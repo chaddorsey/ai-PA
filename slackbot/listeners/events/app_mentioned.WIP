@@ -1,0 +1,104 @@
+# listeners/events/app_mentioned.py
+from logging import Logger
+from slack_bolt import App, Say
+from slack_sdk import WebClient
+import time
+
+from ai.providers.letta_stream import LettaAPIStreaming
+from ..listener_utils.listener_constants import (
+    DEFAULT_LOADING_TEXT,
+    MENTION_WITHOUT_TEXT,
+)
+from ..listener_utils.parse_conversation import parse_conversation
+
+# Throttle updates to avoid Slack rate limits
+THROTTLE_SECONDS = 0.5          # minimum time between edits
+MAX_MESSAGE_LEN = 39000         # stay below Slack hard limits
+BATCH_CHUNKS = 5                # also edit every N chunks (in addition to time)
+
+
+def _handle_app_mention(event: dict, client: WebClient, logger: Logger, say: Say):
+    channel_id = event.get("channel")
+    thread_ts = event.get("thread_ts")
+    user_id = event.get("user")
+    text = (event.get("text") or "").strip()
+
+    # 1) Gather minimal context from the thread / channel
+    try:
+        if thread_ts:
+            history = client.conversations_replies(
+                channel=channel_id, ts=thread_ts, limit=10
+            )["messages"]
+        else:
+            history = client.conversations_history(channel=channel_id, limit=10)["messages"]
+            thread_ts = event["ts"]
+    except Exception as e:
+        logger.exception("Failed to fetch context: %s", e)
+        history = []
+
+    conversation_context = parse_conversation(history[:-1]) if history else ""
+
+    # 2) If no prompt text, reply with a hint
+    if not text:
+        say(text=MENTION_WITHOUT_TEXT, thread_ts=thread_ts)
+        return
+
+    # 3) Post a placeholder we'll keep updating as we stream
+    waiting = say(text=DEFAULT_LOADING_TEXT, thread_ts=thread_ts)
+
+    # 4) Build the system + user prompts
+    system = "You are a helpful Slack bot. Be concise and helpful."
+    user_prompt = (
+        (f"Conversation so far:\n{conversation_context}\n\n") if conversation_context else ""
+    ) + f"User <@{user_id}> says:\n{text}"
+
+    # 5) Stream from Letta and progressively update the Slack message
+    streamer = LettaAPIStreaming()
+    chunks = []
+    last_edit = 0.0
+
+    try:
+        for i, delta in enumerate(streamer.chat_stream(system, user_prompt), start=1):
+            if not isinstance(delta, str):
+                # Some servers may send JSON fragments; coerce to string if needed
+                delta = str(delta)
+            chunks.append(delta)
+
+            now = time.time()
+            if (now - last_edit) >= THROTTLE_SECONDS or (i % BATCH_CHUNKS) == 0:
+                partial = "".join(chunks)
+                if len(partial) > MAX_MESSAGE_LEN:
+                    partial = partial[:MAX_MESSAGE_LEN] + "…"
+                client.chat_update(channel=channel_id, ts=waiting["ts"], text=partial)
+                last_edit = now
+
+        # Final update
+        final_text = "".join(chunks).strip() or "(no content)"
+        if len(final_text) > MAX_MESSAGE_LEN:
+            final_text = final_text[:MAX_MESSAGE_LEN] + "…"
+        client.chat_update(channel=channel_id, ts=waiting["ts"], text=final_text)
+
+    except Exception as e:
+        logger.exception("Streaming failed: %s", e)
+        # Fall back: post a fresh error message (don't assume waiting exists)
+        try:
+            client.chat_postMessage(
+                channel=channel_id,
+                thread_ts=thread_ts or event.get("ts"),
+                text=f"Received an error from Bolty while streaming:\n{e}",
+            )
+        except Exception:
+            pass
+
+
+def register(app: App):
+    @app.event("app_mention")
+    def _on_mention(event, client, logger, say):
+        _handle_app_mention(event, client, logger, say)
+
+
+# Back-compat export (if older code imports this symbol)
+from slack_bolt import Say as _Say
+from slack_sdk import WebClient as _WebClient
+def app_mentioned_callback(client: _WebClient, event: dict, logger: Logger, say: _Say):
+    _handle_app_mention(event, client, logger, say)

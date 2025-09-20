@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  gmail-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - mcp-gmail:/gmail-server
+      - ./gcp-oauth.keys.json:/root/.gmail-mcp/gcp-oauth.keys.json:ro
+    environment:
+      - GMAIL_CREDENTIALS_PATH=/gmail-server/credentials.json
+      - GMAIL_OAUTH_PATH=/root/.gmail-mcp/gcp-oauth.keys.json
+    ports:
+      - "8331:7331"
+    restart: unless-stopped
+
+volumes:
+  mcp-gmail:

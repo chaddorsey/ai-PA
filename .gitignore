@@ -1,0 +1,193 @@
+# ================================
+# AI-PA PROJECT .gitignore
+# ================================
+
+# Environment & Secrets
+.env
+.env.local
+.env.production
+.env.staging
+.env.test
+.env.*
+/backups/.env.bak
+
+# Credentials & Keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+gcp-oauth.keys.json
+credentials.json
+**/credentials.json
+oauth-*.json
+service-account-*.json
+google-credentials.json
+api-keys.txt
+
+# Database & Volume Data
+/data/
+/db/
+/postgres/
+/clickhouse/
+/neo4j/
+pgdata/
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker & Container Data
+docker-compose.override.yml
+.dockerignore.local
+**/logs/
+/volumes/
+/mounts/
+
+# Backup Files
+/backups/
+*.backup
+*.bak
+*.dump
+*.sql.gz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime & Cache
+.cache/
+.tmp/
+.temp/
+node_modules/
+.npm
+.yarn/
+.pnp.*
+.zero-installs
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.node_repl_history
+*.tgz
+.yarn-integrity
+
+# TypeScript
+*.tsbuildinfo
+dist/
+build/
+
+# AI/ML Models & Data
+*.model
+*.pkl
+*.joblib
+models/
+embeddings/
+vectors/
+*.h5
+*.onnx
+checkpoints/
+
+# Temporary Files
+*.tmp
+*.temp
+*~
+.#*
+\#*#
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git Nested Repositories (we'll handle these separately)
+# Uncomment these after we resolve nested repos:
+# /graphiti/
+# /letta/
+# /*/.*git/
+
+# Project Specific
+/old/
+/archive/
+/deprecated/
+/experimental/
+/sandbox/
+/test-data/
+/samples/
+
+# Documentation Build
+docs/_build/
+site/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# SSL Certificates
+*.crt
+*.key
+*.pem
+*.ca-bundle
+
+# Cloud & Tunnel Config
+.cloudflared/
+tunnel-*.json
+
+# Monitoring & Analytics
+/metrics/
+/analytics/
+*.metrics
+
+# Local Development
+.local/
+.dev/
+local.properties
+
+# Legacy & External Projects (with git histories)
+legacy_and_extra/
+# Database persistence and test data
+.persist/
+pgdata*/

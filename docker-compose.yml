@@ -1,0 +1,319 @@
+version: "3.9"
+
+services:
+  # --- Database Layer ---
+  supabase-db:
+    image: supabase/postgres:15.8.1.060
+    container_name: supabase-db
+    restart: unless-stopped
+#    ports:
+#      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - supabase_db:/var/lib/postgresql/data
+
+  # --- Supabase Services ---
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.12
+    depends_on: [supabase-db]
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      PGRST_DB_ANON_ROLE: anon
+    networks: [default]
+
+  supabase-auth:
+    image: supabase/gotrue:v2.177.0
+    depends_on: [supabase-db]
+    environment:
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+    networks: [default]
+
+  supabase-realtime:
+    image: supabase/realtime:v2.34.47
+    depends_on: [supabase-db]
+    networks: [default]
+
+  supabase-meta:
+    image: supabase/postgres-meta:v0.91.0
+    container_name: supabase-meta
+    restart: unless-stopped
+    depends_on:
+      - supabase-db
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8080:8080"
+    networks: [default]
+
+  supabase-studio:
+    image: supabase/studio:2025.06.30-sha-6f5982d
+    container_name: supabase-studio
+    restart: unless-stopped
+    depends_on:
+      - supabase-db
+      - supabase-meta
+      - supabase-auth
+      - supabase-rest
+    ports:
+      - "54323:3000"
+    environment:
+      # URL Studio uses to connect to Postgres directly
+      SUPABASE_DB_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+
+      # Where Studio finds Postgres Meta (schema/foreign key info)
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+
+      # RESTful entrypoint via Kong gateway
+      SUPABASE_URL: http://supabase-kong:8000
+
+      # Keys (must be in your .env)
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+
+      # Pass Postgres password explicitly as well
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks: [default]
+
+  # --- Workflow Automation (n8n) ---
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_DATABASE: n8n_restore   # 👈 updated here
+      DB_POSTGRESDB_HOST: supabase-db
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_USER: postgres
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+      GENERIC_TIMEZONE: "America/New_York"
+      TZ: "America/New_York"
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      WEBHOOK_URL: ${WEBHOOK_URL} 
+      N8N_PROTOCOL: "https"
+    depends_on:
+      - supabase-db
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - /tmp/granola-to-letta:/tmp/granola-notes
+
+
+  # --- Neo4j for Graphiti ---
+  neo4j:
+    image: neo4j:5.26
+    container_name: graphiti-neo4j
+    restart: unless-stopped
+    environment:
+      - NEO4J_AUTH=neo4j/demodemo
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    ports:
+      - "7474:7474"   # Neo4j Browser
+      - "7687:7687"   # Bolt protocol
+
+  # --- Graphiti MCP Server ---
+  graphiti-mcp:
+    build:
+      context: /Users/chaddorsey/dev/ai-PA/graphiti/mcp_server
+    container_name: graphiti-mcp
+    user: root
+    restart: unless-stopped
+    depends_on:
+      - neo4j
+    working_dir: /app
+    entrypoint: ["/root/.local/bin/uv","run","graphiti_mcp_server.py"]
+    environment:
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      MODEL_NAME: "${MODEL_NAME:-gpt-4.1-mini}"
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: demodemo
+      GRAPHITI_TELEMETRY_ENABLED: "false"
+      SEMAPHORE_LIMIT: "10"
+      RESET_NEO4J: "true"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+    ports:
+      - "8800:8000"
+
+
+# Cloudflare
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    depends_on:
+      - n8n
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+    command: tunnel run
+
+  letta_db:
+    image: ankane/pgvector:v0.5.1
+    networks:
+      default:
+        aliases:
+          - pgvector_db
+          - letta-db
+    environment:
+      - POSTGRES_USER=${LETTA_PG_USER:-letta}
+      - POSTGRES_PASSWORD=${LETTA_PG_PASSWORD:-letta}
+      - POSTGRES_DB=${LETTA_PG_DB:-letta}
+    volumes:
+      - ./.persist/pgdata-test:/var/lib/postgresql/data
+
+    ports:
+      - "5432:5432"
+
+  # Letta is an agent building framework with built-in memory/vectordb support.
+  # https://docs.letta.com/quickstart/docker
+  letta:
+    image: letta/letta:latest
+    volumes:
+      - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
+    ports:
+      - 8283:8283
+    environment:
+      LETTA_DEBUG: "${LETTA_DEBUG:-false}"
+      LETTA_PG_DB: ${LETTA_PG_DB:-letta}
+      LETTA_PG_USER: ${LETTA_PG_USER:-letta}
+      LETTA_PG_PASSWORD: ${LETTA_PG_PASSWORD:-letta}
+      LETTA_PG_HOST: pgvector_db
+      LETTA_PG_PORT: 5432
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      # https://docs.letta.com/guides/server/providers/anthropic
+      ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+      # https://docs.letta.com/guides/server/providers/google
+      GEMINI_API_KEY: $GEMINI_API_KEY
+      #OLLAMA_BASE_URL: $OLLAMA_BASE_URL
+      OPENAI_API_KEY: $OPENAI_API_KEY
+
+      # Do not attempt to use Ollama, LM Studio or OpenRouter chat models with Letta.
+      # Letta is *very* picky and will only reliably work with the major cloud providers.
+      # Embedding models will work fine, but only uncomment if you know what you're doing.
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8283/v1/health/"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 1s
+
+
+  # Open WebUI is the front-end UI to Letta
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.6.22
+    container_name: open-webui
+    volumes:
+     - open-webui:/app/backend/data
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    environment:
+      # https://docs.openwebui.com/getting-started/env-configuration/
+      - GLOBAL_LOG_LEVEL=$OPENWEBUI_LOG_LEVEL
+      # Disable admin login
+      - WEBUI_AUTH=false
+      # Enable the /docs endpoint for OpenAPI viewing
+      #- ENV=dev
+      # Prevent a langchain warning
+      - USER_AGENT=openwebui
+      # Set tags and titles explictly
+      - ENABLE_TAGS_GENERATION=$ENABLE_TAGS_GENERATION
+      - ENABLE_TITLE_GENERATION=$ENABLE_TITLE_GENERATION
+      - TASK_MODEL=$TASK_MODEL
+      - TASK_MODEL_EXTERNAL=$TASK_MODEL_EXTERNAL
+      # Disable some meaningless options
+      - ENABLE_EVALUATION_ARENA_MODELS=false
+      - ENABLE_AUTOCOMPLETE_GENERATION=false
+      - ENABLE_RETRIEVAL_QUERY_GENERATION=false
+      - ENABLE_FOLLOW_UP_GENERATION=false
+      # OpenAI selection should go to Hayhooks to show agents
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://hayhooks:1416
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Ollama Options
+      - ENABLE_OLLAMA_API=$ENABLE_OLLAMA_API
+      - OLLAMA_BASE_URL=$OLLAMA_BASE_URL
+      # RAG options can be transformers, ollama, or openai 
+      - RAG_EMBEDDING_ENGINE=$RAG_EMBEDDING_ENGINE
+      - RAG_EMBEDDING_MODEL=$RAG_EMBEDDING_MODEL
+      - RAG_OPENAI_API_BASE_URL=http://litellm:4000
+      - RAG_OPENAI_API_KEY=$LITELLM_MASTER_KEY
+      - RAG_OLLAMA_BASE_URL=$OLLAMA_BASE_URL
+      # Tavily Web Search in Open WebUI
+      - ENABLE_WEB_SEARCH=$ENABLE_WEB_SEARCH
+      - WEB_SEARCH_ENGINE=$WEB_SEARCH_ENGINE
+      - TAVILY_API_KEY=$TAVILY_API_KEY
+      # Audio options
+      - AUDIO_STT_ENGINE=$AUDIO_STT_ENGINE
+    restart: unless-stopped
+    # https://docs.openwebui.com/getting-started/advanced-topics/monitoring/#basic-health-check-endpoint
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 5s
+
+
+  slack-mcp-server:
+    image: ghcr.io/korotovsky/slack-mcp-server:latest
+    restart: unless-stopped
+    networks:
+      - app-tier
+    ports:
+      - "3001:3001"
+    volumes:
+      - users_cache:/app/mcp-server/.users_cache.json
+      - channels_cache:/app/mcp-server/.channels_cache.json
+    env_file:
+      - .env
+    environment:
+      SLACK_MCP_HOST: "0.0.0.0"
+      SLACK_MCP_PORT: "3001"
+
+  gmail:
+    build:
+      context: ./gmail-mcp
+      dockerfile: Dockerfile
+    image: gmail-mcp-server
+    ports:
+      - "7331:7331"
+    volumes:
+      - mcp-gmail:/gmail-server
+      - ./gmail-mcp/gcp-oauth.keys.json:/gcp-oauth.keys.json:ro
+    environment:
+      GMAIL_OAUTH_PATH: /gcp-oauth.keys.json
+      GMAIL_CREDENTIALS_PATH: /gmail-server/credentials.json
+      PORT: 7331
+
+volumes:
+  supabase_db:
+    external: true
+    name: ai-pa_supabase_db
+  n8n_data:
+    name: ai-pa_n8n_data
+  neo4j_data:
+  neo4j_logs:
+  open-webui:  
+  users_cache:
+  channels_cache:
+  mcp-gmail:
+
+networks:
+  app-tier:
+    name: app-tier
+    external: true
