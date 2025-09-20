@@ -88,6 +88,15 @@ services:
     ports:
       - "5678:5678"
     networks: [pa-network]
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     environment:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_DATABASE: n8n_restore   # 👈 updated here
@@ -124,6 +133,12 @@ services:
     ports:
       - "7474:7474"   # Neo4j Browser
       - "7687:7687"   # Bolt protocol
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7474/browser/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # --- Graphiti MCP Server ---
   graphiti-mcp:
@@ -134,7 +149,8 @@ services:
     restart: unless-stopped
     networks: [pa-network]
     depends_on:
-      - neo4j
+      neo4j:
+        condition: service_healthy
     working_dir: /app
     entrypoint: ["/root/.local/bin/uv","run","graphiti_mcp_server.py"]
     environment:
@@ -150,6 +166,12 @@ services:
       PORT: "8000"
     ports:
       - "8800:8000"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
 
 
 # Cloudflare
@@ -160,7 +182,8 @@ services:
     restart: unless-stopped
     networks: [pa-network]
     depends_on:
-      - n8n
+      n8n:
+        condition: service_healthy
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
     command: tunnel run
@@ -208,7 +231,7 @@ services:
       - "${OPEN_WEBUI_PORT:-3000}:8080"
     environment:
       # https://docs.openwebui.com/getting-started/env-configuration/
-      - GLOBAL_LOG_LEVEL=$OPENWEBUI_LOG_LEVEL
+      - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-INFO}
       # Disable admin login
       - WEBUI_AUTH=false
       # Enable the /docs endpoint for OpenAPI viewing
@@ -268,6 +291,12 @@ services:
     environment:
       SLACK_MCP_HOST: "0.0.0.0"
       SLACK_MCP_PORT: "3001"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "3001"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   gmail:
     build:
@@ -284,6 +313,12 @@ services:
       GMAIL_OAUTH_PATH: /gcp-oauth.keys.json
       GMAIL_CREDENTIALS_PATH: /gmail-server/credentials.json
       PORT: 7331
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7331"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   supabase_db:
