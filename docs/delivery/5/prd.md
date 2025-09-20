@@ -85,6 +85,7 @@ External Slack MCP Server (unchanged) → Letta (MCP tools)
 6. **Service Management**: Can be started/stopped with docker-compose commands
 7. **Health Checks**: Proper health check implementation
 8. **Environment Configuration**: Proper environment variable management
+9. **Streaming Responses**: Human-like progressive message updates using Letta streaming API
 
 ## Dependencies
 
@@ -92,17 +93,35 @@ External Slack MCP Server (unchanged) → Letta (MCP tools)
 - **PBI 3**: Network unification (must be completed first)
 - **PBI 4**: MCP server standardization (provides patterns to follow)
 
+## Streaming Enhancement
+
+### Human-Like Interaction
+The Slackbot will implement streaming responses to provide a more natural, human-like interaction experience:
+
+- **Progressive Updates**: Messages update in real-time as content streams from Letta
+- **Rate Limiting**: Throttled updates (0.5s intervals, 5-chunk batches) to avoid API limits
+- **Message Length Management**: Proper handling of long responses with truncation
+- **Error Handling**: Graceful fallback to non-streaming on errors
+- **Loading Behavior**: Replace static "Thinking..." with dynamic content updates
+
+### Technical Implementation
+- Switch from `LettaAPI` to `LettaAPIStreaming` class
+- Use `chat_update()` for progressive message updates
+- Implement proper error handling and fallback mechanisms
+- Configure rate limiting to respect Slack API limits
+
 ## Open Questions
 
 1. **MCP Interface Implementation**: What specific MCP tools should the Slackbot expose?
 2. **Authentication**: How should Slack tokens be managed in the containerized environment?
 3. **State Management**: How should user state be persisted in the containerized environment?
-4. **Error Handling**: What error handling patterns should be implemented for MCP interface?
+4. **Streaming Configuration**: Should streaming be configurable per user or globally?
+5. **Error Handling**: What error handling patterns should be implemented for MCP interface?
 
 ## Related Tasks
 
 - [Task 5-1: Analyze current Slackbot implementation](./5-1.md)
 - [Task 5-2: Create Dockerfile for Slackbot](./5-2.md)
-- [Task 5-3: Implement MCP server interface](./5-3.md)
-- [Task 5-4: Update Docker Compose configuration](./5-4.md)
-- [Task 5-5: Test integration and validate functionality](./5-5.md)
+- [Task 5-3: Update Docker Compose to integrate containerized Slackbot](./5-3.md)
+- [Task 5-4: Test Slackbot integration and validate functionality](./5-4.md)
+- [Task 5-5: Implement streaming responses for human-like interaction](./5-5.md)
