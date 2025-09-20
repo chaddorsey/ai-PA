@@ -11,11 +11,10 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Runtime dirs & env
-RUN mkdir -p /app/data /app/config
+# Runtime environment
 ENV NODE_ENV=production
-ENV GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
-ENV GMAIL_OAUTH_PATH=/app/config/gcp-oauth.keys.json
+ENV PORT=8083
+ENV HEALTH_CHECK_INTERVAL=30
 
-EXPOSE 8080
-CMD ["node", "dist/server-http.js"]
+EXPOSE 8083
+CMD ["node", "dist/index.js"]

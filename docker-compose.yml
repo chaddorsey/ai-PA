@@ -189,10 +189,10 @@ services:
       start_period: 60s
 
   # --- Graphiti MCP Server ---
-  graphiti-mcp:
+  graphiti-mcp-server:
     build:
       context: /Users/chaddorsey/dev/ai-PA/graphiti/mcp_server
-    container_name: graphiti-mcp
+    container_name: graphiti-mcp-server
     user: root
     restart: unless-stopped
     networks: [pa-network]
@@ -202,22 +202,133 @@ services:
     working_dir: /app
     entrypoint: ["/root/.local/bin/uv","run","graphiti_mcp_server.py"]
     environment:
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      MODEL_NAME: "${MODEL_NAME:-gpt-4.1-mini}"
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: demodemo
-      GRAPHITI_TELEMETRY_ENABLED: "false"
-      SEMAPHORE_LIMIT: "10"
-      RESET_NEO4J: "true"
-      HOST: "0.0.0.0"
-      PORT: "8000"
+      # Common MCP variables
+      - MCP_SERVER_NAME=graphiti-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_SERVER_DESCRIPTION=Graphiti memory and knowledge graph tools
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8082
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      
+      # Graphiti-specific variables
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4.1-mini}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=demodemo
+      - GRAPHITI_TELEMETRY_ENABLED=false
+      - SEMAPHORE_LIMIT=10
+      - RESET_NEO4J=true
+      - HOST=0.0.0.0
+      - PORT=8082
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "8000"]
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 45s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=graphiti-mcp-server"
+      - "component=mcp-server"
+      - "network=pa-internal"
+      - "mcp-transport=http"
+      - "mcp-version=1.0.0"
+      - "security.internal-only=true"
+      - "security.no-external-access=true"
+
+  # --- RAG MCP Server ---
+  rag-mcp-server:
+    build:
+      context: ./rag-mcp
+      dockerfile: Dockerfile
+    container_name: rag-mcp-server
+    restart: unless-stopped
+    networks: [pa-network]
+    volumes:
+      - rag-mcp-data:/app/data
+    environment:
+      # Common MCP variables
+      - MCP_SERVER_NAME=rag-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_SERVER_DESCRIPTION=RAG tools for retrieval-augmented generation
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8082
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      
+      # RAG-specific variables (placeholders for future implementation)
+      - VECTOR_DB_URL=http://vector-db:8080
+      - DOCUMENT_STORE_URL=http://document-store:8080
+      - EMBEDDING_MODEL=text-embedding-ada-002
+      - PORT=8082
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=rag-mcp-server"
+      - "component=mcp-server"
+      - "network=pa-internal"
+      - "mcp-transport=http"
+      - "mcp-version=1.0.0"
+      - "security.internal-only=true"
+      - "security.no-external-access=true"
+
+  # --- Health Monitor Service ---
+  health-monitor:
+    build:
+      context: ./health-monitor
+      dockerfile: Dockerfile
+    container_name: health-monitor
+    restart: unless-stopped
+    networks: [pa-network]
+    depends_on:
+      - gmail-mcp-server
+      - graphiti-mcp-server
+      - rag-mcp-server
+    environment:
+      - NODE_ENV=production
+      - PORT=8083
+      - HEALTH_CHECK_INTERVAL=30
+    ports:
+      - "8083:8083"  # Expose for external access to dashboard
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=health-monitor"
+      - "component=monitoring"
+      - "network=pa-internal"
+      - "external-access=true"
+      - "dashboard=true"
 
 
 # Cloudflare
@@ -355,25 +466,52 @@ services:
       retries: 3
       start_period: 30s
 
-  gmail:
+  gmail-mcp-server:
     build:
       context: ./gmail-mcp
       dockerfile: Dockerfile
-    image: gmail-mcp-server
+    container_name: gmail-mcp-server
+    restart: unless-stopped
     networks: [pa-network]
     volumes:
-      - mcp-gmail:/gmail-server
-      - ./gmail-mcp/gcp-oauth.keys.json:/gcp-oauth.keys.json:ro
+      - gmail-mcp-data:/app/data
+      - ./gmail-mcp/gcp-oauth.keys.json:/app/config/gcp-oauth.keys.json:ro
     environment:
-      GMAIL_OAUTH_PATH: /gcp-oauth.keys.json
-      GMAIL_CREDENTIALS_PATH: /gmail-server/credentials.json
-      PORT: 7331
+      # Common MCP variables
+      - MCP_SERVER_NAME=gmail-tools
+      - MCP_SERVER_VERSION=1.1.11
+      - MCP_SERVER_DESCRIPTION=Gmail integration tools
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8080
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      
+      # Gmail-specific variables
+      - GMAIL_OAUTH_PATH=/app/config/gcp-oauth.keys.json
+      - GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
+      - PORT=8080
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "7331"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=gmail-mcp-server"
+      - "component=mcp-server"
+      - "network=pa-internal"
+      - "mcp-transport=http"
+      - "mcp-version=1.1.11"
+      - "security.internal-only=true"
+      - "security.no-external-access=true"
 
 volumes:
   supabase_db:
@@ -386,7 +524,8 @@ volumes:
   open-webui:  
   users_cache:
   channels_cache:
-  mcp-gmail:
+  gmail-mcp-data:
+  rag-mcp-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring

@@ -14,8 +14,15 @@ RUN npm run build
 # Runtime dirs & env
 RUN mkdir -p /app/data /app/config
 ENV NODE_ENV=production
-ENV GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
-ENV GMAIL_OAUTH_PATH=/app/config/gcp-oauth.keys.json
+ENV MCP_SERVER_NAME=rag-tools
+ENV MCP_SERVER_VERSION=1.0.0
+ENV MCP_SERVER_DESCRIPTION=RAG tools for retrieval-augmented generation
+ENV MCP_SERVER_HOST=0.0.0.0
+ENV MCP_SERVER_PORT=8082
+ENV MCP_SERVER_PATH=/mcp
+ENV MCP_LOG_LEVEL=INFO
+ENV MCP_LOG_FORMAT=json
+ENV MCP_HEALTH_CHECK_PATH=/health
 
-EXPOSE 8080
+EXPOSE 8082
 CMD ["node", "dist/server-http.js"]

@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import sys
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, TypedDict, cast
@@ -1159,6 +1160,54 @@ async def get_status() -> StatusResponse:
             status='error',
             message=f'Graphiti MCP server is running but Neo4j connection failed: {error_msg}',
         )
+
+
+@mcp.resource('http://graphiti/health')
+async def get_health() -> dict[str, Any]:
+    """Get the health status of the Graphiti MCP server with standardized format."""
+    global graphiti_client
+    
+    server_name = os.getenv('MCP_SERVER_NAME', 'graphiti-tools')
+    server_version = os.getenv('MCP_SERVER_VERSION', '1.0.0')
+    
+    health_status = {
+        'status': 'healthy',
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'service': server_name,
+        'version': server_version,
+        'uptime': f"PT{int(time.time())}S",
+        'dependencies': {
+            'neo4j': 'healthy',
+            'openai_api': 'healthy',
+            'external_apis': 'healthy'
+        }
+    }
+    
+    if graphiti_client is None:
+        health_status['status'] = 'unhealthy'
+        health_status['dependencies']['neo4j'] = 'unhealthy'
+        health_status['error'] = 'Graphiti client not initialized'
+        return health_status
+
+    try:
+        # Test Neo4j connection
+        assert graphiti_client is not None
+        client = cast(Graphiti, graphiti_client)
+        await client.driver.client.verify_connectivity()
+        
+        # Test OpenAI API if configured
+        if not os.getenv('OPENAI_API_KEY'):
+            health_status['dependencies']['openai_api'] = 'not_configured'
+        else:
+            health_status['dependencies']['openai_api'] = 'healthy'
+            
+    except Exception as e:
+        health_status['status'] = 'unhealthy'
+        health_status['dependencies']['neo4j'] = 'unhealthy'
+        health_status['error'] = f'Neo4j connection failed: {str(e)}'
+        logger.error(f'Health check failed: {str(e)}')
+    
+    return health_status
 
 
 async def initialize_server() -> MCPConfig:

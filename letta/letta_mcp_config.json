@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "gmail-tools": {
+      "command": "http",
+      "args": ["http://gmail-mcp-server:8080"],
+      "env": {},
+      "disabled": false
+    },
+    "slack-tools": {
+      "command": "http",
+      "args": ["http://slack-mcp-server:8081"],
+      "env": {},
+      "disabled": false
+    },
+    "graphiti-tools": {
+      "command": "http",
+      "args": ["http://graphiti-mcp-server:8082"],
+      "env": {},
+      "disabled": false
+    },
+    "rag-tools": {
+      "command": "http",
+      "args": ["http://rag-mcp-server:8083"],
+      "env": {},
+      "disabled": false
+    }
+  }
+}

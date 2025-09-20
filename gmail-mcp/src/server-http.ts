@@ -5,8 +5,9 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { registerAll } from "./index.js";
 
 const app = express(); // DO NOT add app.use(express.json()); transport needs raw body
-const PORT = Number(process.env.PORT || 7331);
+const PORT = Number(process.env.PORT || 8080);
 const PATH = process.env.MCP_PATH || "/mcp";
+const HEALTH_PATH = process.env.MCP_HEALTH_CHECK_PATH || "/health";
 
 // Shared server instance (singleton pattern for HTTP transport)
 let sharedServer: Server | null = null;
@@ -61,8 +62,21 @@ async function getTransport(req: Request): Promise<StreamableHTTPServerTransport
 }
 
 // --- Health probe
-app.get("/healthz", (_req: Request, res: Response) => {
-  res.status(200).json({ ok: true });
+app.get(HEALTH_PATH, (_req: Request, res: Response) => {
+  const serverName = process.env.MCP_SERVER_NAME || "gmail-tools";
+  const serverVersion = process.env.MCP_SERVER_VERSION || "1.1.11";
+  
+  res.status(200).json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    service: serverName,
+    version: serverVersion,
+    uptime: process.uptime(),
+    dependencies: {
+      gmail_api: "healthy", // TODO: Add actual Gmail API health check
+      external_apis: "healthy"
+    }
+  });
 });
 
 // --- JSON-RPC (client -> server)
