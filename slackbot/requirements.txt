@@ -6,3 +6,4 @@ slack-sdk
 openai
 anthropic
 google-cloud-aiplatform
+sseclient-py
