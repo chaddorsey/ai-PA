@@ -12,34 +12,75 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - supabase_db:/var/lib/postgresql/data
+    networks: [pa-network]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=supabase-db"
+      - "component=database"
+      - "network=pa-internal"
 
   # --- Supabase Services ---
   supabase-rest:
     image: postgrest/postgrest:v12.2.12
-    depends_on: [supabase-db]
+    depends_on: 
+      supabase-db:
+        condition: service_healthy
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
     networks: [pa-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   supabase-auth:
     image: supabase/gotrue:v2.177.0
-    depends_on: [supabase-db]
+    depends_on:
+      supabase-db:
+        condition: service_healthy
     environment:
       GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
     networks: [pa-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   supabase-realtime:
     image: supabase/realtime:v2.34.47
-    depends_on: [supabase-db]
+    depends_on:
+      supabase-db:
+        condition: service_healthy
     networks: [pa-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   supabase-meta:
     image: supabase/postgres-meta:v0.91.0
     container_name: supabase-meta
     restart: unless-stopped
     depends_on:
-      - supabase-db
+      supabase-db:
+        condition: service_healthy
     environment:
       PG_META_PORT: 8080
       PG_META_DB_HOST: supabase-db
@@ -47,21 +88,27 @@ services:
       PG_META_DB_NAME: postgres
       PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "8080:8080"
     networks: [pa-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   supabase-studio:
     image: supabase/studio:2025.06.30-sha-6f5982d
     container_name: supabase-studio
     restart: unless-stopped
     depends_on:
-      - supabase-db
-      - supabase-meta
-      - supabase-auth
-      - supabase-rest
-    ports:
-      - "54323:3000"
+      supabase-db:
+        condition: service_healthy
+      supabase-meta:
+        condition: service_healthy
+      supabase-auth:
+        condition: service_healthy
+      supabase-rest:
+        condition: service_healthy
     environment:
       # URL Studio uses to connect to Postgres directly
       SUPABASE_DB_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
@@ -79,14 +126,18 @@ services:
       # Pass Postgres password explicitly as well
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     networks: [pa-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # --- Workflow Automation (n8n) ---
   n8n:
     image: docker.n8n.io/n8nio/n8n
     container_name: n8n
     restart: unless-stopped
-    ports:
-      - "5678:5678"
     networks: [pa-network]
     depends_on:
       supabase-db:
@@ -130,9 +181,6 @@ services:
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
-    ports:
-      - "7474:7474"   # Neo4j Browser
-      - "7687:7687"   # Bolt protocol
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7474/browser/"]
       interval: 30s
@@ -164,8 +212,6 @@ services:
       RESET_NEO4J: "true"
       HOST: "0.0.0.0"
       PORT: "8000"
-    ports:
-      - "8800:8000"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "8000"]
       interval: 30s
@@ -187,6 +233,22 @@ services:
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
     command: tunnel run
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "info"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=cloudflared"
+      - "component=tunnel"
+      - "network=pa-internal"
+      - "external-access=true"
 
 
   # Letta is an agent building framework with built-in memory/vectordb support.
@@ -195,8 +257,6 @@ services:
     image: letta/letta:latest
     volumes:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
-    ports:
-      - 8283:8283
     networks: [pa-network]
     environment:
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
@@ -227,8 +287,7 @@ services:
     container_name: open-webui
     volumes:
      - open-webui:/app/backend/data
-    ports:
-      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    networks: [pa-network]
     environment:
       # https://docs.openwebui.com/getting-started/env-configuration/
       - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-INFO}
@@ -281,8 +340,6 @@ services:
     image: ghcr.io/korotovsky/slack-mcp-server:latest
     restart: unless-stopped
     networks: [pa-network]
-    ports:
-      - "3001:3001"
     volumes:
       - users_cache:/app/mcp-server/.users_cache.json
       - channels_cache:/app/mcp-server/.channels_cache.json
@@ -303,8 +360,6 @@ services:
       context: ./gmail-mcp
       dockerfile: Dockerfile
     image: gmail-mcp-server
-    ports:
-      - "7331:7331"
     networks: [pa-network]
     volumes:
       - mcp-gmail:/gmail-server
@@ -333,13 +388,36 @@ volumes:
   channels_cache:
   mcp-gmail:
 
+# --- Monitoring and Logging Configuration ---
+# All services use standardized logging and labeling for unified monitoring
+
 networks:
   pa-network:
     name: pa-internal
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.driver.mtu: "1500"
     ipam:
+      driver: default
       config:
         - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
     labels:
       - "project=pa-ecosystem"
       - "environment=production"
+      - "security=internal-only"
+
+# Standard logging configuration for all services:
+# logging:
+#   driver: "json-file"
+#   options:
+#     max-size: "10m"
+#     max-file: "3"
+#
+# Standard labeling for all services:
+# labels:
+#   - "service=<service-name>"
+#   - "component=<component-type>"
+#   - "network=pa-internal"
