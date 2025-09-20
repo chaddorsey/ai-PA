@@ -20,19 +20,19 @@ services:
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
-    networks: [default]
+    networks: [pa-network]
 
   supabase-auth:
     image: supabase/gotrue:v2.177.0
     depends_on: [supabase-db]
     environment:
       GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-    networks: [default]
+    networks: [pa-network]
 
   supabase-realtime:
     image: supabase/realtime:v2.34.47
     depends_on: [supabase-db]
-    networks: [default]
+    networks: [pa-network]
 
   supabase-meta:
     image: supabase/postgres-meta:v0.91.0
@@ -49,7 +49,7 @@ services:
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "8080:8080"
-    networks: [default]
+    networks: [pa-network]
 
   supabase-studio:
     image: supabase/studio:2025.06.30-sha-6f5982d
@@ -78,7 +78,7 @@ services:
 
       # Pass Postgres password explicitly as well
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    networks: [default]
+    networks: [pa-network]
 
   # --- Workflow Automation (n8n) ---
   n8n:
@@ -87,6 +87,7 @@ services:
     restart: unless-stopped
     ports:
       - "5678:5678"
+    networks: [pa-network]
     environment:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_DATABASE: n8n_restore   # 👈 updated here
@@ -114,6 +115,7 @@ services:
     image: neo4j:5.26
     container_name: graphiti-neo4j
     restart: unless-stopped
+    networks: [pa-network]
     environment:
       - NEO4J_AUTH=neo4j/demodemo
     volumes:
@@ -130,6 +132,7 @@ services:
     container_name: graphiti-mcp
     user: root
     restart: unless-stopped
+    networks: [pa-network]
     depends_on:
       - neo4j
     working_dir: /app
@@ -155,6 +158,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
+    networks: [pa-network]
     depends_on:
       - n8n
     environment:
@@ -170,6 +174,7 @@ services:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
     ports:
       - 8283:8283
+    networks: [pa-network]
     environment:
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
       LETTA_PG_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
@@ -252,8 +257,7 @@ services:
   slack-mcp-server:
     image: ghcr.io/korotovsky/slack-mcp-server:latest
     restart: unless-stopped
-    networks:
-      - app-tier
+    networks: [pa-network]
     ports:
       - "3001:3001"
     volumes:
@@ -272,6 +276,7 @@ services:
     image: gmail-mcp-server
     ports:
       - "7331:7331"
+    networks: [pa-network]
     volumes:
       - mcp-gmail:/gmail-server
       - ./gmail-mcp/gcp-oauth.keys.json:/gcp-oauth.keys.json:ro
@@ -294,6 +299,12 @@ volumes:
   mcp-gmail:
 
 networks:
-  app-tier:
-    name: app-tier
-    external: true
+  pa-network:
+    name: pa-internal
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+    labels:
+      - "project=pa-ecosystem"
+      - "environment=production"
