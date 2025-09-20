@@ -161,22 +161,6 @@ services:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
     command: tunnel run
 
-  letta_db:
-    image: ankane/pgvector:v0.5.1
-    networks:
-      default:
-        aliases:
-          - pgvector_db
-          - letta-db
-    environment:
-      - POSTGRES_USER=${LETTA_PG_USER:-letta}
-      - POSTGRES_PASSWORD=${LETTA_PG_PASSWORD:-letta}
-      - POSTGRES_DB=${LETTA_PG_DB:-letta}
-    volumes:
-      - ./.persist/pgdata-test:/var/lib/postgresql/data
-
-    ports:
-      - "5432:5432"
 
   # Letta is an agent building framework with built-in memory/vectordb support.
   # https://docs.letta.com/quickstart/docker
@@ -188,11 +172,7 @@ services:
       - 8283:8283
     environment:
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
-      LETTA_PG_DB: ${LETTA_PG_DB:-letta}
-      LETTA_PG_USER: ${LETTA_PG_USER:-letta}
-      LETTA_PG_PASSWORD: ${LETTA_PG_PASSWORD:-letta}
-      LETTA_PG_HOST: pgvector_db
-      LETTA_PG_PORT: 5432
+      LETTA_PG_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
       # https://docs.letta.com/guides/server/providers/anthropic
       ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
