@@ -4,8 +4,8 @@ from slack_bolt import App, Say
 from slack_sdk import WebClient
 
 from ai.providers import get_provider_response
-from ..listener_utils.listener_constants import DEFAULT_LOADING_TEXT
-from ..listener_utils.parse_conversation import parse_conversation
+from listeners.listener_utils.listener_constants import DEFAULT_LOADING_TEXT
+from listeners.listener_utils.parse_conversation import parse_conversation
 
 
 def _handle_dm(event: dict, client: WebClient, logger: Logger, say: Say):

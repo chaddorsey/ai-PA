@@ -1,4 +1,4 @@
-from .base_provider import BaseAPIProvider
+from ai.providers.base_provider import BaseAPIProvider
 import anthropic
 import os
 import logging

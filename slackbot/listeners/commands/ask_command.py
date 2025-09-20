@@ -1,4 +1,4 @@
-from slack_bolt import Ack, Say, BoltContext
+from slack_bolt import Ack, Say, BoltContext, App
 from logging import Logger
 from ai.providers import get_provider_response
 from slack_sdk import WebClient
@@ -54,3 +54,7 @@ def ask_callback(
         client.chat_postEphemeral(
             channel=channel_id, user=user_id, text=f"Received an error from Bolty:\n{e}"
         )
+
+
+def register(app: App):
+    app.command("/ask-bolty")(ask_callback)

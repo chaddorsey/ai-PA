@@ -1,23 +1,12 @@
-# app.py
+# Minimal app.py for testing Docker containerization
 import os
-import sys
 import logging
 import threading
 import time
-
-# Add current directory to Python path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
-from listeners.listeners import register_listeners
 from health_check import start_health_server
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-app = App(token=os.environ["SLACK_BOT_TOKEN"])
-register_listeners(app)
 
 def start_health_check():
     """Start health check server in a separate thread."""
@@ -33,6 +22,10 @@ if __name__ == "__main__":
     health_thread = threading.Thread(target=start_health_check, daemon=True)
     health_thread.start()
     
-    # Start Slack bot
-    logger.info("Starting Slack bot...")
-    SocketModeHandler(app, os.environ["SLACK_APP_TOKEN"]).start()
+    # Keep the main thread alive
+    logger.info("Minimal Slackbot container started (health check only)")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")

@@ -1,5 +1,5 @@
-from .user_state_store import UserStateStore
-from .user_identity import UserIdentity
+from state_store.user_state_store import UserStateStore
+from state_store.user_identity import UserIdentity
 import logging
 from pathlib import Path
 import json

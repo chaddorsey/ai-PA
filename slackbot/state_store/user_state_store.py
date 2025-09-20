@@ -1,4 +1,4 @@
-from .user_identity import UserIdentity
+from state_store.user_identity import UserIdentity
 
 
 class UserStateStore:

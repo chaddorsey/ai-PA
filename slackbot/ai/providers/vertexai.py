@@ -4,7 +4,7 @@ import os
 import google.api_core.exceptions
 import vertexai.generative_models
 
-from .base_provider import BaseAPIProvider
+from ai.providers.base_provider import BaseAPIProvider
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)

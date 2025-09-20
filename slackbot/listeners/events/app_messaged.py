@@ -3,8 +3,8 @@ from ai.providers import get_provider_response
 from logging import Logger
 from slack_bolt import Say
 from slack_sdk import WebClient
-from ..listener_utils.listener_constants import DEFAULT_LOADING_TEXT
-from ..listener_utils.parse_conversation import parse_conversation
+from listeners.listener_utils.listener_constants import DEFAULT_LOADING_TEXT
+from listeners.listener_utils.parse_conversation import parse_conversation
 
 """
 Handles the event when a direct message is sent to the bot, retrieves the conversation context,

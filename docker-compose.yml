@@ -466,6 +466,43 @@ services:
       retries: 3
       start_period: 30s
 
+  # --- Slackbot Service ---
+  slackbot:
+    build:
+      context: ./slackbot
+      dockerfile: Dockerfile
+    container_name: slackbot
+    restart: unless-stopped
+    networks: [pa-network]
+    volumes:
+      - slackbot_state:/app/state_store
+      - slackbot_logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      LETTA_BASE_URL: "http://letta:8283"
+      LETTA_AGENT_ID: ${LETTA_AGENT_ID}
+      HEALTH_CHECK_PORT: "8081"
+    ports:
+      - "8081:8081"  # Health check port
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=slackbot"
+      - "component=chatbot"
+      - "network=pa-internal"
+
   gmail-mcp-server:
     build:
       context: ./gmail-mcp
@@ -524,6 +561,8 @@ volumes:
   open-webui:  
   users_cache:
   channels_cache:
+  slackbot_state:
+  slackbot_logs:
   gmail-mcp-data:
   rag-mcp-data:
 

@@ -4,7 +4,7 @@ from typing import Optional
 
 class LettaAPI:
     def __init__(self):
-        base = os.getenv("LETTA_BASE_URL", "http://192.168.7.114:8283").rstrip("/")
+        base = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
         agent = os.getenv("LETTA_AGENT_ID", "").strip()
         if not agent:
             raise RuntimeError("LETTA_AGENT_ID is not set")

@@ -1,5 +1,5 @@
 from slack_bolt import App
-from .summary_function import handle_summary_function_callback
+from listeners.functions.summary_function import handle_summary_function_callback
 
 
 def register(app: App):

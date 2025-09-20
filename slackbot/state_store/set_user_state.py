@@ -1,7 +1,7 @@
 import json
 import os
 from state_store.user_identity import UserIdentity
-from .file_state_store import FileStateStore
+from state_store.file_state_store import FileStateStore
 
 store = FileStateStore()
 
