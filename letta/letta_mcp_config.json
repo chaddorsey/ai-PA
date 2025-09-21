@@ -8,7 +8,7 @@
     },
     "slack-tools": {
       "command": "http",
-      "args": ["http://slack-mcp-server:8081"],
+      "args": ["http://slack-mcp-server:3001"],
       "env": {},
       "disabled": false
     },
