@@ -34,11 +34,21 @@
   },
   "oauth_config": {
       "scopes": {
-          "bot": [
-              "channels:history",
-              "chat:write",
-              "commands"
-          ]
+        "bot": [
+            "channels:history",
+            "chat:write",
+            "commands",
+            "reactions:write",
+            "app_mentions:read",
+            "im:history",
+            "im:write",
+            "groups:history",
+            "groups:write",
+            "mpim:history",
+            "mpim:write",
+            "users:read",
+            "users:read.email"
+        ]
       }
   },
   "settings": {
