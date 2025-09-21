@@ -96,6 +96,19 @@ log "✓ N8N data volume backed up"
 docker run --rm -v ai-pa_open-webui:/source:ro -v "$BACKUP_DIR":/backup alpine tar czf /backup/openwebui_data_$(date +%Y%m%d_%H%M%S).tar.gz -C /source .
 log "✓ Open WebUI data volume backed up"
 
+# Gmail MCP data volume
+if check_container "gmail-mcp-server"; then
+    docker run --rm -v gmail-mcp-data:/source:ro -v "$BACKUP_DIR":/backup alpine tar czf /backup/gmail-mcp-data_$(date +%Y%m%d_%H%M%S).tar.gz -C /source .
+    log "✓ Gmail MCP data volume backed up"
+    
+    # Backup Gmail MCP credentials
+    docker cp gmail-mcp-server:/app/config/gcp-oauth.keys.json "$BACKUP_DIR/gmail-mcp-oauth-$(date +%Y%m%d_%H%M%S).json" 2>/dev/null || warning "Could not backup Gmail MCP OAuth keys"
+    docker cp gmail-mcp-server:/app/data/credentials.json "$BACKUP_DIR/gmail-mcp-credentials-$(date +%Y%m%d_%H%M%S).json" 2>/dev/null || warning "Could not backup Gmail MCP credentials"
+    log "✓ Gmail MCP credentials backed up"
+else
+    warning "Gmail MCP container not found, skipping backup"
+fi
+
 # 5. Backup configuration files
 log "Backing up configuration files..."
 cp "/Users/chaddorsey/Dropbox/dev/ai-PA/docker-compose.yml" "$BACKUP_DIR/"
