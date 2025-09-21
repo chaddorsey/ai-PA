@@ -342,7 +342,7 @@ services:
       n8n:
         condition: service_healthy
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     command: tunnel run
     healthcheck:
       test: ["CMD", "cloudflared", "tunnel", "info"]
@@ -503,6 +503,36 @@ services:
     labels:
       - "service=slackbot"
       - "component=chatbot"
+      - "network=pa-internal"
+
+  # --- Cloudflare Tunnel Service ---
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    networks: [pa-network]
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - letta
+      - open-webui
+      - n8n
+      - slackbot
+            healthcheck:
+              test: ["CMD", "cloudflared", "tunnel", "info", "pa-ecosystem-tunnel"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+              start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=cloudflare-tunnel"
+      - "component=external-access"
       - "network=pa-internal"
 
   gmail-mcp-server:
