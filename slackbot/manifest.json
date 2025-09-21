@@ -55,7 +55,9 @@
       "event_subscriptions": {
           "bot_events": [
               "app_home_opened",
-              "message.channels"
+              "app_mention",
+              "message.channels",
+              "message.im"
           ]
       },
       "interactivity": {
