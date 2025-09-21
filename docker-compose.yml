@@ -366,6 +366,8 @@ services:
   # https://docs.letta.com/quickstart/docker
   letta:
     image: letta/letta:latest
+    ports:
+      - "8283:8283"  # Letta web interface
     volumes:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
     networks: [pa-network]
