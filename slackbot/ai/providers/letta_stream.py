@@ -14,6 +14,8 @@ class LettaAPIStreaming:
         with requests.post(url, json=body, headers=self.headers, stream=True) as r:
             r.raise_for_status()
             client = sseclient.SSEClient(r)
+            full_content = ""
+            
             for event in client.events():
                 if event.event == "message":
                     try:
@@ -22,16 +24,31 @@ class LettaAPIStreaming:
                         if data.get("message_type") == "assistant_message" and "content" in data:
                             content = data["content"]
                             if isinstance(content, str):
-                                yield content
+                                full_content = content
                             elif isinstance(content, list):
                                 # Handle segmented content
+                                full_content = ""
                                 for segment in content:
                                     if isinstance(segment, str):
-                                        yield segment
+                                        full_content += segment
                                     elif isinstance(segment, dict) and "text" in segment:
-                                        yield segment["text"]
+                                        full_content += segment["text"]
                     except (json.JSONDecodeError, KeyError, TypeError):
                         # Skip malformed events
                         continue
                 elif event.data == "[DONE]":
                     break
+            
+            # Now artificially stream the content in chunks
+            if full_content:
+                import time
+                words = full_content.split()
+                chunk_size = 3  # Words per chunk
+                
+                for i in range(0, len(words), chunk_size):
+                    chunk_words = words[i:i + chunk_size]
+                    chunk = " ".join(chunk_words)
+                    if i + chunk_size < len(words):
+                        chunk += " "  # Add space if not the last chunk
+                    yield chunk
+                    time.sleep(0.1)  # Small delay between chunks

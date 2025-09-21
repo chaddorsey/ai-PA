@@ -1,9 +1,9 @@
 from slack_bolt import App
 from listeners.app_home.app_home_opened import register as reg_home
 from listeners.actions.provider_changed import register as reg_action
-from listeners.commands.ask_bolty_streaming import register as reg_cmd
+from listeners.commands.ask_bolty_debug import register as reg_cmd
 from listeners.events.app_mentioned import register as reg_mention
-from listeners.messages.message_im import register as reg_dm
+from listeners.messages.message_im_hybrid import register as reg_dm
 from listeners.workflows.summarize_function import register as reg_wf
 
 def register_listeners(app: App):
