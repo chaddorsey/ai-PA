@@ -1,0 +1,529 @@
+# PA Ecosystem Secure Network Configuration
+# Implements network segmentation and firewall policies for enhanced security
+# Created: 2025-01-21
+
+version: "3.9"
+
+services:
+  # =============================================================================
+  # DATABASE TIER - Isolated Network
+  # =============================================================================
+  supabase-db:
+    image: supabase/postgres:15.8.1.060
+    container_name: supabase-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - supabase_db:/var/lib/postgresql/data
+    networks:
+      - database-tier
+      - supabase-internal
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=supabase-db"
+      - "component=database"
+      - "tier=database"
+      - "network=database-tier"
+
+  # =============================================================================
+  # SUPABASE INTERNAL TIER - Isolated from external access
+  # =============================================================================
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.12
+    depends_on: 
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      PGRST_DB_ANON_ROLE: anon
+    networks:
+      - supabase-internal
+      - backend-tier
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "service=supabase-rest"
+      - "component=supabase"
+      - "tier=backend"
+      - "network=supabase-internal"
+
+  supabase-auth:
+    image: supabase/gotrue:v2.177.0
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+    networks:
+      - supabase-internal
+      - backend-tier
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "service=supabase-auth"
+      - "component=supabase"
+      - "tier=backend"
+      - "network=supabase-internal"
+
+  supabase-realtime:
+    image: supabase/realtime:v2.34.47
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks:
+      - supabase-internal
+      - backend-tier
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "service=supabase-realtime"
+      - "component=supabase"
+      - "tier=backend"
+      - "network=supabase-internal"
+
+  supabase-meta:
+    image: supabase/postgres-meta:v0.91.0
+    container_name: supabase-meta
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - supabase-internal
+      - backend-tier
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "service=supabase-meta"
+      - "component=supabase"
+      - "tier=backend"
+      - "network=supabase-internal"
+
+  # =============================================================================
+  # BACKEND TIER - Application Services
+  # =============================================================================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    networks:
+      - backend-tier
+      - frontend-tier
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      WEBHOOK_URL: ${WEBHOOK_URL}
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+      N8N_HOST: ${N8N_HOST}
+      N8N_EDITOR_BASE_URL: ${N8N_EDITOR_BASE_URL}
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: supabase-db
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: postgres
+      DB_POSTGRESDB_USER: postgres
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "service=n8n"
+      - "component=workflow"
+      - "tier=backend"
+      - "network=backend-tier"
+
+  # =============================================================================
+  # MCP SERVICES TIER - Isolated MCP servers
+  # =============================================================================
+  graphiti-mcp-server:
+    image: graphiti-mcp-server:latest
+    container_name: graphiti-mcp-server
+    restart: unless-stopped
+    networks:
+      - mcp-tier
+      - backend-tier
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    environment:
+      - MCP_SERVER_NAME=graphiti-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_PATH=/mcp
+      - MCP_HEALTH_CHECK_PATH=/health
+      - PORT=8080
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=demodemo
+    labels:
+      - "service=graphiti-mcp-server"
+      - "component=mcp"
+      - "tier=mcp"
+      - "network=mcp-tier"
+
+  rag-mcp-server:
+    image: rag-mcp-server:latest
+    container_name: rag-mcp-server
+    restart: unless-stopped
+    networks:
+      - mcp-tier
+    volumes:
+      - rag-mcp-data:/app/data
+    environment:
+      - MCP_SERVER_NAME=rag-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_PATH=/mcp
+      - MCP_HEALTH_CHECK_PATH=/health
+      - PORT=8080
+    labels:
+      - "service=rag-mcp-server"
+      - "component=mcp"
+      - "tier=mcp"
+      - "network=mcp-tier"
+
+  gmail-mcp-server:
+    image: gmail-mcp-server:latest
+    container_name: gmail-mcp-server
+    restart: unless-stopped
+    networks:
+      - mcp-tier
+    volumes:
+      - gmail-mcp-data:/app/data
+      - ./gmail-mcp/gcp-oauth.keys.json:/app/config/gcp-oauth.keys.json:ro
+    environment:
+      - MCP_SERVER_NAME=gmail-tools
+      - MCP_SERVER_VERSION=1.1.11
+      - MCP_PATH=/mcp
+      - MCP_HEALTH_CHECK_PATH=/health
+      - PORT=8080
+      - GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
+      - GMAIL_OAUTH_PATH=/app/config/gcp-oauth.keys.json
+    labels:
+      - "service=gmail-mcp-server"
+      - "component=mcp"
+      - "tier=mcp"
+      - "network=mcp-tier"
+
+  slack-mcp-server:
+    image: ghcr.io/korotovsky/slack-mcp-server:latest
+    restart: unless-stopped
+    networks:
+      - mcp-tier
+    volumes:
+      - users_cache:/app/mcp-server/.users_cache.json
+      - channels_cache:/app/mcp-server/.channels_cache.json
+    environment:
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN}
+    labels:
+      - "service=slack-mcp-server"
+      - "component=mcp"
+      - "tier=mcp"
+      - "network=mcp-tier"
+
+  # =============================================================================
+  # FRONTEND TIER - User-facing services
+  # =============================================================================
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    networks:
+      - frontend-tier
+      - backend-tier
+    volumes:
+      - open-webui:/app/backend/data
+    environment:
+      - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-INFO}
+      - WEBUI_AUTH=false
+      - DEFAULT_USER_ROLE=admin
+      - ENABLE_SIGNUP=true
+      - OPENAI_API_BASE_URL=http://localhost:11434/v1
+      - OPENAI_API_KEY=ollama
+      - WEBUI_SECRET_KEY=${LITELLM_MASTER_KEY}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - LITELLM_HOST=0.0.0.0
+      - LITELLM_PORT=11434
+      - LITELLM_NUM_WORKERS=1
+    labels:
+      - "service=open-webui"
+      - "component=frontend"
+      - "tier=frontend"
+      - "network=frontend-tier"
+
+  # =============================================================================
+  # EXTERNAL TIER - External-facing services
+  # =============================================================================
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    restart: unless-stopped
+    networks:
+      - external-tier
+      - frontend-tier
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - open-webui
+    labels:
+      - "service=cloudflare-tunnel"
+      - "component=external"
+      - "tier=external"
+      - "network=external-tier"
+
+  # =============================================================================
+  # MONITORING TIER - Monitoring and health services
+  # =============================================================================
+  health-monitor:
+    image: health-monitor:latest
+    container_name: health-monitor
+    restart: unless-stopped
+    networks:
+      - monitoring-tier
+      - mcp-tier
+      - backend-tier
+      - frontend-tier
+    depends_on:
+      - gmail-mcp-server
+      - graphiti-mcp-server
+      - rag-mcp-server
+    environment:
+      - MONITOR_INTERVAL=60
+      - HEALTH_CHECK_TIMEOUT=30
+      - MCP_SERVERS=gmail-mcp-server:8080,graphiti-mcp-server:8080,rag-mcp-server:8080
+    labels:
+      - "service=health-monitor"
+      - "component=monitoring"
+      - "tier=monitoring"
+      - "network=monitoring-tier"
+
+  # =============================================================================
+  # AI SERVICES TIER - AI and LLM services
+  # =============================================================================
+  letta:
+    image: letta:latest
+    container_name: letta
+    restart: unless-stopped
+    networks:
+      - ai-tier
+      - backend-tier
+      - mcp-tier
+    volumes:
+      - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
+    environment:
+      LETTA_DEBUG: "${LETTA_DEBUG:-false}"
+      LETTA_PG_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    labels:
+      - "service=letta"
+      - "component=ai"
+      - "tier=ai"
+      - "network=ai-tier"
+
+  slackbot:
+    image: slackbot:latest
+    container_name: slackbot
+    restart: unless-stopped
+    networks:
+      - ai-tier
+      - mcp-tier
+    volumes:
+      - slackbot_state:/app/state_store
+      - slackbot_logs:/app/logs
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      LETTA_AGENT_ID: ${LETTA_AGENT_ID}
+      LETTA_BASE_URL: http://letta:8283
+    labels:
+      - "service=slackbot"
+      - "component=ai"
+      - "tier=ai"
+      - "network=ai-tier"
+
+# =============================================================================
+# NETWORK SEGMENTATION CONFIGURATION
+# =============================================================================
+networks:
+  # Database Tier - Only accessible by database and Supabase services
+  database-tier:
+    name: pa-database-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.1.0/24
+    labels:
+      - "tier=database"
+      - "security=high"
+
+  # Supabase Internal - Internal Supabase services only
+  supabase-internal:
+    name: pa-supabase-internal
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.2.0/24
+    labels:
+      - "tier=supabase"
+      - "security=high"
+
+  # Backend Tier - Application backend services
+  backend-tier:
+    name: pa-backend-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.3.0/24
+    labels:
+      - "tier=backend"
+      - "security=medium"
+
+  # MCP Services Tier - Isolated MCP servers
+  mcp-tier:
+    name: pa-mcp-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.4.0/24
+    labels:
+      - "tier=mcp"
+      - "security=high"
+
+  # Frontend Tier - User-facing services
+  frontend-tier:
+    name: pa-frontend-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.5.0/24
+    labels:
+      - "tier=frontend"
+      - "security=medium"
+
+  # External Tier - External-facing services
+  external-tier:
+    name: pa-external-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.6.0/24
+    labels:
+      - "tier=external"
+      - "security=low"
+
+  # Monitoring Tier - Monitoring and health services
+  monitoring-tier:
+    name: pa-monitoring-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.7.0/24
+    labels:
+      - "tier=monitoring"
+      - "security=high"
+
+  # AI Services Tier - AI and LLM services
+  ai-tier:
+    name: pa-ai-tier
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+    ipam:
+      config:
+        - subnet: 172.20.8.0/24
+    labels:
+      - "tier=ai"
+      - "security=high"
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  supabase_db:
+    name: pa-supabase-db
+  n8n_data:
+    name: pa-n8n-data
+  neo4j_data:
+    name: pa-neo4j-data
+  neo4j_logs:
+    name: pa-neo4j-logs
+  rag-mcp-data:
+    name: pa-rag-mcp-data
+  gmail-mcp-data:
+    name: pa-gmail-mcp-data
+  users_cache:
+    name: pa-users-cache
+  channels_cache:
+    name: pa-channels-cache
+  open-webui:
+    name: pa-open-webui
+  slackbot_state:
+    name: pa-slackbot-state
+  slackbot_logs:
+    name: pa-slackbot-logs
