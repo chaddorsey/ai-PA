@@ -26,3 +26,4 @@ ENV MCP_HEALTH_CHECK_PATH=/health
 
 EXPOSE 8082
 CMD ["node", "dist/server-http.js"]
+

@@ -18,3 +18,4 @@ ENV HEALTH_CHECK_INTERVAL=30
 
 EXPOSE 8083
 CMD ["node", "dist/index.js"]
+

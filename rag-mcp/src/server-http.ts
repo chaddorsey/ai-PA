@@ -336,3 +336,4 @@ app.listen(PORT, () => {
   console.log(`Health check available at http://localhost:${PORT}${HEALTH_PATH}`);
   console.log(`MCP endpoint available at http://localhost:${PORT}${PATH}`);
 });
+

@@ -21,3 +21,4 @@ pip install -r requirements.txt
 python configure_mcp_servers.py
 
 echo "MCP server configuration complete!"
+

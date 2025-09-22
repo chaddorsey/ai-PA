@@ -204,3 +204,4 @@ docker exec -it letta curl http://gmail-mcp-server:8080/health
 - [Letta MCP Documentation](https://docs.letta.com/guides/mcp/)
 - [MCP Protocol Specification](https://modelcontextprotocol.io/)
 - [Docker Networking](https://docs.docker.com/network/)
+

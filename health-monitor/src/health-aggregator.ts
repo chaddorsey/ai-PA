@@ -185,3 +185,4 @@ export class HealthAggregator {
     return [...this.config];
   }
 }
+

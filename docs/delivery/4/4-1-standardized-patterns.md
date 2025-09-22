@@ -328,3 +328,4 @@ mcp-servers/
 - [ ] Service responds to MCP requests
 - [ ] Dependencies are accessible
 - [ ] Performance meets requirements
+

@@ -62,3 +62,4 @@ export interface HealthConfig {
   };
   notificationChannels: string[];
 }
+

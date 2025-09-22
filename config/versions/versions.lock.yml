@@ -1,0 +1,179 @@
+# PA Ecosystem Version Lock File
+# Generated: 2025-01-21 04:40:00
+# Purpose: Lock all framework and dependency versions for controlled upgrades
+
+version: "1.0"
+last_updated: "2025-01-21T04:40:00Z"
+lock_reason: "Initial version lock establishment for PBI 11"
+
+# Core Framework Versions
+frameworks:
+  n8n:
+    image: "docker.n8n.io/n8nio/n8n"
+    tag: "1.109.2"
+    version: "1.109.2"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Detected actual version from running container"
+
+  letta:
+    image: "letta/letta"
+    tag: "0.11.7"
+    version: "0.11.7"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Detected actual version from running container API"
+
+  graphiti:
+    image: "custom"  # Built from source
+    tag: "local"
+    version: "0.18.9"  # From pyproject.toml
+    locked: true
+    upgrade_path: "patch"
+    notes: "Built from graphiti/mcp_server directory, version from pyproject.toml"
+
+# Database Versions
+databases:
+  postgres:
+    image: "supabase/postgres"
+    tag: "15.8.1.060"
+    version: "15.8.1.060"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Supabase PostgreSQL with pgvector extension"
+
+  neo4j:
+    image: "neo4j"
+    tag: "5.26"
+    version: "5.26"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Neo4j for Graphiti knowledge graph storage"
+
+# MCP Server Versions
+mcp_servers:
+  gmail-mcp:
+    image: "custom"  # Built from source
+    tag: "local"
+    version: "1.1.11"  # From MCP_SERVER_VERSION env var
+    locked: true
+    upgrade_path: "patch"
+    notes: "Built from gmail-mcp directory"
+
+  graphiti-mcp:
+    image: "custom"  # Built from source
+    tag: "local"
+    version: "1.0.0"  # From MCP_SERVER_VERSION env var
+    locked: true
+    upgrade_path: "patch"
+    notes: "Built from graphiti/mcp_server directory"
+
+  rag-mcp:
+    image: "custom"  # Built from source
+    tag: "local"
+    version: "1.0.0"  # From MCP_SERVER_VERSION env var
+    locked: true
+    upgrade_path: "patch"
+    notes: "Built from rag-mcp directory"
+
+  slack-mcp:
+    image: "ghcr.io/korotovsky/slack-mcp-server"
+    tag: "latest"
+    version: "latest"
+    locked: true
+    upgrade_path: "major"
+    notes: "External image - locked to current latest, requires manual version pinning for production"
+
+# Infrastructure Services
+infrastructure:
+  cloudflared:
+    image: "cloudflare/cloudflared"
+    tag: "2025.8.1"
+    version: "2025.8.1"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Detected actual version from running container"
+
+  open-webui:
+    image: "ghcr.io/open-webui/open-webui"
+    tag: "0.6.22"
+    version: "0.6.22"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Pinned to specific version"
+
+  health-monitor:
+    image: "custom"  # Built from source
+    tag: "1.0.0"
+    version: "1.0.0"
+    locked: true
+    upgrade_path: "patch"
+    notes: "Built from health-monitor directory, version from package.json"
+
+# Supabase Services
+supabase_services:
+  postgrest:
+    image: "postgrest/postgrest"
+    tag: "v12.2.12"
+    version: "12.2.12"
+    locked: true
+    upgrade_path: "minor"
+    notes: "PostgREST API server"
+
+  gotrue:
+    image: "supabase/gotrue"
+    tag: "v2.177.0"
+    version: "2.177.0"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Supabase Auth server"
+
+  realtime:
+    image: "supabase/realtime"
+    tag: "v2.34.47"
+    version: "2.34.47"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Supabase Realtime server"
+
+  postgres_meta:
+    image: "supabase/postgres-meta"
+    tag: "v0.91.0"
+    version: "0.91.0"
+    locked: true
+    upgrade_path: "minor"
+    notes: "PostgreSQL metadata API"
+
+  studio:
+    image: "supabase/studio"
+    tag: "2025.06.30-sha-6f5982d"
+    version: "2025.06.30"
+    locked: true
+    upgrade_path: "minor"
+    notes: "Supabase Studio dashboard"
+
+# Version Management Metadata
+metadata:
+  total_services: 15
+  locked_services: 14
+  unlocked_services: 1
+  critical_services_unlocked: 0  # All critical services locked
+  
+  upgrade_priorities:
+    critical: []  # All critical services locked
+    high: []  # All high priority services locked
+    medium: []  # All medium priority services locked
+    low: ["graphiti", "mcp-servers"]  # Custom built services
+
+  compatibility_notes:
+    - "n8n and letta are core frameworks - version compatibility is critical"
+    - "Graphiti version 0.18.9 has specific dependency requirements"
+    - "Supabase services should be upgraded together to maintain compatibility"
+    - "MCP servers can be upgraded independently as they use HTTP APIs"
+
+# Next Actions Required
+next_actions:
+  - "Create upgrade procedures for each service category"
+  - "Establish compatibility matrix between services"
+  - "Create automated version detection and update workflow"
+  - "Monitor slack-mcp for specific version releases (currently locked to latest)"

@@ -1,0 +1,110 @@
+# Detected Versions - PA Ecosystem
+# Generated: 2025-09-22T01:47:32Z
+# Purpose: Actual running versions detected from containers
+
+detection_timestamp: "2025-09-22T01:47:32Z"
+detection_method: "container_inspection"
+
+services:
+  n8n:
+    container_name: "n8n"
+    image_id: "sha256:cee5123d22779c73ec878b4067aef4d88fdc079e7db381fca25bfc64b2d6c0de"
+    image_tag: "docker.n8n.io/n8nio/n8n"
+    created_date: "2025-09-21T04:39:05.738894588Z"
+    detected_version: "NODE_VERSION=22.19.0
+YARN_VERSION=1.22.22"
+
+  letta:
+    status: "not_running"
+    container_name: "letta"
+
+  cloudflared:
+    status: "not_running"
+    container_name: "cloudflared"
+
+  cloudflare-tunnel:
+    container_name: "cloudflare-tunnel"
+    image_id: "sha256:b1963abf59b4778851b5663a9254836c5e35c2393067c1cb869ea72160bdbab3"
+    image_tag: "cloudflare/cloudflared:latest"
+    created_date: "2025-09-21T04:58:55.58116943Z"
+    detected_version: "unknown"
+
+  open-webui:
+    container_name: "open-webui"
+    image_id: "sha256:034d4c7acd26cc304003505c5279fb255f2808db0ef1c3b79c8d4d5533cfaefd"
+    image_tag: "ghcr.io/open-webui/open-webui:0.6.22"
+    created_date: "2025-09-21T04:39:05.730953421Z"
+    detected_version: "PYTHON_VERSION=3.11.13
+WEBUI_BUILD_VERSION=438e5d966f0f64f9ea3feab22724a5bd96a4127b"
+
+  supabase-db:
+    container_name: "supabase-db"
+    image_id: "sha256:7e1559c037c21858d742e67feff91546df91ecf57a15ca59d4349867d138fd48"
+    image_tag: "supabase/postgres:15.8.1.060"
+    created_date: "2025-09-20T23:15:04.150383132Z"
+    detected_version: "unknown"
+
+  graphiti-neo4j:
+    status: "not_running"
+    container_name: "neo4j"
+
+  gmail-mcp-server:
+    status: "not_running"
+    container_name: "gmail-mcp-server"
+
+  graphiti-mcp-server:
+    status: "not_running"
+    container_name: "graphiti-mcp-server"
+
+  rag-mcp-server:
+    status: "not_running"
+    container_name: "rag-mcp-server"
+
+  slackbot:
+    container_name: "slackbot"
+    image_id: "sha256:600348a09cb4541887304c9d561f64cb1e28fdb6fbb4d3ecfc630d396bbfdc36"
+    image_tag: "ai-pa-slackbot"
+    created_date: "2025-09-21T04:58:54.915134847Z"
+    detected_version: "PYTHON_VERSION=3.11.13
+PIP_DISABLE_PIP_VERSION_CHECK=1"
+
+  health-monitor:
+    status: "not_running"
+    container_name: "health-monitor"
+
+  health-monitor:
+    type: "nodejs"
+    package_version: "1.0.0"
+    package_path: "/Users/chaddorsey/Dropbox/dev/ai-PA/health-monitor/package.json"
+
+  gmail-mcp:
+    type: "nodejs"
+    package_version: "1.1.11"
+    package_path: "/Users/chaddorsey/Dropbox/dev/ai-PA/gmail-mcp/package.json"
+
+  rag-mcp:
+    type: "nodejs"
+    package_version: "1.0.0"
+    package_path: "/Users/chaddorsey/Dropbox/dev/ai-PA/rag-mcp/package.json"
+
+  graphiti:
+    type: "python"
+    pyproject_version: "0.18.9"
+    pyproject_path: "/Users/chaddorsey/Dropbox/dev/ai-PA/graphiti/pyproject.toml"
+
+
+# Summary
+summary:
+  total_services_checked: 16
+  detection_timestamp: "2025-09-22T01:47:32Z"
+  next_steps:
+    - "Review detected versions"
+    - "Update versions.lock.yml with actual versions"
+    - "Pin services currently using 'latest' tags"
+    - "Create upgrade procedures for each service"
+
+# Notes
+notes:
+  - "Services using 'latest' tags need version pinning"
+  - "Custom built services should have version tags in their build processes"
+  - "Regular version detection should be automated"

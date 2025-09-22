@@ -325,3 +325,4 @@ curl http://letta:8283/v1/tools/mcp/servers
 - Neo4j dependency management preserved
 - Knowledge graph operations remain uninterrupted
 - MCP tool functionality preserved
+

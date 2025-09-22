@@ -296,3 +296,4 @@ curl http://letta:8283/v1/tools/mcp/servers
 - Add Prometheus metrics endpoint
 - Implement health check aggregation
 - Add alerting for critical failures
+
