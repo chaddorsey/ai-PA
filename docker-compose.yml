@@ -509,6 +509,8 @@ services:
     container_name: cloudflare-tunnel
     restart: unless-stopped
     networks: [pa-network]
+    volumes:
+      - /Users/dorseyhomeserver/.cloudflared:/home/nonroot/.cloudflared:ro
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
