@@ -105,9 +105,9 @@ app.get('/health', (req, res) => {
 app.get('/api/health/overall', async (req, res) => {
   try {
     const aggregation = await healthAggregator.checkAllServices();
-    res.json(aggregation);
+    return res.json(aggregation);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to check health status',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -131,9 +131,9 @@ app.get('/api/health/service/:serviceName', async (req, res) => {
       return res.status(404).json({ error: 'Service health not available' });
     }
 
-    res.json(serviceHealth);
+    return res.json(serviceHealth);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to check service health',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -150,9 +150,9 @@ app.get('/api/health/history/:serviceName', (req, res) => {
       return res.status(404).json({ error: 'Service not found or no history available' });
     }
 
-    res.json(Array.from(history.values())[0]);
+    return res.json(Array.from(history.values())[0]);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get health history',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -167,9 +167,9 @@ app.get('/api/alerts', (req, res) => {
       service as string,
       resolved ? resolved === 'true' : undefined
     );
-    res.json(alerts);
+    return res.json(alerts);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get alerts',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -183,12 +183,12 @@ app.post('/api/alerts/:alertId/resolve', (req, res) => {
     const resolved = healthAggregator.resolveAlert(alertId);
     
     if (resolved) {
-      res.json({ message: 'Alert resolved successfully' });
+      return res.json({ message: 'Alert resolved successfully' });
     } else {
-      res.status(404).json({ error: 'Alert not found' });
+      return res.status(404).json({ error: 'Alert not found' });
     }
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to resolve alert',
       message: error instanceof Error ? error.message : 'Unknown error',
     });
@@ -199,9 +199,9 @@ app.post('/api/alerts/:alertId/resolve', (req, res) => {
 app.get('/api/services', (req, res) => {
   try {
     const services = healthAggregator.getAllServiceConfigs();
-    res.json(services);
+    return res.json(services);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Failed to get service configurations',
       message: error instanceof Error ? error.message : 'Unknown error',
     });

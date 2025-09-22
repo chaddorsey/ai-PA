@@ -317,7 +317,7 @@ app.delete(PATH, async (req: Request, res: Response) => {
   try {
     const sid = req.header("mcp-session-id") || "";
     if (sessions[sid]) {
-      sessions[sid].disconnect();
+      // sessions[sid].disconnect(); // Method not available on StreamableHTTPServerTransport
       delete sessions[sid];
       console.log(`Session ${sid} torn down.`);
       res.status(200).json({ message: `Session ${sid} torn down.` });

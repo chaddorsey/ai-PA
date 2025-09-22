@@ -60,7 +60,7 @@ export class HealthChecker {
         version: data.version || 'unknown',
         uptime: data.uptime || 0,
         dependencies: data.dependencies || {},
-        error: statusCode !== 200 ? `HTTP ${statusCode}` : undefined,
+        error: statusCode !== 200 ? `HTTP ${statusCode}` : "",
       };
     }
 
@@ -70,7 +70,7 @@ export class HealthChecker {
       version: 'unknown',
       uptime: 0,
       dependencies: {},
-      error: statusCode !== 200 ? `HTTP ${statusCode}` : undefined,
+      error: statusCode !== 200 ? `HTTP ${statusCode}` : "",
     };
   }
 

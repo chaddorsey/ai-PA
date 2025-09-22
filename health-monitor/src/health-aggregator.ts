@@ -82,7 +82,7 @@ export class HealthAggregator {
     // Check for service recovery
     if (healthStatus.status === 'healthy' && history.length > 1) {
       const previousStatus = history[history.length - 2];
-      if (previousStatus.status === 'unhealthy') {
+      if (previousStatus && previousStatus.status === 'unhealthy') {
         this.createAlert(serviceName, 'recovery', `Service ${serviceName} has recovered and is now healthy`, 'medium');
       }
     }

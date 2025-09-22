@@ -187,10 +187,10 @@ export class GmailHealthMonitor {
                 return "degraded";
             }
 
-            if (expiryMinutes < 0) {
+            if (expiryMinutes !== undefined && expiryMinutes < 0) {
                 this.logError("Access token has expired");
                 return "unhealthy";
-            } else if (expiryMinutes < 5) {
+            } else if (expiryMinutes !== undefined && expiryMinutes < 5) {
                 this.logError("Access token expires soon");
                 return "degraded";
             }
@@ -211,7 +211,7 @@ export class GmailHealthMonitor {
             // Test Google OAuth endpoint
             const response = await fetch('https://oauth2.googleapis.com/token', {
                 method: 'HEAD',
-                timeout: 5000
+                
             });
             
             if (response.ok) {
@@ -269,12 +269,12 @@ export class GmailHealthMonitor {
     /**
      * Get token expiry in minutes
      */
-    private async getTokenExpiryMinutes(): Promise<number | null> {
-        if (!this.oauth2Client) return null;
+    private async getTokenExpiryMinutes(): Promise<number | undefined> {
+        if (!this.oauth2Client) return undefined;
 
         try {
             const credentials = this.oauth2Client.credentials;
-            if (!credentials.expiry_date) return null;
+            if (!credentials.expiry_date) return undefined;
 
             const expiryTime = new Date(credentials.expiry_date);
             const currentTime = new Date();
@@ -283,7 +283,7 @@ export class GmailHealthMonitor {
             return Math.floor(diffMs / (1000 * 60));
         } catch (error: any) {
             this.logError(`Token expiry check error: ${error.message}`);
-            return null;
+            return undefined;
         }
     }
 

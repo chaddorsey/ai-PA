@@ -163,8 +163,6 @@ services:
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
       WEBHOOK_URL: ${WEBHOOK_URL} 
       N8N_PROTOCOL: "https"
-    depends_on:
-      - supabase-db
     volumes:
       - n8n_data:/home/node/.n8n
       - /tmp/granola-to-letta:/tmp/granola-notes
@@ -191,7 +189,7 @@ services:
   # --- Graphiti MCP Server ---
   graphiti-mcp-server:
     build:
-      context: /Users/chaddorsey/dev/ai-PA/graphiti/mcp_server
+      context: ./graphiti/mcp_server
     container_name: graphiti-mcp-server
     user: root
     restart: unless-stopped
@@ -519,7 +517,7 @@ services:
       - open-webui
       - n8n
       - slackbot
-            healthcheck:
+    healthcheck:
               test: ["CMD", "cloudflared", "tunnel", "info", "pa-ecosystem-tunnel"]
               interval: 30s
               timeout: 10s
