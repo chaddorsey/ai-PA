@@ -1,0 +1,523 @@
+version: "3.9"
+
+services:
+  # --- Database Layer ---
+  supabase-db:
+    image: supabase/postgres:15.8.1.060
+    container_name: supabase-db-staging
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"  # Expose for staging access
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - supabase_db_staging:/var/lib/postgresql/data
+    networks: [pa-staging-network]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=supabase-db"
+      - "component=database"
+      - "environment=staging"
+      - "network=pa-staging"
+
+  # --- Supabase Services ---
+  supabase-rest:
+    image: postgrest/postgrest:v12.2.12
+    container_name: supabase-rest-staging
+    depends_on: 
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      PGRST_DB_ANON_ROLE: anon
+    networks: [pa-staging-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  supabase-auth:
+    image: supabase/gotrue:v2.177.0
+    container_name: supabase-auth-staging
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+    networks: [pa-staging-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  supabase-realtime:
+    image: supabase/realtime:v2.34.47
+    container_name: supabase-realtime-staging
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    networks: [pa-staging-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  supabase-meta:
+    image: supabase/postgres-meta:v0.91.0
+    container_name: supabase-meta-staging
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    networks: [pa-staging-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  supabase-studio:
+    image: supabase/studio:2025.06.30-sha-6f5982d
+    container_name: supabase-studio-staging
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-meta:
+        condition: service_healthy
+      supabase-auth:
+        condition: service_healthy
+      supabase-rest:
+        condition: service_healthy
+    environment:
+      SUPABASE_DB_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks: [pa-staging-network]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # --- Workflow Automation (n8n) ---
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    ports:
+      - "${N8N_PORT:-5678}:5678"  # Expose for staging access
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_DATABASE: n8n_restore
+      DB_POSTGRESDB_HOST: supabase-db
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_USER: postgres
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+      GENERIC_TIMEZONE: "America/New_York"
+      TZ: "America/New_York"
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      WEBHOOK_URL: ${WEBHOOK_URL} 
+      N8N_PROTOCOL: "http"  # Use HTTP for staging
+    volumes:
+      - n8n_data_staging:/home/node/.n8n
+      - /tmp/granola-to-letta:/tmp/granola-notes
+
+  # --- Neo4j for Graphiti ---
+  neo4j:
+    image: neo4j:5.26
+    container_name: graphiti-neo4j-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    ports:
+      - "${NEO4J_PORT:-7474}:7474"  # Expose for staging access
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/demodemo
+    volumes:
+      - neo4j_data_staging:/data
+      - neo4j_logs_staging:/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7474/browser/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # --- Graphiti MCP Server ---
+  graphiti-mcp-server:
+    build:
+      context: /Users/chaddorsey/dev/ai-PA/graphiti/mcp_server
+    container_name: graphiti-mcp-server-staging
+    user: root
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    working_dir: /app
+    entrypoint: ["/root/.local/bin/uv","run","graphiti_mcp_server.py"]
+    environment:
+      - MCP_SERVER_NAME=graphiti-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_SERVER_DESCRIPTION=Graphiti memory and knowledge graph tools
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8082
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-gpt-4.1-mini}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=demodemo
+      - GRAPHITI_TELEMETRY_ENABLED=false
+      - SEMAPHORE_LIMIT=10
+      - RESET_NEO4J=true
+      - HOST=0.0.0.0
+      - PORT=8082
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=graphiti-mcp-server"
+      - "component=mcp-server"
+      - "environment=staging"
+      - "network=pa-staging"
+
+  # --- RAG MCP Server ---
+  rag-mcp-server:
+    build:
+      context: ./rag-mcp
+      dockerfile: Dockerfile
+    container_name: rag-mcp-server-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    volumes:
+      - rag-mcp-data_staging:/app/data
+    environment:
+      - MCP_SERVER_NAME=rag-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_SERVER_DESCRIPTION=RAG tools for retrieval-augmented generation
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8082
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      - VECTOR_DB_URL=http://vector-db:8080
+      - DOCUMENT_STORE_URL=http://document-store:8080
+      - EMBEDDING_MODEL=text-embedding-ada-002
+      - PORT=8082
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=rag-mcp-server"
+      - "component=mcp-server"
+      - "environment=staging"
+      - "network=pa-staging"
+
+  # --- Health Monitor Service ---
+  health-monitor:
+    build:
+      context: ./health-monitor
+      dockerfile: Dockerfile
+    container_name: health-monitor-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    depends_on:
+      - gmail-mcp-server
+      - graphiti-mcp-server
+      - rag-mcp-server
+    environment:
+      - NODE_ENV=staging
+      - PORT=8083
+      - HEALTH_CHECK_INTERVAL=30
+    ports:
+      - "${HEALTH_MONITOR_PORT:-8083}:8083"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=health-monitor"
+      - "component=monitoring"
+      - "environment=staging"
+      - "network=pa-staging"
+
+  # Letta is an agent building framework with built-in memory/vectordb support.
+  letta:
+    image: letta/letta:latest
+    container_name: letta-staging
+    ports:
+      - "${LETTA_PORT:-8283}:8283"  # Letta web interface
+    volumes:
+      - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
+    networks: [pa-staging-network]
+    environment:
+      LETTA_DEBUG: "${LETTA_DEBUG:-true}"  # Enable debug for staging
+      LETTA_PG_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
+      GEMINI_API_KEY: $GEMINI_API_KEY
+      OPENAI_API_KEY: $OPENAI_API_KEY
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8283/v1/health/"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 1s
+
+  # Open WebUI is the front-end UI to Letta
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:0.6.22
+    container_name: open-webui-staging
+    volumes:
+     - open-webui_staging:/app/backend/data
+    networks: [pa-staging-network]
+    ports:
+      - "${OPENWEBUI_PORT:-8080}:8080"
+    environment:
+      - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-DEBUG}  # More verbose logging for staging
+      - WEBUI_AUTH=false
+      - USER_AGENT=openwebui
+      - ENABLE_TAGS_GENERATION=$ENABLE_TAGS_GENERATION
+      - ENABLE_TITLE_GENERATION=$ENABLE_TITLE_GENERATION
+      - TASK_MODEL=$TASK_MODEL
+      - TASK_MODEL_EXTERNAL=$TASK_MODEL_EXTERNAL
+      - ENABLE_EVALUATION_ARENA_MODELS=false
+      - ENABLE_AUTOCOMPLETE_GENERATION=false
+      - ENABLE_RETRIEVAL_QUERY_GENERATION=false
+      - ENABLE_FOLLOW_UP_GENERATION=false
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://hayhooks:1416
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENABLE_OLLAMA_API=$ENABLE_OLLAMA_API
+      - OLLAMA_BASE_URL=$OLLAMA_BASE_URL
+      - RAG_EMBEDDING_ENGINE=$RAG_EMBEDDING_ENGINE
+      - RAG_EMBEDDING_MODEL=$RAG_EMBEDDING_MODEL
+      - RAG_OPENAI_API_BASE_URL=http://litellm:4000
+      - RAG_OPENAI_API_KEY=$LITELLM_MASTER_KEY
+      - RAG_OLLAMA_BASE_URL=$OLLAMA_BASE_URL
+      - ENABLE_WEB_SEARCH=$ENABLE_WEB_SEARCH
+      - WEB_SEARCH_ENGINE=$WEB_SEARCH_ENGINE
+      - TAVILY_API_KEY=$TAVILY_API_KEY
+      - AUDIO_STT_ENGINE=$AUDIO_STT_ENGINE
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 5s
+
+  slack-mcp-server:
+    image: ghcr.io/korotovsky/slack-mcp-server:latest
+    container_name: slack-mcp-server-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    volumes:
+      - users_cache_staging:/app/mcp-server/.users_cache.json
+      - channels_cache_staging:/app/mcp-server/.channels_cache.json
+    env_file:
+      - .env
+    environment:
+      SLACK_MCP_HOST: "0.0.0.0"
+      SLACK_MCP_PORT: "3001"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "3001"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # --- Slackbot Service ---
+  slackbot:
+    build:
+      context: ./slackbot
+      dockerfile: Dockerfile
+    container_name: slackbot-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    volumes:
+      - slackbot_state_staging:/app/state_store
+      - slackbot_logs_staging:/app/logs
+    env_file:
+      - .env
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
+      LETTA_BASE_URL: "http://letta:8283"
+      LETTA_AGENT_ID: ${LETTA_AGENT_ID}
+      HEALTH_CHECK_PORT: "8081"
+    ports:
+      - "${SLACKBOT_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=slackbot"
+      - "component=chatbot"
+      - "environment=staging"
+      - "network=pa-staging"
+
+  gmail-mcp-server:
+    build:
+      context: ./gmail-mcp
+      dockerfile: Dockerfile
+    container_name: gmail-mcp-server-staging
+    restart: unless-stopped
+    networks: [pa-staging-network]
+    volumes:
+      - gmail-mcp-data_staging:/app/data
+      - ./gmail-mcp/gcp-oauth.keys.json:/app/config/gcp-oauth.keys.json:ro
+    environment:
+      - MCP_SERVER_NAME=gmail-tools
+      - MCP_SERVER_VERSION=1.1.11
+      - MCP_SERVER_DESCRIPTION=Gmail integration tools
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8080
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      - GMAIL_OAUTH_PATH=/app/config/gcp-oauth.keys.json
+      - GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
+      - PORT=8080
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=gmail-mcp-server"
+      - "component=mcp-server"
+      - "environment=staging"
+      - "network=pa-staging"
+
+volumes:
+  supabase_db_staging:
+    name: ai-pa_supabase_db_staging
+  n8n_data_staging:
+    name: ai-pa_n8n_data_staging
+  neo4j_data_staging:
+    name: ai-pa_neo4j_data_staging
+  neo4j_logs_staging:
+    name: ai-pa_neo4j_logs_staging
+  open-webui_staging:
+    name: ai-pa_open-webui_staging
+  users_cache_staging:
+    name: ai-pa_users_cache_staging
+  channels_cache_staging:
+    name: ai-pa_channels_cache_staging
+  slackbot_state_staging:
+    name: ai-pa_slackbot_state_staging
+  slackbot_logs_staging:
+    name: ai-pa_slackbot_logs_staging
+  gmail-mcp-data_staging:
+    name: ai-pa_gmail-mcp-data_staging
+  rag-mcp-data_staging:
+    name: ai-pa_rag-mcp-data_staging
+
+networks:
+  pa-staging-network:
+    name: pa-staging
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.driver.mtu: "1500"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+    labels:
+      - "project=pa-ecosystem"
+      - "environment=staging"
+      - "security=internal-only"

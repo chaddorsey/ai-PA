@@ -1,139 +1,147 @@
-# PBI-12: Lean Upgrade Infrastructure with Automated Testing
+# PBI-12: Lean Upgrade Infrastructure with Distributed Development Support
 
 [View in Backlog](../backlog.md#user-content-12)
 
 ## Overview
 
-This PBI establishes lean upgrade infrastructure with automated testing to validate framework upgrades in staging before production deployment with quick rollback capability. The infrastructure will provide automated workflow validation, database migration testing, and rapid rollback capabilities within 5 minutes.
+This PBI establishes lean upgrade infrastructure with automated testing to validate framework upgrades in staging before production deployment with quick rollback capability. The infrastructure supports distributed development workflows, allowing development and testing on laptop while maintaining reliable deployment to production server. The solution uses simplified GitOps + Docker Compose patterns optimized for single semi-technical developer maintenance.
 
 ## Problem Statement
 
-Framework upgrades require careful validation to ensure system stability and functionality. Without proper upgrade infrastructure, the system faces significant risks:
+Framework upgrades require careful validation to ensure system stability and functionality. Additionally, the development workflow needs to support distributed development where new features and upgrades are developed and tested on a separate laptop while maintaining production services on the server. Without proper upgrade infrastructure, the system faces significant risks:
 
 - Framework upgrades may be deployed without proper testing, leading to production failures
 - No staging environment for upgrade validation may result in untested deployments
 - Lack of automated workflow validation may miss critical functionality issues
 - No database migration testing may cause data corruption or loss
 - Missing rollback capability may result in extended downtime during upgrade failures
+- No distributed development support may limit development flexibility and testing capabilities
+- Complex infrastructure may be difficult to maintain for single developer teams
 
 ## User Stories
 
 **Primary Actor: DevOps Engineer**
 - As a DevOps engineer, I want a staging environment for testing upgrades so that I can validate changes before production deployment
+- As a DevOps engineer, I want to develop and test on my laptop so that I can work independently while production runs on the server
 - As a DevOps engineer, I want automated workflow validation so that I can ensure critical workflows function correctly after upgrades
 - As a DevOps engineer, I want database migration testing so that I can validate data integrity during upgrades
 - As a DevOps engineer, I want rollback capability within 5 minutes so that I can quickly recover from failed upgrades
+- As a DevOps engineer, I want simple, maintainable infrastructure so that I can manage upgrades without complex tooling
 
 **Secondary Actors:**
 - **System Administrator**: Needs confidence that upgrades won't break production systems
 - **Product Owner**: Needs assurance that user-facing features work after upgrades
 - **Support Engineer**: Needs quick rollback capability to minimize user impact
+- **Developer**: Needs ability to develop and test features independently on laptop
 
 ## Technical Approach
 
-### Upgrade Infrastructure Architecture
-- **Staging Environment**: Isolated staging environment for upgrade testing and validation
-- **Automated Testing**: Automated workflow validation and testing procedures
-- **Database Testing**: Database migration testing and validation procedures
-- **Rollback Infrastructure**: Rapid rollback capability with minimal downtime
-- **Monitoring**: Upgrade monitoring and validation systems
+### Simplified Distributed Development Architecture
+- **GitOps + Docker Compose**: Single unified approach using Git as source of truth and Docker Compose for orchestration
+- **Environment Portability**: Staging environment works on both laptop and server with environment-specific configuration
+- **Data Synchronization**: Simple file-based data sync between production and staging environments
+- **Automated Testing**: Lightweight automated testing using shell scripts and Docker
+- **Rapid Rollback**: Simple rollback procedures using Git and Docker Compose
 
-### Upgrade Infrastructure Components
+### Core Components
 
-#### 1. Staging Environment
-- **Environment Provisioning**: Automated staging environment setup and configuration
-- **Data Synchronization**: Production data synchronization for realistic testing
-- **Service Isolation**: Isolated staging services with production-like configuration
-- **Testing Automation**: Automated testing and validation procedures
-- **Environment Management**: Staging environment lifecycle management
+#### 1. Environment Templates and Configuration
+- **Docker Compose Templates**: Standardized `docker-compose.staging.yml` for consistent staging environments
+- **Environment Variables**: Environment-specific `.env` files (`.env.production`, `.env.staging`, `.env.laptop`)
+- **Configuration Management**: Simple shell scripts for environment detection and configuration injection
+- **Portability**: Same configuration works on laptop and server with appropriate overrides
 
-#### 2. Automated Workflow Validation
-- **Critical Path Testing**: Automated testing of critical user workflows
-- **Integration Testing**: Cross-service integration validation and testing
-- **API Testing**: API endpoint validation and compatibility testing
-- **Performance Testing**: Performance validation and regression testing
-- **User Experience Testing**: End-to-end user experience validation
+#### 2. Data Synchronization
+- **Database Dumps**: Simple PostgreSQL dumps for database synchronization
+- **File Sync**: rsync-based file synchronization for uploads and static data
+- **Data Sanitization**: Optional data sanitization for sensitive information on laptop
+- **Incremental Updates**: Support for incremental data updates to keep staging current
 
-#### 3. Database Migration Testing
-- **Migration Validation**: Database migration script testing and validation
-- **Data Integrity**: Data integrity validation during migration procedures
-- **Rollback Testing**: Database rollback testing and validation procedures
-- **Performance Testing**: Database performance validation during migration
-- **Compatibility Testing**: Database compatibility validation across versions
+#### 3. Automated Testing and Validation
+- **Health Checks**: Docker-based health checks for service validation
+- **Workflow Testing**: Shell script-based testing of critical user workflows
+- **Integration Testing**: Simple API and service integration validation
+- **Performance Validation**: Basic performance checks and resource monitoring
 
-#### 4. Rollback Infrastructure
-- **Automated Rollback**: Automated rollback mechanisms with minimal downtime
-- **Data Rollback**: Data and configuration rollback procedures
-- **Service Rollback**: Service-level rollback and recovery procedures
-- **Validation Testing**: Rollback validation and testing procedures
-- **Monitoring**: Rollback monitoring and success validation
+#### 4. Deployment and Rollback
+- **Git-based Deployment**: Use Git branches and tags for version management
+- **Automated Scripts**: Shell scripts for deployment, promotion, and rollback
+- **Backup and Restore**: Simple file-based backup and restore procedures
+- **Validation Pipeline**: Automated validation before production deployment
 
-### Upgrade Infrastructure Tools
-- **Container Orchestration**: Docker-based staging and rollback infrastructure
-- **Database Management**: Database migration and rollback tools
-- **Testing Automation**: Automated testing and validation frameworks
-- **Monitoring**: Upgrade and rollback monitoring systems
-- **Documentation**: Upgrade infrastructure documentation and procedures
+### Technology Stack
+- **Git**: Version control and deployment coordination
+- **Docker Compose**: Container orchestration and environment management
+- **Shell Scripts**: Automation and deployment procedures
+- **PostgreSQL**: Database with pg_dump/pg_restore for data sync
+- **rsync**: File synchronization between environments
 
 ## UX/UI Considerations
 
-### Upgrade Process Interface
-- Clear upgrade status and progress indicators
-- Automated upgrade validation and testing progress
-- Rollback initiation and progress tracking
-- Upgrade success/failure notifications and alerts
-- Upgrade history and audit trail interfaces
+### Simplified Command-Line Interface
+- Clear command-line scripts with progress indicators and status messages
+- Simple confirmation prompts for destructive operations
+- Color-coded output for success, warning, and error states
+- Help text and usage examples for all scripts
+- Logging to files for audit trail and debugging
 
-### Staging Environment Management
-- Staging environment provisioning and management interfaces
-- Data synchronization status and progress indicators
-- Testing automation status and results
+### Environment Management
+- Simple script commands for environment operations (`deploy-staging.sh`, `promote-to-production.sh`)
+- Environment status checking and health validation
+- Data synchronization progress indicators
+- Clear error messages and troubleshooting guidance
 - Environment cleanup and reset capabilities
-- Staging environment monitoring and health checks
 
-### Rollback Experience
-- Quick rollback initiation with confirmation dialogs
-- Rollback progress tracking and status updates
-- Rollback success validation and reporting
-- Rollback history and audit trail
-- Post-rollback validation and health checks
+### Development Workflow
+- Clear documentation for laptop vs server development
+- Simple Git workflow for feature development and testing
+- Automated validation before production deployment
+- Quick rollback procedures with clear status reporting
+- Development environment setup and maintenance guides
 
 ## Acceptance Criteria
 
+### Distributed Development Support
+- [ ] Staging environment works on both laptop and server with appropriate configuration
+- [ ] Environment-specific configuration files (`.env.production`, `.env.staging`, `.env.laptop`) implemented
+- [ ] Simple deployment scripts for laptop development and server staging
+- [ ] Git-based workflow for feature development and testing
+- [ ] Clear documentation for distributed development workflow
+
 ### Staging Environment
-- [ ] Staging environment for testing upgrades deployed and operational
-- [ ] Automated staging environment provisioning and configuration
-- [ ] Production data synchronization for realistic testing scenarios
-- [ ] Isolated staging services with production-like configuration
-- [ ] Staging environment lifecycle management and automation
+- [ ] Portable staging environment using `docker-compose.staging.yml`
+- [ ] Automated staging environment provisioning with shell scripts
+- [ ] Production data synchronization using database dumps and file sync
+- [ ] Environment detection and configuration injection
+- [ ] Staging environment lifecycle management scripts
 
-### Automated Workflow Validation
-- [ ] Automated workflow validation for critical user paths
-- [ ] Cross-service integration testing and validation
+### Data Synchronization
+- [ ] Database synchronization using PostgreSQL dumps (`pg_dump`/`pg_restore`)
+- [ ] File synchronization using rsync for uploads and static data
+- [ ] Data sanitization options for sensitive data on laptop
+- [ ] Incremental data update capabilities
+- [ ] Data synchronization validation and testing
+
+### Automated Testing and Validation
+- [ ] Health check scripts for service validation
+- [ ] Critical workflow testing using shell scripts
 - [ ] API endpoint validation and compatibility testing
-- [ ] Performance validation and regression testing
-- [ ] End-to-end user experience validation and testing
-
-### Database Migration Testing
-- [ ] Database migration testing and validation procedures
-- [ ] Data integrity validation during migration procedures
-- [ ] Database rollback testing and validation
-- [ ] Database performance validation during migration
-- [ ] Database compatibility validation across versions
+- [ ] Basic performance validation and resource monitoring
+- [ ] Automated validation before production deployment
 
 ### Rollback Capability
-- [ ] Rollback capability within 5 minutes implemented and tested
-- [ ] Automated rollback mechanisms with minimal downtime
-- [ ] Data and configuration rollback procedures validated
-- [ ] Service rollback and recovery procedures tested
-- [ ] Rollback validation and testing automated
+- [ ] Rollback capability within 5 minutes using Git and Docker Compose
+- [ ] Automated rollback scripts with backup and restore procedures
+- [ ] Data and configuration rollback validation
+- [ ] Service rollback and recovery procedures
+- [ ] Rollback validation and testing automation
 
 ### Documentation and Procedures
-- [ ] Upgrade infrastructure setup and configuration procedures documented
-- [ ] Automated testing procedures and validation documented
-- [ ] Database migration testing procedures documented
-- [ ] Rollback procedures and recovery documentation complete
-- [ ] Upgrade infrastructure monitoring and maintenance procedures documented
+- [ ] Simplified upgrade infrastructure setup and configuration procedures
+- [ ] Distributed development workflow documentation
+- [ ] Data synchronization procedures and troubleshooting guides
+- [ ] Rollback procedures and recovery documentation
+- [ ] Maintenance procedures optimized for single developer
 
 ## Dependencies
 
@@ -143,24 +151,25 @@ Framework upgrades require careful validation to ensure system stability and fun
 - **PBI 11**: Version management must be complete for upgrade procedures
 
 ### External Dependencies
-- Container orchestration and staging environment tools
-- Database migration and testing tools
-- Automated testing frameworks and validation tools
-- Monitoring and alerting infrastructure
+- Git repository for version control and deployment coordination
+- Docker and Docker Compose for container orchestration
+- PostgreSQL with pg_dump/pg_restore for database operations
+- rsync for file synchronization
+- Basic shell scripting capabilities
 
 ## Open Questions
 
-1. **Staging Environment Size**: What size and configuration should the staging environment have relative to production?
+1. **Data Sensitivity**: What level of data sanitization is required for laptop development environments?
 
-2. **Data Synchronization**: How frequently should production data be synchronized to staging?
+2. **Synchronization Frequency**: How frequently should production data be synchronized to staging environments?
 
-3. **Testing Scope**: What level of testing is required for different types of upgrades (patch, minor, major)?
+3. **Resource Constraints**: What are the minimum resource requirements for laptop staging environments?
 
-4. **Rollback Triggers**: What conditions should trigger automatic rollback vs manual rollback?
+4. **Network Configuration**: How should network configurations differ between laptop and server environments?
 
-5. **Performance Validation**: What performance degradation thresholds are acceptable during upgrades?
+5. **Backup Strategy**: What backup and retention policies are needed for staging environments?
 
-6. **Environment Cleanup**: How should staging environments be cleaned up and reset between tests?
+6. **Development Workflow**: What Git branching strategy works best for distributed development?
 
 ## Related Tasks
 
@@ -170,14 +179,16 @@ See [Tasks for PBI 12](./tasks.md) for detailed implementation tasks.
 
 - **Upgrade Validation**: 100% of upgrades validated in staging before production
 - **Rollback Time**: Rollback capability within 5 minutes for all upgrade scenarios
-- **Testing Coverage**: Critical workflow tests automated and comprehensive
+- **Development Efficiency**: Successful development and testing on laptop with reliable server deployment
 - **Database Integrity**: Database migration testing with zero data loss
-- **Automation**: Automated testing and validation for all upgrade procedures
+- **Maintenance Simplicity**: Single developer can maintain and operate upgrade infrastructure
+- **Environment Consistency**: Staging environments work identically on laptop and server
 
 ## Risk Mitigation
 
 - **Upgrade Failures**: Comprehensive staging testing and automated rollback procedures
 - **Data Loss**: Database migration testing and validation procedures
 - **Service Disruption**: Minimal downtime rollback procedures and validation
-- **Testing Gaps**: Comprehensive automated testing and validation coverage
-- **Environment Issues**: Automated staging environment management and cleanup
+- **Environment Drift**: Standardized templates and configuration management
+- **Complexity Overload**: Simplified tooling and clear documentation for single developer
+- **Distributed Development Issues**: Clear workflows and environment portability
