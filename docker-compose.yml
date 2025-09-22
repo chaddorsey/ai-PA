@@ -511,7 +511,7 @@ services:
     networks: [pa-network]
     volumes:
       - /Users/dorseyhomeserver/.cloudflared:/home/nonroot/.cloudflared:ro
-    command: tunnel --no-autoupdate run
+    command: tunnel --no-autoupdate --config /home/nonroot/.cloudflared/config.yml run
     depends_on:
       - letta
       - open-webui
