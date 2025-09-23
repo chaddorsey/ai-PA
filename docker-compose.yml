@@ -142,6 +142,8 @@ services:
     depends_on:
       supabase-db:
         condition: service_healthy
+    ports:
+      - "5678:5678"  # Expose n8n web interface
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
       interval: 30s
