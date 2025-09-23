@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - supabase_db:/var/lib/postgresql/data
-    networks: [pa-network]
+    networks: [pa-internal]
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 30s
@@ -38,7 +38,7 @@ services:
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
-    networks: [pa-network]
+    networks: [pa-internal]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -53,7 +53,7 @@ services:
         condition: service_healthy
     environment:
       GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-    networks: [pa-network]
+    networks: [pa-internal]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
       interval: 30s
@@ -66,7 +66,7 @@ services:
     depends_on:
       supabase-db:
         condition: service_healthy
-    networks: [pa-network]
+    networks: [pa-internal]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 30s
@@ -88,7 +88,7 @@ services:
       PG_META_DB_NAME: postgres
       PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
-    networks: [pa-network]
+    networks: [pa-internal]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -125,7 +125,7 @@ services:
 
       # Pass Postgres password explicitly as well
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    networks: [pa-network]
+    networks: [pa-internal]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -138,7 +138,7 @@ services:
     image: docker.n8n.io/n8nio/n8n
     container_name: n8n
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     depends_on:
       supabase-db:
         condition: service_healthy
@@ -173,7 +173,7 @@ services:
     image: neo4j:5.26
     container_name: graphiti-neo4j
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     environment:
       - NEO4J_AUTH=neo4j/demodemo
     volumes:
@@ -193,7 +193,7 @@ services:
     container_name: graphiti-mcp-server
     user: root
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     depends_on:
       neo4j:
         condition: service_healthy
@@ -250,7 +250,7 @@ services:
       dockerfile: Dockerfile
     container_name: rag-mcp-server
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     volumes:
       - rag-mcp-data:/app/data
     environment:
@@ -298,7 +298,7 @@ services:
       dockerfile: Dockerfile
     container_name: health-monitor
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     depends_on:
       - gmail-mcp-server
       - graphiti-mcp-server
@@ -335,7 +335,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     depends_on:
       n8n:
         condition: service_healthy
@@ -368,7 +368,7 @@ services:
       - "8283:8283"  # Letta web interface
     volumes:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
-    networks: [pa-network]
+    networks: [pa-internal]
     environment:
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
       LETTA_PG_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
@@ -398,7 +398,7 @@ services:
     container_name: open-webui
     volumes:
      - open-webui:/app/backend/data
-    networks: [pa-network]
+    networks: [pa-internal]
     environment:
       # https://docs.openwebui.com/getting-started/env-configuration/
       - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-INFO}
@@ -450,7 +450,7 @@ services:
   slack-mcp-server:
     image: ghcr.io/korotovsky/slack-mcp-server:latest
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     volumes:
       - users_cache:/app/mcp-server/.users_cache.json
       - channels_cache:/app/mcp-server/.channels_cache.json
@@ -473,7 +473,7 @@ services:
       dockerfile: Dockerfile
     container_name: slackbot
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     volumes:
       - slackbot_state:/app/state_store
       - slackbot_logs:/app/logs
@@ -508,7 +508,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: cloudflare-tunnel
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     volumes:
       - /Users/dorseyhomeserver/.cloudflared:/home/nonroot/.cloudflared:ro
     command: tunnel --no-autoupdate --config /home/nonroot/.cloudflared/config.yml run pa-server
@@ -539,7 +539,7 @@ services:
       dockerfile: Dockerfile
     container_name: gmail-mcp-server
     restart: unless-stopped
-    networks: [pa-network]
+    networks: [pa-internal]
     volumes:
       - gmail-mcp-data:/app/data
       - ./gmail-mcp/gcp-oauth.keys.json:/app/config/gcp-oauth.keys.json:ro
@@ -600,7 +600,7 @@ volumes:
 # All services use standardized logging and labeling for unified monitoring
 
 networks:
-  pa-network:
+  pa-internal:
     name: pa-internal
     driver: bridge
     driver_opts:
