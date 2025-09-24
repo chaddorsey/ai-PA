@@ -168,6 +168,7 @@ services:
       N8N_HOST: "0.0.0.0"
       N8N_PORT: "5678"
       N8N_EDITOR_BASE_URL: "https://n8n.cd-ai-pa.work"
+      N8N_TRUST_PROXY: "true"
     volumes:
       - n8n_data:/home/node/.n8n
       - /tmp/granola-to-letta:/tmp/granola-notes
