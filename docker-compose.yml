@@ -411,6 +411,7 @@ services:
       - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-INFO}
       # Disable admin login
       - WEBUI_AUTH=false
+      - WEBUI_BASE_URL=https://webui.cd-ai-pa.work
       # Enable the /docs endpoint for OpenAPI viewing
       #- ENV=dev
       # Prevent a langchain warning
