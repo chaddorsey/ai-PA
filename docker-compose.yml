@@ -38,9 +38,14 @@ services:
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_SCHEMA: public
+      PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      PGRST_DB_USE_LEGACY_GUCS: false
+    ports:
+      - "8000:3000"
     networks: [pa-internal]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "pgrep", "postgrest"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -52,10 +57,22 @@ services:
       supabase-db:
         condition: service_healthy
     environment:
+      GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      API_EXTERNAL_URL: http://localhost:8000
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: "http://localhost:3000,http://localhost:8080"
+      GOTRUE_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_DISABLE_SIGNUP: false
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: true
+    ports:
+      - "9999:9999"
     networks: [pa-internal]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9999/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9999/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -88,13 +105,9 @@ services:
       PG_META_DB_NAME: postgres
       PG_META_DB_USER: postgres
       PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8081:8080"
     networks: [pa-internal]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
 
   supabase-studio:
     image: supabase/studio:2025.06.30-sha-6f5982d
@@ -116,8 +129,8 @@ services:
       # Where Studio finds Postgres Meta (schema/foreign key info)
       STUDIO_PG_META_URL: http://supabase-meta:8080
 
-      # RESTful entrypoint via Kong gateway
-      SUPABASE_URL: http://supabase-kong:8000
+      # RESTful entrypoint via REST service
+      SUPABASE_URL: http://supabase-rest:3000
 
       # Keys (must be in your .env)
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
@@ -125,6 +138,8 @@ services:
 
       # Pass Postgres password explicitly as well
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "3000:3000"
     networks: [pa-internal]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
@@ -346,37 +361,7 @@ services:
       - "dashboard=true"
 
 
-# Cloudflare
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    restart: unless-stopped
-    networks: [pa-internal]
-    depends_on:
-      n8n:
-        condition: service_healthy
-    extra_hosts:
-      - "n8n:172.20.0.3"
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-    command: tunnel run
-    healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "info"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 120s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    labels:
-      - "service=cloudflared"
-      - "component=tunnel"
-      - "network=pa-internal"
-      - "external-access=true"
+# Cloudflare tunnel configuration is below in the cloudflare-tunnel service
 
 
   # Letta is an agent building framework with built-in memory/vectordb support.
