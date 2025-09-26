@@ -135,7 +135,7 @@ services:
 
   # --- Workflow Automation (n8n) ---
   n8n:
-    image: docker.n8n.io/n8nio/n8n
+    image: docker.n8n.io/n8nio/n8n  # No version pin - use latest like working reference
     container_name: n8n
     restart: unless-stopped
     networks: [pa-internal]
@@ -145,31 +145,41 @@ services:
     ports:
       - "5678:5678"  # Expose n8n web interface
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5678/healthz', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     environment:
+      # Database configuration - match working reference
       DB_TYPE: postgresdb
-      DB_POSTGRESDB_DATABASE: n8n_restore   # 👈 updated here
+      DB_POSTGRESDB_DATABASE: n8n
       DB_POSTGRESDB_HOST: supabase-db
       DB_POSTGRESDB_PORT: 5432
-      DB_POSTGRESDB_USER: postgres
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POSTGRESDB_USER: n8n  # Use dedicated n8n user like working reference
+      DB_POSTGRESDB_PASSWORD: n8n_dev_password  # Use n8n-specific password
       DB_POSTGRESDB_SCHEMA: public
+      
+      # Timezone configuration - match working reference
       GENERIC_TIMEZONE: "America/New_York"
       TZ: "America/New_York"
-      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      
+      # Working reference settings
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
-      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
-      WEBHOOK_URL: ${WEBHOOK_URL} 
-      N8N_PROTOCOL: "https"
-      N8N_HOST: "0.0.0.0"
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      
+      # Security configuration
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      
+      # HYBRID APPROACH: Internal HTTP routing for MCP/webhooks
+      N8N_HOST: "0.0.0.0"  # Bind to all interfaces for internal access
       N8N_PORT: "5678"
-      N8N_EDITOR_BASE_URL: "https://n8n.cd-ai-pa.work"
-      N8N_TRUST_PROXY: "true"
-      N8N_PROXY_HOPS: "1"
+      N8N_PROTOCOL: "http"  # Use HTTP internally like working reference
+      WEBHOOK_URL: "http://n8n:5678"  # Internal container URL for MCP/webhooks
+      
+      # External access still available via Cloudflare tunnel (HTTPS)
+      # Tunnel routes https://n8n.cd-ai-pa.work -> http://n8n:5678
     volumes:
       - n8n_data:/home/node/.n8n
       - /tmp/granola-to-letta:/tmp/granola-notes
@@ -346,6 +356,8 @@ services:
     depends_on:
       n8n:
         condition: service_healthy
+    extra_hosts:
+      - "n8n:172.20.0.3"
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     command: tunnel run
@@ -378,7 +390,7 @@ services:
     networks: [pa-internal]
     environment:
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
-      LETTA_PG_URI: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
+      LETTA_PG_URI: "postgresql://letta:letta_dev_password@supabase-db:5432/letta"
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
       # https://docs.letta.com/guides/server/providers/anthropic
       ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
@@ -461,6 +473,8 @@ services:
     image: ghcr.io/korotovsky/slack-mcp-server:latest
     restart: unless-stopped
     networks: [pa-internal]
+    ports:
+      - "3001:3001"  # Expose for Letta Desktop access
     volumes:
       - users_cache:/app/mcp-server/.users_cache.json
       - channels_cache:/app/mcp-server/.channels_cache.json
@@ -550,6 +564,8 @@ services:
     container_name: gmail-mcp-server
     restart: unless-stopped
     networks: [pa-internal]
+    ports:
+      - "8084:8080"  # Expose for Letta Desktop access
     volumes:
       - gmail-mcp-data:/app/data
       - ./gmail-mcp/gcp-oauth.keys.json:/app/config/gcp-oauth.keys.json:ro
@@ -570,7 +586,7 @@ services:
       - GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
       - PORT=8080
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -596,6 +612,7 @@ volumes:
     name: ai-pa_supabase_db
   n8n_data:
     name: ai-pa_n8n_data
+  n8n_data_test:
   neo4j_data:
   neo4j_logs:
   open-webui:  
