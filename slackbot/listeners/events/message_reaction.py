@@ -86,6 +86,5 @@ def _handle_message_reaction(event: dict, client: WebClient, logger: Logger):
 
 
 def register(app: App):
-    @app.event("message")
-    def _on_message(event, client, logger):
-        _handle_message_reaction(event, client, logger)
+    """Message reaction handler temporarily disabled to avoid DM conflicts."""
+    return

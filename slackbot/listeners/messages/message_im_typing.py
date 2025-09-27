@@ -64,6 +64,5 @@ def _handle_dm_typing(event: dict, client: WebClient, logger: Logger, say: Say):
 
 
 def register(app: App):
-    @app.event("message")
-    def _on_dm(event, client, logger, say):
-        _handle_dm_typing(event, client, logger, say)
+    """Typing animation DM handler is disabled in favour of hybrid handler."""
+    return
