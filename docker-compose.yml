@@ -195,6 +195,9 @@ services:
       
       # External access still available via Cloudflare tunnel (HTTPS)
       # Tunnel routes https://n8n.cd-ai-pa.work -> http://n8n:5678
+      
+      # OAuth callback URL configuration - n8n uses EDITOR_BASE_URL to generate OAuth redirect URLs
+      N8N_EDITOR_BASE_URL: "https://n8n.cd-ai-pa.work"
     volumes:
       - n8n_data:/home/node/.n8n
       - /tmp/granola-to-letta:/tmp/granola-notes
