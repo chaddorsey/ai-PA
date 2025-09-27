@@ -17,9 +17,22 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger, say: Say):
     user_id = event.get("user")
     text = (event.get("text") or "").strip()
 
+    # Debug: Log the actual channel and user IDs received
+    logger.info(f"DM Event - Channel ID: '{channel_id}', User ID: '{user_id}', Channel Type: '{event.get('channel_type')}'")
+    logger.info(f"Full DM event keys: {list(event.keys())}")
+    
+    # Test if the channel ID is valid by trying to get channel info
     try:
-        history = client.conversations_history(channel=channel_id, limit=10)["messages"]
-        conversation_context = parse_conversation(history[:-1])
+        channel_info = client.conversations_info(channel=channel_id)
+        logger.info(f"Channel info successful: {channel_info.get('channel', {}).get('name', 'no name')}")
+    except Exception as channel_error:
+        logger.error(f"Channel info failed: {channel_error}")
+        # Try alternative approaches
+        logger.info(f"Trying with @{user_id} instead of {channel_id}")
+
+    try:
+        # Skip conversation history due to permissions issue - just like working slash commands
+        conversation_context = ""
 
         # Start with simple loading message
         waiting = say(text="...")

@@ -8,7 +8,7 @@ from listeners.messages.message_im_hybrid import register as reg_dm
 from listeners.workflows.summarize_function import register as reg_wf
 
 def register_listeners(app: App):
-    reg_home(app)
+    # reg_home(app)  # Disabled temporarily due to not_enabled error
     reg_action(app)
     reg_cmd(app)
     reg_mention(app)
