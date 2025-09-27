@@ -53,7 +53,7 @@ MCP_SERVERS = {
     "rag-tools": {
         "server_name": "rag-tools",
         "type": "streamable_http",
-        "server_url": "http://rag-mcp-server:8082/mcp", 
+        "server_url": "http://rag-mcp-server:8080/mcp", 
         "auth_header": None,
         "auth_token": None,
         "custom_headers": {

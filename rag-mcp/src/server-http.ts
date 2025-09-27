@@ -110,10 +110,11 @@ async function getSharedServer(): Promise<Server> {
   sharedServer = new Server({
     name: "rag-tools",
     version: "1.0.0"
+  }, {
+    capabilities: {
+      tools: {}
+    }
   });
-
-  // Set capabilities (required for MCP SDK to allow tool registration)
-  (sharedServer as any).capabilities = { tools: {} };
 
   // Register RAG Tools
   sharedServer.setRequestHandler(ListToolsRequestSchema, async () => {
