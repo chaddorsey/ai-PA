@@ -43,7 +43,7 @@ MCP_SERVERS = {
     "graphiti-tools": {
         "server_name": "graphiti-tools",
         "type": "streamable_http", 
-        "server_url": "http://graphiti-mcp-server:8082/mcp",
+        "server_url": "http://graphiti-mcp-server:8000/mcp",
         "auth_header": None,
         "auth_token": None,
         "custom_headers": {
@@ -53,7 +53,7 @@ MCP_SERVERS = {
     "rag-tools": {
         "server_name": "rag-tools",
         "type": "streamable_http",
-        "server_url": "http://rag-mcp-server:8083/mcp", 
+        "server_url": "http://rag-mcp-server:8082/mcp", 
         "auth_header": None,
         "auth_token": None,
         "custom_headers": {

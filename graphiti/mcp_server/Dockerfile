@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # Copy application code
-COPY graphiti_mcp_server.py ./
+COPY graphiti_mcp_server.py graphiti_http_wrapper.py ./
 
 # Change ownership to app user
 RUN chown -Rv app:app /app

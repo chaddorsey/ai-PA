@@ -1224,7 +1224,7 @@ async def initialize_server() -> MCPConfig:
     )
     parser.add_argument(
         '--transport',
-        choices=['sse', 'stdio'],
+        choices=['sse', 'stdio', 'http'],
         default='sse',
         help='Transport to use for communication with the client. (default: sse)',
     )
@@ -1295,6 +1295,11 @@ async def run_mcp_server():
             f'Running MCP server with SSE transport on {mcp.settings.host}:{mcp.settings.port}'
         )
         await mcp.run_sse_async()
+    elif mcp_config.transport == 'http':
+        logger.info(
+            f'Running MCP server with HTTP transport on {mcp.settings.host}:{mcp.settings.port}'
+        )
+        await mcp.run_http_async()
 
 
 def main():

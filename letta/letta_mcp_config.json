@@ -2,7 +2,7 @@
   "mcpServers": {
     "gmail-tools": {
       "command": "http",
-      "args": ["http://localhost:8084/mcp"],
+      "args": ["http://gmail-mcp-server:8080/mcp"],
       "env": {
         "MCP_SERVER_NAME": "gmail-tools",
         "MCP_SERVER_VERSION": "1.1.11",
@@ -18,14 +18,22 @@
     },
     "graphiti-tools": {
       "command": "http",
-      "args": ["http://graphiti-mcp-server:8082"],
-      "env": {},
+      "args": ["http://graphiti-mcp-server:8000/mcp"],
+      "env": {
+        "MCP_SERVER_NAME": "graphiti-tools",
+        "MCP_SERVER_VERSION": "1.0.0",
+        "MCP_TRANSPORT": "streamable-http"
+      },
       "disabled": false
     },
     "rag-tools": {
       "command": "http",
-      "args": ["http://rag-mcp-server:8083"],
-      "env": {},
+      "args": ["http://rag-mcp-server:8082/mcp"],
+      "env": {
+        "MCP_SERVER_NAME": "rag-tools",
+        "MCP_SERVER_VERSION": "1.0.0",
+        "MCP_TRANSPORT": "streamable-http"
+      },
       "disabled": false
     }
   }
