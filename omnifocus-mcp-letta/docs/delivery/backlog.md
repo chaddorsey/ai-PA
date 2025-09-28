@@ -26,7 +26,7 @@ This document contains all Product Backlog Items (PBIs) for the OmniFocus MCP Br
 | 5 | Workflow Automator | As a workflow automator, I want to create templates and automate task management workflows through AI conversations so that I can reduce repetitive work and get proactive optimization suggestions. | Proposed | 1. AI can create and apply project templates with parameters, 2. AI can set up automated workflows with triggers and actions, 3. AI can provide smart suggestions for task optimization, 4. Templates significantly reduce setup time, 5. Automation suggestions improve productivity |  
 | 6 | Integration User | As an integration user, I want to use the bridge with multiple MCP clients and connect external services so that I can access OmniFocus from different AI interfaces and sync with other productivity tools. | Proposed | 1. Bridge works seamlessly with multiple MCP clients, 2. External service integrations maintain data consistency, 3. Calendar sync works bidirectionally, 4. Performance scales with multiple connections, 5. Protocol compliance enables broad compatibility |
 | 10 | OmniFocus Integrator | As an OmniFocus integrator, I want MCP responses to include creation and modification timestamps so that agents can reason about item freshness and history. | Done | Plugin exposes added/modified timestamps for tasks, projects, folders, tags, and perspectives; MCP responses return ISO timestamps; Documentation updated with usage guidance |
-| 11 | OmniFocus Planner | As an OmniFocus planner, I want the MCP tooling to expose planned dates so that agents can schedule work according to OmniFocus’s new planning signals. | Proposed | Planned date fields (`plannedDate`, `effectivePlannedDate`) captured in plugin payloads; MCP schemas and typings surface planned dates; Documentation and testing updated to cover planned scheduling data |
+| 11 | OmniFocus Planner | As an OmniFocus planner, I want the MCP tooling to expose planned dates so that agents can schedule work according to OmniFocus’s new planning signals. | Done | Planned date fields (`plannedDate`, `effectivePlannedDate`) captured in plugin payloads; MCP schemas and typings surface planned dates; Documentation and testing updated to cover planned scheduling data |
 
 ## PBI History
 
@@ -41,6 +41,7 @@ This document contains all Product Backlog Items (PBIs) for the OmniFocus MCP Br
 | 2025-01-31 17:45:00 | 4 | Status_Change | Moved to Done - completed all hierarchy and relationship management with 11 tasks. Tasks 4-12, 4-13, 4-14 set aside as redundant/overengineered for use case | AI Agent |
 | 2025-01-16 20:15:00 | 3 | Status_Change | Moved to Done - completed organizational structure access with comprehensive perspective reading, project hierarchy, group type management. Tasks 3-2, 3-8 deferred as overkill | AI Agent |
 | 2025-09-28 22:20:00 | 10 | Created | Added PBI 10 for exposing OmniFocus timestamps through MCP integration | AI Agent |
+| 2025-09-29 03:50:00 | 11 | Status_Change | Planned date exposure complete; documentation and regression coverage updated | AI Agent |
 
 **Links to PBI Details:**
 - [PBI-1: Complete Core CRUD and Enhanced Queries](./1/prd.md)
