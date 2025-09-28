@@ -30,7 +30,7 @@ return _res
 `;
     fs.writeFileSync(tmpApple, script, "utf8");
     try {
-        const raw = execSync(`osascript "${tmpApple}"`, { encoding: "utf8" });
+        const raw = execSync(`/usr/bin/osascript "${tmpApple}"`, { encoding: "utf8" });
         return JSON.parse(raw);
     }
     catch (err) {

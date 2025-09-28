@@ -4,14 +4,13 @@
 PROJECT_DIR="/Users/chaddorsey/Dropbox/dev/MCP/omnifocus-mcp-bridge"
 
 # Hardcoded file paths (with correct escaping for spaces)
-DEST1="/Users/chaddorsey/Library/Containers/com.omnigroup.OmniFocus4/Data/Library/Application Support/Plug-Ins/omnifocus-mcp.omnijs"
+# Note: Plugin file is now a symbolic link, so no copy needed
 DEST2="/Users/chaddorsey/Library/Application Support/Claude/claude_desktop_config.json"
-SRC1="/Users/chaddorsey/Dropbox/dev/MCP/omnifocus-mcp-bridge/extra-files/omnifocus-mcp.omnijs"
 SRC2="/Users/chaddorsey/Dropbox/dev/MCP/omnifocus-mcp-bridge/extra-files/claude_desktop_config.json"
 
-# Copy files
-echo "Copying files to $DEST1 and $DEST2..."
-cp "$SRC1" "$DEST1" || { echo "File copy failed"; exit 1; }
+# Copy Claude config (plugin file is now a symbolic link, so no copy needed)
+echo "Copying Claude config to $DEST2..."
+echo "ℹ️  Plugin file is now a symbolic link - no copy needed"
 cp "$SRC2" "$DEST2" || { echo "File copy failed"; exit 1; }
 
 echo "🔧 Running npm build..."

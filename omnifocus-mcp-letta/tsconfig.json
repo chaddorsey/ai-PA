@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["server.ts", "server-simple.ts", "server-streamable.ts", "server-mcp-streamable.ts", "server-streamable-8124.ts", "server-mcp-official-8124.ts", "server-mcp-full-8124.ts", "bridge.ts", "http-bridge.ts"]
+  "include": ["server.ts", "server-simple.ts", "server-streamable.ts", "server-mcp-streamable.ts", "server-streamable-8124.ts", "server-mcp-official-8124.ts", "server-mcp-full-8124.ts", "bridge.ts", "http-bridge.ts", "serializeSchema.ts"]
 }
