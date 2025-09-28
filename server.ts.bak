@@ -1,0 +1,203 @@
+// src/server.ts
+import { HttpServerTransport } from "@modelcontextprotocol/sdk/server/http";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { callOmniFocus } from "./bridge.js";
+
+// 1. Create server, but do NOT connect yet
+const server = new McpServer({
+  name: "omnifocus",
+  version: "1.0.0",
+});
+
+// 2. Define all tool handlers BEFORE connecting
+
+server.tool(
+  "listRemaining",
+  "Return all incomplete tasks from OmniFocus",
+  {},
+  async (_args, _extra) => {
+    const result = await callOmniFocus({ command: "listRemaining" });
+    return {
+      content: [
+        { type: "text", text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "getTask",
+  "Fetch one task by ID",
+  { taskId: z.string().describe("OmniFocus task ID") },
+  async ({ taskId }, _extra) => {
+    const result = await callOmniFocus({
+      command: "getTask",
+      args: { taskId },
+    });
+    return {
+      content: [
+        { type: "text", text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "createTask",
+  "Create a new OmniFocus task",
+  {
+    title: z.string().describe("Task title"),
+    note: z.string().optional().describe("Optional note or URL"),
+    projectId: z.string().optional().describe("Project ID"),
+    folderId: z.string().optional().describe("Folder ID"),
+    contexts: z
+      .array(z.string())
+      .optional()
+      .describe("List of context/tag IDs"),
+    flagged: z.boolean().optional().describe("Whether to flag"),
+    deferDate: z
+      .string()
+      .optional()
+      .describe("Defer date, ISO YYYY-MM-DD"),
+    dueDate: z
+      .string()
+      .optional()
+      .describe("Due date, ISO YYYY-MM-DD"),
+    duration: z
+      .number()
+      .optional()
+      .describe("Estimated duration in minutes"),
+  },
+  async (args, _extra) => {
+    const result = await callOmniFocus({
+      command: "createTask",
+      args,
+    });
+    return {
+      content: [
+        { type: "text", text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "updateTask",
+  "Update fields on an existing OmniFocus task",
+  {
+    taskId: z.string().describe("OmniFocus task ID"),
+    title: z.string().optional().describe("New title"),
+    note: z.string().optional().describe("New note"),
+    projectId: z.string().optional().describe("New project ID"),
+    folderId: z.string().optional().describe("New folder ID"),
+    contexts: z
+      .array(z.string())
+      .optional()
+      .describe("Updated list of contexts"),
+    flagged: z.boolean().optional().describe("Flag/unflag"),
+    deferDate: z
+      .string()
+      .optional()
+      .describe("New defer date (ISO)"),
+    dueDate: z
+      .string()
+      .optional()
+      .describe("New due date (ISO)"),
+    duration: z
+      .number()
+      .optional()
+      .describe("New duration (minutes)"),
+    completed: z
+      .boolean()
+      .optional()
+      .describe("Mark complete/incomplete"),
+  },
+  async ({ taskId, ...patch }, _extra) => {
+    const result = await callOmniFocus({
+      command: "updateTask",
+      args: { taskId, patch },
+    });
+    return {
+      content: [
+        { type: "text", text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "deleteTask",
+  "Delete a task by ID",
+  { taskId: z.string().describe("OmniFocus task ID") },
+  async ({ taskId }, _extra) => {
+    const result = await callOmniFocus({
+      command: "deleteTask",
+      args: { taskId },
+    });
+    return {
+      content: [
+        { type: "text", text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "findTasks",
+  "Search tasks by various filters",
+  {
+    projectId: z
+      .string()
+      .optional()
+      .describe("Filter by project ID"),
+    contexts: z
+      .array(z.string())
+      .optional()
+      .describe("Filter by context/tag IDs"),
+    flagged: z.boolean().optional().describe("Only flagged?"),
+    completed: z.boolean().optional().describe("Include completed?"),
+    query: z
+      .string()
+      .optional()
+      .describe("Text search in title or notes"),
+    fromDate: z
+      .string()
+      .optional()
+      .describe("Earliest due date (ISO)"),
+    toDate: z
+      .string()
+      .optional()
+      .describe("Latest due date (ISO)"),
+    minDuration: z
+      .number()
+      .optional()
+      .describe("Minimum duration (minutes)"),
+    maxDuration: z
+      .number()
+      .optional()
+      .describe("Maximum duration (minutes)"),
+  },
+  async (filters, _extra) => {
+    const result = await callOmniFocus({
+      command: "findTasks",
+      args: filters,
+    });
+    return {
+      content: [
+        { type: "text", text: JSON.stringify(result, null, 2) },
+      ],
+    };
+  }
+);
+
+// 3. Now connect transport – **after** all tools are registered
+(async () => {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("✅ OmniFocus MCP server running on stdio");
+  const http = new HttpServerTransport({ port: 3020 });
+  await server.connect(http);
+  console.error("MCP over HTTP on http://localhost:3020");
+})();
