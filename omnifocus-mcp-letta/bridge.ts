@@ -154,6 +154,26 @@ export interface ProjectInfo {
   modified: string | null;
 }
 
+export interface PlannedDates {
+  plannedDate: string | null;
+  effectivePlannedDate: string | null;
+}
+
+export interface TaskInfo extends PlannedDates, TimestampedEntity {
+  taskId: string;
+  taskName: string;
+  note: string;
+  flagged: boolean;
+  deferDate: string | null;
+  dueDate: string | null;
+  duration: number | null;
+  projectId: string | null;
+  folderId: string | null;
+  contexts: string[];
+  completed: boolean;
+  dropped: boolean;
+}
+
 /**
  * Call OmniFocus via its JavaScript‐for‐Automation plugin.
  * All debug output goes to **stderr** so stdout stays JSON-only.
