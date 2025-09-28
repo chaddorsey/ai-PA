@@ -59,3 +59,7 @@ The following files have been customized for Docker integration:
 - All Docker-specific changes are tracked in the ai-PA repository
 - The HTTP bridge server runs on port 8888 by default
 - Health checks are configured for the Docker integration
+
+## Post-Sync Checklist
+- Run `npm run build` and Docker smoke tests.
+- Execute `docs/testing/timestamp-smoke.sh` to verify timestamp and planned date fields survive the merge.

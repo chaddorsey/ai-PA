@@ -101,3 +101,7 @@ When running in Docker:
 ## Security Note
 
 The plugin requires OmniFocus to execute JavaScript, which may require additional permissions depending on your macOS security settings.
+
+## Planned Date Support
+- Requires OmniFocus 4.7.1 or later (first release with `plannedDate` and `effectivePlannedDate`).
+- MCP responses now include these fields for tasks; ensure the plugin copy above is deployed before testing.
