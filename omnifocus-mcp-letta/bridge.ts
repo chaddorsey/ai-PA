@@ -70,6 +70,8 @@ export interface FolderInfo {
   projectCount: number;
   totalSubfoldersCount?: number;
   totalProjectsCount?: number;
+  added: string | null;
+  modified: string | null;
 }
 
 // ===== PROJECT MOVEMENT INTERFACES (Task 4-2) =====
@@ -98,6 +100,11 @@ export interface GetProjectByIdParams {
   projectId: string;
 }
 
+export interface TimestampedEntity {
+  added: string | null;
+  modified: string | null;
+}
+
 /**
  * Response from project movement
  */
@@ -108,6 +115,8 @@ export interface MoveProjectResponse {
   newFolderId: string | null;
   moved: boolean;
   taskCount: number;
+  added: string | null;
+  modified: string | null;
 }
 
 /**
@@ -141,6 +150,8 @@ export interface ProjectInfo {
   deferDate: string | null;
   flagged: boolean;
   note: string;
+  added: string | null;
+  modified: string | null;
 }
 
 /**

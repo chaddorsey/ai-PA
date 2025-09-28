@@ -353,13 +353,21 @@
   function toIsoOrNull(value) {
     if (!value) return null;
     try {
-      return value.toISOString();
+      return typeof value === 'string' ? value : value.toISOString();
     } catch (error) {
+      console.error(`[ERROR] Failed to convert timestamp to ISO string: ${error}`);
       return null;
     }
   }
 
   function serializeTimestamped(entity) {
+    if (!entity) {
+      return {
+        added: null,
+        modified: null
+      };
+    }
+
     return {
       added: toIsoOrNull(entity.added),
       modified: toIsoOrNull(entity.modified)
