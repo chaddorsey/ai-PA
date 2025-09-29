@@ -6,6 +6,8 @@
     "start": "node dist/server.js",
     "build": "tsc",
     "start:http": "node dist/http-bridge.js",
+    "start:simplified": "node dist/server-mcp-simplified.js",
+    "start:full": "node dist/server-mcp-full.js",
     "dev:http": "ts-node http-bridge.ts",
     "test:http": "curl -X POST http://localhost:8888/mcp -H 'Content-Type: application/json' -d '{\"jsonrpc\": \"2.0\", \"method\": \"tools/list\", \"id\": 1}'"
   },

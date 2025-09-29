@@ -193,3 +193,6 @@ letta/voice_agent_extra_files/
 # Database persistence and test data
 .persist/
 pgdata*/
+
+# Reference files
+omnifocus-mcp-letta/docs/reference/

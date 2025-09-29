@@ -56,6 +56,27 @@ With the symbolic link approach:
 
 The `rst.sh` script has been updated to skip the plugin copy operation (since it's now a symbolic link) and will still work for building and restarting services. The `sac.sh` script becomes unnecessary with the symbolic link.
 
+## Server Startup Modes
+
+Choose the npm script that matches the tool surface you need:
+
+```bash
+# Simplified tool surface (default for Letta integration)
+npm run start:simplified
+
+# Full tool surface (legacy 70+ tools)
+npm run start:full
+
+# StdIO bridge (legacy transport)
+npm run start:http
+```
+
+- `start:simplified` listens on port `8889` by default and exposes the consolidated, freshness-aware tool set.
+- `start:full` listens on port `8890` by default and exposes the original full tool catalog.
+- `start:http` runs the historical stdio/HTTP bridge on port `8888`.
+
+Only run one server mode at a time to avoid port conflicts.
+
 ## How It Works
 
 The MCP server communicates with OmniFocus through this architecture:

@@ -15,7 +15,7 @@ function asJsonText(body) {
     };
 }
 // All 71 tools from the original server.ts
-const tools = [
+export const tools = [
     {
         name: "listRemaining",
         description: "Return all of your incomplete OmniFocus tasks",
