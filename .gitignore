@@ -188,6 +188,8 @@ local.properties
 
 # Legacy & External Projects (with git histories)
 legacy_and_extra/
+# Voice agent experiments
+letta/voice_agent_extra_files/
 # Database persistence and test data
 .persist/
 pgdata*/
