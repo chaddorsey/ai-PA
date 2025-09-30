@@ -390,6 +390,8 @@ services:
       GEMINI_API_KEY: $GEMINI_API_KEY
       #OLLAMA_BASE_URL: $OLLAMA_BASE_URL
       OPENAI_API_KEY: $OPENAI_API_KEY
+    extra_hosts:
+      - "omnifocus-mcp-server:192.168.65.254"
 
       # Do not attempt to use Ollama, LM Studio or OpenRouter chat models with Letta.
       # Letta is *very* picky and will only reliably work with the major cloud providers.

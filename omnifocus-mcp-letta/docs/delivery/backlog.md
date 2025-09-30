@@ -29,6 +29,7 @@ This document contains all Product Backlog Items (PBIs) for the OmniFocus MCP Br
 | 11 | OmniFocus Planner | As an OmniFocus planner, I want the MCP tooling to expose planned dates so that agents can schedule work according to OmniFocus’s new planning signals. | Done | Planned date fields (`plannedDate`, `effectivePlannedDate`) captured in plugin payloads; MCP schemas and typings surface planned dates; Documentation and testing updated to cover planned scheduling data |
 | 12 | Letta Integrator | As a Letta integrator, I want the OmniFocus MCP server to expose a streamlined tool set that still provides freshness-aware insights so that agents can work efficiently without losing recently added functionality. | InProgress | Simplified tool surface matches consolidate-tool design; Freshness-aware sorting options available where relevant; Full tool server remains available but disabled by default; Documentation outlines selection between simplified and full tool sets |
 | 13 | MCP Maintainer | As an MCP maintainer, I want tool definitions managed through reusable metadata and schemas so that multiple server profiles can stay consistent without duplicating configuration. | Proposed | Centralized tool metadata registry replaces legacy server arrays; Simplified/full profiles load from shared source; Docs/tests auto-generated from metadata; Legacy full server file retired |
+| 14 | Quick Command User | As a quick command user, I want shorthand tools for common task/project operations so that AI agents can perform frequent OmniFocus workflows without over-specifying consolidated operations. | Proposed | Dedicated tools exist for task completion, moving tasks, listing incomplete tasks, and listing projects; Inputs/outputs support core metadata as requested; Simplified server exposes these tools alongside consolidated options |
 
 ## PBI History
 
@@ -44,6 +45,7 @@ This document contains all Product Backlog Items (PBIs) for the OmniFocus MCP Br
 | 2025-01-16 20:15:00 | 3 | Status_Change | Moved to Done - completed organizational structure access with comprehensive perspective reading, project hierarchy, group type management. Tasks 3-2, 3-8 deferred as overkill | AI Agent |
 | 2025-09-28 22:20:00 | 10 | Created | Added PBI 10 for exposing OmniFocus timestamps through MCP integration | AI Agent |
 | 2025-09-29 03:50:00 | 11 | Status_Change | Planned date exposure complete; documentation and regression coverage updated | AI Agent |
+| 2025-10-01 00:15:00 | 14 | Created | Added PBI for quick-access simplified tools covering completion, listing, and moving tasks/projects | AI Agent |
 
 **Links to PBI Details:**
 - [PBI-1: Complete Core CRUD and Enhanced Queries](./1/prd.md)

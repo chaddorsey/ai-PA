@@ -10,6 +10,7 @@ import {
   JSONRPCNotification,
 } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
+
 import { callOmniFocus } from "./bridge.js";
 import { detailLevelEnum, sortOrderEnum, DetailLevel, SortOrder } from "./schemas.js";
 
@@ -1055,16 +1056,30 @@ class OmniFocusSimplifiedMCPServer {
     });
   }
 
-  async handleGetRequest(req: Request, res: Response) {
-    const sessionId = req.headers[SESSION_ID_HEADER_NAME] as string | undefined;
-    if (!sessionId || !this.transports[sessionId]) {
-      res.sendStatus(400);
-      return;
-    }
+  getTransport(sessionId: string) {
+    return this.transports[sessionId];
+  }
 
-    const transport = this.transports[sessionId];
-    await transport.handleRequest(req, res);
-    await this.streamMessages(transport);
+  removeTransport(sessionId: string) {
+    delete this.transports[sessionId];
+  }
+
+  async attachTransport(sessionId: string | undefined) {
+    const server = this.server;
+    const resolvedSessionId = sessionId ?? randomUUID();
+    let transport: StreamableHTTPServerTransport;
+
+    transport = new StreamableHTTPServerTransport({
+      enableJsonResponse: true,
+      sessionIdGenerator: () => resolvedSessionId,
+      onsessioninitialized: (id: string) => {
+        this.transports[id] = transport;
+      },
+    });
+
+    await server.connect(transport);
+    this.transports[resolvedSessionId] = transport;
+    return transport;
   }
 
   async handlePostRequest(req: Request, res: Response) {
@@ -1073,31 +1088,57 @@ class OmniFocusSimplifiedMCPServer {
 
     try {
       if (sessionId && this.transports[sessionId]) {
-        const transport = this.transports[sessionId];
-        await transport.handleRequest(req, res, payload);
+        const existingTransport = this.transports[sessionId];
+        await existingTransport.handleRequest(req, res, payload);
         return;
       }
 
-      if (!sessionId && this.isInitializeRequest(payload)) {
-        const transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-        });
+      const transport = await this.attachTransport(sessionId);
+      await transport.handleRequest(req, res, payload);
 
-        await this.server.connect(transport);
-        await transport.handleRequest(req, res, payload);
-
-        const newSessionId = transport.sessionId;
-        if (newSessionId) {
-          this.transports[newSessionId] = transport;
-        }
-        return;
+      const newSession = transport.sessionId ?? sessionId;
+      if (newSession) {
+        this.transports[newSession] = transport;
       }
-
-      res.sendStatus(400);
     } catch (error) {
       console.error("Error handling MCP request:", error);
-      res.sendStatus(500);
+      res.status(500).json({ error: "Internal server error." });
     }
+  }
+
+  async handleGetRequest(req: Request, res: Response) {
+    const sessionId = req.headers[SESSION_ID_HEADER_NAME] as string | undefined;
+    if (!sessionId) {
+      res.status(400).json({ error: "missing mcp-session-id" });
+      return;
+    }
+
+    const transport = this.transports[sessionId];
+    if (!transport) {
+      res.status(400).json({ error: "unknown mcp-session-id" });
+      return;
+    }
+
+    await transport.handleRequest(req, res);
+    await this.streamMessages(transport);
+  }
+
+  async handleDeleteRequest(req: Request, res: Response) {
+    const sessionId = req.headers[SESSION_ID_HEADER_NAME] as string | undefined;
+    if (!sessionId) {
+      res.status(400).json({ error: "missing mcp-session-id" });
+      return;
+    }
+
+    const transport = this.transports[sessionId];
+    if (!transport) {
+      res.status(400).json({ error: "unknown mcp-session-id" });
+      return;
+    }
+
+    await transport.handleRequest(req, res);
+    this.removeTransport(sessionId);
+    res.status(204).end();
   }
 
   async cleanup() {
@@ -1178,9 +1219,17 @@ const simplifiedServer = new OmniFocusSimplifiedMCPServer(
 );
 
 const app = express();
-app.use(express.json());
 
 const MCP_ENDPOINT = "/mcp";
+
+app.get("/health", (_req, res) => {
+  res.json({
+    status: "healthy",
+    mode: "simplified",
+    toolCount: tools.length,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.post(MCP_ENDPOINT, async (req: Request, res: Response) => {
   await simplifiedServer.handlePostRequest(req, res);
@@ -1190,8 +1239,8 @@ app.get(MCP_ENDPOINT, async (req: Request, res: Response) => {
   await simplifiedServer.handleGetRequest(req, res);
 });
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "healthy", mode: "simplified", toolCount: tools.length });
+app.delete(MCP_ENDPOINT, async (req: Request, res: Response) => {
+  await simplifiedServer.handleDeleteRequest(req, res);
 });
 
 const PORT = Number.parseInt(process.env.PORT ?? "8889", 10);
