@@ -215,7 +215,7 @@ services:
       - neo4j_data:/data
       - neo4j_logs:/logs
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7474/browser/"]
+      test: ["CMD", "curl", "-f", "http://localhost:7474/"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -530,11 +530,6 @@ services:
     volumes:
       - /Users/dorseyhomeserver/.cloudflared:/home/nonroot/.cloudflared:ro
     command: tunnel --no-autoupdate --config /home/nonroot/.cloudflared/config.yml run 216dbb28-79cd-4256-ad86-542bd47f23a4
-    depends_on:
-      - letta
-      - open-webui
-      - n8n
-      - slackbot
     healthcheck:
               test: ["CMD", "cloudflared", "tunnel", "info", "pa-ecosystem-tunnel"]
               interval: 30s
@@ -641,6 +636,40 @@ services:
       - "security.internal-only=true"
       - "security.no-external-access=true"
 
+  # --- Web-based Administration Tools ---
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    networks: [pa-internal]
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    environment:
+      - PORTAINER_HTTP_ENABLED=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=portainer"
+      - "component=administration"
+      - "network=pa-internal"
+      - "external-access=true"
+      - "security.requires-auth=true"
+
+  # Web-based system monitoring and administration
+  # cockpit: (temporarily disabled - image not available)
+
 volumes:
   supabase_db:
     external: true
@@ -657,6 +686,7 @@ volumes:
   slackbot_logs:
   gmail-mcp-data:
   rag-mcp-data:
+  portainer_data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring
