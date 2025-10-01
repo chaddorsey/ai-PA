@@ -8,11 +8,19 @@ import {
   Notification,
   InitializeRequestSchema,
   JSONRPCNotification,
+  JSONRPCResponse,
 } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "crypto";
 
 import { callOmniFocus } from "./bridge.js";
-import { detailLevelEnum, sortOrderEnum, DetailLevel, SortOrder } from "./schemas.js";
+import {
+  detailLevelEnum,
+  sortOrderEnum,
+  DetailLevel,
+  SortOrder,
+  CompletionSuccess,
+  CompletionResult,
+} from "./schemas.js";
 
 const SESSION_ID_HEADER_NAME = "mcp-session-id";
 const JSON_RPC = "2.0";
@@ -22,6 +30,143 @@ const freshnessDescription =
 
 const detailLevelDescription =
   "Control response size: minimal (id, name, status, timestamps), standard (default - plus common metadata), full (include all fields such as notes or attachments).";
+
+const quickToolSchemas = {
+  markCompleted: {
+    type: "object" as const,
+    properties: {
+      id: { type: "string", description: "UUID to mark complete" },
+      scope: {
+        type: "string",
+        enum: ["task", "project"],
+        description: "Scope of the identifier",
+        default: "task",
+      },
+    },
+    required: ["id"],
+    additionalProperties: false,
+  },
+  listUncompletedTasks: {
+    type: "object" as const,
+    properties: {
+      projectId: { type: "string", description: "Filter by project UUID", nullable: true },
+      onlyFlagged: {
+        type: "boolean",
+        description: "Return only flagged tasks",
+      },
+      onlyAvailable: {
+        type: "boolean",
+        description: "Return only OmniFocus available tasks",
+      },
+    },
+    additionalProperties: false,
+  },
+  listProjects: {
+    type: "object" as const,
+    properties: {
+      folderId: {
+        type: "string",
+        description: "Filter to a specific folder UUID",
+      },
+      listProjectNames: {
+        type: "boolean",
+        description: "Include task names in addition to task IDs",
+      },
+      listByFolder: {
+        type: "boolean",
+        description: "Group results by folder",
+      },
+    },
+    additionalProperties: false,
+  },
+  moveTaskToProject: {
+    type: "object" as const,
+    properties: {
+      taskId: { type: "string", description: "Task UUID to move" },
+      projectId: { type: "string", description: "Target project UUID" },
+    },
+    required: ["taskId", "projectId"],
+    additionalProperties: false,
+  },
+};
+
+type CompletionScope = "task" | "project";
+
+interface CompletionSuccessResponse {
+  completedAt?: string;
+  alreadyCompleted?: boolean;
+  success?: boolean;
+}
+
+interface CompletionErrorResponse {
+  error: string;
+}
+
+type CompletionBridgeResponse = CompletionSuccessResponse | CompletionErrorResponse;
+
+interface CompletionErrorEntry {
+  id: string;
+  scope: CompletionScope | "unknown";
+  message: string;
+}
+
+async function performCompletion(id: string, scope: unknown): Promise<CompletionResult> {
+  const completed: CompletionSuccess[] = [];
+  const errors: CompletionErrorEntry[] = [];
+
+  if (scope === "task") {
+    const response = normalizeResult<CompletionBridgeResponse>(
+      await callOmniFocus({ command: "completeTask", args: { taskId: id } }),
+    );
+    if (isCompletionErrorResponse(response)) {
+      errors.push({ id, scope: "task", message: response.error });
+    } else {
+      completed.push(toCompletionSuccessEntry(id, "task", response));
+    }
+  } else if (scope === "project") {
+    const response = normalizeResult<CompletionBridgeResponse>(
+      await callOmniFocus({ command: "completeProject", args: { projectId: id } }),
+    );
+    if (isCompletionErrorResponse(response)) {
+      errors.push({ id, scope: "project", message: response.error });
+    } else {
+      completed.push(toCompletionSuccessEntry(id, "project", response));
+    }
+  } else {
+    errors.push({ id, scope: "unknown", message: `Unsupported scope: ${String(scope)}` });
+  }
+
+  if (completed.length === 0 && errors.length === 0) {
+    errors.push({ id, scope: "unknown", message: "No completion action performed" });
+  }
+
+  return {
+    completed,
+    ...(errors.length > 0 ? { errors } : {}),
+  };
+}
+
+function toCompletionSuccessEntry(
+  id: string,
+  scope: CompletionScope,
+  response: CompletionSuccessResponse,
+): CompletionSuccess {
+  const completedAt = response.completedAt ?? new Date().toISOString();
+  const base: CompletionSuccess = {
+    id,
+    scope,
+    completionStatus: "completed",
+    completedAt,
+  };
+  if (response.alreadyCompleted) {
+    base.alreadyCompleted = true;
+  }
+  return base;
+}
+
+function isCompletionErrorResponse(value: CompletionBridgeResponse): value is CompletionErrorResponse {
+  return Boolean((value as CompletionErrorResponse)?.error);
+}
 
 const tools = [
   {
@@ -476,6 +621,26 @@ const tools = [
       additionalProperties: false,
     },
   },
+  {
+    name: "markCompleted",
+    description: "Mark tasks or projects as completed by ID",
+    inputSchema: quickToolSchemas.markCompleted,
+  },
+  {
+    name: "listUncompletedTasks",
+    description: "List incomplete tasks with optional filters",
+    inputSchema: quickToolSchemas.listUncompletedTasks,
+  },
+  {
+    name: "listProjects",
+    description: "List projects with optional grouping and detail flags",
+    inputSchema: quickToolSchemas.listProjects,
+  },
+  {
+    name: "moveTaskToProject",
+    description: "Move a task into a specified project",
+    inputSchema: quickToolSchemas.moveTaskToProject,
+  },
 ];
 
 function asJsonText(body: unknown) {
@@ -614,6 +779,83 @@ function applySortOrder(data: any, sortOrder: SortOrder): any {
   return sortByFreshness(data);
 }
 
+function requireString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${name} must be a non-empty string`);
+  }
+  return value;
+}
+
+function isAvailableTask(task: any): boolean {
+  if (!task || typeof task !== "object") {
+    return false;
+  }
+  if (task.completed || task.dropped) {
+    return false;
+  }
+  if (task.deferDate) {
+    const deferDate = Date.parse(task.deferDate);
+    if (!Number.isNaN(deferDate) && deferDate > Date.now()) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function normalizeResult<T = unknown>(raw: any): T {
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as T;
+    } catch (error) {
+      console.warn("Failed to parse JSON string result", error);
+      return raw as T;
+    }
+  }
+  return raw as T;
+}
+
+function toTaskSummary(task: any) {
+  return {
+    taskId: task.id ?? task.taskId ?? null,
+    name: task.name ?? task.taskName ?? "",
+    projectId: task.projectId ?? null,
+    inInbox: Boolean(task.projectId == null),
+    flagged: Boolean(task.flagged),
+    created: task.added ?? task.created ?? null,
+    due: task.dueDate ?? task.due ?? null,
+    deferred: task.deferDate ?? task.deferred ?? null,
+  };
+}
+
+function toProjectSummary(project: any, includeTaskNames: boolean) {
+  const folderId = project.folderId ?? project.folderID ?? null;
+  const folderName = project.folderName ?? project.folder?.name ?? null;
+  const base = {
+    projectId: project.id ?? project.projectId ?? null,
+    name: project.name ?? project.projectName ?? "",
+    description: project.note ?? project.description ?? null,
+    folderId,
+    folderName,
+    taskIds: Array.isArray(project.taskIds)
+      ? project.taskIds
+      : Array.isArray(project.tasks)
+      ? project.tasks.map((task: any) => task.id ?? task.taskId)
+      : [],
+  };
+
+  if (includeTaskNames) {
+    const tasks = Array.isArray(project.tasks)
+      ? project.tasks.map((task: any) => ({
+          taskId: task.id ?? task.taskId,
+          name: task.name ?? task.taskName ?? "",
+        }))
+      : base.taskIds.map((taskId: string) => ({ taskId, name: "" }));
+    return { ...base, tasks };
+  }
+
+  return base;
+}
+
 class OmniFocusSimplifiedMCPServer {
   private readonly server: Server;
   private readonly transports: Record<string, StreamableHTTPServerTransport> = {};
@@ -683,6 +925,119 @@ class OmniFocusSimplifiedMCPServer {
               throw new Error(`Unknown task action: ${action}`);
           }
           break;
+        }
+        case "markCompleted": {
+          const { id, scope = "task" } = args;
+          const resolvedId = requireString(id, "id");
+
+          const completionResult = await performCompletion(resolvedId, scope);
+          return asJsonText(completionResult);
+        }
+        case "listUncompletedTasks": {
+          const { projectId, onlyFlagged, onlyAvailable } = args;
+          const rawList = normalizeResult<{ result?: any[] } | any[]>(
+            await callOmniFocus({ command: "listRemaining", args: {} }),
+          );
+          const detailed = filterResponseByDetailLevel(rawList, "standard");
+          const tasks = Array.isArray(detailed) ? detailed : detailed?.result ?? [];
+          const filtered = tasks
+            .filter((task: any) => {
+              if (projectId && task.projectId !== projectId) {
+                return false;
+              }
+              if (onlyFlagged && !task.flagged) {
+                return false;
+              }
+              if (onlyAvailable && !isAvailableTask(task)) {
+                return false;
+              }
+              return true;
+            })
+            .map(toTaskSummary);
+          return asJsonText(filtered);
+        }
+        case "listProjects": {
+           const { folderId, listProjectNames, listByFolder } = args;
+          const rawProjects = normalizeResult<{ result?: any[] } | any[]>(
+            await callOmniFocus({ command: "listProjects", args: {} }),
+          );
+          const detailed = filterResponseByDetailLevel(rawProjects, "standard");
+          const projects = Array.isArray(detailed) ? detailed : detailed?.result ?? [];
+
+          const folderLookup: Record<string, { folderId: string | null; folderName: string | null }> = {};
+          const getFolderInfo = (project: any) => {
+            if (project.folderId && !folderLookup[project.folderId]) {
+              folderLookup[project.folderId] = {
+                folderId: project.folderId,
+                folderName: project.folderName ?? project.folder?.name ?? null,
+              };
+            }
+            return folderLookup[project.folderId ?? ""] ?? {
+              folderId: project.folderId ?? null,
+              folderName: project.folderName ?? project.folder?.name ?? null,
+            };
+          };
+
+          const includeNames = Boolean(listProjectNames);
+
+          const projectSummaries = [] as any[];
+          for (const project of projects) {
+            if (folderId && (project.folderId ?? null) !== folderId) {
+              continue;
+            }
+
+            const folderInfo = getFolderInfo(project);
+            const taskList = includeNames
+              ? normalizeResult<{ result?: any[] } | any[]>(
+                  await callOmniFocus({ command: "listTasksByProject", args: { projectId: project.id ?? project.projectId } }),
+                )
+              : null;
+            const taskItems = Array.isArray(taskList) ? taskList : taskList?.result ?? [];
+            const summary = toProjectSummary(
+              {
+                ...project,
+                folderId: folderInfo.folderId,
+                folderName: folderInfo.folderName,
+                tasks: taskItems,
+                taskIds: taskItems.map((task: any) => task.id ?? task.taskId),
+              },
+              includeNames,
+            );
+            projectSummaries.push(summary);
+          }
+
+          if (listByFolder) {
+            const grouped: Record<string, { folderId: string | null; folderName: string | null; projects: any[] }> = {};
+            for (const project of projectSummaries) {
+              const groupId = project.folderId ?? "__root__";
+              if (!grouped[groupId]) {
+                grouped[groupId] = {
+                  folderId: project.folderId ?? null,
+                  folderName: project.folderName ?? null,
+                  projects: [],
+                };
+              }
+              grouped[groupId].projects.push(project);
+            }
+            return asJsonText(Object.values(grouped));
+          }
+
+          return asJsonText(projectSummaries);
+        }
+        case "moveTaskToProject": {
+          const { taskId, projectId } = args;
+          const resolvedTaskId = requireString(taskId, "taskId");
+          const resolvedProjectId = requireString(projectId, "projectId");
+          const result = normalizeResult<{ error?: string }>(
+            await callOmniFocus({
+              command: "moveTask",
+              args: { taskId: resolvedTaskId, targetProjectId: resolvedProjectId },
+            }),
+          );
+          if (result?.error) {
+            throw new Error(result.error);
+          }
+          return asJsonText({ taskId: resolvedTaskId, projectId: resolvedProjectId, status: "moved" });
         }
         case "taskQuery": {
           const { detailLevel: dl, sortOrder: so, query, scope, searchScope, filters = {} } = args;

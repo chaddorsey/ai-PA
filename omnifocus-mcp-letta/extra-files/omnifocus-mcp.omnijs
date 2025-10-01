@@ -739,6 +739,24 @@
     return { success: true };
   };
 
+  lib.completeProject = params => {
++    console.log(`[INFO] completeProject called for ${params.projectId}`);
+    const project = flattenedProjects.find(x => bareId(x.id) === params.projectId);
+    if (!project) throw new Error("Unknown project ID: " + params.projectId);
+
+    const alreadyCompleted = project.completed === true;
+
+    project.markComplete();
+
+    queryCache.clear();
+
+    return {
+      success: true,
+      alreadyCompleted,
+      completedAt: new Date().toISOString(),
+    };
+  };
+
   lib.deleteTask = params => {
     const t = flattenedTasks.find(x => bareId(x.id) === params.taskId);
     if (!t) throw new Error("Unknown task ID: " + params.taskId);
@@ -751,7 +769,6 @@
     
     return { success: true, deleted: true };
   };
-
   lib.listInbox = params => {
     const startTime = Date.now();
     
@@ -1546,7 +1563,6 @@
       preferred_batch_size: 10
     };
   }
-
   function buildUserPatterns() {
     // Analyze recent project usage
     const recentProjects = flattenedProjects
@@ -2021,7 +2037,6 @@
 
     return result;
   }
-
   lib.getPerspective = params => {
     const startTime = Date.now();
     
@@ -2667,7 +2682,6 @@
     
     return result;
   };
-
   lib.executeBulkInboxProcessing = params => {
     const startTime = Date.now();
     
@@ -3373,7 +3387,6 @@
     
     return result;
   };
-
   lib.searchTasks = params => {
     const startTime = Date.now();
     
@@ -4163,7 +4176,6 @@
     
     return results;
   };
-
   // ============ PROJECT GROUP TYPE MANAGEMENT (Task 3-5) ============
   
   lib.getProjectGroupType = params => {
@@ -4950,7 +4962,6 @@
       throw new Error(`Failed to set project properties: ${error.message}`);
     }
   };
-  
   // ===== TASK-TO-PROJECT CONVERSION METHODS (Task 4-5) =====
   
   lib.convertTaskToProject = params => {
@@ -5743,7 +5754,6 @@
       throw new Error(`Failed to get task hierarchy: ${error.message}`);
     }
   };
-
   lib.createSubtaskHierarchy = params => {
     const startTime = Date.now();
     const parentTaskId = params.parentTaskId;
@@ -6354,7 +6364,6 @@
       throw new Error(`Failed to nest tasks as hierarchy: ${error.message}`);
     }
   };
-
   lib.restructureTaskHierarchy = params => {
     const startTime = Date.now();
     const operations = params.operations || [];
@@ -7048,7 +7057,6 @@
       return count;
     }
   };
-
   lib.getValidationErrors = params => {
     const startTime = Date.now();
     const hierarchyIds = params.hierarchyIds || [];
@@ -7761,7 +7769,6 @@
       throw new Error(`Failed to execute transactional operations: ${error.message}`);
     }
   };
-
   lib.acceptTransaction = function({
     transactionId = null,
     validateAfter = false
