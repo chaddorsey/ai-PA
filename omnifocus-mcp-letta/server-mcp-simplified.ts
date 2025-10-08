@@ -76,6 +76,16 @@ const quickToolSchemas = {
         type: "boolean",
         description: "Group results by folder",
       },
+      completion: {
+        type: "string",
+        description: "Filter projects by completion state (e.g., all, active, completed, dropped)",
+      },
+      detailLevel: {
+        type: "string",
+        enum: detailLevelEnum.options,
+        default: "standard",
+        description: detailLevelDescription,
+      },
     },
     additionalProperties: false,
   },
@@ -747,29 +757,68 @@ function removeHeavyFields(item: any) {
 }
 
 function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
-  if (detailLevel === "full") {
+  if (!data) {
     return data;
   }
 
-  const apply = (item: any) => {
-    if (detailLevel === "minimal") {
-      return createMinimalRecord(item);
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  // Allow responses that already selected detail level via keyed object
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    (detailLevel in data || "minimal" in data || "standard" in data || "full" in data)
+  ) {
+    const keyed = data as Record<string, unknown>;
+    return (keyed[detailLevel] ?? keyed.standard ?? keyed.full ?? keyed.minimal) ?? data;
+  }
+
+  const MINIMAL_FIELDS = ["id", "name", "status", "completionState", "added", "modified"];
+  const STANDARD_FIELDS = MINIMAL_FIELDS.concat([
+    "sequential",
+    "flagged",
+    "deferDate",
+    "dueDate",
+    "nextReviewDate",
+    "lastReviewDate",
+    "folderId",
+    "folderName",
+    "taskIds",
+    "taskCounts",
+  ]);
+  const FULL_FIELDS = STANDARD_FIELDS.concat(["note", "tasks", "folderPath"]);
+
+  const clampToFields = (value: any, fields: string[]): any => {
+    if (!value || typeof value !== "object") {
+      return value;
     }
-    if (detailLevel === "standard") {
-      return removeHeavyFields(item);
-    }
-    return item;
+    const result: Record<string, unknown> = {};
+    fields.forEach((field) => {
+      if (field in value) {
+        result[field] = value[field];
+      }
+    });
+    return {
+      ...result,
+      detailLevel,
+    };
   };
 
-  if (Array.isArray(data)) {
-    return data.map(apply);
+  if (detailLevel === "minimal") {
+    return clampToFields(data, MINIMAL_FIELDS);
   }
 
-  if (data && typeof data === "object" && Array.isArray((data as any).result)) {
-    return { ...data, result: (data as any).result.map(apply) };
+  if (detailLevel === "standard") {
+    return clampToFields(data, STANDARD_FIELDS);
   }
 
-  return apply(data);
+  if (detailLevel === "full") {
+    return clampToFields(data, FULL_FIELDS);
+  }
+
+  return data;
 }
 
 function applySortOrder(data: any, sortOrder: SortOrder): any {
@@ -957,72 +1006,45 @@ class OmniFocusSimplifiedMCPServer {
           return asJsonText(filtered);
         }
         case "listProjects": {
-           const { folderId, listProjectNames, listByFolder } = args;
-          const rawProjects = normalizeResult<{ result?: any[] } | any[]>(
-            await callOmniFocus({ command: "listProjects", args: {} }),
-          );
-          const detailed = filterResponseByDetailLevel(rawProjects, "standard");
-          const projects = Array.isArray(detailed) ? detailed : detailed?.result ?? [];
+          const {
+            folderId,
+            listProjectNames,
+            listByFolder,
+            completion,
+            detailLevel: dl,
+            includeCounts,
+          } = args;
 
-          const folderLookup: Record<string, { folderId: string | null; folderName: string | null }> = {};
-          const getFolderInfo = (project: any) => {
-            if (project.folderId && !folderLookup[project.folderId]) {
-              folderLookup[project.folderId] = {
-                folderId: project.folderId,
-                folderName: project.folderName ?? project.folder?.name ?? null,
-              };
-            }
-            return folderLookup[project.folderId ?? ""] ?? {
-              folderId: project.folderId ?? null,
-              folderName: project.folderName ?? project.folder?.name ?? null,
-            };
-          };
-
+          const detailLvl = getDetailLevel(dl);
           const includeNames = Boolean(listProjectNames);
 
-          const projectSummaries = [] as any[];
-          for (const project of projects) {
-            if (folderId && (project.folderId ?? null) !== folderId) {
-              continue;
-            }
-
-            const folderInfo = getFolderInfo(project);
-            const taskList = includeNames
-              ? normalizeResult<{ result?: any[] } | any[]>(
-                  await callOmniFocus({ command: "listTasksByProject", args: { projectId: project.id ?? project.projectId } }),
-                )
-              : null;
-            const taskItems = Array.isArray(taskList) ? taskList : taskList?.result ?? [];
-            const summary = toProjectSummary(
-              {
-                ...project,
-                folderId: folderInfo.folderId,
-                folderName: folderInfo.folderName,
-                tasks: taskItems,
-                taskIds: taskItems.map((task: any) => task.id ?? task.taskId),
+          const rawProjects = normalizeResult<{ result?: any[] } | any[]>(
+            await callOmniFocus({
+              command: "listProjects",
+              args: {
+                completion,
+                includeTasks: includeNames || detailLvl === "full",
+                includeNotes: detailLvl === "full",
+                includeFolderPath: detailLvl === "full",
+                includeCounts: includeCounts !== false,
+                folderId: folderId ?? null,
+                listByFolder: Boolean(listByFolder),
               },
-              includeNames,
-            );
-            projectSummaries.push(summary);
+            }),
+          );
+
+          const detailed = filterResponseByDetailLevel(rawProjects, detailLvl);
+
+          if (Array.isArray(detailed)) {
+            return asJsonText(detailed);
           }
 
-          if (listByFolder) {
-            const grouped: Record<string, { folderId: string | null; folderName: string | null; projects: any[] }> = {};
-            for (const project of projectSummaries) {
-              const groupId = project.folderId ?? "__root__";
-              if (!grouped[groupId]) {
-                grouped[groupId] = {
-                  folderId: project.folderId ?? null,
-                  folderName: project.folderName ?? null,
-                  projects: [],
-                };
-              }
-              grouped[groupId].projects.push(project);
-            }
-            return asJsonText(Object.values(grouped));
+          if (detailed && typeof detailed === "object" && Array.isArray((detailed as any).result)) {
+            return asJsonText((detailed as any).result);
           }
 
-          return asJsonText(projectSummaries);
+          // Fallback: return whatever structure came back (e.g., grouped object)
+          return asJsonText(detailed ?? []);
         }
         case "moveTaskToProject": {
           const { taskId, projectId } = args;
@@ -1085,17 +1107,30 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "projectOperations": {
-          const { action, parameters = {}, detailLevel: dl, sortOrder: so } = args;
+          const { action, parameters = {}, detailLevel: dl, sortOrder: so, filters = {} } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
           switch (action) {
             case "list":
               command = "listProjects";
-              commandArgs = {};
+              commandArgs = {
+                ...(parameters && typeof parameters === "object" ? parameters : {}),
+                ...(filters && typeof filters === "object" ? filters : {}),
+                detailLevel,
+              };
               break;
             case "get":
               command = "getProjectById";
-              commandArgs = parameters;
+              commandArgs = {
+                ...(parameters && typeof parameters === "object" ? parameters : {}),
+                options: {
+                  includeNotes: detailLevel === "full",
+                  includeTasks: detailLevel === "full",
+                  includeFolderPath: detailLevel === "full",
+                  includeCounts: true,
+                },
+                detailLevel,
+              };
               sortOrder = "default";
               break;
             case "create":
