@@ -406,6 +406,152 @@
     };
   }
 
+  function buildFolderPathArray(folder) {
+    const path = [];
+    let current = folder;
+    while (current) {
+      path.unshift(current.name);
+      current = current.parent;
+    }
+    return path;
+  }
+
+  function getProjectCompletionState(project) {
+    if (project.completed) {
+      return "completed";
+    }
+    if (project.effectiveActive === false) {
+      return "dropped";
+    }
+    return "active";
+  }
+
+  function serializeTaskSummary(task) {
+    const timestamps = serializeTimestamped(task);
+    return {
+      id: bareId(task.id),
+      name: task.name,
+      completed: task.completed,
+      flagged: task.flagged,
+      added: timestamps.added,
+      modified: timestamps.modified
+    };
+  }
+
+  function serializeProject(project, options = {}) {
+    const {
+      includeNotes = false,
+      includeTasks = false,
+      includeFolderPath = false,
+      includeTaskCounts = true
+    } = options;
+
+    const timestamps = serializeTimestamped(project);
+    const folder = project.folder || null;
+    const folderId = folder ? bareId(folder.id) : null;
+    const folderName = folder ? folder.name : null;
+    const folderPath = includeFolderPath && folder ? buildFolderPathArray(folder) : includeFolderPath ? [] : undefined;
+
+    const completionState = getProjectCompletionState(project);
+    const flattenedTasks = project.flattenedTasks ? Array.from(project.flattenedTasks) : [];
+
+    const taskIds = [];
+    const taskSummaries = [];
+    let completedTaskCount = 0;
+    let activeTaskCount = 0;
+
+    for (const task of flattenedTasks) {
+      const id = bareId(task.id);
+      taskIds.push(id);
+      if (task.completed) {
+        completedTaskCount += 1;
+      } else if (task.effectiveActive) {
+        activeTaskCount += 1;
+      }
+      if (includeTasks) {
+        taskSummaries.push(serializeTaskSummary(task));
+      }
+    }
+
+    const result = {
+      id: bareId(project.id),
+      name: project.name,
+      status: project.status ? project.status.name : null,
+      sequential: project.sequential === true,
+      flagged: Boolean(project.flagged),
+      completed: project.completed === true,
+      dropped: project.effectiveActive === false,
+      completionState,
+      deferDate: toIsoOrNull(project.deferDate),
+      dueDate: toIsoOrNull(project.dueDate),
+      nextReviewDate: toIsoOrNull(project.nextReviewDate),
+      lastReviewDate: toIsoOrNull(project.lastReviewDate),
+      added: timestamps.added,
+      modified: timestamps.modified,
+      folderId,
+      folderName,
+      taskIds
+    };
+
+    if (includeNotes) {
+      result.note = project.note ?? "";
+    }
+
+    if (includeFolderPath) {
+      result.folderPath = folderPath ?? [];
+    }
+
+    if (includeTasks) {
+      result.tasks = taskSummaries;
+    }
+
+    if (includeTaskCounts) {
+      result.taskCounts = {
+        total: taskIds.length,
+        completed: completedTaskCount,
+        active: activeTaskCount,
+        remaining: taskIds.length - completedTaskCount
+      };
+    }
+
+    return result;
+  }
+
+  function normalizeCompletionFilter(value) {
+    if (typeof value !== 'string') {
+      return 'all';
+    }
+    const normalized = value.toLowerCase();
+    switch (normalized) {
+      case 'active':
+      case 'completed':
+      case 'dropped':
+      case 'all':
+        return normalized;
+      case 'open':
+      case 'incomplete':
+        return 'active';
+      case 'done':
+        return 'completed';
+      default:
+        return 'all';
+    }
+  }
+
+  function projectMatchesCompletion(project, filter) {
+    switch (filter) {
+      case 'active':
+        return !project.completed && project.effectiveActive;
+      case 'completed':
+        return project.completed;
+      case 'dropped':
+        return !project.effectiveActive && !project.completed;
+      case 'all':
+      default:
+        return true;
+    }
+  }
+
   lib.listRemaining = () => {
     const startTime = Date.now();
     
@@ -436,13 +582,67 @@
     return t ? serializeTask(t) : null;
   };
 
-  lib.listProjects = () =>
-    flattenedProjects.map(p => ({
-      id: bareId(p.id),
-      name: p.name,
-      added: toIsoOrNull(p.added),
-      modified: toIsoOrNull(p.modified)
-    }));
+  lib.listProjects = params => {
+    const startTime = Date.now();
+
+    const {
+      completion = 'all',
+      includeTasks = false,
+      includeNotes = false,
+      includeFolderPath = false,
+      folderId = null,
+      listByFolder = false,
+      includeCounts = true
+    } = params || {};
+
+    const completionFilter = normalizeCompletionFilter(completion);
+
+    let projects = Array.from(flattenedProjects);
+
+    if (folderId) {
+      projects = projects.filter(project => {
+        const projectFolderId = project.folder ? bareId(project.folder.id) : null;
+        return projectFolderId === folderId;
+      });
+    }
+
+    projects = projects.filter(project => projectMatchesCompletion(project, completionFilter));
+
+    const serialized = projects.map(project =>
+      serializeProject(project, {
+        includeNotes,
+        includeTasks,
+        includeFolderPath,
+        includeTaskCounts: includeCounts
+      }),
+    );
+
+    let result;
+
+    if (listByFolder) {
+      const grouped = {};
+      for (const project of serialized) {
+        const groupId = project.folderId || '__root__';
+        if (!grouped[groupId]) {
+          grouped[groupId] = {
+            folderId: project.folderId,
+            folderName: project.folderName,
+            projects: [],
+          };
+        }
+        grouped[groupId].projects.push(project);
+      }
+
+      result = Object.values(grouped);
+    } else {
+      result = serialized;
+    }
+
+    trackPerformance('listProjects', startTime, false);
+    console.log(`listProjects: ${Date.now() - startTime}ms (processed ${projects.length} projects)`);
+
+    return result;
+  };
 
   lib.listTags = () =>
     flattenedTags.map(t => ({
