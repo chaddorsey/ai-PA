@@ -35,7 +35,7 @@ const quickToolSchemas = {
   markCompleted: {
     type: "object" as const,
     properties: {
-      id: { type: "string", description: "UUID to mark complete" },
+      id: { type: "string", description: "Task or project UUID to mark complete" },
       scope: {
         type: "string",
         enum: ["task", "project"],
@@ -52,11 +52,12 @@ const quickToolSchemas = {
       projectId: { type: "string", description: "Filter by project UUID", nullable: true },
       onlyFlagged: {
         type: "boolean",
-        description: "Return only flagged tasks",
+        description: "Return only flagged tasks (default false)",
       },
       onlyAvailable: {
         type: "boolean",
-        description: "Return only OmniFocus available tasks",
+        description:
+          "Return only OmniFocus available tasks (not blocked/deferred). Default false; requires availability data from OmniFocus.",
       },
     },
     additionalProperties: false,
@@ -66,25 +67,29 @@ const quickToolSchemas = {
     properties: {
       folderId: {
         type: "string",
-        description: "Filter to a specific folder UUID",
+        description: "Filter to a specific folder UUID (null or omit for all).",
       },
       listProjectNames: {
         type: "boolean",
-        description: "Include task names in addition to task IDs",
+        description: "If true, include task names alongside IDs (increases payload size).",
       },
       listByFolder: {
         type: "boolean",
-        description: "Group results by folder",
+        description: "If true, group results by folder with `projects` arrays per folder.",
       },
       completion: {
         type: "string",
-        description: "Filter projects by completion state (e.g., all, active, completed, dropped)",
+        description: "Filter projects by completion state (`all`, `active`, `completed`, `dropped`).",
       },
       detailLevel: {
         type: "string",
         enum: detailLevelEnum.options,
         default: "standard",
         description: detailLevelDescription,
+      },
+      includeCounts: {
+        type: "boolean",
+        description: "Include task count summary (default true).",
       },
     },
     additionalProperties: false,
@@ -98,7 +103,45 @@ const quickToolSchemas = {
     required: ["taskId", "projectId"],
     additionalProperties: false,
   },
+  tasksGetHelp: {
+    type: "object" as const,
+    properties: {},
+    description: "No parameters required.",
+    additionalProperties: false,
+  },
 };
+
+const HELP_MARKDOWN = `# OmniFocus Simplified MCP Quick Reference
+
+## Getting Started
+- Initialize:
+  \`tools/list\` shows available commands after \`initialize\` (protocol 2024-11-05).
+- Use \`mcp-session-id\` header from the \`initialize\` response for subsequent requests.
+
+## Common Calls
+- **Mark task or project complete**
+  \`\`\`
+  {"jsonrpc":"2.0","id":"markTask","method":"tools/call","params":{"name":"markCompleted","arguments":{"id":"TASK_UUID"}}}
+  \`\`\`
+  Use \`scope:"project"\` when completing a project.
+
+- **List incomplete tasks**
+  \`\`\`
+  {"jsonrpc":"2.0","id":"tasks","method":"tools/call","params":{"name":"listUncompletedTasks","arguments":{"projectId":"PROJECT_UUID","onlyFlagged":false,"onlyAvailable":true}}}
+  \`\`\`
+
+- **List projects grouped by folder**
+  \`\`\`
+  {"jsonrpc":"2.0","id":"projects","method":"tools/call","params":{"name":"listProjects","arguments":{"detailLevel":"full","listByFolder":true,"completion":"active"}}}
+  \`\`\`
+
+## Tips
+- \`detailLevel\` determines field richness (\`minimal\`, \`standard\`, \`full\`).
+- \`completion\` accepts \`all\`, \`active\`, \`completed\`, \`dropped\`.
+- Prefer \`listByFolder:true\` when presenting hierarchical summaries.
+- Refer to project metadata docs for field descriptions.
+`;
+
 
 type CompletionScope = "task" | "project";
 
@@ -633,23 +676,32 @@ const tools = [
   },
   {
     name: "markCompleted",
-    description: "Mark tasks or projects as completed by ID",
+    description:
+      "Mark a task or project as completed by ID. Provide `id` and optionally `scope` (`task` default or `project`). Returns completion status.",
     inputSchema: quickToolSchemas.markCompleted,
   },
   {
     name: "listUncompletedTasks",
-    description: "List incomplete tasks with optional filters",
+    description:
+      "List incomplete tasks with optional filters (`projectId`, `onlyFlagged`, `onlyAvailable`). Useful for quick inbox or project reviews.",
     inputSchema: quickToolSchemas.listUncompletedTasks,
   },
   {
     name: "listProjects",
-    description: "List projects with optional grouping and detail flags",
+    description:
+      "List projects, optionally grouped by folder. Supports `completion` filters, `detailLevel`, `listByFolder`, `listProjectNames`, and `folderId` scope.",
     inputSchema: quickToolSchemas.listProjects,
   },
   {
     name: "moveTaskToProject",
     description: "Move a task into a specified project",
     inputSchema: quickToolSchemas.moveTaskToProject,
+  },
+  {
+    name: "tasks/getHelp",
+    description:
+      "Retrieve OmniFocus quick-access help in markdown format, including initialization and tool invocation examples.",
+    inputSchema: quickToolSchemas.tasksGetHelp,
   },
 ];
 
@@ -923,6 +975,17 @@ class OmniFocusSimplifiedMCPServer {
 
       if (!toolName) {
         throw new Error("tool name undefined");
+      }
+
+      if (toolName === "tasks/getHelp") {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: HELP_MARKDOWN,
+            },
+          ],
+        };
       }
 
       let detailLevel: DetailLevel = "standard";
@@ -1535,13 +1598,7 @@ class OmniFocusSimplifiedMCPServer {
     await this.server.close();
   }
 
-  private async streamMessages(transport: StreamableHTTPServerTransport) {
-    const message: LoggingMessageNotification = {
-      method: "notifications/message",
-      params: { level: "info", data: "OmniFocus MCP Simplified Connection established" },
-    };
-    await this.sendNotification(transport, message);
-  }
+  private async streamMessages(_transport: StreamableHTTPServerTransport) {}
 
   private async sendNotification(
     transport: StreamableHTTPServerTransport,
