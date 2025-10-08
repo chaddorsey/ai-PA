@@ -20,6 +20,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 12 | DevOps Engineer | As a DevOps engineer, I want lean upgrade infrastructure with automated testing so that framework upgrades are validated in staging before production deployment with quick rollback capability. | Proposed | Staging environment for testing upgrades; Automated workflow validation; Database migration testing; Rollback capability within 5 minutes; Critical workflow tests automated - [View Details](./12/prd.md) |
 | 13 | AI Engineer | As an AI engineer, I want extensible RAG infrastructure integrated through Letta so that the personal assistant can access and search through technical documentation, personal notes, and domain-specific knowledge bases. | Proposed | HayHooks service deployed and operational; RAG MCP server integrated with Letta; Document ingestion workflow functional; Semantic search queries return relevant results; Tool-based access from Letta working - [View Details](./13/prd.md) |
 | 14 | System Administrator | As a system administrator, I want RAG document processing and storage using the existing PostgreSQL infrastructure so that document knowledge is integrated seamlessly with the unified database approach. | Proposed | RAG documents stored in PostgreSQL with pgvector; Document embedding pipeline operational; Incremental document updates supported; Domain-specific document organization; Backup procedures include RAG data - [View Details](./14/prd.md) |
+| 15 | Productivity Specialist | As a productivity specialist, I want project-oriented MCP tooling to expose accurate OmniFocus project metadata so that downstream automations can trust quick-access summaries. | Proposed | projectOperations list returns created/modified timestamps and status data; projectOperations detailLevel outputs differ across minimal/standard/full; listProjects surfaces folder metadata and honours listByFolder flag; Regression tests and docs capture the updated tool behaviour - [View Details](./15/prd.md) |
 
 ## PBI History Log
 
@@ -36,6 +37,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 2025-01-21 01:50:00 | 7 | start_implementation | PBI 7 implementation completed - comprehensive deployment kit with 61 files created | AI_Agent |
 | 2025-01-21 04:30:00 | 11 | propose_for_backlog | PBI 11 moved from Proposed to Agreed - framework version management ready for implementation | AI_Agent |
 | 2025-01-21 09:35:00 | 11 | approve | PBI 11 completed - all acceptance criteria met, comprehensive version management framework implemented | User |
+| 2025-10-08 14:20:00 | 15 | create_pbi | Added PBI 15 to repair OmniFocus project metadata exposure in MCP quick tools | AI_Agent |
 
 ## Backlog Notes
 
