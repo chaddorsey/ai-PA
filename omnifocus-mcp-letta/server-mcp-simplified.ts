@@ -103,7 +103,7 @@ const quickToolSchemas = {
     required: ["taskId", "projectId"],
     additionalProperties: false,
   },
-  tasksGetHelp: {
+  tasksHelp: {
     type: "object" as const,
     properties: {},
     description: "No parameters required.",
@@ -698,10 +698,10 @@ const tools = [
     inputSchema: quickToolSchemas.moveTaskToProject,
   },
   {
-    name: "tasks/getHelp",
+    name: "tasksHelp",
     description:
       "Retrieve OmniFocus quick-access help in markdown format, including initialization and tool invocation examples.",
-    inputSchema: quickToolSchemas.tasksGetHelp,
+    inputSchema: quickToolSchemas.tasksHelp,
   },
 ];
 
@@ -977,7 +977,7 @@ class OmniFocusSimplifiedMCPServer {
         throw new Error("tool name undefined");
       }
 
-      if (toolName === "tasks/getHelp") {
+      if (toolName === "tasksHelp") {
         return {
           content: [
             {
