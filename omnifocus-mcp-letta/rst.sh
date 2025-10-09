@@ -23,6 +23,18 @@ echo "🔧 Running npm build..."
 cd "$PROJECT_DIR" || { echo "❌ Cannot find project directory"; exit 1; }
 npm run build || { echo "❌ Build failed"; exit 1; }
 
+# Copy OmniFocus plugin
+PLUGIN_SRC="$PROJECT_DIR/extra-files/omnifocus-mcp.omnijs"
+PLUGIN_DEST="$HOME/Library/Application Support/OmniFocus/Plug-Ins/omnifocus-mcp.omnijs"
+
+if [[ -f "$PLUGIN_SRC" ]]; then
+  echo "📦 Installing OmniFocus plugin to $PLUGIN_DEST..."
+  mkdir -p "$(dirname "$PLUGIN_DEST")"
+  cp "$PLUGIN_SRC" "$PLUGIN_DEST" || { echo "❌ Failed to copy plugin"; exit 1; }
+else
+  echo "⚠️  Plugin source not found at $PLUGIN_SRC; skipping copy."
+fi
+
 # Restart OmniFocus
 echo "🔄 Restarting OmniFocus..."
 osascript -e 'tell application "OmniFocus" to quit'

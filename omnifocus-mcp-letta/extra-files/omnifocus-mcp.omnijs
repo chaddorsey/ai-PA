@@ -697,9 +697,9 @@
       plannedDate: plannedDates.plannedDate,
       effectivePlannedDate: plannedDates.effectivePlannedDate,
       duration:  t.estimatedMinutes,
-      projectId: t.containingProject ? bareId(t.containingProject.id) : null,
-      folderId:  (t.containingProject && t.containingProject.folder)
-                ? bareId(t.containingProject.folder.id)
+      projectId: t.containingProject ? bareId(resolveValue(t.containingProject, 'id')) : null,
+      folderId:  (t.containingProject && resolveValue(t.containingProject, 'folder'))
+                ? bareId(resolveValue(resolveValue(t.containingProject, 'folder'), 'id'))
                 : null,
       contexts:  t.tags.map(x => bareId(x.id)),
       completed: t.completed,
@@ -862,13 +862,17 @@
   }
 
   function projectMatchesCompletion(project, filter) {
+    const isCompleted = resolveValue(project, 'completed') === true;
+    const effectiveActiveValue = resolveValue(project, 'effectiveActive');
+    const isEffectiveActive = effectiveActiveValue !== false;
+
     switch (filter) {
       case 'active':
-        return !project.completed && project.effectiveActive;
+        return !isCompleted && isEffectiveActive;
       case 'completed':
-        return project.completed;
+        return isCompleted;
       case 'dropped':
-        return !project.effectiveActive && !project.completed;
+        return !isEffectiveActive && !isCompleted;
       case 'all':
       default:
         return true;
@@ -932,26 +936,56 @@
 
     const completionFilter = normalizeCompletionFilter(completion);
 
-    const sources = flattenedProjects || document.projects;
-    let projects = Array.from(sources);
+    const sources = Array.from(flattenedProjects || document.projects);
 
-    if (folderId) {
-      projects = projects.filter(project => {
-        const projectFolderId = project.folder ? bareId(project.folder.id) : null;
-        return projectFolderId === folderId;
+    let tasksByProject;
+    if (includeTasks) {
+      tasksByProject = new Map();
+      const sourceTasks = flattenedTasks || document.tasks || [];
+      sourceTasks.forEach((task) => {
+        const project = resolveValue(task, 'containingProject');
+        const projectId = project ? bareId(resolveValue(project, 'id')) : null;
+        if (!projectId) {
+          return;
+        }
+
+        if (!tasksByProject.has(projectId)) {
+          tasksByProject.set(projectId, []);
+        }
+
+        tasksByProject.get(projectId).push(serializeTaskSummary(task));
       });
     }
 
-    projects = projects.filter(project => projectMatchesCompletion(project, completionFilter));
+    const filteredProjects = sources.filter(project => {
+      const rootTask = getProjectRootTask(project);
+      const projectFolder = determineProjectFolder(project, rootTask);
+      const projectFolderId = projectFolder ? bareId(resolveValue(projectFolder, 'id')) : null;
 
-    const serialized = projects.map(project =>
-      serializeProject(project, {
+      if (folderId && projectFolderId !== folderId) {
+        return false;
+      }
+
+      return projectMatchesCompletion(project, completionFilter);
+    });
+
+    console.log(`[DEBUG] listProjects filter result count: ${filteredProjects.length}`);
+    if (filteredProjects.length > 0) {
+      console.log(`[DEBUG] First project in result: ${filteredProjects[0].name} (folderId=${folderId})`);
+    }
+
+    const serialized = filteredProjects.map(project => {
+      const projectId = bareId(resolveValue(project, 'id'));
+      const projectTasks = includeTasks && tasksByProject ? tasksByProject.get(projectId) || [] : undefined;
+
+      return serializeProject(project, {
         includeNotes,
         includeTasks,
         includeFolderPath,
-        includeTaskCounts: includeCounts
-      }),
-    );
+        includeTaskCounts: includeCounts,
+        tasks: projectTasks,
+      });
+    });
 
     let result;
 
@@ -3223,6 +3257,17 @@
     
     return result;
   };
+
+  lib.getFolderById = params => {
+    const folderId = params && typeof params === 'object' ? params.folderId : params;
+    if (!folderId || typeof folderId !== 'string') {
+      throw new Error("folderId parameter is required");
+    }
+
+    const folder = getFolderById(folderId);
+    return folder;
+  };
+
   lib.executeBulkInboxProcessing = params => {
     const startTime = Date.now();
     

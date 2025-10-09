@@ -198,4 +198,6 @@ pgdata*/
 omnifocus-mcp-letta/docs/reference/
 
 #Backups
-deployment/backups/
+deployment/backups/*
+deployment/backups2/*
+

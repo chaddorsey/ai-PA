@@ -827,6 +827,14 @@ function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
     return (keyed[detailLevel] ?? keyed.standard ?? keyed.full ?? keyed.minimal) ?? data;
   }
 
+  // Preserve structures containing a result array by applying the clamp to each item
+  if (typeof data === "object" && data !== null && Array.isArray((data as any).result)) {
+    return {
+      ...data,
+      result: (data as any).result.map((item: any) => filterResponseByDetailLevel(item, detailLevel)),
+    };
+  }
+
   const MINIMAL_FIELDS = ["id", "name", "status", "completionState", "added", "modified"];
   const STANDARD_FIELDS = MINIMAL_FIELDS.concat([
     "sequential",
@@ -1050,9 +1058,14 @@ class OmniFocusSimplifiedMCPServer {
           const rawList = normalizeResult<{ result?: any[] } | any[]>(
             await callOmniFocus({ command: "listRemaining", args: {} }),
           );
-          const detailed = filterResponseByDetailLevel(rawList, "standard");
-          const tasks = Array.isArray(detailed) ? detailed : detailed?.result ?? [];
-          const filtered = tasks
+
+          const tasksArray = Array.isArray(rawList)
+            ? rawList
+            : rawList && typeof rawList === "object" && Array.isArray((rawList as any).result)
+              ? (rawList as any).result
+              : [];
+
+          const filtered = tasksArray
             .filter((task: any) => {
               if (projectId && task.projectId !== projectId) {
                 return false;
@@ -1066,6 +1079,7 @@ class OmniFocusSimplifiedMCPServer {
               return true;
             })
             .map(toTaskSummary);
+
           return asJsonText(filtered);
         }
         case "listProjects": {
@@ -1095,6 +1109,21 @@ class OmniFocusSimplifiedMCPServer {
               },
             }),
           );
+
+          const rawProjectsArray = Array.isArray(rawProjects)
+            ? rawProjects
+            : rawProjects && typeof rawProjects === "object" && Array.isArray((rawProjects as any).result)
+              ? (rawProjects as any).result
+              : null;
+          console.log(
+            `[listProjects] folderId=${folderId ?? "<all>"} completion=${completion ?? "<default>"} rawLength=${rawProjectsArray ? rawProjectsArray.length : "n/a"}`,
+          );
+          if (rawProjectsArray && rawProjectsArray.length > 0) {
+            const firstProject = rawProjectsArray[0];
+            console.log(
+              `[listProjects] first project id=${firstProject?.id ?? "<unknown>"} folderId=${firstProject?.folderId ?? "<none>"} name=${firstProject?.name ?? "<unnamed>"}`,
+            );
+          }
 
           const detailed = filterResponseByDetailLevel(rawProjects, detailLvl);
 
