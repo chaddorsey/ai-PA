@@ -22,6 +22,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 14 | System Administrator | As a system administrator, I want RAG document processing and storage using the existing PostgreSQL infrastructure so that document knowledge is integrated seamlessly with the unified database approach. | Proposed | RAG documents stored in PostgreSQL with pgvector; Document embedding pipeline operational; Incremental document updates supported; Domain-specific document organization; Backup procedures include RAG data - [View Details](./14/prd.md) |
 | 15 | Productivity Specialist | As a productivity specialist, I want project-oriented MCP tooling to expose accurate OmniFocus project metadata so that downstream automations can trust quick-access summaries. | Proposed | projectOperations list returns created/modified timestamps and status data; projectOperations detailLevel outputs differ across minimal/standard/full; listProjects surfaces folder metadata and honours listByFolder flag; Regression tests and docs capture the updated tool behaviour - [View Details](./15/prd.md) |
 | 16 | Conversational AI Designer | As a conversational AI designer, I want rich OmniFocus MCP tool metadata and onboarding guidance so that LLMs invoke the tools correctly without repeated failures. | Proposed | Tool descriptions explain required fields and defaults; Quick-start help tool provides usage examples; Welcome notification advertises help reference; Smoke tests confirm help tool availability - [View Details](./16/prd.md) |
+| 17 | Productivity Specialist | As a productivity specialist, I want task durations surfaced in simplified OmniFocus tools so that automations and LLMs can reason about effort. | Proposed | Quick task listings and project summaries include durationMinutes; schemas updated; docs and smoke tests refreshed with duration examples - [View Details](./17/prd.md) |
 
 ## PBI History Log
 
@@ -29,6 +30,8 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 |:----------|:-------|:-----------|:--------|:-----|
 | 2025-09-20 01:30:00 | ALL | create_pbi | Initial backlog created based on ecosystem unification analysis | AI_Agent |
 | 2025-09-20 02:15:00 | 11,12 | create_pbi | Added framework upgrade management PBIs based on practical n8n upgrade analysis | AI_Agent |
+| 2025-10-09 07:19:48 | 17 | create_pbi | Added PBI 17 to expose task duration in simplified OmniFocus tools | AI_Agent |
+| 2025-10-09 07:32:07 | 17 | approve | PBI 17 completed - duration exposed in quick tools and documentation | AI_Agent |
 | 2025-09-20 02:45:00 | 13,14 | create_pbi | Added RAG infrastructure PBIs based on lean HayHooks integration approach | AI_Agent |
 | 2025-01-20 16:30:00 | 3 | approve | PBI 3 moved from Proposed to Agreed - ready for implementation | User |
 | 2025-01-20 18:40:00 | 3 | approve | PBI 3 completed successfully - all conditions of satisfaction met | AI_Agent |

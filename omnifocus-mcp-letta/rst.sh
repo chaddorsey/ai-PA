@@ -47,5 +47,14 @@ osascript -e 'quit app "Claude"' >/dev/null 2>&1 || true
 sleep 2
 open -a "Claude" >/dev/null 2>&1 || true
 
+# Restart simplified MCP server (ensure fresh process after plugin rebuild)
+echo "🛑 Killing any running simplified server..."
+pkill -f "server-mcp-simplified" >/dev/null 2>&1 || true
+
+echo "🚀 Relaunching simplified server..."
+cd "$PROJECT_DIR" || { echo "❌ Cannot find project directory for server start"; exit 1; }
+nohup npm run start:simplified > "$PROJECT_DIR/server.log" 2>&1 &
+echo "ℹ️  Simplified server restarting in background (log: $PROJECT_DIR/server.log)"
+
 echo "✅ Build complete and apps restarted."
 

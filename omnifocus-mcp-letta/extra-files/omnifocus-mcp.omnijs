@@ -736,6 +736,7 @@
       name: task.name,
       completed: task.completed,
       flagged: task.flagged,
+      duration: task.estimatedMinutes ?? null,
       added: timestamps.added,
       modified: timestamps.modified
     };

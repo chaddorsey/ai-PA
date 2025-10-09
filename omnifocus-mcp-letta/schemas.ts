@@ -41,7 +41,9 @@ export const ListUncompletedTasksInputSchema = z.object({
   onlyFlagged: z.boolean().optional(),
   onlyAvailable: z.boolean().optional(),
 });
-export type ListUncompletedTasksInput = z.infer<typeof ListUncompletedTasksInputSchema>;
+export type ListUncompletedTasksInput = z.infer<
+  typeof ListUncompletedTasksInputSchema
+>;
 
 export const TaskSummarySchema = z.object({
   taskId: z.string(),
@@ -52,24 +54,31 @@ export const TaskSummarySchema = z.object({
   created: z.string().datetime().optional(),
   due: z.string().datetime().nullable().optional(),
   deferred: z.string().datetime().nullable().optional(),
+  durationMinutes: z.number().nullable().optional(),
 });
 export type TaskSummary = z.infer<typeof TaskSummarySchema>;
 
 export const listUncompletedTasksResultSchema = z.array(TaskSummarySchema);
-export type ListUncompletedTasksResult = z.infer<typeof listUncompletedTasksResultSchema>;
+export type ListUncompletedTasksResult = z.infer<
+  typeof listUncompletedTasksResultSchema
+>;
 
 export const MoveTaskToProjectInputSchema = z.object({
   taskId: z.string().min(1, "taskId is required"),
   projectId: z.string().min(1, "projectId is required"),
 });
-export type MoveTaskToProjectInput = z.infer<typeof MoveTaskToProjectInputSchema>;
+export type MoveTaskToProjectInput = z.infer<
+  typeof MoveTaskToProjectInputSchema
+>;
 
 export const moveTaskToProjectResultSchema = z.object({
   taskId: z.string(),
   projectId: z.string(),
   status: z.literal("moved"),
 });
-export type MoveTaskToProjectResult = z.infer<typeof moveTaskToProjectResultSchema>;
+export type MoveTaskToProjectResult = z.infer<
+  typeof moveTaskToProjectResultSchema
+>;
 
 export const ListProjectsInputSchema = z.object({
   folderId: z.string().optional(),
@@ -81,6 +90,7 @@ export type ListProjectsInput = z.infer<typeof ListProjectsInputSchema>;
 export const ProjectTaskSummarySchema = z.object({
   taskId: z.string(),
   name: z.string(),
+  durationMinutes: z.number().nullable().optional(),
 });
 export type ProjectTaskSummary = z.infer<typeof ProjectTaskSummarySchema>;
 
@@ -115,4 +125,3 @@ export const quickToolSchemas = {
 
 export type CompletionSuccess = z.infer<typeof CompletionSuccessSchema>;
 export type CompletionResult = z.infer<typeof CompletionResultSchema>;
-

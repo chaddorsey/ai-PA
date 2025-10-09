@@ -35,7 +35,10 @@ const quickToolSchemas = {
   markCompleted: {
     type: "object" as const,
     properties: {
-      id: { type: "string", description: "Task or project UUID to mark complete" },
+      id: {
+        type: "string",
+        description: "Task or project UUID to mark complete",
+      },
       scope: {
         type: "string",
         enum: ["task", "project"],
@@ -49,7 +52,11 @@ const quickToolSchemas = {
   listUncompletedTasks: {
     type: "object" as const,
     properties: {
-      projectId: { type: "string", description: "Filter by project UUID", nullable: true },
+      projectId: {
+        type: "string",
+        description: "Filter by project UUID",
+        nullable: true,
+      },
       onlyFlagged: {
         type: "boolean",
         description: "Return only flagged tasks (default false)",
@@ -71,15 +78,18 @@ const quickToolSchemas = {
       },
       listProjectNames: {
         type: "boolean",
-        description: "If true, include task names alongside IDs (increases payload size).",
+        description:
+          "If true, include task names alongside IDs (increases payload size).",
       },
       listByFolder: {
         type: "boolean",
-        description: "If true, group results by folder with `projects` arrays per folder.",
+        description:
+          "If true, group results by folder with `projects` arrays per folder.",
       },
       completion: {
         type: "string",
-        description: "Filter projects by completion state (`all`, `active`, `completed`, `dropped`).",
+        description:
+          "Filter projects by completion state (`all`, `active`, `completed`, `dropped`).",
       },
       detailLevel: {
         type: "string",
@@ -142,7 +152,6 @@ const HELP_MARKDOWN = `# OmniFocus Simplified MCP Quick Reference
 - Refer to project metadata docs for field descriptions.
 `;
 
-
 type CompletionScope = "task" | "project";
 
 interface CompletionSuccessResponse {
@@ -155,7 +164,9 @@ interface CompletionErrorResponse {
   error: string;
 }
 
-type CompletionBridgeResponse = CompletionSuccessResponse | CompletionErrorResponse;
+type CompletionBridgeResponse =
+  | CompletionSuccessResponse
+  | CompletionErrorResponse;
 
 interface CompletionErrorEntry {
   id: string;
@@ -163,7 +174,10 @@ interface CompletionErrorEntry {
   message: string;
 }
 
-async function performCompletion(id: string, scope: unknown): Promise<CompletionResult> {
+async function performCompletion(
+  id: string,
+  scope: unknown,
+): Promise<CompletionResult> {
   const completed: CompletionSuccess[] = [];
   const errors: CompletionErrorEntry[] = [];
 
@@ -178,7 +192,10 @@ async function performCompletion(id: string, scope: unknown): Promise<Completion
     }
   } else if (scope === "project") {
     const response = normalizeResult<CompletionBridgeResponse>(
-      await callOmniFocus({ command: "completeProject", args: { projectId: id } }),
+      await callOmniFocus({
+        command: "completeProject",
+        args: { projectId: id },
+      }),
     );
     if (isCompletionErrorResponse(response)) {
       errors.push({ id, scope: "project", message: response.error });
@@ -186,11 +203,19 @@ async function performCompletion(id: string, scope: unknown): Promise<Completion
       completed.push(toCompletionSuccessEntry(id, "project", response));
     }
   } else {
-    errors.push({ id, scope: "unknown", message: `Unsupported scope: ${String(scope)}` });
+    errors.push({
+      id,
+      scope: "unknown",
+      message: `Unsupported scope: ${String(scope)}`,
+    });
   }
 
   if (completed.length === 0 && errors.length === 0) {
-    errors.push({ id, scope: "unknown", message: "No completion action performed" });
+    errors.push({
+      id,
+      scope: "unknown",
+      message: "No completion action performed",
+    });
   }
 
   return {
@@ -217,20 +242,31 @@ function toCompletionSuccessEntry(
   return base;
 }
 
-function isCompletionErrorResponse(value: CompletionBridgeResponse): value is CompletionErrorResponse {
+function isCompletionErrorResponse(
+  value: CompletionBridgeResponse,
+): value is CompletionErrorResponse {
   return Boolean((value as CompletionErrorResponse)?.error);
 }
 
 const tools = [
   {
     name: "taskOperations",
-    description: "Manage tasks – list, get, create, update, complete, delete, move",
+    description:
+      "Manage tasks – list, get, create, update, complete, delete, move",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["list", "get", "create", "update", "complete", "delete", "move"],
+          enum: [
+            "list",
+            "get",
+            "create",
+            "update",
+            "complete",
+            "delete",
+            "move",
+          ],
           description: "Task operation to perform",
         },
         parameters: {
@@ -241,13 +277,29 @@ const tools = [
         filters: {
           type: "object",
           properties: {
-            projectId: { type: "string", description: "Filter by project UUID" },
+            projectId: {
+              type: "string",
+              description: "Filter by project UUID",
+            },
             tagId: { type: "string", description: "Filter by tag UUID" },
-            includeCompleted: { type: "boolean", description: "Include completed tasks" },
-            includeDropped: { type: "boolean", description: "Include dropped tasks" },
+            includeCompleted: {
+              type: "boolean",
+              description: "Include completed tasks",
+            },
+            includeDropped: {
+              type: "boolean",
+              description: "Include dropped tasks",
+            },
             active: { type: "boolean", description: "Filter for active tasks" },
-            flagged: { type: "boolean", description: "Filter for flagged tasks" },
-            limit: { type: "number", exclusiveMinimum: 0, description: "Maximum number of results" },
+            flagged: {
+              type: "boolean",
+              description: "Filter for flagged tasks",
+            },
+            limit: {
+              type: "number",
+              exclusiveMinimum: 0,
+              description: "Maximum number of results",
+            },
           },
           additionalProperties: false,
           description: "Optional filters for list operations",
@@ -271,7 +323,8 @@ const tools = [
   },
   {
     name: "taskQuery",
-    description: "Query/search tasks with advanced filtering and freshness options",
+    description:
+      "Query/search tasks with advanced filtering and freshness options",
     inputSchema: {
       type: "object",
       properties: {
@@ -309,7 +362,8 @@ const tools = [
   },
   {
     name: "taskHierarchy",
-    description: "Manage task hierarchy – create subtasks, flatten, move branches, restructure",
+    description:
+      "Manage task hierarchy – create subtasks, flatten, move branches, restructure",
     inputSchema: {
       type: "object",
       properties: {
@@ -363,7 +417,8 @@ const tools = [
   },
   {
     name: "projectSettings",
-    description: "Update project settings – group types, completion behaviour, properties",
+    description:
+      "Update project settings – group types, completion behaviour, properties",
     inputSchema: {
       type: "object",
       properties: {
@@ -555,13 +610,21 @@ const tools = [
   },
   {
     name: "transactionOperations",
-    description: "Manage transactions – begin, execute, accept, rollback, get history",
+    description:
+      "Manage transactions – begin, execute, accept, rollback, get history",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["begin", "execute", "accept", "rollback", "rollbackRecent", "getHistory"],
+          enum: [
+            "begin",
+            "execute",
+            "accept",
+            "rollback",
+            "rollbackRecent",
+            "getHistory",
+          ],
           description: "Transaction action",
         },
         parameters: {
@@ -734,8 +797,12 @@ function normalizeFreshnessValue(value: unknown): number {
 function sortByFreshness(data: any): any {
   const sortArray = (array: any[]) => {
     return [...array].sort((a, b) => {
-      const bTime = normalizeFreshnessValue(b?.modified) || normalizeFreshnessValue(b?.added);
-      const aTime = normalizeFreshnessValue(a?.modified) || normalizeFreshnessValue(a?.added);
+      const bTime =
+        normalizeFreshnessValue(b?.modified) ||
+        normalizeFreshnessValue(b?.added);
+      const aTime =
+        normalizeFreshnessValue(a?.modified) ||
+        normalizeFreshnessValue(a?.added);
       if (bTime === aTime) {
         return 0;
       }
@@ -761,13 +828,24 @@ function createMinimalRecord(item: any) {
 
   const minimal: any = {};
 
-  const id = item.id ?? item.taskId ?? item.projectId ?? item.folderId ?? item.tagId ?? item.perspectiveId;
+  const id =
+    item.id ??
+    item.taskId ??
+    item.projectId ??
+    item.folderId ??
+    item.tagId ??
+    item.perspectiveId;
   if (id !== undefined) {
     minimal.id = id;
   }
 
   const name =
-    item.name ?? item.taskName ?? item.projectName ?? item.folderName ?? item.tagName ?? item.perspectiveName;
+    item.name ??
+    item.taskName ??
+    item.projectName ??
+    item.folderName ??
+    item.tagName ??
+    item.perspectiveName;
   if (name !== undefined) {
     minimal.name = name;
   }
@@ -814,39 +892,87 @@ function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
   }
 
   if (Array.isArray(data)) {
-    return data;
+    return data.map((item) => filterResponseByDetailLevel(item, detailLevel));
   }
 
-  // Allow responses that already selected detail level via keyed object
-  if (
-    typeof data === "object" &&
-    data !== null &&
-    (detailLevel in data || "minimal" in data || "standard" in data || "full" in data)
-  ) {
-    const keyed = data as Record<string, unknown>;
-    return (keyed[detailLevel] ?? keyed.standard ?? keyed.full ?? keyed.minimal) ?? data;
+  if (typeof data === "object" && data !== null) {
+    let working = data as Record<string, unknown>;
+
+    if (Object.prototype.hasOwnProperty.call(working, "result")) {
+      working = {
+        ...working,
+        result: filterResponseByDetailLevel(
+          (working as any).result,
+          detailLevel,
+        ),
+      };
+    }
+
+    if (
+      (working as any).detailLevel &&
+      (working as any).detailLevel !== detailLevel
+    ) {
+      // continue to clamp below to enforce requested detail level
+    }
+
+    if (Array.isArray((working as any).result)) {
+      return {
+        ...working,
+        result: (working as any).result.map((item: any) =>
+          filterResponseByDetailLevel(item, detailLevel),
+        ),
+      };
+    }
+
+    if (
+      detailLevel in working ||
+      "minimal" in working ||
+      "standard" in working ||
+      "full" in working
+    ) {
+      const target =
+        working[detailLevel] ??
+        working.standard ??
+        working.full ??
+        working.minimal ??
+        working;
+      return filterResponseByDetailLevel(target, detailLevel);
+    }
+
+    data = working;
   }
 
-  // Preserve structures containing a result array by applying the clamp to each item
-  if (typeof data === "object" && data !== null && Array.isArray((data as any).result)) {
-    return {
-      ...data,
-      result: (data as any).result.map((item: any) => filterResponseByDetailLevel(item, detailLevel)),
-    };
-  }
-
-  const MINIMAL_FIELDS = ["id", "name", "status", "completionState", "added", "modified"];
-  const STANDARD_FIELDS = MINIMAL_FIELDS.concat([
-    "sequential",
+  const MINIMAL_FIELDS = [
+    "id",
+    "taskId",
+    "name",
+    "status",
+    "completionState",
+    "added",
+    "modified",
+    "created",
+    "projectId",
+    "inInbox",
     "flagged",
     "deferDate",
+    "deferred",
+    "due",
     "dueDate",
+    "duration",
+    "durationMinutes",
+    "detailLevel",
+    "result",
+  ];
+  const STANDARD_FIELDS = MINIMAL_FIELDS.concat([
+    "sequential",
     "nextReviewDate",
     "lastReviewDate",
     "folderId",
     "folderName",
     "taskIds",
     "taskCounts",
+    "tasks",
+    "projects",
   ]);
   const FULL_FIELDS = STANDARD_FIELDS.concat(["note", "tasks", "folderPath"]);
 
@@ -933,6 +1059,7 @@ function toTaskSummary(task: any) {
     created: task.added ?? task.created ?? null,
     due: task.dueDate ?? task.due ?? null,
     deferred: task.deferDate ?? task.deferred ?? null,
+    durationMinutes: task.duration ?? task.durationMinutes ?? null,
   };
 }
 
@@ -948,8 +1075,8 @@ function toProjectSummary(project: any, includeTaskNames: boolean) {
     taskIds: Array.isArray(project.taskIds)
       ? project.taskIds
       : Array.isArray(project.tasks)
-      ? project.tasks.map((task: any) => task.id ?? task.taskId)
-      : [],
+        ? project.tasks.map((task: any) => task.id ?? task.taskId)
+        : [],
   };
 
   if (includeTaskNames) {
@@ -957,8 +1084,13 @@ function toProjectSummary(project: any, includeTaskNames: boolean) {
       ? project.tasks.map((task: any) => ({
           taskId: task.id ?? task.taskId,
           name: task.name ?? task.taskName ?? "",
+          durationMinutes: task.duration ?? task.durationMinutes ?? null,
         }))
-      : base.taskIds.map((taskId: string) => ({ taskId, name: "" }));
+      : base.taskIds.map((taskId: string) => ({
+          taskId,
+          name: "",
+          durationMinutes: null,
+        }));
     return { ...base, tasks };
   }
 
@@ -967,7 +1099,8 @@ function toProjectSummary(project: any, includeTaskNames: boolean) {
 
 class OmniFocusSimplifiedMCPServer {
   private readonly server: Server;
-  private readonly transports: Record<string, StreamableHTTPServerTransport> = {};
+  private readonly transports: Record<string, StreamableHTTPServerTransport> =
+    {};
 
   constructor(server: Server) {
     this.server = server;
@@ -975,7 +1108,9 @@ class OmniFocusSimplifiedMCPServer {
   }
 
   private registerHandlers() {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools,
+    }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const args = request.params.arguments ?? {};
@@ -1003,13 +1138,22 @@ class OmniFocusSimplifiedMCPServer {
 
       switch (toolName) {
         case "taskOperations": {
-          const { action, parameters = {}, filters = {}, detailLevel: dl, sortOrder: so } = args;
+          const {
+            action,
+            parameters = {},
+            filters = {},
+            detailLevel: dl,
+            sortOrder: so,
+          } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
           switch (action) {
             case "list":
               command = "listRemaining";
-              commandArgs = typeof filters === "object" && filters !== null ? { ...filters } : {};
+              commandArgs =
+                typeof filters === "object" && filters !== null
+                  ? { ...filters }
+                  : {};
               break;
             case "get":
               command = "getTask";
@@ -1061,7 +1205,9 @@ class OmniFocusSimplifiedMCPServer {
 
           const tasksArray = Array.isArray(rawList)
             ? rawList
-            : rawList && typeof rawList === "object" && Array.isArray((rawList as any).result)
+            : rawList &&
+                typeof rawList === "object" &&
+                Array.isArray((rawList as any).result)
               ? (rawList as any).result
               : [];
 
@@ -1112,7 +1258,9 @@ class OmniFocusSimplifiedMCPServer {
 
           const rawProjectsArray = Array.isArray(rawProjects)
             ? rawProjects
-            : rawProjects && typeof rawProjects === "object" && Array.isArray((rawProjects as any).result)
+            : rawProjects &&
+                typeof rawProjects === "object" &&
+                Array.isArray((rawProjects as any).result)
               ? (rawProjects as any).result
               : null;
           console.log(
@@ -1131,7 +1279,11 @@ class OmniFocusSimplifiedMCPServer {
             return asJsonText(detailed);
           }
 
-          if (detailed && typeof detailed === "object" && Array.isArray((detailed as any).result)) {
+          if (
+            detailed &&
+            typeof detailed === "object" &&
+            Array.isArray((detailed as any).result)
+          ) {
             return asJsonText((detailed as any).result);
           }
 
@@ -1145,16 +1297,30 @@ class OmniFocusSimplifiedMCPServer {
           const result = normalizeResult<{ error?: string }>(
             await callOmniFocus({
               command: "moveTask",
-              args: { taskId: resolvedTaskId, targetProjectId: resolvedProjectId },
+              args: {
+                taskId: resolvedTaskId,
+                targetProjectId: resolvedProjectId,
+              },
             }),
           );
           if (result?.error) {
             throw new Error(result.error);
           }
-          return asJsonText({ taskId: resolvedTaskId, projectId: resolvedProjectId, status: "moved" });
+          return asJsonText({
+            taskId: resolvedTaskId,
+            projectId: resolvedProjectId,
+            status: "moved",
+          });
         }
         case "taskQuery": {
-          const { detailLevel: dl, sortOrder: so, query, scope, searchScope, filters = {} } = args;
+          const {
+            detailLevel: dl,
+            sortOrder: so,
+            query,
+            scope,
+            searchScope,
+            filters = {},
+          } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
 
@@ -1163,7 +1329,9 @@ class OmniFocusSimplifiedMCPServer {
             commandArgs = {
               query,
               ...(typeof scope === "string" ? { scope } : {}),
-              ...(typeof filters === "object" && filters !== null ? filters : {}),
+              ...(typeof filters === "object" && filters !== null
+                ? filters
+                : {}),
             };
             if (searchScope) {
               commandArgs.searchScope = searchScope;
@@ -1171,7 +1339,9 @@ class OmniFocusSimplifiedMCPServer {
           } else {
             command = "queryTasks";
             commandArgs = {
-              ...(typeof filters === "object" && filters !== null ? filters : {}),
+              ...(typeof filters === "object" && filters !== null
+                ? filters
+                : {}),
             };
           }
           break;
@@ -1199,14 +1369,22 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "projectOperations": {
-          const { action, parameters = {}, detailLevel: dl, sortOrder: so, filters = {} } = args;
+          const {
+            action,
+            parameters = {},
+            detailLevel: dl,
+            sortOrder: so,
+            filters = {},
+          } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
           switch (action) {
             case "list":
               command = "listProjects";
               commandArgs = {
-                ...(parameters && typeof parameters === "object" ? parameters : {}),
+                ...(parameters && typeof parameters === "object"
+                  ? parameters
+                  : {}),
                 ...(filters && typeof filters === "object" ? filters : {}),
                 detailLevel,
               };
@@ -1214,7 +1392,9 @@ class OmniFocusSimplifiedMCPServer {
             case "get":
               command = "getProjectById";
               commandArgs = {
-                ...(parameters && typeof parameters === "object" ? parameters : {}),
+                ...(parameters && typeof parameters === "object"
+                  ? parameters
+                  : {}),
                 options: {
                   includeNotes: detailLevel === "full",
                   includeTasks: detailLevel === "full",
@@ -1348,7 +1528,12 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "perspectiveOperations": {
-          const { action, parameters = {}, detailLevel: dl, sortOrder: so } = args;
+          const {
+            action,
+            parameters = {},
+            detailLevel: dl,
+            sortOrder: so,
+          } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
           switch (action) {
@@ -1372,7 +1557,12 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "tagOperations": {
-          const { action, parameters = {}, detailLevel: dl, sortOrder: so } = args;
+          const {
+            action,
+            parameters = {},
+            detailLevel: dl,
+            sortOrder: so,
+          } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
           switch (action) {
@@ -1531,6 +1721,9 @@ class OmniFocusSimplifiedMCPServer {
           console.warn("Failed to parse string result as JSON.");
         }
       }
+      if (toolName === "taskOperations" && args?.action === "get") {
+        console.log("[taskOperations.get] parsedResult", parsedResult);
+      }
 
       const filtered = filterResponseByDetailLevel(parsedResult, detailLevel);
       const finalResult = applySortOrder(filtered, sortOrder);
@@ -1631,7 +1824,7 @@ class OmniFocusSimplifiedMCPServer {
 
   private async sendNotification(
     transport: StreamableHTTPServerTransport,
-    notification: Notification
+    notification: Notification,
   ) {
     const jsonRpcNotification: JSONRPCNotification = {
       ...notification,
@@ -1641,7 +1834,8 @@ class OmniFocusSimplifiedMCPServer {
   }
 
   private isInitializeRequest(body: any): boolean {
-    const check = (value: any) => InitializeRequestSchema.safeParse(value).success;
+    const check = (value: any) =>
+      InitializeRequestSchema.safeParse(value).success;
     if (Array.isArray(body)) {
       return body.some((item) => check(item));
     }
@@ -1690,8 +1884,8 @@ const simplifiedServer = new OmniFocusSimplifiedMCPServer(
         tools: {},
         logging: {},
       },
-    }
-  )
+    },
+  ),
 );
 
 const app = express();
@@ -1732,4 +1926,3 @@ const shutdown = async () => {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-
