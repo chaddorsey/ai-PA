@@ -323,8 +323,12 @@ async def book_slot(
             await browser.close()
             return results
         
-        # Wait for form to appear (may involve navigation)
-        await page.wait_for_timeout(1500)
+        # Wait for form to appear - use explicit wait for form inputs
+        try:
+            await page.wait_for_selector('input[name="full_name"], input[name="name"], input[type="email"]', timeout=10000)
+        except Exception:
+            # Fallback to time-based wait
+            await page.wait_for_timeout(2000)
         
         # Step 5: Verify and fill form fields (name, email, guests, custom questions)
         async def fill_if_present(selectors: List[str], value: str) -> bool:
