@@ -574,8 +574,19 @@ async def _handle_calendly_book_slot(arguments: Dict[str, Any]) -> Dict[str, Any
                 conf_step = result.get("steps", {}).get("confirmation", {})
                 final_url = conf_step.get('final_url', 'unknown')
                 
+                # Normalize URLs for comparison (handle http vs https)
+                url_normalized = url.replace('http://', '').replace('https://', '')
+                final_url_normalized = final_url.replace('http://', '').replace('https://', '')
+                
                 # Check if URL suggests we're still on the booking page
-                if url in final_url and ("/invitees/" not in final_url and "/scheduled_events/" not in final_url):
+                # (Same base URL but no invitee/scheduled_events path)
+                still_on_booking_page = (
+                    url_normalized.split('?')[0] in final_url_normalized and
+                    "/invitees/" not in final_url and 
+                    "/scheduled_events/" not in final_url
+                )
+                
+                if still_on_booking_page:
                     # Still on booking page - submission likely failed
                     raise ValueError(
                         f"Booking submission appears to have failed - still on the booking page. "
