@@ -24,7 +24,7 @@ def create_booking_link(
     Generate a pre-filled Calendly booking link.
     
     Args:
-        url: Calendly event URL
+        url: Calendly event URL (must include event slug)
         date: Date in YYYY-MM-DD format
         time: Time in HH:MM or h:mma format
         name: Invitee name
@@ -35,9 +35,32 @@ def create_booking_link(
         
     Returns:
         Dict with booking_url and metadata
+        
+    Raises:
+        ValueError: If URL is not a full event URL
     """
     custom_fields = custom_fields or {}
     guests = guests or []
+    
+    # Validate that this is a full event URL (not just a profile)
+    # Profile URL: https://calendly.com/username
+    # Event URL:   https://calendly.com/username/event-slug
+    url_parts = url.rstrip('/').split('/')
+    
+    # Should have at least: ['https:', '', 'calendly.com', 'username', 'event-slug']
+    if len(url_parts) < 5:
+        raise ValueError(
+            f"URL must be a full event URL, not a profile URL.\n"
+            f"❌ Received: {url}\n"
+            f"✅ Expected format: https://calendly.com/username/event-slug\n"
+            f"\n"
+            f"Example: https://calendly.com/zarek-drozda/30min\n"
+            f"\n"
+            f"To get the event URL:\n"
+            f"1. Use calendly_slots tool first to find available events\n"
+            f"2. Each event in the response has a 'url' field with the full event URL\n"
+            f"3. Use that URL for booking"
+        )
     
     # Parse time to ISO format
     time_normalized = _normalize_time(time, timezone, date)

@@ -547,6 +547,13 @@ def _handle_calendly_create_booking_link(arguments: Dict[str, Any]) -> Dict[str,
         result["success"] = True
         return result
         
+    except ValueError as e:
+        # Validation errors from create_booking_link (e.g., URL format issues)
+        return {
+            "success": False,
+            "error": "invalid_url",
+            "message": str(e)
+        }
     except Exception as e:
         logger.error(f"Error creating booking link: {e}", exc_info=True)
         return {
