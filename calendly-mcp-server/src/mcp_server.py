@@ -5,11 +5,13 @@ Handles JSON-RPC requests for the MCP protocol and tool execution.
 """
 
 import logging
+import json
 from typing import Dict, Any, List, Optional
 from datetime import date, timedelta
 import asyncio
 
 from .calendly_slots import slots_for_profile_or_event
+from .calendly_book_slot_safe import book_slot
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,96 @@ CALENDLY_TOOLS = [
             },
             "required": ["url"]
         }
+    },
+    {
+        "name": "calendly_book_slot",
+        "description": (
+            "Book a Calendly time slot with automatic custom field discovery. "
+            "\n\n"
+            "RECOMMENDED WORKFLOW:\n"
+            "1. Use calendly_slots tool first to find available dates and times\n"
+            "2. Call this tool with basic info (url, date, time, name, email) and dry_run=true\n"
+            "3. If error 'required_fields_missing' is returned, it lists the exact fields needed\n"
+            "4. Ask user for missing information\n"
+            "5. Retry with custom_fields populated\n"
+            "6. When user confirms, call again with dry_run=false to create actual booking\n"
+            "\n\n"
+            "IMPORTANT NOTES:\n"
+            "- Different Calendly users have different custom required fields (e.g., meeting title, company name)\n"
+            "- This tool auto-discovers them and tells you exactly what's needed\n"
+            "- ALWAYS use dry_run=true first (it's the default) to validate\n"
+            "- Only set dry_run=false when user explicitly confirms the booking\n"
+            "- Actual booking (dry_run=false) creates a REAL calendar event\n"
+            "\n\n"
+            "FEATURES:\n"
+            "- Auto-discovers and validates custom required fields\n"
+            "- Supports multiple guest email addresses\n"
+            "- Handles both 12-hour (3:30pm) and 24-hour (15:30) time formats\n"
+            "- Returns detailed errors with retry guidance\n"
+            "- Safe dry-run mode by default"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Calendly event URL (e.g., https://calendly.com/user/30min)"
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Date in YYYY-MM-DD format",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "time": {
+                    "type": "string",
+                    "description": "Time in HH:MM (24h) or h:mma format. Examples: '14:30', '2:30pm', '2:30 PM'"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Invitee full name"
+                },
+                "email": {
+                    "type": "string",
+                    "description": "Invitee email address"
+                },
+                "timezone": {
+                    "type": "string",
+                    "description": "IANA timezone (e.g., 'America/New_York', 'Europe/London')",
+                    "default": "America/New_York"
+                },
+                "guests": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional: Additional guest email addresses to invite to the meeting"
+                },
+                "custom_fields": {
+                    "type": "object",
+                    "description": (
+                        "Custom field responses for event-specific questions. "
+                        "Keys should match part of the field label (case-insensitive substring match). "
+                        "\n\n"
+                        "Examples:\n"
+                        "  {'title the meeting': 'Q4 Strategy Discussion'}\n"
+                        "  {'company': 'Acme Corp', 'main topic': 'Budget review'}\n"
+                        "\n\n"
+                        "NOTE: If you don't know what fields are required, call this tool once without custom_fields. "
+                        "If required fields exist, the tool will return an error listing them with examples."
+                    ),
+                    "additionalProperties": {"type": "string"}
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": (
+                        "If true (DEFAULT), validates the booking flow without actually submitting. "
+                        "Set to false ONLY when user explicitly confirms they want to create the booking. "
+                        "\n\n"
+                        "SAFETY: Always use dry_run=true first to validate, then ask user for confirmation before dry_run=false."
+                    ),
+                    "default": True
+                }
+            },
+            "required": ["url", "date", "time", "name", "email"]
+        }
     }
 ]
 
@@ -73,8 +165,16 @@ async def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]
     Raises:
         ValueError: If tool is unknown or arguments are invalid
     """
-    if tool_name != "calendly_slots":
-        raise ValueError(f"Unknown tool: '{tool_name}'. Available tools: calendly_slots")
+    if tool_name == "calendly_slots":
+        return await _handle_calendly_slots(arguments)
+    elif tool_name == "calendly_book_slot":
+        return await _handle_calendly_book_slot(arguments)
+    else:
+        raise ValueError(f"Unknown tool: '{tool_name}'. Available tools: calendly_slots, calendly_book_slot")
+
+
+async def _handle_calendly_slots(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle calendly_slots tool - check availability."""
     
     # Extract and validate arguments with expressive error messages
     url = arguments.get("url")
@@ -314,6 +414,187 @@ async def _call_with_retry(url: str, tz: str, start: str, end: str,
             return result
     
     return result
+
+
+async def _handle_calendly_book_slot(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle calendly_book_slot tool - book a specific time slot.
+    
+    Provides intelligent error handling for required custom fields and guides
+    the LLM through successful booking.
+    """
+    # Extract and validate arguments
+    url = arguments.get("url")
+    if not url:
+        raise ValueError("Missing required parameter 'url'")
+    
+    date_str = arguments.get("date")
+    if not date_str:
+        raise ValueError("Missing required parameter 'date' (format: YYYY-MM-DD)")
+    
+    time_str = arguments.get("time")
+    if not time_str:
+        raise ValueError("Missing required parameter 'time' (format: HH:MM or h:mma)")
+    
+    name = arguments.get("name")
+    if not name:
+        raise ValueError("Missing required parameter 'name'")
+    
+    email = arguments.get("email")
+    if not email:
+        raise ValueError("Missing required parameter 'email'")
+    
+    timezone = arguments.get("timezone", "America/New_York")
+    guests = arguments.get("guests", [])
+    custom_fields = arguments.get("custom_fields", {})
+    dry_run = arguments.get("dry_run", True)  # Safe by default!
+    
+    # Validate date format
+    try:
+        date.fromisoformat(date_str)
+    except ValueError as e:
+        raise ValueError(f"Invalid date format: '{date_str}'. Expected YYYY-MM-DD. Error: {e}")
+    
+    logger.info(f"Calling calendly_book_slot: url={url}, date={date_str}, time={time_str}, "
+                f"name={name}, email={email}, guests={len(guests)}, "
+                f"custom_fields={len(custom_fields)}, dry_run={dry_run}")
+    
+    try:
+        # Call the booking function
+        result = await book_slot(
+            event_url=url,
+            date_iso=date_str,
+            time_str=time_str,
+            invitee_name=name,
+            invitee_email=email,
+            timezone=timezone,
+            answers=custom_fields,
+            guests=guests,
+            dry_run=dry_run,
+            headless=True,
+            click_months_ahead=6,
+            settle_ms=1000,
+            screenshot_dir="/tmp"
+        )
+        
+        # Check if booking succeeded
+        if not result.get("ok"):
+            reason = result.get("reason", "")
+            
+            # Required fields missing - provide detailed guidance
+            if "required_fields_missing" in reason:
+                validation = result.get("steps", {}).get("required_field_validation", {})
+                missing = validation.get("missing_required_fields", [])
+                
+                if missing:
+                    # Format helpful error message
+                    field_list = "\n".join([f"  {i+1}. \"{field}\"" for i, field in enumerate(missing)])
+                    
+                    # Create example custom_fields object
+                    example_fields = {}
+                    for field in missing[:2]:  # Show example for first 2
+                        if "title" in field.lower():
+                            key = "title the meeting"
+                            value = "Q4 Strategy Discussion"
+                        elif "company" in field.lower():
+                            key = "company"
+                            value = "Acme Corp"
+                        else:
+                            # Use first few words as suggestion
+                            key = " ".join(field.split()[:3]).lower()
+                            value = "Your Answer Here"
+                        example_fields[key] = value
+                    
+                    example_json = json.dumps({
+                        "url": url,
+                        "date": date_str,
+                        "time": time_str,
+                        "name": name,
+                        "email": email,
+                        "custom_fields": example_fields
+                    }, indent=2)
+                    
+                    error_msg = (
+                        f"This Calendly event requires {len(missing)} additional custom field(s):\n\n"
+                        f"{field_list}\n\n"
+                        f"NEXT STEPS:\n"
+                        f"1. Ask the user for this information\n"
+                        f"2. Retry this tool call with the custom_fields parameter\n"
+                        f"3. Use substring matching for keys (case-insensitive)\n\n"
+                        f"Example retry:\n{example_json}\n\n"
+                        f"{validation.get('hint', '')}"
+                    )
+                    raise ValueError(error_msg)
+            
+            # Date not found
+            elif "date_not_found" in reason:
+                steps = result.get("steps", {}).get("date_selection", {})
+                raise ValueError(
+                    f"Could not find date {date_str} on the calendar after checking "
+                    f"{steps.get('months_navigated', 0) + 1} month(s). "
+                    f"This usually means:\n"
+                    f"  1. The date has no availability (verify with calendly_slots tool first)\n"
+                    f"  2. The date is too far in the future\n"
+                    f"  3. The date is in the past\n\n"
+                    f"Suggestion: Use calendly_slots('{url}') to find actually available dates."
+                )
+            
+            # Time not found
+            elif "time_not_found" in reason:
+                steps = result.get("steps", {}).get("time_selection", {})
+                raise ValueError(
+                    f"Could not find time slot '{time_str}' on {date_str}. "
+                    f"Tried variants: {steps.get('time_variants_tried', [])}. "
+                    f"This usually means:\n"
+                    f"  1. The time slot was just booked by someone else\n"
+                    f"  2. The time is not available on this date\n\n"
+                    f"Suggestion: Use calendly_slots('{url}', '{date_str}', '{date_str}') "
+                    f"to see currently available times for this date."
+                )
+            
+            # Next button not found
+            elif "next_button_not_found" in reason:
+                raise ValueError(
+                    f"Could not find the 'Next' button after selecting time {time_str}. "
+                    f"This may indicate a Calendly UI change. Please report this issue."
+                )
+            
+            # Generic error
+            else:
+                raise ValueError(
+                    f"Booking failed: {reason}. "
+                    f"Message: {result.get('message', 'No additional details')}"
+                )
+        
+        # Success!
+        logger.info(f"calendly_book_slot completed: ok={result.get('ok')}, dry_run={dry_run}")
+        
+        # Return concise result for LLM
+        return {
+            "ok": result.get("ok"),
+            "dry_run": dry_run,
+            "message": result.get("message"),
+            "event_url": url,
+            "date": date_str,
+            "time": time_str,
+            "invitee_name": name,
+            "invitee_email": email,
+            "guests_added": result.get("steps", {}).get("guests", {}).get("added", []),
+            "custom_fields_filled": list(result.get("steps", {}).get("custom_answers", {}).get("filled", {}).keys()),
+            "confirmation_url": result.get("confirmation_url") if not dry_run else None,
+            "ics_url": result.get("ics_url") if not dry_run else None,
+            "steps_completed": [
+                step_name for step_name, step_data in result.get("steps", {}).items()
+                if step_data.get("ok") == True
+            ]
+        }
+        
+    except ValueError:
+        # Re-raise validation errors
+        raise
+    except Exception as e:
+        logger.error(f"Error executing calendly_book_slot: {e}", exc_info=True)
+        raise ValueError(f"Unexpected error during booking: {str(e)}")
 
 
 def get_server_info() -> Dict[str, Any]:
