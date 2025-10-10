@@ -1,6 +1,6 @@
 # Calendly MCP Server
 
-MCP (Model Context Protocol) server that provides Calendly availability checking tools for Letta agents.
+MCP (Model Context Protocol) server that provides Calendly availability checking and booking tools for Letta agents.
 
 ## Overview
 
@@ -29,11 +29,19 @@ This service wraps the verified `calendly_slots.py` implementation in an MCP-com
 
 ## Features
 
-- **Profile URL Support**: Query all events for a Calendly user profile
-- **Event URL Support**: Query specific event availability
-- **Date Range Queries**: Flexible date range specification
-- **Timezone Handling**: Proper timezone conversion (default: America/New_York)
-- **Time Slot Details**: Returns available dates and specific time slots
+- **Availability Checking**: Query available time slots for Calendly events
+  - Profile URL Support: Query all events for a Calendly user profile
+  - Event URL Support: Query specific event availability
+  - Date Range Queries: Flexible date range specification
+  - Timezone Handling: Proper timezone conversion (default: America/New_York)
+  - Time Slot Details: Returns available dates and specific time slots
+  
+- **Pre-filled Booking Links**: Generate booking URLs with auto-filled form data
+  - Avoids CAPTCHA issues (user completes booking in their browser)
+  - Pre-fills name, email, custom fields, and time slot
+  - Returns clickable link + instructions for completion
+  - No browser automation required
+  
 - **Health Checks**: Built-in health monitoring endpoint
 
 ## Core Function
@@ -144,7 +152,9 @@ POST /mcp
 
 MCP protocol endpoint for tool discovery and invocation.
 
-## Tool: `calendly_slots`
+## Available Tools
+
+### Tool 1: `calendly_slots` - Check Availability
 
 Query Calendly availability for a profile or specific event.
 
@@ -166,6 +176,66 @@ Query Calendly availability for a profile or specific event.
   }
 }
 ```
+
+### Tool 2: `calendly_create_booking_link` - Generate Pre-filled Booking Link
+
+Generate a Calendly booking URL with all form data pre-filled (name, email, custom fields, time slot).
+
+**Why Use This?**
+- ✅ Avoids CAPTCHA/bot detection (user completes booking in their browser)
+- ✅ Saves user time (form is pre-filled)
+- ✅ Works reliably across all Calendly accounts
+- ✅ User can review before confirming
+
+**Parameters:**
+- `url` (string, required): Calendly event URL
+- `date` (string, required): Date in YYYY-MM-DD format
+- `time` (string, required): Time in HH:MM (24h) or h:mma format (e.g., "14:30" or "2:30pm")
+- `name` (string, required): Invitee full name
+- `email` (string, required): Invitee email address
+- `timezone` (string, optional): IANA timezone (default: "America/New_York")
+- `custom_fields` (object, optional): Custom field responses (e.g., {"title the meeting": "Q4 Planning"})
+- `guests` (array, optional): Guest email addresses (must be added manually by user)
+
+**Example Usage:**
+```json
+{
+  "tool": "calendly_create_booking_link",
+  "arguments": {
+    "url": "https://calendly.com/zarek-drozda/30min",
+    "date": "2025-10-29",
+    "time": "12:30pm",
+    "name": "Chad Dorsey",
+    "email": "cdorsey@concord.org",
+    "timezone": "America/New_York",
+    "custom_fields": {
+      "title the meeting": "Chad - Kate - Zarek check-in"
+    },
+    "guests": ["kmiller@concord.org"]
+  }
+}
+```
+
+**Example Response:**
+```json
+{
+  "success": true,
+  "booking_url": "https://calendly.com/zarek-drozda/30min/2025-10-29T12:30:00-04:00?name=Chad+Dorsey&email=cdorsey@concord.org&question_0=Chad+-+Kate+-+Zarek+check-in",
+  "instructions": [
+    "1. Click the booking_url link",
+    "2. Verify the pre-filled information is correct",
+    "3. Add guests manually: kmiller@concord.org",
+    "4. Click 'Schedule Event' button",
+    "5. Complete CAPTCHA if prompted"
+  ]
+}
+```
+
+**Recommended Workflow:**
+1. Use `calendly_slots` to find available times
+2. Use `calendly_create_booking_link` to generate a pre-filled link
+3. Present the link to the user
+4. User clicks link and completes booking
 
 ## Integration with Letta
 

@@ -12,6 +12,7 @@ import asyncio
 
 from .calendly_slots import slots_for_profile_or_event
 from .calendly_book_slot_safe import book_slot
+from .calendly_booking_link import create_booking_link
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +60,87 @@ CALENDLY_TOOLS = [
         }
     },
     {
+        "name": "calendly_create_booking_link",
+        "description": (
+            "Generate a pre-filled Calendly booking link that opens with all information ready. "
+            "\n\n"
+            "RECOMMENDED APPROACH (avoids CAPTCHA issues):\n"
+            "1. Use calendly_slots to find available times\n"
+            "2. Use this tool to generate a pre-filled booking link\n"
+            "3. User clicks the link and completes booking (avoiding automation detection)\n"
+            "\n\n"
+            "ADVANTAGES:\n"
+            "- No CAPTCHA/bot detection issues (user completes booking in their browser)\n"
+            "- Saves time by pre-filling name, email, and custom fields\n"
+            "- User can review before confirming\n"
+            "- Works reliably across all Calendly accounts\n"
+            "\n\n"
+            "PRE-FILLS:\n"
+            "- Name and email fields\n"
+            "- Custom question fields (e.g., meeting title, company)\n"
+            "- Date and time slot selection\n"
+            "\n\n"
+            "MANUAL STEPS:\n"
+            "- Guests must be added manually (not supported in URL)\n"
+            "- User must click 'Schedule Event' button\n"
+            "- User may need to complete CAPTCHA\n"
+            "\n\n"
+            "Use this tool instead of calendly_book_slot for reliable booking workflows."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Calendly event URL (e.g., https://calendly.com/user/30min)"
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Date in YYYY-MM-DD format",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "time": {
+                    "type": "string",
+                    "description": "Time in HH:MM (24h) or h:mma format. Examples: '14:30', '2:30pm'"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Invitee full name"
+                },
+                "email": {
+                    "type": "string",
+                    "description": "Invitee email address"
+                },
+                "timezone": {
+                    "type": "string",
+                    "description": "IANA timezone (e.g., 'America/New_York')",
+                    "default": "America/New_York"
+                },
+                "custom_fields": {
+                    "type": "object",
+                    "description": (
+                        "Custom field responses (e.g., meeting title, company). "
+                        "Will be mapped to question_0, question_1, etc. in the URL."
+                    ),
+                    "additionalProperties": {"type": "string"}
+                },
+                "guests": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Guest email addresses (will be listed in instructions for manual addition)"
+                }
+            },
+            "required": ["url", "date", "time", "name", "email"]
+        }
+    },
+    {
         "name": "calendly_book_slot",
         "description": (
-            "Book a Calendly time slot with automatic custom field discovery. "
+            "⚠️ EXPERIMENTAL: Automated Calendly booking (has CAPTCHA limitations). "
+            "\n\n"
+            "IMPORTANT: This tool often fails due to Calendly's CAPTCHA/bot detection. "
+            "For reliable booking, use calendly_create_booking_link instead which generates "
+            "a pre-filled link for the user to complete manually.\n"
             "\n\n"
             "RECOMMENDED WORKFLOW:\n"
             "1. Use calendly_slots tool first to find available dates and times\n"
@@ -167,10 +246,12 @@ async def call_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]
     """
     if tool_name == "calendly_slots":
         return await _handle_calendly_slots(arguments)
+    elif tool_name == "calendly_create_booking_link":
+        return _handle_calendly_create_booking_link(arguments)
     elif tool_name == "calendly_book_slot":
         return await _handle_calendly_book_slot(arguments)
     else:
-        raise ValueError(f"Unknown tool: '{tool_name}'. Available tools: calendly_slots, calendly_book_slot")
+        raise ValueError(f"Unknown tool: '{tool_name}'. Available tools: calendly_slots, calendly_create_booking_link, calendly_book_slot")
 
 
 async def _handle_calendly_slots(arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -414,6 +495,65 @@ async def _call_with_retry(url: str, tz: str, start: str, end: str,
             return result
     
     return result
+
+
+def _handle_calendly_create_booking_link(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Handle calendly_create_booking_link tool - generate pre-filled booking URL."""
+    
+    # Extract and validate parameters
+    url = arguments.get("url", "").strip()
+    date = arguments.get("date", "").strip()
+    time = arguments.get("time", "").strip()
+    name = arguments.get("name", "").strip()
+    email = arguments.get("email", "").strip()
+    timezone = arguments.get("timezone", "America/New_York").strip()
+    custom_fields = arguments.get("custom_fields", {})
+    guests = arguments.get("guests", [])
+    
+    # Validate required fields
+    errors = []
+    if not url or not url.startswith("http"):
+        errors.append("url: Must be a valid Calendly URL (e.g., https://calendly.com/user/30min)")
+    if not date or not date.replace("-", "").isdigit():
+        errors.append("date: Must be in YYYY-MM-DD format (e.g., 2025-10-29)")
+    if not time:
+        errors.append("time: Must be provided (e.g., '14:30' or '2:30pm')")
+    if not name:
+        errors.append("name: Invitee name is required")
+    if not email or "@" not in email:
+        errors.append("email: Must be a valid email address")
+    
+    if errors:
+        return {
+            "success": False,
+            "error": "validation_failed",
+            "message": "Invalid parameters",
+            "details": errors
+        }
+    
+    try:
+        # Generate the booking link
+        result = create_booking_link(
+            url=url,
+            date=date,
+            time=time,
+            name=name,
+            email=email,
+            timezone=timezone,
+            custom_fields=custom_fields,
+            guests=guests
+        )
+        
+        result["success"] = True
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error creating booking link: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": "generation_failed",
+            "message": f"Failed to generate booking link: {str(e)}"
+        }
 
 
 async def _handle_calendly_book_slot(arguments: Dict[str, Any]) -> Dict[str, Any]:
