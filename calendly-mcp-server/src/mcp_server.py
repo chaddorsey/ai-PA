@@ -473,7 +473,7 @@ async def _handle_calendly_book_slot(arguments: Dict[str, Any]) -> Dict[str, Any
             dry_run=dry_run,
             headless=True,
             click_months_ahead=6,
-            settle_ms=1000,
+            settle_ms=2000,  # Increased to 2s for better confirmation detection
             screenshot_dir="/tmp"
         )
         
@@ -557,6 +557,24 @@ async def _handle_calendly_book_slot(arguments: Dict[str, Any]) -> Dict[str, Any
                 raise ValueError(
                     f"Could not find the 'Next' button after selecting time {time_str}. "
                     f"This may indicate a Calendly UI change. Please report this issue."
+                )
+            
+            # Confirmation not detected (booking may have succeeded but verification failed)
+            elif "confirmation_not_detected" in reason:
+                conf_step = result.get("steps", {}).get("confirmation", {})
+                raise ValueError(
+                    f"Booking may have been submitted, but confirmation could not be verified. "
+                    f"Details:\n"
+                    f"  - Final URL: {conf_step.get('final_url', 'unknown')}\n"
+                    f"  - URL changed: {conf_step.get('url_changed', False)}\n"
+                    f"  - Invitee ID in URL: {conf_step.get('invitee_id_in_url', False)}\n"
+                    f"  - Confirmation text found: {conf_step.get('confirmation_text_found', False)}\n"
+                    f"  - ICS link found: {conf_step.get('ics_url') is not None}\n\n"
+                    f"IMPORTANT: The booking MAY have succeeded. Please check:\n"
+                    f"  1. User's email ({email}) for confirmation\n"
+                    f"  2. Calendar for the event on {date_str} at {time_str}\n"
+                    f"  3. Final URL above for invitee/confirmation page\n\n"
+                    f"To avoid duplicate bookings, verify before retrying."
                 )
             
             # Generic error

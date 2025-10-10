@@ -665,16 +665,29 @@ async def book_slot(
             await browser.close()
             return results
         
-        # Wait for confirmation
+        # Wait for confirmation page to load
         await page.wait_for_timeout(settle_ms)
         
-        # Step 10: Verify confirmation
+        # Step 10: Verify confirmation (multiple signals)
         confirmed = False
         confirmation_text = None
+        
+        # Signal 1: Wait for URL to change to confirmation page
+        current_url = page.url
+        url_changed = current_url != event_url
+        invitee_id_in_url = "/invitees/" in current_url
+        scheduled_in_url = "/scheduled_events/" in current_url
+        
+        # If URL changed, wait a bit more for content
+        if url_changed:
+            await page.wait_for_timeout(1000)
+            current_url = page.url  # Update after wait
+        
+        # Signal 2: Look for confirmation text
         try:
             conf = page.get_by_text(re.compile(
                 r"You (are|'re|re) scheduled|Event scheduled|You're all set|Confirmed|"
-                r"Check your email|We (sent|emailed)",
+                r"Check your email|We (sent|emailed)|successfully scheduled|booking confirmed",
                 re.I
             ))
             if await conf.count():
@@ -686,10 +699,13 @@ async def book_slot(
         except Exception:
             pass
         
-        # Check if URL changed to confirmation page
-        current_url = page.url
-        url_changed = current_url != event_url
-        invitee_id_in_url = "/invitees/" in current_url
+        # Signal 3: Check for calendar "Add to Calendar" buttons (common on confirmation)
+        add_to_calendar = False
+        try:
+            calendar_btns = page.locator('a[href$=".ics"], button:has-text("Add to Calendar")')
+            add_to_calendar = await calendar_btns.count() > 0
+        except Exception:
+            pass
         
         # Get ICS link if available
         ics_url = None
@@ -700,12 +716,17 @@ async def book_slot(
         except Exception:
             pass
         
+        # Confirmation is OK if ANY of these signals are true
+        confirmation_ok = confirmed or invitee_id_in_url or scheduled_in_url or add_to_calendar
+        
         results["steps"]["confirmation"] = {
-            "ok": confirmed or invitee_id_in_url,
+            "ok": confirmation_ok,
             "confirmation_text_found": confirmed,
             "confirmation_text": confirmation_text,
             "url_changed": url_changed,
             "invitee_id_in_url": invitee_id_in_url,
+            "scheduled_in_url": scheduled_in_url,
+            "add_to_calendar_found": add_to_calendar,
             "final_url": current_url,
             "ics_url": ics_url
         }
