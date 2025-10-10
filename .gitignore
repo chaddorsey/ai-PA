@@ -49,6 +49,15 @@ docker-compose.override.yml
 *.bak
 *.dump
 *.sql.gz
+*.sql
+*.tar.gz
+*_backup_*.tar.gz
+*_backup_*.sql
+*_backup_*.json
+n8n_backup_*
+n8n_data_backup_*
+n8n_database_backup_*
+workflows_backup_*
 
 # Logs
 logs/
