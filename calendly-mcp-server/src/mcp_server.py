@@ -559,23 +559,53 @@ async def _handle_calendly_book_slot(arguments: Dict[str, Any]) -> Dict[str, Any
                     f"This may indicate a Calendly UI change. Please report this issue."
                 )
             
+            # Form validation errors
+            elif "form_validation_errors" in reason:
+                submit_step = result.get("steps", {}).get("submission", {})
+                errors = submit_step.get("validation_errors", [])
+                error_list = "\n".join([f"  - {err}" for err in errors])
+                raise ValueError(
+                    f"Form validation errors prevented submission:\n{error_list}\n\n"
+                    f"Please verify all required fields are correctly filled."
+                )
+            
             # Confirmation not detected (booking may have succeeded but verification failed)
             elif "confirmation_not_detected" in reason:
                 conf_step = result.get("steps", {}).get("confirmation", {})
-                raise ValueError(
-                    f"Booking may have been submitted, but confirmation could not be verified. "
-                    f"Details:\n"
-                    f"  - Final URL: {conf_step.get('final_url', 'unknown')}\n"
-                    f"  - URL changed: {conf_step.get('url_changed', False)}\n"
-                    f"  - Invitee ID in URL: {conf_step.get('invitee_id_in_url', False)}\n"
-                    f"  - Confirmation text found: {conf_step.get('confirmation_text_found', False)}\n"
-                    f"  - ICS link found: {conf_step.get('ics_url') is not None}\n\n"
-                    f"IMPORTANT: The booking MAY have succeeded. Please check:\n"
-                    f"  1. User's email ({email}) for confirmation\n"
-                    f"  2. Calendar for the event on {date_str} at {time_str}\n"
-                    f"  3. Final URL above for invitee/confirmation page\n\n"
-                    f"To avoid duplicate bookings, verify before retrying."
-                )
+                final_url = conf_step.get('final_url', 'unknown')
+                
+                # Check if URL suggests we're still on the booking page
+                if url in final_url and ("/invitees/" not in final_url and "/scheduled_events/" not in final_url):
+                    # Still on booking page - submission likely failed
+                    raise ValueError(
+                        f"Booking submission appears to have failed - still on the booking page. "
+                        f"Final URL: {final_url}\n\n"
+                        f"This usually means:\n"
+                        f"  1. Form validation error prevented submission\n"
+                        f"  2. Submit button didn't actually submit the form\n"
+                        f"  3. JavaScript error occurred during submission\n\n"
+                        f"Diagnostic info:\n"
+                        f"  - URL changed: {conf_step.get('url_changed', False)}\n"
+                        f"  - Navigation occurred: {result.get('steps', {}).get('submission', {}).get('navigation_occurred', False)}\n\n"
+                        f"Suggestion: This is likely NOT a duplicate. You can safely retry. "
+                        f"If the issue persists, there may be a form validation problem."
+                    )
+                else:
+                    # URL changed but can't confirm - may have succeeded
+                    raise ValueError(
+                        f"Booking may have been submitted, but confirmation could not be verified. "
+                        f"Details:\n"
+                        f"  - Final URL: {final_url}\n"
+                        f"  - URL changed: {conf_step.get('url_changed', False)}\n"
+                        f"  - Invitee ID in URL: {conf_step.get('invitee_id_in_url', False)}\n"
+                        f"  - Confirmation text found: {conf_step.get('confirmation_text_found', False)}\n"
+                        f"  - ICS link found: {conf_step.get('ics_url') is not None}\n\n"
+                        f"IMPORTANT: The booking MAY have succeeded. Please check:\n"
+                        f"  1. User's email ({email}) for confirmation\n"
+                        f"  2. Calendar for the event on {date_str} at {time_str}\n"
+                        f"  3. Final URL above for invitee/confirmation page\n\n"
+                        f"To avoid duplicate bookings, verify before retrying."
+                    )
             
             # Generic error
             else:

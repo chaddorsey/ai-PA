@@ -650,22 +650,59 @@ async def book_slot(
             return results
         
         # Step 9: ACTUAL SUBMISSION (only if dry_run=False)
+        # Check for form validation errors first
+        validation_errors = []
         try:
-            await submit_btn.click(timeout=5000)
-            results["steps"]["submission"] = {
-                "ok": True,
-                "clicked": True,
-                "button_text": submit_text
-            }
-        except Exception as e:
+            error_msgs = page.locator('[class*="error"], [aria-invalid="true"], [class*="invalid"]')
+            if await error_msgs.count() > 0:
+                for i in range(min(5, await error_msgs.count())):
+                    try:
+                        text = await error_msgs.nth(i).text_content()
+                        if text and text.strip():
+                            validation_errors.append(text.strip())
+                    except:
+                        pass
+        except:
+            pass
+        
+        if validation_errors:
             results["steps"]["submission"] = {
                 "ok": False,
-                "error": str(e)
+                "error": "form_validation_errors",
+                "validation_errors": validation_errors
             }
+            results["reason"] = f"form_validation_errors: {', '.join(validation_errors)}"
             await browser.close()
             return results
         
-        # Wait for confirmation page to load
+        # Click submit and wait for navigation
+        submission_error = None
+        navigation_occurred = False
+        
+        try:
+            # Wait for navigation after clicking submit (timeout 10s)
+            async with page.expect_navigation(timeout=10000):
+                await submit_btn.click(timeout=5000)
+            navigation_occurred = True
+            results["steps"]["submission"] = {
+                "ok": True,
+                "clicked": True,
+                "button_text": submit_text,
+                "navigation_occurred": True
+            }
+        except Exception as e:
+            # Submit may have worked even if navigation timeout occurred
+            submission_error = str(e)
+            results["steps"]["submission"] = {
+                "ok": True,  # Assume ok unless proven otherwise
+                "clicked": True,
+                "button_text": submit_text,
+                "navigation_occurred": False,
+                "navigation_timeout": "timeout" in str(e).lower(),
+                "error_detail": str(e)
+            }
+        
+        # Wait for confirmation page to load/render
         await page.wait_for_timeout(settle_ms)
         
         # Step 10: Verify confirmation (multiple signals)
