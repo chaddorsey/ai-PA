@@ -35,6 +35,16 @@
         "MCP_TRANSPORT": "streamable-http"
       },
       "disabled": false
+    },
+    "calendly-tools": {
+      "command": "http",
+      "args": ["http://calendly-mcp-server:8086/mcp"],
+      "env": {
+        "MCP_SERVER_NAME": "calendly-tools",
+        "MCP_SERVER_VERSION": "1.0.0",
+        "MCP_TRANSPORT": "streamable-http"
+      },
+      "disabled": false
     }
   }
 }

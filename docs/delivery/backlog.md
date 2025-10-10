@@ -23,6 +23,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 15 | Productivity Specialist | As a productivity specialist, I want project-oriented MCP tooling to expose accurate OmniFocus project metadata so that downstream automations can trust quick-access summaries. | Proposed | projectOperations list returns created/modified timestamps and status data; projectOperations detailLevel outputs differ across minimal/standard/full; listProjects surfaces folder metadata and honours listByFolder flag; Regression tests and docs capture the updated tool behaviour - [View Details](./15/prd.md) |
 | 16 | Conversational AI Designer | As a conversational AI designer, I want rich OmniFocus MCP tool metadata and onboarding guidance so that LLMs invoke the tools correctly without repeated failures. | Proposed | Tool descriptions explain required fields and defaults; Quick-start help tool provides usage examples; Welcome notification advertises help reference; Smoke tests confirm help tool availability - [View Details](./16/prd.md) |
 | 17 | Productivity Specialist | As a productivity specialist, I want task durations surfaced in simplified OmniFocus tools so that automations and LLMs can reason about effort. | Proposed | Quick task listings and project summaries include durationMinutes; schemas updated; docs and smoke tests refreshed with duration examples - [View Details](./17/prd.md) |
+| 18 | AI Engineer | As an AI engineer, I want Calendly availability checking integrated into Letta as an MCP server so that my personal assistant can intelligently query scheduling availability and suggest meeting times. | Proposed | Calendly MCP server deployed as Docker service; Server exposes slot-checking tools via MCP protocol; Letta can query Calendly URLs for available dates and times; Health checks validate server availability; Documentation includes usage examples - [View Details](./18/prd.md) |
 
 ## PBI History Log
 
@@ -42,6 +43,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 2025-01-21 04:30:00 | 11 | propose_for_backlog | PBI 11 moved from Proposed to Agreed - framework version management ready for implementation | AI_Agent |
 | 2025-01-21 09:35:00 | 11 | approve | PBI 11 completed - all acceptance criteria met, comprehensive version management framework implemented | User |
 | 2025-10-08 14:20:00 | 15 | create_pbi | Added PBI 15 to repair OmniFocus project metadata exposure in MCP quick tools | AI_Agent |
+| 2025-10-10 12:00:00 | 18 | create_pbi | Added PBI 18 to integrate Calendly availability checking via MCP server for Letta | AI_Agent |
 
 ## Backlog Notes
 

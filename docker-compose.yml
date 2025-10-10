@@ -330,6 +330,53 @@ services:
       - "security.internal-only=true"
       - "security.no-external-access=true"
 
+  # --- Calendly MCP Server ---
+  calendly-mcp-server:
+    build:
+      context: ./calendly-mcp-server
+      dockerfile: Dockerfile
+    container_name: calendly-mcp-server
+    restart: unless-stopped
+    networks: [pa-internal]
+    environment:
+      # Common MCP variables
+      - MCP_SERVER_NAME=calendly-tools
+      - MCP_SERVER_VERSION=1.0.0
+      - MCP_SERVER_DESCRIPTION=Calendly availability checking tools
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8086
+      - MCP_SERVER_PATH=/mcp
+      - MCP_LOG_LEVEL=INFO
+      - MCP_LOG_FORMAT=json
+      - MCP_HEALTH_CHECK_PATH=/health
+      
+      # Calendly-specific variables
+      - CALENDLY_DEFAULT_TIMEZONE=America/New_York
+      - CALENDLY_REQUEST_TIMEOUT=30
+      - PORT=8086
+    ports:
+      - "8086:8086"  # Expose for Letta Desktop access
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service,component,network"
+    labels:
+      - "service=calendly-mcp-server"
+      - "component=mcp-server"
+      - "network=pa-internal"
+      - "mcp-transport=http"
+      - "mcp-version=1.0.0"
+      - "security.internal-only=true"
+      - "security.no-external-access=true"
+
   # --- Health Monitor Service ---
   health-monitor:
     build:
@@ -342,6 +389,7 @@ services:
       - gmail-mcp-server
       - graphiti-mcp-server
       - rag-mcp-server
+      - calendly-mcp-server
     environment:
       - NODE_ENV=production
       - PORT=8083
