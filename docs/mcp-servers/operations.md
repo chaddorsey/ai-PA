@@ -93,6 +93,15 @@ docker-compose up -d health-monitor
 curl http://localhost:8083/health
 ```
 
+#### Scheduler MCP Server
+```bash
+# Build and start Scheduler MCP server
+docker-compose up -d scheduler-mcp-server
+
+# Verify Scheduler MCP server
+curl http://localhost:8088/health
+```
+
 ### Configuration Management
 
 #### Environment Variables
@@ -130,6 +139,14 @@ MCP_SERVER_PORT=8082
 PORT=8083
 HEALTH_CHECK_INTERVAL=30
 NODE_ENV=production
+```
+
+**Scheduler MCP Server**:
+```bash
+SCHEDULER_BASE_URL=http://scheduler-service:8087/v1
+SCHEDULER_API_KEY=<optional_api_key>
+MCP_SERVER_NAME=scheduler-tools
+MCP_SERVER_PORT=8088
 ```
 
 ## Monitoring and Alerting

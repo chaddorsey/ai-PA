@@ -21,6 +21,7 @@ The PA ecosystem includes several MCP servers that provide specialized functiona
 - **[Graphiti MCP Server](./graphiti-mcp-server.md)** - Knowledge graph and memory tools
 - **[RAG MCP Server](./rag-mcp-server.md)** - Retrieval-augmented generation tools
 - **[Health Monitor](./health-monitor.md)** - Health monitoring and alerting system
+- **[Scheduler MCP Server](./scheduler-mcp-server.md)** - Scheduler/reminder tools for Letta
 
 ### Integration Documentation
 - **[Letta Integration](./letta-integration.md)** - Letta MCP server integration
@@ -62,6 +63,7 @@ open http://localhost:8083/dashboard
 - **Graphiti MCP Server** (Port 8082) - Knowledge graph and memory tools
 - **RAG MCP Server** (Port 8082) - Document retrieval and search tools
 - **Health Monitor** (Port 8083) - Health monitoring and alerting
+- **Scheduler MCP Server** (Port 8088) - Scheduler/reminder management tools
 
 ### Integration Points
 - **Letta Integration** - Primary MCP client

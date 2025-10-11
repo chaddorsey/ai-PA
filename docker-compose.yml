@@ -330,6 +330,70 @@ services:
       - "security.internal-only=true"
       - "security.no-external-access=true"
 
+  scheduler-service:
+    build:
+      context: ./scheduler-service
+    container_name: scheduler-service
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      SCHEDULER_DB_URL: ${SCHEDULER_DB_URL:-postgresql+asyncpg://scheduler_service:${SCHEDULER_DB_PASSWORD:-scheduler_secret}@supabase-db:5432/scheduler_service}
+      SCHEDULER_DB_PASSWORD: ${SCHEDULER_DB_PASSWORD:-scheduler_secret}
+      SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
+    networks: [pa-internal]
+    ports:
+      - "8087:8087"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/v1/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=scheduler-service"
+      - "component=scheduler"
+      - "network=pa-internal"
+
+  scheduler-mcp:
+    build:
+      context: ./scheduler-mcp
+    container_name: scheduler-mcp
+    restart: unless-stopped
+    depends_on:
+      scheduler-service:
+        condition: service_started
+    environment:
+      SCHEDULER_BASE_URL: ${SCHEDULER_BASE_URL:-http://scheduler-service:8087/v1}
+      SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
+    networks: [pa-internal]
+    ports:
+      - "8088:8088"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=scheduler-mcp"
+      - "component=mcp-server"
+      - "network=pa-internal"
+      - "mcp-transport=http"
+      - "mcp-version=0.1.0"
+      - "security.internal-only=true"
+
   # --- Calendly MCP Server ---
   calendly-mcp-server:
     build:
@@ -414,6 +478,7 @@ services:
       - "network=pa-internal"
       - "external-access=true"
       - "dashboard=true"
+
 
 
 # Cloudflare tunnel configuration is below in the cloudflare-tunnel service
@@ -717,6 +782,7 @@ services:
 
   # Web-based system monitoring and administration
   # cockpit: (temporarily disabled - image not available)
+
 
 volumes:
   supabase_db:

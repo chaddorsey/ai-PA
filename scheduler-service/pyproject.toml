@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "scheduler-service"
+version = "0.1.0"
+description = "Dedicated scheduling and reminder service for Letta ecosystem"
+authors = ["AI Agent <ai-agent@example.com>"]
+readme = "README.md"
+packages = [{ include = "scheduler_service", from = "src" }]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+fastapi = "^0.115.0"
+uvicorn = { extras = ["standard"], version = "^0.30.5" }
+sqlalchemy = "^2.0.34"
+sqlalchemy-utils = "^0.41.2"
+asyncpg = "^0.29.0"
+alembic = "^1.13.2"
+apscheduler = "^3.10.4"
+structlog = "^24.1.0"
+httpx = "^0.28.1"
+pydantic = "^2.9.2"
+pydantic-settings = "^2.4.0"
+pgvector = "^0.3.4"
+numpy = "^1.26.4"
+scikit-learn = "^1.5.2"
+python-dotenv = "^1.0.1"
+
+[tool.poetry.extras]
+embeddings = ["sentence-transformers"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.2"
+pytest-asyncio = "^0.24.0"
+httpx = { extras = ["cli"], version = "^0.28.1" }
+coverage = "^7.6.2"
+ruff = "^0.6.8"
+mypy = "^1.11.1"
+types-requests = "^2.32.0.20240906"
+types-python-dateutil = "^2.9.0.20240316"
+pyyaml = "^6.0.3"
+pytest-httpx = "^0.35.0"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
+

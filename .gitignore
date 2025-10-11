@@ -190,6 +190,9 @@ tunnel-*.json
 /analytics/
 *.metrics
 
+# Project-specific virtualenvs
+scheduler-mcp/.venv-test/
+
 # Local Development
 .local/
 .dev/
