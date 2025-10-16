@@ -67,6 +67,7 @@ const quickToolSchemas = {
           "Return only OmniFocus available tasks (not blocked/deferred). Default false; requires availability data from OmniFocus.",
       },
     },
+    required: [],
     additionalProperties: false,
   },
   listProjects: {
@@ -102,6 +103,7 @@ const quickToolSchemas = {
         description: "Include task count summary (default true).",
       },
     },
+    required: [],
     additionalProperties: false,
   },
   moveTaskToProject: {
@@ -116,6 +118,7 @@ const quickToolSchemas = {
   tasksHelp: {
     type: "object" as const,
     properties: {},
+    required: [],
     description: "No parameters required.",
     additionalProperties: false,
   },
@@ -357,6 +360,7 @@ const tools = [
           description: freshnessDescription,
         },
       },
+      required: [],
       additionalProperties: false,
     },
   },
