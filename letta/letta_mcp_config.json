@@ -45,6 +45,16 @@
         "MCP_TRANSPORT": "streamable-http"
       },
       "disabled": false
+    },
+    "scheduler-tools": {
+      "command": "http",
+      "args": ["http://scheduler-mcp:8088/mcp"],
+      "env": {
+        "MCP_SERVER_NAME": "scheduler-tools",
+        "MCP_SERVER_VERSION": "1.0.0",
+        "MCP_TRANSPORT": "streamable-http"
+      },
+      "disabled": false
     }
   }
 }
