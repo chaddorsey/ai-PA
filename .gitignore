@@ -216,3 +216,4 @@ deployment/backups2/*
 #Data and resources
 data-resources/*
 letta/upload_log.txt
+omnifocus-mcp-letta/dist/server-mcp-official-8124.js

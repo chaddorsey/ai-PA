@@ -145,7 +145,7 @@ export class OmniFocusMCPServer {
                             },
                             parameters: {
                                 type: "object",
-                                additionalProperties: {},
+                                additionalProperties: true,
                                 description: "Parameters for the operation"
                             }
                         },
@@ -165,7 +165,7 @@ export class OmniFocusMCPServer {
                             },
                             parameters: {
                                 type: "object",
-                                additionalProperties: {},
+                                additionalProperties: true,
                                 description: "Parameters for the action"
                             },
                             context: {
