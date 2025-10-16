@@ -378,7 +378,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -399,7 +400,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
         detailLevel: {
@@ -433,7 +435,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -454,7 +457,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -475,7 +479,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -496,7 +501,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -538,7 +544,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
         sortOrder: {
@@ -571,7 +578,6 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
           description: "Parameters for the action",
         },
         detailLevel: {
@@ -587,7 +593,7 @@ const tools = [
           description: freshnessDescription,
         },
       },
-      required: ["action"],
+      required: ["action", "parameters"],
       additionalProperties: false,
     },
   },
@@ -604,7 +610,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -633,7 +640,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -654,7 +662,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -675,7 +684,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -696,7 +706,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -717,7 +728,8 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          properties: {},
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
