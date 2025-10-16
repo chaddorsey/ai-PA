@@ -31,3 +31,5 @@ curl -s "$BASE_URL/health/metrics" | jq .
 
 echo -e "\n\nAll tests complete!"
 
+
+

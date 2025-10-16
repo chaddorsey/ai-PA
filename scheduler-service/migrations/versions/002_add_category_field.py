@@ -39,3 +39,5 @@ def downgrade() -> None:
     op.drop_index("jobs_category_idx", table_name="jobs", schema="scheduler")
     op.drop_column("jobs", "category", schema="scheduler")
 
+
+
