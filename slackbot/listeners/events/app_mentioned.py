@@ -1,16 +1,20 @@
 # listeners/events/app_mentioned.py
-from logging import Logger
-from slack_bolt import App, Say
-from slack_sdk import WebClient
 import time
 import random
 import threading
+from logging import Logger
+from typing import List
+
+from slack_bolt import App, Say
+from slack_sdk import WebClient
 
 from ai.providers.letta_stream import LettaAPIStreaming
-from listeners.listener_utils.listener_constants import (
-    DEFAULT_LOADING_TEXT,
-    MENTION_WITHOUT_TEXT,
+from listeners.messages.message_im_hybrid import (
+    _is_streaming_enabled,
+    _set_assistant_status,
+    _stream_dm_reply,
 )
+from listeners.listener_utils.listener_constants import MENTION_WITHOUT_TEXT
 from listeners.listener_utils.parse_conversation import parse_conversation
 
 
@@ -44,101 +48,100 @@ def _handle_app_mention(event: dict, client: WebClient, logger: Logger, say: Say
             (f"Conversation so far:\n{conversation_context}\n\n") if conversation_context else ""
         ) + f"User <@{user_id}> says:\n{text}"
 
-        # Phase 1: Ultra-fast initial feedback
-        waiting = client.chat_postMessage(channel=channel_id, text="...")
-        
-        # Get the full response while showing sophisticated dot animation
         system = "You are a helpful Slack bot. Be concise and helpful."
-        streamer = LettaAPIStreaming()
-        
-        # Start streaming response in background while showing dots
-        full_response = ""
+        streaming_enabled = _is_streaming_enabled()
+
+        if streaming_enabled:
+            logger.info("Streaming enabled for app_mention; attempting Slack chat.stream")
+            placeholder = client.chat_postMessage(
+                channel=channel_id,
+                text="…",
+                thread_ts=thread_ts,
+            )
+
+            _set_assistant_status(
+                client,
+                logger,
+                channel_id,
+                placeholder["ts"],
+                status="thinking…",
+                loading_messages=[
+                    "Gathering channel history…",
+                    "Assembling a helpful reply…",
+                    "Checking references…",
+                ],
+            )
+
+            success, streamed_text = _stream_dm_reply(
+                client,
+                logger,
+                channel_id,
+                placeholder["ts"],
+                system,
+                user_prompt,
+            )
+
+            if success:
+                _set_assistant_status(
+                    client,
+                    logger,
+                    channel_id,
+                    placeholder["ts"],
+                    status="done",
+                )
+                return
+
+            logger.warning(
+                "Streaming mention response failed; falling back to legacy animation"
+            )
+            waiting = placeholder
+            fallback_text = streamed_text
+        else:
+            fallback_text = None
+
+        if "waiting" not in locals():
+            waiting = client.chat_postMessage(channel=channel_id, text="...", thread_ts=thread_ts)
+
+        streamer = LettaAPIStreaming(logger=logger)
         response_ready = threading.Event()
-        
+        collected_chunks: List[str] = []
+
         def get_response():
-            nonlocal full_response
-            full_response = "".join(streamer.chat_stream(system, user_prompt)).strip()
-            response_ready.set()
-        
-        # Start getting response in background
+            try:
+                for chunk in streamer.chat_stream(system, user_prompt):
+                    collected_chunks.append(chunk)
+            finally:
+                response_ready.set()
+
         response_thread = threading.Thread(target=get_response)
         response_thread.start()
-        
-        # Sophisticated dot animation
+
         dot_count = 3
-        animation_phase = 1  # 1: initial 3 dots, 2: growing to 7, 3: cycling
-        
-        # Phase 1: Quick initial 3 dots (already shown)
-        # Phase 2: Add one dot per second until 7 dots
+
         while not response_ready.is_set() and dot_count < 7:
             time.sleep(1.0)
-            if not response_ready.is_set():  # Check again after sleep
+            if not response_ready.is_set():
                 dot_count += 1
                 client.chat_update(channel=channel_id, ts=waiting["ts"], text="." * dot_count)
-        
-        # Phase 3: Cycle between 1 and 7 dots if response still not ready
+
         while not response_ready.is_set():
-            # Reset to 1 dot
             dot_count = 1
             client.chat_update(channel=channel_id, ts=waiting["ts"], text=".")
             time.sleep(1.0)
-            
+
             if response_ready.is_set():
                 break
-                
-            # Add dots back up to 7
+
             while not response_ready.is_set() and dot_count < 7:
                 time.sleep(1.0)
                 if not response_ready.is_set():
                     dot_count += 1
                     client.chat_update(channel=channel_id, ts=waiting["ts"], text="." * dot_count)
-        
-        # Wait for response thread to complete
+
         response_thread.join()
-        
-        # Phase 2: Smart sentence-based chunking
-        words = full_response.split()
-        current_text = ""
-        i = 0
-        
-        while i < len(words):
-            # Find the next sentence boundary
-            sentence_end = i
-            for j in range(i, len(words)):
-                word = words[j]
-                if word.endswith('.') or word.endswith('!') or word.endswith('?'):
-                    sentence_end = j + 1
-                    break
-            
-            # Determine chunk size based on sentence length
-            sentence_length = sentence_end - i
-            if sentence_length <= 6:
-                # Short sentence: deliver in 1-2 chunks
-                chunk_size = random.choices([sentence_length, sentence_length//2 + 1], weights=[3, 2])[0]
-            else:
-                # Longer sentence: deliver in 2 chunks
-                chunk_size = random.choices([3, 4, 5, 6, 7, 8, 9], weights=[1, 2, 4, 4, 3, 2, 1])[0]
-                chunk_size = min(chunk_size, sentence_length)
-            
-            # Don't exceed remaining words
-            chunk_size = min(chunk_size, len(words) - i)
-            
-            # Add the chunk
-            chunk_words = words[i:i + chunk_size]
-            current_text += " ".join(chunk_words) + " "
-            client.chat_update(channel=channel_id, ts=waiting["ts"], text=current_text.strip())
-            
-            # Calculate delay based on chunk characteristics
-            chunk_text = " ".join(chunk_words)
-            base_delay = 0.2 + (len(chunk_text) * 0.015)  # Faster base delay
-            variable_delay = random.uniform(0.05, 0.2)    # Less variation
-            delay = base_delay + variable_delay
-            
-            # Cap the delay to prevent it from being too slow
-            delay = min(delay, 0.8)
-            
-            time.sleep(delay)
-            i += chunk_size
+
+        full_response = fallback_text or streamer.last_message or "".join(collected_chunks).strip()
+        client.chat_update(channel=channel_id, ts=waiting["ts"], text=full_response)
 
     except Exception as e:
         logger.exception(e)
