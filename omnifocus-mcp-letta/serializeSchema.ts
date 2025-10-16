@@ -10,7 +10,7 @@ export function serializeSchema(schema: z.ZodTypeAny) {
     type: "object",
     properties: {
       command: { type: "string" },
-      args: { type: "object", additionalProperties: true },
+      args: { type: "object", additionalProperties: false },
     },
     required: ["command"],
     additionalProperties: false,

@@ -271,7 +271,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters specific to the action",
         },
         filters: {
@@ -341,7 +341,7 @@ const tools = [
         },
         filters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Advanced filter object (dates, duration, status, tags)",
         },
         detailLevel: {
@@ -374,7 +374,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -395,7 +395,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
         detailLevel: {
@@ -429,7 +429,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -450,7 +450,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -471,7 +471,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -492,7 +492,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -513,7 +513,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for bulk processing",
         },
       },
@@ -534,7 +534,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
         sortOrder: {
@@ -567,7 +567,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
         detailLevel: {
@@ -600,7 +600,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -629,7 +629,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -650,7 +650,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -671,7 +671,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -692,7 +692,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
@@ -713,7 +713,7 @@ const tools = [
         },
         parameters: {
           type: "object",
-          additionalProperties: true,
+          additionalProperties: false,
           description: "Parameters for the action",
         },
       },
