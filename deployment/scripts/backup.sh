@@ -160,6 +160,19 @@ if ! command -v docker-compose >/dev/null 2>&1; then
     exit 1
 fi
 
+# Function to translate container path to host path for Docker mounts
+# When running inside a container, /workspace maps to /Users/dorseyhomeserver/ai-PA on host
+translate_to_host_path() {
+    local path="$1"
+    # If running inside scheduler container and path starts with /workspace
+    if [[ -f /.dockerenv ]] && [[ "$path" == /workspace/* ]]; then
+        # Replace /workspace with actual host path
+        echo "${path/\/workspace/\/Users\/dorseyhomeserver\/ai-PA}"
+    else
+        echo "$path"
+    fi
+}
+
 # Function to check if service is running
 is_service_running() {
     local service_name="$1"
@@ -195,9 +208,54 @@ backup_volume() {
     if [[ "$DRY_RUN" == "true" ]]; then
         log "DRY RUN: Would backup volume $volume_name to $backup_file"
     else
-        docker run --rm -v "$volume_name":/data -v "$(dirname "$backup_file")":/backup alpine tar czf "/backup/$(basename "$backup_file")" -C /data .
-        log_success "Volume $volume_name backed up to $backup_file"
+        # Check if volume exists and has data
+        if ! docker volume inspect "$volume_name" >/dev/null 2>&1; then
+            log_warning "Volume $volume_name does not exist. Skipping."
+            return
+        fi
+        
+        local volume_size=$(docker run --rm -v "$volume_name":/data alpine du -sh /data 2>/dev/null | awk '{print $1}')
+        if [[ "$volume_size" == "0" || "$volume_size" == "4.0K" ]]; then
+            log_warning "Volume $volume_name appears empty ($volume_size). Skipping."
+            return
+        fi
+        
+        # Translate path for nested Docker containers
+        local backup_dir_host=$(translate_to_host_path "$(dirname "$backup_file")")
+        docker run --rm -v "$volume_name":/data -v "$backup_dir_host":/backup alpine tar czf "/backup/$(basename "$backup_file")" -C /data .
+        local backup_size=$(du -h "$backup_file" | cut -f1)
+        log_success "Volume $volume_name backed up ($volume_size -> $backup_size)"
     fi
+}
+
+# Function to discover and backup all named volumes
+backup_all_volumes() {
+    local backup_dir="$1"
+    
+    log "Discovering volumes from running containers..."
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would discover and backup volumes"
+        return
+    fi
+    
+    # Get all named volumes from running containers
+    local volumes=$(docker ps --format '{{.Names}}' | while read container; do
+        docker inspect "$container" 2>/dev/null | jq -r '.[0].Mounts[] | select(.Type=="volume" and .Name != null and (.Name | startswith("ai-pa_") or startswith("pa-ecosystem_"))) | .Name'
+    done | sort -u)
+    
+    if [[ -z "$volumes" ]]; then
+        log_warning "No named volumes found in running containers"
+        return
+    fi
+    
+    local count=0
+    for volume in $volumes; do
+        backup_volume "$volume" "$backup_dir/${volume}_${TIMESTAMP}.tar.gz"
+        ((count++)) || true
+    done
+    
+    log_success "Backed up $count volumes"
 }
 
 # Function to backup configuration files
@@ -210,8 +268,208 @@ backup_config() {
     if [[ "$DRY_RUN" == "true" ]]; then
         log "DRY RUN: Would backup configuration $config_dir to $backup_file"
     else
-        tar czf "$backup_file" -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
+        # Special handling for deployment/ directory to exclude backups subfolder
+        if [[ "$(basename "$config_dir")" == "deployment" ]]; then
+            tar czf "$backup_file" --exclude="backups" -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
+        else
+            tar czf "$backup_file" -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
+        fi
         log_success "Configuration $config_dir backed up to $backup_file"
+    fi
+}
+
+# Function to backup all databases dynamically
+backup_all_databases() {
+    local backup_dir="$1"
+    
+    log "Discovering and backing up all databases..."
+    
+    if ! is_service_running "supabase-db"; then
+        log_warning "Database service is not running. Skipping database discovery."
+        return
+    fi
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would backup all databases"
+        return
+    fi
+    
+    # Cluster-wide backup (includes all DBs, roles, permissions)
+    log "Creating cluster-wide backup with pg_dumpall..."
+    docker-compose exec -T supabase-db pg_dumpall -U postgres > "$backup_dir/pg_cluster_$TIMESTAMP.sql"
+    log_success "Cluster-wide backup created: pg_cluster_$TIMESTAMP.sql"
+    
+    # List and backup individual databases
+    local databases=$(docker-compose exec -T supabase-db psql -U postgres -tA -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
+    
+    for db in $databases; do
+        log "Backing up individual database: $db"
+        docker-compose exec -T supabase-db pg_dump -U postgres "$db" > "$backup_dir/${db}_$TIMESTAMP.sql"
+        log_success "Database $db backed up"
+    done
+}
+
+# Function to backup Letta agent exports and memory blocks
+backup_letta_exports() {
+    local export_dir="$1"
+    
+    log "Backing up Letta agent exports and memory blocks..."
+    
+    # Determine Letta base URL (try container-internal first, then localhost)
+    local LETTA_BASE_URL="${LETTA_BASE_URL:-http://letta:8283}"
+    local LETTA_API_TOKEN="${LETTA_API_TOKEN:-}"
+    
+    # Create export directories
+    mkdir -p "$export_dir/agents" "$export_dir/memory"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would backup Letta exports from $LETTA_BASE_URL"
+        return
+    fi
+    
+    # Check if Letta is accessible
+    if ! curl -sSf "$LETTA_BASE_URL/v1/health/" >/dev/null 2>&1; then
+        log_warning "Letta service not accessible at $LETTA_BASE_URL. Trying localhost..."
+        LETTA_BASE_URL="http://127.0.0.1:8283"
+        if ! curl -sSf "$LETTA_BASE_URL/v1/health/" >/dev/null 2>&1; then
+            log_warning "Letta service not accessible. Skipping Letta exports."
+            return
+        fi
+    fi
+    
+    log_success "Letta service accessible at $LETTA_BASE_URL"
+    
+    # Build auth header if token is provided
+    local AUTH_HEADER=""
+    if [[ -n "$LETTA_API_TOKEN" ]]; then
+        AUTH_HEADER="Authorization: Bearer $LETTA_API_TOKEN"
+    fi
+    
+    # Export all agents
+    log "Fetching agent list..."
+    local agents_response=$(mktemp)
+    if [[ -n "$AUTH_HEADER" ]]; then
+        curl -sSL -H "$AUTH_HEADER" "$LETTA_BASE_URL/v1/agents?limit=1000" > "$agents_response" 2>/dev/null || true
+    else
+        curl -sSL "$LETTA_BASE_URL/v1/agents?limit=1000" > "$agents_response" 2>/dev/null || true
+    fi
+    
+    # Check if response is valid JSON
+    if ! jq -e . >/dev/null 2>&1 < "$agents_response"; then
+        log_warning "Failed to fetch agents list or invalid JSON response"
+        rm "$agents_response"
+        return
+    fi
+    
+    # Letta API returns array directly, not {items: [...]}
+    local agent_count=$(jq -r '. | length' "$agents_response" 2>/dev/null || echo "0")
+    log "Found $agent_count agents to export"
+    
+    if [[ "$agent_count" -eq 0 ]]; then
+        log_warning "No agents found to export"
+        rm "$agents_response"
+        return
+    fi
+    
+    # Export each agent (using legacy format for compatibility)
+    jq -r '.[].id' "$agents_response" 2>/dev/null | while read -r agent_id; do
+        if [[ -z "$agent_id" ]]; then
+            continue
+        fi
+        
+        log "Exporting agent: $agent_id"
+        # Try legacy format first (v1) - more reliable
+        if [[ -n "$AUTH_HEADER" ]]; then
+            curl -sSL -H "$AUTH_HEADER" "$LETTA_BASE_URL/v1/agents/$agent_id/export?use_legacy_format=true" \
+                -o "$export_dir/agents/${agent_id}.json" 2>/dev/null || true
+        else
+            curl -sSL "$LETTA_BASE_URL/v1/agents/$agent_id/export?use_legacy_format=true" \
+                -o "$export_dir/agents/${agent_id}.json" 2>/dev/null || true
+        fi
+        
+        # Verify export was successful (check for error JSON)
+        if [[ -s "$export_dir/agents/${agent_id}.json" ]]; then
+            if grep -q '"detail"' "$export_dir/agents/${agent_id}.json" 2>/dev/null; then
+                log_warning "Agent $agent_id export failed (API error)"
+            else
+                local agent_size=$(du -h "$export_dir/agents/${agent_id}.json" | cut -f1)
+                log_success "Agent $agent_id exported ($agent_size)"
+            fi
+        else
+            log_warning "Agent $agent_id export is empty"
+        fi
+    done
+    
+    rm "$agents_response"
+    
+    # Export memory blocks
+    log "Fetching memory blocks..."
+    if [[ -n "$AUTH_HEADER" ]]; then
+        curl -sSL -H "$AUTH_HEADER" "$LETTA_BASE_URL/v1/blocks?limit=1000" \
+            -o "$export_dir/memory/blocks_all.json" 2>/dev/null || true
+    else
+        curl -sSL "$LETTA_BASE_URL/v1/blocks?limit=1000" \
+            -o "$export_dir/memory/blocks_all.json" 2>/dev/null || true
+    fi
+    
+    if [[ -s "$export_dir/memory/blocks_all.json" ]]; then
+        # Letta API returns array directly for blocks too
+        local block_count=$(jq -r '. | length' "$export_dir/memory/blocks_all.json" 2>/dev/null || echo "0")
+        log_success "Memory blocks exported: $block_count blocks"
+    else
+        log_warning "Memory blocks export is empty or failed"
+    fi
+}
+
+# Function to record Git state
+record_git_state() {
+    local git_ref_file="$1"
+    local repo_snapshot_file="$2"
+    
+    log "Recording Git state..."
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would record Git state"
+        return
+    fi
+    
+    # Check if we're in a Git repository
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        log_warning "Not in a Git repository. Skipping Git state capture."
+        return
+    fi
+    
+    # Record Git reference information
+    cat > "$git_ref_file" << EOF
+# PA Ecosystem Backup - Git Reference
+# Created: $(date)
+
+Commit: $(git rev-parse HEAD)
+Branch: $(git rev-parse --abbrev-ref HEAD)
+Date: $(git log -1 --format=%cd)
+Author: $(git log -1 --format=%an)
+Message: $(git log -1 --format=%s)
+
+## Status:
+$(git status --porcelain=v1)
+
+## Recent Commits:
+$(git log --oneline -10)
+EOF
+    
+    log_success "Git reference saved: $git_ref_file"
+    
+    # Create snapshot of tracked files (exclude backup directory)
+    log "Creating snapshot of tracked files..."
+    local backup_dir_name=$(basename "$BACKUP_DIR")
+    git ls-files -z | tar --null --files-from=- --exclude="$backup_dir_name/*" -czf "$repo_snapshot_file" 2>/dev/null || {
+        log_warning "Git snapshot creation had warnings (this is usually safe)"
+    }
+    
+    if [[ -s "$repo_snapshot_file" ]]; then
+        log_success "Git snapshot created: $(basename "$repo_snapshot_file")"
+    else
+        log_warning "Git snapshot is empty or failed"
     fi
 }
 
@@ -242,7 +500,7 @@ create_manifest() {
 EOF
         
         # Add file listings
-        find "$BACKUP_PATH" -type f -name "*.tar.gz" -o -name "*.sql" -o -name "*.env" | while read -r file; do
+        find "$BACKUP_PATH" -type f -name "*.tar.gz" -o -name "*.sql" -o -name "*.env" -o -name "*.json" -o -name "*.txt" | while read -r file; do
             echo "- $(basename "$file") ($(du -h "$file" | cut -f1))" >> "$manifest_file"
         done
         
@@ -263,22 +521,16 @@ main() {
     fi
     
     # Create backup directory structure
-    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs}
+    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports}
     
-    # Backup databases
+    # Backup all databases (dynamic discovery + cluster backup)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
-        backup_database "postgres" "$BACKUP_PATH/databases/postgres_$TIMESTAMP.sql"
-        backup_database "letta" "$BACKUP_PATH/databases/letta_$TIMESTAMP.sql"
-        backup_database "n8n" "$BACKUP_PATH/databases/n8n_$TIMESTAMP.sql"
+        backup_all_databases "$BACKUP_PATH/databases"
     fi
     
-    # Backup volumes
+    # Backup volumes (dynamic discovery)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
-        backup_volume "pa-ecosystem_letta_data" "$BACKUP_PATH/volumes/letta_data_$TIMESTAMP.tar.gz"
-        backup_volume "pa-ecosystem_n8n_data" "$BACKUP_PATH/volumes/n8n_data_$TIMESTAMP.tar.gz"
-        backup_volume "pa-ecosystem_openwebui_data" "$BACKUP_PATH/volumes/openwebui_data_$TIMESTAMP.tar.gz"
-        backup_volume "pa-ecosystem_neo4j_data" "$BACKUP_PATH/volumes/neo4j_data_$TIMESTAMP.tar.gz"
-        backup_volume "pa-ecosystem_supabase_storage" "$BACKUP_PATH/volumes/supabase_storage_$TIMESTAMP.tar.gz"
+        backup_all_volumes "$BACKUP_PATH/volumes"
     fi
     
     # Backup configuration files
@@ -291,12 +543,8 @@ main() {
     
     # Backup service configurations
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "services" ]]; then
-        # Backup Letta configuration
-        if is_service_running "letta"; then
-            docker-compose exec -T letta cat /app/agent.json > "$BACKUP_PATH/configs/letta_agent.json" 2>/dev/null || true
-            docker-compose exec -T letta cat /app/blocks.json > "$BACKUP_PATH/configs/letta_blocks.json" 2>/dev/null || true
-            docker-compose exec -T letta cat /app/core_memory.json > "$BACKUP_PATH/configs/letta_core_memory.json" 2>/dev/null || true
-        fi
+        # Backup Letta agents and memory via API
+        backup_letta_exports "$BACKUP_PATH/letta_exports"
         
         # Backup n8n workflows
         if is_service_running "n8n"; then
@@ -304,6 +552,9 @@ main() {
             docker cp "$(docker-compose ps -q n8n)":/tmp/n8n_backup.json "$BACKUP_PATH/configs/n8n_workflows.json" 2>/dev/null || true
         fi
     fi
+    
+    # Record Git state (for all backup types)
+    record_git_state "$BACKUP_PATH/GIT_REFERENCE.txt" "$BACKUP_PATH/configs/git_snapshot_$TIMESTAMP.tar.gz"
     
     # Create backup manifest
     create_manifest "$BACKUP_PATH/BACKUP_MANIFEST.md"

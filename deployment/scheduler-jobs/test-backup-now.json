@@ -1,0 +1,25 @@
+{
+  "title": "Test Backup Execution - Manual",
+  "description": "One-time test of backup script execution via scheduler service",
+  "schedule": {
+    "type": "one_off",
+    "expression": {
+      "run_at": "2025-10-16T00:19:00Z"
+    }
+  },
+  "created_by": "system",
+  "category": "test",
+  "actions": [
+    {
+      "action_type": "script",
+      "order": 1,
+      "config": {
+        "script": "backup.sh",
+        "env": {
+          "LETTA_BASE_URL": "http://letta:8283"
+        }
+      }
+    }
+  ]
+}
+

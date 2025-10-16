@@ -1,0 +1,26 @@
+{
+  "title": "Daily System Backup",
+  "description": "Comprehensive backup of all databases, Docker volumes, Letta agents/memory, n8n workflows, and Git state. Runs daily at 2 AM Eastern.",
+  "schedule": {
+    "type": "cron",
+    "expression": {
+      "cron": "0 2 * * *"
+    }
+  },
+  "created_by": "system",
+  "category": "backup",
+  "actions": [
+    {
+      "action_type": "script",
+      "order": 1,
+      "config": {
+        "script": "backup.sh",
+        "args": [],
+        "env": {
+          "LETTA_BASE_URL": "http://letta:8283"
+        }
+      }
+    }
+  ]
+}
+

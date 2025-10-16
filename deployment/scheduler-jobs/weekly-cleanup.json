@@ -1,0 +1,23 @@
+{
+  "title": "Weekly Backup Cleanup",
+  "description": "Remove backups older than 30 days to manage disk space. Runs Sundays at 3 AM Eastern.",
+  "schedule": {
+    "type": "cron",
+    "expression": {
+      "cron": "0 3 * * 0"
+    }
+  },
+  "created_by": "system",
+  "category": "maintenance",
+  "actions": [
+    {
+      "action_type": "script",
+      "order": 1,
+      "config": {
+        "script": "cleanup.sh",
+        "args": ["30"]
+      }
+    }
+  ]
+}
+

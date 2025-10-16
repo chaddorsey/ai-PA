@@ -215,3 +215,4 @@ deployment/backups2/*
 
 #Data and resources
 data-resources/*
+letta/upload_log.txt

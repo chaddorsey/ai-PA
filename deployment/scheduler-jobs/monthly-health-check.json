@@ -1,0 +1,22 @@
+{
+  "title": "Monthly Backup Health Check",
+  "description": "Verify backup integrity including database dumps, Letta exports, Git state, and overall backup health. Runs first day of each month at 4 AM Eastern.",
+  "schedule": {
+    "type": "cron",
+    "expression": {
+      "cron": "0 4 1 * *"
+    }
+  },
+  "created_by": "system",
+  "category": "monitoring",
+  "actions": [
+    {
+      "action_type": "script",
+      "order": 1,
+      "config": {
+        "script": "backup-health-check.sh"
+      }
+    }
+  ]
+}
+
