@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from scheduler_mcp.server import create_mcp_server
+from scheduler_mcp.server_simple import create_app as create_simple_app
 
 
 def create_app():
-    server = create_mcp_server()
-    return server.streamable_http_app()
+    """Create FastAPI app with simple HTTP JSON-RPC for Letta compatibility."""
+    return create_simple_app()
 

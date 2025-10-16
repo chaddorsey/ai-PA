@@ -342,6 +342,20 @@ services:
       SCHEDULER_DB_URL: ${SCHEDULER_DB_URL:-postgresql+asyncpg://scheduler_service:${SCHEDULER_DB_PASSWORD:-scheduler_secret}@supabase-db:5432/scheduler_service}
       SCHEDULER_DB_PASSWORD: ${SCHEDULER_DB_PASSWORD:-scheduler_secret}
       SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
+      LETTA_CALLBACK_URL: ${LETTA_CALLBACK_URL:-http://letta:8283/v1/agents/%agent_id%/messages}
+      ALLOWLIST_SCRIPT_DIR: /app/scripts
+      LETTA_BASE_URL: http://letta:8283
+      SCHEDULER_TIMEZONE: America/New_York
+    volumes:
+      - ./scheduler-service/scripts:/app/scripts:ro
+      - ./deployment/scripts:/workspace/deployment/scripts:ro
+      - ./deployment/backups:/workspace/deployment/backups
+      - ./deployment/logs:/workspace/deployment/logs
+      - ./.env:/workspace/.env:ro
+      - ./docker-compose.yml:/workspace/docker-compose.yml:ro
+      - ./docs:/workspace/docs:ro
+      - ./.git:/workspace/.git:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     networks: [pa-internal]
     ports:
       - "8087:8087"

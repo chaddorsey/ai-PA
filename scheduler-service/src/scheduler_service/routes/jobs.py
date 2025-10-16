@@ -20,11 +20,13 @@ from scheduler_service.models.job import (
     Job,
     JobMetadata,
     JobStatus,
+    ScheduleType,
 )
 from scheduler_service.schemas import jobs as job_schemas
 from scheduler_service.services.embeddings import embed_texts
 from scheduler_service.services.scheduler import scheduler_service
 from scheduler_service.services.actions import execute_action, ActionExecutionError
+from scheduler_service.services.schedule_parser import parse_schedule, ScheduleParseError
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 logger = get_logger(__name__)
@@ -54,14 +56,48 @@ async def create_job(
     payload: job_schemas.JobCreate,
     session: AsyncSession = Depends(get_session),
 ) -> job_schemas.JobResponse:
+    # Handle natural language schedule parsing
+    schedule_type = payload.schedule.type.value
+    schedule_expression = payload.schedule.expression
+    next_run_at = payload.schedule.next_run_at
+    
+    if schedule_type == "natural" or (isinstance(schedule_expression, str)):
+        # Parse natural language schedule
+        try:
+            when_expr = schedule_expression if isinstance(schedule_expression, str) else schedule_expression.get("expression", "")
+            tz = schedule_expression.get("timezone", "America/New_York") if isinstance(schedule_expression, dict) else "America/New_York"
+            
+            parsed = parse_schedule(when_expr, tz)
+            
+            # Update to use parsed values
+            schedule_type = parsed["type"]
+            schedule_expression = parsed["expression"]
+            next_run_at = parsed["next_run_at"]
+            
+            logger.info(f"Parsed natural language schedule: '{when_expr}' -> {schedule_type} @ {next_run_at}")
+        
+        except ScheduleParseError as e:
+            logger.error(f"Failed to parse schedule: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid schedule expression: {e.reason}"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error parsing schedule: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to parse schedule: {str(e)}"
+            )
+    
     job = Job(
         title=payload.title,
         description=payload.description,
         status=JobStatus.SCHEDULED.value,
-        schedule_type=payload.schedule.type.value,
-        schedule_expression=payload.schedule.expression,
+        schedule_type=schedule_type,
+        schedule_expression=schedule_expression,
         created_by=payload.created_by,
-        next_run_at=payload.schedule.next_run_at,
+        next_run_at=next_run_at,
+        category=payload.category,
     )
 
     if payload.metadata:
@@ -136,6 +172,8 @@ async def update_job(
         job.schedule_type = payload.schedule.type.value
         job.schedule_expression = payload.schedule.expression
         job.next_run_at = payload.schedule.next_run_at
+    if payload.category is not None:
+        job.category = payload.category
 
     if payload.metadata is not None:
         job.metadata_entries.clear()
@@ -176,6 +214,28 @@ async def delete_job(job_id: str, session: AsyncSession = Depends(get_session)) 
     await session.commit()
 
     await scheduler_service.remove_job(job_uuid)
+
+
+@router.post("/{job_id}/executions", response_model=job_schemas.ExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
+async def trigger_job(
+    job_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> job_schemas.ExecutionResponse:
+    """Manually trigger a job execution."""
+    job_uuid = _parse_job_id(job_id)
+    job = await _load_job(session, job_uuid)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    
+    # Trigger the job immediately via the scheduler service
+    execution_id = await scheduler_service.trigger_job(job_uuid)
+    
+    # Return the execution details
+    execution = await session.get(Execution, execution_id)
+    if not execution:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Execution not created")
+    
+    return job_schemas.ExecutionResponse.from_model(execution)
 
 
 @router.get("/{job_id}/executions", response_model=List[job_schemas.ExecutionResponse])

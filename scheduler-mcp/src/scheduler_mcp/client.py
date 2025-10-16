@@ -39,9 +39,23 @@ class SchedulerClient:
         response.raise_for_status()
         return response
 
-    async def list_jobs(self) -> Dict[str, Any]:
+    async def list_jobs(
+        self,
+        status_filter: str = None,
+        created_by_filter: str = None,
+        category_filter: str = None,
+    ) -> Dict[str, Any]:
         try:
-            response = await self._request("GET", "/jobs")
+            # Build query parameters
+            params = {}
+            if status_filter:
+                params["status_filter"] = status_filter
+            if created_by_filter:
+                params["created_by_filter"] = created_by_filter
+            if category_filter:
+                params["category_filter"] = category_filter
+            
+            response = await self._request("GET", "/jobs", params=params)
             return response.json()
         except RetryError as exc:  # pragma: no cover
             raise SchedulerClientError("Scheduler service unavailable after retries") from exc

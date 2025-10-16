@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -14,8 +14,9 @@ class SchedulePayload(BaseModel):
     """Base schedule description."""
 
     type: ScheduleType
-    expression: dict[str, object]
+    expression: Union[str, dict[str, object]]  # String for natural language, dict for structured
     next_run_at: Optional[datetime] = None
+    timezone: Optional[str] = None  # Timezone for natural language schedules
 
 
 class MetadataEntry(BaseModel):
@@ -101,6 +102,7 @@ class JobCreate(BaseModel):
     description: Optional[str] = None
     created_by: str = Field(..., max_length=128)
     schedule: SchedulePayload
+    category: Optional[str] = Field(None, max_length=128)
     metadata: Optional[list[MetadataEntry]] = None
     actions: Optional[list[ActionConfig]] = None
 
@@ -112,6 +114,7 @@ class JobUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[JobStatus] = None
     schedule: Optional[SchedulePayload] = None
+    category: Optional[str] = Field(None, max_length=128)
     metadata: Optional[list[MetadataEntry]] = None
     actions: Optional[list[ActionConfig]] = None
 
@@ -126,6 +129,7 @@ class JobResponse(BaseModel):
     schedule_type: ScheduleType
     schedule_expression: dict[str, object]
     next_run_at: Optional[datetime]
+    category: Optional[str]
     metadata: list[MetadataResponse] = Field(default_factory=list)
     actions: list[ActionResponse] = Field(default_factory=list)
     created_at: datetime
@@ -145,6 +149,7 @@ class JobResponse(BaseModel):
             schedule_type=ScheduleType(model.schedule_type),
             schedule_expression=model.schedule_expression,
             next_run_at=model.next_run_at,
+            category=model.category,
             created_at=model.created_at,
             created_by=model.created_by,
             updated_at=model.updated_at,

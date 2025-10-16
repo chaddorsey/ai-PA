@@ -14,5 +14,6 @@ This document lists all tasks associated with PBI 19.
 | 19-4 | [External Action Pipelines](./19-4.md) | Done | Add HTTP/webhook/script execution support with result ingestion and tests. |
 | 19-5 | [Observability & Resilience](./19-5.md) | Done | Implement logging, retries, catch-up logic, health/metrics endpoints. |
 | 19-6 | [E2E CoS Test](./19-6.md) | Review | Create end-to-end test plan verifying conditions of satisfaction. |
+| 19-7 | [LLM-Friendly Tool Schema & Natural Language Scheduling](./19-7.md) | Review | Refactor MCP tools for LLM usability with natural language parsing and comprehensive error messages. |
 
 

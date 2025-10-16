@@ -12,11 +12,13 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from scheduler_service.database import AsyncSessionFactory
 from scheduler_service.logging_config import get_logger
 from scheduler_service.models.job import (
     Execution,
+    ExecutionOutput,
     ExecutionStatus,
     Job,
     JobStatus,
@@ -116,12 +118,47 @@ class SchedulerService:
             logger.info("Removed job from scheduler", job_id=str(job_id))
         except Exception:  # pragma: no cover - APScheduler raises JobLookupError
             logger.debug("Job not present in scheduler", job_id=str(job_id))
+    
+    async def trigger_job(self, job_id: uuid.UUID) -> uuid.UUID:
+        """Manually trigger a job execution immediately, bypassing the schedule."""
+        logger.info("Manually triggering job", job_id=str(job_id))
+        
+        # Create execution record immediately
+        async with AsyncSessionFactory() as session:
+            execution = Execution(
+                job_id=job_id,
+                scheduled_at=datetime.now(timezone.utc),
+                status=ExecutionStatus.RUNNING.value,
+            )
+            session.add(execution)
+            await session.commit()
+            await session.refresh(execution)
+            execution_id = execution.execution_id
+        
+        # Schedule immediate one-off execution
+        self.scheduler.add_job(
+            self._execute_job,
+            trigger=DateTrigger(run_date=datetime.now(timezone.utc)),
+            id=f"manual-trigger-{execution_id}",
+            args=[job_id],
+            max_instances=1,
+        )
+        
+        return execution_id
 
     async def _execute_job(self, job_id: uuid.UUID) -> None:
         log = execution_logger(str(job_id), "pending")
         log.info("Executing job")
         async with AsyncSessionFactory() as session:
-            job = await session.get(Job, job_id)
+            # Eagerly load actions to avoid lazy-loading issues in async context
+            stmt = (
+                select(Job)
+                .where(Job.job_id == job_id)
+                .options(selectinload(Job.actions))
+            )
+            result = await session.execute(stmt)
+            job = result.scalar_one_or_none()
+            
             if not job:
                 log.warning("Job not found, removing from scheduler")
                 self.scheduler.remove_job(str(job_id))
@@ -139,16 +176,19 @@ class SchedulerService:
 
             try:
                 for action in job.actions:
-                    result = await execute_action(action.action_type.value, action.config)
+                    # action_type is already a string from DB, no need for .value
+                    action_type_str = action.action_type if isinstance(action.action_type, str) else action.action_type.value
+                    result = await execute_action(action_type_str, action.config)
+                    # result is a dict with 'status' and 'output' keys
                     output = ExecutionOutput(
+                        execution_id=execution.execution_id,
                         action_id=action.action_id,
-                        status=result.status,
-                        output=result.output,
-                        error=result.error,
+                        output_type=result.get("status", "unknown"),
+                        output_data=result.get("output", {}),
                     )
                     session.add(output)
                     await session.commit()
-                    log.info("Action completed", action_id=action.action_id, status=result.status)
+                    log.info("Action completed", action_id=str(action.action_id), status=result.get("status"))
 
                 execution.status = ExecutionStatus.SUCCEEDED.value
                 log.info("Execution succeeded")

@@ -132,10 +132,115 @@ async def execute_script_action(action_config: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
+async def execute_agent_message_action(action_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Send message to Letta agent via REST API."""
+    agent_id = action_config.get("agent_id")
+    message = action_config.get("message")
+    
+    if not agent_id:
+        raise ActionExecutionError("agent_message action requires 'agent_id'")
+    if not message:
+        raise ActionExecutionError("agent_message action requires 'message'")
+    
+    # Get Letta API URL from settings
+    letta_url = settings.letta_callback_url
+    if not letta_url:
+        logger.warning("LETTA_CALLBACK_URL not configured, logging message instead")
+        logger.info(
+            "Agent message (would send to Letta)",
+            agent_id=agent_id,
+            message=message,
+            category=action_config.get("category"),
+        )
+        return {
+            "status": "success",
+            "output": {
+                "method": "log_only",
+                "agent_id": agent_id,
+                "message": message,
+                "note": "LETTA_CALLBACK_URL not configured",
+            },
+        }
+    
+    # Construct Letta API endpoint
+    # Supports multiple placeholder formats:
+    # - %agent_id% (preferred)
+    # - {agent_id} (fallback)
+    # - URL-encoded versions
+    # Convert Pydantic URL to string
+    letta_url_str = str(letta_url)
+    
+    # Handle various placeholder formats
+    if "%agent_id%" in letta_url_str:
+        # Preferred format: %agent_id%
+        url = letta_url_str.replace("%agent_id%", agent_id)
+    elif "%7Bagent_id%7D" in letta_url_str:
+        # URL-encoded {agent_id}
+        url = letta_url_str.replace("%7Bagent_id%7D", agent_id)
+    elif "{agent_id}" in letta_url_str:
+        # Plain text {agent_id}
+        url = letta_url_str.replace("{agent_id}", agent_id)
+    else:
+        # No template, construct full URL
+        base_url = letta_url_str.rstrip('/')
+        # If base_url already has /api/agents or /v1/agents, don't add it again
+        if "/agents" in base_url:
+            url = f"{base_url}/{agent_id}/messages"
+        else:
+            # Assume we need to add the full path
+            url = f"{base_url}/v1/agents/{agent_id}/messages"
+    
+    # Send message to Letta
+    # Letta API expects: {"messages": [{"role": "user"|"system", "content": "text"}]}
+    started_at = datetime.utcnow()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                json={
+                    "messages": [
+                        {
+                            "role": "system",  # Scheduler messages come as system messages
+                            "content": message,
+                        }
+                    ]
+                },
+            )
+            response.raise_for_status()
+            
+            logger.info(
+                "Agent message delivered",
+                agent_id=agent_id,
+                url=url,
+                status_code=response.status_code,
+            )
+            
+            return {
+                "status": "success",
+                "output": {
+                    "agent_id": agent_id,
+                    "message": message,
+                    "status_code": response.status_code,
+                    "started_at": started_at.isoformat(),
+                    "completed_at": datetime.utcnow().isoformat(),
+                },
+            }
+    
+    except Exception as exc:
+        logger.error(
+            "Failed to deliver agent message",
+            agent_id=agent_id,
+            url=url,
+            error=str(exc),
+        )
+        raise ActionExecutionError(f"Failed to send message to agent {agent_id}: {exc}") from exc
+
+
 ACTION_EXECUTORS = {
     "http": execute_http_action,
     "webhook": execute_http_action,
     "script": execute_script_action,
+    "agent_message": execute_agent_message_action,
 }
 
 

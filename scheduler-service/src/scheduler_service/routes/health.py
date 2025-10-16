@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from scheduler_service.services.metrics import get_metrics
 
-router = APIRouter(prefix="/v1/health", tags=["health"])
+router = APIRouter(prefix="/health", tags=["health"])
 
 
 @router.get("/ready")
