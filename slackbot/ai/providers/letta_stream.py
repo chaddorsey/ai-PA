@@ -126,13 +126,14 @@ class LettaAPIStreaming:
                     yield tool_event
                     continue
 
-                # Extract text segments
+                # Extract text segments (already clean from assistant_message)
                 segments = self._extract_segments(payload)
                 if not segments:
                     continue
 
                 for segment in segments:
-                    cleaned = self._sanitize_segment(segment)
+                    # Segments from assistant_message are already clean - no sanitization needed
+                    cleaned = segment.strip()
                     if not cleaned:
                         continue
                     normalized_current = self._normalize_for_compare(cleaned)
@@ -159,8 +160,19 @@ class LettaAPIStreaming:
         if not isinstance(payload, dict):
             return None
 
-        # Look for tool call patterns in Letta's SSE responses
-        # Common patterns: tool_calls, function_call, etc.
+        # Check for tool_call_message type (Letta's current format)
+        if payload.get("message_type") == "tool_call_message":
+            tool_call = payload.get("tool_call")
+            if isinstance(tool_call, dict):
+                tool_name = tool_call.get("name", "")
+                self.logger.info(f"🔧 Tool call detected: {tool_name}")
+                return {
+                    "type": "tool_call",
+                    "tool_name": tool_name,
+                    "arguments": tool_call.get("arguments", {}),
+                }
+
+        # Check for tool_calls array pattern
         if "tool_calls" in payload:
             tool_calls = payload["tool_calls"]
             if isinstance(tool_calls, list) and tool_calls:
@@ -182,7 +194,7 @@ class LettaAPIStreaming:
                     "arguments": func_call.get("arguments", {}),
                 }
         
-        # Check message_type for tool call indicators
+        # Check message_type for function_call indicators
         if payload.get("message_type") == "function_call":
             return {
                 "type": "tool_call",

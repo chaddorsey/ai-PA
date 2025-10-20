@@ -9,9 +9,9 @@ TOOL_STATUS_MESSAGES: Dict[str, Dict[str, any]] = {
     "find_shared_meeting_slots": {
         "status": "Checking schedules…",
         "loading_messages": [
-            "Checking schedules and availability…",
-            "Finding open time slots…",
-            "Comparing calendars…",
+            "Checking calendars…",
+            "Comparing schedules…",
+            "Identifying shared slots…",
         ],
     },
     "search_email": {
