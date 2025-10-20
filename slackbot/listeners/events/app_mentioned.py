@@ -69,11 +69,15 @@ def _handle_app_mention(event: dict, client: WebClient, logger: Logger, say: Say
         text_chunks = []
         
         for event in streamer.chat_stream_with_events(system, user_prompt):
-            if event.get("type") == "tool_call":
+            event_type = event.get("type")
+            logger.error(f"📨 Mention Event: type={event_type}, keys={list(event.keys())}")
+            
+            if event_type == "tool_call":
                 # Update status based on tool call
                 tool_name = event.get("tool_name", "")
+                logger.error(f"🔧 MENTION TOOL CALL: {tool_name}")
                 if streaming_enabled and status_thread_ts and tool_name:
-                    logger.info(f"Tool call detected: {tool_name}")
+                    logger.error(f"🔄 Updating mention status for: {tool_name}")
                     tool_status = get_status_for_tool(tool_name)
                     _set_assistant_status(
                         client,
@@ -83,7 +87,7 @@ def _handle_app_mention(event: dict, client: WebClient, logger: Logger, say: Say
                         status=tool_status["status"],
                         loading_messages=tool_status["loading_messages"],
                     )
-            elif event.get("type") == "text":
+            elif event_type == "text":
                 # Accumulate text
                 text_chunks.append(event.get("content", ""))
 

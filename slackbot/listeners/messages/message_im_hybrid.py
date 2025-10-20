@@ -31,20 +31,18 @@ def _set_assistant_status(
     loading_messages: Optional[List[str]] = None,
 ) -> None:
     try:
-        client.assistant_threads_setStatus(
+        logger.error(f"🚀 CALLING assistant_threads_setStatus: status={status}, channel={channel_id}, thread={thread_ts}, messages={loading_messages}")
+        result = client.assistant_threads_setStatus(
             channel_id=channel_id,
             thread_ts=thread_ts,
             status=status,
             loading_messages=loading_messages,
         )
-        logger.debug("Assistant status set: %s (channel=%s, ts=%s)", status, channel_id, thread_ts)
+        logger.error(f"✅ assistant_threads_setStatus SUCCESS: {result}")
     except Exception as error:  # pragma: no cover - non-critical feedback
-        logger.warning(
-            "assistant_threads_setStatus failed (status=%s, channel=%s, ts=%s): %s",
-            status,
-            channel_id,
-            thread_ts,
-            error,
+        logger.error(
+            f"❌ assistant_threads_setStatus FAILED (status={status}, channel={channel_id}, ts={thread_ts}): {error}",
+            exc_info=True,
         )
 
 
@@ -316,12 +314,17 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         text_chunks = []
         
         for event in streamer.chat_stream_with_events(system_prompt, user_prompt):
-            if event.get("type") == "tool_call":
+            event_type = event.get("type")
+            logger.error(f"📨 Event received: type={event_type}, keys={list(event.keys())}")
+            
+            if event_type == "tool_call":
                 # Update status based on tool call
                 tool_name = event.get("tool_name", "")
+                logger.error(f"🔧 TOOL CALL EVENT: {tool_name}")
                 if streaming_enabled and user_message_ts and tool_name:
-                    logger.info(f"Tool call detected: {tool_name}")
+                    logger.error(f"🔄 Updating status for tool: {tool_name}")
                     tool_status = get_status_for_tool(tool_name)
+                    logger.error(f"📝 Status config: {tool_status}")
                     _set_assistant_status(
                         client,
                         logger,
@@ -330,7 +333,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                         status=tool_status["status"],
                         loading_messages=tool_status["loading_messages"],
                     )
-            elif event.get("type") == "text":
+            elif event_type == "text":
                 # Accumulate text
                 text_chunks.append(event.get("content", ""))
 
@@ -343,16 +346,6 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
             text=final_chunks[0]
         )
         reply_ts = post_response.get("ts")
-        
-        # Clear assistant status if it was set
-        if streaming_enabled and user_message_ts:
-            _set_assistant_status(
-                client,
-                logger,
-                working_channel,
-                user_message_ts,
-                status="",
-            )
 
         # Post any overflow chunks in the same channel
         for extra_chunk in final_chunks[1:]:

@@ -49,8 +49,13 @@ DEFAULT_STATUS = {
 
 
 def get_status_for_tool(tool_name: str) -> Dict[str, any]:
-    """Get status message configuration for a specific tool call."""
-    return TOOL_STATUS_MESSAGES.get(tool_name, DEFAULT_STATUS)
+    """Get status message configuration for a specific tool call.
+    
+    Performs case-insensitive lookup to handle PascalCase tool names from Letta.
+    """
+    # Normalize to lowercase for case-insensitive lookup
+    normalized_name = tool_name.lower()
+    return TOOL_STATUS_MESSAGES.get(normalized_name, DEFAULT_STATUS)
 
 
 def get_default_status() -> Dict[str, any]:
