@@ -10,6 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from ai.providers.letta_stream import LettaAPIStreaming
+from listeners.messages.status_messages import get_status_for_tool, get_default_status
 
 MAX_SLACK_MESSAGE_LENGTH = 3500  # Slack hard limit is 4000 characters; keep buffer for formatting
 MAX_STREAM_PREVIEW_LENGTH = 1200
@@ -298,33 +299,48 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         # Use the user's message timestamp as the thread_ts for assistant status
         user_message_ts = event.get("ts")
         
-        # Show assistant status if streaming is enabled
+        # Set initial default status
         if streaming_enabled and user_message_ts:
+            default_status = get_default_status()
             _set_assistant_status(
                 client,
                 logger,
                 working_channel,
                 user_message_ts,
-                status="thinking…",
-                loading_messages=[
-                    "Gathering thoughts…",
-                    "Checking memory…",
-                    "Crafting response…",
-                ],
+                status=default_status["status"],
+                loading_messages=default_status["loading_messages"],
             )
 
-        # Get full response from Letta
+        # Get full response from Letta with event detection
         streamer = LettaAPIStreaming(logger=logger)
-        full_response = "".join(streamer.chat_stream(system_prompt, user_prompt)).strip()
+        text_chunks = []
+        
+        for event in streamer.chat_stream_with_events(system_prompt, user_prompt):
+            if event.get("type") == "tool_call":
+                # Update status based on tool call
+                tool_name = event.get("tool_name", "")
+                if streaming_enabled and user_message_ts and tool_name:
+                    logger.info(f"Tool call detected: {tool_name}")
+                    tool_status = get_status_for_tool(tool_name)
+                    _set_assistant_status(
+                        client,
+                        logger,
+                        working_channel,
+                        user_message_ts,
+                        status=tool_status["status"],
+                        loading_messages=tool_status["loading_messages"],
+                    )
+            elif event.get("type") == "text":
+                # Accumulate text
+                text_chunks.append(event.get("content", ""))
 
-        final_text = streamer.last_message or full_response
+        final_text = (streamer.last_message or "".join(text_chunks)).strip()
         final_chunks = list(_chunk_text(final_text)) or [""]
 
-        # Post the response in the thread
+        # Post the response in the same channel (not threaded)
         post_response = client.chat_postMessage(
             channel=working_channel, 
-            text=final_chunks[0],
-            thread_ts=user_message_ts if user_message_ts else None
+            text=final_chunks[0]
         )
         reply_ts = post_response.get("ts")
         
@@ -338,12 +354,11 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 status="",
             )
 
-        # Post any overflow chunks
+        # Post any overflow chunks in the same channel
         for extra_chunk in final_chunks[1:]:
             client.chat_postMessage(
                 channel=working_channel, 
-                text=extra_chunk,
-                thread_ts=user_message_ts if user_message_ts else None
+                text=extra_chunk
             )
         
         # Set thread title if enabled

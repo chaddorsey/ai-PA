@@ -9,6 +9,7 @@ from listeners.messages.message_im_hybrid import (
     _is_streaming_enabled,
     _set_assistant_status,
 )
+from listeners.messages.status_messages import get_status_for_tool, get_default_status
 from listeners.listener_utils.listener_constants import MENTION_WITHOUT_TEXT
 from listeners.listener_utils.parse_conversation import parse_conversation
 
@@ -51,25 +52,42 @@ def _handle_app_mention(event: dict, client: WebClient, logger: Logger, say: Say
         # If already in a thread, use that thread_ts; otherwise use the mention event's ts
         status_thread_ts = thread_ts if thread_ts else event_ts
 
-        # Show assistant status if streaming is enabled
+        # Set initial default status
         if streaming_enabled and status_thread_ts:
+            default_status = get_default_status()
             _set_assistant_status(
                 client,
                 logger,
                 channel_id,
                 status_thread_ts,
-                status="thinking…",
-                loading_messages=[
-                    "Gathering thoughts…",
-                    "Checking memory…",
-                    "Crafting response…",
-                ],
+                status=default_status["status"],
+                loading_messages=default_status["loading_messages"],
             )
 
-        # Get full response from Letta
+        # Get full response from Letta with event detection
         streamer = LettaAPIStreaming(logger=logger)
-        full_response = "".join(streamer.chat_stream(system, user_prompt)).strip()
-        full_response = streamer.last_message or full_response
+        text_chunks = []
+        
+        for event in streamer.chat_stream_with_events(system, user_prompt):
+            if event.get("type") == "tool_call":
+                # Update status based on tool call
+                tool_name = event.get("tool_name", "")
+                if streaming_enabled and status_thread_ts and tool_name:
+                    logger.info(f"Tool call detected: {tool_name}")
+                    tool_status = get_status_for_tool(tool_name)
+                    _set_assistant_status(
+                        client,
+                        logger,
+                        channel_id,
+                        status_thread_ts,
+                        status=tool_status["status"],
+                        loading_messages=tool_status["loading_messages"],
+                    )
+            elif event.get("type") == "text":
+                # Accumulate text
+                text_chunks.append(event.get("content", ""))
+
+        full_response = (streamer.last_message or "".join(text_chunks)).strip()
         
         # Post reply - threaded if in a thread, inline otherwise
         reply_kwargs = {"channel": channel_id, "text": full_response}
