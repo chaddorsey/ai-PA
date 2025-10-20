@@ -3,6 +3,8 @@ from slack_bolt import App
 from listeners.actions.provider_changed import register as reg_action
 from listeners.commands.ask_bolty_debug import register as reg_cmd
 from listeners.events.app_mentioned import register as reg_mention
+from listeners.events.assistant_thread_started import register as reg_assistant_started
+from listeners.events.assistant_thread_context_changed import register as reg_assistant_context
 # from listeners.events.message_reaction import register as reg_reaction
 from listeners.messages.message_im_hybrid import register as reg_dm
 from listeners.workflows.summarize_function import register as reg_wf
@@ -12,6 +14,8 @@ def register_listeners(app: App):
     reg_action(app)
     reg_cmd(app)
     reg_mention(app)
+    reg_assistant_started(app)
+    reg_assistant_context(app)
     # reg_reaction(app)
     reg_dm(app)
     reg_wf(app)

@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from typing import Generator, Iterable, List
 
 import requests
@@ -30,7 +31,8 @@ class LettaAPIStreaming:
         prompt = f"{system}\n\n{user}" if system else user
         body = {"messages": [{"role": "user", "content": prompt}]}
 
-        full_chunks: List[str] = []
+        assembled: str = ""
+        last_segment: str | None = None
 
         with requests.post(
             url,
@@ -60,12 +62,26 @@ class LettaAPIStreaming:
                     continue
 
                 for segment in segments:
-                    if not segment:
+                    cleaned = self._sanitize_segment(segment)
+                    if not cleaned:
                         continue
-                    full_chunks.append(segment)
-                    yield segment
+                    normalized_current = self._normalize_for_compare(cleaned)
+                    if normalized_current == self._normalize_for_compare(last_segment or ""):
+                        continue
+                    if assembled:
+                        prefix = os.path.commonprefix([assembled, cleaned])
+                        delta = cleaned[len(prefix) :]
+                    else:
+                        delta = cleaned
 
-        self.last_message = "".join(full_chunks)
+                    if not delta:
+                        continue
+
+                    assembled += delta
+                    last_segment = cleaned
+                    yield delta
+
+            self.last_message = assembled.strip()
 
     # ------------------------------------------------------------------
     def _extract_segments(self, payload: object) -> List[str]:
@@ -116,3 +132,38 @@ class LettaAPIStreaming:
                 collected.extend(self._normalise_text(item))
             return collected
         return []
+
+    _CONTROL_PREFIXES = (
+        re.compile(r"^message-[^\s]+", re.IGNORECASE),
+        re.compile(r"^hidden_reasoning_message", re.IGNORECASE),
+        re.compile(r"^reasoning_message", re.IGNORECASE),
+        re.compile(r"^step-[^\s]+", re.IGNORECASE),
+        re.compile(r"^run-[^\s]+", re.IGNORECASE),
+    )
+    _TIMESTAMP_PREFIX = re.compile(r"^[0-9]{4}-[0-9T:+-]+")
+    _UUID_PREFIX = re.compile(r"^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
+
+    def _sanitize_segment(self, text: str) -> str:
+        if not text:
+            return ""
+
+        cleaned = text
+
+        for pattern in self._CONTROL_PREFIXES:
+            cleaned = pattern.sub("", cleaned)
+
+        cleaned = self._TIMESTAMP_PREFIX.sub("", cleaned)
+        cleaned = self._UUID_PREFIX.sub("", cleaned)
+
+        cleaned = cleaned.replace("omitted", "")
+        cleaned = cleaned.replace("stop_reason", "")
+        cleaned = cleaned.replace("end_turn", "")
+        cleaned = cleaned.replace("usage_statistics", "")
+
+        return cleaned.strip()
+
+    @staticmethod
+    def _normalize_for_compare(text: str) -> str:
+        if not text:
+            return ""
+        return " ".join(text.split()).lower()

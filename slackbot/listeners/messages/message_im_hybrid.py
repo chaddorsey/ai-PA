@@ -1,5 +1,6 @@
 # listeners/messages/message_im.py
 import os
+import threading
 import time
 from logging import Logger
 from typing import List, Optional, Tuple
@@ -35,14 +36,33 @@ def _set_assistant_status(
             status=status,
             loading_messages=loading_messages,
         )
+        logger.debug("Assistant status set: %s (channel=%s, ts=%s)", status, channel_id, thread_ts)
     except Exception as error:  # pragma: no cover - non-critical feedback
-        logger.error(
+        logger.warning(
             "assistant_threads_setStatus failed (status=%s, channel=%s, ts=%s): %s",
             status,
             channel_id,
             thread_ts,
             error,
         )
+
+
+def _show_typing_indicator(
+    client: WebClient,
+    logger: Logger,
+    channel_id: str,
+    stop_event: threading.Event,
+) -> None:
+    """Show native typing indicator, refreshing every 2 seconds until stopped."""
+    while not stop_event.is_set():
+        try:
+            client.chat_typingIndicator(channel=channel_id)
+            logger.debug("Typing indicator sent for channel %s", channel_id)
+        except Exception as error:
+            logger.debug("typing indicator failed: %s", error)
+        
+        # Wait 2 seconds or until stopped
+        stop_event.wait(timeout=2.0)
 
 
 def _should_use_streaming(logger: Logger) -> bool:
@@ -62,6 +82,9 @@ def _stream_dm_reply(
     thread_ts: str,
     system_prompt: str,
     user_prompt: str,
+    *,
+    recipient_user_id: Optional[str] = None,
+    recipient_team_id: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """Attempt to stream a Letta response using Slack's chat.stream helpers."""
 
@@ -70,11 +93,18 @@ def _stream_dm_reply(
     collected: List[str] = []
 
     try:
-        slack_stream = client.chat_stream(
-            channel=channel_id,
-            thread_ts=thread_ts,
-            buffer_size=80,
-        )
+        stream_kwargs = {
+            "channel": channel_id,
+            "thread_ts": thread_ts,
+            "buffer_size": 80,
+        }
+        if recipient_user_id:
+            stream_kwargs["recipient_user_id"] = recipient_user_id
+        if recipient_team_id:
+            stream_kwargs["recipient_team_id"] = recipient_team_id
+        
+        logger.error(f"🚀 chat.stream kwargs: {stream_kwargs}")
+        slack_stream = client.chat_stream(**stream_kwargs)
 
         for chunk in streamer.chat_stream(system_prompt, user_prompt):
             if not chunk:
@@ -114,13 +144,13 @@ def _force_open_dm_channel(client: WebClient, user_id: str, logger: Logger) -> t
         response = client.conversations_open(users=[user_id])
         data = getattr(response, "data", response)
         debug["force_open"] = data
-        logger.error("force conversations.open response: %s", data)
+        logger.debug("force conversations.open response: %s", data)
         if response.get("ok"):
             channel_id = response.get("channel", {}).get("id")
             if channel_id:
                 return channel_id, debug
     except Exception as exc:  # pragma: no cover - network failure
-        logger.error("force conversations.open failed: %s", exc)
+        logger.debug("force conversations.open failed: %s", exc)
     return None, debug
 
 
@@ -196,27 +226,23 @@ def _resolve_dm_channel(
 def _handle_dm(event: dict, client: WebClient, logger: Logger):
     if event.get("channel_type") != "im" or event.get("subtype"):
         return
-
-    # FORCE LOGGING AT START
-    logger.error("=== DM HANDLER CALLED - ENHANCED VERSION ===")
     
-    try:
-        channel_id = event.get("channel")
-        user_id = event.get("user")
-        text = (event.get("text") or "").strip()
-        
-        # Enhanced debugging for channel issues
-        logger.error(f"🔍 DM Event Debug - SHOULD BE VISIBLE:")
-        logger.error(f"  Channel ID: '{channel_id}' (type: {type(channel_id)})")
-        logger.error(f"  User ID: '{user_id}' (type: {type(user_id)})")
-        logger.error(f"  Text: '{text}' (length: {len(text)})")
-        logger.error(f"  Event keys: {list(event.keys())}")
-        logger.error(f"  Full event: {event}")
-    except Exception as debug_error:
-        logger.error(f"❌ DEBUG ERROR: {debug_error}")
-        logger.error(f"❌ Event type: {type(event)}")
-        logger.error(f"❌ Event: {event}")
-        return
+    # Ignore messages sent BY the bot itself (to prevent echo loops)
+    sender_user_id = event.get("user")
+    if sender_user_id:
+        try:
+            bot_user_id = client.auth_test().get("user_id")
+            if sender_user_id == bot_user_id:
+                logger.info("Ignoring DM sent by bot itself (user=%s)", sender_user_id)
+                return
+        except Exception as auth_err:
+            logger.warning("Unable to check bot user ID: %s", auth_err)
+
+    channel_id = event.get("channel")
+    user_id = event.get("user")
+    text = (event.get("text") or "").strip()
+    
+    logger.debug("DM received from user %s in channel %s", user_id, channel_id)
     
     # Validate channel_id
     if not channel_id:
@@ -243,7 +269,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         forced_channel, forced_debug = _force_open_dm_channel(client, user_id, logger)
         channel_debug["forced_channel"] = forced_debug
         if forced_channel:
-            logger.error("🔁 Forced channel replacement: %s -> %s", channel_id, forced_channel)
+            logger.debug("Forced channel replacement: %s -> %s", channel_id, forced_channel)
             working_channel = forced_channel
         else:
             logger.error("❌ Forced channel lookup failed; original channel remains %s", channel_id)
@@ -268,104 +294,69 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
 
         system_prompt = "You are a helpful Slack bot. Be concise and helpful."
         streaming_enabled = _should_use_streaming(logger)
-        print(f"STREAMING_FLAG={streaming_enabled}")
-        try:
-            waiting = client.chat_postMessage(channel=working_channel, text="…")
-            logger.info(
-                "✅ Posted initial placeholder message to channel %s", working_channel
-            )
-            if streaming_enabled:
-                _set_assistant_status(
-                    client,
-                    logger,
-                    working_channel,
-                    waiting["ts"],
-                    status="thinking…",
-                    loading_messages=[
-                        "Working through the details…",
-                        "Gathering the right answer…",
-                        "Connecting the dots…",
-                        "Checking sources…",
-                    ],
-                )
-        except Exception as loading_error:  # pragma: no cover - Slack API failure
-            logger.error(
-                "❌ Failed to post loading message to %s: %s",
-                working_channel,
-                loading_error,
-            )
-            return
-
-        success_text: str = ""
-
-        if streaming_enabled:
-            logger.info("Streaming enabled via feature flag; attempting chat.stream path")
-            success, streamed_text = _stream_dm_reply(
-                client,
-                logger,
-                working_channel,
-                waiting["ts"],
-                system_prompt,
-                user_prompt,
-            )
-            logger.warning(
-                "Streaming attempt completed: success=%s, text_length=%s",
-                success,
-                len(streamed_text or ""),
-            )
-            success_text = streamed_text
-
-            if success:
-                _set_assistant_status(
-                    client,
-                    logger,
-                    working_channel,
-                    waiting["ts"],
-                    status="done",
-                )
-                logger.info("Streaming path completed successfully")
-                return
-
-            logger.warning(
-                "Streaming failed or returned empty output; falling back to hybrid path"
-            )
-
-        # Fallback to legacy chunked update behaviour
-        streamer = LettaAPIStreaming(logger=logger)
-        chunks = []
-
-        for i, chunk in enumerate(streamer.chat_stream(system_prompt, user_prompt)):
-            if sum(len(part) for part in chunks) > MAX_STREAM_PREVIEW_LENGTH:
-                logger.info("Stream preview exceeded limit; skipping further updates")
-                break
-
-            chunks.append(chunk)
-
-            if (i + 1) % 2 == 0 or len(chunks) == 1:
-                partial = _truncate("".join(chunks))
-                client.chat_update(
-                    channel=working_channel,
-                    ts=waiting["ts"],
-                    text=partial,
-                )
-                time.sleep(0.3)
-
-        final_text = success_text or streamer.last_message or "".join(chunks).strip()
-        final_chunks = list(_chunk_text(final_text)) or [""]
-
-        client.chat_update(channel=working_channel, ts=waiting["ts"], text=final_chunks[0])
-
-        for extra_chunk in final_chunks[1:]:
-            client.chat_postMessage(channel=working_channel, text=extra_chunk)
-
-        if streaming_enabled:
+        
+        # Use the user's message timestamp as the thread_ts for assistant status
+        user_message_ts = event.get("ts")
+        
+        # Show assistant status if streaming is enabled
+        if streaming_enabled and user_message_ts:
             _set_assistant_status(
                 client,
                 logger,
                 working_channel,
-                waiting["ts"],
-                status="done",
+                user_message_ts,
+                status="thinking…",
+                loading_messages=[
+                    "Gathering thoughts…",
+                    "Checking memory…",
+                    "Crafting response…",
+                ],
             )
+
+        # Get full response from Letta
+        streamer = LettaAPIStreaming(logger=logger)
+        full_response = "".join(streamer.chat_stream(system_prompt, user_prompt)).strip()
+
+        final_text = streamer.last_message or full_response
+        final_chunks = list(_chunk_text(final_text)) or [""]
+
+        # Post the response in the thread
+        post_response = client.chat_postMessage(
+            channel=working_channel, 
+            text=final_chunks[0],
+            thread_ts=user_message_ts if user_message_ts else None
+        )
+        reply_ts = post_response.get("ts")
+        
+        # Clear assistant status if it was set
+        if streaming_enabled and user_message_ts:
+            _set_assistant_status(
+                client,
+                logger,
+                working_channel,
+                user_message_ts,
+                status="",
+            )
+
+        # Post any overflow chunks
+        for extra_chunk in final_chunks[1:]:
+            client.chat_postMessage(
+                channel=working_channel, 
+                text=extra_chunk,
+                thread_ts=user_message_ts if user_message_ts else None
+            )
+        
+        # Set thread title if enabled
+        if streaming_enabled and user_message_ts:
+            try:
+                thread_title = (text or "Conversation")[:50]
+                client.assistant_threads_setTitle(
+                    channel_id=working_channel,
+                    thread_ts=user_message_ts,
+                    title=thread_title,
+                )
+            except Exception as title_err:
+                logger.debug("Could not set thread title: %s", title_err)
 
     except Exception as e:
         logger.exception(e)

@@ -1,8 +1,8 @@
-slack-bolt==1.24.0
+slack-bolt==1.26.0
 pytest==8.4.1
 flake8==7.3.0
 black==25.1.0
-slack-sdk
+slack-sdk>=3.37.0,<=3.999.0
 openai
 anthropic
 google-cloud-aiplatform

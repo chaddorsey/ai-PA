@@ -1,9 +1,5 @@
 # listeners/events/app_mentioned.py
-import time
-import random
-import threading
 from logging import Logger
-from typing import List
 
 from slack_bolt import App, Say
 from slack_sdk import WebClient
@@ -12,7 +8,6 @@ from ai.providers.letta_stream import LettaAPIStreaming
 from listeners.messages.message_im_hybrid import (
     _is_streaming_enabled,
     _set_assistant_status,
-    _stream_dm_reply,
 )
 from listeners.listener_utils.listener_constants import MENTION_WITHOUT_TEXT
 from listeners.listener_utils.parse_conversation import parse_conversation
@@ -50,98 +45,47 @@ def _handle_app_mention(event: dict, client: WebClient, logger: Logger, say: Say
 
         system = "You are a helpful Slack bot. Be concise and helpful."
         streaming_enabled = _is_streaming_enabled()
+        event_ts = event.get("ts")
 
-        if streaming_enabled:
-            logger.info("Streaming enabled for app_mention; attempting Slack chat.stream")
-            placeholder = client.chat_postMessage(
-                channel=channel_id,
-                text="…",
-                thread_ts=thread_ts,
-            )
+        # Determine the thread_ts to use for assistant status
+        # If already in a thread, use that thread_ts; otherwise use the mention event's ts
+        status_thread_ts = thread_ts if thread_ts else event_ts
 
+        # Show assistant status if streaming is enabled
+        if streaming_enabled and status_thread_ts:
             _set_assistant_status(
                 client,
                 logger,
                 channel_id,
-                placeholder["ts"],
+                status_thread_ts,
                 status="thinking…",
                 loading_messages=[
-                    "Gathering channel history…",
-                    "Assembling a helpful reply…",
-                    "Checking references…",
+                    "Gathering thoughts…",
+                    "Checking memory…",
+                    "Crafting response…",
                 ],
             )
 
-            success, streamed_text = _stream_dm_reply(
+        # Get full response from Letta
+        streamer = LettaAPIStreaming(logger=logger)
+        full_response = "".join(streamer.chat_stream(system, user_prompt)).strip()
+        full_response = streamer.last_message or full_response
+        
+        # Post reply - threaded if in a thread, inline otherwise
+        reply_kwargs = {"channel": channel_id, "text": full_response}
+        if thread_ts and thread_ts != event_ts:
+            reply_kwargs["thread_ts"] = thread_ts
+        client.chat_postMessage(**reply_kwargs)
+        
+        # Clear assistant status if it was set
+        if streaming_enabled and status_thread_ts:
+            _set_assistant_status(
                 client,
                 logger,
                 channel_id,
-                placeholder["ts"],
-                system,
-                user_prompt,
+                status_thread_ts,
+                status="",
             )
-
-            if success:
-                _set_assistant_status(
-                    client,
-                    logger,
-                    channel_id,
-                    placeholder["ts"],
-                    status="done",
-                )
-                return
-
-            logger.warning(
-                "Streaming mention response failed; falling back to legacy animation"
-            )
-            waiting = placeholder
-            fallback_text = streamed_text
-        else:
-            fallback_text = None
-
-        if "waiting" not in locals():
-            waiting = client.chat_postMessage(channel=channel_id, text="...", thread_ts=thread_ts)
-
-        streamer = LettaAPIStreaming(logger=logger)
-        response_ready = threading.Event()
-        collected_chunks: List[str] = []
-
-        def get_response():
-            try:
-                for chunk in streamer.chat_stream(system, user_prompt):
-                    collected_chunks.append(chunk)
-            finally:
-                response_ready.set()
-
-        response_thread = threading.Thread(target=get_response)
-        response_thread.start()
-
-        dot_count = 3
-
-        while not response_ready.is_set() and dot_count < 7:
-            time.sleep(1.0)
-            if not response_ready.is_set():
-                dot_count += 1
-                client.chat_update(channel=channel_id, ts=waiting["ts"], text="." * dot_count)
-
-        while not response_ready.is_set():
-            dot_count = 1
-            client.chat_update(channel=channel_id, ts=waiting["ts"], text=".")
-            time.sleep(1.0)
-
-            if response_ready.is_set():
-                break
-
-            while not response_ready.is_set() and dot_count < 7:
-                time.sleep(1.0)
-                if not response_ready.is_set():
-                    dot_count += 1
-                    client.chat_update(channel=channel_id, ts=waiting["ts"], text="." * dot_count)
-
-        response_thread.join()
-
-        full_response = fallback_text or streamer.last_message or "".join(collected_chunks).strip()
-        client.chat_update(channel=channel_id, ts=waiting["ts"], text=full_response)
 
     except Exception as e:
         logger.exception(e)

@@ -71,7 +71,7 @@ def _handle_ask_bolty_streaming(ack, respond, command: dict, client: WebClient, 
                 logger,
                 channel_id,
                 thread_ts,
-                status="done",
+                status="",
             )
             return
 
