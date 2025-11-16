@@ -371,32 +371,63 @@ backup_letta_exports() {
         return
     fi
     
-    # Export each agent (using legacy format for compatibility)
+    # Export each agent (try legacy format, then fall back to non-legacy, then retrieve)
     jq -r '.[].id' "$agents_response" 2>/dev/null | while read -r agent_id; do
         if [[ -z "$agent_id" ]]; then
             continue
         fi
         
         log "Exporting agent: $agent_id"
-        # Try legacy format first (v1) - more reliable
+        local agent_file="$export_dir/agents/${agent_id}.json"
+        local status_code=""
+        # 1) Legacy export attempt
         if [[ -n "$AUTH_HEADER" ]]; then
-            curl -sSL -H "$AUTH_HEADER" "$LETTA_BASE_URL/v1/agents/$agent_id/export?use_legacy_format=true" \
-                -o "$export_dir/agents/${agent_id}.json" 2>/dev/null || true
+            status_code=$(curl -sS -w "%{http_code}" -H "$AUTH_HEADER" \
+                "$LETTA_BASE_URL/v1/agents/$agent_id/export?use_legacy_format=true" \
+                -o "$agent_file" 2>/dev/null || echo "")
         else
-            curl -sSL "$LETTA_BASE_URL/v1/agents/$agent_id/export?use_legacy_format=true" \
-                -o "$export_dir/agents/${agent_id}.json" 2>/dev/null || true
+            status_code=$(curl -sS -w "%{http_code}" \
+                "$LETTA_BASE_URL/v1/agents/$agent_id/export?use_legacy_format=true" \
+                -o "$agent_file" 2>/dev/null || echo "")
         fi
-        
-        # Verify export was successful (check for error JSON)
-        if [[ -s "$export_dir/agents/${agent_id}.json" ]]; then
-            if grep -q '"detail"' "$export_dir/agents/${agent_id}.json" 2>/dev/null; then
-                log_warning "Agent $agent_id export failed (API error)"
-            else
-                local agent_size=$(du -h "$export_dir/agents/${agent_id}.json" | cut -f1)
-                log_success "Agent $agent_id exported ($agent_size)"
-            fi
+        # If legacy returned 200 and file doesn't look like an error JSON, accept it
+        if [[ "$status_code" == "200" && -s "$agent_file" && ! $(grep -q '"detail"' "$agent_file"; echo $?) -eq 0 ]]; then
+            local agent_size=$(du -h "$agent_file" | cut -f1)
+            log_success "Agent $agent_id exported (legacy) ($agent_size)"
         else
-            log_warning "Agent $agent_id export is empty"
+            log_warning "Legacy export failed for $agent_id (status=$status_code). Trying non-legacy..."
+            # 2) Non-legacy export attempt
+            if [[ -n "$AUTH_HEADER" ]]; then
+                status_code=$(curl -sS -w "%{http_code}" -H "$AUTH_HEADER" \
+                    "$LETTA_BASE_URL/v1/agents/$agent_id/export" \
+                    -o "$agent_file" 2>/dev/null || echo "")
+            else
+                status_code=$(curl -sS -w "%{http_code}" \
+                    "$LETTA_BASE_URL/v1/agents/$agent_id/export" \
+                    -o "$agent_file" 2>/dev/null || echo "")
+            fi
+            if [[ "$status_code" == "200" && -s "$agent_file" && ! $(grep -q '"detail"' "$agent_file"; echo $?) -eq 0 ]]; then
+                local agent_size=$(du -h "$agent_file" | cut -f1)
+                log_success "Agent $agent_id exported (non-legacy) ($agent_size)"
+            else
+                log_warning "Non-legacy export failed for $agent_id (status=$status_code). Falling back to retrieve..."
+                # 3) Retrieve agent details as last resort
+                if [[ -n "$AUTH_HEADER" ]]; then
+                    status_code=$(curl -sS -w "%{http_code}" -H "$AUTH_HEADER" \
+                        "$LETTA_BASE_URL/v1/agents/$agent_id" \
+                        -o "$agent_file" 2>/dev/null || echo "")
+                else
+                    status_code=$(curl -sS -w "%{http_code}" \
+                        "$LETTA_BASE_URL/v1/agents/$agent_id" \
+                        -o "$agent_file" 2>/dev/null || echo "")
+                fi
+                if [[ "$status_code" == "200" && -s "$agent_file" && ! $(grep -q '"detail"' "$agent_file"; echo $?) -eq 0 ]]; then
+                    local agent_size=$(du -h "$agent_file" | cut -f1)
+                    log_success "Agent $agent_id retrieved as fallback ($agent_size)"
+                else
+                    log_warning "Agent $agent_id retrieval failed (status=$status_code) or returned error JSON"
+                fi
+            fi
         fi
     done
     
