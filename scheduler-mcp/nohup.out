@@ -1,1 +1,2 @@
 sh: line 1: 84243 Terminated: 15          PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH" /opt/homebrew/bin/poetry run uvicorn scheduler_mcp.app:create_app --factory --port 8088 --lifespan off > uvicorn.log 2>&1
+sh: line 1: 87297 Terminated: 15          PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH" /opt/homebrew/bin/poetry run uvicorn scheduler_mcp.app:create_app --factory --port 8088 > uvicorn.log 2>&1

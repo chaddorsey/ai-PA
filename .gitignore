@@ -212,7 +212,13 @@ omnifocus-mcp-letta/docs/reference/
 #Backups
 deployment/backups/*
 deployment/backups2/*
+deployment/backups-tmpsave/*
 
 #Data and resources
 data-resources/*
 letta/upload_log.txt
+
+#Slack MCP reference files
+
+slack_analytics_screenshots/*
+slack_analytics_downloads/*
