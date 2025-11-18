@@ -226,3 +226,5 @@ omnifocus-mcp-letta/dist/server-mcp-official-8124.js
 slack_analytics_screenshots/*
 slack_analytics_downloads/*
 docs/technical/slack-analytics-export.md
+gmail-mcp/gcp-oauth.admin-reports.desktop.json
+gmail-mcp/OLD-gcp-oauth.keys.json
