@@ -106,12 +106,26 @@ def orchestrate_scheduling(
             # Fallback to absolute imports (when run standalone or in Letta)
             import sys
             import os
-            # Add letta directory to path if not already there
-            letta_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # Find the letta directory and add it to path
+            # __file__ might be the .pyc file, so get the real path
+            current_file = os.path.abspath(__file__)
+            if current_file.endswith('.pyc'):
+                current_file = current_file[:-1]  # Remove .pyc to get .py
+            
+            # Get letta directory (parent of scheduling_orchestrator)
+            letta_dir = os.path.dirname(os.path.dirname(current_file))
             if letta_dir not in sys.path:
                 sys.path.insert(0, letta_dir)
             
-            from scheduling_orchestrator.schemas import (
+            # Also try adding the scheduling_orchestrator directory itself
+            orchestrator_dir = os.path.dirname(current_file)
+            if orchestrator_dir not in sys.path:
+                sys.path.insert(0, orchestrator_dir)
+            
+            # Now try absolute imports
+            try:
+                from scheduling_orchestrator.schemas import (
                 ResponseEnvelope,
                 Proposal,
                 Event,
@@ -126,6 +140,23 @@ def orchestrate_scheduling(
             from scheduling_orchestrator.fact_generator import generate_asp_program
             from scheduling_orchestrator.clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
             from scheduling_orchestrator.unsat_analyzer import explain_unsat
+            except ImportError:
+                # Last resort: try direct imports from orchestrator_dir
+                from schemas import (
+                    ResponseEnvelope,
+                    Proposal,
+                    Event,
+                    SchedulingProblem,
+                    Relaxation,
+                    DebugInfo,
+                    MovedEvent,
+                    ObjectiveScores,
+                )
+                from dspy_extraction import extract_with_fallback
+                from normalizer import normalize_events
+                from fact_generator import generate_asp_program
+                from clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+                from unsat_analyzer import explain_unsat
     except ImportError as e:
         # If dependencies are missing, return a helpful error
         return {
