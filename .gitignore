@@ -142,6 +142,8 @@ checkpoints/
 *~
 .#*
 \#*#
+# Letta tool execution temporary files
+letta/tmp*.py
 
 # OS Generated
 .DS_Store
@@ -225,3 +227,4 @@ slack_analytics_screenshots/*
 slack_analytics_downloads/*
 .gitignore
 .gitignore
+docs/technical/slack-analytics-export.md
