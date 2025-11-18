@@ -12,6 +12,7 @@ The tool uses:
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import time
+import json
 
 # Lazy imports to avoid dependency issues during Letta schema generation
 # These will be imported when the function is actually called
@@ -19,8 +20,8 @@ import time
 
 def orchestrate_scheduling(
     utterance: str,
-    events_by_participant: dict,  # Dict[str, List[Dict[str, Any]]] - mapping participant IDs to lists of event dicts
-    context_json: Optional[dict] = None  # Dict[str, Any] - optional scheduling context and preferences
+    events_by_participant: str,  # JSON string: Dict[str, List[Dict[str, Any]]] - mapping participant IDs to lists of event dicts
+    context_json: Optional[str] = None  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences
 ) -> dict:
     """
     Orchestrate scheduling by finding optimal meeting times that satisfy constraints and preferences.
@@ -33,11 +34,11 @@ def orchestrate_scheduling(
     
     Args:
         utterance: Natural language scheduling request (e.g., "Find 45 minutes with Alex & Priya Tue–Thu mornings. Minimize disruption.")
-        events_by_participant: Dictionary mapping participant IDs (strings) to lists of calendar events (list of dicts).
+        events_by_participant: JSON string representing a dictionary mapping participant IDs (strings) to lists of calendar events.
                               Each event should be a dict with keys: id, title, start, end, locked, protected, flexible.
                               Events should be expanded instances within the planning horizon.
-                              Example: {"exec": [{"id": "evt1", "title": "Meeting", "start": "2025-11-25T10:00:00Z", "end": "2025-11-25T11:00:00Z", "locked": False}], "alex": [...]}
-        context_json: Optional dictionary containing:
+                              Example JSON: '{"exec": [{"id": "evt1", "title": "Meeting", "start": "2025-11-25T10:00:00Z", "end": "2025-11-25T11:00:00Z", "locked": false}], "alex": []}'
+        context_json: Optional JSON string containing:
                       - timeframe: {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "tz": "America/New_York"}
                       - participants: [{"id": "exec", "email": "me@acme.com", "work_hours": "M-F 09:00-17:30"}, ...]
                       - policy: {
@@ -82,22 +83,49 @@ def orchestrate_scheduling(
         '2025-11-26T15:15:00Z'
     """
     # Lazy imports - only import when function is called, not during schema generation
+    # Try relative imports first (when run as package), then absolute imports (when run standalone)
     try:
-        from .schemas import (
-            ResponseEnvelope,
-            Proposal,
-            Event,
-            SchedulingProblem,
-            Relaxation,
-            DebugInfo,
-            MovedEvent,
-            ObjectiveScores,
-        )
-        from .dspy_extraction import extract_with_fallback
-        from .normalizer import normalize_events
-        from .fact_generator import generate_asp_program
-        from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
-        from .unsat_analyzer import explain_unsat
+        try:
+            # Try relative imports (when run as package)
+            from .schemas import (
+                ResponseEnvelope,
+                Proposal,
+                Event,
+                SchedulingProblem,
+                Relaxation,
+                DebugInfo,
+                MovedEvent,
+                ObjectiveScores,
+            )
+            from .dspy_extraction import extract_with_fallback
+            from .normalizer import normalize_events
+            from .fact_generator import generate_asp_program
+            from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+            from .unsat_analyzer import explain_unsat
+        except (ImportError, ValueError):
+            # Fallback to absolute imports (when run standalone or in Letta)
+            import sys
+            import os
+            # Add letta directory to path if not already there
+            letta_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if letta_dir not in sys.path:
+                sys.path.insert(0, letta_dir)
+            
+            from scheduling_orchestrator.schemas import (
+                ResponseEnvelope,
+                Proposal,
+                Event,
+                SchedulingProblem,
+                Relaxation,
+                DebugInfo,
+                MovedEvent,
+                ObjectiveScores,
+            )
+            from scheduling_orchestrator.dspy_extraction import extract_with_fallback
+            from scheduling_orchestrator.normalizer import normalize_events
+            from scheduling_orchestrator.fact_generator import generate_asp_program
+            from scheduling_orchestrator.clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+            from scheduling_orchestrator.unsat_analyzer import explain_unsat
     except ImportError as e:
         # If dependencies are missing, return a helpful error
         return {
@@ -105,6 +133,21 @@ def orchestrate_scheduling(
             "explanation": f"Tool dependencies not available: {str(e)}. Please ensure clingo and dspy-ai are installed.",
             "proposals": [],
             "error_message": f"Missing dependencies: {str(e)}",
+            "debug": {}
+        }
+    
+    # Parse JSON string inputs
+    try:
+        if isinstance(events_by_participant, str):
+            events_by_participant = json.loads(events_by_participant)
+        if context_json is not None and isinstance(context_json, str):
+            context_json = json.loads(context_json)
+    except json.JSONDecodeError as e:
+        return {
+            "status": "bad_input",
+            "explanation": f"Invalid JSON in input parameters: {str(e)}",
+            "proposals": [],
+            "error_message": f"JSON decode error: {str(e)}",
             "debug": {}
         }
     

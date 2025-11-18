@@ -7,8 +7,14 @@ Transforms events_by_participant into discrete 15-minute slot facts for ASP enco
 from datetime import datetime, timedelta
 from typing import Dict, List, Set, Tuple, Optional, Any
 import pytz
-from .slot_indexer import SlotIndexer, SLOT_SIZE_MINUTES
-from .schemas import Event
+
+# Handle both relative and absolute imports
+try:
+    from .slot_indexer import SlotIndexer, SLOT_SIZE_MINUTES
+    from .schemas import Event
+except (ImportError, ValueError):
+    from slot_indexer import SlotIndexer, SLOT_SIZE_MINUTES
+    from schemas import Event
 
 
 def parse_work_hours(work_hours_str: str, timezone_str: str) -> List[Tuple[int, int]]:

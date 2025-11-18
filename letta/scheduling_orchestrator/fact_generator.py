@@ -5,8 +5,14 @@ Converts the output of normalize_events() and scheduling problem into ASP facts 
 """
 
 from typing import Dict, List, Set, Any, Tuple
-from .slot_indexer import SlotIndexer
-from .schemas import SchedulingProblem
+
+# Handle both relative and absolute imports
+try:
+    from .slot_indexer import SlotIndexer
+    from .schemas import SchedulingProblem
+except (ImportError, ValueError):
+    from slot_indexer import SlotIndexer
+    from schemas import SchedulingProblem
 
 
 def generate_asp_facts(
@@ -129,7 +135,11 @@ def generate_asp_program(
     Returns:
         Complete ASP program as a string
     """
-    from .asp_encoding import BASE_ASP_PROGRAM, COMPLETE_ASP_PROGRAM
+    # Handle both relative and absolute imports
+    try:
+        from .asp_encoding import BASE_ASP_PROGRAM, COMPLETE_ASP_PROGRAM
+    except (ImportError, ValueError):
+        from asp_encoding import BASE_ASP_PROGRAM, COMPLETE_ASP_PROGRAM
     
     facts = generate_asp_facts(normalized_data, scheduling_problem, request_id)
     

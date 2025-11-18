@@ -7,8 +7,14 @@ Analyzes unsatisfiable scheduling problems and generates ranked relaxation sugge
 from typing import Dict, List, Any, Optional, Set, Tuple
 from datetime import datetime, timedelta
 import pytz
-from .schemas import Relaxation
-from .slot_indexer import SlotIndexer
+
+# Handle both relative and absolute imports
+try:
+    from .schemas import Relaxation
+    from .slot_indexer import SlotIndexer
+except (ImportError, ValueError):
+    from schemas import Relaxation
+    from slot_indexer import SlotIndexer
 
 
 def analyze_unsat_causes(

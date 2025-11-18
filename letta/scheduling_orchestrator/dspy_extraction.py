@@ -15,7 +15,11 @@ except ImportError:
     DSPY_AVAILABLE = False
     dspy = None
 
-from .schemas import SchedulingProblem
+# Handle both relative and absolute imports
+try:
+    from .schemas import SchedulingProblem
+except (ImportError, ValueError):
+    from schemas import SchedulingProblem
 
 
 class ExtractSchedulingRequest(dspy.Signature if DSPY_AVAILABLE else object):
@@ -200,7 +204,11 @@ def validate_scheduling_problem_json(json_str: str) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    from .extraction_validator import validate_scheduling_problem
+    # Handle both relative and absolute imports
+    try:
+        from .extraction_validator import validate_scheduling_problem
+    except (ImportError, ValueError):
+        from extraction_validator import validate_scheduling_problem
     
     try:
         data = json.loads(json_str)

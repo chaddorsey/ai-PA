@@ -22,6 +22,46 @@ class Event(BaseModel):
     owner: Optional[str] = Field(default=None, description="Participant ID who owns this event")
     location: Optional[str] = Field(default=None, description="Event location if available")
     description: Optional[str] = Field(default=None, description="Event description if available")
+    
+    class Config:
+        # Ensure additionalProperties is false in JSON schema
+        json_schema_extra = {
+            "additionalProperties": False
+        }
+
+
+class EventsByParticipant(BaseModel):
+    """Dictionary mapping participant IDs to their calendar events.
+    
+    This is a wrapper to ensure proper JSON schema generation with additionalProperties: false.
+    In practice, this will be used as a dict[str, List[Event]].
+    """
+    
+    class Config:
+        # This model is just for schema generation - actual usage is dict[str, List[dict]]
+        extra = "forbid"
+        json_schema_extra = {
+            "additionalProperties": False,
+            "type": "object",
+            "description": "Dictionary mapping participant IDs (strings) to lists of calendar events. Each event is a dict with keys: id, title, start, end, locked, protected, flexible."
+        }
+
+
+class ContextJSON(BaseModel):
+    """Optional scheduling context and preferences.
+    
+    This is a wrapper to ensure proper JSON schema generation with additionalProperties: false.
+    In practice, this will be used as a dict[str, Any].
+    """
+    
+    class Config:
+        # This model is just for schema generation - actual usage is dict[str, Any]
+        extra = "allow"  # Allow extra fields since context_json is flexible
+        json_schema_extra = {
+            "additionalProperties": True,  # Context is flexible, but we document the structure
+            "type": "object",
+            "description": "Optional dictionary containing timeframe, participants, and policy preferences"
+        }
 
 
 class SchedulingProblem(BaseModel):
