@@ -12,21 +12,9 @@ The tool uses:
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import time
-from .schemas import (
-    ResponseEnvelope,
-    Proposal,
-    Event,
-    SchedulingProblem,
-    Relaxation,
-    DebugInfo,
-    MovedEvent,
-    ObjectiveScores,
-)
-from .dspy_extraction import extract_with_fallback
-from .normalizer import normalize_events
-from .fact_generator import generate_asp_program
-from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
-from .unsat_analyzer import explain_unsat
+
+# Lazy imports to avoid dependency issues during Letta schema generation
+# These will be imported when the function is actually called
 
 
 def orchestrate_scheduling(
@@ -93,6 +81,23 @@ def orchestrate_scheduling(
         >>> print(result["proposals"][0]["start_utc"])
         '2025-11-26T15:15:00Z'
     """
+    # Lazy imports - only import when function is called, not during schema generation
+    from .schemas import (
+        ResponseEnvelope,
+        Proposal,
+        Event,
+        SchedulingProblem,
+        Relaxation,
+        DebugInfo,
+        MovedEvent,
+        ObjectiveScores,
+    )
+    from .dspy_extraction import extract_with_fallback
+    from .normalizer import normalize_events
+    from .fact_generator import generate_asp_program
+    from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+    from .unsat_analyzer import explain_unsat
+    
     start_time = time.time()
     debug_info = DebugInfo()
     
