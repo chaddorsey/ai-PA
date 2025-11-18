@@ -19,5 +19,5 @@ This document lists all tasks associated with PBI 21.
 | 21-9 | [Letta registration & schema verification](./21-9.md) | Done | Register the tool in Letta ADE/SDK, verify the JSON schema, display names/docs, and run a manual test call with sample events. |
 | 21-10 | [Scenario tests & evaluation metrics](./21-10.md) | Proposed | Create scenario scripts for: (a) common slot finding, (b) focus-block day reflow, (c) recurring cadence with jitter. Metrics: total moved minutes, longest focus block, preference satisfaction %. |
 | 21-11 | [Observability & audit logs](./21-11.md) | Proposed | Log inputs, chosen objective values, proposals, and explanations. Redact PII as configured. |
-| 21-12 | [Security & configuration](./21-12.md) | Proposed | Set timeouts, memory limits; handle secrets (LM keys) via Letta tool configuration; document allowed horizon sizes. Add dependencies to letta/requirements.txt. |
+| 21-12 | [Security & configuration](./21-12.md) | Done | Set timeouts, memory limits; handle secrets (LM keys) via Letta tool configuration; document allowed horizon sizes. Add dependencies to letta/requirements.txt. |
 
