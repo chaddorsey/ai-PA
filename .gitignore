@@ -228,3 +228,6 @@ slack_analytics_downloads/*
 docs/technical/slack-analytics-export.md
 gmail-mcp/gcp-oauth.admin-reports.desktop.json
 gmail-mcp/OLD-gcp-oauth.keys.json
+docs/technical/slack-analytics-export.md
+.gitignore
+.gitignore
