@@ -543,11 +543,15 @@ services:
       - "8283:8283"  # Letta web interface
     volumes:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
+      - ./letta:/app/tools/letta  # Mount letta directory for tool execution (different path to avoid conflicts)
+      - ~/.gmail-mcp:/root/.gmail-mcp  # Mount OAuth credentials directory
     networks: [pa-internal]
     environment:
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
       LETTA_PG_URI: "postgresql://letta:letta_dev_password@supabase-db:5432/letta"
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      TOOL_EXEC_DIR: "/app/tools/letta"  # Directory where tools are executed
+      TOOL_EXEC_VENV_NAME: "env"  # Virtual environment name (Letta will create it and install requirements.txt)
       # https://docs.letta.com/guides/server/providers/anthropic
       ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
       # https://docs.letta.com/guides/server/providers/google
@@ -556,6 +560,10 @@ services:
       OPENAI_API_KEY: $OPENAI_API_KEY
       # Slack tokens for analytics tools
       SLACK_MCP_XOXP_TOKEN: $SLACK_MCP_XOXP_TOKEN
+      # Drive analytics OAuth paths (container paths)
+      GMAIL_OAUTH_PATH: "/root/.gmail-mcp/gcp-oauth.admin-reports.desktop.json"
+      GMAIL_CREDENTIALS_PATH: "/root/.gmail-mcp/admin-reports.credentials.json"
+      MY_EMAIL: "${MY_EMAIL:-cdorsey@concord.org}"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 

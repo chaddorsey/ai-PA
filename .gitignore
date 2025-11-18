@@ -208,6 +208,7 @@ pgdata*/
 
 # Reference files
 omnifocus-mcp-letta/docs/reference/
+docs/reference/*
 
 #Backups
 deployment/backups/*
@@ -222,3 +223,5 @@ letta/upload_log.txt
 
 slack_analytics_screenshots/*
 slack_analytics_downloads/*
+.gitignore
+.gitignore
