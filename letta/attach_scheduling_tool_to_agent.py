@@ -65,8 +65,12 @@ def main():
             tool_id = None
             
             for tool in tools:
-                if tool.get("name") == tool_name or tool.get("function", {}).get("name") == tool_name:
-                    tool_id = tool.get("id")
+                # Handle both dict and Pydantic Tool objects
+                tool_name_attr = tool.name if hasattr(tool, 'name') else (tool.get("name") if isinstance(tool, dict) else None)
+                tool_id_attr = tool.id if hasattr(tool, 'id') else (tool.get("id") if isinstance(tool, dict) else None)
+                
+                if tool_name_attr == tool_name:
+                    tool_id = tool_id_attr
                     print(f"  ✓ Found tool (ID: {tool_id})")
                     break
             
