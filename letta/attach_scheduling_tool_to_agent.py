@@ -7,6 +7,19 @@ This script attaches the orchestrate_scheduling tool to your Letta agent.
 
 import os
 import sys
+from pathlib import Path
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    # Load from project root .env file
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    pass  # python-dotenv not installed, skip
+except Exception:
+    pass  # .env file doesn't exist or can't be loaded
 
 try:
     from letta_client import Letta

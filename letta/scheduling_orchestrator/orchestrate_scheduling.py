@@ -31,9 +31,9 @@ from .unsat_analyzer import explain_unsat
 
 def orchestrate_scheduling(
     utterance: str,
-    events_by_participant: Dict[str, List[Dict[str, Any]]],
-    context_json: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    events_by_participant: dict,  # Dict[str, List[Dict[str, Any]]] - mapping participant IDs to lists of event dicts
+    context_json: Optional[dict] = None  # Dict[str, Any] - optional scheduling context and preferences
+) -> dict:
     """
     Orchestrate scheduling by finding optimal meeting times that satisfy constraints and preferences.
     
@@ -45,9 +45,10 @@ def orchestrate_scheduling(
     
     Args:
         utterance: Natural language scheduling request (e.g., "Find 45 minutes with Alex & Priya Tue–Thu mornings. Minimize disruption.")
-        events_by_participant: Dictionary mapping participant IDs to lists of calendar events.
+        events_by_participant: Dictionary mapping participant IDs (strings) to lists of calendar events (list of dicts).
                               Each event should be a dict with keys: id, title, start, end, locked, protected, flexible.
                               Events should be expanded instances within the planning horizon.
+                              Example: {"exec": [{"id": "evt1", "title": "Meeting", "start": "2025-11-25T10:00:00Z", "end": "2025-11-25T11:00:00Z", "locked": False}], "alex": [...]}
         context_json: Optional dictionary containing:
                       - timeframe: {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "tz": "America/New_York"}
                       - participants: [{"id": "exec", "email": "me@acme.com", "work_hours": "M-F 09:00-17:30"}, ...]

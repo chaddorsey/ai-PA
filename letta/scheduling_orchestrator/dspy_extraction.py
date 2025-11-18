@@ -35,6 +35,16 @@ def initialize_dspy():
     if not DSPY_AVAILABLE:
         return None
     
+    # Load .env file if it exists (for local development)
+    try:
+        from dotenv import load_dotenv
+        from pathlib import Path
+        env_path = Path(__file__).parent.parent.parent.parent / '.env'
+        if env_path.exists():
+            load_dotenv(env_path)
+    except (ImportError, Exception):
+        pass  # python-dotenv not installed or .env doesn't exist
+    
     # Get LLM configuration from environment
     # Support OpenAI, Anthropic, or other providers
     openai_api_key = os.getenv("OPENAI_API_KEY")

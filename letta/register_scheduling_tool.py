@@ -8,6 +8,19 @@ so the agent can handle complex scheduling requests using ASP optimization.
 
 import os
 import sys
+from pathlib import Path
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    # Load from project root .env file
+    env_path = Path(__file__).parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    pass  # python-dotenv not installed, skip
+except Exception:
+    pass  # .env file doesn't exist or can't be loaded
 
 # Add letta directory to path so we can import the scheduling orchestrator
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -54,7 +67,9 @@ def main():
                     tags=["scheduling", "calendar", "optimization", "custom"]
                 )
                 print(f"  ✓ Registered: {tool_name}")
-                print(f"    Tool ID: {created_tool.get('id', 'N/A')}")
+                # Handle both dict and Pydantic model responses
+                tool_id = created_tool.id if hasattr(created_tool, 'id') else (created_tool.get('id') if isinstance(created_tool, dict) else 'N/A')
+                print(f"    Tool ID: {tool_id}")
                 print(f"    Description: Scheduling orchestration tool using ASP optimization")
                 
             except AttributeError:
@@ -65,7 +80,8 @@ def main():
                     tags=["scheduling", "calendar", "optimization", "custom"]
                 )
                 print(f"  ✓ Registered: {tool_name}")
-                print(f"    Tool ID: {created_tool.get('id', 'N/A')}")
+                tool_id = created_tool.id if hasattr(created_tool, 'id') else (created_tool.get('id') if isinstance(created_tool, dict) else 'N/A')
+                print(f"    Tool ID: {tool_id}")
                 print(f"    Description: Scheduling orchestration tool using ASP optimization")
             
             print(f"\n{'='*60}")
