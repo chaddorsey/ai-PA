@@ -98,17 +98,20 @@ External Slack MCP Server (unchanged) → Letta (MCP tools)
 ### Human-Like Interaction
 The Slackbot will implement streaming responses to provide a more natural, human-like interaction experience:
 
-- **Progressive Updates**: Messages update in real-time as content streams from Letta
-- **Rate Limiting**: Throttled updates (0.5s intervals, 5-chunk batches) to avoid API limits
-- **Message Length Management**: Proper handling of long responses with truncation
-- **Error Handling**: Graceful fallback to non-streaming on errors
-- **Loading Behavior**: Replace static "Thinking..." with dynamic content updates
+- **Progressive Updates**: Messages update in real-time as content streams from Letta.
+- **Native Typing Indicators**: Slack users see the standard "bot is typing" affordance whenever a Letta response is in flight.
+- **Rate Limiting**: Streaming buffer size and append cadence respect Slack API limits automatically.
+- **Message Length Management**: Streams handle long responses with chunking and final consolidation.
+- **Error Handling**: Streaming failures fall back gracefully to legacy non-streaming responses.
+- **Loading Behavior**: Static placeholders are replaced with native streaming state.
 
 ### Technical Implementation
-- Switch from `LettaAPI` to `LettaAPIStreaming` class
-- Use `chat_update()` for progressive message updates
-- Implement proper error handling and fallback mechanisms
-- Configure rate limiting to respect Slack API limits
+- Switch from the legacy `LettaAPI` to the SSE-driven `LettaAPIStreaming` class.
+- Consume Letta SSE events incrementally, forwarding deltas directly to Slack via `chat_stream` / `chat_appendStream` / `chat_stopStream`.
+- Replace manual `chat_update` polling with Slack’s managed streaming APIs to enable typing indicators automatically.
+- Call `assistant.threads.setStatus` to broadcast native typing/loading messages while the stream is active, and clear the status when the reply completes.
+- Track stream state with watchdog timers; pause or terminate streams that stall or exceed size limits and surface telemetry.
+- Provide configuration (`ENABLE_SLACK_STREAMING`) to toggle the feature and document required Slack scopes.
 
 ## Open Questions
 
