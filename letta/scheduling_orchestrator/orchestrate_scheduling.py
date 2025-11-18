@@ -82,21 +82,31 @@ def orchestrate_scheduling(
         '2025-11-26T15:15:00Z'
     """
     # Lazy imports - only import when function is called, not during schema generation
-    from .schemas import (
-        ResponseEnvelope,
-        Proposal,
-        Event,
-        SchedulingProblem,
-        Relaxation,
-        DebugInfo,
-        MovedEvent,
-        ObjectiveScores,
-    )
-    from .dspy_extraction import extract_with_fallback
-    from .normalizer import normalize_events
-    from .fact_generator import generate_asp_program
-    from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
-    from .unsat_analyzer import explain_unsat
+    try:
+        from .schemas import (
+            ResponseEnvelope,
+            Proposal,
+            Event,
+            SchedulingProblem,
+            Relaxation,
+            DebugInfo,
+            MovedEvent,
+            ObjectiveScores,
+        )
+        from .dspy_extraction import extract_with_fallback
+        from .normalizer import normalize_events
+        from .fact_generator import generate_asp_program
+        from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+        from .unsat_analyzer import explain_unsat
+    except ImportError as e:
+        # If dependencies are missing, return a helpful error
+        return {
+            "status": "bad_input",
+            "explanation": f"Tool dependencies not available: {str(e)}. Please ensure clingo and dspy-ai are installed.",
+            "proposals": [],
+            "error_message": f"Missing dependencies: {str(e)}",
+            "debug": {}
+        }
     
     start_time = time.time()
     debug_info = DebugInfo()
