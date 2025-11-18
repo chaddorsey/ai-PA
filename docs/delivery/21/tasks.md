@@ -16,7 +16,7 @@ This document lists all tasks associated with PBI 21.
 | 21-6 | [DSPy extraction program](./21-6.md) | Done | Define ExtractSchedulingRequest(utterance, context_json) -> problem_delta_json signature; use BestOfN/Refine with a JSON validator for reliability. |
 | 21-7 | [UNSAT explanation & relaxation suggestions](./21-7.md) | Done | If UNSAT, turn blocking facts/assumptions into human-readable causes and ranked relaxations. Optionally use DSPy to verbalize. |
 | 21-8 | [Assemble orchestrate_scheduling tool](./21-8.md) | Done | Combine tasks 21-2..21-7 into the single tool. Ensure internal steps are deterministic and bounded. |
-| 21-9 | [Letta registration & schema verification](./21-9.md) | Proposed | Register the tool in Letta ADE/SDK, verify the JSON schema, display names/docs, and run a manual test call with sample events. |
+| 21-9 | [Letta registration & schema verification](./21-9.md) | Done | Register the tool in Letta ADE/SDK, verify the JSON schema, display names/docs, and run a manual test call with sample events. |
 | 21-10 | [Scenario tests & evaluation metrics](./21-10.md) | Proposed | Create scenario scripts for: (a) common slot finding, (b) focus-block day reflow, (c) recurring cadence with jitter. Metrics: total moved minutes, longest focus block, preference satisfaction %. |
 | 21-11 | [Observability & audit logs](./21-11.md) | Proposed | Log inputs, chosen objective values, proposals, and explanations. Redact PII as configured. |
 | 21-12 | [Security & configuration](./21-12.md) | Proposed | Set timeouts, memory limits; handle secrets (LM keys) via Letta tool configuration; document allowed horizon sizes. Add dependencies to letta/requirements.txt. |
