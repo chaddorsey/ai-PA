@@ -55,3 +55,68 @@ occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D.
 #show occurs/2.
 """
 
+# Soft constraints with lexicographic optimization
+SOFT_CONSTRAINTS_PROGRAM = """
+% ============================================
+% Scheduling ASP Encoding - Soft Constraints
+% ============================================
+
+% Additional predicates for optimization:
+%   protected_event(P, S)    - Participant P has a protected event at slot S
+%   event_start(P, E, S)    - Event E for participant P starts at slot S
+%   event_end(P, E, S)      - Event E for participant P ends at slot S
+%   moved_event(P, E, M)     - Event E for participant P moved by M minutes
+%   focus_block(P, B, L)     - Participant P has focus block B of length L slots
+%   preferred_time(Q, T)     - Request Q prefers time slot T
+%   preferred_day(Q, D)      - Request Q prefers day D
+
+% L1: Minimize violations of protected event boundaries
+% Penalize moving protected events (events that should not be moved if possible)
+% For each protected event slot that the new meeting overlaps with, add penalty
+protected_overlap(Q, P, S) :- occurs(Q, S), needs(Q, P), protected_event(P, S).
+#minimize { 1@1 : protected_overlap(Q, P, S) }.
+
+% L2: Minimize total moved minutes
+% Calculate how much existing events need to shift to accommodate the new meeting
+% This is simplified - in a full implementation, we'd track event boundaries
+% and calculate actual shift amounts. For now, we penalize overlaps with flexible events.
+flexible_overlap(Q, P, S) :- occurs(Q, S), needs(Q, P), busy(P, S), not protected_event(P, S), not locked_event(P, S).
+% Weight by duration - longer overlaps cost more
+overlap_cost(Q, P, S, C) :- flexible_overlap(Q, P, S), occurs(Q, S), duration(Q, D), C = D * 15.
+#minimize { C@2 : overlap_cost(Q, P, S, C) }.
+
+% L3: Maximize focus blocks (consecutive free slots)
+% Identify consecutive free slots after scheduling the meeting
+% A focus block is a sequence of free slots of minimum length
+% We reward longer focus blocks
+free_slot(P, S) :- slot(S), participant(P), not busy(P, S), not occurs(Q, S) : needs(Q, P).
+% Focus block starts when we transition from busy to free or at slot 0
+focus_block_start(P, 0) :- free_slot(P, 0), participant(P).
+focus_block_start(P, S) :- free_slot(P, S), (busy(P, S-1) ; occurs(Q, S-1) : needs(Q, P)), S > 0.
+% Focus block continues while slots are free (simplified - track length)
+% For optimization, we'll use a simpler approach: count consecutive free slots
+% This is a simplified version - full implementation would track block boundaries
+% For now, we'll optimize based on total free slots (proxy for focus blocks)
+% More sophisticated: track actual block lengths
+free_slot_count(P, C) :- participant(P), C = #count { S : free_slot(P, S) }.
+% Maximize free slots (minimize negative count)
+#minimize { -C@3 : free_slot_count(P, C) }.
+
+% L3: Minimize preference violations
+% Penalize deviations from preferred times
+% If preferred times are specified and we don't use one, add penalty
+has_preferred_time(Q) :- preferred_time(Q, T).
+preference_violation(Q, T, 1) :- start(Q, T), has_preferred_time(Q), not preferred_time(Q, T).
+% Penalize deviations from preferred days
+% Calculate day from slot (assuming 96 slots per day = 24 hours * 4 slots/hour)
+% This is approximate - actual calculation depends on horizon start
+% For simplicity, we'll use a helper fact that will be generated if preferred_days are specified
+has_preferred_day(Q) :- preferred_day(Q, D).
+preference_day_violation(Q, T, 1) :- start(Q, T), has_preferred_day(Q), not preferred_day(Q, D) : day_of_slot(T, D).
+#minimize { P@3 : preference_violation(Q, T, P) }.
+#minimize { P@3 : preference_day_violation(Q, T, P) }.
+"""
+
+# Complete ASP program (hard + soft constraints)
+COMPLETE_ASP_PROGRAM = BASE_ASP_PROGRAM + SOFT_CONSTRAINTS_PROGRAM
+
