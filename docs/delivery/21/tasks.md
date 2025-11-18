@@ -9,7 +9,7 @@ This document lists all tasks associated with PBI 21.
 | Task ID | Name | Status | Description |
 | :------ | :----------------------------------------------- | :------- | :----------------------------------------------- |
 | 21-1 | [Define orchestration tool interface & schemas](./21-1.md) | Done | Specify the single Letta tool orchestrate_scheduling with typed args/docstring or Pydantic models. Define input/output schemas. |
-| 21-2 | [Event payload normalizer → 15-min grid](./21-2.md) | Proposed | Transform events_by_participant (from Get_Events) into discrete 15-minute slot facts over the planning horizon. |
+| 21-2 | [Event payload normalizer → 15-min grid](./21-2.md) | Done | Transform events_by_participant (from Get_Events) into discrete 15-minute slot facts over the planning horizon. |
 | 21-3 | [ASP encoding (grid, hard constraints)](./21-3.md) | Proposed | Write the clingo logic for selecting one start slot per request, occupying D slots, no overlaps, windows, work hours, min gaps. |
 | 21-4 | [ASP soft constraints & lexicographic objectives](./21-4.md) | Proposed | Add weak constraints with levels (lexicographic): L1 Protect protected events; L2 minimize total moved minutes; L3 maximize focus blocks; L3 respect participant preferences. |
 | 21-5 | [clingo wrapper & model extraction](./21-5.md) | Proposed | Inside the tool, build the wrapper that compiles facts, grounds, solves, extracts start/2, occurs/2, computes move deltas and objective scores, and collects stats. |
