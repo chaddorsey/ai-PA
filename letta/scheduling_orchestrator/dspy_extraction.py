@@ -13,7 +13,23 @@ try:
     DSPY_AVAILABLE = True
 except ImportError:
     DSPY_AVAILABLE = False
-    dspy = None
+    # Create dummy classes for when dspy is not available
+    class DummySignature:
+        pass
+    class DummyField:
+        def __init__(self, desc=""):
+            self.desc = desc
+    # Create a mock dspy module
+    class DummyDspy:
+        class Signature:
+            pass
+        @staticmethod
+        def InputField(desc=""):
+            return DummyField(desc)
+        @staticmethod
+        def OutputField(desc=""):
+            return DummyField(desc)
+    dspy = DummyDspy()
 
 # Handle both relative and absolute imports
 try:
@@ -22,21 +38,41 @@ except (ImportError, ValueError):
     from schemas import SchedulingProblem
 
 
-class ExtractSchedulingRequest(dspy.Signature if DSPY_AVAILABLE else object):
-    """
-    Extract structured scheduling problem from natural language utterance.
-    
-    Input: utterance (natural language scheduling request)
-    Output: JSON string matching SchedulingProblem schema
-    """
-    utterance: str = dspy.InputField(desc="Natural language scheduling request")
-    context_json: str = dspy.InputField(desc="JSON string of context (working hours, preferences, policy)")
-    problem_json: str = dspy.OutputField(desc="JSON string matching SchedulingProblem schema with participants, duration_minutes, time_window_start, time_window_end, preferred_times, preferred_days, title, location, min_gap_minutes, allow_off_hours")
+# Define the class conditionally based on DSPY_AVAILABLE
+if DSPY_AVAILABLE:
+    class ExtractSchedulingRequest(dspy.Signature):
+        """
+        Extract structured scheduling problem from natural language utterance.
+        
+        Input: utterance (natural language scheduling request)
+        Output: JSON string matching SchedulingProblem schema
+        """
+        utterance: str = dspy.InputField(desc="Natural language scheduling request")
+        context_json: str = dspy.InputField(desc="JSON string of context (working hours, preferences, policy)")
+        problem_json: str = dspy.OutputField(desc="JSON string matching SchedulingProblem schema with participants, duration_minutes, time_window_start, time_window_end, preferred_times, preferred_days, title, location, min_gap_minutes, allow_off_hours")
+else:
+    # Fallback class when dspy is not available
+    class ExtractSchedulingRequest:
+        """
+        Extract structured scheduling problem from natural language utterance.
+        
+        This is a fallback class when DSPy is not available.
+        """
+        utterance: str = None
+        context_json: str = None
+        problem_json: str = None
 
 
 def initialize_dspy():
     """Initialize DSPy with LLM configuration."""
     if not DSPY_AVAILABLE:
+        # DSPy not available - will use fallback extraction
+        return None
+    
+    # Re-import dspy to ensure it's available
+    try:
+        import dspy
+    except ImportError:
         return None
     
     # Load .env file if it exists (for local development)
@@ -88,8 +124,14 @@ def extract_scheduling_request(
     if not DSPY_AVAILABLE:
         raise ValueError("DSPy is not available. Please install dspy-ai package.")
     
+    # Re-import dspy to ensure it's available
+    try:
+        import dspy
+    except ImportError:
+        raise ValueError("DSPy is not available. Please install dspy-ai package.")
+    
     # Initialize DSPy if not already configured
-    if dspy.settings.lm is None:
+    if not hasattr(dspy, 'settings') or dspy.settings.lm is None:
         initialize_dspy()
     
     # Convert context_json to string if provided
@@ -162,11 +204,17 @@ def extract_with_fallback(
         
         # Try to extract duration (look for numbers followed by "min", "hour", etc.)
         import re
-        duration_match = re.search(r'(\d+)\s*(?:min|minute|hour|hr)', utterance, re.IGNORECASE)
+        duration_match = re.search(r'(\d+)\s*(min|minute|hour|hr)?', utterance, re.IGNORECASE)
         duration_minutes = 60  # default
         if duration_match:
             num = int(duration_match.group(1))
-            unit = duration_match.group(2).lower() if duration_match.group(2) else ""
+            # Safely get group 2 (unit) - it may not exist if optional group didn't match
+            try:
+                unit_str = duration_match.group(2)
+                unit = unit_str.lower() if unit_str else ""
+            except (IndexError, AttributeError):
+                unit = ""
+            
             if "hour" in unit or "hr" in unit:
                 duration_minutes = num * 60
             else:
@@ -178,6 +226,19 @@ def extract_with_fallback(
         if context_json and "participants" in context_json:
             # Use all participants from context as default
             participants = [p.get("id", "") for p in context_json["participants"] if p.get("id")]
+        
+        # If no participants found in context, try to extract from utterance
+        if not participants:
+            # Look for participant names in the utterance (simple pattern matching)
+            # This is a very basic fallback - DSPy would do much better
+            participant_pattern = r'\b(?:for|with)\s+([A-Z][a-z]+(?:\s+and\s+[A-Z][a-z]+)*)'
+            participant_match = re.search(participant_pattern, utterance, re.IGNORECASE)
+            if participant_match:
+                names_str = participant_match.group(1)
+                # Split on "and" or commas
+                names = [name.strip() for name in re.split(r'\s+and\s+|,', names_str) if name.strip()]
+                # Convert to lowercase IDs (assuming participant IDs are lowercase)
+                participants = [name.lower() for name in names]
         
         return SchedulingProblem(
             participants=participants if participants else ["exec"],  # default to exec

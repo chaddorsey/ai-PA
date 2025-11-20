@@ -11,17 +11,39 @@ BASE_ASP_PROGRAM = """
 % ============================================
 
 % Predicates:
-%   slot(S)              - Slot S exists in the grid
+%   slot(S)              - Slot S exists in the grid (generated from range or explicit facts)
 %   busy(P, S)           - Participant P is busy at slot S
 %   needs(Q, P)          - Request Q requires participant P
-%   window(Q, S)         - Request Q is allowed to start at slot S
+%   window(Q, S)         - Request Q is allowed to start at slot S (explicit or from range)
+%   window_min(Q, M)     - Request Q minimum allowed start slot (for range)
+%   window_max(Q, M)     - Request Q maximum allowed start slot (for range)
+%   horizon_max(M)       - Maximum slot index in the horizon
 %   duration(Q, D)       - Request Q requires D slots
 %   workhours(P, S)      - Participant P is available during work hours at slot S
 %   min_gap(Q, G)        - Request Q requires minimum gap G slots after previous events
 %   locked_event(P, S)   - Participant P has a locked event at slot S (cannot move)
 
+% Generate slot range from horizon_max (optimization: avoid generating thousands of slot facts)
+% NOTE: If explicit slot(S) facts are provided, use those instead of the range rule.
+% This dramatically reduces grounding atoms by only generating slots that are actually used.
+% Fallback to range rule only if no explicit slot facts are provided.
+has_explicit_slots :- slot(_).
+slot(S) :- horizon_max(M), S = 0..M, not has_explicit_slots.
+
+% Generate window from range if window_min/window_max are provided (optimization)
+% This is more efficient than generating explicit window facts for every slot
+% OPTIMIZATION: If explicit window facts are provided, use those; otherwise use range rule
+has_explicit_windows :- window(Q, _).
+window(Q, S) :- window_min(Q, Min), window_max(Q, Max), slot(S), S >= Min, S <= Max, not has_explicit_windows.
+
 % Choice rule: Select exactly one start slot for each request
-{ start(Q, T) : slot(T), window(Q, T) } = 1 :- request(Q).
+% OPTIMIZATION: Use free_slot(T) instead of slot(T) to dramatically reduce candidates
+% If free_slot facts are provided, use them; otherwise fall back to slot(T)
+% Check if any free_slot facts exist
+has_free_slots :- free_slot(_).
+% Use free_slot if available, otherwise use all slots
+{ start(Q, T) : free_slot(T), window(Q, T) } = 1 :- request(Q), has_free_slots.
+{ start(Q, T) : slot(T), window(Q, T) } = 1 :- request(Q), not has_free_slots.
 
 % Meeting occurs at all slots from start to start+duration-1
 occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D.
@@ -36,6 +58,21 @@ occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D.
 
 % Hard constraint: Must respect work hours
 % Meeting must occur during participant work hours
+% Support both range encoding (workhours_range) and inverse encoding (non_workhours)
+
+% Range encoding: workhours_range(P, Start, End) means P works from Start to End (inclusive)
+workhours(P, S) :- workhours_range(P, Start, End), slot(S), S >= Start, S <= End.
+
+% Inverse encoding: non_workhours(P, Start, End) means P does NOT work from Start to End
+% Helper: check if slot S is in a non-workhours range
+in_non_workhours(P, S) :- non_workhours(P, Start, End), slot(S), S >= Start, S <= End.
+% If non_workhours is defined, workhours = all slots NOT in non_workhours ranges
+workhours(P, S) :- slot(S), participant(P), not in_non_workhours(P, S), not workhours_range(P, _, _).
+
+% Fallback: if no work hours specified, assume all slots are work hours
+workhours(P, S) :- slot(S), participant(P), not workhours_range(P, _, _), not non_workhours(P, _, _).
+
+% Hard constraint: Meeting must occur during work hours
 :- occurs(Q, T), needs(Q, P), not workhours(P, T).
 
 % Hard constraint: Cannot overlap with locked events

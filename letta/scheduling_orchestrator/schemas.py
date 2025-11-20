@@ -132,6 +132,17 @@ class DebugInfo(BaseModel):
     total_time_ms: Optional[int] = Field(default=None, description="Total execution time in milliseconds")
     facts_generated: Optional[int] = Field(default=None, description="Number of ASP facts generated")
     slots_considered: Optional[int] = Field(default=None, description="Number of time slots in the planning horizon")
+    input_summary: Optional[Dict[str, Any]] = Field(default=None, description="Summary of input parameters (utterance preview, participant counts, etc.)")
+    total_busy_slots: Optional[int] = Field(default=None, description="Total number of busy slots across all participants")
+    asp_program_lines: Optional[int] = Field(default=None, description="Number of lines in the generated ASP program")
+    asp_facts_count: Optional[int] = Field(default=None, description="Number of fact lines in the ASP program")
+    asp_program_size_chars: Optional[int] = Field(default=None, description="Size of ASP program in characters")
+    horizon_reduced: Optional[bool] = Field(default=None, description="Whether the planning horizon was reduced to fit within ASP limits")
+    original_slots: Optional[int] = Field(default=None, description="Original number of slots before reduction")
+    reduced_slots: Optional[int] = Field(default=None, description="Number of slots after reduction")
+    horizon_reduction_error: Optional[str] = Field(default=None, description="Error message if horizon reduction failed")
+    free_slots_found: Optional[int] = Field(default=None, description="Number of free slots found by pre-filtering (inverse approach)")
+    free_slots_ratio: Optional[float] = Field(default=None, description="Ratio of free slots to total slots (for debugging)")
 
 
 class ResponseEnvelope(BaseModel):

@@ -84,26 +84,35 @@ def main():
             print(f"\nAttaching tool to agent {LETTA_AGENT_ID}...")
             
             try:
-                # Try different methods to attach tool
-                if hasattr(client, 'agents') and hasattr(client.agents, 'attach_tool'):
-                    client.agents.attach_tool(agent_id=LETTA_AGENT_ID, tool_id=tool_id)
-                elif hasattr(client, 'attach_tool'):
-                    client.attach_tool(agent_id=LETTA_AGENT_ID, tool_id=tool_id)
-                else:
-                    print("  ⚠ Could not find attach_tool method")
-                    print("  Please attach the tool manually in Letta ADE")
-                    print(f"  Tool ID: {tool_id}")
-                    return 0
+                # Get current agent to check existing tools
+                agent = client.agents.retrieve(LETTA_AGENT_ID)
+                current_tool_ids = agent.tools or []
                 
-                print(f"  ✓ Tool attached successfully")
+                # Convert to list of strings if needed
+                current_tool_ids = [t.id if hasattr(t, 'id') else (t.get('id') if isinstance(t, dict) else str(t)) for t in current_tool_ids]
+                
+                # Check if tool is already attached
+                if tool_id in current_tool_ids:
+                    print(f"  → Tool already attached to agent")
+                else:
+                    # Add tool to the list and update agent
+                    updated_tool_ids = list(current_tool_ids) + [tool_id]
+                    client.agents.modify(
+                        agent_id=LETTA_AGENT_ID,
+                        tool_ids=updated_tool_ids
+                    )
+                    print(f"  ✓ Tool attached successfully")
                 
             except Exception as e:
-                if "already attached" in str(e).lower() or "already exists" in str(e).lower():
+                error_str = str(e).lower()
+                if "already attached" in error_str or "already exists" in error_str or "409" in error_str:
                     print(f"  → Tool already attached to agent")
                 else:
                     print(f"  ✗ Error attaching tool: {e}")
                     print(f"\nYou can attach the tool manually in Letta ADE:")
                     print(f"  Tool ID: {tool_id}")
+                    import traceback
+                    traceback.print_exc()
                     return 1
             
             print(f"\n{'='*60}")

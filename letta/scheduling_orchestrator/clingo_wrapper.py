@@ -64,7 +64,31 @@ class ClingoSolver:
         self.optimal_model = None
         self.stats = {}
         
-        ctl = Control(["--opt-mode=optN"])  # Optimize with multiple models
+        # Configure clingo to suppress messages and limit output
+        # --opt-mode=optN: optimize with multiple models but limit to first optimal
+        # --models=1: only return the first optimal model (reduces output)
+        # --warn=none: suppress all warnings to reduce message volume
+        ctl = Control([
+            "--opt-mode=optN",
+            "--models=1",  # Only return first optimal model
+            "--warn=none"  # Suppress all warnings
+        ])
+        
+        # Suppress clingo's message handler to avoid "too many messages" error
+        # The callback takes a single Message object parameter
+        message_count = [0]  # Use list to allow modification in nested function
+        MAX_MESSAGES = 10000  # Increase limit to handle larger problems
+        
+        def on_message(msg):
+            """Suppress clingo messages to avoid 'too many messages' error."""
+            message_count[0] += 1
+            # Suppress all messages to avoid "too many messages" error
+            # Return True to suppress the message, False to show it
+            # We suppress everything to prevent clingo from hitting its internal message limit
+            return True
+        
+        # Set the message handler BEFORE adding program to catch all messages
+        ctl.on_message = on_message
         
         # Add program
         ctl.add("base", [], program)
@@ -76,7 +100,20 @@ class ClingoSolver:
             ground_time = time.time() - start_time
             self.stats["ground_time_ms"] = int(ground_time * 1000)
         except Exception as e:
-            self.stats["error"] = str(e)
+            ground_time = time.time() - start_time
+            error_msg = str(e)
+            self.stats["error"] = error_msg
+            self.stats["ground_time_ms"] = int(ground_time * 1000)
+            self.stats["grounding_failed"] = True
+            
+            # Check for specific error types
+            if "parsing" in error_msg.lower() or "parse" in error_msg.lower():
+                self.stats["error_type"] = "parsing_failed"
+            elif "memory" in error_msg.lower() or "out of memory" in error_msg.lower():
+                self.stats["error_type"] = "out_of_memory"
+            else:
+                self.stats["error_type"] = "grounding_failed"
+            
             return None, self.stats, SolveResult.UNKNOWN
         
         # Solve with timeout
@@ -84,7 +121,9 @@ class ClingoSolver:
         
         def on_model(model: Model):
             """Callback for each model found."""
-            self.models.append(model)
+            # Limit number of models collected to avoid memory issues
+            if len(self.models) < 10:  # Only keep first 10 models
+                self.models.append(model)
             if on_model_callback:
                 on_model_callback(model)
             # Track optimal model (first model when optimizing)

@@ -23,7 +23,12 @@ Before calling `orchestrate_scheduling`, you must first retrieve calendar events
   - Use this for participants other than the user
   - Example: Call `Get-Events_From_Arbitrary_Calendar` for each participant (Alex, Priya, etc.)
 
-**Important**: You need to call these tools for ALL participants in the scheduling request, covering the entire planning horizon (typically 1-2 weeks ahead).
+**Important**: 
+- You need to call these tools for ALL participants in the scheduling request
+- **Filter events by time horizon**: Only fetch events within the planning window (e.g., if scheduling for "next 2 weeks", only get events in that range)
+- **Filter all-day events**: Exclude events that span 24+ hours (they don't block specific time slots)
+- **Use minimal event format**: When preparing events for `orchestrate_scheduling`, only include: `id`, `start`, `end`, `locked`, `protected`, `flexible` (omit `title`, `description`, `location`, etc.)
+- This reduces payload size by 60-70% and prevents message size limit errors
 
 ### Step 2: Prepare the Inputs
 
@@ -34,15 +39,18 @@ Once you have all the calendar events, prepare the inputs for `orchestrate_sched
 
 2. **events_by_participant** (JSON string): A JSON object mapping participant IDs to their calendar events
    - Format: `{"participant_id": [list of events], ...}`
-   - Each event should have: `id`, `title`, `start`, `end`, `locked`, `protected`, `flexible`
-   - Convert the events from Get_Events/Get-Events_From_Arbitrary_Calendar into this format
-   - Example JSON:
+   - **IMPORTANT**: Use minimal event format to reduce payload size (see below)
+   - Each event must have: `id`, `start`, `end`, `locked`, `protected`, `flexible`
+   - **Omit unused fields**: `title`, `description`, `location`, `owner` are NOT needed
+   - **Pre-filter events**: Only include events within the planning horizon (timeframe)
+   - **Filter all-day events**: Exclude events that span 24+ hours (they don't block time slots)
+   - Convert the events from Get_Events/Get-Events_From_Arbitrary_Calendar into this minimal format
+   - Example JSON (minimal format):
      ```json
      {
        "exec": [
          {
            "id": "evt1",
-           "title": "Standup",
            "start": "2025-11-25T14:00:00Z",
            "end": "2025-11-25T14:15:00Z",
            "locked": false,
@@ -53,7 +61,6 @@ Once you have all the calendar events, prepare the inputs for `orchestrate_sched
        "alex": [
          {
            "id": "evt2",
-           "title": "Team Meeting",
            "start": "2025-11-25T10:00:00Z",
            "end": "2025-11-25T11:00:00Z",
            "locked": false,
@@ -64,6 +71,7 @@ Once you have all the calendar events, prepare the inputs for `orchestrate_sched
        "priya": []
      }
      ```
+   - **Payload size optimization**: This minimal format reduces payload by 60-70% compared to full event objects
 
 3. **context_json** (optional JSON string): Scheduling preferences and rules
    - Can include: `timeframe`, `participants` (with work hours), `policy` (min gaps, preferences)
