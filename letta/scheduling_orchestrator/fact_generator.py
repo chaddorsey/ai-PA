@@ -122,7 +122,10 @@ def _find_free_slots(
 def generate_asp_facts(
     normalized_data: Dict[str, Any],
     scheduling_problem: SchedulingProblem,
-    request_id: str = "q1"
+    request_id: str = "q1",
+    include_work_hours: bool = True,
+    include_min_gap: bool = True,
+    include_locked_events: bool = True
 ) -> str:
     """
     Generate ASP facts from normalized data and scheduling problem.
@@ -166,8 +169,9 @@ def generate_asp_facts(
     duration_slots = max(1, scheduling_problem.duration_minutes // 15)
     facts.append(f"duration({request_id}, {duration_slots}).")
     
-    # Generate min_gap fact
-    facts.append(f"min_gap({request_id}, {min_gap_slots}).")
+    # Generate min_gap fact (only if include_min_gap is True)
+    if include_min_gap:
+        facts.append(f"min_gap({request_id}, {min_gap_slots}).")
     
     # Generate busy facts first (only for slots that are actually busy)
     # We need to track these for free slot calculation and explicit slot generation
@@ -187,9 +191,21 @@ def generate_asp_facts(
         min_gap_slots
     )
     
-    # Generate free_slot facts only for actually free slots
+    # OPTIMIZATION: Limit free slots for phase 1 to reduce fact count
+    # For phase 1 (minimal constraints, no work hours), limit to first 50 free slots
+    # This dramatically reduces occurs_if_start facts while still giving clingo enough candidates
+    # For later phases, use all free slots (work hours filtering should reduce the count)
+    MAX_FREE_SLOTS_FOR_PHASE1 = 50
+    if not include_work_hours and len(free_slots) > MAX_FREE_SLOTS_FOR_PHASE1:
+        # Phase 1: Limit to first N free slots to reduce occurs_if_start fact count
+        free_slots_limited = sorted(free_slots)[:MAX_FREE_SLOTS_FOR_PHASE1]
+    else:
+        # Phase 2+: Use all free slots (should be fewer due to work hours filtering)
+        free_slots_limited = free_slots
+    
+    # Generate free_slot facts only for limited free slots
     # This reduces grounding atoms by ~80-90% for typical calendars
-    for slot in sorted(free_slots):
+    for slot in sorted(free_slots_limited):
         facts.append(f"free_slot({slot}).")
         used_slots.add(slot)
     
@@ -202,8 +218,11 @@ def generate_asp_facts(
     # Instead of using the rule occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D
     # which generates many atoms during grounding, we pre-generate explicit occurs facts
     # for each free slot (meeting start candidate)
+    # Use the limited free slots set to match free_slot facts
+    free_slots_for_occurs = free_slots_limited
+    
     meeting_duration_slots = set()
-    for free_slot in free_slots:
+    for free_slot in free_slots_for_occurs:
         # Pre-generate occurs facts for this meeting start
         for offset in range(duration_slots):
             slot_idx = free_slot + offset
@@ -219,41 +238,44 @@ def generate_asp_facts(
     for slot in sorted(used_slots):
         facts.append(f"slot({slot}).")
     
-    # Generate workhours facts - OPTIMIZATION: Use range encoding for work hours
-    # Instead of generating workhours(P, S) for every slot, we'll use workhours_range facts
-    # This dramatically reduces fact count for large horizons
-    for participant_id, slots in work_hours_slots.items():
-        if not slots:
-            continue
-        
-        # OPTIMIZATION: Generate explicit workhours facts only for slots that are actually used
-        # Instead of using range rules which generate many atoms, generate facts only for:
-        # 1. Free slots (meeting candidates)
-        # 2. Meeting duration slots (for occurs rule)
-        # 3. Busy slots (for constraint checking)
-        workhours_slots_to_generate = used_slots.intersection(slots)
-        
-        if workhours_slots_to_generate:
-            # Generate explicit workhours facts only for used slots
-            for slot in sorted(workhours_slots_to_generate):
-                facts.append(f"workhours({participant_id}, {slot}).")
-        else:
-            # If no intersection, use range encoding as fallback (but only for used slots)
-            # This is a compromise - still uses ranges but only for slots we care about
-            work_ranges = _slots_to_ranges(sorted(slots.intersection(used_slots)))
-            for start_slot, end_slot in work_ranges:
-                facts.append(f"workhours_range({participant_id}, {start_slot}, {end_slot}).")
+    # Generate workhours facts (only if include_work_hours is True)
+    if include_work_hours:
+        # OPTIMIZATION: Use range encoding for work hours
+        # Instead of generating workhours(P, S) for every slot, we'll use workhours_range facts
+        # This dramatically reduces fact count for large horizons
+        for participant_id, slots in work_hours_slots.items():
+            if not slots:
+                continue
+            
+            # OPTIMIZATION: Generate explicit workhours facts only for slots that are actually used
+            # Instead of using range rules which generate many atoms, generate facts only for:
+            # 1. Free slots (meeting candidates)
+            # 2. Meeting duration slots (for occurs rule)
+            # 3. Busy slots (for constraint checking)
+            workhours_slots_to_generate = used_slots.intersection(slots)
+            
+            if workhours_slots_to_generate:
+                # Generate explicit workhours facts only for used slots
+                for slot in sorted(workhours_slots_to_generate):
+                    facts.append(f"workhours({participant_id}, {slot}).")
+            else:
+                # If no intersection, use range encoding as fallback (but only for used slots)
+                # This is a compromise - still uses ranges but only for slots we care about
+                work_ranges = _slots_to_ranges(sorted(slots.intersection(used_slots)))
+                for start_slot, end_slot in work_ranges:
+                    facts.append(f"workhours_range({participant_id}, {start_slot}, {end_slot}).")
     
-    # Generate locked_event facts (from event_protection)
-    # We need to map back from event protection to slots
-    # For now, we'll mark all busy slots of locked events as locked
-    # In a more sophisticated version, we'd track which slots belong to which events
-    for (participant_id, event_id), protection_level in event_protection.items():
-        if protection_level == "locked" and participant_id in busy_slots:
-            # Mark all busy slots for this participant as potentially locked
-            # This is a simplification - ideally we'd track event boundaries
-            for slot in busy_slots[participant_id]:
-                facts.append(f"locked_event({participant_id}, {slot}).")
+    # Generate locked_event facts (only if include_locked_events is True)
+    if include_locked_events:
+        # We need to map back from event protection to slots
+        # For now, we'll mark all busy slots of locked events as locked
+        # In a more sophisticated version, we'd track which slots belong to which events
+        for (participant_id, event_id), protection_level in event_protection.items():
+            if protection_level == "locked" and participant_id in busy_slots:
+                # Mark all busy slots for this participant as potentially locked
+                # This is a simplification - ideally we'd track event boundaries
+                for slot in busy_slots[participant_id]:
+                    facts.append(f"locked_event({participant_id}, {slot}).")
     
     # Generate window facts (allowed start slots)
     # OPTIMIZATION: Instead of generating window facts for every slot,
@@ -304,27 +326,74 @@ def generate_asp_program(
     normalized_data: Dict[str, Any],
     scheduling_problem: SchedulingProblem,
     request_id: str = "q1",
-    include_soft_constraints: bool = True
+    include_soft_constraints: bool = False,
+    include_work_hours: bool = True,
+    include_min_gap: bool = True,
+    include_locked_events: bool = True,
+    phase: int = 1
 ) -> str:
     """
-    Generate complete ASP program (facts + encoding).
+    Generate ASP program (facts + encoding) with configurable constraints.
     
     Args:
         normalized_data: Output from normalize_events()
         scheduling_problem: Parsed scheduling problem
         request_id: Identifier for this scheduling request
-        include_soft_constraints: Whether to include soft constraints (default: True)
+        include_soft_constraints: Whether to include soft constraints (default: False)
+        include_work_hours: Whether to include work hours constraints (default: True)
+        include_min_gap: Whether to include min gap constraints (default: True)
+        include_locked_events: Whether to include locked event constraints (default: True)
+        phase: Multi-shot phase number (1=minimal, 2=+work hours, 3=+min gap, 4=+soft)
         
     Returns:
         Complete ASP program as a string
     """
     # Handle both relative and absolute imports
     try:
-        from .asp_encoding import BASE_ASP_PROGRAM, COMPLETE_ASP_PROGRAM
+        from .asp_encoding import (
+            MINIMAL_ASP_PROGRAM,
+            BASE_ASP_PROGRAM,
+            COMPLETE_ASP_PROGRAM,
+            WORK_HOURS_CONSTRAINTS,
+            MIN_GAP_CONSTRAINTS,
+            LOCKED_EVENT_CONSTRAINTS,
+            SOFT_CONSTRAINTS_PROGRAM
+        )
     except (ImportError, ValueError):
-        from asp_encoding import BASE_ASP_PROGRAM, COMPLETE_ASP_PROGRAM
+        from asp_encoding import (
+            MINIMAL_ASP_PROGRAM,
+            BASE_ASP_PROGRAM,
+            COMPLETE_ASP_PROGRAM,
+            WORK_HOURS_CONSTRAINTS,
+            MIN_GAP_CONSTRAINTS,
+            LOCKED_EVENT_CONSTRAINTS,
+            SOFT_CONSTRAINTS_PROGRAM
+        )
     
-    facts = generate_asp_facts(normalized_data, scheduling_problem, request_id)
+    facts = generate_asp_facts(normalized_data, scheduling_problem, request_id, 
+                                include_work_hours=include_work_hours,
+                                include_min_gap=include_min_gap,
+                                include_locked_events=include_locked_events)
+    
+    # Build program incrementally based on phase
+    if phase == 1:
+        # Phase 1: Minimal constraints only (no work hours, no min_gap, no locked events)
+        program = MINIMAL_ASP_PROGRAM
+    else:
+        # Phase 2+: Start with minimal, add constraints incrementally
+        program = MINIMAL_ASP_PROGRAM
+        
+        if include_work_hours or phase >= 2:
+            program += WORK_HOURS_CONSTRAINTS
+        
+        if include_locked_events or phase >= 2:
+            program += LOCKED_EVENT_CONSTRAINTS
+        
+        if include_min_gap or phase >= 3:
+            program += MIN_GAP_CONSTRAINTS
+        
+        if include_soft_constraints and phase >= 4:
+            program += SOFT_CONSTRAINTS_PROGRAM
     
     # Add facts for soft constraints if needed
     if include_soft_constraints:

@@ -4,6 +4,62 @@ ASP (Answer Set Programming) encoding for scheduling optimization.
 Defines the clingo logic program for constraint-based scheduling on a 15-minute grid.
 """
 
+# Minimal ASP program with core constraints only (for multi-shot Phase 1)
+MINIMAL_ASP_PROGRAM = """
+% ============================================
+% Scheduling ASP Encoding - Minimal Constraints (Phase 1)
+% ============================================
+% Core constraints only: no double-booking, basic window
+% Work hours and min_gap added in later phases
+
+% Predicates:
+%   slot(S)              - Slot S exists in the grid
+%   busy(P, S)           - Participant P is busy at slot S
+%   needs(Q, P)          - Request Q requires participant P
+%   window(Q, S)         - Request Q is allowed to start at slot S
+%   horizon_max(M)       - Maximum slot index in the horizon
+%   duration(Q, D)       - Request Q requires D slots
+
+% Generate slot range from horizon_max (optimization: avoid generating thousands of slot facts)
+% NOTE: If explicit slot(S) facts are provided, use those instead of the range rule.
+% This dramatically reduces grounding atoms by only generating slots that are actually used.
+% Fallback to range rule only if no explicit slot facts are provided.
+has_explicit_slots :- slot(_).
+slot(S) :- horizon_max(M), S = 0..M, not has_explicit_slots.
+
+% Generate window from range if window_min/window_max are provided (optimization)
+% This is more efficient than generating explicit window facts for every slot
+% OPTIMIZATION: If explicit window facts are provided, use those; otherwise use range rule
+has_explicit_windows :- window(Q, _).
+window(Q, S) :- window_min(Q, Min), window_max(Q, Max), slot(S), S >= Min, S <= Max, not has_explicit_windows.
+
+% Choice rule: Select exactly one start slot for each request
+% OPTIMIZATION: Use free_slot(T) instead of slot(T) to dramatically reduce candidates
+% If free_slot facts are provided, use them; otherwise fall back to slot(T)
+% Check if any free_slot facts exist
+has_free_slots :- free_slot(_).
+% Use free_slot if available, otherwise use all slots
+{ start(Q, T) : free_slot(T), window(Q, T) } = 1 :- request(Q), has_free_slots.
+{ start(Q, T) : slot(T), window(Q, T) } = 1 :- request(Q), not has_free_slots.
+
+% Meeting occurs at all slots from start to start+duration-1
+% OPTIMIZATION: Use pre-generated occurs_if_start facts instead of range constraint
+% This eliminates the range constraint T >= T0, T < T0 + D which generates many atoms
+occurs(Q, T) :- start(Q, T0), occurs_if_start(Q, T0, T).
+
+% Hard constraint: No double-booking
+% A meeting cannot occur when any required participant is busy
+:- occurs(Q, T), needs(Q, P), busy(P, T).
+
+% Hard constraint: Must respect time window
+% Meeting can only start within allowed window
+:- start(Q, T), not window(Q, T).
+
+% Show the selected start slots and occupied slots
+#show start/2.
+#show occurs/2.
+"""
+
 # Base ASP program with hard constraints
 BASE_ASP_PROGRAM = """
 % ============================================
@@ -152,4 +208,50 @@ preference_day_violation(Q, T, 1) :- start(Q, T), has_preferred_day(Q), not pref
 
 # Complete ASP program (hard + soft constraints)
 COMPLETE_ASP_PROGRAM = BASE_ASP_PROGRAM + SOFT_CONSTRAINTS_PROGRAM
+
+# Work hours constraints (added in Phase 2)
+WORK_HOURS_CONSTRAINTS = """
+% ============================================
+% Work Hours Constraints (Phase 2)
+% ============================================
+
+% Hard constraint: Must respect work hours
+% Meeting must occur during participant work hours
+% OPTIMIZATION: Use explicit workhours facts when available, fallback to range rules
+has_explicit_workhours :- workhours(_, _).
+% If explicit workhours facts exist, use those
+% If workhours_range exists, use range rule (but only for slots that exist)
+workhours(P, S) :- workhours_range(P, Start, End), slot(S), S >= Start, S <= End, not has_explicit_workhours.
+% Fallback: if no work hours specified, assume all slots are work hours
+workhours(P, S) :- slot(S), participant(P), not workhours(P, _), not workhours_range(P, _, _).
+
+% Hard constraint: Meeting must occur during work hours
+:- occurs(Q, T), needs(Q, P), not workhours(P, T).
+"""
+
+# Min gap constraints (added in Phase 3)
+MIN_GAP_CONSTRAINTS = """
+% ============================================
+% Minimum Gap Constraints (Phase 3)
+% ============================================
+
+% Hard constraint: Minimum gap after previous events
+% Ensure no meeting starts within min_gap slots after any busy slot ends
+% We need to track when busy slots end - for simplicity, assume each busy slot
+% blocks the next min_gap slots. A more sophisticated version would track
+% consecutive busy slots as events.
+% For now: if a participant is busy at slot T, no meeting can start at T+1 to T+G
+:- start(Q, T), needs(Q, P), busy(P, T2), min_gap(Q, G), T > T2, T <= T2 + G.
+"""
+
+# Locked event constraints (added in Phase 2)
+LOCKED_EVENT_CONSTRAINTS = """
+% ============================================
+% Locked Event Constraints (Phase 2)
+% ============================================
+
+% Hard constraint: Cannot overlap with locked events
+% Meeting cannot occur when any required participant has a locked event
+:- occurs(Q, T), needs(Q, P), locked_event(P, T).
+"""
 

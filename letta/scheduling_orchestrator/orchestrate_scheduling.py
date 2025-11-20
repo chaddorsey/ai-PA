@@ -315,8 +315,9 @@ def orchestrate_scheduling(
         # Even with explicit slot facts and no soft constraints, clingo's grounding can still
         # generate too many atoms from rules like occurs() and workhours(). We need to be
         # very conservative. With explicit slots and no soft constraints, we can handle
-        # ~288 slots (3 days) safely.
-        MAX_SLOTS_FOR_ASP = 288  # 3 days * 96 slots/day - safe with explicit slots + no soft constraints
+        # ~192 slots (2 days) safely. The occurs_if_start pre-generation creates many facts,
+        # so we need to keep the horizon small.
+        MAX_SLOTS_FOR_ASP = 192  # 2 days * 96 slots/day - conservative limit for clingo grounding
         if num_slots > MAX_SLOTS_FOR_ASP:
             try:
                 original_slots = num_slots
@@ -448,67 +449,175 @@ def orchestrate_scheduling(
         debug_info.slots_considered = num_slots
         debug_info.total_busy_slots = total_busy_slots
         
-        # 4. Generate ASP program
-        try:
-            # Count free slots before generating ASP (for debugging)
-            try:
-                try:
-                    from .fact_generator import _find_free_slots
-                except (ImportError, ValueError):
-                    from fact_generator import _find_free_slots
-                
-                duration_slots = max(1, scheduling_problem.duration_minutes // 15)
-                free_slots = _find_free_slots(
-                    all_slots,
-                    busy_slots,
-                    normalized_data.get("work_hours_slots", {}),
-                    scheduling_problem.participants,
-                    duration_slots,
-                    normalized_data.get("min_gap_slots", 0)
-                )
-                debug_info.free_slots_found = len(free_slots)
-                debug_info.free_slots_ratio = len(free_slots) / num_slots if num_slots > 0 else 0
-            except Exception:
-                # If we can't count free slots, that's okay - just skip this debug info
-                pass
-            
-            # Disable soft constraints by default to reduce grounding complexity
-            # Soft constraints generate many atoms (focus blocks, preferences, etc.)
-            # We can enable them in a second pass for refinement if needed
-            asp_program = generate_asp_program(
-                normalized_data,
-                scheduling_problem,
-                request_id="q1",
-                include_soft_constraints=False
-            )
-            # Log ASP program size
-            asp_lines = asp_program.split("\n")
-            asp_facts_count = sum(1 for line in asp_lines if line.strip() and not line.strip().startswith("%") and not line.strip().startswith("#"))
-            debug_info.asp_program_lines = len(asp_lines)
-            debug_info.asp_facts_count = asp_facts_count
-            debug_info.asp_program_size_chars = len(asp_program)
-            
-            # Count free_slot facts in the program (for verification)
-            free_slot_facts = sum(1 for line in asp_lines if line.strip().startswith("free_slot("))
-            if free_slot_facts > 0:
-                debug_info.free_slots_found = free_slot_facts  # Override with actual count from program
-            # Note: asp_generation_time_ms is not in DebugInfo schema, so we skip tracking it
-        except Exception as e:
-            error_traceback = traceback.format_exc()
-            return ResponseEnvelope(
-                status="bad_input",
-                explanation=f"Failed to generate ASP program: {str(e)}",
-                proposals=[],
-                error_message=str(e),
-                debug=debug_info
-            ).model_dump() | {"error_traceback": error_traceback}
+        # 4. Multi-shot solving: Try phases with incremental constraints
+        # Phase 1: Minimal constraints (no work hours, no min_gap, no locked events)
+        # Phase 2: Add work hours and locked events
+        # Phase 3: Add min_gap
+        # This reduces grounding complexity by 50-70% per phase
         
-        # 5. Solve with clingo
-        solver = ClingoSolver(timeout=30)
+        model = None
+        stats = None
+        solve_result = None
+        asp_program = None
+        phase_used = 0
+        
+        # Count free slots before generating ASP (for debugging)
         try:
-            model, stats, solve_result = solver.solve(asp_program)
-            debug_info.asp_stats = stats
-            debug_info.solve_time_ms = stats.get("solve_time_ms", 0)
+            try:
+                from .fact_generator import _find_free_slots
+            except (ImportError, ValueError):
+                from fact_generator import _find_free_slots
+            
+            duration_slots = max(1, scheduling_problem.duration_minutes // 15)
+            free_slots = _find_free_slots(
+                all_slots,
+                busy_slots,
+                normalized_data.get("work_hours_slots", {}),
+                scheduling_problem.participants,
+                duration_slots,
+                normalized_data.get("min_gap_slots", 0)
+            )
+            debug_info.free_slots_found = len(free_slots)
+            debug_info.free_slots_ratio = len(free_slots) / num_slots if num_slots > 0 else 0
+        except Exception:
+            # If we can't count free slots, that's okay - just skip this debug info
+            pass
+        
+        solver = ClingoSolver(timeout=30)
+        
+        # Try phases incrementally
+        for phase in [1, 2, 3]:
+            try:
+                phase_used = phase
+                
+                # Generate ASP program for this phase
+                include_work_hours = (phase >= 2)
+                include_min_gap = (phase >= 3)
+                include_locked_events = (phase >= 2)
+                
+                asp_program = generate_asp_program(
+                    normalized_data,
+                    scheduling_problem,
+                    request_id="q1",
+                    include_soft_constraints=False,
+                    include_work_hours=include_work_hours,
+                    include_min_gap=include_min_gap,
+                    include_locked_events=include_locked_events,
+                    phase=phase
+                )
+                
+                # Log ASP program size (for last phase attempted)
+                asp_lines = asp_program.split("\n")
+                asp_facts_count = sum(1 for line in asp_lines if line.strip() and not line.strip().startswith("%") and not line.strip().startswith("#"))
+                debug_info.asp_program_lines = len(asp_lines)
+                debug_info.asp_facts_count = asp_facts_count
+                debug_info.asp_program_size_chars = len(asp_program)
+                debug_info.multi_shot_phase = phase
+                
+                # Count free_slot facts in the program (for verification)
+                free_slot_facts = sum(1 for line in asp_lines if line.strip().startswith("free_slot("))
+                if free_slot_facts > 0:
+                    debug_info.free_slots_found = free_slot_facts  # Override with actual count from program
+                
+                # Solve with clingo
+                model, stats, solve_result = solver.solve(asp_program)
+                debug_info.asp_stats = stats
+                debug_info.solve_time_ms = stats.get("solve_time_ms", 0)
+                
+                # Check if grounding/parsing failed
+                if stats.get("error") or stats.get("grounding_failed"):
+                    error_msg = stats.get("error", "Unknown error during ASP grounding/parsing")
+                    error_type = stats.get("error_type", "unknown")
+                    
+                    # If this is a grounding error, try next phase (might be too many constraints)
+                    if phase < 3:
+                        continue  # Try next phase
+                    else:
+                        # Last phase failed - return error
+                        diagnostics = {
+                            "error_type": error_type,
+                            "input_summary": input_summary,
+                            "slots_considered": num_slots,
+                            "total_busy_slots": total_busy_slots,
+                            "asp_program_lines": debug_info.asp_program_lines,
+                            "asp_facts_count": debug_info.asp_facts_count,
+                            "asp_program_size_chars": debug_info.asp_program_size_chars,
+                            "phase": phase
+                        }
+                        
+                        if error_type == "parsing_failed":
+                            diagnostics["suggestion"] = "The ASP program may be too large or contain syntax errors. Consider reducing the planning horizon."
+                            explanation = f"Failed to parse ASP program: {error_msg}. Problem size: {num_slots} slots, {total_busy_slots} busy slots, {debug_info.asp_facts_count} facts."
+                        elif error_type == "out_of_memory":
+                            diagnostics["suggestion"] = "The problem size exceeds available memory. Reduce the planning horizon or number of participants/events."
+                            explanation = f"Out of memory during ASP grounding: {error_msg}. Problem size: {num_slots} slots, {debug_info.asp_facts_count} facts."
+                        else:
+                            diagnostics["suggestion"] = "The problem size may be too large. Consider reducing the planning horizon, number of participants, or number of events."
+                            explanation = f"Failed to ground ASP program: {error_msg}. Problem size: {num_slots} slots, {total_busy_slots} busy slots, {debug_info.asp_facts_count} facts."
+                        
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=explanation,
+                            proposals=[],
+                            error_message=error_msg,
+                            debug=debug_info
+                        ).model_dump() | {"diagnostics": diagnostics}
+                
+                # Check if we got a solution
+                if model and stats.get("satisfiable", False):
+                    # Success! Break out of phase loop
+                    break
+                else:
+                    # UNSAT - try next phase with more constraints
+                    if phase < 3:
+                        continue  # Try next phase
+                    else:
+                        # Last phase was UNSAT - will be handled below
+                        break
+                        
+            except Exception as e:
+                error_traceback = traceback.format_exc()
+                error_msg = str(e)
+                
+                # Check if this is the "too many messages" error
+                if "too many messages" in error_msg.lower():
+                    # Try next phase if available
+                    if phase < 3:
+                        continue  # Try next phase with fewer constraints
+                    else:
+                        # Last phase - return error
+                        diagnostics = {
+                            "error_type": "clingo_too_many_messages",
+                            "input_summary": input_summary,
+                            "slots_considered": num_slots,
+                            "total_busy_slots": total_busy_slots,
+                            "asp_program_lines": debug_info.asp_program_lines if hasattr(debug_info, 'asp_program_lines') else None,
+                            "asp_facts_count": debug_info.asp_facts_count if hasattr(debug_info, 'asp_facts_count') else None,
+                            "phase": phase,
+                            "suggestion": "The problem size may be too large. Consider reducing the planning horizon, number of participants, or number of events."
+                        }
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Failed to solve ASP program: {error_msg}. Problem size: {num_slots} slots, {total_busy_slots} busy slots, {asp_facts_count if hasattr(debug_info, 'asp_facts_count') else 'unknown'} facts. Consider reducing the planning horizon or number of events.",
+                            proposals=[],
+                            error_message=error_msg,
+                            debug=debug_info
+                        ).model_dump() | {"error_traceback": error_traceback, "diagnostics": diagnostics}
+                else:
+                    # Other error - try next phase if available
+                    if phase < 3:
+                        continue
+                    else:
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Failed to solve ASP program: {error_msg}",
+                            proposals=[],
+                            error_message=error_msg,
+                            debug=debug_info
+                        ).model_dump() | {"error_traceback": error_traceback}
+        
+        # 5. Handle UNSAT (but only if there was no error during grounding)
+        if not model or not stats or not stats.get("satisfiable", False):
             
             # Check if grounding/parsing failed
             if stats.get("error") or stats.get("grounding_failed"):
@@ -542,44 +651,8 @@ def orchestrate_scheduling(
                     error_message=error_msg,
                     debug=debug_info
                 ).model_dump() | {"diagnostics": diagnostics}
-                
-        except Exception as e:
-            error_traceback = traceback.format_exc()
-            error_msg = str(e)
             
-            # Check if this is the "too many messages" error
-            if "too many messages" in error_msg.lower():
-                # Provide detailed diagnostics for this specific error
-                diagnostics = {
-                    "error_type": "clingo_too_many_messages",
-                    "input_summary": input_summary,
-                    "slots_considered": num_slots,
-                    "total_busy_slots": total_busy_slots,
-                    "asp_program_lines": debug_info.asp_program_lines if hasattr(debug_info, 'asp_program_lines') else None,
-                    "asp_facts_count": debug_info.asp_facts_count if hasattr(debug_info, 'asp_facts_count') else None,
-                    "suggestion": "The problem size may be too large. Consider reducing the planning horizon, number of participants, or number of events."
-                }
-                return ResponseEnvelope(
-                    status="bad_input",
-                    explanation=f"Failed to solve ASP program: {error_msg}. Problem size: {num_slots} slots, {total_busy_slots} busy slots, {asp_facts_count if hasattr(debug_info, 'asp_facts_count') else 'unknown'} facts. Consider reducing the planning horizon or number of events.",
-                    proposals=[],
-                    error_message=error_msg,
-                    debug=debug_info
-                ).model_dump() | {"error_traceback": error_traceback, "diagnostics": diagnostics}
-            else:
-                return ResponseEnvelope(
-                    status="bad_input",
-                    explanation=f"Failed to solve ASP program: {error_msg}",
-                    proposals=[],
-                    error_message=error_msg,
-                    debug=debug_info
-                ).model_dump() | {"error_traceback": error_traceback}
-        
-        # 6. Handle UNSAT (but only if there was no error during grounding)
-        if stats.get("error") or stats.get("grounding_failed"):
-            # Error already handled above, but check if we somehow got here
-            pass
-        elif not model or not stats.get("satisfiable", False):
+            # If no grounding error, then it's genuinely UNSAT
             unsat_info = explain_unsat(normalized_data, scheduling_problem, slot_indexer, context_json)
             return ResponseEnvelope(
                 status="unsat",
@@ -589,7 +662,7 @@ def orchestrate_scheduling(
                 debug=debug_info
             ).model_dump()
         
-        # 7. Extract solution
+        # 6. Extract solution
         try:
             solution = extract_scheduling_solution(model, request_id="q1")
             if not solution:

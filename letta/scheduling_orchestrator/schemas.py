@@ -143,6 +143,7 @@ class DebugInfo(BaseModel):
     horizon_reduction_error: Optional[str] = Field(default=None, description="Error message if horizon reduction failed")
     free_slots_found: Optional[int] = Field(default=None, description="Number of free slots found by pre-filtering (inverse approach)")
     free_slots_ratio: Optional[float] = Field(default=None, description="Ratio of free slots to total slots (for debugging)")
+    multi_shot_phase: Optional[int] = Field(default=None, description="Multi-shot phase that succeeded (1=minimal, 2=+work hours, 3=+min gap)")
 
 
 class ResponseEnvelope(BaseModel):
