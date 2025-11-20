@@ -198,24 +198,24 @@ def generate_asp_facts(
         for slot in sorted(slots):
             facts.append(f"busy({participant_id}, {slot}).")
     
+    # OPTIMIZATION: Pre-generate occurs() facts to eliminate range constraint
+    # Instead of using the rule occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D
+    # which generates many atoms during grounding, we pre-generate explicit occurs facts
+    # for each free slot (meeting start candidate)
+    meeting_duration_slots = set()
+    for free_slot in free_slots:
+        # Pre-generate occurs facts for this meeting start
+        for offset in range(duration_slots):
+            slot_idx = free_slot + offset
+            if slot_idx <= max_slot:  # Ensure within horizon
+                facts.append(f"occurs_if_start({request_id}, {free_slot}, {slot_idx}).")
+                meeting_duration_slots.add(slot_idx)
+    used_slots.update(meeting_duration_slots)
+    
     # OPTIMIZATION: Generate explicit slot facts only for used slots
     # Instead of using the range rule slot(S) :- horizon_max(M), S = 0..M
     # which generates atoms for ALL slots, we generate slot(S) facts only for
     # slots that are actually referenced (free, busy, work hours, etc.)
-    # Also need to include slots that will be used by occurs() - meeting duration slots
-    # For each free slot, we need slots for the meeting duration
-    # OPTIMIZATION: Only generate slot facts for slots that are actually needed
-    # This includes: free slots (start candidates), busy slots (constraints), 
-    # and meeting duration slots (for occurs rule)
-    meeting_duration_slots = set()
-    for free_slot in free_slots:
-        for offset in range(duration_slots):
-            slot_idx = free_slot + offset
-            if slot_idx <= max_slot:  # Ensure within horizon
-                meeting_duration_slots.add(slot_idx)
-    used_slots.update(meeting_duration_slots)
-    
-    # Generate explicit slot facts - this prevents the range rule from generating all slots
     for slot in sorted(used_slots):
         facts.append(f"slot({slot}).")
     
@@ -226,25 +226,21 @@ def generate_asp_facts(
         if not slots:
             continue
         
-        # Track slots used by work hours for explicit slot generation
-        used_slots.update(slots)
+        # OPTIMIZATION: Generate explicit workhours facts only for slots that are actually used
+        # Instead of using range rules which generate many atoms, generate facts only for:
+        # 1. Free slots (meeting candidates)
+        # 2. Meeting duration slots (for occurs rule)
+        # 3. Busy slots (for constraint checking)
+        workhours_slots_to_generate = used_slots.intersection(slots)
         
-        # OPTIMIZATION: If work hours cover most slots, use inverse encoding (non-work hours)
-        # Otherwise, use range encoding for work hours
-        total_slots = max_slot + 1
-        work_hours_ratio = len(slots) / total_slots if total_slots > 0 else 0
-        
-        if work_hours_ratio > 0.7:
-            # Work hours cover >70% of slots - encode non-work hours instead (more efficient)
-            non_work_slots = set(range(total_slots)) - slots
-            if non_work_slots:
-                # Generate ranges for non-work hours (fewer facts)
-                non_work_ranges = _slots_to_ranges(sorted(non_work_slots))
-                for start_slot, end_slot in non_work_ranges:
-                    facts.append(f"non_workhours({participant_id}, {start_slot}, {end_slot}).")
+        if workhours_slots_to_generate:
+            # Generate explicit workhours facts only for used slots
+            for slot in sorted(workhours_slots_to_generate):
+                facts.append(f"workhours({participant_id}, {slot}).")
         else:
-            # Work hours cover <70% of slots - encode work hours as ranges
-            work_ranges = _slots_to_ranges(sorted(slots))
+            # If no intersection, use range encoding as fallback (but only for used slots)
+            # This is a compromise - still uses ranges but only for slots we care about
+            work_ranges = _slots_to_ranges(sorted(slots.intersection(used_slots)))
             for start_slot, end_slot in work_ranges:
                 facts.append(f"workhours_range({participant_id}, {start_slot}, {end_slot}).")
     

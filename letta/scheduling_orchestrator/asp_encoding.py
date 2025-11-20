@@ -46,7 +46,9 @@ has_free_slots :- free_slot(_).
 { start(Q, T) : slot(T), window(Q, T) } = 1 :- request(Q), not has_free_slots.
 
 % Meeting occurs at all slots from start to start+duration-1
-occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D.
+% OPTIMIZATION: Use pre-generated occurs_if_start facts instead of range constraint
+% This eliminates the range constraint T >= T0, T < T0 + D which generates many atoms
+occurs(Q, T) :- start(Q, T0), occurs_if_start(Q, T0, T).
 
 % Hard constraint: No double-booking
 % A meeting cannot occur when any required participant is busy
@@ -58,19 +60,13 @@ occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D.
 
 % Hard constraint: Must respect work hours
 % Meeting must occur during participant work hours
-% Support both range encoding (workhours_range) and inverse encoding (non_workhours)
-
-% Range encoding: workhours_range(P, Start, End) means P works from Start to End (inclusive)
-workhours(P, S) :- workhours_range(P, Start, End), slot(S), S >= Start, S <= End.
-
-% Inverse encoding: non_workhours(P, Start, End) means P does NOT work from Start to End
-% Helper: check if slot S is in a non-workhours range
-in_non_workhours(P, S) :- non_workhours(P, Start, End), slot(S), S >= Start, S <= End.
-% If non_workhours is defined, workhours = all slots NOT in non_workhours ranges
-workhours(P, S) :- slot(S), participant(P), not in_non_workhours(P, S), not workhours_range(P, _, _).
-
+% OPTIMIZATION: Use explicit workhours facts when available, fallback to range rules
+has_explicit_workhours :- workhours(_, _).
+% If explicit workhours facts exist, use those
+% If workhours_range exists, use range rule (but only for slots that exist)
+workhours(P, S) :- workhours_range(P, Start, End), slot(S), S >= Start, S <= End, not has_explicit_workhours.
 % Fallback: if no work hours specified, assume all slots are work hours
-workhours(P, S) :- slot(S), participant(P), not workhours_range(P, _, _), not non_workhours(P, _, _).
+workhours(P, S) :- slot(S), participant(P), not workhours(P, _), not workhours_range(P, _, _).
 
 % Hard constraint: Meeting must occur during work hours
 :- occurs(Q, T), needs(Q, P), not workhours(P, T).
