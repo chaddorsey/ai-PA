@@ -13,7 +13,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Hold",
@@ -27,7 +28,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Hold Helen",
@@ -41,7 +43,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Hold Helen",
@@ -55,7 +58,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Hold",
@@ -69,7 +73,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Hold",
@@ -83,7 +88,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Volume III: Examples of Assessment in the Service of Learning Webinar",
@@ -97,7 +103,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 1
+    "number_of_attendees": 1,
+    "internal_only": true
   },
   {
     "summary": "Hold",
@@ -111,7 +118,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Hold",
@@ -125,7 +133,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chalk and Code podcast recording",
@@ -139,7 +148,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Letta office hours",
@@ -153,7 +163,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Letta office hours",
@@ -167,7 +178,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Finance / AAFCPA Meeting",
@@ -181,7 +193,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 8
+    "number_of_attendees": 8,
+    "internal_only": false
   },
   {
     "summary": "Concord Consortium/Hewlett",
@@ -195,7 +208,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Grants Team Meeting",
@@ -209,7 +223,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Grants Team Meeting",
@@ -223,7 +238,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Inquisitive & Concord Consortium",
@@ -237,7 +253,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Chad/Sue",
@@ -251,7 +268,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Weekly Review",
@@ -265,7 +283,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Weekly Review",
@@ -279,7 +298,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -293,7 +313,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -307,7 +328,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -321,7 +343,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -335,7 +358,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Consortium/Amgen",
@@ -349,7 +373,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "MSU/Concord Zoom Meeting",
@@ -363,7 +388,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 17
+    "number_of_attendees": 17,
+    "internal_only": false
   },
   {
     "summary": "MSU/Concord Zoom Meeting",
@@ -377,7 +403,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 17
+    "number_of_attendees": 17,
+    "internal_only": false
   },
   {
     "summary": "Chad out",
@@ -391,7 +418,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Josh Engel & Concord Consortium Intro",
@@ -405,7 +433,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Justin Barra & Concord Consortium Intro",
@@ -419,7 +448,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Judi / Chad",
@@ -433,7 +463,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Judi / Chad",
@@ -447,7 +478,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -461,7 +493,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -475,7 +508,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Tech Capabilities Development Discussion",
@@ -489,7 +523,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Concord Tech Capabilities Development Discussion",
@@ -503,7 +538,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Development Weekly Check In",
@@ -517,7 +553,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Chad & Leslie",
@@ -531,7 +568,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "AI Design Thinking",
@@ -545,7 +583,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": false
   },
   {
     "summary": "AI Design Thinking",
@@ -559,7 +598,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": false
   },
   {
     "summary": "Concord Consortium and Stile connect",
@@ -573,7 +613,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Chad Dorsey, You're Booked for the AI CEO Roundtable (December 10, 2025 @ 3PM ET) ",
@@ -587,7 +628,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": false
   },
   {
     "summary": "Chad out",
@@ -601,7 +643,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -615,7 +658,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Chad out",
@@ -629,7 +673,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Supplemental submission (and/or submission prep)",
@@ -643,7 +688,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -657,7 +703,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -671,7 +718,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -685,7 +733,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -699,7 +748,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -713,7 +763,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -727,7 +778,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -741,7 +793,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -755,7 +808,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Email & Tasks",
@@ -769,7 +823,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": true,
     "flexible": false,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "2025 End of Year Potluck 🥧",
@@ -783,7 +838,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Chad/Sue",
@@ -797,7 +853,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Chad & Leslie",
@@ -811,7 +868,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Kate / Chad",
@@ -825,7 +883,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Troop Meeting",
@@ -839,7 +898,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 1
+    "number_of_attendees": 1,
+    "internal_only": true
   },
   {
     "summary": "Troop Meeting",
@@ -853,7 +913,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 1
+    "number_of_attendees": 1,
+    "internal_only": true
   },
   {
     "summary": "Strategy 2.0",
@@ -867,7 +928,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Development Check In",
@@ -881,7 +943,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Chad / Leslie",
@@ -895,7 +958,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Mapping Time & LEADS T2 Dev",
@@ -909,7 +973,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 6
+    "number_of_attendees": 6,
+    "internal_only": true
   },
   {
     "summary": "Chad and Danielle?",
@@ -923,7 +988,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Cynthia / Chad",
@@ -937,7 +1003,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Reminder review and approval timesheets",
@@ -951,7 +1018,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 9
+    "number_of_attendees": 9,
+    "internal_only": true
   },
   {
     "summary": "All-hands meeting",
@@ -965,7 +1033,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 28
+    "number_of_attendees": 28,
+    "internal_only": false
   },
   {
     "summary": "Core Support ",
@@ -979,7 +1048,8 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 6
+    "number_of_attendees": 6,
+    "internal_only": true
   },
   {
     "summary": "Concord Audit Drafts",
@@ -993,7 +1063,23 @@ Event data for cdorsey@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": false
+  },
+  {
+    "summary": "Interview In office Finance -Amy",
+    "id": "6st1tbg89fokl0iv2s90pavdb2",
+    "start": {
+      "dateTime": "2025-12-10T10:00:00-05:00"
+    },
+    "end": {
+      "dateTime": "2025-12-10T11:00:00-05:00"
+    },
+    "locked": false,
+    "protected": false,
+    "flexible": true,
+    "number_of_attendees": 3,
+    "internal_only": true
   }
 ]
 
@@ -1012,7 +1098,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Fund TIAA",
@@ -1026,7 +1113,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Recurring non-profit accounting meeting",
@@ -1040,7 +1128,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": false
   },
   {
     "summary": "Monthly budget mtg",
@@ -1054,7 +1143,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Weekly Insource and Concord accounting status update",
@@ -1068,7 +1158,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Weekly Insource and Concord accounting status update",
@@ -1082,7 +1173,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Get Concord Light Bill ",
@@ -1096,7 +1188,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Qtrly Budget Meetings",
@@ -1110,7 +1203,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Concord Finance / AAFCPA Meeting",
@@ -1124,7 +1218,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 8
+    "number_of_attendees": 8,
+    "internal_only": false
   },
   {
     "summary": "Grants Team Meeting",
@@ -1138,7 +1233,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Grants Team Meeting",
@@ -1152,7 +1248,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Chad/Sue",
@@ -1166,7 +1263,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "eye exam",
@@ -1180,7 +1278,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "VACATION",
@@ -1194,7 +1293,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "VACATION",
@@ -1208,7 +1308,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "VACATION",
@@ -1222,7 +1323,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "VACATION",
@@ -1236,7 +1338,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "VACATION",
@@ -1250,7 +1353,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Cancel water delivery",
@@ -1264,7 +1368,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord/Insource check-in",
@@ -1278,7 +1383,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Development Weekly Check In",
@@ -1292,7 +1398,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Insource / Concord Check In",
@@ -1306,7 +1413,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Group meditation",
@@ -1320,7 +1428,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Amy's",
@@ -1334,7 +1443,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "All things Concord!",
@@ -1348,7 +1458,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "John Prine",
@@ -1362,7 +1473,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Lisa / Sue check in",
@@ -1376,7 +1488,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Movers @Warren St",
@@ -1390,7 +1503,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "2025 End of Year Potluck 🥧",
@@ -1404,7 +1518,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Concord On-Site (Network Equipment Move) Andrew",
@@ -1418,7 +1533,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 4
+    "number_of_attendees": 4,
+    "internal_only": false
   },
   {
     "summary": "Concord On-Site  (Jessie and Andrew)",
@@ -1432,7 +1548,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": false
   },
   {
     "summary": "Concord On-Site (Andrew)",
@@ -1446,7 +1563,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 4
+    "number_of_attendees": 4,
+    "internal_only": false
   },
   {
     "summary": "Chad/Sue",
@@ -1460,7 +1578,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Lisa / Sue check in",
@@ -1474,7 +1593,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Interview Amy",
@@ -1488,7 +1608,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Interview Rachel",
@@ -1502,7 +1623,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Concord Accounting",
@@ -1516,7 +1638,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Accounting",
@@ -1530,7 +1653,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Accounting",
@@ -1544,7 +1668,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Accounting",
@@ -1558,7 +1683,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Accounting",
@@ -1572,7 +1698,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Cancel water delivery ",
@@ -1586,7 +1713,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Zoom Phones Training ",
@@ -1600,7 +1728,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Cancel Scheer Alarm",
@@ -1614,7 +1743,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Group meditation",
@@ -1628,7 +1758,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "GL with Hannah",
@@ -1642,7 +1773,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": false
   },
   {
     "summary": "Strategy 2.0",
@@ -1656,7 +1788,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "F&A: What/How are we doing? ",
@@ -1670,7 +1803,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 4
+    "number_of_attendees": 4,
+    "internal_only": true
   },
   {
     "summary": "Development Check In",
@@ -1684,7 +1818,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Judi/Sue",
@@ -1698,7 +1833,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Judi/Sue",
@@ -1712,7 +1848,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "interview Chelsea",
@@ -1726,7 +1863,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Susan Brau's Zoom Meeting",
@@ -1740,7 +1878,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "F&A: What/How are we doing? ",
@@ -1754,7 +1893,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 4
+    "number_of_attendees": 4,
+    "internal_only": true
   },
   {
     "summary": "Reminder review and approval timesheets",
@@ -1768,7 +1908,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 9
+    "number_of_attendees": 9,
+    "internal_only": true
   },
   {
     "summary": "All-hands meeting",
@@ -1782,7 +1923,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 28
+    "number_of_attendees": 28,
+    "internal_only": false
   },
   {
     "summary": "Mindfulness Wednesday",
@@ -1796,7 +1938,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 26
+    "number_of_attendees": 26,
+    "internal_only": true
   },
   {
     "summary": "Core Support ",
@@ -1810,7 +1953,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 6
+    "number_of_attendees": 6,
+    "internal_only": true
   },
   {
     "summary": "Cynthia / Susan - follow up",
@@ -1824,7 +1968,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "Concord Audit Drafts",
@@ -1838,7 +1983,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": false
   },
   {
     "summary": "Interview In office Finance -Amy",
@@ -1852,7 +1998,8 @@ Event data for sbrau@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   }
 ]
 
@@ -1871,7 +2018,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up Danny",
@@ -1885,7 +2033,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Consortium/Hewlett",
@@ -1899,7 +2048,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Grants Team Meeting",
@@ -1913,7 +2063,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Grants Team Meeting",
@@ -1927,7 +2078,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 5
+    "number_of_attendees": 5,
+    "internal_only": true
   },
   {
     "summary": "Briefing-Hewlett",
@@ -1941,7 +2093,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Concord Consortium/Amgen",
@@ -1955,7 +2108,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Piano",
@@ -1969,7 +2123,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Website & Comms",
@@ -1983,7 +2138,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Website & Comms",
@@ -1997,7 +2153,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Ask Me Anything with Jawad Asghar",
@@ -2011,7 +2168,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "495 Partnership Conference",
@@ -2025,7 +2183,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Development Weekly Check In",
@@ -2039,7 +2198,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Athletics",
@@ -2053,7 +2213,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Drive to piano",
@@ -2067,7 +2228,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Marcella/Danielle Follow Up",
@@ -2081,7 +2243,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": false
   },
   {
     "summary": "2025 End of Year Potluck 🥧",
@@ -2095,7 +2258,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": false
   },
   {
     "summary": "Danielle Kehoe-Concord Consortium & Matt Jose ",
@@ -2109,7 +2273,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": false
   },
   {
     "summary": "Concord Consortium/ MWCC",
@@ -2123,7 +2288,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": false
   },
   {
     "summary": "F&A: What/How are we doing? ",
@@ -2137,7 +2303,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 4
+    "number_of_attendees": 4,
+    "internal_only": true
   },
   {
     "summary": "Development Check In",
@@ -2151,7 +2318,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 3
+    "number_of_attendees": 3,
+    "internal_only": true
   },
   {
     "summary": "Chad and Danielle?",
@@ -2165,7 +2333,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 2
+    "number_of_attendees": 2,
+    "internal_only": true
   },
   {
     "summary": "F&A: What/How are we doing? ",
@@ -2179,7 +2348,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 4
+    "number_of_attendees": 4,
+    "internal_only": true
   },
   {
     "summary": "All-hands meeting",
@@ -2193,7 +2363,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 28
+    "number_of_attendees": 28,
+    "internal_only": false
   },
   {
     "summary": "Core Support ",
@@ -2207,7 +2378,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 6
+    "number_of_attendees": 6,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2221,7 +2393,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2235,7 +2408,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2249,7 +2423,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2263,7 +2438,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2277,7 +2453,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2291,7 +2468,8 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
   },
   {
     "summary": "Pick up",
@@ -2305,6 +2483,22 @@ Event data for dkehoe@concord.org:
     "locked": false,
     "protected": false,
     "flexible": true,
-    "number_of_attendees": 0
+    "number_of_attendees": 0,
+    "internal_only": true
+  },
+  {
+    "summary": "Danielle Kehoe and Maya Morales Garcia (she, her, ella)",
+    "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g8csjac1n84s36dhg6oq48gpg64o30c1g60o30c1g60o30c1g60o32c1g60o30c1g8krk2cpn8ooj6ga66h23cgpk6d0j0dpm6kr3ecph6h134d1g6h20",
+    "start": {
+      "dateTime": "2025-12-05T12:30:00-05:00"
+    },
+    "end": {
+      "dateTime": "2025-12-05T13:00:00-05:00"
+    },
+    "locked": false,
+    "protected": false,
+    "flexible": true,
+    "number_of_attendees": 2,
+    "internal_only": false
   }
 ]

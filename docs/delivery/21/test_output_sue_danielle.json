@@ -28,18 +28,18 @@
     "extraction_time_ms": 2,
     "normalization_time_ms": 13,
     "solve_time_ms": 1,
-    "total_time_ms": 17,
+    "total_time_ms": 20,
     "facts_generated": null,
     "slots_considered": 1152,
     "input_summary": {
       "utterance": "Provide me options for a 45-minute meeting with Sue and Danielle between December 1 and December 12.",
       "num_participants": 3,
       "events_per_participant": {
-        "cdorsey@concord.org": 71,
+        "cdorsey@concord.org": 72,
         "sbrau@concord.org": 61,
-        "dkehoe@concord.org": 32
+        "dkehoe@concord.org": 33
       },
-      "total_events": 164,
+      "total_events": 166,
       "has_context": true,
       "context_keys": [
         "timeframe",
@@ -48,7 +48,7 @@
         "slot_size_minutes"
       ]
     },
-    "total_busy_slots": 769,
+    "total_busy_slots": 771,
     "asp_program_lines": null,
     "asp_facts_count": null,
     "asp_program_size_chars": null,

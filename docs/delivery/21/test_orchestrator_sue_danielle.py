@@ -324,7 +324,9 @@ def load_events_from_example(example_file: Path) -> dict:
                     "end": end_str,
                     "locked": event.get("locked", False),
                     "protected": event.get("protected", False),
-                    "flexible": event.get("flexible", True)
+                    "flexible": event.get("flexible", True),
+                    "internal_only": event.get("internal_only", True),  # Include internal_only field
+                    "number_of_attendees": event.get("number_of_attendees", 0)  # Include number_of_attendees field
                 }
                 normalized_events.append(normalized)
             
