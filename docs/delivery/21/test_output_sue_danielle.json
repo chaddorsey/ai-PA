@@ -1,0 +1,64 @@
+{
+  "status": "ok",
+  "proposals": [
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-01T21:00:00+00:00",
+      "end_utc": "2025-12-01T21:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 23,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    }
+  ],
+  "explanation": "Found optimal meeting time: 2025-12-01 21:00 UTC. Creates 23 minutes of focus time.",
+  "relaxations": null,
+  "debug": {
+    "asp_stats": null,
+    "extraction_time_ms": 2,
+    "normalization_time_ms": 13,
+    "solve_time_ms": 1,
+    "total_time_ms": 17,
+    "facts_generated": null,
+    "slots_considered": 1152,
+    "input_summary": {
+      "utterance": "Provide me options for a 45-minute meeting with Sue and Danielle between December 1 and December 12.",
+      "num_participants": 3,
+      "events_per_participant": {
+        "cdorsey@concord.org": 71,
+        "sbrau@concord.org": 61,
+        "dkehoe@concord.org": 32
+      },
+      "total_events": 164,
+      "has_context": true,
+      "context_keys": [
+        "timeframe",
+        "participants",
+        "policy",
+        "slot_size_minutes"
+      ]
+    },
+    "total_busy_slots": 769,
+    "asp_program_lines": null,
+    "asp_facts_count": null,
+    "asp_program_size_chars": null,
+    "horizon_reduced": false,
+    "original_slots": null,
+    "reduced_slots": null,
+    "horizon_reduction_error": "Failed to create reduced slot indexer: name 'context_json_dict' is not defined",
+    "free_slots_found": 5,
+    "free_slots_ratio": 0.004340277777777778,
+    "multi_shot_phase": null
+  },
+  "error_message": null
+}
