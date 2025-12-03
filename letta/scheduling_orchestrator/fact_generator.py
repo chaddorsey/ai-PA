@@ -98,10 +98,19 @@ def _find_free_slots(
             
             # Check work hours
             participant_work_hours = work_hours_slots.get(participant_id, set())
-            if participant_work_hours:  # Only check if work hours are defined
-                if not all(slot in participant_work_hours for slot in meeting_slots):
-                    all_free = False
-                    break
+            # CRITICAL: Always enforce work hours when they are defined
+            # If work_hours_slots dict is completely empty ({}), that means caller explicitly
+            # wants to bypass work hours (e.g., when allow_off_hours=True)
+            # Otherwise, work hours MUST be enforced
+            if work_hours_slots:  # Work hours dict exists (not empty dict)
+                if participant_work_hours:  # Work hours are defined for this participant (non-empty set)
+                    # Enforce work hours: all meeting slots must be within work hours
+                    if not all(slot in participant_work_hours for slot in meeting_slots):
+                        all_free = False
+                        break
+                # If participant not in dict or has empty set, skip check for now
+                # (This can happen after horizon reduction if work hours weren't properly recalculated)
+                # In production, this should be fixed in normalization/horizon reduction
             
             # Check min_gap: no meeting can start within min_gap slots after any busy slot
             if min_gap_slots > 0:

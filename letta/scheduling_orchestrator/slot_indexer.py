@@ -101,23 +101,34 @@ class SlotIndexer:
                 return []
         
         # Find last slot that overlaps
-        last_slot = self.datetime_to_slot(end_utc)
-        if last_slot is None:
+        # Since end_utc is exclusive, we want slots that START before end_utc
+        # A slot that starts exactly at end_utc should NOT be included
+        end_slot = self.datetime_to_slot(end_utc)
+        
+        if end_slot is None:
             # Range extends beyond horizon, use last slot
             if end_utc > self.horizon_end:
                 last_slot = self.total_slots - 1
             else:
                 # Range ends before horizon
                 return []
+        else:
+            # end_utc falls within a slot
+            slot_start_time = self.slot_to_datetime(end_slot)
+            if end_utc > slot_start_time:
+                # end_utc is in the middle of the slot - include this slot
+                last_slot = end_slot
+            else:
+                # end_utc is exactly at slot start - exclude this slot (exclusive end)
+                last_slot = end_slot - 1
         
-        # Include all slots from first to last (inclusive)
-        # Also include slot that contains end_utc if it's not exactly on a boundary
-        end_slot = self.datetime_to_slot(end_utc)
-        if end_slot is not None and end_utc > self.slot_to_datetime(end_slot):
-            last_slot = max(last_slot, end_slot)
+        # Ensure last_slot is valid
+        if last_slot < first_slot:
+            return []
         
         for slot in range(first_slot, min(last_slot + 1, self.total_slots)):
-            slots.append(slot)
+            if slot >= 0:
+                slots.append(slot)
         
         return slots
     

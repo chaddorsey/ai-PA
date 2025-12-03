@@ -148,8 +148,16 @@ def normalize_events(
             
             # Parse datetimes
             try:
-                start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                # Handle both ISO format strings and ensure proper parsing
+                # Replace "Z" with "+00:00" for ISO format compatibility
+                start_str_clean = start_str.replace("Z", "+00:00") if start_str else ""
+                end_str_clean = end_str.replace("Z", "+00:00") if end_str else ""
+                
+                if not start_str_clean or not end_str_clean:
+                    continue
+                
+                start_dt = datetime.fromisoformat(start_str_clean)
+                end_dt = datetime.fromisoformat(end_str_clean)
                 
                 # Ensure UTC
                 if start_dt.tzinfo is None:
@@ -189,12 +197,22 @@ def normalize_events(
         for participant in context_json["participants"]:
             participant_id = participant.get("id", "")
             work_hours_str = participant.get("work_hours", "")
-            tz_str = participant.get("timezone", context_json.get("timeframe", {}).get("tz", "UTC"))
+            # Default timezone is Eastern time for default work hours
+            # If participant has explicit timezone, use that; otherwise use timeframe timezone or Eastern
+            participant_timezone = participant.get("timezone")
+            if not participant_timezone:
+                participant_timezone = context_json.get("timeframe", {}).get("tz", "America/New_York")
             
             if not work_hours_str:
-                # Default to all slots if no work hours specified
-                work_hours_slots[participant_id] = set(slot_indexer.get_all_slots())
-                continue
+                # Default to standard business hours (9 AM - 5 PM weekdays) in Eastern time
+                # This prevents scheduling meetings at midnight or other inappropriate times
+                work_hours_str = "M-F 09:00-17:00"
+                # Use Eastern timezone for default work hours
+                tz_str = "America/New_York"
+                # Continue to parse and apply the default
+            else:
+                # Use participant's timezone for their specified work hours
+                tz_str = participant_timezone
             
             # Parse work hours
             work_hours = parse_work_hours(work_hours_str, tz_str)
@@ -223,6 +241,48 @@ def normalize_events(
                         work_end_utc = work_end_local.astimezone(pytz.UTC)
                         
                         # Get slots for this work period
+                        # Note: get_slots_in_range has exclusive end, so work_end_utc (5:00 PM) means
+                        # slots up to but NOT including the slot starting at 5:00 PM.
+                        # For work hours 9 AM - 5 PM, we want meetings to END by 5:00 PM.
+                        # So we include slots up to 4:45 PM (the last slot that allows a meeting to end by 5:00 PM).
+                        # This is already handled by the exclusive end - no adjustment needed.
+                        work_period_slots = slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
+                        work_slots.update(work_period_slots)
+                    
+                    current_date += timedelta(days=1)
+            
+            work_hours_slots[participant_id] = work_slots
+    
+    # Ensure all participants from events_by_participant have work hours set
+    # If a participant isn't in context_json["participants"], apply default work hours in Eastern time
+    # Default is 9-5 Eastern time unless explicitly specified otherwise
+    default_work_hours_tz = "America/New_York"  # Always use Eastern time for default work hours
+    for participant_id in events_by_participant.keys():
+        if participant_id not in work_hours_slots:
+            # Participant not in context_json - apply default work hours (9-5 Eastern)
+            work_hours_str = "M-F 09:00-17:00"
+            work_hours = parse_work_hours(work_hours_str, default_work_hours_tz)
+            participant_tz = pytz.timezone(default_work_hours_tz)
+            
+            # Convert work hours to UTC slots
+            work_slots = set()
+            for day, start_hm, end_hm in work_hours:
+                current_date = from_date_utc
+                while current_date < to_date_utc:
+                    if current_date.weekday() == day:
+                        start_hour = start_hm // 100
+                        start_min = start_hm % 100
+                        end_hour = end_hm // 100
+                        end_min = end_hm % 100
+                        
+                        work_start = current_date.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+                        work_end = current_date.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+                        
+                        work_start_local = participant_tz.localize(work_start.replace(tzinfo=None))
+                        work_end_local = participant_tz.localize(work_end.replace(tzinfo=None))
+                        work_start_utc = work_start_local.astimezone(pytz.UTC)
+                        work_end_utc = work_end_local.astimezone(pytz.UTC)
+                        
                         work_period_slots = slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
                         work_slots.update(work_period_slots)
                     
