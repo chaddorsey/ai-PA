@@ -133,6 +133,8 @@ def normalize_events(
     # Process events
     busy_slots: Dict[str, Set[int]] = {}
     event_protection: Dict[Tuple[str, str], str] = {}
+    event_slots_map: Dict[Tuple[str, str], Set[int]] = {}  # Maps (participant_id, event_id) to slot set
+    event_metadata: Dict[Tuple[str, str], Dict[str, Any]] = {}  # Maps (participant_id, event_id) to event metadata
     
     for participant_id, events in events_by_participant.items():
         busy_slots[participant_id] = set()
@@ -174,6 +176,24 @@ def normalize_events(
                 event_slots = slot_indexer.get_slots_in_range(start_dt, end_dt)
                 busy_slots[participant_id].update(event_slots)
                 
+                # Store event-to-slots mapping for move logic
+                event_key = (participant_id, event_id)
+                event_slots_map[event_key] = set(event_slots)
+                
+                # Store event metadata for move logic
+                event_metadata[event_key] = {
+                    "start_dt": start_dt,
+                    "end_dt": end_dt,
+                    "start_str": start_str_clean,
+                    "end_str": end_str_clean,
+                    "title": event_dict.get("title") or event_dict.get("summary", ""),
+                    "locked": locked,
+                    "protected": protected,
+                    "flexible": flexible,
+                    "internal_only": event_dict.get("internal_only", True),  # Default to True for backwards compatibility
+                    "number_of_attendees": event_dict.get("number_of_attendees", 0)  # Default to 0 for backwards compatibility
+                }
+                
                 # Determine protection level
                 if locked:
                     protection_level = "locked"
@@ -184,7 +204,7 @@ def normalize_events(
                 else:
                     protection_level = "flexible"  # default
                 
-                event_protection[(participant_id, event_id)] = protection_level
+                event_protection[event_key] = protection_level
                 
             except Exception as e:
                 # Skip invalid events
@@ -295,6 +315,8 @@ def normalize_events(
         "busy_slots": busy_slots,
         "work_hours_slots": work_hours_slots,
         "event_protection": event_protection,
+        "event_slots_map": event_slots_map,  # For move logic: maps (participant_id, event_id) to slot set
+        "event_metadata": event_metadata,  # For move logic: maps (participant_id, event_id) to event details
         "min_gap_slots": min_gap_slots,
         "timezone": timezone,
     }

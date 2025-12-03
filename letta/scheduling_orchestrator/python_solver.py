@@ -6,7 +6,7 @@ Handles free slot finding, ranking by preferences, and single-meeting moves.
 """
 
 from typing import Dict, List, Set, Optional, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # Handle both relative and absolute imports
@@ -128,7 +128,8 @@ def find_optimal_slot(
         slot_indexer,
         duration_slots,
         min_gap_slots,
-        context_json
+        context_json,
+        normalized_data
     )
     
     if candidates:
@@ -362,41 +363,229 @@ def _find_slots_with_single_move(
     slot_indexer: SlotIndexer,
     duration_slots: int,
     min_gap_slots: int,
-    context_json: Optional[Dict[str, Any]] = None
+    context_json: Optional[Dict[str, Any]] = None,
+    normalized_data: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Find slots that become available by moving one flexible meeting.
     
+    Strategy:
+    1. Identify candidate meeting slots (those that fail only due to single conflicts)
+    2. For each candidate, find the flexible events blocking it
+    3. Try moving each blocking event forward/backward by small amounts
+    4. Verify the move creates space and doesn't violate constraints
+    5. Rank solutions by disruption cost (smaller moves preferred, protected events cost more)
+    
     Returns:
         List of candidate dicts with keys: start_slot, score, moved_events, method
     """
+    if normalized_data is None:
+        return []
+    
+    # Get event metadata and slots mapping from normalized_data
+    event_metadata_map = normalized_data.get("event_metadata", {})
+    event_slots_map_full = normalized_data.get("event_slots_map", {})
+    
+    if not event_metadata_map or not event_slots_map_full:
+        # No event metadata available - can't do moves
+        return []
+    
     candidates = []
     max_slot = max(all_slots) if all_slots else 0
     
-    # For each participant, try moving their flexible events
-    for participant_id in scheduling_problem.participants:
-        participant_flexible = flexible_events.get(participant_id, [])
-        participant_busy = busy_slots.get(participant_id, set())
+    # Constants for move exploration
+    MAX_MOVE_SLOTS = 16  # Maximum 4 hours (16 * 15 min slots) to move an event
+    MOVE_STEP_SLOTS = 1  # Try moves in 15-minute increments
+    
+    # Find candidate slots (slots where meeting would fit except for conflicts)
+    # These are slots where only one participant has a conflict with a flexible event
+    for candidate_slot in all_slots:
+        if candidate_slot + duration_slots > max_slot + 1:
+            continue
         
-        for event in participant_flexible:
-            event_id = event.get("id")
-            if not event_id:
+        # Check if this slot would be valid except for conflicts
+        meeting_slots = range(candidate_slot, candidate_slot + duration_slots)
+        
+        # Check work hours for all participants
+        work_hours_ok = True
+        for participant_id in scheduling_problem.participants:
+            participant_work_hours = work_hours_slots.get(participant_id, set())
+            if participant_work_hours and not all(slot in participant_work_hours for slot in meeting_slots):
+                work_hours_ok = False
+                break
+        if not work_hours_ok:
+            continue
+        
+        # Check time window
+        if not _check_time_window(candidate_slot, scheduling_problem, slot_indexer, duration_slots):
+            continue
+        
+        # Find which participants have conflicts at this slot
+        conflicting_participants = []
+        conflicting_events = []  # List of (participant_id, event_id) tuples
+        
+        for participant_id in scheduling_problem.participants:
+            participant_busy = busy_slots.get(participant_id, set())
+            conflicting_slots = set(meeting_slots).intersection(participant_busy)
+            
+            if conflicting_slots:
+                conflicting_participants.append(participant_id)
+                
+                # Find which events are causing the conflict
+                # Look through event_slots_map to find events that overlap with conflicting_slots
+                for (p_id, e_id), slots in event_slots_map_full.items():
+                    if p_id == participant_id and slots.intersection(conflicting_slots):
+                        # Check if event is flexible
+                        protection = event_protection.get((p_id, e_id), "flexible")
+                        if protection != "locked":  # Can move flexible or protected
+                            conflicting_events.append((p_id, e_id))
+        
+        # Skip if multiple participants conflict (need multi-move, handled later)
+        if len(conflicting_participants) > 1:
+            continue
+        
+        # Skip if no single flexible event can resolve it
+        if not conflicting_events:
+            continue
+        
+        # Sort conflicting events by preference for moving:
+        # 1. Internal-only meetings first (easier to reschedule)
+        # 2. Fewer attendees first (easier to coordinate)
+        # This helps us try preferred candidates first (though all will be scored)
+        def event_preference_key(event_tuple):
+            p_id, e_id = event_tuple
+            event_key = (p_id, e_id)
+            meta = event_metadata_map.get(event_key, {})
+            internal = meta.get("internal_only", True)
+            num_attendees = meta.get("number_of_attendees", 0)
+            # Return tuple for sorting: (not internal, num_attendees)
+            # Lower values sort first, so internal-only (False) comes before external (True)
+            return (not internal, num_attendees)
+        
+        conflicting_events_sorted = sorted(conflicting_events, key=event_preference_key)
+        
+        # Try moving each conflicting flexible event
+        for participant_id, event_id in conflicting_events_sorted:
+            event_key = (participant_id, event_id)
+            event_meta = event_metadata_map.get(event_key)
+            if not event_meta:
                 continue
             
-            # Get event slots (simplified - would need to convert from event times)
-            # For now, we'll use a heuristic: try moving events that conflict
+            protection = event_protection.get(event_key, "flexible")
+            current_event_slots = event_slots_map_full.get(event_key, set())
             
-            # Find potential new slots for this event
-            # This is simplified - in a full implementation, we'd:
-            # 1. Find the event's current slot range
-            # 2. Try moving it to other slots
-            # 3. Check if that makes the target slot free
+            if not current_event_slots:
+                continue
             
-            # For now, return empty - single-move logic can be enhanced later
-            pass
+            # Get event duration in slots
+            event_duration_slots = len(current_event_slots)
+            original_start_slot = min(current_event_slots)
+            
+            # Try moving the event forward and backward
+            for move_direction in [-1, 1]:  # -1 = earlier, 1 = later
+                for move_slots in range(MOVE_STEP_SLOTS, MAX_MOVE_SLOTS + 1, MOVE_STEP_SLOTS):
+                    new_start_slot = original_start_slot + (move_direction * move_slots)
+                    new_event_slots = set(range(new_start_slot, new_start_slot + event_duration_slots))
+                    
+                    # Validate move constraints
+                    if new_start_slot < 0 or new_start_slot + event_duration_slots > max_slot + 1:
+                        break  # Can't move further in this direction
+                    
+                    # Check work hours for moved event
+                    participant_work_hours = work_hours_slots.get(participant_id, set())
+                    if participant_work_hours and not all(slot in participant_work_hours for slot in new_event_slots):
+                        # Moved event would be outside work hours - try next move
+                        continue
+                    
+                    # Check if move creates space for meeting (no overlap)
+                    if not new_event_slots.intersection(meeting_slots):
+                        # Check if moved event creates new conflicts
+                        # (simplified: just check if slots are free for this participant)
+                        other_busy = busy_slots.get(participant_id, set()) - current_event_slots
+                        if new_event_slots.intersection(other_busy):
+                            # Would conflict with other events - try next move
+                            continue
+                        
+                        # Check if meeting slot is now free for all participants
+                        all_free = True
+                        for p_id in scheduling_problem.participants:
+                            p_busy = busy_slots.get(p_id, set())
+                            if p_id == participant_id:
+                                # For the participant whose event we moved, exclude old slots and include new
+                                p_busy = (p_busy - current_event_slots) | new_event_slots
+                            
+                            if set(meeting_slots).intersection(p_busy):
+                                all_free = False
+                                break
+                        
+                        if all_free:
+                            # Found a valid move! Calculate score
+                            move_minutes = move_slots * 15
+                            
+                            # Base score on disruption cost
+                            # Lower disruption = higher score
+                            # Protected events cost more to move (weight: 2x)
+                            # Flexible events cost less (weight: 1x)
+                            protection_weight = 2.0 if protection == "protected" else 1.0
+                            disruption_cost = move_minutes * protection_weight
+                            
+                            # Prefer internal-only meetings over external ones
+                            # Internal meetings are easier to reschedule (all @concord.org)
+                            internal_only = event_meta.get("internal_only", True)  # Default to True for backwards compat
+                            internal_bonus = 50.0 if internal_only else -50.0  # Bonus for internal, penalty for external
+                            
+                            # Prefer meetings with fewer participants
+                            # Smaller meetings are easier to coordinate
+                            num_attendees = event_meta.get("number_of_attendees", 0)
+                            # Penalty increases with number of attendees (quadratic to strongly prefer smaller)
+                            attendee_penalty = (num_attendees ** 2) * 2.0  # 0 attendees = 0, 1 = 2, 2 = 8, 5 = 50, 10 = 200
+                            
+                            # Prefer smaller moves (invert cost to get score)
+                            # Add preference score for the meeting slot itself
+                            preference_score = _compute_preference_score(candidate_slot, scheduling_problem, slot_indexer)
+                            
+                            # Combined score: lower disruption = higher score
+                            # Add bonuses/penalties for internal-only and attendee count
+                            # Scale appropriately to keep scores comparable
+                            score = preference_score - (disruption_cost / 10.0) + (internal_bonus / 10.0) - (attendee_penalty / 10.0)
+                            
+                            # Create moved event details
+                            old_start_dt = event_meta["start_dt"]
+                            old_end_dt = event_meta["end_dt"]
+                            event_duration = old_end_dt - old_start_dt
+                            move_delta = timedelta(minutes=move_direction * move_minutes)
+                            new_start_dt = old_start_dt + move_delta
+                            new_end_dt = old_end_dt + move_delta
+                            
+                            moved_event = {
+                                "owner": participant_id,
+                                "event_id": event_id,
+                                "old_start": old_start_dt.isoformat(),
+                                "old_end": old_end_dt.isoformat(),
+                                "new_start": new_start_dt.isoformat(),
+                                "new_end": new_end_dt.isoformat(),
+                                "shift_minutes": move_direction * move_minutes,
+                                "title": event_meta.get("title", "")
+                            }
+                            
+                            candidates.append({
+                                "start_slot": candidate_slot,
+                                "score": score,
+                                "moved_events": [moved_event],
+                                "method": "single_move",
+                                "move_cost": disruption_cost,
+                                "protection_level": protection
+                            })
+                            
+                            # Found a valid move for this event - no need to try further moves
+                            break
+                
+                # If we found a valid move, no need to try other directions
+                if any(c["start_slot"] == candidate_slot and 
+                       any(me["event_id"] == event_id for me in c["moved_events"]) 
+                       for c in candidates):
+                    break
     
-    # Simplified: If we can't find single moves easily, return empty
-    # This can be enhanced with more sophisticated move detection
     return candidates
 
 
