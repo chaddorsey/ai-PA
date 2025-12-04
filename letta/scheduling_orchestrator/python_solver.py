@@ -42,6 +42,20 @@ def find_optimal_slot(
     busy_slots: Dict[str, Set[int]] = normalized_data.get("busy_slots", {})
     work_hours_slots: Dict[str, Set[int]] = normalized_data.get("work_hours_slots", {})
     event_protection: Dict[Tuple[str, str], str] = normalized_data.get("event_protection", {})
+    
+    # CRITICAL: Verify all participants have work hours defined
+    # If any participant is missing work hours, this is a data integrity issue
+    # that could lead to slots outside work hours being incorrectly marked as free
+    missing_work_hours = []
+    for participant_id in scheduling_problem.participants:
+        participant_work_hours = work_hours_slots.get(participant_id, set())
+        if not participant_work_hours and work_hours_slots:  # work_hours_slots dict exists but participant missing
+            missing_work_hours.append(participant_id)
+    
+    if missing_work_hours:
+        # Log warning but don't fail - might be intentional (allow_off_hours scenario)
+        # The _find_free_slots function will handle this by rejecting slots when work hours are missing
+        pass  # For now, just let _find_free_slots handle it with the stricter check
     min_gap_slots: int = normalized_data.get("min_gap_slots", 0)
     
     # Extract locked events from event_protection
@@ -135,10 +149,150 @@ def find_optimal_slot(
     if candidates:
         # Rank candidates by score (higher is better)
         candidates.sort(key=lambda x: x["score"], reverse=True)
+        # Return top candidate (single solution - caller will handle multiple if needed)
         return candidates[0]
     
     # No solution found
     return None
+
+
+def find_top_candidates(
+    normalized_data: Dict[str, Any],
+    scheduling_problem: SchedulingProblem,
+    slot_indexer: SlotIndexer,
+    context_json: Optional[Dict[str, Any]] = None,
+    max_candidates: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Find multiple top candidate solutions for diversity.
+    
+    Returns up to max_candidates solutions, ensuring diversity across days/times.
+    """
+    candidates = []
+    
+    # Get free slots
+    all_slots = list(range(slot_indexer.total_slots))
+    busy_slots = normalized_data["busy_slots"]
+    work_hours_slots = normalized_data["work_hours_slots"]
+    duration_slots = max(1, scheduling_problem.duration_minutes // 15)
+    min_gap_slots = normalized_data.get("min_gap_slots", 0)
+    
+    free_slots = _find_free_slots(
+        all_slots,
+        busy_slots,
+        work_hours_slots,
+        scheduling_problem.participants,
+        duration_slots,
+        min_gap_slots
+    )
+    
+    # Add free slot candidates
+    for slot in sorted(free_slots):
+        start_dt = slot_indexer.slot_to_datetime(slot)
+        if start_dt:
+            candidates.append({
+                "start_slot": slot,
+                "score": 1000,  # High score for free slots
+                "moved_events": [],
+                "method": "free_slot",
+                "start_datetime": start_dt
+            })
+    
+    # Get single-move candidates
+    event_protection = normalized_data.get("event_protection", {})
+    locked_events: Dict[str, Set[int]] = {}
+    flexible_events: Dict[str, List[Dict[str, Any]]] = {}
+    
+    single_move_candidates = _find_slots_with_single_move(
+        all_slots,
+        busy_slots,
+        work_hours_slots,
+        locked_events,
+        flexible_events,
+        event_protection,
+        scheduling_problem,
+        slot_indexer,
+        duration_slots,
+        min_gap_slots,
+        context_json,
+        normalized_data
+    )
+    
+    for candidate in single_move_candidates:
+        start_dt = slot_indexer.slot_to_datetime(candidate["start_slot"])
+        if start_dt:
+            candidate["start_datetime"] = start_dt
+            candidates.append(candidate)
+    
+    # Sort by score
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Filter for diversity: ensure proposals span different days/times
+    # Group by day and take best from each day
+    from datetime import datetime
+    import pytz
+    
+    # Group candidates by day (in a simple timezone)
+    candidates_by_day: Dict[str, List[Dict[str, Any]]] = {}
+    for candidate in candidates:
+        start_dt = candidate.get("start_datetime")
+        if start_dt:
+            # Use a consistent timezone for day grouping (use UTC or first participant's timezone)
+            if start_dt.tzinfo is None:
+                start_dt = pytz.UTC.localize(start_dt)
+            # Get date string (YYYY-MM-DD)
+            day_key = start_dt.date().isoformat()
+            if day_key not in candidates_by_day:
+                candidates_by_day[day_key] = []
+            candidates_by_day[day_key].append(candidate)
+    
+    # Select top candidates ensuring diversity
+    selected = []
+    selected_days = set()
+    
+    # If max_candidates is high enough, return all candidates (no filtering for diversity)
+    # Otherwise, apply diversity filtering
+    if max_candidates >= 1000:
+        # Return all candidates - we'll filter by move count later
+        selected = candidates
+    else:
+        # First pass: take best candidate from each day (up to max_candidates days)
+        for day_key in sorted(candidates_by_day.keys()):
+            if len(selected) >= max_candidates:
+                break
+            day_candidates = candidates_by_day[day_key]
+            if day_candidates:
+                # Best candidate for this day
+                best = max(day_candidates, key=lambda x: x["score"])
+                selected.append(best)
+                selected_days.add(day_key)
+        
+        # Second pass: fill remaining slots with best overall candidates not yet selected
+        for candidate in candidates:
+            if len(selected) >= max_candidates:
+                break
+            start_dt = candidate.get("start_datetime")
+            if start_dt:
+                day_key = start_dt.date().isoformat()
+                # Skip if we already have a candidate from this day (unless we have room)
+                if day_key in selected_days and len(selected) >= max_candidates // 2:
+                    continue
+                # Check if already selected
+                if candidate not in selected:
+                    selected.append(candidate)
+                    if day_key not in selected_days:
+                        selected_days.add(day_key)
+    
+    # Remove start_datetime before returning (not part of expected format)
+    for candidate in selected:
+        candidate.pop("start_datetime", None)
+    
+    # If max_candidates is high, return all candidates (don't truncate)
+    # Otherwise, limit to max_candidates
+    if max_candidates >= 1000:
+        return selected  # Return all candidates
+    else:
+        return selected[:max_candidates]
 
 
 def _check_time_window(
@@ -407,12 +561,23 @@ def _find_slots_with_single_move(
         meeting_slots = range(candidate_slot, candidate_slot + duration_slots)
         
         # Check work hours for all participants
+        # CRITICAL: Enforce work hours strictly - if any participant is missing work hours
+        # or any meeting slot is outside work hours, reject this candidate
         work_hours_ok = True
-        for participant_id in scheduling_problem.participants:
-            participant_work_hours = work_hours_slots.get(participant_id, set())
-            if participant_work_hours and not all(slot in participant_work_hours for slot in meeting_slots):
-                work_hours_ok = False
-                break
+        if work_hours_slots:  # Work hours dict exists (not empty dict)
+            for participant_id in scheduling_problem.participants:
+                participant_work_hours = work_hours_slots.get(participant_id, set())
+                if participant_work_hours:  # Work hours defined for this participant
+                    # All meeting slots must be within work hours
+                    if not all(slot in participant_work_hours for slot in meeting_slots):
+                        work_hours_ok = False
+                        break
+                else:
+                    # Participant missing from work_hours_slots or has empty set
+                    # This should not happen - fail the check to be safe
+                    work_hours_ok = False
+                    break
+        # If work_hours_slots is empty dict, assume work hours are not enforced (allow_off_hours scenario)
         if not work_hours_ok:
             continue
         
@@ -508,6 +673,7 @@ def _find_slots_with_single_move(
                         
                         # Check if meeting slot is now free for all participants
                         all_free = True
+                        blocking_participant = None
                         for p_id in scheduling_problem.participants:
                             p_busy = busy_slots.get(p_id, set())
                             if p_id == participant_id:
@@ -516,7 +682,11 @@ def _find_slots_with_single_move(
                             
                             if set(meeting_slots).intersection(p_busy):
                                 all_free = False
+                                blocking_participant = p_id
                                 break
+                        
+                        if not all_free:
+                            pass  # Continue to next move attempt
                         
                         if all_free:
                             # Found a valid move! Calculate score

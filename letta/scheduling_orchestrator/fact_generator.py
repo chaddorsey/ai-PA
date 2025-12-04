@@ -108,9 +108,16 @@ def _find_free_slots(
                     if not all(slot in participant_work_hours for slot in meeting_slots):
                         all_free = False
                         break
-                # If participant not in dict or has empty set, skip check for now
-                # (This can happen after horizon reduction if work hours weren't properly recalculated)
-                # In production, this should be fixed in normalization/horizon reduction
+                else:
+                    # Participant missing from work_hours_slots or has empty set
+                    # This should not happen if normalization properly applied defaults
+                    # However, rather than rejecting out of hand, we should log a warning
+                    # and conservatively reject the slot (since we can't apply defaults here without context)
+                    # The caller (orchestrate_scheduling) should ensure all participants have work hours
+                    # before calling this function.
+                    # For now, reject to be safe - this indicates a data integrity issue upstream
+                    all_free = False
+                    break
             
             # Check min_gap: no meeting can start within min_gap slots after any busy slot
             if min_gap_slots > 0:
@@ -134,7 +141,8 @@ def generate_asp_facts(
     request_id: str = "q1",
     include_work_hours: bool = True,
     include_min_gap: bool = True,
-    include_locked_events: bool = True
+    include_locked_events: bool = True,
+    allow_overlaps: bool = False
 ) -> str:
     """
     Generate ASP facts from normalized data and scheduling problem.
@@ -172,7 +180,8 @@ def generate_asp_facts(
     
     # Generate needs facts (participants required)
     for participant_id in scheduling_problem.participants:
-        facts.append(f"needs({request_id}, {participant_id}).")
+        # Quote participant_id to handle special characters like @ in email addresses
+        facts.append(f'needs({request_id}, "{participant_id}").')
     
     # Generate duration fact
     duration_slots = max(1, scheduling_problem.duration_minutes // 15)
@@ -200,44 +209,139 @@ def generate_asp_facts(
         min_gap_slots
     )
     
-    # OPTIMIZATION: Limit free slots for phase 1 to reduce fact count
-    # For phase 1 (minimal constraints, no work hours), limit to first 50 free slots
-    # This dramatically reduces occurs_if_start facts while still giving clingo enough candidates
-    # For later phases, use all free slots (work hours filtering should reduce the count)
-    MAX_FREE_SLOTS_FOR_PHASE1 = 50
-    if not include_work_hours and len(free_slots) > MAX_FREE_SLOTS_FOR_PHASE1:
-        # Phase 1: Limit to first N free slots to reduce occurs_if_start fact count
-        free_slots_limited = sorted(free_slots)[:MAX_FREE_SLOTS_FOR_PHASE1]
+    # OPTIMIZATION: For multi-move (allow_overlaps), we need to consider all slots
+    # For normal mode, limit free slots to reduce fact count
+    if allow_overlaps:
+        # Multi-move mode: Generate candidate slots from all work-hours slots, not just free
+        # This allows ASP to find solutions by overlapping with flexible events
+        # BUT: We must limit aggressively to avoid clingo "too many messages" error
+        
+        # Strategy: Prioritize slots with fewer conflicts (more likely to be solvable)
+        # Count conflicts per slot
+        slot_conflict_count: Dict[int, int] = {}
+        candidate_slots_raw = set()
+        
+        for participant_id in scheduling_problem.participants:
+            participant_work_hours = work_hours_slots.get(participant_id, set())
+            participant_busy = busy_slots.get(participant_id, set())
+            candidate_slots_raw.update(participant_work_hours)
+            
+            # Count conflicts for each slot
+            for slot in participant_work_hours:
+                if slot not in slot_conflict_count:
+                    slot_conflict_count[slot] = 0
+                if slot in participant_busy:
+                    slot_conflict_count[slot] += 1
+        
+        # Prioritize slots: free slots first, then slots with 1 conflict, then 2, etc.
+        # This helps ASP find solutions faster and reduces fact count
+        # Increased limit to allow multi-day exploration (300 slots ≈ 3 days)
+        MAX_CANDIDATE_SLOTS_FOR_ASP = 300  # Limit to 300 candidate slots max for extensive multi-day exploration
+        
+        candidate_slots_by_priority = {
+            0: [],  # Free slots
+            1: [],  # 1 conflict
+            2: [],  # 2 conflicts
+            3: []   # 3+ conflicts
+        }
+        
+        for slot in candidate_slots_raw:
+            conflicts = slot_conflict_count.get(slot, 0)
+            if conflicts == 0:
+                candidate_slots_by_priority[0].append(slot)
+            elif conflicts == 1:
+                candidate_slots_by_priority[1].append(slot)
+            elif conflicts == 2:
+                candidate_slots_by_priority[2].append(slot)
+            else:
+                candidate_slots_by_priority[3].append(slot)
+        
+        # Select slots in priority order until we hit the limit
+        candidate_slots_limited = []
+        for priority in [0, 1, 2, 3]:
+            if len(candidate_slots_limited) >= MAX_CANDIDATE_SLOTS_FOR_ASP:
+                break
+            remaining = MAX_CANDIDATE_SLOTS_FOR_ASP - len(candidate_slots_limited)
+            candidate_slots_limited.extend(sorted(candidate_slots_by_priority[priority])[:remaining])
+        
+        candidate_slots_limited = sorted(candidate_slots_limited)
+        candidate_slots_set = set(candidate_slots_limited)
+        
+        # Still mark free slots for optimization (ASP can prefer them)
+        free_slots_in_candidates = [s for s in free_slots if s in candidate_slots_set]
+        for slot in sorted(free_slots_in_candidates):
+            facts.append(f"free_slot({slot}).")
+            used_slots.add(slot)
+        
+        slots_for_occurs = candidate_slots_limited
     else:
-        # Phase 2+: Use all free slots (should be fewer due to work hours filtering)
-        free_slots_limited = free_slots
-    
-    # Generate free_slot facts only for limited free slots
-    # This reduces grounding atoms by ~80-90% for typical calendars
-    for slot in sorted(free_slots_limited):
-        facts.append(f"free_slot({slot}).")
-        used_slots.add(slot)
+        # Normal mode: Limit free slots for phase 1 to reduce fact count
+        MAX_FREE_SLOTS_FOR_PHASE1 = 50
+        if not include_work_hours and len(free_slots) > MAX_FREE_SLOTS_FOR_PHASE1:
+            # Phase 1: Limit to first N free slots to reduce occurs_if_start fact count
+            free_slots_limited = sorted(free_slots)[:MAX_FREE_SLOTS_FOR_PHASE1]
+        else:
+            # Phase 2+: Use all free slots (should be fewer due to work hours filtering)
+            free_slots_limited = sorted(free_slots)
+        
+        # Generate free_slot facts only for limited free slots
+        # This reduces grounding atoms by ~80-90% for typical calendars
+        for slot in free_slots_limited:
+            facts.append(f"free_slot({slot}).")
+            used_slots.add(slot)
+        
+        candidate_slots_limited = free_slots_limited
+        slots_for_occurs = free_slots_limited
     
     # Generate busy facts (only for slots that are actually busy)
-    for participant_id, slots in busy_slots.items():
-        for slot in sorted(slots):
-            facts.append(f"busy({participant_id}, {slot}).")
+    # OPTIMIZATION: For multi-move, only generate busy facts for candidate slots
+    # This dramatically reduces fact count since we only care about conflicts in candidate areas
+    if allow_overlaps:
+        # Only generate busy facts for candidate slots (where we might place the meeting)
+        candidate_slots_set = set(candidate_slots_limited)
+        for participant_id, slots in busy_slots.items():
+            for slot in sorted(slots):
+                if slot in candidate_slots_set:
+                    facts.append(f'busy("{participant_id}", {slot}).')
+    else:
+        # Normal mode: generate all busy facts
+        for participant_id, slots in busy_slots.items():
+            for slot in sorted(slots):
+                facts.append(f'busy("{participant_id}", {slot}).')
     
     # OPTIMIZATION: Pre-generate occurs() facts to eliminate range constraint
     # Instead of using the rule occurs(Q, T) :- start(Q, T0), duration(Q, D), slot(T), T >= T0, T < T0 + D
     # which generates many atoms during grounding, we pre-generate explicit occurs facts
-    # for each free slot (meeting start candidate)
-    # Use the limited free slots set to match free_slot facts
-    free_slots_for_occurs = free_slots_limited
+    # slots_for_occurs is already set above (free_slots for normal mode, all work-hours slots for multi-move)
     
+    # OPTIMIZATION: Limit occurs_if_start facts to reduce grounding
+    # For multi-move with many candidate slots, this can generate thousands of facts
+    # Limit to first N candidate slots to keep fact count manageable
+    # For multi-move, be even more conservative
+    MAX_OCCURS_CANDIDATES = 30 if allow_overlaps else 100  # Maximum number of start slots to generate occurs facts for
+    
+    # Pre-generate occurs_if_start facts (limit aggressively for ASP)
+    # These facts are critical but can generate many atoms
     meeting_duration_slots = set()
-    for free_slot in free_slots_for_occurs:
+    
+    # For multi-move (allow_overlaps), be more conservative with occurs_if_start
+    if allow_overlaps:
+        # Limit occurs_if_start to first 100 candidate slots to reduce fact explosion
+        MAX_OCCURS_CANDIDATES = 100
+        occurs_candidates = slots_for_occurs[:MAX_OCCURS_CANDIDATES]
+    else:
+        occurs_candidates = slots_for_occurs
+    
+    for start_slot in occurs_candidates:
         # Pre-generate occurs facts for this meeting start
-        for offset in range(duration_slots):
-            slot_idx = free_slot + offset
-            if slot_idx <= max_slot:  # Ensure within horizon
-                facts.append(f"occurs_if_start({request_id}, {free_slot}, {slot_idx}).")
-                meeting_duration_slots.add(slot_idx)
+        # Only if meeting would fit within horizon
+        if start_slot + duration_slots <= max_slot + 1:
+            for offset in range(duration_slots):
+                slot_idx = start_slot + offset
+                if slot_idx <= max_slot:  # Ensure within horizon
+                    facts.append(f"occurs_if_start({request_id}, {start_slot}, {slot_idx}).")
+                    meeting_duration_slots.add(slot_idx)
+    
     used_slots.update(meeting_duration_slots)
     
     # OPTIMIZATION: Generate explicit slot facts only for used slots
@@ -266,25 +370,27 @@ def generate_asp_facts(
             if workhours_slots_to_generate:
                 # Generate explicit workhours facts only for used slots
                 for slot in sorted(workhours_slots_to_generate):
-                    facts.append(f"workhours({participant_id}, {slot}).")
+                    facts.append(f'workhours("{participant_id}", {slot}).')
             else:
                 # If no intersection, use range encoding as fallback (but only for used slots)
                 # This is a compromise - still uses ranges but only for slots we care about
                 work_ranges = _slots_to_ranges(sorted(slots.intersection(used_slots)))
                 for start_slot, end_slot in work_ranges:
-                    facts.append(f"workhours_range({participant_id}, {start_slot}, {end_slot}).")
+                    facts.append(f'workhours_range("{participant_id}", {start_slot}, {end_slot}).')
     
     # Generate locked_event facts (only if include_locked_events is True)
     if include_locked_events:
-        # We need to map back from event protection to slots
-        # For now, we'll mark all busy slots of locked events as locked
-        # In a more sophisticated version, we'd track which slots belong to which events
+        # CRITICAL: Only mark slots that belong to locked events, not all busy slots
+        # Use event_slots_map to find which slots belong to which events
+        event_slots_map = normalized_data.get("event_slots_map", {})
         for (participant_id, event_id), protection_level in event_protection.items():
-            if protection_level == "locked" and participant_id in busy_slots:
-                # Mark all busy slots for this participant as potentially locked
-                # This is a simplification - ideally we'd track event boundaries
-                for slot in busy_slots[participant_id]:
-                    facts.append(f"locked_event({participant_id}, {slot}).")
+            if protection_level == "locked":
+                # Find slots for this specific locked event
+                event_key = (participant_id, event_id)
+                if event_key in event_slots_map:
+                    # Mark only the slots that belong to this locked event
+                    for slot in event_slots_map[event_key]:
+                        facts.append(f'locked_event("{participant_id}", {slot}).')
     
     # Generate window facts (allowed start slots)
     # OPTIMIZATION: Instead of generating window facts for every slot,
@@ -311,22 +417,89 @@ def generate_asp_facts(
         window_slots = slot_indexer.get_slots_in_range(start_dt, end_dt)
         
         # Only allow slots where the meeting would fit (start + duration <= horizon_end)
-        # AND only include slots that are actually free (inverse approach)
-        # This ensures window facts only reference slots we'll generate
-        for slot in window_slots:
-            if slot + duration_slots <= max_slot + 1:
-                # Only add window fact if slot is in free_slots (will be generated)
-                if slot in free_slots:
+        if allow_overlaps:
+            # Multi-move: Use candidate_slots_set (already limited and prioritized)
+            # This ensures window facts only reference slots we'll actually consider
+            candidate_slots_set = set(candidate_slots_limited) if 'candidate_slots_limited' in locals() else set()
+            for slot in window_slots:
+                if slot + duration_slots <= max_slot + 1:
+                    # Check if slot is in candidate slots
+                    if slot in candidate_slots_set:
+                        facts.append(f"window({request_id}, {slot}).")
+                        used_slots.add(slot)
+        else:
+            # Normal mode: Only include free slots (inverse approach)
+            for slot in window_slots:
+                if slot + duration_slots <= max_slot + 1:
+                    # Only add window fact if slot is in free_slots
+                    if slot in free_slots:
+                        facts.append(f"window({request_id}, {slot}).")
+                        used_slots.add(slot)
+    else:
+        # No window specified
+        if allow_overlaps:
+            # Multi-move: Include all candidate slots (already limited and prioritized)
+            for slot in candidate_slots_limited:
+                if slot + duration_slots <= max_slot + 1:
                     facts.append(f"window({request_id}, {slot}).")
                     used_slots.add(slot)
-    else:
-        # No window specified - generate window facts only for free slots
-        # This ensures we only generate window atoms for slots that actually exist
-        # and are feasible (inverse approach)
-        for slot in sorted(free_slots):
-            if slot + duration_slots <= max_slot + 1:
-                facts.append(f"window({request_id}, {slot}).")
-                used_slots.add(slot)
+        else:
+            # Normal mode: Generate window facts only for free slots
+            for slot in sorted(free_slots):
+                if slot + duration_slots <= max_slot + 1:
+                    facts.append(f"window({request_id}, {slot}).")
+                    used_slots.add(slot)
+    
+    # Generate metadata facts for multi-move mode (protected_event, internal_only_event, event_attendees, participant_subset_event)
+    # These are needed for the enhanced soft constraints prioritization
+    if allow_overlaps:
+        event_slots_map = normalized_data.get("event_slots_map", {})
+        event_metadata = normalized_data.get("event_metadata", {})
+        event_protection = normalized_data.get("event_protection", {})
+        
+        # Build mapping: (participant, slot) -> event metadata
+        slot_to_event: Dict[Tuple[str, int], Tuple[str, str]] = {}
+        for (participant_id, event_id), slots in event_slots_map.items():
+            for slot in slots:
+                key = (participant_id, slot)
+                if key not in slot_to_event:
+                    slot_to_event[key] = (participant_id, event_id)
+        
+        # Request participants set for participant-subset detection
+        request_participants_set = set(scheduling_problem.participants)
+        request_participants_count = len(request_participants_set)
+        
+        # Generate metadata facts only for candidate slots (where we might place the meeting)
+        candidate_slots_set = set(candidate_slots_limited) if 'candidate_slots_limited' in locals() else set()
+        
+        for (participant_id, slot), (p_id, event_id) in slot_to_event.items():
+            # Only generate facts for candidate slots
+            if slot not in candidate_slots_set:
+                continue
+            
+            event_key = (p_id, event_id)
+            protection_level = event_protection.get(event_key, "flexible")
+            event_meta = event_metadata.get(event_key, {})
+            
+            # Protected event
+            if protection_level == "protected":
+                facts.append(f'protected_event("{participant_id}", {slot}).')
+            
+            # Internal-only flag
+            internal_only = event_meta.get("internal_only", True)
+            if internal_only:
+                facts.append(f'internal_only_event("{participant_id}", {slot}).')
+            
+            # Attendee count
+            num_attendees = event_meta.get("number_of_attendees", 0)
+            facts.append(f'event_attendees("{participant_id}", {slot}, {num_attendees}).')
+            
+            # Participant-subset detection: Events where all participants are likely a subset of request participants
+            # Heuristic: internal-only AND owner is in request participants AND attendee_count <= request_participants_count
+            if (internal_only and 
+                participant_id in request_participants_set and 
+                num_attendees <= request_participants_count):
+                facts.append(f'participant_subset_event("{participant_id}", {slot}).')
     
     return "\n".join(facts) + "\n"
 
@@ -339,7 +512,8 @@ def generate_asp_program(
     include_work_hours: bool = True,
     include_min_gap: bool = True,
     include_locked_events: bool = True,
-    phase: int = 1
+    phase: int = 1,
+    allow_multi_move: bool = False
 ) -> str:
     """
     Generate ASP program (facts + encoding) with configurable constraints.
@@ -363,6 +537,8 @@ def generate_asp_program(
             MINIMAL_ASP_PROGRAM,
             BASE_ASP_PROGRAM,
             COMPLETE_ASP_PROGRAM,
+            COMPLETE_ASP_PROGRAM_MULTI_MOVE,
+            BASE_ASP_PROGRAM_MULTI_MOVE,
             WORK_HOURS_CONSTRAINTS,
             MIN_GAP_CONSTRAINTS,
             LOCKED_EVENT_CONSTRAINTS,
@@ -373,6 +549,8 @@ def generate_asp_program(
             MINIMAL_ASP_PROGRAM,
             BASE_ASP_PROGRAM,
             COMPLETE_ASP_PROGRAM,
+            COMPLETE_ASP_PROGRAM_MULTI_MOVE,
+            BASE_ASP_PROGRAM_MULTI_MOVE,
             WORK_HOURS_CONSTRAINTS,
             MIN_GAP_CONSTRAINTS,
             LOCKED_EVENT_CONSTRAINTS,
@@ -382,38 +560,89 @@ def generate_asp_program(
     facts = generate_asp_facts(normalized_data, scheduling_problem, request_id, 
                                 include_work_hours=include_work_hours,
                                 include_min_gap=include_min_gap,
-                                include_locked_events=include_locked_events)
+                                include_locked_events=include_locked_events,
+                                allow_overlaps=allow_multi_move)
     
     # Build program incrementally based on phase
-    if phase == 1:
-        # Phase 1: Minimal constraints only (no work hours, no min_gap, no locked events)
-        program = MINIMAL_ASP_PROGRAM
+    if allow_multi_move:
+        # Multi-move mode: Use multi-move base program which has relaxed constraints
+        if phase == 1:
+            # Phase 1: Minimal constraints only
+            program = MINIMAL_ASP_PROGRAM
+        elif include_soft_constraints and phase >= 4:
+            # Phase 4+: Full multi-move program with soft constraints
+            program = COMPLETE_ASP_PROGRAM_MULTI_MOVE
+        else:
+            # Phase 2-3: Use multi-move base (has relaxed min_gap for locked events only)
+            # BASE_ASP_PROGRAM_MULTI_MOVE already includes:
+            # - work hours constraints
+            # - locked event constraints  
+            # - relaxed min_gap (only for locked events)
+            program = BASE_ASP_PROGRAM_MULTI_MOVE
     else:
-        # Phase 2+: Start with minimal, add constraints incrementally
-        program = MINIMAL_ASP_PROGRAM
-        
-        if include_work_hours or phase >= 2:
-            program += WORK_HOURS_CONSTRAINTS
-        
-        if include_locked_events or phase >= 2:
-            program += LOCKED_EVENT_CONSTRAINTS
-        
-        if include_min_gap or phase >= 3:
-            program += MIN_GAP_CONSTRAINTS
-        
-        if include_soft_constraints and phase >= 4:
-            program += SOFT_CONSTRAINTS_PROGRAM
+        # Normal mode: Build incrementally
+        if phase == 1:
+            # Phase 1: Minimal constraints only (no work hours, no min_gap, no locked events)
+            program = MINIMAL_ASP_PROGRAM
+        else:
+            # Phase 2+: Start with minimal, add constraints incrementally
+            program = MINIMAL_ASP_PROGRAM
+            
+            if include_work_hours or phase >= 2:
+                program += WORK_HOURS_CONSTRAINTS
+            
+            if include_locked_events or phase >= 2:
+                program += LOCKED_EVENT_CONSTRAINTS
+            
+            if include_min_gap or phase >= 3:
+                program += MIN_GAP_CONSTRAINTS
+            
+            if include_soft_constraints and phase >= 4:
+                program += SOFT_CONSTRAINTS_PROGRAM
     
-    # Add facts for soft constraints if needed
-    if include_soft_constraints:
-        # Add protected_event facts
+    # Note: Metadata facts (protected_event, internal_only_event, event_attendees) are now
+    # generated in generate_asp_facts() when allow_multi_move=True, to have access to candidate_slots.
+    # For normal mode (allow_multi_move=False), we still generate them here if needed.
+    if include_soft_constraints and not allow_multi_move:
+        # Add protected_event, internal_only_event, and event_attendees facts for normal mode
         event_protection: Dict[Tuple[str, str], str] = normalized_data["event_protection"]
         busy_slots: Dict[str, Set[int]] = normalized_data["busy_slots"]
+        event_metadata = normalized_data.get("event_metadata", {})
+        event_slots_map = normalized_data.get("event_slots_map", {})
         
-        for (participant_id, event_id), protection_level in event_protection.items():
-            if protection_level == "protected" and participant_id in busy_slots:
-                for slot in busy_slots[participant_id]:
-                    facts += f"protected_event({participant_id}, {slot}).\n"
+        # Build mapping: (participant, slot) -> event metadata
+        slot_to_event: Dict[Tuple[str, int], Tuple[str, str]] = {}
+        
+        for (participant_id, event_id), slots in event_slots_map.items():
+            for slot in slots:
+                key = (participant_id, slot)
+                if key not in slot_to_event:
+                    slot_to_event[key] = (participant_id, event_id)
+        
+        # Generate facts for each busy slot with event metadata
+        for (participant_id, slot), (p_id, event_id) in slot_to_event.items():
+            protection_level = event_protection.get((p_id, event_id), "flexible")
+            event_meta = event_metadata.get((p_id, event_id), {})
+            
+            if protection_level == "protected":
+                facts += f'protected_event("{participant_id}", {slot}).\n'
+            
+            # Internal-only flag
+            internal_only = event_meta.get("internal_only", True)
+            if internal_only:
+                facts += f'internal_only_event("{participant_id}", {slot}).\n'
+            
+            # Attendee count
+            num_attendees = event_meta.get("number_of_attendees", 0)
+            facts += f'event_attendees("{participant_id}", {slot}, {num_attendees}).\n'
+        
+        # Fallback: for busy slots without event metadata
+        for participant_id, slots in busy_slots.items():
+            for slot in slots:
+                key = (participant_id, slot)
+                if key not in slot_to_event:
+                    facts += f'internal_only_event("{participant_id}", {slot}).\n'
+                    facts += f'event_attendees("{participant_id}", {slot}, 0).\n'
         
         # Add preferred_time facts if specified
         if scheduling_problem.preferred_times:
@@ -449,7 +678,7 @@ def generate_asp_program(
         
         # Add participant facts for focus block calculation
         for participant_id in scheduling_problem.participants:
-            facts += f"participant({participant_id}).\n"
+            facts += f'participant("{participant_id}").\n'
         
         # Add participant facts for work hours encoding (needed for inverse encoding)
         work_hours_slots = normalized_data.get("work_hours_slots", {})
@@ -461,9 +690,8 @@ def generate_asp_program(
                 # No work hours defined - will use fallback rule in ASP
                 pass
         
-        program = COMPLETE_ASP_PROGRAM
-    else:
-        program = BASE_ASP_PROGRAM
+        # Note: Program was already set above based on phase/constraints
+        # Don't overwrite it here!
     
     return program + "\n% Facts:\n" + facts
 

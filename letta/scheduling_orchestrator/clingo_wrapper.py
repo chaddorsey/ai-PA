@@ -57,8 +57,12 @@ class ClingoSolver:
             Tuple of (optimal_model, stats, solve_result)
         """
         if not CLINGO_AVAILABLE:
+            # Use placeholder SolveResult for when clingo not available
+            class MockSolveResult:
+                satisfiable = False
+                unknown = True
             self.stats = {"error": "clingo not available", "satisfiable": False}
-            return None, self.stats, SolveResult.UNKNOWN
+            return None, self.stats, MockSolveResult()
         
         self.models = []
         self.optimal_model = None
@@ -67,10 +71,12 @@ class ClingoSolver:
         # Configure clingo to suppress messages and limit output
         # --opt-mode=optN: optimize with multiple models but limit to first optimal
         # --models=1: only return the first optimal model (reduces output)
+        # Note: --models=1 with optimization can sometimes fail to return models
+        # if optimization is not proven, so we may need to relax this
         # --warn=none: suppress all warnings to reduce message volume
         ctl = Control([
             "--opt-mode=optN",
-            "--models=1",  # Only return first optimal model
+            "--models=10",  # Return up to 10 optimal models for diversity
             "--warn=none"  # Suppress all warnings
         ])
         
@@ -114,26 +120,55 @@ class ClingoSolver:
             else:
                 self.stats["error_type"] = "grounding_failed"
             
-            return None, self.stats, SolveResult.UNKNOWN
+            # Create a mock result for grounding failure
+            class MockSolveResult:
+                def __init__(self):
+                    self.satisfiable = False
+                    self.unknown = True
+                    self.unsatisfiable = False
+                    self.exhausted = False
+                    self.interrupted = False
+            return None, self.stats, MockSolveResult()
         
         # Solve with timeout
         solve_start = time.time()
         
         def on_model(model: Model):
             """Callback for each model found."""
-            # Limit number of models collected to avoid memory issues
-            if len(self.models) < 10:  # Only keep first 10 models
-                self.models.append(model)
+            # Extract all needed data from model while it's still valid
+            # Clingo models are only valid within the solve context
+            model_data = {
+                'symbols': list(model.symbols(shown=True)),  # Extract symbols immediately
+                'cost': list(model.cost) if hasattr(model, 'cost') and model.cost else []
+            }
+            
+            # Collect multiple optimal models for diversity (all models at same cost level are optimal)
+            # Limit to reasonable number to avoid memory issues
+            MAX_MODELS = 15  # Collect up to 15 models to have variety
+            if len(self.models) < MAX_MODELS:
+                self.models.append(model_data)
             if on_model_callback:
+                # Still call callback with original model (valid during solve)
                 on_model_callback(model)
-            # Track optimal model (first model when optimizing)
+            # Track optimal model data (first model when optimizing)
             if self.optimal_model is None:
-                self.optimal_model = model
+                self.optimal_model = model_data
         
         try:
             with ctl.solve(on_model=on_model, async_=True) as handle:
-                # Wait with timeout
-                result = handle.get(timeout=self.timeout)
+                # Wait with timeout - clingo's handle.get() doesn't accept timeout
+                # Instead, we poll with a timeout loop
+                import time as time_module
+                start_wait = time_module.time()
+                result = None
+                while time_module.time() - start_wait < self.timeout:
+                    if handle.wait(0.1):  # Check if result is ready (wait up to 0.1 seconds)
+                        result = handle.get()
+                        break
+                if result is None:
+                    # Timeout - cancel solving
+                    handle.cancel()
+                    result = handle.get()  # Get partial result
                 self.solve_result = result
                 
                 solve_time = time.time() - solve_start
@@ -147,9 +182,9 @@ class ClingoSolver:
                 if result.satisfiable:
                     self.stats["satisfiable"] = True
                     if self.optimal_model:
-                        # Extract cost vector if available
-                        if hasattr(self.optimal_model, 'cost'):
-                            self.stats["cost"] = list(self.optimal_model.cost)
+                        # Cost vector was already extracted in on_model callback
+                        if 'cost' in self.optimal_model:
+                            self.stats["cost"] = self.optimal_model['cost']
                 else:
                     self.stats["satisfiable"] = False
                     self.stats["unsat"] = True
@@ -178,23 +213,42 @@ class ClingoSolver:
             self.stats["solve_time_ms"] = int(solve_time * 1000)
             self.stats["error"] = str(e)
             self.stats["timeout"] = solve_time >= self.timeout
-            return None, self.stats, SolveResult.UNKNOWN
+            # Create a mock result for error case (SolveResult doesn't have UNKNOWN constant)
+            class MockSolveResult:
+                def __init__(self):
+                    self.satisfiable = False
+                    self.unknown = True
+                    self.unsatisfiable = False
+                    self.exhausted = False
+                    self.interrupted = False
+            return None, self.stats, MockSolveResult()
 
 
-def extract_model_predicates(model: Model) -> Dict[str, List[Tuple]]:
+def extract_model_predicates(model) -> Dict[str, List[Tuple]]:
     """
-    Extract predicates from a clingo model.
+    Extract predicates from a clingo model or model data.
     
     Args:
-        model: clingo Model object
+        model: clingo Model object (valid during solve) or dict with 'symbols' key
         
     Returns:
         Dictionary mapping predicate names to lists of tuples (arguments)
     """
     predicates: Dict[str, List[Tuple]] = {}
     
-    for atom in model.symbols(shown=True):
-        if atom.type == atom.type.Function:
+    # Handle both live Model objects and extracted model data dicts
+    if isinstance(model, dict) and 'symbols' in model:
+        # Model data dict: symbols are already extracted as a list
+        symbols = model['symbols']
+    elif hasattr(model, 'symbols'):
+        # Live Model object: call symbols() method
+        symbols = model.symbols(shown=True)
+    else:
+        return predicates
+    
+    for atom in symbols:
+        # Symbols from dict are already Symbol objects (from clingo)
+        if hasattr(atom, 'type') and atom.type == atom.type.Function:
             name = atom.name
             args = tuple(arg.number if arg.type == arg.type.Number else str(arg) for arg in atom.arguments)
             
@@ -206,7 +260,7 @@ def extract_model_predicates(model: Model) -> Dict[str, List[Tuple]]:
 
 
 def extract_scheduling_solution(
-    model: Model,
+    model,
     request_id: str = "q1"
 ) -> Optional[Dict[str, Any]]:
     """
@@ -277,7 +331,14 @@ def compute_move_deltas(
     event_protection: Dict[Tuple[str, str], str] = normalized_data["event_protection"]
     slot_indexer = normalized_data["slot_indexer"]
     
-    # For each participant, check if new meeting overlaps with their events
+    # Use event_slots_map to find which events overlap with the solution
+    event_slots_map = normalized_data.get("event_slots_map", {})
+    event_metadata = normalized_data.get("event_metadata", {})
+    
+    # Track which events have been processed to avoid duplicates
+    processed_events = set()
+    
+    # For each participant, find events that overlap with the solution
     for participant_id in scheduling_problem.participants:
         participant_busy = busy_slots.get(participant_id, set())
         overlap_slots = occurs_slots & participant_busy
@@ -285,58 +346,108 @@ def compute_move_deltas(
         if not overlap_slots:
             continue
         
-        # Find which events are affected
-        # This is simplified - in practice, we'd track which slots belong to which events
-        # For now, we'll create a moved event for the overlap
-        # A more sophisticated version would track event boundaries
-        
-        # Group consecutive overlapping slots (simplified)
-        sorted_overlap = sorted(overlap_slots)
-        if sorted_overlap:
-            first_slot = sorted_overlap[0]
-            last_slot = sorted_overlap[-1]
+        # Find which specific events overlap with the solution slots
+        for (p_id, event_id), event_slots_set in event_slots_map.items():
+            if p_id != participant_id:
+                continue
             
-            # Calculate shift needed (simplified - shift by meeting duration)
-            meeting_duration_slots = len(occurs_slots)
-            shift_slots = meeting_duration_slots
+            # Check if this event overlaps with the solution
+            event_overlap = event_slots_set & occurs_slots
+            if not event_overlap:
+                continue
             
-            old_start_dt = slot_indexer.slot_to_datetime(first_slot)
-            new_start_dt = slot_indexer.slot_to_datetime(first_slot + shift_slots)
+            # Avoid processing the same event twice
+            event_key = (p_id, event_id)
+            if event_key in processed_events:
+                continue
+            processed_events.add(event_key)
             
-            if old_start_dt and new_start_dt:
-                shift_minutes = shift_slots * 15
+            # Get event metadata for old start/end times
+            event_meta = event_metadata.get(event_key, {})
+            old_start_dt = event_meta.get("start_dt")
+            old_end_dt = event_meta.get("end_dt")
+            
+            if not old_start_dt or not old_end_dt:
+                # Fallback: calculate from slots
+                if event_slots_set:
+                    first_slot = min(event_slots_set)
+                    last_slot = max(event_slots_set)
+                    old_start_dt = slot_indexer.slot_to_datetime(first_slot)
+                    old_end_dt = slot_indexer.slot_to_datetime(last_slot + 1)  # +1 because end is exclusive
+            
+            if old_start_dt:
+                # For ASP solutions, we need to calculate where the event should be moved.
+                # Since ASP doesn't explicitly tell us where events were moved, we use a heuristic:
+                # Find the earliest slot after the meeting that would fit the event.
+                # But a simpler approach: shift the event by the meeting duration plus a small buffer.
+                # This is a conservative estimate - in practice, ASP may have moved it less.
+                meeting_duration_slots = len(occurs_slots)
+                meeting_start_slot = min(occurs_slots) if occurs_slots else 0
+                meeting_end_slot = max(occurs_slots) + 1 if occurs_slots else 0
                 
-                # Find event ID (simplified - use first overlapping event)
-                event_id = None
-                for (p_id, e_id), protection in event_protection.items():
-                    if p_id == participant_id:
-                        event_id = e_id
-                        break
+                # Calculate the event's current start slot in the current slot_indexer's frame
+                event_start_slot = min(event_slots_set) if event_slots_set else None
                 
-                if event_id:
-                    moved_events.append({
-                        "owner": participant_id,
-                        "event_id": event_id,
-                        "old_start": old_start_dt.isoformat(),
-                        "new_start": new_start_dt.isoformat(),
-                        "old_end": (old_start_dt + timedelta(minutes=15 * len(sorted_overlap))).isoformat(),
-                        "new_end": (new_start_dt + timedelta(minutes=15 * len(sorted_overlap))).isoformat(),
-                        "shift_minutes": shift_minutes
-                    })
+                if event_start_slot is not None:
+                    # Calculate minimum shift: move event to start after meeting ends
+                    # Add 1 slot (15 min) buffer to avoid back-to-back meetings
+                    min_new_start_slot = meeting_end_slot + 1
+                    slot_shift = min_new_start_slot - event_start_slot
+                    shift_minutes = slot_shift * 15
+                    
+                    # Calculate new start/end times based on slot shift
+                    new_start_slot = event_start_slot + slot_shift
+                    new_start_dt = slot_indexer.slot_to_datetime(new_start_slot)
+                    if not new_start_dt:
+                        # Fallback to simple duration shift
+                        meeting_duration = timedelta(minutes=meeting_duration_slots * 15)
+                        new_start_dt = old_start_dt + meeting_duration
+                        shift_minutes = int(meeting_duration.total_seconds() / 60)
+                    else:
+                        # Calculate actual shift from datetime difference
+                        actual_shift = (new_start_dt - old_start_dt).total_seconds() / 60
+                        shift_minutes = int(actual_shift)
+                    
+                    # Calculate new end time
+                    event_duration = (old_end_dt - old_start_dt) if old_end_dt else timedelta(minutes=len(event_slots_set) * 15)
+                    new_end_dt = new_start_dt + event_duration if new_start_dt else None
+                else:
+                    # Fallback: shift by meeting duration
+                    meeting_duration = timedelta(minutes=meeting_duration_slots * 15)
+                    new_start_dt = old_start_dt + meeting_duration
+                    new_end_dt = old_end_dt + meeting_duration if old_end_dt else None
+                    shift_minutes = int(meeting_duration.total_seconds() / 60)
+                
+                if not new_end_dt and new_start_dt:
+                    event_duration = (old_end_dt - old_start_dt) if old_end_dt else timedelta(minutes=len(event_slots_set) * 15)
+                    new_end_dt = new_start_dt + event_duration
+                
+                moved_event_dict = {
+                    "owner": participant_id,
+                    "event_id": event_id,
+                    "old_start": old_start_dt.isoformat(),
+                    "new_start": new_start_dt.isoformat(),
+                    "old_end": old_end_dt.isoformat() if old_end_dt else new_end_dt.isoformat(),
+                    "new_end": new_end_dt.isoformat(),
+                    "shift_minutes": shift_minutes
+                }
+                
+                moved_events.append(moved_event_dict)
     
     return moved_events
 
 
 def compute_objective_scores(
-    model: Model,
+    model,
     solution: Dict[str, Any],
-    normalized_data: Dict[str, Any]
+    normalized_data: Dict[str, Any],
+    scheduling_problem=None
 ) -> Dict[str, int]:
     """
     Compute objective scores from model and solution.
     
     Args:
-        model: clingo Model object
+        model: clingo Model object (valid during solve) or dict with 'cost' key
         solution: Output from extract_scheduling_solution()
         normalized_data: Output from normalize_events()
         
@@ -351,8 +462,19 @@ def compute_objective_scores(
     }
     
     # Extract cost vector if available
-    if hasattr(model, 'cost') and model.cost:
-        cost = list(model.cost)
+    # Handle both live Model objects and extracted model data dicts
+    cost = None
+    if isinstance(model, dict) and 'cost' in model:
+        cost = model['cost']
+    elif hasattr(model, 'cost') and model.cost:
+        # Only safe to access if model is still in solve context
+        try:
+            cost = list(model.cost)
+        except (AttributeError, RuntimeError):
+            # Model may be invalid - skip cost extraction
+            cost = None
+    
+    if cost:
         # Cost vector format: [L1_cost, L2_cost, L3_cost]
         if len(cost) >= 1:
             scores["protected_events_moved"] = cost[0] if cost[0] else 0
@@ -364,8 +486,8 @@ def compute_objective_scores(
             scores["preference_penalty"] = cost[2] if cost[2] and cost[2] > 0 else 0
     
     # Calculate moved minutes from solution
-    if solution:
-        moved_events = compute_move_deltas(solution, normalized_data, None)  # TODO: pass scheduling_problem
+    if solution and scheduling_problem:
+        moved_events = compute_move_deltas(solution, normalized_data, scheduling_problem)
         scores["moved_minutes"] = sum(me.get("shift_minutes", 0) for me in moved_events)
     
     return scores

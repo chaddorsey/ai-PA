@@ -181,7 +181,9 @@ overlap_cost(Q, P, S, C) :- flexible_overlap(Q, P, S), occurs(Q, S), duration(Q,
 free_slot(P, S) :- slot(S), participant(P), not busy(P, S), not occurs(Q, S) : needs(Q, P).
 % Focus block starts when we transition from busy to free or at slot 0
 focus_block_start(P, 0) :- free_slot(P, 0), participant(P).
-focus_block_start(P, S) :- free_slot(P, S), (busy(P, S-1) ; occurs(Q, S-1) : needs(Q, P)), S > 0.
+% Split the disjunction to avoid conditional literal syntax issues
+focus_block_start(P, S) :- free_slot(P, S), busy(P, S-1), S > 0.
+focus_block_start(P, S) :- free_slot(P, S), occurs(Q, S-1), needs(Q, P), S > 0.
 % Focus block continues while slots are free (simplified - track length)
 % For optimization, we'll use a simpler approach: count consecutive free slots
 % This is a simplified version - full implementation would track block boundaries
@@ -254,4 +256,129 @@ LOCKED_EVENT_CONSTRAINTS = """
 % Meeting cannot occur when any required participant has a locked event
 :- occurs(Q, T), needs(Q, P), locked_event(P, T).
 """
+
+# Multi-move variant: allows flexible event overlaps for multi-participant conflicts
+# This version relaxes the hard constraint on double-booking to allow overlaps with
+# flexible/protected events, which are then penalized in soft constraints
+BASE_ASP_PROGRAM_MULTI_MOVE = """
+% ============================================
+% Scheduling ASP Encoding - Multi-Move Variant
+% ============================================
+% Allows overlaps with flexible/protected events (penalized in soft constraints)
+% Only locked events are hard constraints
+
+% Predicates: (same as BASE_ASP_PROGRAM)
+
+% Generate slot range from horizon_max
+has_explicit_slots :- slot(_).
+slot(S) :- horizon_max(M), S = 0..M, not has_explicit_slots.
+
+% Generate window from range if window_min/window_max are provided
+has_explicit_windows :- window(Q, _).
+window(Q, S) :- window_min(Q, Min), window_max(Q, Max), slot(S), S >= Min, S <= Max, not has_explicit_windows.
+
+% Choice rule: Select exactly one start slot for each request
+has_free_slots :- free_slot(_).
+{ start(Q, T) : free_slot(T), window(Q, T) } = 1 :- request(Q), has_free_slots.
+{ start(Q, T) : slot(T), window(Q, T) } = 1 :- request(Q), not has_free_slots.
+
+% Meeting occurs at all slots from start to start+duration-1
+occurs(Q, T) :- start(Q, T0), occurs_if_start(Q, T0, T).
+
+% Hard constraint: Cannot overlap with locked events only
+% Flexible and protected events can overlap (penalized in soft constraints)
+:- occurs(Q, T), needs(Q, P), locked_event(P, T).
+
+% Hard constraint: Must respect time window
+:- start(Q, T), not window(Q, T).
+
+% Hard constraint: Must respect work hours
+has_explicit_workhours :- workhours(_, _).
+workhours(P, S) :- workhours_range(P, Start, End), slot(S), S >= Start, S <= End, not has_explicit_workhours.
+workhours(P, S) :- slot(S), participant(P), not workhours(P, _), not workhours_range(P, _, _).
+:- occurs(Q, T), needs(Q, P), not workhours(P, T).
+
+% Hard constraint: Minimum gap after previous events
+% In multi-move mode, we relax this for flexible/protected events (can be moved)
+% Only enforce min_gap for locked events (cannot be moved)
+% For flexible events, overlaps are allowed (penalized in soft constraints)
+:- start(Q, T), needs(Q, P), locked_event(P, T2), min_gap(Q, G), T > T2, T <= T2 + G.
+
+% Show the selected start slots and occupied slots
+#show start/2.
+#show occurs/2.
+"""
+
+# Enhanced soft constraints with prioritization: participant-subset, internal-only, external
+SOFT_CONSTRAINTS_PROGRAM_ENHANCED = """
+% ============================================
+% Enhanced Soft Constraints for Multi-Move
+% ============================================
+% Priority order for move candidates:
+%   1. Protected events (should not move if possible)
+%   2a. Participant-subset events (meetings with participants that are subset of request participants)
+%   2b. Internal-only events (fewer attendees preferred)
+%   2c. External events (only if necessary)
+
+% L1: Minimize violations of protected event boundaries
+protected_overlap(Q, P, S) :- occurs(Q, S), needs(Q, P), protected_event(P, S).
+#minimize { 1@1 : protected_overlap(Q, P, S) }.
+
+% L2: Minimize overlaps with flexible events, with prioritized weighting
+flexible_overlap(Q, P, S) :- occurs(Q, S), needs(Q, P), busy(P, S), not protected_event(P, S), not locked_event(P, S).
+
+% L2a: Participant-subset events (HIGHEST priority for moving - lowest penalty)
+% These are meetings where all participants are likely a subset of request participants
+% Use separate lexicographic level to ensure these are minimized FIRST before internal-only
+participant_subset_overlap(Q, P, S) :- flexible_overlap(Q, P, S), participant_subset_event(P, S).
+% Apply attendee count multiplier (fewer attendees = preferred)
+participant_subset_cost(Q, P, S, C) :- participant_subset_overlap(Q, P, S), event_attendees(P, S, N), N == 0, C = 10 * 1.
+participant_subset_cost(Q, P, S, C) :- participant_subset_overlap(Q, P, S), event_attendees(P, S, N), N == 1, C = 10 * 2.
+participant_subset_cost(Q, P, S, C) :- participant_subset_overlap(Q, P, S), event_attendees(P, S, N), N == 2, C = 10 * 5.
+participant_subset_cost(Q, P, S, C) :- participant_subset_overlap(Q, P, S), event_attendees(P, S, N), N >= 3, C = 10 * (N * N + 1).
+participant_subset_cost(Q, P, S, C) :- participant_subset_overlap(Q, P, S), not event_attendees(P, S, _), C = 10 * 2.
+#minimize { C@2 : participant_subset_cost(Q, P, S, C) }.
+
+% L2b: Internal-only events (medium priority - prefer fewer attendees)
+% Only minimize AFTER participant-subset events are minimized (separate lex level)
+internal_only_overlap(Q, P, S) :- flexible_overlap(Q, P, S), internal_only_event(P, S), not participant_subset_event(P, S).
+% Apply attendee count multiplier
+internal_only_cost(Q, P, S, C) :- internal_only_overlap(Q, P, S), event_attendees(P, S, N), N == 0, C = 30 * 1.
+internal_only_cost(Q, P, S, C) :- internal_only_overlap(Q, P, S), event_attendees(P, S, N), N == 1, C = 30 * 2.
+internal_only_cost(Q, P, S, C) :- internal_only_overlap(Q, P, S), event_attendees(P, S, N), N == 2, C = 30 * 5.
+internal_only_cost(Q, P, S, C) :- internal_only_overlap(Q, P, S), event_attendees(P, S, N), N >= 3, C = 30 * (N * N + 1).
+internal_only_cost(Q, P, S, C) :- internal_only_overlap(Q, P, S), not event_attendees(P, S, _), C = 30 * 2.
+#minimize { C@3 : internal_only_cost(Q, P, S, C) }.
+
+% L2c: External events (LOWEST priority - only if all internal options exhausted)
+% Only minimize AFTER participant-subset and internal-only are minimized (separate lex level)
+external_overlap(Q, P, S) :- flexible_overlap(Q, P, S), not internal_only_event(P, S), not participant_subset_event(P, S).
+% Apply attendee count multiplier (external events are heavily penalized)
+external_cost(Q, P, S, C) :- external_overlap(Q, P, S), event_attendees(P, S, N), N == 0, C = 100 * 1.
+external_cost(Q, P, S, C) :- external_overlap(Q, P, S), event_attendees(P, S, N), N == 1, C = 100 * 2.
+external_cost(Q, P, S, C) :- external_overlap(Q, P, S), event_attendees(P, S, N), N == 2, C = 100 * 5.
+external_cost(Q, P, S, C) :- external_overlap(Q, P, S), event_attendees(P, S, N), N >= 3, C = 100 * (N * N + 1).
+external_cost(Q, P, S, C) :- external_overlap(Q, P, S), not event_attendees(P, S, _), C = 100 * 2.
+#minimize { C@4 : external_cost(Q, P, S, C) }.
+
+% L3: Maximize focus blocks
+free_slot(P, S) :- slot(S), participant(P), not busy(P, S), not occurs(Q, S) : needs(Q, P).
+focus_block_start(P, 0) :- free_slot(P, 0), participant(P).
+% Split the disjunction to avoid conditional literal syntax issues
+focus_block_start(P, S) :- free_slot(P, S), busy(P, S-1), S > 0.
+focus_block_start(P, S) :- free_slot(P, S), occurs(Q, S-1), needs(Q, P), S > 0.
+free_slot_count(P, C) :- participant(P), C = #count { S : free_slot(P, S) }.
+#minimize { -C@5 : free_slot_count(P, C) }.
+
+% L6: Minimize preference violations
+has_preferred_time(Q) :- preferred_time(Q, T).
+preference_violation(Q, T, 1) :- start(Q, T), has_preferred_time(Q), not preferred_time(Q, T).
+has_preferred_day(Q) :- preferred_day(Q, D).
+preference_day_violation(Q, T, 1) :- start(Q, T), has_preferred_day(Q), not preferred_day(Q, D) : day_of_slot(T, D).
+#minimize { P@6 : preference_violation(Q, T, P) }.
+#minimize { P@6 : preference_day_violation(Q, T, P) }.
+"""
+
+# Complete multi-move ASP program
+COMPLETE_ASP_PROGRAM_MULTI_MOVE = BASE_ASP_PROGRAM_MULTI_MOVE + SOFT_CONSTRAINTS_PROGRAM_ENHANCED
 

@@ -75,7 +75,7 @@ class SchedulingProblem(BaseModel):
     preferred_days: Optional[List[str]] = Field(default=None, description="Preferred days of week (e.g., ['Monday', 'Tuesday'])")
     title: Optional[str] = Field(default=None, description="Proposed meeting title")
     location: Optional[str] = Field(default=None, description="Proposed meeting location")
-    min_gap_minutes: Optional[int] = Field(default=15, description="Minimum gap between meetings in minutes")
+    min_gap_minutes: Optional[int] = Field(default=0, description="Minimum gap between meetings in minutes (default: 0)")
     allow_off_hours: bool = Field(default=False, description="Allow scheduling outside work hours if needed")
 
 

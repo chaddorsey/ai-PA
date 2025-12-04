@@ -122,13 +122,15 @@ def normalize_events(
     slot_indexer = SlotIndexer(from_date_utc, to_date_utc)
     
     # Extract policy
-    min_gap_minutes = 15
+    # Default to 0 minutes gap unless specifically set
+    min_gap_minutes = 0
     if context_json and "policy" in context_json:
         policy = context_json["policy"]
         if "hard" in policy and "min_gap_min" in policy["hard"]:
             min_gap_minutes = policy["hard"]["min_gap_min"]
     
-    min_gap_slots = max(1, min_gap_minutes // SLOT_SIZE_MINUTES)
+    # Calculate min_gap_slots - allow 0 if min_gap_minutes is 0
+    min_gap_slots = min_gap_minutes // SLOT_SIZE_MINUTES
     
     # Process events
     busy_slots: Dict[str, Set[int]] = {}
@@ -147,6 +149,14 @@ def normalize_events(
             locked = event_dict.get("locked", False)
             protected = event_dict.get("protected", False)
             flexible = event_dict.get("flexible", True)
+            
+            # Special handling: VACATION/OUT OF OFFICE events should block scheduling (locked)
+            # Check summary/title for vacation indicators
+            event_summary = (event_dict.get("summary") or event_dict.get("title", "")).upper()
+            if "VACATION" in event_summary or "OUT OF OFFICE" in event_summary or "OOO" in event_summary:
+                locked = True
+                protected = True
+                flexible = False
             
             # Parse datetimes
             try:
@@ -195,7 +205,9 @@ def normalize_events(
                 }
                 
                 # Determine protection level
-                if locked:
+                # CRITICAL: If an event is protected AND not flexible, it should not be moved
+                # Therefore, treat it as "locked" to prevent overlaps
+                if locked or (protected and not flexible):
                     protection_level = "locked"
                 elif protected:
                     protection_level = "protected"

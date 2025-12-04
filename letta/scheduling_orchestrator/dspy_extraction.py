@@ -430,7 +430,7 @@ def extract_with_fallback(
             preferred_days=None,
             title=None,
             location=None,
-            min_gap_minutes=15,
+            min_gap_minutes=0,
             allow_off_hours=False
         )
 
