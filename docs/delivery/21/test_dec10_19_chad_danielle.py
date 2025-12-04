@@ -232,6 +232,17 @@ def main():
                             print(f"  Moved events: None (solo-override slot)")
                         else:
                             print(f"  Moved events: None (free slot)")
+                    
+                    # Show priority score and objective scores if available
+                    objective_scores = proposal.get('objective_scores', {})
+                    if objective_scores:
+                        priority_score = objective_scores.get('priority_score', 0.0)
+                        if priority_score != 0.0:
+                            print(f"  Priority score: {priority_score:.2f}")
+                        moved_minutes = objective_scores.get('moved_minutes', 0)
+                        protected_moved = objective_scores.get('protected_events_moved', 0)
+                        if moved_minutes > 0:
+                            print(f"  Move details: {moved_minutes} minutes, {protected_moved} protected event(s)")
                     print()
             else:
                 print("No proposals found.")
