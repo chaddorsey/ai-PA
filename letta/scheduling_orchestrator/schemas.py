@@ -98,6 +98,7 @@ class ObjectiveScores(BaseModel):
     focus_block_bonus: int = Field(default=0, description="Bonus points for creating long focus blocks (in minutes)")
     preference_penalty: int = Field(default=0, description="Penalty for deviating from preferences")
     protected_events_moved: int = Field(default=0, description="Number of protected events that were moved")
+    priority_score: float = Field(default=0.0, description="Overall priority score (higher is better). Reflects attendee count, internal-only status, move distance, etc.")
 
 
 class Proposal(BaseModel):

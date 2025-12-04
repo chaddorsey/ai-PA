@@ -831,7 +831,7 @@ def compute_objective_scores_python(
     Compute objective scores from Python solution.
     
     Returns:
-        Dict with moved_minutes, focus_block_bonus, preference_penalty, protected_events_moved
+        Dict with moved_minutes, focus_block_bonus, preference_penalty, protected_events_moved, priority_score
     """
     moved_events = solution.get("moved_events", [])
     moved_minutes = sum(me.get("shift_minutes", 0) for me in moved_events)
@@ -842,11 +842,15 @@ def compute_objective_scores_python(
     focus_bonus = int(solution.get("score", 0) * 0.2)  # Rough conversion
     preference_penalty = 0  # Would need to compute from preference violations
     
+    # Extract the priority score from the solution (already calculated with attendee count, internal-only, etc.)
+    priority_score = solution.get("score", 0.0)
+    
     return {
         "moved_minutes": moved_minutes,
         "focus_block_bonus": focus_bonus,
         "preference_penalty": preference_penalty,
-        "protected_events_moved": protected_moved
+        "protected_events_moved": protected_moved,
+        "priority_score": priority_score
     }
 
 

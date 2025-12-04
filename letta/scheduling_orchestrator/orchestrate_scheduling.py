@@ -1276,9 +1276,16 @@ def orchestrate_scheduling(
                         "moved_minutes": objective_scores_dict.get("moved_minutes", 0),
                         "focus_block_bonus": objective_scores_dict.get("focus_block_bonus", 0),
                         "preference_penalty": objective_scores_dict.get("preference_penalty", 0),
-                        "protected_events_moved": objective_scores_dict.get("protected_events_moved", 0)
+                        "protected_events_moved": objective_scores_dict.get("protected_events_moved", 0),
+                        "priority_score": objective_scores_dict.get("priority_score", 0.0)
                     }
                     scores = ObjectiveScores(**scores_dict)
+                    
+                    # Store the score temporarily for sorting (will be in objective_scores.priority_score)
+                    # Also store solution score for fallback if priority_score is 0
+                    solution_score = sol.get("score", 0.0)
+                    if scores.priority_score == 0.0 and solution_score != 0.0:
+                        scores.priority_score = solution_score
                     
                     proposal = Proposal(
                         title=scheduling_problem.title or "Meeting",
@@ -1293,6 +1300,8 @@ def orchestrate_scheduling(
                     # We'll remove this attribute before returning
                     if solution_method == "solo_override":
                         proposal._solution_method = "solo_override"
+                    # Store solution score temporarily for sorting
+                    proposal._solution_score = scores.priority_score
                     all_proposals.append(proposal)
                 except Exception as e:
                     # Skip this solution if proposal building fails
@@ -1310,12 +1319,18 @@ def orchestrate_scheduling(
                     debug=debug_info
                 ).model_dump()
             
-            # Final sort: prioritize proposals by type and moved count
+            # Final sort: prioritize proposals by type, then by priority score within each type
             # Priority order: free_slot (0 moves) > single_move (1 move) > solo_override (0 moves but lower priority) > multi-move
-            # Within same type, prefer earlier proposals (better scores/earlier times)
+            # Within same type and moved_count, sort by priority_score (higher is better), then by earlier times
+            # Time-based prioritization: earlier dates/times within the requested interval get higher priority
             def proposal_sort_key(prop):
                 moved_count = len(prop.moved_events) if prop.moved_events else 0
                 start_utc = prop.start_utc
+                
+                # Get priority score from the proposal (stored temporarily or from objective_scores)
+                priority_score = getattr(prop, '_solution_score', 0.0)
+                if priority_score == 0.0:
+                    priority_score = prop.objective_scores.priority_score if prop.objective_scores else 0.0
                 
                 # Determine proposal type/priority
                 # Check if this is a solo_override by checking the temporary attribute
@@ -1334,7 +1349,22 @@ def orchestrate_scheduling(
                     # Multi-move - lowest priority
                     priority = 3
                 
-                return (priority, moved_count, start_utc)
+                # Calculate time-based priority: earlier dates/times within the interval get higher priority
+                # Parse the start_utc ISO string to get a numeric time value for sorting
+                # Earlier times should sort first, so we use a normalized time offset
+                try:
+                    from datetime import datetime
+                    start_dt = datetime.fromisoformat(start_utc.replace('Z', '+00:00'))
+                    # Use the start time as a sortable value (earlier = smaller number = higher priority)
+                    # Convert to timestamp for consistent sorting across timezones
+                    time_sort_value = start_dt.timestamp()
+                except (ValueError, AttributeError):
+                    # Fallback to string sorting if datetime parsing fails
+                    time_sort_value = start_utc
+                
+                # Sort by: priority category, moved_count, then by time (earlier first), then by priority_score (higher is better)
+                # This ensures earlier dates get higher priority within each category
+                return (priority, moved_count, time_sort_value, -priority_score)
             
             all_proposals.sort(key=proposal_sort_key)
             
@@ -1361,6 +1391,9 @@ def orchestrate_scheduling(
                         else:
                             prop.notes_for_invite = "This slot conflicts with solo/blocking events but can override them"
                     delattr(prop, '_solution_method')
+                # Remove temporary score attribute (it's already in objective_scores.priority_score)
+                if hasattr(prop, '_solution_score'):
+                    delattr(prop, '_solution_score')
             
             # Generate explanation grouped by proposal type
             # Group proposals by type

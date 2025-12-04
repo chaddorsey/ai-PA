@@ -490,5 +490,14 @@ def compute_objective_scores(
         moved_events = compute_move_deltas(solution, normalized_data, scheduling_problem)
         scores["moved_minutes"] = sum(me.get("shift_minutes", 0) for me in moved_events)
     
+    # Calculate priority score from cost vector (lower cost = higher priority score)
+    # ASP uses lexicographic optimization, so we convert cost to a priority score
+    # Cost vector format: [L1_cost, L2_cost, L3_cost, ...] where lower is better
+    if cost:
+        # Invert costs to get priority score (lower cost = higher score)
+        # Use negative sum of costs as priority score (lower total cost = higher score)
+        total_cost = sum(c if c else 0 for c in cost)
+        scores["priority_score"] = max(0.0, 1000.0 - total_cost)  # Higher score = better
+    
     return scores
 
