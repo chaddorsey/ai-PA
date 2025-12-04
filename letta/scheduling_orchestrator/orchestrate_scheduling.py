@@ -108,6 +108,7 @@ def orchestrate_scheduling(
                 ResponseEnvelope,
                 Proposal,
                 Event,
+                FreeBlockStats,
                 SchedulingProblem,
                 Relaxation,
                 DebugInfo,
@@ -1319,9 +1320,55 @@ def orchestrate_scheduling(
                     debug=debug_info
                 ).model_dump()
             
-            # Final sort: prioritize proposals by type, then by priority score within each type
+            # Calculate free-block scores for all proposals
+            # This prioritizes proposals that preserve/create long unbroken stretches on requester's calendar
+            try:
+                from .free_block_scorer import calculate_free_block_score, identify_requester
+                requester_id = identify_requester(scheduling_problem, context_dict)
+                
+                for prop in all_proposals:
+                    # Pass moved_events to free-block scorer so it can account for event moves
+                    moved_events_list = []
+                    if hasattr(prop, 'moved_events') and prop.moved_events:
+                        # Convert Pydantic models to dicts if needed
+                        for me in prop.moved_events:
+                            if hasattr(me, 'model_dump'):
+                                moved_events_list.append(me.model_dump())
+                            elif isinstance(me, dict):
+                                moved_events_list.append(me)
+                    
+                    free_block_stats = calculate_free_block_score(
+                        prop.start_utc,
+                        scheduling_problem,
+                        original_normalized_data,
+                        original_normalized_data["slot_indexer"],
+                        requester_id,
+                        moved_events=moved_events_list if moved_events_list else None
+                    )
+                    # Store free-block score temporarily for sorting
+                    prop._free_block_score = free_block_stats.get("free_block_score", 0.0)
+                    prop._free_block_stats = free_block_stats
+                    
+                    # Also store in the Proposal's free_block_stats field for output
+                    try:
+                        from .schemas import FreeBlockStats
+                        prop.free_block_stats = FreeBlockStats(**free_block_stats)
+                    except Exception:
+                        # If FreeBlockStats import fails, continue without it
+                        pass
+            except Exception as e:
+                # If free-block scoring fails, continue without it
+                import traceback
+                print(f"ERROR in free-block scoring: {e}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
+                for prop in all_proposals:
+                    prop._free_block_score = 0.0
+                    prop._free_block_stats = {}
+            
+            # Final sort: prioritize proposals by type, then by free-block score, then by priority score
             # Priority order: free_slot (0 moves) > single_move (1 move) > solo_override (0 moves but lower priority) > multi-move
-            # Within same type and moved_count, sort by priority_score (higher is better), then by earlier times
+            # For zero-conflict: category priority maintained, free-block score determines order within category
+            # For one-move and override: free-block score takes precedence across categories, then category priority
             # Time-based prioritization: earlier dates/times within the requested interval get higher priority
             def proposal_sort_key(prop):
                 moved_count = len(prop.moved_events) if prop.moved_events else 0
@@ -1331,6 +1378,9 @@ def orchestrate_scheduling(
                 priority_score = getattr(prop, '_solution_score', 0.0)
                 if priority_score == 0.0:
                     priority_score = prop.objective_scores.priority_score if prop.objective_scores else 0.0
+                
+                # Get free-block score (calculated above)
+                free_block_score = getattr(prop, '_free_block_score', 0.0)
                 
                 # Determine proposal type/priority
                 # Check if this is a solo_override by checking the temporary attribute
@@ -1362,9 +1412,24 @@ def orchestrate_scheduling(
                     # Fallback to string sorting if datetime parsing fails
                     time_sort_value = start_utc
                 
-                # Sort by: priority category, moved_count, then by time (earlier first), then by priority_score (higher is better)
-                # This ensures earlier dates get higher priority within each category
-                return (priority, moved_count, time_sort_value, -priority_score)
+                # Sorting strategy:
+                # 1. Zero-conflict (priority 0) ALWAYS comes first (category priority maintained)
+                # 2. Within zero-conflict: sort by free-block score (higher is better)
+                # 3. For one-move (priority 1) and override (priority 2): free-block score across categories, then category
+                # 4. Always sort by free-block score (higher is better), then priority_score, then time
+                
+                if priority == 0:
+                    # Zero-conflict: category priority maintained (always first), free-block score determines order within category
+                    # Use a large offset for priority to ensure it always sorts first
+                    return (-10000, moved_count, -free_block_score, -priority_score, time_sort_value)
+                elif priority in (1, 2):
+                    # One-move and override: free-block score takes precedence across categories
+                    # Use negative free_block_score so higher scores sort first
+                    # Add priority offset (1 or 2) to ensure they sort after zero-conflict
+                    return (-1000, -free_block_score, priority, moved_count, -priority_score, time_sort_value)
+                else:
+                    # Multi-move: use standard priority
+                    return (-500, priority, moved_count, -free_block_score, -priority_score, time_sort_value)
             
             all_proposals.sort(key=proposal_sort_key)
             
@@ -1391,9 +1456,12 @@ def orchestrate_scheduling(
                         else:
                             prop.notes_for_invite = "This slot conflicts with solo/blocking events but can override them"
                     delattr(prop, '_solution_method')
-                # Remove temporary score attribute (it's already in objective_scores.priority_score)
+                # Remove temporary score attributes (they're stored in objective_scores)
+                # But preserve free_block_stats in notes_for_invite or as a separate field for debugging
                 if hasattr(prop, '_solution_score'):
                     delattr(prop, '_solution_score')
+                # Keep free_block_stats available for test output (remove at the very end if needed)
+                # For now, we'll keep it as it might be useful for debugging
             
             # Generate explanation grouped by proposal type
             # Group proposals by type

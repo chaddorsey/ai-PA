@@ -91,6 +91,16 @@ class MovedEvent(BaseModel):
     shift_minutes: int = Field(..., description="Number of minutes the event was shifted")
 
 
+class FreeBlockStats(BaseModel):
+    """Statistics about unbroken free/solo-event blocks on requester's calendar."""
+    
+    free_block_score: float = Field(default=0.0, description="Overall free-block score (higher is better)")
+    total_effective_hours: float = Field(default=0.0, description="Total effective free hours across all days")
+    avg_block_hours: float = Field(default=0.0, description="Average unbroken block length in hours")
+    max_block_hours: float = Field(default=0.0, description="Maximum unbroken block length in hours")
+    median_block_hours: float = Field(default=0.0, description="Median unbroken block length in hours")
+
+
 class ObjectiveScores(BaseModel):
     """Breakdown of optimization objective values."""
     
@@ -112,6 +122,7 @@ class Proposal(BaseModel):
     notes_for_invite: Optional[str] = Field(default=None, description="Notes to include in calendar invite")
     moved_events: List[MovedEvent] = Field(default_factory=list, description="Events that need to be moved")
     objective_scores: ObjectiveScores = Field(..., description="Optimization objective scores for this proposal")
+    free_block_stats: Optional[FreeBlockStats] = Field(default=None, description="Free-block statistics for requester's calendar")
 
 
 class Relaxation(BaseModel):

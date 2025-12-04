@@ -675,8 +675,37 @@ def _find_slots_with_single_move(
             original_start_slot = min(current_event_slots)
             
             # Try moving the event forward and backward
-            for move_direction in [-1, 1]:  # -1 = earlier, 1 = later
-                for move_slots in range(MOVE_STEP_SLOTS, MAX_MOVE_SLOTS + 1, MOVE_STEP_SLOTS):
+            # Prefer forward moves (later) as they're usually less disruptive
+            for move_direction in [1, -1]:  # 1 = later (preferred), -1 = earlier
+                # For forward moves, calculate the minimum move needed
+                # The meeting ends at candidate_slot + duration_slots
+                # To clear the meeting, move event to start at meeting_end_slot (minimal)
+                # or meeting_end_slot + min_gap_slots (with gap)
+                meeting_end_slot = candidate_slot + duration_slots
+                min_move_slots = None
+                if move_direction == 1:  # Moving forward (later)
+                    # Minimum move: event starts exactly when meeting ends
+                    min_move_slots = meeting_end_slot - original_start_slot
+                    if min_move_slots > 0:
+                        # Also try with gap: meeting_end_slot + min_gap_slots
+                        min_move_with_gap_slots = meeting_end_slot + min_gap_slots - original_start_slot
+                        if min_move_with_gap_slots > min_move_slots:
+                            # Try minimal first, then with gap
+                            move_slots_to_try = [min_move_slots, min_move_with_gap_slots]
+                            # Also try a few larger gaps (30, 45, 60 min) as they create better free blocks
+                            for gap_slots in [2, 3, 4]:  # 30, 45, 60 minutes
+                                gap_move_slots = meeting_end_slot + gap_slots - original_start_slot
+                                if gap_move_slots > min_move_slots and gap_move_slots not in move_slots_to_try:
+                                    move_slots_to_try.append(gap_move_slots)
+                        else:
+                            move_slots_to_try = [min_move_slots]
+                    else:
+                        move_slots_to_try = list(range(MOVE_STEP_SLOTS, MAX_MOVE_SLOTS + 1, MOVE_STEP_SLOTS))
+                else:
+                    # For backward moves, try incrementally
+                    move_slots_to_try = list(range(MOVE_STEP_SLOTS, MAX_MOVE_SLOTS + 1, MOVE_STEP_SLOTS))
+                
+                for move_slots in move_slots_to_try:
                     new_start_slot = original_start_slot + (move_direction * move_slots)
                     new_event_slots = set(range(new_start_slot, new_start_slot + event_duration_slots))
                     
@@ -765,7 +794,10 @@ def _find_slots_with_single_move(
                             # Combined score: lower disruption = higher score
                             # Add bonuses/penalties for internal-only and attendee count
                             # Scale appropriately to keep scores comparable
-                            score = preference_score - (disruption_cost / 10.0) + (internal_bonus / 10.0) - (attendee_penalty / 10.0)
+                            # Heavily penalize larger moves to prefer minimal moves
+                            # The free-block scorer will then add bonuses for gaps, but minimal moves should be strongly preferred initially
+                            move_size_penalty = (move_slots - 3) * 50.0 if move_slots > 3 else 0.0  # Penalty for moves > 45 minutes
+                            score = preference_score - (disruption_cost / 10.0) + (internal_bonus / 10.0) - (attendee_penalty / 10.0) - (move_size_penalty / 10.0)
                             
                             # Create moved event details
                             old_start_dt = event_meta["start_dt"]
@@ -792,11 +824,22 @@ def _find_slots_with_single_move(
                                 "moved_events": [moved_event],
                                 "method": "single_move",
                                 "move_cost": disruption_cost,
-                                "protection_level": protection
+                                "protection_level": protection,
+                                "move_size_slots": move_slots  # Track move size for later filtering
                             })
                             
-                            # Found a valid move for this event - no need to try further moves
-                            break
+                            # Found a valid move for this event
+                            # Continue to find additional valid moves (smaller moves preferred by scoring)
+                            # The free-block scorer will then rank them appropriately
+                            # But we'll break if this is a minimal move (exactly enough to clear the meeting)
+                            meeting_end_slot = candidate_slot + duration_slots
+                            if move_direction == 1:  # Moving forward (later)
+                                # If the moved event starts exactly when the meeting ends, this is minimal
+                                if new_start_slot == meeting_end_slot:
+                                    # This is the minimal forward move - no need to try larger moves
+                                    break
+                            # For backward moves or moves that create gaps, continue to find alternatives
+                            # The scoring will prioritize smaller moves, but free-block scorer may prefer gaps
                 
                 # If we found a valid move, no need to try other directions
                 if any(c["start_slot"] == candidate_slot and 
