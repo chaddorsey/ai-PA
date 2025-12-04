@@ -1,0 +1,903 @@
+{
+  "status": "ok",
+  "proposals": [
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T16:00:00+00:00",
+      "end_utc": "2025-12-12T16:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "3q0ibm94tdmcfaecctn8i2gihq",
+          "old_start": "2025-12-12T16:30:00+00:00",
+          "new_start": "2025-12-12T17:00:00+00:00",
+          "old_end": "2025-12-12T17:20:00+00:00",
+          "new_end": "2025-12-12T17:50:00+00:00",
+          "shift_minutes": 30
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 210,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 500
+      },
+      "free_block_stats": {
+        "free_block_score": 1452.142857142857,
+        "total_effective_hours": 11.75,
+        "avg_block_hours": 0.8392857142857143,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T21:00:00+00:00",
+      "end_utc": "2025-12-12T21:45:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 96,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 484.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1441.7857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T21:15:00+00:00",
+      "end_utc": "2025-12-12T22:00:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 96,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 484.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1441.7857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T17:00:00+00:00",
+      "end_utc": "2025-12-15T17:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "479qiof9eq3hl5q6f1kmuhml2r_20251222T190000Z",
+          "old_start": "2025-12-15T17:00:00+00:00",
+          "new_start": "2025-12-15T17:45:00+00:00",
+          "old_end": "2025-12-15T17:45:00+00:00",
+          "new_end": "2025-12-15T18:30:00+00:00",
+          "shift_minutes": 45
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 45,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 0.7
+      },
+      "free_block_stats": {
+        "free_block_score": 1414.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:15:00+00:00",
+      "end_utc": "2025-12-15T19:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:45:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T18:10:00+00:00",
+          "shift_minutes": -15
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -15,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -10.5
+      },
+      "free_block_stats": {
+        "free_block_score": 1414.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T17:45:00+00:00",
+      "end_utc": "2025-12-15T18:30:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T18:30:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T18:55:00+00:00",
+          "shift_minutes": 30
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 30,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -12.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1414.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:15:00+00:00",
+      "end_utc": "2025-12-15T19:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:30:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T17:55:00+00:00",
+          "shift_minutes": -30
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -30,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -12.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1414.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:15:00+00:00",
+      "end_utc": "2025-12-15T19:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:15:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T17:40:00+00:00",
+          "shift_minutes": -45
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -45,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -13.5
+      },
+      "free_block_stats": {
+        "free_block_score": 1414.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:15:00+00:00",
+      "end_utc": "2025-12-15T19:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:00:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T17:25:00+00:00",
+          "shift_minutes": -60
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -60,
+        "focus_block_bonus": -4,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -20.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1414.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T17:15:00+00:00",
+      "end_utc": "2025-12-15T18:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "479qiof9eq3hl5q6f1kmuhml2r_20251222T190000Z",
+          "old_start": "2025-12-15T17:00:00+00:00",
+          "new_start": "2025-12-15T18:00:00+00:00",
+          "old_end": "2025-12-15T17:45:00+00:00",
+          "new_end": "2025-12-15T18:45:00+00:00",
+          "shift_minutes": 60
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 60,
+        "focus_block_bonus": -1,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -5.8
+      },
+      "free_block_stats": {
+        "free_block_score": 1387.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:00:00+00:00",
+      "end_utc": "2025-12-15T18:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:30:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T17:55:00+00:00",
+          "shift_minutes": -30
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -30,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -12.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1387.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:00:00+00:00",
+      "end_utc": "2025-12-15T18:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:15:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T17:40:00+00:00",
+          "shift_minutes": -45
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -45,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -13.5
+      },
+      "free_block_stats": {
+        "free_block_score": 1387.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T18:00:00+00:00",
+      "end_utc": "2025-12-15T18:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "sbrau@concord.org",
+          "event_id": "66hblqk1camaboca5q44hllpct_20251215T180000Z",
+          "old_start": "2025-12-15T18:00:00+00:00",
+          "new_start": "2025-12-15T17:00:00+00:00",
+          "old_end": "2025-12-15T18:25:00+00:00",
+          "new_end": "2025-12-15T17:25:00+00:00",
+          "shift_minutes": -60
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -60,
+        "focus_block_bonus": -4,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": -20.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1387.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-15T17:00:00+00:00",
+      "end_utc": "2025-12-15T17:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "479qiof9eq3hl5q6f1kmuhml2r_20251222T190000Z",
+          "old_start": "2025-12-15T17:00:00+00:00",
+          "new_start": "2025-12-15T18:00:00+00:00",
+          "old_end": "2025-12-15T17:45:00+00:00",
+          "new_end": "2025-12-15T18:45:00+00:00",
+          "shift_minutes": 60
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 210,
+        "focus_block_bonus": 0,
+        "preference_penalty": 50,
+        "protected_events_moved": 0,
+        "priority_score": 950.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1347.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-19T20:15:00+00:00",
+      "end_utc": "2025-12-19T21:00:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 97,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 488.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1339.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-19T21:15:00+00:00",
+      "end_utc": "2025-12-19T22:00:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 96,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 484.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1339.2857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T18:00:00+00:00",
+      "end_utc": "2025-12-12T18:45:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 93,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 468.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1301.7857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-19T20:30:00+00:00",
+      "end_utc": "2025-12-19T21:15:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 97,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 488.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1297.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-19T21:00:00+00:00",
+      "end_utc": "2025-12-19T21:45:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 96,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 484.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1297.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-19T20:45:00+00:00",
+      "end_utc": "2025-12-19T21:30:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 96,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 484.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1295.0,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T18:15:00+00:00",
+      "end_utc": "2025-12-12T19:00:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 93,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 468.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1247.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T18:30:00+00:00",
+      "end_utc": "2025-12-12T19:15:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 93,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 468.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1232.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-12T18:45:00+00:00",
+      "end_utc": "2025-12-12T19:30:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 93,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 468.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1232.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.25,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-16T16:30:00+00:00",
+      "end_utc": "2025-12-16T17:15:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 92,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 460.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1226.7857142857142,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.8035714285714286,
+        "max_block_hours": 2.0,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-16T16:45:00+00:00",
+      "end_utc": "2025-12-16T17:30:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 92,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 460.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1160.0,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.0,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-16T17:00:00+00:00",
+      "end_utc": "2025-12-16T17:45:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 92,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 460.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1132.5,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.0,
+        "median_block_hours": 0.5
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "sbrau@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-16T17:15:00+00:00",
+      "end_utc": "2025-12-16T18:00:00+00:00",
+      "location": null,
+      "notes_for_invite": "This slot conflicts with solo/blocking events but can override them",
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 92,
+        "preference_penalty": 0,
+        "protected_events_moved": 0,
+        "priority_score": 460.0
+      },
+      "free_block_stats": {
+        "free_block_score": 1120.0,
+        "total_effective_hours": 11.25,
+        "avg_block_hours": 0.75,
+        "max_block_hours": 2.0,
+        "median_block_hours": 0.5
+      }
+    }
+  ],
+  "explanation": "Found 27 meeting option(s):. 12 option(s) requiring 1 event move. 15 option(s) available by overriding solo/blocking events.",
+  "relaxations": null,
+  "debug": {
+    "asp_stats": {
+      "models": 26,
+      "optimum": false,
+      "solve_time_ms": 0,
+      "ground_time_ms": 5,
+      "windows_explored": 4,
+      "satisfiable": true,
+      "asp_model_truthy": true,
+      "asp_result_satisfiable": true
+    },
+    "extraction_time_ms": 2,
+    "normalization_time_ms": 13,
+    "solve_time_ms": 10,
+    "total_time_ms": 93,
+    "facts_generated": null,
+    "slots_considered": 96,
+    "input_summary": {
+      "utterance": "Find me possible 45-minute meeting slots with Sue and Danielle between Dec. 10 and Dec. 19.",
+      "num_participants": 3,
+      "events_per_participant": {
+        "cdorsey@concord.org": 72,
+        "dkehoe@concord.org": 25,
+        "sbrau@concord.org": 51
+      },
+      "total_events": 148,
+      "has_context": true,
+      "context_keys": [
+        "timeframe",
+        "participants",
+        "policy",
+        "slot_size_minutes"
+      ]
+    },
+    "total_busy_slots": 515,
+    "asp_program_lines": null,
+    "asp_facts_count": null,
+    "asp_program_size_chars": null,
+    "horizon_reduced": true,
+    "original_slots": 960,
+    "reduced_slots": 288,
+    "horizon_reduction_error": null,
+    "free_slots_found": 0,
+    "free_slots_ratio": 0.0,
+    "multi_shot_phase": null
+  },
+  "error_message": null
+}
