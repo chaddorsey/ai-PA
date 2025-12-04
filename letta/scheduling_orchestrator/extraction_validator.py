@@ -46,6 +46,9 @@ def validate_scheduling_problem(data: Dict[str, Any]) -> Tuple[bool, List[str]]:
         "time_window_end": (str, type(None)),
         "preferred_times": (list, type(None)),
         "preferred_days": (list, type(None)),
+        "participant_preferences": (list, type(None)),
+        "avoid_times": (list, type(None)),
+        "avoid_days": (list, type(None)),
         "title": (str, type(None)),
         "location": (str, type(None)),
         "min_gap_minutes": (int, type(None)),
@@ -81,6 +84,40 @@ def validate_scheduling_problem(data: Dict[str, Any]) -> Tuple[bool, List[str]]:
                     errors.append(f"preferred_days[{i}] must be a string")
                 elif day not in valid_days:
                     errors.append(f"preferred_days[{i}] must be a valid day name")
+    
+    # Validate participant_preferences if present
+    if "participant_preferences" in data and data["participant_preferences"] is not None:
+        if not isinstance(data["participant_preferences"], list):
+            errors.append("participant_preferences must be a list")
+        else:
+            for i, pref in enumerate(data["participant_preferences"]):
+                if not isinstance(pref, dict):
+                    errors.append(f"participant_preferences[{i}] must be a dictionary")
+                else:
+                    if "participant_id" not in pref:
+                        errors.append(f"participant_preferences[{i}] must have 'participant_id' field")
+                    # Optional fields are validated only if present
+    
+    # Validate avoid_times if present
+    if "avoid_times" in data and data["avoid_times"] is not None:
+        if not isinstance(data["avoid_times"], list):
+            errors.append("avoid_times must be a list")
+        else:
+            for i, time_str in enumerate(data["avoid_times"]):
+                if not isinstance(time_str, str):
+                    errors.append(f"avoid_times[{i}] must be a string")
+    
+    # Validate avoid_days if present
+    if "avoid_days" in data and data["avoid_days"] is not None:
+        if not isinstance(data["avoid_days"], list):
+            errors.append("avoid_days must be a list")
+        else:
+            valid_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            for i, day in enumerate(data["avoid_days"]):
+                if not isinstance(day, str):
+                    errors.append(f"avoid_days[{i}] must be a string")
+                elif day not in valid_days:
+                    errors.append(f"avoid_days[{i}] must be a valid day name")
     
     return len(errors) == 0, errors
 

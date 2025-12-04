@@ -114,12 +114,22 @@ def find_optimal_slot(
     
     # Step 2: If free slots exist, rank and return best
     if constrained_free_slots:
+        # Get requester_id from context_json if available
+        requester_id = None
+        if context_json and isinstance(context_json, dict):
+            participants_list = context_json.get("participants", [])
+            if participants_list and isinstance(participants_list, list):
+                first_participant = participants_list[0]
+                if isinstance(first_participant, dict):
+                    requester_id = first_participant.get("id")
+        
         ranked = _rank_slots(
             constrained_free_slots,
             normalized_data,
             scheduling_problem,
             slot_indexer,
-            context_json
+            context_json,
+            requester_id
         )
         if ranked:
             best_slot, best_score = ranked[0]
@@ -383,7 +393,8 @@ def _rank_slots(
     normalized_data: Dict[str, Any],
     scheduling_problem: SchedulingProblem,
     slot_indexer: SlotIndexer,
-    context_json: Optional[Dict[str, Any]] = None
+    context_json: Optional[Dict[str, Any]] = None,
+    requester_id: Optional[str] = None
 ) -> List[Tuple[int, float]]:
     """
     Rank free slots by preferences.
@@ -399,7 +410,10 @@ def _rank_slots(
         # Compute scores (higher is better)
         disruption_score = _compute_disruption_score(slot, busy_slots, scheduling_problem.participants, scheduling_problem.duration_minutes // 15)
         focus_bonus = _compute_focus_block_bonus(slot, busy_slots, scheduling_problem.participants, scheduling_problem.duration_minutes // 15)
-        preference_score = _compute_preference_score(slot, scheduling_problem, slot_indexer)
+        preference_score = _compute_preference_score(
+            slot, scheduling_problem, slot_indexer,
+            context_json=context_json, requester_id=requester_id
+        )
         
         # Weighted sum (can be made lexicographic later if needed)
         total_score = (
@@ -485,44 +499,60 @@ def _compute_focus_block_bonus(
 def _compute_preference_score(
     slot: int,
     scheduling_problem: SchedulingProblem,
-    slot_indexer: SlotIndexer
+    slot_indexer: SlotIndexer,
+    context_json: Optional[Dict[str, Any]] = None,
+    requester_id: Optional[str] = None
 ) -> float:
-    """Compute preference score based on preferred times and days."""
-    score = 0.0
-    slot_dt = slot_indexer.slot_to_datetime(slot)
-    if not slot_dt:
-        return 0.0
+    """
+    Compute preference score with participant preferences.
     
-    # Check preferred times
-    if scheduling_problem.preferred_times:
-        for pref_time_str in scheduling_problem.preferred_times:
-            try:
-                pref_dt = datetime.fromisoformat(pref_time_str.replace("Z", "+00:00"))
-                if pref_dt.tzinfo is None:
-                    pref_dt = pytz.UTC.localize(pref_dt)
-                else:
-                    pref_dt = pref_dt.astimezone(pytz.UTC)
-                
-                # Score based on proximity to preferred time
-                time_diff = abs((slot_dt - pref_dt).total_seconds() / 3600)  # Hours
-                if time_diff < 1:  # Within 1 hour
-                    score += 1.0 - time_diff  # Closer = higher score
-            except Exception:
-                pass
-    
-    # Check preferred days
-    if scheduling_problem.preferred_days:
-        day_map = {
-            "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
-            "Friday": 4, "Saturday": 5, "Sunday": 6
-        }
-        slot_weekday = slot_dt.weekday()
-        for day_name in scheduling_problem.preferred_days:
-            preferred_weekday = day_map.get(day_name.capitalize())
-            if preferred_weekday == slot_weekday:
-                score += 1.0
-    
-    return score
+    Uses the enhanced preference scorer that supports:
+    - Participant-specific preferences
+    - Avoid preferences (days/times)
+    - Preference layering (cdorsey gets 2x weight)
+    """
+    try:
+        from .preference_scorer import compute_aggregate_preference_score
+        return compute_aggregate_preference_score(
+            slot, scheduling_problem, context_json, slot_indexer, requester_id
+        )
+    except ImportError:
+        # Fallback to basic scoring if preference_scorer not available
+        score = 0.0
+        slot_dt = slot_indexer.slot_to_datetime(slot)
+        if not slot_dt:
+            return 0.0
+        
+        # Check preferred times
+        if scheduling_problem.preferred_times:
+            for pref_time_str in scheduling_problem.preferred_times:
+                try:
+                    pref_dt = datetime.fromisoformat(pref_time_str.replace("Z", "+00:00"))
+                    if pref_dt.tzinfo is None:
+                        pref_dt = pytz.UTC.localize(pref_dt)
+                    else:
+                        pref_dt = pref_dt.astimezone(pytz.UTC)
+                    
+                    # Score based on proximity to preferred time
+                    time_diff = abs((slot_dt - pref_dt).total_seconds() / 3600)  # Hours
+                    if time_diff < 1:  # Within 1 hour
+                        score += 1.0 - time_diff  # Closer = higher score
+                except Exception:
+                    pass
+        
+        # Check preferred days
+        if scheduling_problem.preferred_days:
+            day_map = {
+                "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+                "Friday": 4, "Saturday": 5, "Sunday": 6
+            }
+            slot_weekday = slot_dt.weekday()
+            for day_name in scheduling_problem.preferred_days:
+                preferred_weekday = day_map.get(day_name.capitalize())
+                if preferred_weekday == slot_weekday:
+                    score += 1.0
+        
+        return score
 
 
 def _find_slots_with_single_move(

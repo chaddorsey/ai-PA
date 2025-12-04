@@ -1320,10 +1320,11 @@ def orchestrate_scheduling(
                     debug=debug_info
                 ).model_dump()
             
-            # Calculate free-block scores for all proposals
+            # Calculate free-block scores and preference scores for all proposals
             # This prioritizes proposals that preserve/create long unbroken stretches on requester's calendar
             try:
                 from .free_block_scorer import calculate_free_block_score, identify_requester
+                from .preference_scorer import compute_aggregate_preference_score
                 requester_id = identify_requester(scheduling_problem, context_dict)
                 
                 for prop in all_proposals:
@@ -1348,6 +1349,27 @@ def orchestrate_scheduling(
                     # Store free-block score temporarily for sorting
                     prop._free_block_score = free_block_stats.get("free_block_score", 0.0)
                     prop._free_block_stats = free_block_stats
+                    
+                    # Calculate preference score for this proposal
+                    try:
+                        from datetime import datetime
+                        start_dt = datetime.fromisoformat(prop.start_utc.replace('Z', '+00:00'))
+                        slot_indexer = original_normalized_data["slot_indexer"]
+                        slot = slot_indexer.datetime_to_slot(start_dt)
+                        if slot is not None:
+                            preference_score = compute_aggregate_preference_score(
+                                slot,
+                                scheduling_problem,
+                                context_dict,
+                                slot_indexer,
+                                requester_id
+                            )
+                            # Store preference score temporarily for sorting
+                            prop._preference_score = preference_score
+                        else:
+                            prop._preference_score = 0.0
+                    except Exception:
+                        prop._preference_score = 0.0
                     
                     # Also store in the Proposal's free_block_stats field for output
                     try:
@@ -1382,6 +1404,9 @@ def orchestrate_scheduling(
                 # Get free-block score (calculated above)
                 free_block_score = getattr(prop, '_free_block_score', 0.0)
                 
+                # Get preference score (calculated above)
+                preference_score = getattr(prop, '_preference_score', 0.0)
+                
                 # Determine proposal type/priority
                 # Check if this is a solo_override by checking the temporary attribute
                 is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
@@ -1414,22 +1439,23 @@ def orchestrate_scheduling(
                 
                 # Sorting strategy:
                 # 1. Zero-conflict (priority 0) ALWAYS comes first (category priority maintained)
-                # 2. Within zero-conflict: sort by free-block score (higher is better)
-                # 3. For one-move (priority 1) and override (priority 2): free-block score across categories, then category
-                # 4. Always sort by free-block score (higher is better), then priority_score, then time
+                # 2. Within zero-conflict: sort by free-block score (higher is better), then preference score
+                # 3. For one-move (priority 1) and override (priority 2): free-block score across categories, then preference score, then category
+                # 4. Preference scores are layered AFTER free-block scores (cdorsey preferences take precedence in ties)
+                # 5. cdorsey preferences are already weighted 2x in preference_scorer, so they naturally break ties
                 
                 if priority == 0:
-                    # Zero-conflict: category priority maintained (always first), free-block score determines order within category
+                    # Zero-conflict: category priority maintained (always first), free-block score determines order, preference score breaks ties
                     # Use a large offset for priority to ensure it always sorts first
-                    return (-10000, moved_count, -free_block_score, -priority_score, time_sort_value)
+                    return (-10000, moved_count, -free_block_score, -preference_score, -priority_score, time_sort_value)
                 elif priority in (1, 2):
-                    # One-move and override: free-block score takes precedence across categories
+                    # One-move and override: free-block score takes precedence across categories, then preference score
                     # Use negative free_block_score so higher scores sort first
                     # Add priority offset (1 or 2) to ensure they sort after zero-conflict
-                    return (-1000, -free_block_score, priority, moved_count, -priority_score, time_sort_value)
+                    return (-1000, -free_block_score, -preference_score, priority, moved_count, -priority_score, time_sort_value)
                 else:
                     # Multi-move: use standard priority
-                    return (-500, priority, moved_count, -free_block_score, -priority_score, time_sort_value)
+                    return (-500, priority, moved_count, -free_block_score, -preference_score, -priority_score, time_sort_value)
             
             all_proposals.sort(key=proposal_sort_key)
             

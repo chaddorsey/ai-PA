@@ -64,6 +64,18 @@ class ContextJSON(BaseModel):
         }
 
 
+class ParticipantPreference(BaseModel):
+    """Preferences specific to a participant."""
+    
+    participant_id: str = Field(..., description="Participant ID (email address) this preference applies to")
+    preferred_times: Optional[List[str]] = Field(default=None, description="Preferred time slots for this participant (ISO 8601 UTC)")
+    preferred_days: Optional[List[str]] = Field(default=None, description="Preferred days of week for this participant (e.g., ['Monday', 'Tuesday'])")
+    avoid_times: Optional[List[str]] = Field(default=None, description="Time slots to avoid for this participant (ISO 8601 UTC)")
+    avoid_days: Optional[List[str]] = Field(default=None, description="Days of week to avoid for this participant (e.g., ['Friday'])")
+    avoid_categories: Optional[List[str]] = Field(default=None, description="Event categories to avoid (e.g., ['lunch', 'meetings'])")
+    flexibility_notes: Optional[str] = Field(default=None, description="Notes about flexibility (e.g., 'my meetings are flexible')")
+
+
 class SchedulingProblem(BaseModel):
     """Encodes the scheduling request extracted from natural language."""
     
@@ -73,6 +85,9 @@ class SchedulingProblem(BaseModel):
     time_window_end: Optional[str] = Field(default=None, description="Latest allowed end time (ISO 8601 UTC)")
     preferred_times: Optional[List[str]] = Field(default=None, description="Preferred time slots (ISO 8601 UTC)")
     preferred_days: Optional[List[str]] = Field(default=None, description="Preferred days of week (e.g., ['Monday', 'Tuesday'])")
+    participant_preferences: Optional[List[ParticipantPreference]] = Field(default=None, description="Preferences specific to individual participants")
+    avoid_times: Optional[List[str]] = Field(default=None, description="Time slots to avoid (request-level, ISO 8601 UTC)")
+    avoid_days: Optional[List[str]] = Field(default=None, description="Days of week to avoid (request-level, e.g., ['Friday'])")
     title: Optional[str] = Field(default=None, description="Proposed meeting title")
     location: Optional[str] = Field(default=None, description="Proposed meeting location")
     min_gap_minutes: Optional[int] = Field(default=0, description="Minimum gap between meetings in minutes (default: 0)")
