@@ -1,0 +1,341 @@
+{
+  "status": "ok",
+  "proposals": [
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-05T16:15:00+00:00",
+      "end_utc": "2025-12-05T17:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 200,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-08T17:15:00+00:00",
+      "end_utc": "2025-12-08T18:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [],
+      "objective_scores": {
+        "moved_minutes": 0,
+        "focus_block_bonus": 200,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-05T19:00:00+00:00",
+      "end_utc": "2025-12-05T19:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "1dkcv7q4bb7jo1h615t0carno1_20251205T170000Z",
+          "old_start": "2025-12-05T17:00:00+00:00",
+          "new_start": "2025-12-05T16:00:00+00:00",
+          "old_end": "2025-12-05T20:00:00+00:00",
+          "new_end": "2025-12-05T19:00:00+00:00",
+          "shift_minutes": -60
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -60,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-05T19:15:00+00:00",
+      "end_utc": "2025-12-05T20:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "1dkcv7q4bb7jo1h615t0carno1_20251205T170000Z",
+          "old_start": "2025-12-05T17:00:00+00:00",
+          "new_start": "2025-12-05T16:15:00+00:00",
+          "old_end": "2025-12-05T20:00:00+00:00",
+          "new_end": "2025-12-05T19:15:00+00:00",
+          "shift_minutes": -45
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -45,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-08T19:45:00+00:00",
+      "end_utc": "2025-12-08T20:30:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "7sm78iiqga3uamu2tulb0cbtf1_20251208T200000Z",
+          "old_start": "2025-12-08T20:00:00+00:00",
+          "new_start": "2025-12-08T17:00:00+00:00",
+          "old_end": "2025-12-08T21:00:00+00:00",
+          "new_end": "2025-12-08T18:00:00+00:00",
+          "shift_minutes": -180
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -180,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-08T20:00:00+00:00",
+      "end_utc": "2025-12-08T20:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "7sm78iiqga3uamu2tulb0cbtf1_20251208T200000Z",
+          "old_start": "2025-12-08T20:00:00+00:00",
+          "new_start": "2025-12-08T17:00:00+00:00",
+          "old_end": "2025-12-08T21:00:00+00:00",
+          "new_end": "2025-12-08T18:00:00+00:00",
+          "shift_minutes": -180
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -180,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-08T20:15:00+00:00",
+      "end_utc": "2025-12-08T21:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "7sm78iiqga3uamu2tulb0cbtf1_20251208T200000Z",
+          "old_start": "2025-12-08T20:00:00+00:00",
+          "new_start": "2025-12-08T17:00:00+00:00",
+          "old_end": "2025-12-08T21:00:00+00:00",
+          "new_end": "2025-12-08T18:00:00+00:00",
+          "shift_minutes": -180
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -180,
+        "focus_block_bonus": -2,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-09T19:45:00+00:00",
+      "end_utc": "2025-12-09T20:30:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "3m7pd70b4784vnc8qhlo0pj6e9_20251209T194500Z",
+          "old_start": "2025-12-09T19:45:00+00:00",
+          "new_start": "2025-12-09T20:30:00+00:00",
+          "old_end": "2025-12-09T21:00:00+00:00",
+          "new_end": "2025-12-09T21:45:00+00:00",
+          "shift_minutes": 45
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 45,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-09T20:00:00+00:00",
+      "end_utc": "2025-12-09T20:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "cdorsey@concord.org",
+          "event_id": "3m7pd70b4784vnc8qhlo0pj6e9_20251209T194500Z",
+          "old_start": "2025-12-09T19:45:00+00:00",
+          "new_start": "2025-12-09T20:45:00+00:00",
+          "old_end": "2025-12-09T21:00:00+00:00",
+          "new_end": "2025-12-09T22:00:00+00:00",
+          "shift_minutes": 60
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": 60,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-09T21:00:00+00:00",
+      "end_utc": "2025-12-09T21:45:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "dkehoe@concord.org",
+          "event_id": "4k74t1qj588nm1m8bi32kqcc5l_20251209T211500Z",
+          "old_start": "2025-12-09T21:15:00+00:00",
+          "new_start": "2025-12-09T20:30:00+00:00",
+          "old_end": "2025-12-09T21:45:00+00:00",
+          "new_end": "2025-12-09T21:00:00+00:00",
+          "shift_minutes": -45
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -45,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    },
+    {
+      "title": "Meeting",
+      "participants": [
+        "cdorsey@concord.org",
+        "dkehoe@concord.org"
+      ],
+      "start_utc": "2025-12-09T21:15:00+00:00",
+      "end_utc": "2025-12-09T22:00:00+00:00",
+      "location": null,
+      "notes_for_invite": null,
+      "moved_events": [
+        {
+          "owner": "dkehoe@concord.org",
+          "event_id": "4k74t1qj588nm1m8bi32kqcc5l_20251209T211500Z",
+          "old_start": "2025-12-09T21:15:00+00:00",
+          "new_start": "2025-12-09T20:45:00+00:00",
+          "old_end": "2025-12-09T21:45:00+00:00",
+          "new_end": "2025-12-09T21:15:00+00:00",
+          "shift_minutes": -30
+        }
+      ],
+      "objective_scores": {
+        "moved_minutes": -30,
+        "focus_block_bonus": 0,
+        "preference_penalty": 0,
+        "protected_events_moved": 0
+      }
+    }
+  ],
+  "explanation": "Found 11 meeting option(s):. 1. 2025-12-05 16:15 UTC. 2. 2025-12-08 17:15 UTC. 3. 2025-12-05 19:00 UTC (requires moving 1 event(s)). 4. 2025-12-05 19:15 UTC (requires moving 1 event(s)). 5. 2025-12-08 19:45 UTC (requires moving 1 event(s)). ... and 6 more option(s).",
+  "relaxations": null,
+  "debug": {
+    "asp_stats": {
+      "models": 0,
+      "optimum": false,
+      "solve_time_ms": 0,
+      "ground_time_ms": 0,
+      "windows_explored": 5,
+      "satisfiable": false,
+      "asp_model_truthy": false,
+      "asp_result_satisfiable": true
+    },
+    "extraction_time_ms": 2,
+    "normalization_time_ms": 14,
+    "solve_time_ms": 48,
+    "total_time_ms": 128,
+    "facts_generated": null,
+    "slots_considered": 192,
+    "input_summary": {
+      "utterance": "Find me possible 45-minute meeting slots with Danielle between Dec. 3 and Dec. 12.",
+      "num_participants": 2,
+      "events_per_participant": {
+        "cdorsey@concord.org": 72,
+        "dkehoe@concord.org": 33
+      },
+      "total_events": 105,
+      "has_context": true,
+      "context_keys": [
+        "timeframe",
+        "participants",
+        "policy",
+        "slot_size_minutes"
+      ]
+    },
+    "total_busy_slots": 345,
+    "asp_program_lines": null,
+    "asp_facts_count": null,
+    "asp_program_size_chars": null,
+    "horizon_reduced": true,
+    "original_slots": 960,
+    "reduced_slots": 192,
+    "horizon_reduction_error": null,
+    "free_slots_found": 0,
+    "free_slots_ratio": 0.0,
+    "multi_shot_phase": null
+  },
+  "error_message": null
+}
