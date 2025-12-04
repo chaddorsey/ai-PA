@@ -226,7 +226,12 @@ def main():
                                 except:
                                     pass
                     else:
-                        print(f"  Moved events: None (free slot)")
+                        # Check if this is a solo-override proposal
+                        notes = proposal.get('notes_for_invite', '')
+                        if notes and 'solo/blocking events' in notes.lower():
+                            print(f"  Moved events: None (solo-override slot)")
+                        else:
+                            print(f"  Moved events: None (free slot)")
                     print()
             else:
                 print("No proposals found.")
