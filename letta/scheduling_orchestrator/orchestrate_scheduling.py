@@ -1102,16 +1102,22 @@ def orchestrate_scheduling(
             def solution_sort_key(sol):
                 score = sol.get("score", 0)
                 # Estimate moved events count from method (for sorting before building proposals)
-                # Lower moved events = better, so we negate for reverse=True sort
+                # Priority order: free_slot > single_move > solo_override > multi-move
                 method = sol.get("method", "")
                 if method == "free_slot":
+                    priority = 0  # Highest priority
                     moved_estimate = 0
                 elif method == "single_move":
+                    priority = 1
                     moved_estimate = 1
+                elif method == "solo_override":
+                    priority = 2
+                    moved_estimate = 0  # No moves, but lower priority than free slots
                 else:
-                    moved_estimate = 10  # Multi-move, assume more
-                # Return tuple: (score, -moved_estimate) so higher score and fewer moves come first
-                return (score, -moved_estimate)
+                    priority = 3  # Multi-move, lowest priority
+                    moved_estimate = 10
+                # Return tuple: (priority, score, -moved_estimate) so priority comes first
+                return (priority, score, -moved_estimate)
             
             solutions.sort(key=solution_sort_key, reverse=True)
             
@@ -1257,8 +1263,13 @@ def orchestrate_scheduling(
                             objective_scores_dict = {}
                     else:
                         # Python solution - use original_normalized_data for consistency
+                        # For solo_override solutions, moved_events will be empty (no moves needed)
+                        # The method="solo_override" indicates these are override solutions
                         moved_events_list = compute_move_deltas_python(sol, python_normalized_data, scheduling_problem) or []
                         objective_scores_dict = compute_objective_scores_python(sol, python_normalized_data, scheduling_problem) or {}
+                        
+                        # Store the method in the proposal for sorting purposes
+                        solution_method = sol.get("method", "unknown")
                     
                     moved_events = [MovedEvent(**me) for me in moved_events_list]
                     scores_dict = {
@@ -1278,6 +1289,10 @@ def orchestrate_scheduling(
                         objective_scores=scores,
                         location=scheduling_problem.location
                     )
+                    # Store solution method temporarily for sorting (solo_override needs special handling)
+                    # We'll remove this attribute before returning
+                    if solution_method == "solo_override":
+                        proposal._solution_method = "solo_override"
                     all_proposals.append(proposal)
                 except Exception as e:
                     # Skip this solution if proposal building fails
@@ -1295,34 +1310,96 @@ def orchestrate_scheduling(
                     debug=debug_info
                 ).model_dump()
             
-            # Final sort: prioritize proposals with fewer moved events (more feasible)
-            # Proposals with 0 moved events are best, then 1, then 2, etc.
-            # Within same moved count, prefer earlier proposals (better scores/earlier times)
+            # Final sort: prioritize proposals by type and moved count
+            # Priority order: free_slot (0 moves) > single_move (1 move) > solo_override (0 moves but lower priority) > multi-move
+            # Within same type, prefer earlier proposals (better scores/earlier times)
             def proposal_sort_key(prop):
                 moved_count = len(prop.moved_events) if prop.moved_events else 0
                 start_utc = prop.start_utc
-                return (moved_count, start_utc)
+                
+                # Determine proposal type/priority
+                # Check if this is a solo_override by checking the temporary attribute
+                is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
+                
+                if moved_count == 0 and not is_solo_override:
+                    # Free slot - highest priority
+                    priority = 0
+                elif moved_count == 1:
+                    # Single move - second priority
+                    priority = 1
+                elif is_solo_override:
+                    # Solo override - third priority (0 moves but conflicts with solo events)
+                    priority = 2
+                else:
+                    # Multi-move - lowest priority
+                    priority = 3
+                
+                return (priority, moved_count, start_utc)
             
             all_proposals.sort(key=proposal_sort_key)
             
-            # Filter to only include proposals with 0 or 1 moves (as specified by max_moved_events)
+            # Filter to only include proposals with 0 or 1 moves OR solo_override (treated as separate tier)
             filtered_proposals = []
             for prop in all_proposals:
                 moved_count = len(prop.moved_events) if prop.moved_events else 0
-                if moved_count <= max_moved_events:
+                is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
+                
+                if moved_count <= max_moved_events or is_solo_override:
                     filtered_proposals.append(prop)
             
             all_proposals = filtered_proposals
             
-            # Generate explanation
+            # Mark solo-override proposals in notes_for_invite before removing temporary attribute
+            # This allows downstream consumers to identify them
+            for prop in all_proposals:
+                if hasattr(prop, '_solution_method'):
+                    if prop._solution_method == "solo_override":
+                        # Add note to indicate this is a solo-override proposal
+                        current_notes = prop.notes_for_invite or ""
+                        if current_notes:
+                            prop.notes_for_invite = f"{current_notes} [This slot conflicts with solo/blocking events but can override them]"
+                        else:
+                            prop.notes_for_invite = "This slot conflicts with solo/blocking events but can override them"
+                    delattr(prop, '_solution_method')
+            
+            # Generate explanation grouped by proposal type
+            # Group proposals by type
+            free_proposals = []
+            single_move_proposals = []
+            solo_override_proposals = []
+            multi_move_proposals = []
+            
+            for prop in all_proposals:
+                moved_count = len(prop.moved_events) if prop.moved_events else 0
+                notes = prop.notes_for_invite or ""
+                is_solo_override = "solo/blocking events" in notes.lower()
+                
+                if moved_count == 0 and not is_solo_override:
+                    free_proposals.append(prop)
+                elif moved_count == 1:
+                    single_move_proposals.append(prop)
+                elif is_solo_override:
+                    solo_override_proposals.append(prop)
+                else:
+                    multi_move_proposals.append(prop)
+            
             explanation_parts = [f"Found {len(all_proposals)} meeting option(s):"]
-            for i, prop in enumerate(all_proposals[:5], 1):  # Show first 5 in explanation
-                start_dt = datetime.fromisoformat(prop.start_utc.replace('Z', '+00:00'))
-                explanation_parts.append(f"{i}. {start_dt.strftime('%Y-%m-%d %H:%M')} UTC")
-                if prop.moved_events:
-                    explanation_parts[-1] += f" (requires moving {len(prop.moved_events)} event(s))"
-            if len(all_proposals) > 5:
-                explanation_parts.append(f"... and {len(all_proposals) - 5} more option(s)")
+            
+            # Free slots
+            if free_proposals:
+                explanation_parts.append(f"{len(free_proposals)} free slot(s)")
+            
+            # Single-move slots
+            if single_move_proposals:
+                explanation_parts.append(f"{len(single_move_proposals)} option(s) requiring 1 event move")
+            
+            # Solo-override slots (after single-move, as requested)
+            if solo_override_proposals:
+                explanation_parts.append(f"{len(solo_override_proposals)} option(s) available by overriding solo/blocking events")
+            
+            # Multi-move slots
+            if multi_move_proposals:
+                explanation_parts.append(f"{len(multi_move_proposals)} option(s) requiring multiple event moves")
             
             explanation = ". ".join(explanation_parts) + "."
             

@@ -224,6 +224,25 @@ def find_top_candidates(
             candidate["start_datetime"] = start_dt
             candidates.append(candidate)
     
+    # Get solo-override candidates (slots that conflict only with solo events)
+    solo_override_candidates = _find_slots_with_solo_override(
+        all_slots,
+        busy_slots,
+        work_hours_slots,
+        event_protection,
+        scheduling_problem,
+        slot_indexer,
+        duration_slots,
+        min_gap_slots,
+        normalized_data
+    )
+    
+    for candidate in solo_override_candidates:
+        start_dt = slot_indexer.slot_to_datetime(candidate["start_slot"])
+        if start_dt:
+            candidate["start_datetime"] = start_dt
+            candidates.append(candidate)
+    
     # Sort by score
     candidates.sort(key=lambda x: x["score"], reverse=True)
     
@@ -588,6 +607,7 @@ def _find_slots_with_single_move(
         # Find which participants have conflicts at this slot
         conflicting_participants = []
         conflicting_events = []  # List of (participant_id, event_id) tuples
+        locked_conflicts = []  # List of (participant_id, event_id) tuples for locked events
         
         for participant_id in scheduling_problem.participants:
             participant_busy = busy_slots.get(participant_id, set())
@@ -600,10 +620,18 @@ def _find_slots_with_single_move(
                 # Look through event_slots_map to find events that overlap with conflicting_slots
                 for (p_id, e_id), slots in event_slots_map_full.items():
                     if p_id == participant_id and slots.intersection(conflicting_slots):
-                        # Check if event is flexible
+                        # Check if event is locked
                         protection = event_protection.get((p_id, e_id), "flexible")
-                        if protection != "locked":  # Can move flexible or protected
+                        if protection == "locked":
+                            # Locked events cannot be moved - this slot is invalid
+                            locked_conflicts.append((p_id, e_id))
+                        elif protection != "locked":  # Can move flexible or protected
                             conflicting_events.append((p_id, e_id))
+        
+        # CRITICAL: Skip if there are any locked event conflicts
+        # Locked events cannot be moved, so this slot cannot be scheduled
+        if locked_conflicts:
+            continue
         
         # Skip if multiple participants conflict (need multi-move, handled later)
         if len(conflicting_participants) > 1:
@@ -672,21 +700,41 @@ def _find_slots_with_single_move(
                             continue
                         
                         # Check if meeting slot is now free for all participants
+                        # CRITICAL: Also verify no locked events conflict (they cannot be moved)
                         all_free = True
                         blocking_participant = None
+                        has_locked_conflict = False
+                        
                         for p_id in scheduling_problem.participants:
                             p_busy = busy_slots.get(p_id, set())
                             if p_id == participant_id:
                                 # For the participant whose event we moved, exclude old slots and include new
                                 p_busy = (p_busy - current_event_slots) | new_event_slots
                             
-                            if set(meeting_slots).intersection(p_busy):
+                            # Check for conflicts
+                            conflict_slots = set(meeting_slots).intersection(p_busy)
+                            if conflict_slots:
+                                # Check if any conflicting slots belong to locked events
+                                for (p2_id, e2_id), slots in event_slots_map_full.items():
+                                    if p2_id == p_id and slots.intersection(conflict_slots):
+                                        protection = event_protection.get((p2_id, e2_id), "flexible")
+                                        if protection == "locked":
+                                            # Locked event conflict - cannot resolve by moving
+                                            has_locked_conflict = True
+                                            all_free = False
+                                            blocking_participant = p_id
+                                            break
+                                
+                                if has_locked_conflict:
+                                    break
+                                
+                                # Non-locked conflict
                                 all_free = False
                                 blocking_participant = p_id
                                 break
                         
                         if not all_free:
-                            pass  # Continue to next move attempt
+                            continue  # Continue to next move attempt
                         
                         if all_free:
                             # Found a valid move! Calculate score
@@ -800,4 +848,136 @@ def compute_objective_scores_python(
         "preference_penalty": preference_penalty,
         "protected_events_moved": protected_moved
     }
+
+
+def _find_slots_with_solo_override(
+    all_slots: List[int],
+    busy_slots: Dict[str, Set[int]],
+    work_hours_slots: Dict[str, Set[int]],
+    event_protection: Dict[Tuple[str, str], str],
+    scheduling_problem: SchedulingProblem,
+    slot_indexer: SlotIndexer,
+    duration_slots: int,
+    min_gap_slots: int,
+    normalized_data: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Find slots that become available by overriding solo events (zero attendees).
+    
+    Solo events are events with number_of_attendees == 0 that are:
+    - Not locked
+    - Not protected (or protected but flexible)
+    
+    These represent "Hold" or personal time blocks that can be overridden.
+    
+    Strategy:
+    1. Find candidate slots where meeting conflicts only with solo events
+    2. Verify these events are override-able (not locked, not protected)
+    3. Score based on event properties (prefer shorter solo events, etc.)
+    
+    Returns:
+        List of candidate dicts with keys: start_slot, score, moved_events (empty for overrides), method
+    """
+    if normalized_data is None:
+        return []
+    
+    # Get event metadata and slots mapping from normalized_data
+    event_metadata_map = normalized_data.get("event_metadata", {})
+    event_slots_map_full = normalized_data.get("event_slots_map", {})
+    
+    if not event_metadata_map or not event_slots_map_full:
+        return []
+    
+    candidates = []
+    max_slot = max(all_slots) if all_slots else 0
+    
+    # Find candidate slots where meeting conflicts only with solo events
+    for candidate_slot in all_slots:
+        if candidate_slot + duration_slots > max_slot + 1:
+            continue
+        
+        meeting_slots = range(candidate_slot, candidate_slot + duration_slots)
+        
+        # Check work hours for all participants
+        work_hours_ok = True
+        if work_hours_slots:
+            for participant_id in scheduling_problem.participants:
+                participant_work_hours = work_hours_slots.get(participant_id, set())
+                if participant_work_hours:
+                    if not all(slot in participant_work_hours for slot in meeting_slots):
+                        work_hours_ok = False
+                        break
+                else:
+                    work_hours_ok = False
+                    break
+        if not work_hours_ok:
+            continue
+        
+        # Check time window
+        if not _check_time_window(candidate_slot, scheduling_problem, slot_indexer, duration_slots):
+            continue
+        
+        # Find conflicting events and check if they're all solo events
+        conflicting_events = []  # List of (participant_id, event_id) tuples
+        non_solo_conflicts = []  # Events that are not solo or not override-able
+        
+        for participant_id in scheduling_problem.participants:
+            participant_busy = busy_slots.get(participant_id, set())
+            conflicting_slots = set(meeting_slots).intersection(participant_busy)
+            
+            if conflicting_slots:
+                # Find which events are causing the conflict
+                for (p_id, e_id), slots in event_slots_map_full.items():
+                    if p_id == participant_id and slots.intersection(conflicting_slots):
+                        event_key = (p_id, e_id)
+                        protection = event_protection.get(event_key, "flexible")
+                        
+                        # Skip locked events (cannot override)
+                        if protection == "locked":
+                            non_solo_conflicts.append(event_key)
+                            continue
+                        
+                        # Check if this is a solo event (zero attendees)
+                        event_meta = event_metadata_map.get(event_key, {})
+                        num_attendees = event_meta.get("number_of_attendees", 0)
+                        
+                        # Check if protected but not flexible (cannot override)
+                        protected = event_meta.get("protected", False)
+                        flexible = event_meta.get("flexible", True)
+                        if protected and not flexible:
+                            non_solo_conflicts.append(event_key)
+                            continue
+                        
+                        if num_attendees == 0:
+                            # Solo event - can override
+                            conflicting_events.append((p_id, e_id))
+                        else:
+                            # Not a solo event - cannot override
+                            non_solo_conflicts.append(event_key)
+        
+        # Only consider this slot if:
+        # 1. All conflicts are with solo events (conflicting_events is non-empty)
+        # 2. No non-solo or locked conflicts exist
+        if conflicting_events and not non_solo_conflicts:
+            # Calculate score based on solo event properties
+            # Prefer shorter solo events, fewer solo events, etc.
+            total_solo_duration = 0
+            for p_id, e_id in conflicting_events:
+                event_key = (p_id, e_id)
+                event_slots = event_slots_map_full.get(event_key, set())
+                total_solo_duration += len(event_slots)
+            
+            # Score: Base score of 500 for solo override (lower than free slots 1000, lower than single_move ~600-900)
+            # But higher than multi-move. Penalize by total duration of solo events overridden.
+            score = 500 - (total_solo_duration * 2)
+            
+            candidates.append({
+                "start_slot": candidate_slot,
+                "score": score,
+                "moved_events": [],  # No moves needed for overrides
+                "method": "solo_override",
+                "override_events": conflicting_events  # Track which events are being overridden
+            })
+    
+    return candidates
 
