@@ -846,6 +846,66 @@ def orchestrate_scheduling(
                 except:
                     pass
         
+        # 6. Add original event to events_by_participant if rescheduling
+        # This ensures the original event is included in normalized data and can be moved/overridden
+        if extracted_event_details and scheduling_problem.is_rescheduling:
+            try:
+                original_event_id = extracted_event_details.get("event_id")
+                original_participants = extracted_event_details.get("participants", [])
+                original_start = extracted_event_details.get("current_start_utc")
+                original_end = extracted_event_details.get("current_end_utc")
+                original_title = extracted_event_details.get("title", "Meeting")
+                original_location = extracted_event_details.get("location")
+                original_internal_only = extracted_event_details.get("internal_only", True)
+                
+                # Format original event to match expected structure
+                # Normalizer expects: id, title (or summary), start, end, locked, protected, flexible, attendees
+                # internal_only is optional and defaults to True
+                original_event = {
+                    "id": original_event_id,
+                    "title": original_title,
+                    "summary": original_title,  # Some code paths use summary
+                    "start": original_start,  # Already in ISO 8601 UTC format
+                    "end": original_end,  # Already in ISO 8601 UTC format
+                    "locked": False,  # Can be moved
+                    "protected": False,  # Can be overridden
+                    "flexible": True,  # Can be moved
+                    "internal_only": original_internal_only,
+                    "attendees": original_participants[1:] if len(original_participants) > 1 else [],  # Exclude owner
+                    "attendees_list": original_participants[1:] if len(original_participants) > 1 else []  # MCP format
+                }
+                
+                # Add location if available
+                if original_location:
+                    original_event["location"] = original_location
+                
+                # Add original event to each participant's calendar
+                for participant_id in original_participants:
+                    # Ensure participant has an entry in events_by_participant
+                    if participant_id not in events_by_participant:
+                        events_by_participant[participant_id] = []
+                    
+                    # Check if event already exists (avoid duplicates)
+                    event_exists = any(
+                        evt.get("id") == original_event_id 
+                        for evt in events_by_participant[participant_id]
+                    )
+                    
+                    if not event_exists:
+                        events_by_participant[participant_id].append(original_event)
+                        # Log addition
+                        try:
+                            print(f"[orchestrate_scheduling] Added original event '{original_title}' (ID: {original_event_id}) to participant {participant_id}'s calendar for rescheduling", file=sys.stderr, flush=True)
+                        except:
+                            pass
+                            
+            except Exception as e:
+                # Log error but continue - event might already be in calendar
+                try:
+                    print(f"[orchestrate_scheduling] Error adding original event to events_by_participant: {str(e)}", file=sys.stderr, flush=True)
+                except:
+                    pass
+        
         # CRITICAL: Map scheduling_problem.participants to actual keys in events_by_participant
         # This ensures the solver uses the correct participant IDs that match busy_slots keys
         # Build a mapping from participant IDs/emails to the actual keys in events_by_participant
