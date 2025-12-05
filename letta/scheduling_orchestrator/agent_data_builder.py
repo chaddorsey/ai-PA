@@ -22,6 +22,10 @@ def build_event_registry(
     """
     Build a registry of all events referenced in proposals.
     
+    Includes:
+    - Events that are moved (from moved_events)
+    - Solo events that are overridden (from solo_override proposals)
+    
     Args:
         proposals: List of all proposals
         normalized_data: Normalized data containing event metadata
@@ -31,40 +35,129 @@ def build_event_registry(
     """
     registry = {}
     event_metadata_map = normalized_data.get("event_metadata", {})
+    slot_indexer = normalized_data.get("slot_indexer")
+    event_slots_map = normalized_data.get("event_slots_map", {})
+    
+    def add_event_to_registry(event_key: Tuple[str, str], meta: Dict[str, Any], start_utc: str, end_utc: str):
+        """Helper to add an event to the registry."""
+        owner, event_id = event_key
+        if event_id not in registry:
+            # Build human-readable description
+            title = meta.get("title", event_id[:40])
+            start_dt_str = meta.get("start_str", start_utc)
+            try:
+                dt = datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = pytz.UTC.localize(dt)
+                et_tz = pytz.timezone("America/New_York")
+                dt_et = dt.astimezone(et_tz)
+                date_str = dt_et.strftime("%b %d at %I:%M %p").lstrip("0")
+                human_readable = f"{title} on {date_str}"
+            except Exception:
+                human_readable = title
+            
+            registry[event_id] = EventMetadata(
+                title=title,
+                owner=owner,
+                start_utc=start_utc,
+                end_utc=end_utc,
+                locked=meta.get("locked", False),
+                protected=meta.get("protected", False),
+                flexible=meta.get("flexible", True),
+                number_of_attendees=meta.get("number_of_attendees", 0),
+                internal_only=meta.get("internal_only", True),
+                human_readable=human_readable
+            )
     
     # Collect all event IDs from moved_events
     for proposal in proposals:
         for moved in proposal.moved_events:
             event_key = (moved.owner, moved.event_id)
-            if event_key in event_metadata_map and moved.event_id not in registry:
+            if event_key in event_metadata_map:
                 meta = event_metadata_map[event_key]
+                add_event_to_registry(event_key, meta, moved.old_start, moved.old_end)
+    
+    # Collect solo events that are overridden by solo_override proposals
+    for proposal in proposals:
+        # Check if this is a solo_override proposal
+        notes = proposal.notes_for_invite or ""
+        is_solo_override = "solo/blocking events" in notes.lower() or proposal.category == "solo_override"
+        
+        if is_solo_override and slot_indexer and event_slots_map:
+            # Find solo events that overlap with this proposal's time
+            try:
+                start_dt = datetime.fromisoformat(proposal.start_utc.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(proposal.end_utc.replace("Z", "+00:00"))
+                if start_dt.tzinfo is None:
+                    start_dt = pytz.UTC.localize(start_dt)
+                if end_dt.tzinfo is None:
+                    end_dt = pytz.UTC.localize(end_dt)
                 
-                # Build human-readable description
-                title = meta.get("title", moved.event_id[:40])
-                start_dt_str = meta.get("start_str", moved.old_start)
-                try:
-                    dt = datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = pytz.UTC.localize(dt)
-                    et_tz = pytz.timezone("America/New_York")
-                    dt_et = dt.astimezone(et_tz)
-                    date_str = dt_et.strftime("%b %d at %I:%M %p").lstrip("0")
-                    human_readable = f"{title} on {date_str}"
-                except Exception:
-                    human_readable = title
+                start_slot = slot_indexer.datetime_to_slot(start_dt)
+                end_slot = slot_indexer.datetime_to_slot(end_dt)
                 
-                registry[moved.event_id] = EventMetadata(
-                    title=title,
-                    owner=moved.owner,
-                    start_utc=moved.old_start,
-                    end_utc=moved.old_end,
-                    locked=meta.get("locked", False),
-                    protected=meta.get("protected", False),
-                    flexible=meta.get("flexible", True),
-                    number_of_attendees=meta.get("number_of_attendees", 0),
-                    internal_only=meta.get("internal_only", True),
-                    human_readable=human_readable
-                )
+                if start_slot is not None and end_slot is not None:
+                    proposal_slots = set(range(start_slot, end_slot))
+                    
+                    # Find solo events with the most overlap
+                    best_overlap = 0
+                    best_key = None
+                    
+                    for (owner_check, event_id_check), event_slots in event_slots_map.items():
+                        overlap = proposal_slots.intersection(event_slots)
+                        if overlap:
+                            event_meta = event_metadata_map.get((owner_check, event_id_check), {})
+                            num_attendees = event_meta.get("number_of_attendees", -1)
+                            
+                            # Only consider solo events (num_attendees == 0)
+                            if num_attendees == 0:
+                                overlap_size = len(overlap)
+                                if overlap_size > best_overlap:
+                                    best_overlap = overlap_size
+                                    best_key = (owner_check, event_id_check)
+                    
+                    # Add the best matching solo event to registry and link it to the proposal
+                    if best_key and best_key in event_metadata_map:
+                        meta = event_metadata_map[best_key]
+                        owner, event_id = best_key
+                        
+                        # Get start/end times from metadata
+                        start_utc = meta.get("start_str", "")
+                        end_utc = meta.get("end_str", "")
+                        
+                        # Fallback to start_dt/end_dt if start_str/end_str not available
+                        if not start_utc or not end_utc:
+                            start_dt_meta = meta.get("start_dt")
+                            end_dt_meta = meta.get("end_dt")
+                            if start_dt_meta:
+                                if isinstance(start_dt_meta, datetime):
+                                    start_utc = start_dt_meta.isoformat()
+                                else:
+                                    start_utc = str(start_dt_meta)
+                            if end_dt_meta:
+                                if isinstance(end_dt_meta, datetime):
+                                    end_utc = end_dt_meta.isoformat()
+                                else:
+                                    end_utc = str(end_dt_meta)
+                        
+                        # Use proposal times as last resort
+                        if not start_utc:
+                            start_utc = proposal.start_utc
+                        if not end_utc:
+                            end_utc = proposal.end_utc
+                        
+                        add_event_to_registry(best_key, meta, start_utc, end_utc)
+                        
+                        # Link the event ID to the proposal
+                        if not proposal.overridden_event_ids:
+                            proposal.overridden_event_ids = []
+                        if event_id not in proposal.overridden_event_ids:
+                            proposal.overridden_event_ids.append(event_id)
+            except Exception as e:
+                # Skip if we can't process this proposal
+                import sys
+                print(f"[build_event_registry] Error processing solo_override proposal {proposal.proposal_id}: {e}", file=sys.stderr, flush=True)
+                continue
     
     return registry
 

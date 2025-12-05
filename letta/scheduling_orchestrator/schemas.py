@@ -142,6 +142,7 @@ class Proposal(BaseModel):
     category: Optional[str] = Field(default=None, description="Category: 'zero_conflict' | 'single_move' | 'solo_override' | 'multi_move'")
     rank: Optional[int] = Field(default=None, description="Overall rank (1 = best)")
     preference_score: Optional[float] = Field(default=None, description="Preference score (higher = better)")
+    overridden_event_ids: Optional[List[str]] = Field(default=None, description="List of event IDs for solo events that this proposal overrides (for solo_override proposals)")
 
 
 class Relaxation(BaseModel):
