@@ -138,6 +138,10 @@ class Proposal(BaseModel):
     moved_events: List[MovedEvent] = Field(default_factory=list, description="Events that need to be moved")
     objective_scores: ObjectiveScores = Field(..., description="Optimization objective scores for this proposal")
     free_block_stats: Optional[FreeBlockStats] = Field(default=None, description="Free-block statistics for requester's calendar")
+    proposal_id: Optional[str] = Field(default=None, description="Unique identifier for this proposal (for cross-referencing)")
+    category: Optional[str] = Field(default=None, description="Category: 'zero_conflict' | 'single_move' | 'solo_override' | 'multi_move'")
+    rank: Optional[int] = Field(default=None, description="Overall rank (1 = best)")
+    preference_score: Optional[float] = Field(default=None, description="Preference score (higher = better)")
 
 
 class Relaxation(BaseModel):
@@ -173,13 +177,134 @@ class DebugInfo(BaseModel):
     multi_shot_phase: Optional[int] = Field(default=None, description="Multi-shot phase that succeeded (1=minimal, 2=+work hours, 3=+min gap)")
 
 
+class FormattedProposal(BaseModel):
+    """User-facing formatted proposal display."""
+    
+    rank: int = Field(..., description="Ranking of this proposal (1 = best)")
+    category: str = Field(..., description="Category: 'best_options' | 'with_moves' | 'with_overrides'")
+    display_text: str = Field(..., description="Pre-formatted detailed display text")
+    short_summary: str = Field(..., description="One-line summary")
+    move_summary: Optional[str] = Field(default=None, description="Human-readable move description")
+    override_summary: Optional[str] = Field(default=None, description="Human-readable override description")
+
+
+class CategoryInfo(BaseModel):
+    """Information about a proposal category."""
+    
+    count: int = Field(..., description="Number of proposals in this category")
+    description: str = Field(..., description="Human-readable description of the category")
+
+
+class EventGroup(BaseModel):
+    """Group of proposals by moved event."""
+    
+    event_id: str = Field(..., description="Event ID")
+    event_title: str = Field(..., description="Human-readable event title")
+    owner: str = Field(..., description="Participant ID who owns the event")
+    options: List[int] = Field(..., description="List of proposal ranks in this group")
+
+
+class UserDisplay(BaseModel):
+    """User-facing formatted content for display."""
+    
+    summary: str = Field(..., description="High-level summary")
+    explanation: str = Field(..., description="Human-readable explanation")
+    formatted_proposals: List[FormattedProposal] = Field(default_factory=list, description="Pre-formatted proposals")
+    categories: Dict[str, CategoryInfo] = Field(default_factory=dict, description="Category information")
+    grouped_by_event: Optional[Dict[str, List[EventGroup]]] = Field(default=None, description="Proposals grouped by moved event")
+
+
+class EventMetadata(BaseModel):
+    """Metadata about an event referenced in proposals."""
+    
+    title: str = Field(..., description="Event title")
+    owner: str = Field(..., description="Participant ID who owns the event")
+    start_utc: str = Field(..., description="Original start time (ISO 8601 UTC)")
+    end_utc: str = Field(..., description="Original end time (ISO 8601 UTC)")
+    locked: bool = Field(..., description="Whether event is locked")
+    protected: bool = Field(..., description="Whether event is protected")
+    flexible: bool = Field(..., description="Whether event is flexible")
+    number_of_attendees: int = Field(default=0, description="Number of attendees")
+    internal_only: bool = Field(default=True, description="Whether event is internal-only")
+    human_readable: str = Field(..., description="Human-readable event description")
+
+
+class RankingFactor(BaseModel):
+    """A factor contributing to a proposal's ranking."""
+    
+    factor: str = Field(..., description="Factor name (e.g., 'zero_conflict', 'free_block_score')")
+    value: Optional[float] = Field(default=None, description="Factor value if applicable")
+    impact: str = Field(..., description="Impact level: 'high' | 'medium' | 'low'")
+
+
+class ProposalComparison(BaseModel):
+    """Comparison of a proposal with others."""
+    
+    better_than: List[str] = Field(default_factory=list, description="Proposal IDs this ranks better than")
+    worse_than: List[str] = Field(default_factory=list, description="Proposal IDs this ranks worse than")
+    tie_breakers: List[str] = Field(default_factory=list, description="Factors used as tie-breakers")
+
+
+class RankingRationale(BaseModel):
+    """Rationale for why a proposal is ranked as it is."""
+    
+    primary_factors: List[RankingFactor] = Field(default_factory=list, description="Primary ranking factors")
+    comparison: Optional[ProposalComparison] = Field(default=None, description="Comparison with other proposals")
+
+
+class OptimizationSummary(BaseModel):
+    """Summary of optimization results."""
+    
+    total_proposals_found: int = Field(..., description="Total number of proposals")
+    zero_conflict_count: int = Field(..., description="Number of zero-conflict proposals")
+    single_move_count: int = Field(..., description="Number of single-move proposals")
+    solo_override_count: int = Field(..., description="Number of solo-override proposals")
+    multi_move_count: int = Field(..., description="Number of multi-move proposals")
+    best_score: float = Field(..., description="Best free-block score")
+    score_range: Dict[str, float] = Field(..., description="Score range: {'min': float, 'max': float}")
+    preference_match_count: int = Field(default=0, description="Number of proposals matching user preferences")
+    work_hours_compliance: str = Field(..., description="'full' | 'partial' | 'none'")
+
+
+class ConstraintsApplied(BaseModel):
+    """Summary of constraints that were applied."""
+    
+    work_hours_enforced: bool = Field(..., description="Whether work hours were enforced")
+    min_gap_minutes: int = Field(..., description="Minimum gap in minutes")
+    locked_events_blocked: int = Field(..., description="Number of locked events that blocked slots")
+    preferences_applied: List[str] = Field(default_factory=list, description="List of preferences applied")
+
+
+class AgentData(BaseModel):
+    """Agent-facing structured data for reasoning."""
+    
+    proposals: List[Proposal] = Field(default_factory=list, description="Full structured proposals")
+    event_registry: Dict[str, EventMetadata] = Field(default_factory=dict, description="Map event IDs to metadata")
+    ranking_rationale: Dict[str, RankingRationale] = Field(default_factory=dict, description="Rationale for proposal rankings")
+    optimization_summary: Optional[OptimizationSummary] = Field(default=None, description="Optimization summary")
+    constraints_applied: Optional[ConstraintsApplied] = Field(default=None, description="Constraints that were applied")
+
+
+class CrossReferenceMapping(BaseModel):
+    """Mapping between user_display and agent_data."""
+    
+    rank_to_proposal_id: Dict[int, str] = Field(default_factory=dict, description="Map rank to proposal ID")
+    proposal_id_to_rank: Dict[str, int] = Field(default_factory=dict, description="Map proposal ID to rank")
+    event_id_to_proposals: Dict[str, List[str]] = Field(default_factory=dict, description="Map event ID to proposal IDs")
+    category_to_proposals: Dict[str, List[str]] = Field(default_factory=dict, description="Map category to proposal IDs")
+
+
 class ResponseEnvelope(BaseModel):
     """Complete tool response envelope."""
     
     status: Literal["ok", "unsat", "bad_input"] = Field(..., description="Status of the scheduling request")
-    proposals: List[Proposal] = Field(default_factory=list, description="List of proposed meeting slots (typically one)")
-    explanation: str = Field(..., description="Human-readable explanation of the result")
+    proposals: List[Proposal] = Field(default_factory=list, description="List of proposed meeting slots (backward compatibility)")
+    explanation: str = Field(..., description="Human-readable explanation of the result (backward compatibility)")
     relaxations: Optional[List[Relaxation]] = Field(default=None, description="Suggested relaxations if status is 'unsat'")
     debug: Optional[DebugInfo] = Field(default=None, description="Debug information for troubleshooting")
     error_message: Optional[str] = Field(default=None, description="Error message if status is 'bad_input'")
+    # Dual-format fields (new)
+    user_display: Optional[UserDisplay] = Field(default=None, description="User-facing formatted content")
+    agent_data: Optional[AgentData] = Field(default=None, description="Agent-facing structured data")
+    mapping: Optional[CrossReferenceMapping] = Field(default=None, description="Cross-reference mapping between formats")
 

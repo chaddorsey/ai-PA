@@ -254,23 +254,25 @@ def normalize_events(
             work_slots = set()
             for day, start_hm, end_hm in work_hours:
                 # Find dates in horizon that match this day of week
+                # CRITICAL: Check weekday in participant's timezone, not UTC
                 current_date = from_date_utc
                 while current_date < to_date_utc:
-                    if current_date.weekday() == day:
-                        # Create datetime for start/end of work hours
+                    # Convert to participant's local timezone to check weekday
+                    current_date_local = current_date.astimezone(participant_tz)
+                    if current_date_local.weekday() == day:
+                        # Create datetime for start/end of work hours in local timezone
                         start_hour = start_hm // 100
                         start_min = start_hm % 100
                         end_hour = end_hm // 100
                         end_min = end_hm % 100
                         
-                        work_start = current_date.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                        work_end = current_date.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+                        # Use the local date (midnight) to create work hours
+                        work_start = current_date_local.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+                        work_end = current_date_local.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
                         
                         # Convert to UTC
-                        work_start_local = participant_tz.localize(work_start.replace(tzinfo=None))
-                        work_end_local = participant_tz.localize(work_end.replace(tzinfo=None))
-                        work_start_utc = work_start_local.astimezone(pytz.UTC)
-                        work_end_utc = work_end_local.astimezone(pytz.UTC)
+                        work_start_utc = work_start.astimezone(pytz.UTC)
+                        work_end_utc = work_end.astimezone(pytz.UTC)
                         
                         # Get slots for this work period
                         # Note: get_slots_in_range has exclusive end, so work_end_utc (5:00 PM) means
@@ -299,21 +301,24 @@ def normalize_events(
             # Convert work hours to UTC slots
             work_slots = set()
             for day, start_hm, end_hm in work_hours:
+                # CRITICAL: Check weekday in participant's timezone, not UTC
                 current_date = from_date_utc
                 while current_date < to_date_utc:
-                    if current_date.weekday() == day:
+                    # Convert to participant's local timezone to check weekday
+                    current_date_local = current_date.astimezone(participant_tz)
+                    if current_date_local.weekday() == day:
                         start_hour = start_hm // 100
                         start_min = start_hm % 100
                         end_hour = end_hm // 100
                         end_min = end_hm % 100
                         
-                        work_start = current_date.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                        work_end = current_date.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
+                        # Use the local date to create work hours
+                        work_start = current_date_local.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
+                        work_end = current_date_local.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
                         
-                        work_start_local = participant_tz.localize(work_start.replace(tzinfo=None))
-                        work_end_local = participant_tz.localize(work_end.replace(tzinfo=None))
-                        work_start_utc = work_start_local.astimezone(pytz.UTC)
-                        work_end_utc = work_end_local.astimezone(pytz.UTC)
+                        # Convert to UTC
+                        work_start_utc = work_start.astimezone(pytz.UTC)
+                        work_end_utc = work_end.astimezone(pytz.UTC)
                         
                         work_period_slots = slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
                         work_slots.update(work_period_slots)

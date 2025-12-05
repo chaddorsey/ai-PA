@@ -13,6 +13,11 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import sys
 
+# Type alias for schema generator compatibility
+if False:  # Never executes, but satisfies type checkers
+    DictType = Dict[str, Any]
+    ObjectType = object
+
 # Lazy imports to avoid dependency issues during Letta schema generation
 # These will be imported when the function is actually called
 
@@ -57,11 +62,14 @@ def orchestrate_scheduling(
     Returns:
         Dictionary with keys:
         - status: "ok" | "unsat" | "bad_input"
-        - proposals: List of Proposal objects (typically one best proposal)
-        - explanation: Human-readable explanation of the result
+        - proposals: List of Proposal objects (backward compatibility)
+        - explanation: Human-readable explanation (backward compatibility)
         - relaxations: List of Relaxation suggestions (if status is "unsat")
         - debug: DebugInfo with timing and statistics
         - error_message: Error message (if status is "bad_input")
+        - user_display: Optional[UserDisplay] - Pre-formatted content for end users
+        - agent_data: Optional[AgentData] - Structured metadata for agent reasoning
+        - mapping: Optional[CrossReferenceMapping] - Links between user_display and agent_data
     
     Example:
         >>> result = orchestrate_scheduling(
@@ -91,6 +99,8 @@ def orchestrate_scheduling(
     from datetime import datetime
     import pytz
     
+    # Helper functions will be defined inline where used to avoid schema generator issues
+    
     # Wrap entire function in try-except to catch any unexpected errors
     try:
         # Log function entry for debugging (stderr goes to Docker logs)
@@ -112,6 +122,13 @@ def orchestrate_scheduling(
                 SchedulingProblem,
                 Relaxation,
                 DebugInfo,
+                UserDisplay,
+                AgentData,
+                CrossReferenceMapping,
+                FormattedProposal,
+                CategoryInfo,
+                OptimizationSummary,
+                ConstraintsApplied,
                 MovedEvent,
                 ObjectiveScores,
             )
@@ -120,6 +137,13 @@ def orchestrate_scheduling(
             from .fact_generator import generate_asp_program
             from .clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
             from .unsat_analyzer import explain_unsat
+            from .formatting import format_proposal_for_display, generate_proposal_id
+            from .agent_data_builder import (
+                build_event_registry,
+                generate_ranking_rationale,
+                build_optimization_summary,
+                build_constraints_applied
+            )
         except (ImportError, ValueError):
             # Fallback to absolute imports (when run standalone or in Letta)
             import sys
@@ -152,12 +176,26 @@ def orchestrate_scheduling(
                     DebugInfo,
                     MovedEvent,
                     ObjectiveScores,
+                    UserDisplay,
+                    AgentData,
+                    CrossReferenceMapping,
+                    FormattedProposal,
+                    CategoryInfo,
+                    OptimizationSummary,
+                    ConstraintsApplied,
                 )
                 from scheduling_orchestrator.dspy_extraction import extract_with_fallback
                 from scheduling_orchestrator.normalizer import normalize_events
                 from scheduling_orchestrator.fact_generator import generate_asp_program
                 from scheduling_orchestrator.clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
                 from scheduling_orchestrator.unsat_analyzer import explain_unsat
+                from scheduling_orchestrator.formatting import format_proposal_for_display, generate_proposal_id
+                from scheduling_orchestrator.agent_data_builder import (
+                    build_event_registry,
+                    generate_ranking_rationale,
+                    build_optimization_summary,
+                    build_constraints_applied
+                )
             except ImportError:
                 # Last resort: try direct imports from orchestrator_dir
                 from schemas import (
@@ -169,12 +207,26 @@ def orchestrate_scheduling(
                     DebugInfo,
                     MovedEvent,
                     ObjectiveScores,
+                    UserDisplay,
+                    AgentData,
+                    CrossReferenceMapping,
+                    FormattedProposal,
+                    CategoryInfo,
+                    OptimizationSummary,
+                    ConstraintsApplied,
                 )
                 from dspy_extraction import extract_with_fallback
                 from normalizer import normalize_events
                 from fact_generator import generate_asp_program
                 from clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
                 from unsat_analyzer import explain_unsat
+                from formatting import format_proposal_for_display, generate_proposal_id
+                from agent_data_builder import (
+                    build_event_registry,
+                    generate_ranking_rationale,
+                    build_optimization_summary,
+                    build_constraints_applied
+                )
         except ImportError as e:
             # If dependencies are missing, return a helpful error with traceback
             error_traceback = traceback.format_exc()
@@ -405,7 +457,10 @@ def orchestrate_scheduling(
         try:
             from .fact_generator import _find_free_slots
         except (ImportError, ValueError):
-            from fact_generator import _find_free_slots
+            try:
+                from scheduling_orchestrator.fact_generator import _find_free_slots
+            except ImportError:
+                from fact_generator import _find_free_slots
         
         free_slots_check = _find_free_slots(
             all_slots,
@@ -781,7 +836,10 @@ def orchestrate_scheduling(
                 try:
                     from .fact_generator import _find_free_slots
                 except (ImportError, ValueError):
-                    from fact_generator import _find_free_slots
+                    try:
+                        from scheduling_orchestrator.fact_generator import _find_free_slots
+                    except ImportError:
+                        from fact_generator import _find_free_slots
                 
                 duration_slots = max(1, scheduling_problem.duration_minutes // 15)
                 free_slots = _find_free_slots(
@@ -866,12 +924,17 @@ def orchestrate_scheduling(
                         asp_available = True
                     except (ImportError, ValueError):
                         try:
-                            from clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
-                            from fact_generator import generate_asp_program
+                            from scheduling_orchestrator.clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+                            from scheduling_orchestrator.fact_generator import generate_asp_program
                             asp_available = True
                         except ImportError:
-                            # ASP not available - fall through to UNSAT
-                            asp_available = False
+                            try:
+                                from clingo_wrapper import ClingoSolver, extract_scheduling_solution, compute_move_deltas, compute_objective_scores
+                                from fact_generator import generate_asp_program
+                                asp_available = True
+                            except ImportError:
+                                # ASP not available - fall through to UNSAT
+                                asp_available = False
                     
                     if asp_available:
                         # SLIDING WINDOW APPROACH: Explore full date range by solving overlapping windows
@@ -913,7 +976,10 @@ def orchestrate_scheduling(
                             try:
                                 from .horizon_reducer import reduce_horizon_to_feasible_window
                             except (ImportError, ValueError):
-                                from horizon_reducer import reduce_horizon_to_feasible_window
+                                try:
+                                    from scheduling_orchestrator.horizon_reducer import reduce_horizon_to_feasible_window
+                                except ImportError:
+                                    from horizon_reducer import reduce_horizon_to_feasible_window
                             
                             for window_idx in range(num_windows):
                                 # Calculate window boundaries
@@ -1100,27 +1166,22 @@ def orchestrate_scheduling(
             # Sort solutions by score (highest first), then by number of moved events (fewer is better)
             # Score already prioritizes free slots, then single moves, etc.
             # We also want to prioritize solutions with fewer moved events within same score tier
-            def solution_sort_key(sol):
-                score = sol.get("score", 0)
-                # Estimate moved events count from method (for sorting before building proposals)
-                # Priority order: free_slot > single_move > solo_override > multi-move
+            # Build sort keys inline to avoid schema generator analyzing nested functions
+            for sol in solutions:
                 method = sol.get("method", "")
                 if method == "free_slot":
-                    priority = 0  # Highest priority
-                    moved_estimate = 0
+                    sol["_sort_priority"] = 0
+                    sol["_moved_estimate"] = 0
                 elif method == "single_move":
-                    priority = 1
-                    moved_estimate = 1
+                    sol["_sort_priority"] = 1
+                    sol["_moved_estimate"] = 1
                 elif method == "solo_override":
-                    priority = 2
-                    moved_estimate = 0  # No moves, but lower priority than free slots
+                    sol["_sort_priority"] = 2
+                    sol["_moved_estimate"] = 0
                 else:
-                    priority = 3  # Multi-move, lowest priority
-                    moved_estimate = 10
-                # Return tuple: (priority, score, -moved_estimate) so priority comes first
-                return (priority, score, -moved_estimate)
-            
-            solutions.sort(key=solution_sort_key, reverse=True)
+                    sol["_sort_priority"] = 3
+                    sol["_moved_estimate"] = 10
+            solutions.sort(key=lambda s: (s.get("_sort_priority", 3), s.get("score", 0), -s.get("_moved_estimate", 10)), reverse=True)
             
             # Count solutions that pass validation after grouping by day
             validated_count = 0
@@ -1207,6 +1268,9 @@ def orchestrate_scheduling(
                 for day_key, _, best_sol in days_with_scores:
                     if len(selected_solutions) >= MAX_SOLUTIONS_TO_PROCESS:
                         break
+                    # Ensure solution has required attributes before adding
+                    if "_start_dt" not in best_sol or "_end_dt" not in best_sol or "_validation_slot_indexer" not in best_sol:
+                        continue  # Skip invalid solutions
                     if best_sol not in selected_solutions:
                         selected_solutions.append(best_sol)
                         selected_days.add(day_key)
@@ -1228,7 +1292,38 @@ def orchestrate_scheduling(
                             selected_solutions.append(sol)
             
             # Build proposals from selected solutions
-            for sol in selected_solutions:
+            # Initialize error collection list (all_proposals already initialized above)
+            proposal_build_errors = []  # Collect errors for debugging
+            
+            # Ensure python_normalized_data is available (it should be from Python solver path)
+            # Check if we're in the scope where python_normalized_data exists
+            if 'python_normalized_data' not in locals() and 'python_normalized_data' not in globals():
+                # Fallback: use original_normalized_data if python_normalized_data not available
+                # This can happen if we're in a different execution path
+                try:
+                    python_normalized_data = original_normalized_data
+                except NameError:
+                    # If original_normalized_data also not available, we have a bigger issue
+                    python_normalized_data = normalized_data
+            
+            # Ensure generate_proposal_id is available
+            if 'generate_proposal_id' not in locals() and 'generate_proposal_id' not in globals():
+                try:
+                    from .formatting import generate_proposal_id
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.formatting import generate_proposal_id
+                    except ImportError:
+                        from formatting import generate_proposal_id
+            
+            for sol_idx, sol in enumerate(selected_solutions):
+                # Validate that solution has required attributes
+                if "_start_dt" not in sol or "_end_dt" not in sol or "_validation_slot_indexer" not in sol:
+                    # Skip solutions that weren't properly validated
+                    import traceback
+                    print(f"[WARNING] Skipping solution missing required attributes: {sol.get('method', 'unknown')} at slot {sol.get('start_slot', 'unknown')}", file=sys.stderr, flush=True)
+                    continue
+                
                 start_dt = sol["_start_dt"]
                 end_dt = sol["_end_dt"]
                 validation_slot_indexer = sol["_validation_slot_indexer"]
@@ -1263,11 +1358,20 @@ def orchestrate_scheduling(
                             moved_events_list = []
                             objective_scores_dict = {}
                     else:
-                        # Python solution - use original_normalized_data for consistency
-                        # For solo_override solutions, moved_events will be empty (no moves needed)
-                        # The method="solo_override" indicates these are override solutions
-                        moved_events_list = compute_move_deltas_python(sol, python_normalized_data, scheduling_problem) or []
-                        objective_scores_dict = compute_objective_scores_python(sol, python_normalized_data, scheduling_problem) or {}
+                        # Python solution - check if moved_events are already computed
+                        # Python solver solutions may already have moved_events populated
+                        if "moved_events" in sol and sol.get("moved_events"):
+                            # Use pre-computed moved_events if available
+                            moved_events_list = sol.get("moved_events", [])
+                            # Also check for objective_scores
+                            if "objective_scores" in sol:
+                                objective_scores_dict = sol.get("objective_scores", {})
+                            else:
+                                objective_scores_dict = compute_objective_scores_python(sol, python_normalized_data, scheduling_problem) or {}
+                        else:
+                            # Compute moved events and scores
+                            moved_events_list = compute_move_deltas_python(sol, python_normalized_data, scheduling_problem) or []
+                            objective_scores_dict = compute_objective_scores_python(sol, python_normalized_data, scheduling_problem) or {}
                         
                         # Store the method in the proposal for sorting purposes
                         solution_method = sol.get("method", "unknown")
@@ -1295,7 +1399,8 @@ def orchestrate_scheduling(
                         end_utc=end_dt.isoformat(),
                         moved_events=moved_events,
                         objective_scores=scores,
-                        location=scheduling_problem.location
+                        location=scheduling_problem.location,
+                        proposal_id=generate_proposal_id()  # Add unique ID
                     )
                     # Store solution method temporarily for sorting (solo_override needs special handling)
                     # We'll remove this attribute before returning
@@ -1307,24 +1412,50 @@ def orchestrate_scheduling(
                 except Exception as e:
                     # Skip this solution if proposal building fails
                     import traceback
-                    traceback.print_exc(file=sys.stderr)
+                    error_tb = traceback.format_exc()
+                    error_msg = f"Solution {sol_idx}: {type(e).__name__}: {str(e)}"
+                    proposal_build_errors.append(error_msg)
+                    print(f"[ERROR] Failed to build proposal from solution {sol_idx}: {str(e)}", file=sys.stderr, flush=True)
+                    print(f"[ERROR] Traceback: {error_tb}", file=sys.stderr, flush=True)
+                    print(f"[ERROR] Solution details: method={sol.get('method', 'unknown')}, start_slot={sol.get('start_slot', 'unknown')}, has_start_dt={'_start_dt' in sol}", file=sys.stderr, flush=True)
+                    # Only show first 3 errors to avoid overwhelming the response
+                    if len(proposal_build_errors) <= 3:
+                        print(f"[ERROR] Full error: {error_tb}", file=sys.stderr, flush=True)
                     continue
             
             if not all_proposals:
-                # No valid proposals built - return error
+                # No valid proposals built - return error with more details
+                error_details = f"Processed {len(selected_solutions)} solutions but none could be converted to proposals. "
+                error_details += f"Validated solutions: {validated_count}. "
+                error_details += f"Solutions selected: {len(selected_solutions)}. "
+                if selected_solutions:
+                    error_details += f"Sample solution keys: {list(selected_solutions[0].keys()) if selected_solutions else 'none'}. "
+                if proposal_build_errors:
+                    error_details += f"Errors encountered: {proposal_build_errors[0] if proposal_build_errors else 'none'}"
+                    if len(proposal_build_errors) > 1:
+                        error_details += f" (and {len(proposal_build_errors) - 1} more similar errors)"
+                
                 return ResponseEnvelope(
                     status="bad_input",
-                    explanation="Failed to build any valid proposals from solutions",
+                    explanation=f"Failed to build any valid proposals from solutions. {error_details}",
                     proposals=[],
-                    error_message="Proposal building failed",
+                    error_message=f"Proposal building failed: {proposal_build_errors[0] if proposal_build_errors else 'Unknown error'}",
                     debug=debug_info
                 ).model_dump()
             
             # Calculate free-block scores and preference scores for all proposals
             # This prioritizes proposals that preserve/create long unbroken stretches on requester's calendar
             try:
-                from .free_block_scorer import calculate_free_block_score, identify_requester
-                from .preference_scorer import compute_aggregate_preference_score
+                try:
+                    from .free_block_scorer import calculate_free_block_score, identify_requester
+                    from .preference_scorer import compute_aggregate_preference_score
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.free_block_scorer import calculate_free_block_score, identify_requester
+                        from scheduling_orchestrator.preference_scorer import compute_aggregate_preference_score
+                    except ImportError:
+                        from free_block_scorer import calculate_free_block_score, identify_requester
+                        from preference_scorer import compute_aggregate_preference_score
                 requester_id = identify_requester(scheduling_problem, context_dict)
                 
                 for prop in all_proposals:
@@ -1373,7 +1504,13 @@ def orchestrate_scheduling(
                     
                     # Also store in the Proposal's free_block_stats field for output
                     try:
-                        from .schemas import FreeBlockStats
+                        try:
+                            from .schemas import FreeBlockStats
+                        except (ImportError, ValueError):
+                            try:
+                                from scheduling_orchestrator.schemas import FreeBlockStats
+                            except ImportError:
+                                from schemas import FreeBlockStats
                         prop.free_block_stats = FreeBlockStats(**free_block_stats)
                     except Exception:
                         # If FreeBlockStats import fails, continue without it
@@ -1392,72 +1529,40 @@ def orchestrate_scheduling(
             # For zero-conflict: category priority maintained, free-block score determines order within category
             # For one-move and override: free-block score takes precedence across categories, then category priority
             # Time-based prioritization: earlier dates/times within the requested interval get higher priority
-            def proposal_sort_key(prop):
+            # Using helper function defined at the start of orchestrate_scheduling
+            # Build sort keys inline for each proposal to avoid schema generator analyzing nested functions
+            for prop in all_proposals:
                 moved_count = len(prop.moved_events) if prop.moved_events else 0
-                start_utc = prop.start_utc
+                is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
+                if moved_count == 0 and not is_solo_override:
+                    prop._sort_priority = 0
+                elif moved_count == 1:
+                    prop._sort_priority = 1
+                elif is_solo_override:
+                    prop._sort_priority = 2
+                else:
+                    prop._sort_priority = 3
                 
-                # Get priority score from the proposal (stored temporarily or from objective_scores)
                 priority_score = getattr(prop, '_solution_score', 0.0)
                 if priority_score == 0.0:
                     priority_score = prop.objective_scores.priority_score if prop.objective_scores else 0.0
+                prop._sort_priority_score = priority_score
                 
-                # Get free-block score (calculated above)
-                free_block_score = getattr(prop, '_free_block_score', 0.0)
-                
-                # Get preference score (calculated above)
-                preference_score = getattr(prop, '_preference_score', 0.0)
-                
-                # Determine proposal type/priority
-                # Check if this is a solo_override by checking the temporary attribute
-                is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
-                
-                if moved_count == 0 and not is_solo_override:
-                    # Free slot - highest priority
-                    priority = 0
-                elif moved_count == 1:
-                    # Single move - second priority
-                    priority = 1
-                elif is_solo_override:
-                    # Solo override - third priority (0 moves but conflicts with solo events)
-                    priority = 2
-                else:
-                    # Multi-move - lowest priority
-                    priority = 3
-                
-                # Calculate time-based priority: earlier dates/times within the interval get higher priority
-                # Parse the start_utc ISO string to get a numeric time value for sorting
-                # Earlier times should sort first, so we use a normalized time offset
                 try:
-                    from datetime import datetime
-                    start_dt = datetime.fromisoformat(start_utc.replace('Z', '+00:00'))
-                    # Use the start time as a sortable value (earlier = smaller number = higher priority)
-                    # Convert to timestamp for consistent sorting across timezones
-                    time_sort_value = start_dt.timestamp()
+                    start_dt = datetime.fromisoformat(prop.start_utc.replace('Z', '+00:00'))
+                    prop._sort_time = start_dt.timestamp()
                 except (ValueError, AttributeError):
-                    # Fallback to string sorting if datetime parsing fails
-                    time_sort_value = start_utc
+                    prop._sort_time = prop.start_utc
                 
-                # Sorting strategy:
-                # 1. Zero-conflict (priority 0) ALWAYS comes first (category priority maintained)
-                # 2. Within zero-conflict: sort by free-block score (higher is better), then preference score
-                # 3. For one-move (priority 1) and override (priority 2): free-block score across categories, then preference score, then category
-                # 4. Preference scores are layered AFTER free-block scores (cdorsey preferences take precedence in ties)
-                # 5. cdorsey preferences are already weighted 2x in preference_scorer, so they naturally break ties
-                
-                if priority == 0:
-                    # Zero-conflict: category priority maintained (always first), free-block score determines order, preference score breaks ties
-                    # Use a large offset for priority to ensure it always sorts first
-                    return (-10000, moved_count, -free_block_score, -preference_score, -priority_score, time_sort_value)
-                elif priority in (1, 2):
-                    # One-move and override: free-block score takes precedence across categories, then preference score
-                    # Use negative free_block_score so higher scores sort first
-                    # Add priority offset (1 or 2) to ensure they sort after zero-conflict
-                    return (-1000, -free_block_score, -preference_score, priority, moved_count, -priority_score, time_sort_value)
-                else:
-                    # Multi-move: use standard priority
-                    return (-500, priority, moved_count, -free_block_score, -preference_score, -priority_score, time_sort_value)
+                prop._sort_free_block = getattr(prop, '_free_block_score', 0.0)
+                prop._sort_preference = getattr(prop, '_preference_score', 0.0)
             
-            all_proposals.sort(key=proposal_sort_key)
+            # Sort using inline lambda (lambdas aren't analyzed by schema generator)
+            all_proposals.sort(key=lambda p: (
+                (-10000, (moved_count := len(p.moved_events) if p.moved_events else 0), -p._sort_free_block, -p._sort_preference, -p._sort_priority_score, p._sort_time) if p._sort_priority == 0 else
+                (-1000, -p._sort_free_block, -p._sort_preference, p._sort_priority, (moved_count := len(p.moved_events) if p.moved_events else 0), -p._sort_priority_score, p._sort_time) if p._sort_priority in (1, 2) else
+                (-500, p._sort_priority, (moved_count := len(p.moved_events) if p.moved_events else 0), -p._sort_free_block, -p._sort_preference, -p._sort_priority_score, p._sort_time)
+            ))
             
             # Filter to only include proposals with 0 or 1 moves OR solo_override (treated as separate tier)
             filtered_proposals = []
@@ -1530,14 +1635,161 @@ def orchestrate_scheduling(
             
             explanation = ". ".join(explanation_parts) + "."
             
-            # Return response
+            # Add category, rank, and preference_score to each proposal
+            for rank, prop in enumerate(all_proposals, 1):
+                # Determine category
+                moved_count = len(prop.moved_events) if prop.moved_events else 0
+                notes = prop.notes_for_invite or ""
+                is_solo_override = "solo/blocking events" in notes.lower()
+                
+                if moved_count == 0 and not is_solo_override:
+                    prop.category = "zero_conflict"
+                elif moved_count == 1:
+                    prop.category = "single_move"
+                elif is_solo_override:
+                    prop.category = "solo_override"
+                else:
+                    prop.category = "multi_move"
+                
+                # Add rank
+                prop.rank = rank
+                
+                # Store preference_score if available
+                preference_score = getattr(prop, '_preference_score', None)
+                if preference_score is not None:
+                    prop.preference_score = preference_score
+            
+            # Build dual-format response
             debug_info.total_time_ms = int((time.time() - start_time) * 1000)
             
+            # Get timezone from context
+            timezone_str = "America/New_York"
+            if context_json and "timeframe" in context_json:
+                timezone_str = context_json["timeframe"].get("tz", "America/New_York")
+            
+            # Build event registry - ensure it's available
+            if 'build_event_registry' not in locals() and 'build_event_registry' not in globals():
+                try:
+                    from .agent_data_builder import build_event_registry
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.agent_data_builder import build_event_registry
+                    except ImportError:
+                        from agent_data_builder import build_event_registry
+            
+            event_registry = build_event_registry(all_proposals, normalized_data)
+            
+            # Build user display
+            formatted_proposals = []
+            categories_info = {}
+            
+            # Ensure dual-format schema classes are available
+            if 'CategoryInfo' not in locals() and 'CategoryInfo' not in globals():
+                try:
+                    from .schemas import CategoryInfo, UserDisplay, AgentData, CrossReferenceMapping, FormattedProposal
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.schemas import CategoryInfo, UserDisplay, AgentData, CrossReferenceMapping, FormattedProposal
+                    except ImportError:
+                        from schemas import CategoryInfo, UserDisplay, AgentData, CrossReferenceMapping, FormattedProposal
+            
+            # Group by category for display
+            display_categories = {
+                "best_options": free_proposals,
+                "with_moves": single_move_proposals,
+                "with_overrides": solo_override_proposals
+            }
+            
+            for cat_key, prop_list in display_categories.items():
+                if prop_list:
+                    for prop in prop_list:
+                        formatted = format_proposal_for_display(
+                            prop, prop.rank, cat_key, event_registry, timezone_str
+                        )
+                        formatted_proposals.append(formatted)
+                    
+                    # Build category info
+                    if cat_key == "best_options":
+                        categories_info[cat_key] = CategoryInfo(
+                            count=len(prop_list),
+                            description="Zero-conflict slots available immediately"
+                        )
+                    elif cat_key == "with_moves":
+                        categories_info[cat_key] = CategoryInfo(
+                            count=len(prop_list),
+                            description="Options requiring moving 1 existing meeting"
+                        )
+                    elif cat_key == "with_overrides":
+                        categories_info[cat_key] = CategoryInfo(
+                            count=len(prop_list),
+                            description="Options available by overriding solo/blocking events"
+                        )
+            
+            user_display = UserDisplay(
+                summary=f"Found {len(all_proposals)} meeting option(s)",
+                explanation=explanation,
+                formatted_proposals=formatted_proposals,
+                categories=categories_info
+            )
+            
+            # Build agent data - ensure functions are available
+            if 'generate_ranking_rationale' not in locals() and 'generate_ranking_rationale' not in globals():
+                try:
+                    from .agent_data_builder import generate_ranking_rationale, build_optimization_summary, build_constraints_applied
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.agent_data_builder import generate_ranking_rationale, build_optimization_summary, build_constraints_applied
+                    except ImportError:
+                        from agent_data_builder import generate_ranking_rationale, build_optimization_summary, build_constraints_applied
+            
+            ranking_rationale = generate_ranking_rationale(all_proposals)
+            optimization_summary = build_optimization_summary(all_proposals, scheduling_problem)
+            constraints_applied = build_constraints_applied(normalized_data, scheduling_problem, context_json)
+            
+            agent_data = AgentData(
+                proposals=all_proposals,
+                event_registry=event_registry,
+                ranking_rationale=ranking_rationale,
+                optimization_summary=optimization_summary,
+                constraints_applied=constraints_applied
+            )
+            
+            # Build cross-reference mapping
+            rank_to_proposal_id = {prop.rank: prop.proposal_id for prop in all_proposals if prop.proposal_id}
+            proposal_id_to_rank = {prop.proposal_id: prop.rank for prop in all_proposals if prop.proposal_id}
+            
+            # Map event IDs to proposals
+            event_id_to_proposals = {}
+            for prop in all_proposals:
+                if prop.proposal_id:
+                    for moved in prop.moved_events:
+                        if moved.event_id not in event_id_to_proposals:
+                            event_id_to_proposals[moved.event_id] = []
+                        event_id_to_proposals[moved.event_id].append(prop.proposal_id)
+            
+            # Map categories to proposal IDs
+            category_to_proposals = {
+                "best_options": [p.proposal_id for p in free_proposals if p.proposal_id],
+                "with_moves": [p.proposal_id for p in single_move_proposals if p.proposal_id],
+                "with_overrides": [p.proposal_id for p in solo_override_proposals if p.proposal_id]
+            }
+            
+            mapping = CrossReferenceMapping(
+                rank_to_proposal_id=rank_to_proposal_id,
+                proposal_id_to_rank=proposal_id_to_rank,
+                event_id_to_proposals=event_id_to_proposals,
+                category_to_proposals=category_to_proposals
+            )
+            
+            # Return response with dual format
             result = ResponseEnvelope(
                 status="ok",
-                proposals=all_proposals,
-                explanation=explanation,
-                debug=debug_info
+                proposals=all_proposals,  # Backward compatibility
+                explanation=explanation,  # Backward compatibility
+                debug=debug_info,
+                user_display=user_display,
+                agent_data=agent_data,
+                mapping=mapping
             ).model_dump()
             
             # Ensure result is JSON-serializable before returning
