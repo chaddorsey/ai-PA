@@ -2425,6 +2425,30 @@ def orchestrate_scheduling(
                     except ImportError:
                         from schemas import CategoryInfo, UserDisplay, AgentData, CrossReferenceMapping, FormattedProposal
             
+            # Import refined formatting function
+            try:
+                from .formatting import format_refined_user_display
+            except (ImportError, ValueError):
+                try:
+                    from scheduling_orchestrator.formatting import format_refined_user_display
+                except ImportError:
+                    from formatting import format_refined_user_display
+            
+            # Generate refined formatted display
+            # CRITICAL: Use original_normalized_data to ensure slot indices match between
+            # proposals (converted from UTC times) and event_slots_map (which uses original horizon)
+            formatting_normalized_data = original_normalized_data if 'original_normalized_data' in locals() else normalized_data
+            refined_display_text = format_refined_user_display(
+                free_proposals=free_proposals,
+                move_proposals=single_move_proposals,
+                override_proposals=solo_override_proposals,
+                event_registry=event_registry,
+                normalized_data=formatting_normalized_data,
+                user_id=user_id,
+                timezone_str=timezone_str
+            )
+            
+            # Also keep the old format for backward compatibility
             # Group by category for display
             display_categories = {
                 "best_options": free_proposals,
@@ -2461,7 +2485,8 @@ def orchestrate_scheduling(
                 summary=f"Found {len(all_proposals)} meeting option(s)",
                 explanation=explanation,
                 formatted_proposals=formatted_proposals,
-                categories=categories_info
+                categories=categories_info,
+                refined_display=refined_display_text
             )
             
             # Build agent data - ensure functions are available

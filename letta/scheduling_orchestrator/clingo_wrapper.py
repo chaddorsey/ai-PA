@@ -434,7 +434,7 @@ def compute_move_deltas(
                             new_start_slot = event_start_slot + slot_shift
                     else:
                         # No work hours defined - use original shift
-                        new_start_slot = event_start_slot + slot_shift
+                    new_start_slot = event_start_slot + slot_shift
                     
                     # Calculate new start/end times based on slot
                     new_start_dt = slot_indexer.slot_to_datetime(new_start_slot)
