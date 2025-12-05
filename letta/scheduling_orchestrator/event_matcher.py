@@ -397,6 +397,14 @@ def identify_event_from_natural_language(
     best_score = 0.0
     best_participant = None
     
+    # Log for debugging
+    import sys
+    try:
+        print(f"[identify_event_from_natural_language] Searching for event with identifiers: {event_identifiers}", file=sys.stderr, flush=True)
+        print(f"[identify_event_from_natural_language] Total participants: {len(events_by_participant)}, Total events: {sum(len(events) for events in events_by_participant.values())}", file=sys.stderr, flush=True)
+    except:
+        pass
+    
     # Score all events across all participants
     for participant_id, events in events_by_participant.items():
         for event in events:
@@ -405,6 +413,15 @@ def identify_event_from_natural_language(
                 best_score = score
                 best_match = event
                 best_participant = participant_id
+    
+    # Log best match found
+    try:
+        if best_match:
+            print(f"[identify_event_from_natural_language] Best match found: '{best_match.get('summary', '')}' (ID: {best_match.get('id', '')}) with score {best_score:.2f} (min: {min_score})", file=sys.stderr, flush=True)
+        else:
+            print(f"[identify_event_from_natural_language] No match found (best_score: {best_score:.2f}, min_score: {min_score})", file=sys.stderr, flush=True)
+    except:
+        pass
     
     # Return best match if it meets minimum threshold
     if best_match and best_score >= min_score:

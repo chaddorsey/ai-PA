@@ -729,6 +729,12 @@ def orchestrate_scheduling(
                         debug=debug_info
                     ).model_dump()
                 
+                # Log event identifiers for debugging
+                try:
+                    print(f"[orchestrate_scheduling] Event identifiers: {event_identifiers_dict}", file=sys.stderr, flush=True)
+                except:
+                    pass
+                
                 # Identify event from natural language
                 match_result = identify_event_from_natural_language(
                     event_identifiers=event_identifiers_dict,
