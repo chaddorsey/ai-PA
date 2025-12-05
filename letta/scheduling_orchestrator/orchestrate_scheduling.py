@@ -24,29 +24,41 @@ if False:  # Never executes, but satisfies type checkers
 
 def orchestrate_scheduling(
     utterance: str,
-    events_by_participant: str,  # JSON string: Dict[str, List[Dict[str, Any]]] - mapping participant IDs to lists of event dicts
-    context_json: Optional[str] = None  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences
+    participant_ids: Optional[List[str]] = None,  # NEW: List of participant email addresses for automatic event fetching
+    user_id: Optional[str] = None,  # NEW: User's own email address (for reference)
+    context_json: Optional[str] = None,  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences (REQUIRED when using participant_ids)
+    events_by_participant: Optional[str] = None  # JSON string: Dict[str, List[Dict[str, Any]]] - LEGACY: Pre-fetched events (use participant_ids instead)
 ) -> dict:
     """
     Orchestrate scheduling by finding optimal meeting times that satisfy constraints and preferences.
     
+    This tool can operate in two modes:
+    
+    1. **RECOMMENDED - Direct Event Retrieval**: Provide participant_ids and the tool will automatically
+       fetch calendar events via MCP. This is more reliable and avoids message size limits.
+       No need to call Get_Events or Core_Event_Data first.
+    
+    2. **LEGACY - Pre-fetched Events**: Provide events_by_participant if you've already fetched events.
+       Use this only for testing or custom calendar sources.
+    
     This function includes comprehensive error handling and logging. Errors are captured
     with full tracebacks and returned in the response for debugging.
     
-    This tool takes a natural language scheduling request, calendar events for all participants,
-    and optional context (working hours, preferences, policies), then returns ready-to-schedule
-    meeting proposals. The tool uses Answer Set Programming (ASP) to find optimal solutions that:
+    The tool uses Answer Set Programming (ASP) to find optimal solutions that:
     - Satisfy hard constraints (no double bookings, work hours, minimum gaps)
     - Optimize soft preferences (minimize disruption, maximize focus blocks, respect timing preferences)
     
     Args:
         utterance: Natural language scheduling request (e.g., "Find 45 minutes with Alex & Priya Tue–Thu mornings. Minimize disruption.")
-        events_by_participant: JSON string representing a dictionary mapping participant IDs (strings) to lists of calendar events.
-                              Each event should be a dict with keys: id, title, start, end, locked, protected, flexible.
-                              Events should be expanded instances within the planning horizon.
-                              Example JSON: '{"exec": [{"id": "evt1", "title": "Meeting", "start": "2025-11-25T10:00:00Z", "end": "2025-11-25T11:00:00Z", "locked": false}], "alex": []}'
-        context_json: Optional JSON string containing:
-                      - timeframe: {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "tz": "America/New_York"}
+        
+        participant_ids: (RECOMMENDED) List of participant email addresses. The tool will automatically fetch
+                        their calendar events via MCP Core_Event_Data. Example: ["cdorsey@concord.org", "alex@example.com"]
+                        If provided, context_json must include timeframe.
+        
+        user_id: (Optional) User's own email address. For reference only - Core_Event_Data treats all calendars the same.
+        
+        context_json: (REQUIRED when using participant_ids) JSON string containing:
+                      - timeframe: {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "tz": "America/New_York"} (REQUIRED for participant_ids mode)
                       - participants: [{"id": "exec", "email": "me@acme.com", "work_hours": "M-F 09:00-17:30"}, ...]
                       - policy: {
                           "hard": {"min_gap_min": 10},
@@ -58,6 +70,11 @@ def orchestrate_scheduling(
                           "lexicographic_levels": ["feasibility", "protected_events", "move_costs", "focus_blocks"]
                         }
                       - slot_size_minutes: 15 (fixed for now)
+        
+        events_by_participant: (LEGACY) JSON string representing a dictionary mapping participant IDs to lists of calendar events.
+                              Each event should be a dict with keys: id, title, start, end, locked, protected, flexible.
+                              Only use this if you've already fetched events. Otherwise, use participant_ids.
+                              Example JSON: '{"exec": [{"id": "evt1", "title": "Meeting", "start": "2025-11-25T10:00:00Z", "end": "2025-11-25T11:00:00Z", "locked": false}], "alex": []}'
     
     Returns:
         Dictionary with keys:
@@ -245,9 +262,17 @@ def orchestrate_scheduling(
         # Parse JSON string inputs
         try:
             if isinstance(events_by_participant, str):
-                events_by_participant = json.loads(events_by_participant)
+                # Handle empty string - treat as None (no events provided)
+                if events_by_participant.strip() == "":
+                    events_by_participant = None
+                else:
+                    events_by_participant = json.loads(events_by_participant)
             if context_json is not None and isinstance(context_json, str):
-                context_json = json.loads(context_json)
+                # Handle empty string - treat as None
+                if context_json.strip() == "":
+                    context_json = None
+                else:
+                    context_json = json.loads(context_json)
         except json.JSONDecodeError as e:
             return {
                 "status": "bad_input",
@@ -260,12 +285,235 @@ def orchestrate_scheduling(
         start_time = time.time()
         debug_info = DebugInfo()
         
+        # Handle participant_ids - fetch events via MCP if provided
+        if participant_ids:
+            # Parse if it's a JSON string
+            if isinstance(participant_ids, str):
+                try:
+                    participant_ids = json.loads(participant_ids)
+                except json.JSONDecodeError:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Invalid JSON in participant_ids: {participant_ids}",
+                        proposals=[],
+                        error_message="Invalid participant_ids JSON",
+                        debug=debug_info
+                    ).model_dump()
+            
+            # Ensure it's a list
+            if not isinstance(participant_ids, list):
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation="participant_ids must be a list of email addresses",
+                    proposals=[],
+                    error_message="participant_ids must be a list",
+                    debug=debug_info
+                ).model_dump()
+        
+        # Determine which mode to use: participant_ids (automatic fetching) or events_by_participant (legacy)
+        if participant_ids:
+            # Mode 1: Fetch events automatically via MCP
+            if not context_json:
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation="context_json with timeframe is required when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
+                    proposals=[],
+                    error_message="Missing context_json with timeframe",
+                    debug=debug_info
+                ).model_dump()
+            
+            if "timeframe" not in context_json:
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation="timeframe is required in context_json when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
+                    proposals=[],
+                    error_message="Missing timeframe in context_json",
+                    debug=debug_info
+                ).model_dump()
+            
+            # Fetch events from MCP
+            import os
+            import asyncio
+            try:
+                # Try relative import first (when run as package)
+                from .mcp_client import MCPCalendarClient, MCPError
+            except (ImportError, ValueError):
+                try:
+                    # Try absolute import (when run standalone or in Letta)
+                    from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
+                except ImportError:
+                    # Last resort: try direct import
+                    from mcp_client import MCPCalendarClient, MCPError
+            
+            # Get MCP server URL from environment or use default
+            mcp_url = os.getenv(
+                "MCP_CALENDAR_SERVER_URL",
+                "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+            )
+            
+            # Create MCP client
+            mcp_client = MCPCalendarClient(
+                base_url=mcp_url,
+                timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
+                max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
+            )
+            
+            # Fetch events asynchronously
+            try:
+                # Import the fetch_calendar_events function (defined below or inline)
+                # For now, define it inline
+                async def fetch_calendar_events(
+                    participant_ids: List[str],
+                    user_id: Optional[str],
+                    timeframe: Dict[str, str],
+                    mcp_client
+                ) -> Dict[str, List[Dict[str, Any]]]:
+                    """Fetch calendar events for all participants via MCP Core_Event_Data tool."""
+                    import pytz
+                    from datetime import datetime
+                    
+                    events_by_participant = {}
+                    
+                    # Convert date strings to format expected by Core_Event_Data
+                    # ⚠️ IMPORTANT: Parameter names are REVERSED!
+                    # "Before" = END date, "After" = START date
+                    tz = pytz.timezone(timeframe.get("tz", "America/New_York"))
+                    start_dt = datetime.strptime(timeframe["from"], "%Y-%m-%d")
+                    start_dt = tz.localize(start_dt)
+                    after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
+                    
+                    end_dt = datetime.strptime(timeframe["to"], "%Y-%m-%d")
+                    end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                    before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
+                    
+                    # Fetch events for each participant concurrently
+                    async def fetch_participant_events(participant_id: str):
+                        try:
+                            # Core_Event_Data accepts one calendar at a time
+                            # ⚠️ IMPORTANT: Parameter names are REVERSED - Before=end, After=start
+                            result = await mcp_client.get_core_event_data(
+                                calendar_id=participant_id,
+                                before=before_date_iso,  # END date
+                                after=after_date_iso      # START date
+                            )
+                            
+                            # The result is a JSON array of events (already parsed from text field)
+                            if isinstance(result, list):
+                                events = result
+                            elif isinstance(result, dict):
+                                # If wrapped in a dict, try to extract
+                                if "events" in result:
+                                    events = result["events"]
+                                elif "items" in result:
+                                    events = result["items"]
+                                elif "data" in result:
+                                    events = result["data"]
+                                else:
+                                    events = []
+                            else:
+                                events = []
+                            
+                            # Normalize to orchestrator's expected format
+                            # Core_Event_Data provides: summary, id, start.dateTime, end.dateTime, locked, protected, flexible, attendees_list
+                            # Orchestrator expects: id, title, start, end, locked, protected, flexible, attendees
+                            normalized_events = []
+                            for evt in events:
+                                # Skip all-day events if present
+                                if evt.get("start", {}).get("date"):  # All-day events have "date" not "dateTime"
+                                    continue
+                                
+                                # Extract start/end from nested structure
+                                start_dt = evt.get("start", {}).get("dateTime") or evt.get("start", {}).get("date")
+                                end_dt = evt.get("end", {}).get("dateTime") or evt.get("end", {}).get("date")
+                                
+                                if not start_dt or not end_dt:
+                                    continue  # Skip events without valid start/end
+                                
+                                # Extract attendees_list
+                                attendees_list = evt.get("attendees_list", [])
+                                if isinstance(attendees_list, str):
+                                    try:
+                                        import ast
+                                        attendees_list = ast.literal_eval(attendees_list)
+                                    except:
+                                        attendees_list = []
+                                elif not isinstance(attendees_list, list):
+                                    attendees_list = []
+                                
+                                # Normalize to orchestrator format
+                                normalized_events.append({
+                                    "id": evt.get("id", ""),
+                                    "title": evt.get("summary", ""),
+                                    "start": start_dt,
+                                    "end": end_dt,
+                                    "locked": evt.get("locked", False),
+                                    "protected": evt.get("protected", False),
+                                    "flexible": evt.get("flexible", True),
+                                    "attendees": attendees_list
+                                })
+                            
+                            return participant_id, normalized_events
+                        except Exception as e:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.error(f"Failed to fetch events for {participant_id}: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
+                            return participant_id, []
+                    
+                    # Fetch all calendars concurrently
+                    tasks = [fetch_participant_events(pid) for pid in participant_ids]
+                    results = await asyncio.gather(*tasks)
+                    
+                    # Build result dictionary
+                    for participant_id, events in results:
+                        events_by_participant[participant_id] = events
+                    
+                    return events_by_participant
+                
+                # Initialize MCP client and fetch events
+                # Use asyncio.run() since this function is not async
+                async def fetch_all():
+                    await mcp_client.initialize()
+                    return await fetch_calendar_events(
+                        participant_ids, user_id, context_json["timeframe"], mcp_client
+                    )
+                
+                fetched_events = asyncio.run(fetch_all())
+                # Merge fetched events with any provided events_by_participant (if both are used)
+                if events_by_participant:
+                    for pid, events in fetched_events.items():
+                        if pid in events_by_participant:
+                            events_by_participant[pid].extend(events)
+                        else:
+                            events_by_participant[pid] = events
+                else:
+                    events_by_participant = fetched_events
+            except MCPError as e:
+                error_traceback = traceback.format_exc()
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation=f"Failed to fetch calendar events from MCP server: {e.message}",
+                    proposals=[],
+                    error_message=f"MCP error: {e.message}",
+                    debug=debug_info
+                ).model_dump() | {"error_traceback": error_traceback}
+            except Exception as e:
+                error_traceback = traceback.format_exc()
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation=f"Failed to fetch calendar events: {str(e)}",
+                    proposals=[],
+                    error_message=str(e),
+                    debug=debug_info
+                ).model_dump() | {"error_traceback": error_traceback}
+        
         # Log input summary for debugging
         input_summary = {
             "utterance": utterance[:200] + ("..." if len(utterance) > 200 else ""),  # Truncate long utterances
-            "num_participants": len(events_by_participant),
-            "events_per_participant": {pid: len(events) for pid, events in events_by_participant.items()},
-            "total_events": sum(len(events) for events in events_by_participant.values()),
+            "num_participants": len(events_by_participant) if events_by_participant else 0,
+            "events_per_participant": {pid: len(events) for pid, events in events_by_participant.items()} if events_by_participant else {},
+            "total_events": sum(len(events) for events in events_by_participant.values()) if events_by_participant else 0,
             "has_context": context_json is not None,
             "context_keys": list(context_json.keys()) if context_json else []
         }
@@ -275,17 +523,17 @@ def orchestrate_scheduling(
         if not events_by_participant:
             return ResponseEnvelope(
                 status="bad_input",
-                explanation="No events provided. Please call Get_Events for the desired horizon and all participants, then pass results as events_by_participant.",
+                explanation="No events provided or fetched. Please provide events_by_participant or participant_ids with a valid timeframe in context.",
                 proposals=[],
                 relaxations=[
                     Relaxation(
-                        description="Call Get_Events for [from,to] and all participants, pass results as events_by_participant",
+                        description="Provide participant_ids and a timeframe in context_json to enable automatic event fetching.",
                         expected_impact="high",
                         policy_change={},
                         rank=1
                     )
                 ],
-                error_message="events_by_participant is empty",
+                error_message="No events to schedule",
                 debug=debug_info
             ).model_dump()
         
@@ -1159,9 +1407,9 @@ def orchestrate_scheduling(
             
             # Process multiple solutions to build diverse proposals
             all_proposals = []
-            # By default, return all proposals with 0 or 1 moves (zero or single-move solutions)
+            # By default, return all proposals with 0, 1, or 2 moves (zero, single-move, or double-move solutions)
             # This ensures we return all feasible options without overwhelming the user
-            max_moved_events = 1  # Return all proposals with 0 or 1 moves
+            max_moved_events = 2  # Return all proposals with 0, 1, or 2 moves
             
             # Sort solutions by score (highest first), then by number of moved events (fewer is better)
             # Score already prioritizes free slots, then single moves, etc.

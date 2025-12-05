@@ -4,107 +4,91 @@
 
 You have access to a powerful scheduling orchestration tool called `orchestrate_scheduling` that uses constraint-based optimization to find optimal meeting times. This tool can handle complex scheduling requests while minimizing disruption to everyone's calendars.
 
+**IMPORTANT**: The tool now automatically fetches calendar events for you! You no longer need to call `Get_Events` or `Core_Event_Data` first.
+
 ## Tool Name
 
 `orchestrate_scheduling`
 
-## How to Use
+## How to Use (Recommended Mode)
 
-### Step 1: Gather Calendar Events
+### Step 1: Extract Participant Information
 
-Before calling `orchestrate_scheduling`, you must first retrieve calendar events for all participants:
-
-- **For the user's calendar**: Use `Get_Events` tool
-  - This tool queries the user's own calendar
-  - Example: Call `Get_Events` with the desired date range and participant list
-
-- **For other staff calendars**: Use `Get-Events_From_Arbitrary_Calendar` tool
-  - This tool queries calendars of other team members/staff
-  - Use this for participants other than the user
-  - Example: Call `Get-Events_From_Arbitrary_Calendar` for each participant (Alex, Priya, etc.)
-
-**Important**: 
-- You need to call these tools for ALL participants in the scheduling request
-- **Filter events by time horizon**: Only fetch events within the planning window (e.g., if scheduling for "next 2 weeks", only get events in that range)
-- **Filter all-day events**: Exclude events that span 24+ hours (they don't block specific time slots)
-- **Use minimal event format**: When preparing events for `orchestrate_scheduling`, only include: `id`, `start`, `end`, `locked`, `protected`, `flexible` (omit `title`, `description`, `location`, etc.)
-- This reduces payload size by 60-70% and prevents message size limit errors
+From the user's request, identify:
+- **Participant email addresses**: All people who need to attend the meeting
+- **Date range**: The timeframe for scheduling (e.g., "next week", "December 8-14")
+- **User's email**: The person making the request (optional but helpful)
 
 ### Step 2: Prepare the Inputs
 
-Once you have all the calendar events, prepare the inputs for `orchestrate_scheduling`:
-
 1. **utterance** (string): The user's natural language scheduling request
    - Example: "Find 45 minutes with Alex and Priya next Tuesday morning. Minimize disruption."
+   - Pass this exactly as the user said it - the tool extracts requirements automatically
 
-2. **events_by_participant** (JSON string): A JSON object mapping participant IDs to their calendar events
-   - Format: `{"participant_id": [list of events], ...}`
-   - **IMPORTANT**: Use minimal event format to reduce payload size (see below)
-   - Each event must have: `id`, `start`, `end`, `locked`, `protected`, `flexible`
-   - **Omit unused fields**: `title`, `description`, `location`, `owner` are NOT needed
-   - **Pre-filter events**: Only include events within the planning horizon (timeframe)
-   - **Filter all-day events**: Exclude events that span 24+ hours (they don't block time slots)
-   - Convert the events from Get_Events/Get-Events_From_Arbitrary_Calendar into this minimal format
-   - Example JSON (minimal format):
-     ```json
-     {
-       "exec": [
-         {
-           "id": "evt1",
-           "start": "2025-11-25T14:00:00Z",
-           "end": "2025-11-25T14:15:00Z",
-           "locked": false,
-           "protected": false,
-           "flexible": true
-         }
-       ],
-       "alex": [
-         {
-           "id": "evt2",
-           "start": "2025-11-25T10:00:00Z",
-           "end": "2025-11-25T11:00:00Z",
-           "locked": false,
-           "protected": true,
-           "flexible": false
-         }
-       ],
-       "priya": []
-     }
-     ```
-   - **Payload size optimization**: This minimal format reduces payload by 60-70% compared to full event objects
+2. **participant_ids** (list of strings): **REQUIRED** - List of participant email addresses
+   - Include ALL participants who need to attend
+   - Example: `["cdorsey@concord.org", "alex@example.com", "priya@example.com"]`
+   - The tool will automatically fetch their calendar events via MCP
+   - **No need to call Get_Events or Core_Event_Data first!**
 
-3. **context_json** (optional JSON string): Scheduling preferences and rules
-   - Can include: `timeframe`, `participants` (with work hours), `policy` (min gaps, preferences)
-   - Example JSON:
+3. **context_json** (JSON string): **REQUIRED when using participant_ids** - Must include timeframe
+   - **Minimum required**:
      ```json
      {
        "timeframe": {
-         "from": "2025-11-24",
-         "to": "2025-12-08",
+         "from": "2025-12-08",
+         "to": "2025-12-14",
+         "tz": "America/New_York"
+       }
+     }
+     ```
+   - **Optional but recommended**:
+     ```json
+     {
+       "timeframe": {
+         "from": "2025-12-08",
+         "to": "2025-12-14",
          "tz": "America/New_York"
        },
        "participants": [
          {
            "id": "exec",
-           "email": "user@example.com",
+           "email": "cdorsey@concord.org",
            "work_hours": "M-F 09:00-17:30"
          }
        ],
        "policy": {
          "hard": {
            "min_gap_min": 15
+         },
+         "soft": {
+           "maximize_focus_blocks": {"block_min": 90, "weight": 10},
+           "minimize_moves_of_existing": {"weight_per_min_shift": 2, "tier": "protected"}
          }
        }
      }
      ```
 
+4. **user_id** (string, optional): User's own email address
+   - Example: `"cdorsey@concord.org"`
+   - For reference only - the tool treats all calendars the same
+
 ### Step 3: Call orchestrate_scheduling
 
-Call the tool with the prepared inputs. The tool will:
+Simply call the tool with the inputs above. The tool will:
+- **Automatically fetch** calendar events for all participants via MCP
 - Extract the scheduling requirements from the natural language utterance
 - Find optimal meeting times that satisfy all constraints
 - Minimize disruption (avoid moving protected events, maximize focus blocks)
 - Return ready-to-schedule proposals
+
+**You do NOT need to:**
+- ❌ Call `Get_Events` or `Core_Event_Data` first
+- ❌ Format events into JSON
+- ❌ Filter or process events
+- ❌ Worry about message size limits
+
+The tool handles all of this automatically!
 
 ### Step 4: Handle the Response
 
@@ -132,26 +116,35 @@ The tool returns a response with:
 - Fix the issue (e.g., ensure events were retrieved, check JSON format)
 - Retry the call
 
-## Example Workflow
+## Example Workflow (Recommended Mode)
 
 **User**: "Find 45 minutes with Alex and Priya next Tuesday morning"
 
 **Agent actions**:
-1. Call `Get_Events` for the user's calendar (next week)
-2. Call `Get-Events_From_Arbitrary_Calendar` for Alex (next week)
-3. Call `Get-Events_From_Arbitrary_Calendar` for Priya (next week)
-4. Combine all events into `events_by_participant` JSON format
-5. Call `orchestrate_scheduling` with:
-   - utterance: "Find 45 minutes with Alex and Priya next Tuesday morning"
-   - events_by_participant: (the combined JSON)
-   - context_json: (optional, with work hours if available)
-6. Present the proposal to the user
+1. Extract participant emails: `["cdorsey@concord.org", "alex@example.com", "priya@example.com"]`
+2. Determine date range: "next Tuesday morning" → December 9-13, 2025 (example)
+3. Call `orchestrate_scheduling` with:
+   ```python
+   {
+     "utterance": "Find 45 minutes with Alex and Priya next Tuesday morning",
+     "participant_ids": ["cdorsey@concord.org", "alex@example.com", "priya@example.com"],
+     "context_json": "{\"timeframe\": {\"from\": \"2025-12-09\", \"to\": \"2025-12-13\", \"tz\": \"America/New_York\"}}"
+   }
+   ```
+4. The tool automatically fetches all calendar events
+5. Present the proposal to the user
+
+**That's it!** No manual event fetching needed.
+
+## Legacy Mode (Optional)
+
+If you already have events fetched (e.g., from testing or custom sources), you can use the legacy `events_by_participant` parameter instead of `participant_ids`. However, the recommended approach is to use `participant_ids` and let the tool fetch events automatically.
 
 ## Key Points
 
-- **Always gather events first**: You cannot call `orchestrate_scheduling` without calendar events
-- **Use the right tool for each calendar**: `Get_Events` for user, `Get-Events_From_Arbitrary_Calendar` for others
-- **Convert to JSON strings**: The tool expects `events_by_participant` and `context_json` as JSON strings
+- **Use participant_ids**: The tool automatically fetches calendar events - no need to call Get_Events or Core_Event_Data first
+- **Always provide timeframe**: When using `participant_ids`, `context_json` must include a `timeframe` with `from`, `to`, and `tz` fields
+- **Extract emails from names**: If the user mentions names like "Alex", map them to email addresses (e.g., "alex@example.com")
 - **Handle UNSAT gracefully**: When no solution is found, present relaxations and negotiate with the user
 - **Explain the reasoning**: Use the `explanation` field to help the user understand why a time was chosen
 
@@ -177,8 +170,25 @@ The tool returns a response with:
 
 ## Error Handling
 
-- **Missing events**: If `events_by_participant` is empty, the tool returns `bad_input` with a helpful message
-- **Invalid JSON**: If JSON parsing fails, check the format and retry
+- **Missing timeframe**: If `participant_ids` is provided but `context_json` doesn't include `timeframe`, the tool returns `bad_input` with a clear error message. Always include timeframe when using participant_ids.
+- **MCP fetch failures**: If the tool cannot fetch events from the MCP server, it returns `bad_input` with details. Check that participant email addresses are correct and the MCP server is accessible.
+- **Invalid JSON**: If JSON parsing fails, check the format of `context_json` and retry
 - **No solution found**: Present relaxations and work with the user to find an acceptable compromise
 - **Tool dependencies missing**: If you get an error about missing dependencies, inform the user that the scheduling system needs to be configured
+
+## Troubleshooting
+
+**"Missing timeframe in context_json" error**:
+- Ensure `context_json` includes a `timeframe` object with `from`, `to`, and `tz` fields
+- Example: `{"timeframe": {"from": "2025-12-08", "to": "2025-12-14", "tz": "America/New_York"}}`
+
+**"Failed to fetch calendar events from MCP server" error**:
+- Verify participant email addresses are correct
+- Check that the MCP calendar server is running and accessible
+- Ensure participant emails match calendar identifiers
+
+**"No events provided or fetched" error**:
+- This usually means the MCP server returned no events for the given participants and date range
+- Verify the date range is correct
+- Check that participants have calendars accessible via the MCP server
 
