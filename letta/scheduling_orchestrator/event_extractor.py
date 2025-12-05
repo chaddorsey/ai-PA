@@ -6,7 +6,7 @@ from fetched calendar events for use in rescheduling operations.
 """
 
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import pytz
 from .schemas import SchedulingProblem
 
@@ -69,17 +69,34 @@ def extract_event_details_for_rescheduling(
         location = location.strip()
     
     # Extract start/end times
-    start_data = event.get("start", {})
-    end_data = event.get("end", {})
+    # Handle both formats: string (ISO 8601) or dict with dateTime/date keys
+    start_raw = event.get("start", {})
+    end_raw = event.get("end", {})
     
-    # Handle both dateTime and date formats (skip all-day events)
-    start_dt_str = start_data.get("dateTime")
-    end_dt_str = end_data.get("dateTime")
+    # If start/end are strings, use them directly
+    if isinstance(start_raw, str):
+        start_dt_str = start_raw
+    elif isinstance(start_raw, dict):
+        start_dt_str = start_raw.get("dateTime")
+        if not start_dt_str:
+            # Check if it's an all-day event (has "date" instead of "dateTime")
+            if start_raw.get("date"):
+                raise ValueError("All-day events are not supported for rescheduling")
+    else:
+        start_dt_str = None
+    
+    if isinstance(end_raw, str):
+        end_dt_str = end_raw
+    elif isinstance(end_raw, dict):
+        end_dt_str = end_raw.get("dateTime")
+        if not end_dt_str:
+            # Check if it's an all-day event (has "date" instead of "dateTime")
+            if end_raw.get("date"):
+                raise ValueError("All-day events are not supported for rescheduling")
+    else:
+        end_dt_str = None
     
     if not start_dt_str or not end_dt_str:
-        # Check if it's an all-day event (has "date" instead of "dateTime")
-        if start_data.get("date") or end_data.get("date"):
-            raise ValueError("All-day events are not supported for rescheduling")
         raise ValueError("Event missing required start/end times")
     
     # Parse datetimes
@@ -180,7 +197,7 @@ def extract_event_details_for_rescheduling(
 
 
 def merge_event_details_with_utterance(
-    extracted_event_details: Dict[str, Any],
+    extracted_event_details: Optional[Dict[str, Any]],
     scheduling_problem: SchedulingProblem,
     context_json: Optional[Dict[str, Any]] = None
 ) -> SchedulingProblem:
@@ -188,26 +205,38 @@ def merge_event_details_with_utterance(
     Merge extracted event details with utterance constraints to create complete SchedulingProblem.
     
     This function combines:
-    - Event details (participants, duration, title, location) as the base
+    - Event details (participants, duration, title, location) as the base (if available)
     - Utterance constraints (preferences, time windows, additional participants) as overrides
     
     Utterance preferences override event defaults when there are conflicts.
     
+    If extracted_event_details is None (event identification failed), this function still expands
+    the time window to the full timeframe for rescheduling requests.
+    
     Args:
-        extracted_event_details: Event details from extract_event_details_for_rescheduling
+        extracted_event_details: Event details from extract_event_details_for_rescheduling (None if identification failed)
         scheduling_problem: SchedulingProblem extracted from utterance
         context_json: Optional context for timeframe defaults
         
     Returns:
         Updated SchedulingProblem with merged details
     """
-    # Start with event details as base
-    event_participants = extracted_event_details.get("participants", [])
-    event_duration = extracted_event_details.get("duration_minutes", 0)
-    event_title = extracted_event_details.get("title", "Meeting")
-    event_location = extracted_event_details.get("location")
-    event_start_utc = extracted_event_details.get("current_start_utc")
-    event_end_utc = extracted_event_details.get("current_end_utc")
+    # Start with event details as base (if available)
+    if extracted_event_details:
+        event_participants = extracted_event_details.get("participants", [])
+        event_duration = extracted_event_details.get("duration_minutes", 0)
+        event_title = extracted_event_details.get("title", "Meeting")
+        event_location = extracted_event_details.get("location")
+        event_start_utc = extracted_event_details.get("current_start_utc")
+        event_end_utc = extracted_event_details.get("current_end_utc")
+    else:
+        # Event identification failed - use utterance values as defaults
+        event_participants = []
+        event_duration = 0
+        event_title = "Meeting"
+        event_location = None
+        event_start_utc = None
+        event_end_utc = None
     
     # Merge participants: Use event participants as base, but utterance may add participants
     # If utterance specifies participants, use those (they may include additional people)
@@ -234,23 +263,62 @@ def merge_event_details_with_utterance(
     # Merge location: Use event location unless utterance specifies different
     merged_location = scheduling_problem.location if scheduling_problem.location else event_location
     
-    # For time constraints, utterance preferences take precedence
-    # But we can use event's current time as a reference if utterance doesn't specify
-    merged_time_window_start = scheduling_problem.time_window_start
-    merged_time_window_end = scheduling_problem.time_window_end
+    # For rescheduling, expand time window to full timeframe (default 2 weeks)
+    # Keep preferred_days/preferred_times as preferences, not hard constraints
+    # This ensures we find multiple options across the full search window
     merged_preferred_times = scheduling_problem.preferred_times
     merged_preferred_days = scheduling_problem.preferred_days
     merged_avoid_times = scheduling_problem.avoid_times
     merged_avoid_days = scheduling_problem.avoid_days
     
-    # Set default timeframe if not in context (28 days from today, current and future)
+    # Set default timeframe if not in context (14 days = 2 weeks from today, current and future)
     if context_json and "timeframe" not in context_json:
         now = datetime.now(pytz.UTC)
         context_json["timeframe"] = {
             "from": now.strftime("%Y-%m-%d"),
-            "to": (now + timedelta(days=26)).strftime("%Y-%m-%d"),  # 27 days inclusive = 28 days
+            "to": (now + timedelta(days=13)).strftime("%Y-%m-%d"),  # 14 days inclusive = 2 weeks
             "tz": "America/New_York"
         }
+    
+    # For rescheduling, use the full timeframe from context_json, not the narrow window from utterance
+    # The utterance's time_window is too restrictive (e.g., "Wednesday afternoon" = single day, 5 hours)
+    # Instead, use the full timeframe and let preferred_days/preferred_times guide the search
+    merged_time_window_start = None
+    merged_time_window_end = None
+    
+    if context_json and "timeframe" in context_json:
+        timeframe = context_json["timeframe"]
+        tz_str = timeframe.get("tz", "America/New_York")
+        from_date_str = timeframe.get("from")
+        to_date_str = timeframe.get("to")
+        
+        if from_date_str and to_date_str:
+            try:
+                participant_tz = pytz.timezone(tz_str)
+                # Parse dates and set to start/end of day in participant timezone
+                from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+                to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+                
+                # Start of first day
+                merged_time_window_start_dt = participant_tz.localize(
+                    datetime.combine(from_date, time.min)
+                )
+                # End of last day
+                merged_time_window_end_dt = participant_tz.localize(
+                    datetime.combine(to_date, time.max)
+                )
+                
+                # Convert to ISO format with timezone
+                merged_time_window_start = merged_time_window_start_dt.isoformat()
+                merged_time_window_end = merged_time_window_end_dt.isoformat()
+            except Exception:
+                # If parsing fails, fall back to utterance's time window
+                merged_time_window_start = scheduling_problem.time_window_start
+                merged_time_window_end = scheduling_problem.time_window_end
+    else:
+        # No timeframe in context - use utterance's time window as fallback
+        merged_time_window_start = scheduling_problem.time_window_start
+        merged_time_window_end = scheduling_problem.time_window_end
     
     # Create merged SchedulingProblem
     merged_problem = SchedulingProblem(
