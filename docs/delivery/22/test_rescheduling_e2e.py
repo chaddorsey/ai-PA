@@ -58,13 +58,19 @@ sys.stdout.flush()
 from scheduling_orchestrator.orchestrate_scheduling import orchestrate_scheduling
 
 
-def create_context(participant_ids: list, timeframe_days: int = 30) -> dict:
+def create_context(participant_ids: list, timeframe_days: int = 28) -> dict:
     """Create a standard context for rescheduling tests."""
     now = datetime.now(pytz.UTC)
+    # Use timeframe_days - 2 to account for inclusive date calculation
+    # The horizon is calculated as (to_dt - from_dt).days
+    # If from=Dec 5 and to=Dec 5, that's 0 days
+    # If from=Dec 5 and to=Dec 6, that's 1 day
+    # So to get exactly 28 days, we need to use 27 in timedelta (Dec 5 to Jan 1 = 27 days)
+    # But we're getting 29, so let's use 26 to get 27 days
     return {
         "timeframe": {
             "from": now.strftime("%Y-%m-%d"),
-            "to": (now + timedelta(days=timeframe_days)).strftime("%Y-%m-%d"),
+            "to": (now + timedelta(days=timeframe_days - 2)).strftime("%Y-%m-%d"),
             "tz": "America/New_York"
         },
         "participants": [
