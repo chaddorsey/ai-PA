@@ -1794,16 +1794,18 @@ def orchestrate_scheduling(
             # Fetch calendars for missing participants if we have MCP client capability
             if missing_participants and context_json and context_json.get("timeframe"):
                 try:
-                    # Import MCP client
-                    from .mcp_client import MCPCalendarClient, MCPError
+                    # Import MCP client - try absolute imports first
                     try:
                         from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
                     except (ImportError, ValueError):
                         try:
-                            from mcp_client import MCPCalendarClient, MCPError
-                        except ImportError:
-                            MCPCalendarClient = None
-                            MCPError = None
+                            from .mcp_client import MCPCalendarClient, MCPError
+                        except (ImportError, ValueError):
+                            try:
+                                from mcp_client import MCPCalendarClient, MCPError
+                            except ImportError:
+                                MCPCalendarClient = None
+                                MCPError = None
                     
                     if MCPCalendarClient:
                         mcp_url = os.getenv(
@@ -1892,11 +1894,13 @@ def orchestrate_scheduling(
                         
                         # Re-normalize with additional participants
                         # This updates normalized_data with the new participants' calendar data
-                        from .normalizer import normalize_events
                         try:
                             from scheduling_orchestrator.normalizer import normalize_events
                         except (ImportError, ValueError):
-                            from normalizer import normalize_events
+                            try:
+                                from .normalizer import normalize_events
+                            except (ImportError, ValueError):
+                                from normalizer import normalize_events
                         
                         # Re-normalize with all participants (original + newly fetched)
                         updated_normalized_data = normalize_events(events_by_participant, context_json)
