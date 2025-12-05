@@ -2052,6 +2052,20 @@ def orchestrate_scheduling(
                     if scores.priority_score == 0.0 and solution_score != 0.0:
                         scores.priority_score = solution_score
                     
+                    # Prepare original event details for rescheduling proposals
+                    original_event_id_value = None
+                    original_event_details_value = None
+                    if extracted_event_details and scheduling_problem.is_rescheduling:
+                        original_event_id_value = extracted_event_details.get("event_id")
+                        original_event_details_value = {
+                            "title": extracted_event_details.get("title"),
+                            "start_utc": extracted_event_details.get("current_start_utc"),
+                            "end_utc": extracted_event_details.get("current_end_utc"),
+                            "participants": extracted_event_details.get("participants", []),
+                            "location": extracted_event_details.get("location"),
+                            "duration_minutes": extracted_event_details.get("duration_minutes")
+                        }
+                    
                     proposal = Proposal(
                         title=scheduling_problem.title or "Meeting",
                         participants=scheduling_problem.participants,
@@ -2060,7 +2074,9 @@ def orchestrate_scheduling(
                         moved_events=moved_events,
                         objective_scores=scores,
                         location=scheduling_problem.location,
-                        proposal_id=generate_proposal_id()  # Add unique ID
+                        proposal_id=generate_proposal_id(),  # Add unique ID
+                        original_event_id=original_event_id_value,
+                        original_event_details=original_event_details_value
                     )
                     # Store solution method temporarily for sorting (solo_override needs special handling)
                     # We'll remove this attribute before returning

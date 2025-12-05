@@ -146,6 +146,9 @@ class Proposal(BaseModel):
     rank: Optional[int] = Field(default=None, description="Overall rank (1 = best)")
     preference_score: Optional[float] = Field(default=None, description="Preference score (higher = better)")
     overridden_event_ids: Optional[List[str]] = Field(default=None, description="List of event IDs for solo events that this proposal overrides (for solo_override proposals)")
+    # Rescheduling metadata (optional, only present for rescheduling operations)
+    original_event_id: Optional[str] = Field(default=None, description="ID of the original event being rescheduled (only present for rescheduling proposals)")
+    original_event_details: Optional[Dict[str, Any]] = Field(default=None, description="Original event details: title, start_utc, end_utc, participants, location (only present for rescheduling proposals)")
 
 
 class Relaxation(BaseModel):
