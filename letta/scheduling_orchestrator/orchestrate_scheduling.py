@@ -702,9 +702,36 @@ def orchestrate_scheduling(
                 if isinstance(context_json, str):
                     context_dict = json.loads(context_json)
                 
+                # Ensure event_identifiers is a dict (not a string)
+                event_identifiers_dict = scheduling_problem.event_identifiers
+                if isinstance(event_identifiers_dict, str):
+                    try:
+                        event_identifiers_dict = json.loads(event_identifiers_dict)
+                    except (json.JSONDecodeError, ValueError):
+                        # If parsing fails, try to extract from the string
+                        import re
+                        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', event_identifiers_dict, re.DOTALL)
+                        if json_match:
+                            try:
+                                event_identifiers_dict = json.loads(json_match.group(0))
+                            except (json.JSONDecodeError, ValueError):
+                                event_identifiers_dict = None
+                        else:
+                            event_identifiers_dict = None
+                
+                # If event_identifiers is still not a dict, we can't proceed
+                if not isinstance(event_identifiers_dict, dict):
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation="Could not parse event identifiers from the request. Please provide more specific details like: participant names, date, time, or meeting title.",
+                        proposals=[],
+                        error_message="Event identifiers not in valid format",
+                        debug=debug_info
+                    ).model_dump()
+                
                 # Identify event from natural language
                 match_result = identify_event_from_natural_language(
-                    event_identifiers=scheduling_problem.event_identifiers,
+                    event_identifiers=event_identifiers_dict,
                     events_by_participant=events_by_participant,
                     context_json=context_dict
                 )
@@ -732,6 +759,17 @@ def orchestrate_scheduling(
                     
             except Exception as e:
                 error_traceback = traceback.format_exc()
+                # Log detailed error for debugging
+                try:
+                    print(f"[orchestrate_scheduling] Event identification error details:", file=sys.stderr, flush=True)
+                    print(f"  - event_identifiers type: {type(scheduling_problem.event_identifiers)}", file=sys.stderr, flush=True)
+                    print(f"  - event_identifiers value: {scheduling_problem.event_identifiers}", file=sys.stderr, flush=True)
+                    print(f"  - events_by_participant type: {type(events_by_participant)}", file=sys.stderr, flush=True)
+                    print(f"  - context_json type: {type(context_json)}", file=sys.stderr, flush=True)
+                    print(f"  - Error: {str(e)}", file=sys.stderr, flush=True)
+                    print(f"  - Traceback: {error_traceback}", file=sys.stderr, flush=True)
+                except:
+                    pass
                 # For rescheduling, if event identification fails, return error
                 # Don't silently continue - user asked to reschedule a specific meeting
                 return ResponseEnvelope(
