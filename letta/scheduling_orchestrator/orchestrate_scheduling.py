@@ -799,6 +799,53 @@ def orchestrate_scheduling(
                 except:
                     pass
         
+        # 5. Merge event details with utterance constraints if rescheduling
+        if extracted_event_details and scheduling_problem.is_rescheduling:
+            try:
+                # Import merge function
+                try:
+                    from .event_extractor import merge_event_details_with_utterance
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.event_extractor import merge_event_details_with_utterance
+                    except ImportError:
+                        from event_extractor import merge_event_details_with_utterance
+                
+                # Convert context_json to dict if needed
+                context_dict = context_json
+                if isinstance(context_json, str):
+                    context_dict = json.loads(context_json)
+                
+                # Merge event details with utterance constraints
+                scheduling_problem = merge_event_details_with_utterance(
+                    extracted_event_details=extracted_event_details,
+                    scheduling_problem=scheduling_problem,
+                    context_json=context_dict
+                )
+                
+                # Log successful merge
+                try:
+                    print(f"[orchestrate_scheduling] Merged event details: {len(scheduling_problem.participants)} participants, {scheduling_problem.duration_minutes} min, title: '{scheduling_problem.title}'", file=sys.stderr, flush=True)
+                except:
+                    pass
+                    
+            except ValueError as e:
+                # Merge failed (e.g., missing participants, invalid duration)
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation=f"Cannot merge event details with request: {str(e)}",
+                    proposals=[],
+                    error_message=f"Event merge failed: {str(e)}",
+                    debug=debug_info
+                ).model_dump()
+            except Exception as e:
+                error_traceback = traceback.format_exc()
+                # Log error but continue with original scheduling_problem
+                try:
+                    print(f"[orchestrate_scheduling] Error merging event details: {str(e)}", file=sys.stderr, flush=True)
+                except:
+                    pass
+        
         # CRITICAL: Map scheduling_problem.participants to actual keys in events_by_participant
         # This ensures the solver uses the correct participant IDs that match busy_slots keys
         # Build a mapping from participant IDs/emails to the actual keys in events_by_participant

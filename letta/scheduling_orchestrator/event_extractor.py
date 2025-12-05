@@ -6,8 +6,9 @@ from fetched calendar events for use in rescheduling operations.
 """
 
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
+from .schemas import SchedulingProblem
 
 
 def extract_event_details_for_rescheduling(
@@ -176,4 +177,99 @@ def extract_event_details_for_rescheduling(
         "protected": protected,
         "flexible": flexible
     }
+
+
+def merge_event_details_with_utterance(
+    extracted_event_details: Dict[str, Any],
+    scheduling_problem: SchedulingProblem,
+    context_json: Optional[Dict[str, Any]] = None
+) -> SchedulingProblem:
+    """
+    Merge extracted event details with utterance constraints to create complete SchedulingProblem.
+    
+    This function combines:
+    - Event details (participants, duration, title, location) as the base
+    - Utterance constraints (preferences, time windows, additional participants) as overrides
+    
+    Utterance preferences override event defaults when there are conflicts.
+    
+    Args:
+        extracted_event_details: Event details from extract_event_details_for_rescheduling
+        scheduling_problem: SchedulingProblem extracted from utterance
+        context_json: Optional context for timeframe defaults
+        
+    Returns:
+        Updated SchedulingProblem with merged details
+    """
+    # Start with event details as base
+    event_participants = extracted_event_details.get("participants", [])
+    event_duration = extracted_event_details.get("duration_minutes", 0)
+    event_title = extracted_event_details.get("title", "Meeting")
+    event_location = extracted_event_details.get("location")
+    event_start_utc = extracted_event_details.get("current_start_utc")
+    event_end_utc = extracted_event_details.get("current_end_utc")
+    
+    # Merge participants: Use event participants as base, but utterance may add participants
+    # If utterance specifies participants, use those (they may include additional people)
+    # Otherwise, use event participants
+    merged_participants = scheduling_problem.participants if scheduling_problem.participants else event_participants
+    
+    # If utterance participants are empty but event has participants, use event participants
+    if not merged_participants and event_participants:
+        merged_participants = event_participants
+    
+    # Ensure we have at least one participant
+    if not merged_participants:
+        raise ValueError("Cannot determine participants: event has no participants and utterance did not specify any")
+    
+    # Merge duration: Use event duration unless utterance specifies different
+    merged_duration = scheduling_problem.duration_minutes if scheduling_problem.duration_minutes > 0 else event_duration
+    
+    if merged_duration <= 0:
+        raise ValueError(f"Invalid duration: {merged_duration} minutes")
+    
+    # Merge title: Use event title unless utterance specifies different
+    merged_title = scheduling_problem.title if scheduling_problem.title else event_title
+    
+    # Merge location: Use event location unless utterance specifies different
+    merged_location = scheduling_problem.location if scheduling_problem.location else event_location
+    
+    # For time constraints, utterance preferences take precedence
+    # But we can use event's current time as a reference if utterance doesn't specify
+    merged_time_window_start = scheduling_problem.time_window_start
+    merged_time_window_end = scheduling_problem.time_window_end
+    merged_preferred_times = scheduling_problem.preferred_times
+    merged_preferred_days = scheduling_problem.preferred_days
+    merged_avoid_times = scheduling_problem.avoid_times
+    merged_avoid_days = scheduling_problem.avoid_days
+    
+    # Set default timeframe if not in context (28 days from today, current and future)
+    if context_json and "timeframe" not in context_json:
+        now = datetime.now(pytz.UTC)
+        context_json["timeframe"] = {
+            "from": now.strftime("%Y-%m-%d"),
+            "to": (now + timedelta(days=26)).strftime("%Y-%m-%d"),  # 27 days inclusive = 28 days
+            "tz": "America/New_York"
+        }
+    
+    # Create merged SchedulingProblem
+    merged_problem = SchedulingProblem(
+        participants=merged_participants,
+        duration_minutes=merged_duration,
+        time_window_start=merged_time_window_start,
+        time_window_end=merged_time_window_end,
+        preferred_times=merged_preferred_times,
+        preferred_days=merged_preferred_days,
+        participant_preferences=scheduling_problem.participant_preferences,
+        avoid_times=merged_avoid_times,
+        avoid_days=merged_avoid_days,
+        title=merged_title,
+        location=merged_location,
+        min_gap_minutes=scheduling_problem.min_gap_minutes,
+        allow_off_hours=scheduling_problem.allow_off_hours,
+        is_rescheduling=True,  # Mark as rescheduling
+        event_identifiers=scheduling_problem.event_identifiers  # Preserve original identifiers
+    )
+    
+    return merged_problem
 
