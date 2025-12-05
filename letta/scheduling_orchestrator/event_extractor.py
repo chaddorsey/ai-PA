@@ -83,9 +83,20 @@ def extract_event_details_for_rescheduling(
     
     # Parse datetimes
     try:
-        # Replace "Z" with "+00:00" for ISO format compatibility
+        # Normalize timezone formats for ISO format compatibility
+        # Handle "Z" -> "+00:00"
+        # Handle "+0000" -> "+00:00" (no colon format)
         start_str_clean = start_dt_str.replace("Z", "+00:00")
+        if start_str_clean.endswith("+0000"):
+            start_str_clean = start_str_clean.replace("+0000", "+00:00")
+        elif start_str_clean.endswith("-0000"):
+            start_str_clean = start_str_clean.replace("-0000", "+00:00")
+        
         end_str_clean = end_dt_str.replace("Z", "+00:00")
+        if end_str_clean.endswith("+0000"):
+            end_str_clean = end_str_clean.replace("+0000", "+00:00")
+        elif end_str_clean.endswith("-0000"):
+            end_str_clean = end_str_clean.replace("-0000", "+00:00")
         
         start_dt = datetime.fromisoformat(start_str_clean)
         end_dt = datetime.fromisoformat(end_str_clean)
