@@ -21,4 +21,5 @@ This document lists all tasks associated with PBI 21.
 | 21-11 | [Observability & audit logs](./21-11.md) | Proposed | Log inputs, chosen objective values, proposals, and explanations. Redact PII as configured. |
 | 21-12 | [Security & configuration](./21-12.md) | Done | Set timeouts, memory limits; handle secrets (LM keys) via Letta tool configuration; document allowed horizon sizes. Add dependencies to letta/requirements.txt. |
 | 21-13 | [Replace ASP/clingo with pure Python constraint solver](./21-13.md) | InProgress | Replace ASP/clingo backend with pure Python constraint checking and ranking to eliminate "too many messages" errors. Handles free slot finding and single-meeting moves. Maintains same interface for compatibility. |
+| 21-14 | [Validate moved events for all participants](./21-14.md) | Done | Validate that all suggested event moves are conflict-free for all participants of the moved event. Enforce internal-only constraint. Proactively fetch calendars for missing participants. |
 

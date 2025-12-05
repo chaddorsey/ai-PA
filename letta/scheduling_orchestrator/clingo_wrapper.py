@@ -364,6 +364,12 @@ def compute_move_deltas(
             
             # Get event metadata for old start/end times
             event_meta = event_metadata.get(event_key, {})
+            
+            # HARD CONSTRAINT: Only internal-only meetings can be moved
+            internal_only = event_meta.get("internal_only", True)  # Default to True for backwards compatibility
+            if not internal_only:
+                continue  # Skip external events - they cannot be moved
+            
             old_start_dt = event_meta.get("start_dt")
             old_end_dt = event_meta.get("end_dt")
             

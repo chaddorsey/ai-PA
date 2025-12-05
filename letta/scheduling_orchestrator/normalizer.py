@@ -137,6 +137,7 @@ def normalize_events(
     event_protection: Dict[Tuple[str, str], str] = {}
     event_slots_map: Dict[Tuple[str, str], Set[int]] = {}  # Maps (participant_id, event_id) to slot set
     event_metadata: Dict[Tuple[str, str], Dict[str, Any]] = {}  # Maps (participant_id, event_id) to event metadata
+    event_participants: Dict[Tuple[str, str], List[str]] = {}  # Maps (participant_id, event_id) to list of all participant emails
     
     for participant_id, events in events_by_participant.items():
         busy_slots[participant_id] = set()
@@ -190,6 +191,11 @@ def normalize_events(
                 event_key = (participant_id, event_id)
                 event_slots_map[event_key] = set(event_slots)
                 
+                # Extract attendees list
+                attendees = event_dict.get("attendees", [])
+                if not isinstance(attendees, list):
+                    attendees = []
+                
                 # Store event metadata for move logic
                 event_metadata[event_key] = {
                     "start_dt": start_dt,
@@ -201,8 +207,13 @@ def normalize_events(
                     "protected": protected,
                     "flexible": flexible,
                     "internal_only": event_dict.get("internal_only", True),  # Default to True for backwards compatibility
-                    "number_of_attendees": event_dict.get("number_of_attendees", 0)  # Default to 0 for backwards compatibility
+                    "number_of_attendees": len(attendees),  # Use actual count from attendees list
+                    "attendees": attendees  # Store full attendees list for validation
                 }
+                
+                # Store all participants of this event (owner + attendees)
+                # The owner (participant_id) is always a participant, plus any additional attendees
+                event_participants[event_key] = [participant_id] + attendees
                 
                 # Determine protection level
                 # CRITICAL: If an event is protected AND not flexible, it should not be moved
@@ -334,6 +345,7 @@ def normalize_events(
         "event_protection": event_protection,
         "event_slots_map": event_slots_map,  # For move logic: maps (participant_id, event_id) to slot set
         "event_metadata": event_metadata,  # For move logic: maps (participant_id, event_id) to event details
+        "event_participants": event_participants,  # For move validation: maps (participant_id, event_id) to list of all participant emails
         "min_gap_slots": min_gap_slots,
         "timezone": timezone,
     }

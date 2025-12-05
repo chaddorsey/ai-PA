@@ -595,8 +595,44 @@ def orchestrate_scheduling(
                 debug=debug_info
             ).model_dump() | {"error_traceback": error_traceback}
         
-        # Validate that all participants in scheduling problem have events (even if empty)
-        missing_participants = [p for p in scheduling_problem.participants if p not in events_by_participant]
+        # CRITICAL: Map scheduling_problem.participants to actual keys in events_by_participant
+        # This ensures the solver uses the correct participant IDs that match busy_slots keys
+        # Build a mapping from participant IDs/emails to the actual keys in events_by_participant
+        participant_id_mapping = {}
+        events_by_participant_keys = set(events_by_participant.keys())
+        
+        # First, try direct matches
+        for p_id in scheduling_problem.participants:
+            if p_id in events_by_participant_keys:
+                participant_id_mapping[p_id] = p_id
+            else:
+                # Try case-insensitive match
+                p_id_lower = p_id.lower()
+                for key in events_by_participant_keys:
+                    if key.lower() == p_id_lower:
+                        participant_id_mapping[p_id] = key
+                        break
+                # If still no match, try to find by email in context
+                if p_id not in participant_id_mapping and context_json:
+                    context_dict = context_json if isinstance(context_json, dict) else json.loads(context_json)
+                    if "participants" in context_dict:
+                        for p in context_dict["participants"]:
+                            p_context_id = p.get("id", "")
+                            p_context_email = p.get("email", "")
+                            if p_id == p_context_id or p_id == p_context_email:
+                                # Find matching key in events_by_participant
+                                for key in events_by_participant_keys:
+                                    if key.lower() == p_context_email.lower() or key.lower() == p_context_id.lower():
+                                        participant_id_mapping[p_id] = key
+                                        break
+                                if p_id in participant_id_mapping:
+                                    break
+        
+        # Map scheduling_problem.participants to actual keys
+        mapped_participants = [participant_id_mapping.get(p_id, p_id) for p_id in scheduling_problem.participants]
+        
+        # Validate that all participants have events (even if empty)
+        missing_participants = [p for p in mapped_participants if p not in events_by_participant]
         if missing_participants:
             return ResponseEnvelope(
                 status="bad_input",
@@ -605,6 +641,16 @@ def orchestrate_scheduling(
                 error_message=f"Missing events for participants: {missing_participants}",
                 debug=debug_info
             ).model_dump()
+        
+        # Update scheduling_problem.participants to use mapped IDs
+        # Create a new SchedulingProblem with mapped participants
+        # We'll need to update all references to use mapped_participants
+        original_participants = scheduling_problem.participants
+        scheduling_problem.participants = mapped_participants
+        
+        # Debug: Log the mapping
+        print(f"[DEBUG] Participant ID mapping - original: {original_participants}, mapped: {mapped_participants}", file=sys.stderr, flush=True)
+        print(f"[DEBUG] events_by_participant keys: {list(events_by_participant.keys())[:5]}", file=sys.stderr, flush=True)
         
         # 3. Normalize events to 15-minute grid
         try:
@@ -1090,16 +1136,22 @@ def orchestrate_scheduling(
                         from fact_generator import _find_free_slots
                 
                 duration_slots = max(1, scheduling_problem.duration_minutes // 15)
+                # Use mapped participants for free slot calculation
                 free_slots = _find_free_slots(
                     all_slots,
                     busy_slots,
                     normalized_data.get("work_hours_slots", {}),
-                    scheduling_problem.participants,
+                    scheduling_problem.participants,  # Already mapped
                     duration_slots,
                     normalized_data.get("min_gap_slots", 0)
                 )
                 debug_info.free_slots_found = len(free_slots)
                 debug_info.free_slots_ratio = len(free_slots) / num_slots if num_slots > 0 else 0
+                
+                # Debug: Log participant ID matching
+                print(f"[DEBUG] Free slot calculation - participants: {scheduling_problem.participants}", file=sys.stderr, flush=True)
+                print(f"[DEBUG] Free slot calculation - busy_slots keys: {list(busy_slots.keys())[:5]}", file=sys.stderr, flush=True)
+                print(f"[DEBUG] Free slot calculation - found {len(free_slots)} free slots", file=sys.stderr, flush=True)
             except Exception:
                 # If we can't count free slots, that's okay - just skip this debug info
                 pass
@@ -1113,20 +1165,36 @@ def orchestrate_scheduling(
             
             solve_start_time = time.time()
             # Try to find multiple solutions for diversity
+            find_top_candidates = None
             try:
-                from .python_solver import find_top_candidates
-            except (ImportError, ValueError):
+                # Try absolute import first (works in Letta environment)
                 try:
-                    from python_solver import find_top_candidates
-                except ImportError:
-                    find_top_candidates = None
+                    from scheduling_orchestrator.python_solver import find_top_candidates
+                    print(f"[SOLVER] Successfully imported find_top_candidates from scheduling_orchestrator.python_solver", file=sys.stderr, flush=True)
+                except (ImportError, ValueError):
+                    try:
+                        from python_solver import find_top_candidates
+                        print(f"[SOLVER] Successfully imported find_top_candidates from python_solver", file=sys.stderr, flush=True)
+                    except ImportError:
+                        try:
+                            from .python_solver import find_top_candidates
+                            print(f"[SOLVER] Successfully imported find_top_candidates from .python_solver", file=sys.stderr, flush=True)
+                        except (ImportError, ValueError) as e:
+                            print(f"[SOLVER] Failed to import find_top_candidates: {e}", file=sys.stderr, flush=True)
+                            find_top_candidates = None
+            except Exception as e:
+                print(f"[SOLVER] Unexpected error importing find_top_candidates: {e}", file=sys.stderr, flush=True)
+                find_top_candidates = None
             
             solutions = []
+            python_solutions_found = False
             if find_top_candidates:
+                print(f"[SOLVER] find_top_candidates is available, calling it...", file=sys.stderr, flush=True)
                 # Find multiple top candidates
                 # Use a high limit to get all 0-move and 1-move solutions
                 # We'll filter by move count later when building proposals
                 # Use original_normalized_data (full horizon) to find all solutions
+                print(f"[SOLVER] Calling Python solver find_top_candidates...", file=sys.stderr, flush=True)
                 solutions = find_top_candidates(
                     python_normalized_data,
                     scheduling_problem,
@@ -1134,18 +1202,27 @@ def orchestrate_scheduling(
                     context_json,
                     max_candidates=2000  # High limit to capture all feasible solutions
                 )
+                print(f"[SOLVER] Python solver returned {len(solutions)} solutions", file=sys.stderr, flush=True)
                 # If we found multiple solutions, use them; otherwise fall back to single solution
                 if not solutions:
+                    print(f"[SOLVER] No solutions from find_top_candidates, trying find_optimal_slot...", file=sys.stderr, flush=True)
                     solution = find_optimal_slot(
-                        normalized_data,
+                        python_normalized_data,
                         scheduling_problem,
-                        slot_indexer,
+                        python_slot_indexer,
                         context_json
                     )
                     if solution:
                         solutions = [solution]
+                        python_solutions_found = True
+                        print(f"[SOLVER] find_optimal_slot found 1 solution", file=sys.stderr, flush=True)
                 else:
                     solution = solutions[0]  # Keep for compatibility with existing code
+                    python_solutions_found = True
+                    print(f"[SOLVER] Python solver found {len(solutions)} solutions", file=sys.stderr, flush=True)
+                    if solutions:
+                        sample = solutions[0]
+                        print(f"[SOLVER] Sample solution: method={sample.get('method')}, start_slot={sample.get('start_slot')}, score={sample.get('score')}", file=sys.stderr, flush=True)
             else:
                 # Fallback to single solution
                 solution = find_optimal_slot(
@@ -1344,6 +1421,24 @@ def orchestrate_scheduling(
                                     else:
                                         continue
                                 
+                                # CRITICAL: Validate that the converted slot doesn't conflict in the original horizon
+                                # The reduced horizon's busy_slots might be different from the original
+                                duration_slots = max(1, window_problem.duration_minutes // 15)
+                                meeting_slots = range(original_slot, original_slot + duration_slots)
+                                original_busy_slots = original_normalized_data.get("busy_slots", {})
+                                
+                                # Check if this slot conflicts in the original horizon
+                                has_conflict = False
+                                for participant_id in window_problem.participants:
+                                    participant_busy = original_busy_slots.get(participant_id, set())
+                                    if any(slot in participant_busy for slot in meeting_slots):
+                                        has_conflict = True
+                                        break
+                                
+                                if has_conflict:
+                                    # Skip this solution - it conflicts in the original horizon
+                                    continue
+                                
                                 # Create solution dict
                                 asp_solution_dict = {
                                     "start_slot": original_slot,
@@ -1359,8 +1454,14 @@ def orchestrate_scheduling(
                             
                             if asp_solutions_list:
                                 solution = asp_solutions_list[0]
-                                solutions.extend(asp_solutions_list)
-                                asp_solution_found = True
+                                # Only add ASP solutions if Python solver didn't find any
+                                # Python solver solutions are preferred (they use full horizon)
+                                if not python_solutions_found:
+                                    solutions.extend(asp_solutions_list)
+                                    asp_solution_found = True
+                                    print(f"[SOLVER] ASP solver found {len(asp_solutions_list)} solutions (Python found none)", file=sys.stderr, flush=True)
+                                else:
+                                    print(f"[SOLVER] ASP solver found {len(asp_solutions_list)} solutions but Python already found {len(solutions)}, using Python solutions", file=sys.stderr, flush=True)
                                 debug_info.horizon_reduced = True
                                 debug_info.reduced_slots = window_slots
                                 # Store windows_explored in asp_stats instead of debug_info directly
@@ -1671,15 +1772,394 @@ def orchestrate_scheduling(
                         print(f"[ERROR] Full error: {error_tb}", file=sys.stderr, flush=True)
                     continue
             
+            # Phase 5: Proactive Calendar Fetching for Missing Participants
+            # Identify participants from moved events who are not in the original request
+            # and fetch their calendars before validation
+            missing_participants = set()
+            event_participants_map = original_normalized_data.get("event_participants", {})
+            
+            # Collect all participants from moved events
+            for prop in all_proposals:
+                if hasattr(prop, 'moved_events') and prop.moved_events:
+                    for moved_event in prop.moved_events:
+                        # Get event key from moved event
+                        event_key = (moved_event.owner, moved_event.event_id)
+                        # Get all participants of this event
+                        participants = event_participants_map.get(event_key, [moved_event.owner])
+                        for participant_id in participants:
+                            # Check if this participant is not in the original events_by_participant
+                            if participant_id not in events_by_participant:
+                                missing_participants.add(participant_id)
+            
+            # Fetch calendars for missing participants if we have MCP client capability
+            if missing_participants and context_json and context_json.get("timeframe"):
+                try:
+                    # Import MCP client
+                    from .mcp_client import MCPCalendarClient, MCPError
+                    try:
+                        from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
+                    except (ImportError, ValueError):
+                        try:
+                            from mcp_client import MCPCalendarClient, MCPError
+                        except ImportError:
+                            MCPCalendarClient = None
+                            MCPError = None
+                    
+                    if MCPCalendarClient:
+                        mcp_url = os.getenv(
+                            "MCP_CALENDAR_SERVER_URL",
+                            "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+                        )
+                        
+                        mcp_client = MCPCalendarClient(
+                            base_url=mcp_url,
+                            timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
+                            max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
+                        )
+                        
+                        # Fetch calendars for missing participants
+                        async def fetch_missing_calendars():
+                            await mcp_client.initialize()
+                            
+                            # Reuse the fetch_calendar_events function logic
+                            async def fetch_participant_events(participant_id):
+                                try:
+                                    result = await mcp_client.get_core_event_data(
+                                        calendar_id=participant_id,
+                                        before=context_json["timeframe"]["to"],
+                                        after=context_json["timeframe"]["from"]
+                                    )
+                                    
+                                    # Normalize events to orchestrator format
+                                    normalized_events = []
+                                    for evt in result:
+                                        # Skip all-day events
+                                        if evt.get("start", {}).get("date"):
+                                            continue
+                                        
+                                        start_dt = evt.get("start", {}).get("dateTime") or evt.get("start", {}).get("date")
+                                        end_dt = evt.get("end", {}).get("dateTime") or evt.get("end", {}).get("date")
+                                        
+                                        if not start_dt or not end_dt:
+                                            continue
+                                        
+                                        # Extract attendees_list
+                                        attendees_list = evt.get("attendees_list", [])
+                                        if isinstance(attendees_list, str):
+                                            try:
+                                                import ast
+                                                attendees_list = ast.literal_eval(attendees_list)
+                                            except:
+                                                attendees_list = []
+                                        elif not isinstance(attendees_list, list):
+                                            attendees_list = []
+                                        
+                                        normalized_events.append({
+                                            "id": evt.get("id", ""),
+                                            "title": evt.get("summary", ""),
+                                            "start": start_dt,
+                                            "end": end_dt,
+                                            "locked": evt.get("locked", False),
+                                            "protected": evt.get("protected", False),
+                                            "flexible": evt.get("flexible", True),
+                                            "attendees": attendees_list
+                                        })
+                                    
+                                    return participant_id, normalized_events
+                                except Exception as e:
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.error(f"Failed to fetch events for {participant_id}: {e}")
+                                    return participant_id, []
+                            
+                            # Fetch all missing calendars concurrently
+                            tasks = [fetch_participant_events(pid) for pid in missing_participants]
+                            results = await asyncio.gather(*tasks)
+                            
+                            # Build result dictionary
+                            fetched_events = {}
+                            for participant_id, events in results:
+                                fetched_events[participant_id] = events
+                            
+                            return fetched_events
+                        
+                        # Fetch missing calendars
+                        fetched_events = asyncio.run(fetch_missing_calendars())
+                        
+                        # Merge into events_by_participant
+                        for pid, events in fetched_events.items():
+                            events_by_participant[pid] = events
+                        
+                        # Re-normalize with additional participants
+                        # This updates normalized_data with the new participants' calendar data
+                        from .normalizer import normalize_events
+                        try:
+                            from scheduling_orchestrator.normalizer import normalize_events
+                        except (ImportError, ValueError):
+                            from normalizer import normalize_events
+                        
+                        # Re-normalize with all participants (original + newly fetched)
+                        updated_normalized_data = normalize_events(events_by_participant, context_json)
+                        
+                        # Merge new participants' data into original_normalized_data
+                        # Update busy_slots, event_slots_map, event_metadata, event_participants
+                        for pid in fetched_events.keys():
+                            # Add busy slots
+                            if pid in updated_normalized_data["busy_slots"]:
+                                original_normalized_data["busy_slots"][pid] = updated_normalized_data["busy_slots"][pid]
+                            
+                            # Add event_slots_map entries
+                            for event_key, slots in updated_normalized_data["event_slots_map"].items():
+                                if event_key[0] == pid:  # Event belongs to this participant
+                                    original_normalized_data["event_slots_map"][event_key] = slots
+                            
+                            # Add event_metadata entries
+                            for event_key, metadata in updated_normalized_data["event_metadata"].items():
+                                if event_key[0] == pid:  # Event belongs to this participant
+                                    original_normalized_data["event_metadata"][event_key] = metadata
+                            
+                            # Add event_participants entries
+                            for event_key, participants_list in updated_normalized_data["event_participants"].items():
+                                if event_key[0] == pid:  # Event belongs to this participant
+                                    original_normalized_data["event_participants"][event_key] = participants_list
+                            
+                            # Add work_hours_slots if available
+                            if pid in updated_normalized_data.get("work_hours_slots", {}):
+                                original_normalized_data["work_hours_slots"][pid] = updated_normalized_data["work_hours_slots"][pid]
+                        
+                        # Update event_protection if needed
+                        for event_key, protection in updated_normalized_data["event_protection"].items():
+                            if event_key[0] in fetched_events.keys():
+                                original_normalized_data["event_protection"][event_key] = protection
+                        
+                except Exception as e:
+                    # Log error but don't fail - we'll validate with available data
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to fetch calendars for missing participants {missing_participants}: {e}")
+                    # Continue without the missing participants - validation will handle this
+            
+            # Phase 4: Post-Solution Validation
+            # Validate all moved events to ensure they don't conflict with participants' calendars
+            validated_proposals = []
+            validation_errors = []
+            
+            for prop in all_proposals:
+                # Validate the meeting time itself (for all proposals, including zero-conflict)
+                try:
+                    try:
+                        from scheduling_orchestrator.move_validator import validate_proposal_meeting_time
+                    except (ImportError, ValueError):
+                        try:
+                            from .move_validator import validate_proposal_meeting_time
+                        except (ImportError, ValueError):
+                            from move_validator import validate_proposal_meeting_time
+                    
+                    # Debug: Check if participants match busy_slots keys
+                    busy_slots_keys = list(original_normalized_data.get("busy_slots", {}).keys())
+                    participants_not_in_busy = [p for p in prop.participants if p not in original_normalized_data.get("busy_slots", {})]
+                    
+                    # Debug logging
+                    print(f"[VALIDATION] Checking proposal {prop.proposal_id} - participants: {prop.participants}", file=sys.stderr, flush=True)
+                    print(f"[VALIDATION] busy_slots keys: {busy_slots_keys[:5]}", file=sys.stderr, flush=True)
+                    print(f"[VALIDATION] Meeting time: {prop.start_utc} to {prop.end_utc}", file=sys.stderr, flush=True)
+                    
+                    if participants_not_in_busy:
+                        # Try case-insensitive match
+                        busy_slots_lower = {k.lower(): k for k in busy_slots_keys}
+                        for p in participants_not_in_busy[:]:
+                            if p.lower() in busy_slots_lower:
+                                # Found case-insensitive match - this is handled in validate_proposal_meeting_time
+                                participants_not_in_busy.remove(p)
+                    
+                    if participants_not_in_busy:
+                        # Participant ID mismatch - this is a data consistency issue
+                        print(f"[VALIDATION] Participant ID mismatch: {participants_not_in_busy} not in busy_slots", file=sys.stderr, flush=True)
+                        validation_errors.append({
+                            "proposal_id": prop.proposal_id,
+                            "start_utc": prop.start_utc,
+                            "errors": [f"Participant ID mismatch: {participants_not_in_busy} not in busy_slots. Available keys: {busy_slots_keys[:5]}"]
+                        })
+                        continue
+                    
+                    # Debug: Check what slots the meeting time maps to
+                    try:
+                        from datetime import datetime
+                        import pytz
+                        start_dt_val = datetime.fromisoformat(prop.start_utc.replace("Z", "+00:00"))
+                        if start_dt_val.tzinfo is None:
+                            start_dt_val = pytz.UTC.localize(start_dt_val)
+                        else:
+                            start_dt_val = start_dt_val.astimezone(pytz.UTC)
+                        end_dt_val = datetime.fromisoformat(prop.end_utc.replace("Z", "+00:00"))
+                        if end_dt_val.tzinfo is None:
+                            end_dt_val = pytz.UTC.localize(end_dt_val)
+                        else:
+                            end_dt_val = end_dt_val.astimezone(pytz.UTC)
+                        start_slot_val = original_normalized_data["slot_indexer"].datetime_to_slot(start_dt_val)
+                        end_slot_val = original_normalized_data["slot_indexer"].datetime_to_slot(end_dt_val)
+                        print(f"[VALIDATION] Meeting maps to slots {start_slot_val}-{end_slot_val}", file=sys.stderr, flush=True)
+                        # Check busy slots for these slots
+                        for p_id in prop.participants:
+                            p_busy = original_normalized_data.get("busy_slots", {}).get(p_id, set())
+                            conflicts = set(range(start_slot_val, end_slot_val)) & p_busy
+                            if conflicts:
+                                print(f"[VALIDATION] Participant {p_id} has {len(conflicts)} conflicting slots: {sorted(list(conflicts))[:5]}", file=sys.stderr, flush=True)
+                    except Exception as e:
+                        print(f"[VALIDATION] Error in debug check: {e}", file=sys.stderr, flush=True)
+                    
+                    # Check if this is a solo_override proposal
+                    is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
+                    
+                    meeting_valid, meeting_error = validate_proposal_meeting_time(
+                        prop.start_utc,
+                        prop.end_utc,
+                        prop.participants,
+                        original_normalized_data,
+                        original_normalized_data["slot_indexer"],
+                        is_solo_override=is_solo_override
+                    )
+                    
+                    if not meeting_valid:
+                        # Meeting time itself conflicts - reject proposal
+                        validation_errors.append({
+                            "proposal_id": prop.proposal_id,
+                            "start_utc": prop.start_utc,
+                            "errors": [f"Meeting time conflict: {meeting_error}"]
+                        })
+                        continue
+                except Exception as e:
+                    # If validation fails due to error, reject the proposal
+                    validation_errors.append({
+                        "proposal_id": prop.proposal_id,
+                        "start_utc": prop.start_utc,
+                        "errors": [f"Validation error: {str(e)}"]
+                    })
+                    continue
+                
+                # If no moved events, meeting time is valid - accept proposal
+                if not prop.moved_events:
+                    validated_proposals.append(prop)
+                    continue
+                
+                # Validate each moved event
+                all_moves_valid = True
+                move_validation_errors = []
+                
+                for moved_event in prop.moved_events:
+                    # Convert Pydantic model to dict if needed
+                    try:
+                        if hasattr(moved_event, 'model_dump'):
+                            moved_event_dict = moved_event.model_dump()
+                        elif isinstance(moved_event, dict):
+                            moved_event_dict = moved_event
+                        else:
+                            # Try to access attributes directly
+                            moved_event_dict = {
+                                "owner": getattr(moved_event, 'owner', None),
+                                "event_id": getattr(moved_event, 'event_id', None),
+                                "new_start": getattr(moved_event, 'new_start', None),
+                                "new_end": getattr(moved_event, 'new_end', None)
+                            }
+                        
+                        # Validate required fields
+                        if not moved_event_dict.get("owner") or not moved_event_dict.get("event_id"):
+                            all_moves_valid = False
+                            move_validation_errors.append(f"Invalid moved_event structure: missing owner or event_id")
+                            continue
+                    except Exception as e:
+                        all_moves_valid = False
+                        move_validation_errors.append(f"Error converting moved_event to dict: {str(e)}")
+                        continue
+                    
+                    # Get event metadata to check internal-only constraint
+                    event_key = (moved_event_dict["owner"], moved_event_dict["event_id"])
+                    event_metadata = original_normalized_data.get("event_metadata", {})
+                    event_meta = event_metadata.get(event_key, {})
+                    
+                    # Check internal-only constraint (should already be enforced, but double-check)
+                    internal_only = event_meta.get("internal_only", True)
+                    if not internal_only:
+                        all_moves_valid = False
+                        move_validation_errors.append(f"Event {moved_event_dict['event_id']} is not internal-only")
+                        continue
+                    
+                    # Validate new location doesn't conflict with participants
+                    try:
+                        try:
+                            from scheduling_orchestrator.move_validator import validate_moved_event_dict
+                        except (ImportError, ValueError):
+                            try:
+                                from .move_validator import validate_moved_event_dict
+                            except (ImportError, ValueError):
+                                from move_validator import validate_moved_event_dict
+                        
+                        is_valid, error_msg = validate_moved_event_dict(
+                            moved_event_dict,
+                            original_normalized_data,
+                            original_normalized_data["slot_indexer"]
+                        )
+                        
+                        if not is_valid:
+                            all_moves_valid = False
+                            move_validation_errors.append(f"Event {moved_event_dict.get('event_id', 'unknown')}: {error_msg}")
+                    except Exception as e:
+                        # If validation fails due to error, reject the move
+                        all_moves_valid = False
+                        move_validation_errors.append(f"Validation error for event {moved_event_dict.get('event_id', 'unknown')}: {str(e)}")
+                
+                if all_moves_valid:
+                    validated_proposals.append(prop)
+                else:
+                    # Log validation errors for debugging
+                    validation_errors.append({
+                        "proposal_id": prop.proposal_id,
+                        "start_utc": prop.start_utc,
+                        "errors": move_validation_errors
+                    })
+            
+            # Replace all_proposals with validated proposals
+            all_proposals = validated_proposals
+            
+            # Log validation summary
+            if validation_errors:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Rejected {len(validation_errors)} proposals due to invalid moves: {validation_errors[:3]}")  # Log first 3
+                # Also print to stderr for debugging
+                print(f"[VALIDATION] Rejected {len(validation_errors)} proposals due to invalid moves", file=sys.stderr, flush=True)
+                for i, ve in enumerate(validation_errors[:3]):
+                    print(f"[VALIDATION] Proposal {i+1}: {ve.get('proposal_id', 'unknown')} - {ve.get('errors', [])}", file=sys.stderr, flush=True)
+            
             if not all_proposals:
-                # No valid proposals built - return error with more details
+                # Include validation errors in the response if all proposals were rejected
                 error_details = f"Processed {len(selected_solutions)} solutions but none could be converted to proposals. "
                 error_details += f"Validated solutions: {validated_count}. "
                 error_details += f"Solutions selected: {len(selected_solutions)}. "
+                
+                # Add validation error details
+                if validation_errors:
+                    error_details += f"All {len(validation_errors)} proposals were rejected during validation. "
+                    first_error = validation_errors[0]
+                    if first_error.get('errors'):
+                        error_details += f"Sample validation error: {first_error.get('errors', [])[0]}. "
+                    # Show participant ID mismatch if that's the issue
+                    if len(validation_errors) > 0:
+                        # Check if all errors are about missing participants
+                        all_missing_participant = all(
+                            any("calendar not available" in str(err) for err in ve.get('errors', []))
+                            for ve in validation_errors[:5]
+                        )
+                        if all_missing_participant:
+                            error_details += f"All validation errors are about missing participant calendars. "
+                            error_details += f"Participants in proposals: {scheduling_problem.participants}. "
+                            error_details += f"Participants in events_by_participant: {list(events_by_participant.keys()) if events_by_participant else 'none'}. "
+                            error_details += f"Participants in busy_slots: {list(original_normalized_data.get('busy_slots', {}).keys())}. "
+                
                 if selected_solutions:
                     error_details += f"Sample solution keys: {list(selected_solutions[0].keys()) if selected_solutions else 'none'}. "
                 if proposal_build_errors:
-                    error_details += f"Errors encountered: {proposal_build_errors[0] if proposal_build_errors else 'none'}"
+                    error_details += f"Proposal build errors: {proposal_build_errors[0] if proposal_build_errors else 'none'}"
                     if len(proposal_build_errors) > 1:
                         error_details += f" (and {len(proposal_build_errors) - 1} more similar errors)"
                 
@@ -1687,7 +2167,7 @@ def orchestrate_scheduling(
                     status="bad_input",
                     explanation=f"Failed to build any valid proposals from solutions. {error_details}",
                     proposals=[],
-                    error_message=f"Proposal building failed: {proposal_build_errors[0] if proposal_build_errors else 'Unknown error'}",
+                    error_message=f"Proposal building failed: {validation_errors[0].get('errors', ['Unknown error'])[0] if validation_errors else (proposal_build_errors[0] if proposal_build_errors else 'Unknown error')}",
                     debug=debug_info
                 ).model_dump()
             

@@ -995,6 +995,8 @@ def _find_slots_with_solo_override(
             continue
         
         # Find conflicting events and check if they're all solo events
+        # CRITICAL: For a solo_override to be valid, ALL participants must have ONLY solo conflicts
+        # If ANY participant has a non-solo conflict, the slot is invalid
         conflicting_events = []  # List of (participant_id, event_id) tuples
         non_solo_conflicts = []  # Events that are not solo or not override-able
         
@@ -1002,8 +1004,24 @@ def _find_slots_with_solo_override(
             participant_busy = busy_slots.get(participant_id, set())
             conflicting_slots = set(meeting_slots).intersection(participant_busy)
             
+            # Debug: Log what we're checking for problematic slots
+            import sys
+            if candidate_slot in [544, 545]:  # Only log for the problematic slots
+                print(f"[SOLVER] Slot {candidate_slot}: Checking participant {participant_id}, meeting_slots={list(meeting_slots)}, participant_busy has {len(participant_busy)} slots, conflicting_slots={list(conflicting_slots)}", file=sys.stderr, flush=True)
+            
             if conflicting_slots:
-                # Find which events are causing the conflict
+                # Find which events are causing the conflict for THIS participant
+                participant_has_solo_only = True  # Track if this participant has only solo conflicts
+                
+                # Debug: Log all events that cover conflicting slots
+                import sys
+                if candidate_slot in [544, 545]:
+                    all_covering_events = []
+                    for (p_id, e_id), slots in event_slots_map_full.items():
+                        if p_id == participant_id and slots.intersection(conflicting_slots):
+                            all_covering_events.append(((p_id, e_id), list(slots.intersection(conflicting_slots))))
+                    print(f"[SOLVER] Slot {candidate_slot}: Participant {participant_id} - All events covering conflicting slots: {all_covering_events}", file=sys.stderr, flush=True)
+                
                 for (p_id, e_id), slots in event_slots_map_full.items():
                     if p_id == participant_id and slots.intersection(conflicting_slots):
                         event_key = (p_id, e_id)
@@ -1012,6 +1030,7 @@ def _find_slots_with_solo_override(
                         # Skip locked events (cannot override)
                         if protection == "locked":
                             non_solo_conflicts.append(event_key)
+                            participant_has_solo_only = False
                             continue
                         
                         # Check if this is a solo event (zero attendees)
@@ -1023,18 +1042,39 @@ def _find_slots_with_solo_override(
                         flexible = event_meta.get("flexible", True)
                         if protected and not flexible:
                             non_solo_conflicts.append(event_key)
+                            participant_has_solo_only = False
                             continue
                         
                         if num_attendees == 0:
                             # Solo event - can override
                             conflicting_events.append((p_id, e_id))
+                            # Debug: Log solo event detection
+                            import sys
+                            print(f"[SOLVER] Found solo event: {event_key}, num_attendees={num_attendees}, title={event_meta.get('title', 'unknown')}", file=sys.stderr, flush=True)
                         else:
                             # Not a solo event - cannot override
                             non_solo_conflicts.append(event_key)
+                            participant_has_solo_only = False
+                            # Debug: Log non-solo conflict
+                            import sys
+                            print(f"[SOLVER] Non-solo conflict: {event_key}, num_attendees={num_attendees}, title={event_meta.get('title', 'unknown')}", file=sys.stderr, flush=True)
+                
+                # If this participant has any non-solo conflicts, the entire slot is invalid
+                # (We continue checking other participants for logging, but will reject at the end)
+            else:
+                # No conflicts for this participant - that's fine
+                pass
         
         # Only consider this slot if:
-        # 1. All conflicts are with solo events (conflicting_events is non-empty)
-        # 2. No non-solo or locked conflicts exist
+        # 1. There are some conflicting events (conflicting_events is non-empty)
+        # 2. NO non-solo or locked conflicts exist for ANY participant
+        # This ensures ALL participants can override their conflicts
+        import sys
+        if conflicting_events and not non_solo_conflicts:
+            print(f"[SOLVER] ACCEPTING solo_override slot {candidate_slot}: {len(conflicting_events)} solo events, 0 non-solo conflicts", file=sys.stderr, flush=True)
+        elif conflicting_events:
+            print(f"[SOLVER] REJECTING slot {candidate_slot}: {len(conflicting_events)} solo events BUT {len(non_solo_conflicts)} non-solo conflicts", file=sys.stderr, flush=True)
+        
         if conflicting_events and not non_solo_conflicts:
             # Calculate score based on solo event properties
             # Prefer shorter solo events, fewer solo events, etc.
