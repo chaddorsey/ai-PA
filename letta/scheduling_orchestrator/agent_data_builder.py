@@ -159,6 +159,53 @@ def build_event_registry(
                 print(f"[build_event_registry] Error processing solo_override proposal {proposal.proposal_id}: {e}", file=sys.stderr, flush=True)
                 continue
     
+    # Collect original events from rescheduling proposals
+    for proposal in proposals:
+        if proposal.original_event_id and proposal.original_event_details:
+            original_event_id = proposal.original_event_id
+            original_details = proposal.original_event_details
+            
+            # Only add once (check if already in registry)
+            if original_event_id not in registry:
+                # Extract original event information
+                original_title = original_details.get("title", "Meeting")
+                # original_event_details uses "current_start_utc" and "current_end_utc"
+                original_start_utc = original_details.get("current_start_utc") or original_details.get("start_utc", "")
+                original_end_utc = original_details.get("current_end_utc") or original_details.get("end_utc", "")
+                original_participants = original_details.get("participants", [])
+                
+                # Determine owner (first participant, or use first participant from proposal if available)
+                owner = original_participants[0] if original_participants else (proposal.participants[0] if proposal.participants else "unknown")
+                
+                # Build human-readable description
+                try:
+                    if original_start_utc:
+                        dt = datetime.fromisoformat(original_start_utc.replace("Z", "+00:00"))
+                        if dt.tzinfo is None:
+                            dt = pytz.UTC.localize(dt)
+                        et_tz = pytz.timezone("America/New_York")
+                        dt_et = dt.astimezone(et_tz)
+                        date_str = dt_et.strftime("%b %d at %I:%M %p").lstrip("0")
+                        human_readable = f"{original_title} on {date_str}"
+                    else:
+                        human_readable = original_title
+                except Exception:
+                    human_readable = original_title
+                
+                # Create EventMetadata for original event
+                registry[original_event_id] = EventMetadata(
+                    title=original_title,
+                    owner=owner,
+                    start_utc=original_start_utc,
+                    end_utc=original_end_utc,
+                    locked=False,  # Original event can be moved/rescheduled
+                    protected=False,  # Original event can be overridden
+                    flexible=True,  # Original event is flexible for rescheduling
+                    number_of_attendees=len(original_participants) - 1 if len(original_participants) > 1 else 0,  # Exclude owner
+                    internal_only=original_details.get("internal_only", True),
+                    human_readable=human_readable
+                )
+    
     return registry
 
 
