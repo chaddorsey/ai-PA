@@ -712,6 +712,9 @@ def orchestrate_scheduling(
                 if match_result:
                     matched_event, matched_participant = match_result
                     fetched_event_by_id = matched_event
+                    # Store matched participant for later use in event extraction
+                    if not event_participant_id:
+                        event_participant_id = matched_participant
                     # Log successful identification
                     try:
                         print(f"[orchestrate_scheduling] Identified event '{matched_event.get('summary', '')}' (ID: {matched_event.get('id', '')}) from natural language in calendar {matched_participant}", file=sys.stderr, flush=True)
@@ -732,6 +735,67 @@ def orchestrate_scheduling(
                 # Log error but continue - might still work with other identifiers
                 try:
                     print(f"[orchestrate_scheduling] Error identifying event from natural language: {str(e)}", file=sys.stderr, flush=True)
+                except:
+                    pass
+        
+        # 4. Extract event details if event was fetched (for rescheduling)
+        extracted_event_details = None
+        if fetched_event_by_id:
+            try:
+                # Import event extractor
+                try:
+                    from .event_extractor import extract_event_details_for_rescheduling
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.event_extractor import extract_event_details_for_rescheduling
+                    except ImportError:
+                        from event_extractor import extract_event_details_for_rescheduling
+                
+                # Determine event owner (use event_participant_id if provided, otherwise use first participant from context)
+                event_owner = event_participant_id
+                if not event_owner and context_json:
+                    context_dict = context_json if isinstance(context_json, dict) else json.loads(context_json)
+                    if "participants" in context_dict and context_dict["participants"]:
+                        event_owner = context_dict["participants"][0].get("id") or context_dict["participants"][0].get("email", "")
+                
+                if not event_owner:
+                    # Fallback: try to get from matched_participant if available from natural language identification
+                    # (This is a bit of a hack - we'd need to store matched_participant in a variable)
+                    # For now, use first participant from scheduling_problem if available
+                    if scheduling_problem.participants:
+                        event_owner = scheduling_problem.participants[0]
+                
+                if event_owner:
+                    extracted_event_details = extract_event_details_for_rescheduling(
+                        event=fetched_event_by_id,
+                        event_owner_id=event_owner
+                    )
+                    # Log successful extraction
+                    try:
+                        print(f"[orchestrate_scheduling] Extracted event details: {extracted_event_details.get('title', '')} ({extracted_event_details.get('duration_minutes', 0)} min) with {len(extracted_event_details.get('participants', []))} participants", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                else:
+                    # Can't extract without owner - log warning
+                    try:
+                        print(f"[orchestrate_scheduling] WARNING: Cannot extract event details - event owner not available", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                        
+            except ValueError as e:
+                # Event extraction failed (e.g., all-day event, missing fields)
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation=f"Cannot reschedule this event: {str(e)}. The event may be an all-day event or missing required information.",
+                    proposals=[],
+                    error_message=f"Event extraction failed: {str(e)}",
+                    debug=debug_info
+                ).model_dump()
+            except Exception as e:
+                error_traceback = traceback.format_exc()
+                # Log error but continue - might still work
+                try:
+                    print(f"[orchestrate_scheduling] Error extracting event details: {str(e)}", file=sys.stderr, flush=True)
                 except:
                     pass
         
