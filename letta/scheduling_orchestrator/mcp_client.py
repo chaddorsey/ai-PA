@@ -292,4 +292,78 @@ class MCPCalendarClient:
             return result
         
         return []
+    
+    async def fetch_event_by_id(
+        self,
+        calendar_id: str,
+        event_id: str,
+        days_forward: int = 30
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a specific event by ID from a calendar.
+        
+        Since Core_Event_Data only supports date range queries, this method:
+        1. Fetches events in a date range (default: today to 30 days in the future)
+        2. Filters the results to find the event with the matching ID
+        3. Returns the event if found, None otherwise
+        
+        This method is optimized for rescheduling use cases, which only need to look
+        at current and future events.
+        
+        Args:
+            calendar_id: Calendar identifier (user ID or email address of a participant)
+            event_id: The ID of the event to fetch
+            days_forward: Number of days in the future to search (default: 30)
+            
+        Returns:
+            Event dictionary with structure matching Core_Event_Data format, or None if not found.
+            Event dict includes: id, summary, start, end, locked, protected, flexible, etc.
+            
+        Raises:
+            MCPError: If there's an error communicating with the MCP server
+        """
+        from datetime import datetime, timedelta
+        import pytz
+        
+        try:
+            # Calculate date range: from today to N days in the future
+            now = datetime.now(pytz.UTC)
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)  # Start of today
+            end_date = now + timedelta(days=days_forward)
+            
+            # Format dates for Core_Event_Data
+            # ⚠️ IMPORTANT: Parameter names are REVERSED!
+            # "Before" = END date, "After" = START date
+            after_date_iso = start_date.strftime("%Y-%m-%dT00:00:00Z")
+            before_date_iso = end_date.strftime("%Y-%m-%dT23:59:59Z")
+            
+            # Fetch events in the date range
+            events = await self.get_core_event_data(
+                calendar_id=calendar_id,
+                before=before_date_iso,  # END date
+                after=after_date_iso     # START date
+            )
+            
+            # Filter to find the event with matching ID
+            for event in events:
+                if event.get("id") == event_id:
+                    return event
+            
+            # Event not found in the date range
+            logger.warning(
+                f"Event {event_id} not found in calendar {calendar_id} "
+                f"for date range {after_date_iso} to {before_date_iso}"
+            )
+            return None
+            
+        except MCPError:
+            # Re-raise MCP errors
+            raise
+        except Exception as e:
+            # Wrap other errors
+            logger.error(f"Error fetching event {event_id} from calendar {calendar_id}: {str(e)}")
+            raise MCPError(
+                code=-32603,
+                message=f"Error fetching event by ID: {str(e)}"
+            )
 

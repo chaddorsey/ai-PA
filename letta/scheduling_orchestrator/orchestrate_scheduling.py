@@ -29,7 +29,7 @@ def orchestrate_scheduling(
     context_json: Optional[str] = None,  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences (REQUIRED when using participant_ids)
     events_by_participant: Optional[str] = None,  # JSON string: Dict[str, List[Dict[str, Any]]] - LEGACY: Pre-fetched events (use participant_ids instead)
     event_id: Optional[str] = None,  # NEW: Explicit event ID for rescheduling (when provided by agent)
-    event_owner_id: Optional[str] = None  # NEW: Owner/calendar ID for the event (required when event_id is provided)
+    event_participant_id: Optional[str] = None  # NEW: ID of one of the event participants (required when event_id is provided, used to fetch the event)
 ) -> dict:
     """
     Orchestrate scheduling by finding optimal meeting times that satisfy constraints and preferences.
@@ -91,12 +91,15 @@ def orchestrate_scheduling(
         event_id: (Optional) Explicit event ID for rescheduling. When provided, the tool will fetch the specific event
                   via MCP Core_Event_Data and extract its details (participants, duration, title, location) to use
                   as the base for finding alternative time slots. Use this when the agent has already identified the
-                  event to reschedule. If provided, event_owner_id must also be provided.
-                  Example: "evt_abc123xyz"
+                  event to reschedule. If provided, event_participant_id must also be provided.
+                  The tool searches for the event in the calendar of the specified participant, looking from today
+                  forward up to 30 days. Example: "evt_abc123xyz"
         
-        event_owner_id: (Optional) Owner/calendar ID for the event specified in event_id. This is the email address
-                        or calendar identifier of the person who owns the calendar containing the event.
-                        Required when event_id is provided. Example: "cdorsey@concord.org"
+        event_participant_id: (Optional) Email address or calendar ID of one of the event participants. This is used
+                              to fetch the event via MCP Core_Event_Data. The event will be searched in this
+                              participant's calendar from today forward up to 30 days. Required when event_id is
+                              provided. Can be any participant of the event, not necessarily the owner.
+                              Example: "cdorsey@concord.org"
     
     Returns:
         Dictionary with keys:
@@ -122,7 +125,7 @@ def orchestrate_scheduling(
         >>> result = orchestrate_scheduling(
         ...     utterance="Find new time options",
         ...     event_id="evt_abc123xyz",
-        ...     event_owner_id="cdorsey@concord.org",
+        ...     event_participant_id="cdorsey@concord.org",
         ...     participant_ids=["cdorsey@concord.org"],
         ...     context_json='{"timeframe": {"from": "2025-12-01", "to": "2025-12-15", "tz": "America/New_York"}}'
         ... )
@@ -307,13 +310,13 @@ def orchestrate_scheduling(
                 "debug": {}
             }
         
-        # Validate event_id and event_owner_id parameters
-        if event_id is not None and event_owner_id is None:
+        # Validate event_id and event_participant_id parameters
+        if event_id is not None and event_participant_id is None:
             return {
                 "status": "bad_input",
-                "explanation": "event_owner_id is required when event_id is provided. Please provide the calendar owner/email address for the event.",
+                "explanation": "event_participant_id is required when event_id is provided. Please provide the email address of one of the event participants to fetch the event from their calendar.",
                 "proposals": [],
-                "error_message": "event_owner_id is required when event_id is provided",
+                "error_message": "event_participant_id is required when event_id is provided",
                 "debug": {}
             }
         
@@ -392,6 +395,53 @@ def orchestrate_scheduling(
                 timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
                 max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
             )
+            
+            # Fetch specific event by ID if provided (for rescheduling)
+            fetched_event_by_id = None
+            if event_id and event_participant_id:
+                try:
+                    async def fetch_specific_event():
+                        await mcp_client.initialize()
+                        return await mcp_client.fetch_event_by_id(
+                            calendar_id=event_participant_id,
+                            event_id=event_id
+                        )
+                    
+                    fetched_event_by_id = asyncio.run(fetch_specific_event())
+                    
+                    if fetched_event_by_id is None:
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Event with ID '{event_id}' not found in calendar '{event_participant_id}'. The event may not exist, may be outside the search range (today to 30 days in the future), or you may not have access to it.",
+                            proposals=[],
+                            error_message=f"Event {event_id} not found in calendar {event_participant_id}",
+                            debug=debug_info
+                        ).model_dump()
+                    
+                    # Log successful fetch
+                    try:
+                        print(f"[orchestrate_scheduling] Successfully fetched event {event_id} from calendar {event_participant_id}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                        
+                except MCPError as e:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Error fetching event '{event_id}' from calendar '{event_participant_id}': {e.message}. The event may be inaccessible or there may be a connection issue.",
+                        proposals=[],
+                        error_message=f"MCP error fetching event: {e.message}",
+                        debug=debug_info
+                    ).model_dump()
+                except Exception as e:
+                    error_traceback = traceback.format_exc()
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Unexpected error fetching event '{event_id}': {str(e)}",
+                        proposals=[],
+                        error_message=f"Error fetching event by ID: {str(e)}",
+                        error_traceback=error_traceback,
+                        debug=debug_info
+                    ).model_dump()
             
             # Fetch events asynchronously
             try:
