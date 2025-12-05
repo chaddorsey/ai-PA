@@ -262,7 +262,18 @@ def score_event_match(
     # Extract event details
     event_title = event.get("summary", "").strip()
     event_start = event.get("start", {})
-    event_start_dt_str = event_start.get("dateTime") or event_start.get("date", "")
+    
+    # Handle both dict format (with dateTime/date fields) and string format (ISO 8601)
+    if isinstance(event_start, str):
+        # start is already an ISO 8601 string
+        event_start_dt_str = event_start
+    elif isinstance(event_start, dict):
+        # start is a dict with dateTime or date fields
+        event_start_dt_str = event_start.get("dateTime") or event_start.get("date", "")
+    else:
+        # Fallback: try to get as string or empty
+        event_start_dt_str = str(event_start) if event_start else ""
+    
     event_attendees = event.get("attendees_list", [])
     
     # Parse event start time
