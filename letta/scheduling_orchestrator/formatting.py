@@ -342,6 +342,7 @@ def format_refined_user_display(
     Generate refined user-facing display with grouped, prioritized formatting.
     
     Format:
+    - Rescheduling header (if rescheduling): Shows original meeting details
     - "Best options" section: Zero-conflict proposals grouped by day
     - "If We Can Move or Override" section: Move and override proposals
     
@@ -357,6 +358,47 @@ def format_refined_user_display(
         Multi-line formatted string ready for display
     """
     lines = []
+    
+    # Check if this is a rescheduling operation by looking for original_event_id in any proposal
+    all_proposals = free_proposals + move_proposals + override_proposals
+    rescheduling_proposal = None
+    for prop in all_proposals:
+        if prop.original_event_id or prop.original_event_details:
+            rescheduling_proposal = prop
+            break
+    
+    # Add rescheduling header if applicable
+    if rescheduling_proposal and rescheduling_proposal.original_event_details:
+        original_details = rescheduling_proposal.original_event_details
+        original_title = original_details.get("title", "Meeting")
+        original_start = original_details.get("start_utc")
+        original_end = original_details.get("end_utc")
+        original_participants = original_details.get("participants", [])
+        
+        lines.append("## Rescheduling Options")
+        lines.append("")
+        lines.append(f"**Original Meeting:** {original_title}")
+        
+        if original_start and original_end:
+            original_day = format_day_header(original_start, timezone_str)
+            original_time = format_time_range(original_start, original_end, timezone_str)
+            lines.append(f"**Current Time:** {original_day} at {original_time}")
+        
+        if original_participants:
+            # Format participant list (show names if available, otherwise emails)
+            participant_display = []
+            for p in original_participants[:3]:  # Show first 3
+                if "@" in p:
+                    name = p.split("@")[0].capitalize()
+                    participant_display.append(name)
+            if len(original_participants) > 3:
+                participant_display.append(f"and {len(original_participants) - 3} more")
+            if participant_display:
+                lines.append(f"**Participants:** {', '.join(participant_display)}")
+        
+        lines.append("")
+        lines.append("Here are alternative time options:")
+        lines.append("")
     
     # Section 1: Best Options (zero-conflict)
     if free_proposals:

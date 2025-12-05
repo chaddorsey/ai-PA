@@ -2674,7 +2674,27 @@ def orchestrate_scheduling(
                 else:
                     multi_move_proposals.append(prop)
             
-            explanation_parts = [f"Found {len(all_proposals)} meeting option(s):"]
+            # Check if this is a rescheduling operation
+            is_rescheduling = any(
+                prop.original_event_id or prop.original_event_details 
+                for prop in all_proposals
+            )
+            
+            if is_rescheduling:
+                # Get original event details from first proposal that has them
+                original_details = None
+                for prop in all_proposals:
+                    if prop.original_event_details:
+                        original_details = prop.original_event_details
+                        break
+                
+                if original_details:
+                    original_title = original_details.get("title", "meeting")
+                    explanation_parts = [f"Found {len(all_proposals)} alternative time option(s) for rescheduling '{original_title}':"]
+                else:
+                    explanation_parts = [f"Found {len(all_proposals)} alternative time option(s) for rescheduling:"]
+            else:
+                explanation_parts = [f"Found {len(all_proposals)} meeting option(s):"]
             
             # Free slots
             if free_proposals:
