@@ -27,6 +27,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 18 | AI Engineer | As an AI engineer, I want Calendly availability checking integrated into Letta as an MCP server so that my personal assistant can intelligently query scheduling availability and suggest meeting times. | Proposed | Calendly MCP server deployed as Docker service; Server exposes slot-checking tools via MCP protocol; Letta can query Calendly URLs for available dates and times; Health checks validate server availability; Documentation includes usage examples - [View Details](./18/prd.md) |
 | 19 | Platform Architect | As a platform architect, I want a dedicated scheduling and reminder service integrated with Letta so that time-indexed actions remain reliable, persistent, and searchable across the ecosystem. | Proposed | Scheduler runs as Docker service with shared Postgres/pgvector access; REST and MCP surfaces available to Letta; Job definitions, executions, and metadata persisted with embeddings; Supports Letta reminders and external actions with archival search; Security posture documented; Usage and integration documentation published - [View Details](./19/prd.md) |
 | 21 | Executive / EA | As a user, I want a single Letta tool that turns my chat request and my team's calendars into reliable meeting proposals that follow my rules and minimize disruption, so that Letta can schedule directly. | Agreed | (1) Single orchestration tool (Pattern B) with typed schema; (2) Accepts events from Letta's Get_Events; (3) 15-min grid-time ASP with lexicographic optimization; (4) Returns ready-to-schedule proposals + explanation; (5) Provides relaxations on UNSAT; (6) Performs within set time budget for typical horizons - [View Details](./21/prd.md) |
+| 22 | Executive / EA | As a user, I want to reschedule existing meetings by asking for new time options, so that Letta can automatically identify the meeting and propose alternatives while preserving all meeting details. | Agreed | (1) Tool accepts event_id parameter or identifies event from natural language; (2) Extracts meeting details (participants, duration, title) from existing event; (3) Finds alternative time slots treating original event as movable; (4) Preserves original event metadata in proposals; (5) Maintains backward compatibility with new meeting scheduling - [View Details](./22/prd.md) |
 
 ## PBI History Log
 
@@ -50,6 +51,8 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 2025-11-11 15:30:00 | 20 | create_pbi | Added PBI 20 to provide dedicated Slack analytics export MCP service and decouple from Calendly server | AI_Agent |
 | 2025-11-16 02:12:30 | 20 | approve | PBI 20 completed; service deployed, tools updated, and operations doc added | User |
 | 2025-11-18 10:00:00 | 21 | create_pbi | Added PBI 21 to build scheduling orchestration tool with DSPy and clingo ASP for intelligent meeting proposal generation | AI_Agent |
+| 2025-01-21 12:00:00 | 22 | create_pbi | Added PBI 22 to extend scheduling orchestrator with rescheduling support for existing meetings | AI_Agent |
+| 2025-01-21 13:00:00 | 22 | propose_for_backlog | PBI 22 moved from Proposed to Agreed - ready for implementation | AI_Agent |
 
 ## Backlog Notes
 

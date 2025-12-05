@@ -27,12 +27,22 @@ def orchestrate_scheduling(
     participant_ids: Optional[List[str]] = None,  # NEW: List of participant email addresses for automatic event fetching
     user_id: Optional[str] = None,  # NEW: User's own email address (for reference)
     context_json: Optional[str] = None,  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences (REQUIRED when using participant_ids)
-    events_by_participant: Optional[str] = None  # JSON string: Dict[str, List[Dict[str, Any]]] - LEGACY: Pre-fetched events (use participant_ids instead)
+    events_by_participant: Optional[str] = None,  # JSON string: Dict[str, List[Dict[str, Any]]] - LEGACY: Pre-fetched events (use participant_ids instead)
+    event_id: Optional[str] = None,  # NEW: Explicit event ID for rescheduling (when provided by agent)
+    event_owner_id: Optional[str] = None  # NEW: Owner/calendar ID for the event (required when event_id is provided)
 ) -> dict:
     """
     Orchestrate scheduling by finding optimal meeting times that satisfy constraints and preferences.
     
-    This tool can operate in two modes:
+    This tool supports two primary use cases:
+    
+    1. **New Meeting Scheduling**: Find optimal time slots for a new meeting with specified participants.
+    
+    2. **Rescheduling Existing Meetings**: Find alternative time options for an existing meeting, either by:
+       - Providing explicit event_id and event_owner_id (agent-generated requests)
+       - Using natural language to identify the meeting (e.g., "Find me a new time for the check-in with Judi on Dec. 10th")
+    
+    This tool can operate in two modes for event retrieval:
     
     1. **RECOMMENDED - Direct Event Retrieval**: Provide participant_ids and the tool will automatically
        fetch calendar events via MCP. This is more reliable and avoids message size limits.
@@ -50,6 +60,8 @@ def orchestrate_scheduling(
     
     Args:
         utterance: Natural language scheduling request (e.g., "Find 45 minutes with Alex & Priya Tue–Thu mornings. Minimize disruption.")
+                   For rescheduling, can be a simple request like "Find new time options" when event_id is provided,
+                   or can identify the meeting: "Find me a new time for the check-in with Judi on Dec. 10th"
         
         participant_ids: (RECOMMENDED) List of participant email addresses. The tool will automatically fetch
                         their calendar events via MCP Core_Event_Data. Example: ["cdorsey@concord.org", "alex@example.com"]
@@ -75,6 +87,16 @@ def orchestrate_scheduling(
                               Each event should be a dict with keys: id, title, start, end, locked, protected, flexible.
                               Only use this if you've already fetched events. Otherwise, use participant_ids.
                               Example JSON: '{"exec": [{"id": "evt1", "title": "Meeting", "start": "2025-11-25T10:00:00Z", "end": "2025-11-25T11:00:00Z", "locked": false}], "alex": []}'
+        
+        event_id: (Optional) Explicit event ID for rescheduling. When provided, the tool will fetch the specific event
+                  via MCP Core_Event_Data and extract its details (participants, duration, title, location) to use
+                  as the base for finding alternative time slots. Use this when the agent has already identified the
+                  event to reschedule. If provided, event_owner_id must also be provided.
+                  Example: "evt_abc123xyz"
+        
+        event_owner_id: (Optional) Owner/calendar ID for the event specified in event_id. This is the email address
+                        or calendar identifier of the person who owns the calendar containing the event.
+                        Required when event_id is provided. Example: "cdorsey@concord.org"
     
     Returns:
         Dictionary with keys:
@@ -88,26 +110,29 @@ def orchestrate_scheduling(
         - agent_data: Optional[AgentData] - Structured metadata for agent reasoning
         - mapping: Optional[CrossReferenceMapping] - Links between user_display and agent_data
     
-    Example:
+    Examples:
+        New meeting scheduling:
         >>> result = orchestrate_scheduling(
         ...     utterance="Find 45 minutes with Alex & Priya Tue–Thu mornings",
-        ...     events_by_participant={
-        ...         "exec": [{"id": "evt1", "title": "Standup", "start": "2025-11-25T14:00:00Z", "end": "2025-11-25T14:15:00Z", "locked": False}],
-        ...         "alex": [...],
-        ...         "priya": [...]
-        ...     },
-        ...     context_json={
-        ...         "timeframe": {"from": "2025-11-24", "to": "2025-11-28", "tz": "America/New_York"},
-        ...         "participants": [
-        ...             {"id": "exec", "email": "me@acme.com", "work_hours": "M-F 09:00-17:30"}
-        ...         ],
-        ...         "policy": {"hard": {"min_gap_min": 15}}
-        ...     }
+        ...     participant_ids=["cdorsey@concord.org", "alex@example.com", "priya@example.com"],
+        ...     context_json='{"timeframe": {"from": "2025-11-24", "to": "2025-11-28", "tz": "America/New_York"}}'
         ... )
-        >>> print(result["status"])
-        'ok'
-        >>> print(result["proposals"][0]["start_utc"])
-        '2025-11-26T15:15:00Z'
+        
+        Rescheduling with explicit event ID:
+        >>> result = orchestrate_scheduling(
+        ...     utterance="Find new time options",
+        ...     event_id="evt_abc123xyz",
+        ...     event_owner_id="cdorsey@concord.org",
+        ...     participant_ids=["cdorsey@concord.org"],
+        ...     context_json='{"timeframe": {"from": "2025-12-01", "to": "2025-12-15", "tz": "America/New_York"}}'
+        ... )
+        
+        Rescheduling with natural language:
+        >>> result = orchestrate_scheduling(
+        ...     utterance="Find me a new time for the check-in with Judi on Dec. 10th",
+        ...     participant_ids=["cdorsey@concord.org", "judi@example.com"],
+        ...     context_json='{"timeframe": {"from": "2025-12-01", "to": "2025-12-15", "tz": "America/New_York"}}'
+        ... )
     """
     # Import traceback, json, time, datetime, and pytz (ensure they're available)
     import traceback
@@ -279,6 +304,16 @@ def orchestrate_scheduling(
                 "explanation": f"Invalid JSON in input parameters: {str(e)}",
                 "proposals": [],
                 "error_message": f"JSON decode error: {str(e)}",
+                "debug": {}
+            }
+        
+        # Validate event_id and event_owner_id parameters
+        if event_id is not None and event_owner_id is None:
+            return {
+                "status": "bad_input",
+                "explanation": "event_owner_id is required when event_id is provided. Please provide the calendar owner/email address for the event.",
+                "proposals": [],
+                "error_message": "event_owner_id is required when event_id is provided",
                 "debug": {}
             }
         
