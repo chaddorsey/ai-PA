@@ -732,11 +732,15 @@ def orchestrate_scheduling(
                     
             except Exception as e:
                 error_traceback = traceback.format_exc()
-                # Log error but continue - might still work with other identifiers
-                try:
-                    print(f"[orchestrate_scheduling] Error identifying event from natural language: {str(e)}", file=sys.stderr, flush=True)
-                except:
-                    pass
+                # For rescheduling, if event identification fails, return error
+                # Don't silently continue - user asked to reschedule a specific meeting
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation=f"Error identifying the meeting to reschedule: {str(e)}. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
+                    proposals=[],
+                    error_message=f"Event identification failed: {str(e)}",
+                    debug=debug_info
+                ).model_dump()
         
         # 4. Extract event details if event was fetched (for rescheduling)
         extracted_event_details = None
@@ -776,11 +780,14 @@ def orchestrate_scheduling(
                     except:
                         pass
                 else:
-                    # Can't extract without owner - log warning
-                    try:
-                        print(f"[orchestrate_scheduling] WARNING: Cannot extract event details - event owner not available", file=sys.stderr, flush=True)
-                    except:
-                        pass
+                    # Can't extract without owner - return error for rescheduling
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation="Cannot reschedule: event owner/participant ID is required to extract event details. Please provide event_participant_id when using event_id, or ensure participant information is available in context_json.",
+                        proposals=[],
+                        error_message="Event owner not available for extraction",
+                        debug=debug_info
+                    ).model_dump()
                         
             except ValueError as e:
                 # Event extraction failed (e.g., all-day event, missing fields)
@@ -793,14 +800,29 @@ def orchestrate_scheduling(
                 ).model_dump()
             except Exception as e:
                 error_traceback = traceback.format_exc()
-                # Log error but continue - might still work
-                try:
-                    print(f"[orchestrate_scheduling] Error extracting event details: {str(e)}", file=sys.stderr, flush=True)
-                except:
-                    pass
+                # For rescheduling, if event extraction fails, return error
+                # Don't silently continue - we need the event details to reschedule
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation=f"Error extracting event details: {str(e)}. Cannot proceed with rescheduling without event details.",
+                    proposals=[],
+                    error_message=f"Event extraction failed: {str(e)}",
+                    debug=debug_info
+                ).model_dump()
         
         # 5. Merge event details with utterance constraints if rescheduling
-        if extracted_event_details and scheduling_problem.is_rescheduling:
+        # For rescheduling, we MUST have successfully identified and extracted the event
+        if scheduling_problem.is_rescheduling:
+            # If event identification/extraction failed, we should have already returned an error
+            # But double-check here to be safe
+            if not extracted_event_details:
+                return ResponseEnvelope(
+                    status="bad_input",
+                    explanation="Cannot reschedule: the meeting to reschedule could not be identified or extracted. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
+                    proposals=[],
+                    error_message="Event not identified or extracted for rescheduling",
+                    debug=debug_info
+                ).model_dump()
             try:
                 # Import merge function
                 try:
@@ -816,16 +838,20 @@ def orchestrate_scheduling(
                 if isinstance(context_json, str):
                     context_dict = json.loads(context_json)
                 
-                # Merge event details with utterance constraints
+                # If event was identified, merge event details with utterance constraints
+                # If event identification failed, still expand time window (use None for extracted_event_details)
                 scheduling_problem = merge_event_details_with_utterance(
-                    extracted_event_details=extracted_event_details,
+                    extracted_event_details=extracted_event_details,  # None if identification failed
                     scheduling_problem=scheduling_problem,
                     context_json=context_dict
                 )
                 
-                # Log successful merge
+                # Log successful merge/expansion
                 try:
-                    print(f"[orchestrate_scheduling] Merged event details: {len(scheduling_problem.participants)} participants, {scheduling_problem.duration_minutes} min, title: '{scheduling_problem.title}'", file=sys.stderr, flush=True)
+                    if extracted_event_details:
+                        print(f"[orchestrate_scheduling] Merged event details: {len(scheduling_problem.participants)} participants, {scheduling_problem.duration_minutes} min, title: '{scheduling_problem.title}'", file=sys.stderr, flush=True)
+                    else:
+                        print(f"[orchestrate_scheduling] Expanded time window for rescheduling (event identification failed): {scheduling_problem.time_window_start} to {scheduling_problem.time_window_end}", file=sys.stderr, flush=True)
                 except:
                     pass
                     
@@ -938,6 +964,12 @@ def orchestrate_scheduling(
                                         break
                                 if p_id in participant_id_mapping:
                                     break
+        
+        # CRITICAL: If scheduling_problem.participants is empty, use participant_ids parameter as fallback
+        # This handles cases where DSPy doesn't extract participants from the utterance
+        if not scheduling_problem.participants and participant_ids:
+            scheduling_problem.participants = participant_ids
+            print(f"[orchestrate_scheduling] Using participant_ids parameter as fallback: {participant_ids}", file=sys.stderr, flush=True)
         
         # Map scheduling_problem.participants to actual keys
         mapped_participants = [participant_id_mapping.get(p_id, p_id) for p_id in scheduling_problem.participants]
