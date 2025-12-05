@@ -702,6 +702,24 @@ def orchestrate_scheduling(
                 if isinstance(context_json, str):
                     context_dict = json.loads(context_json)
                 
+                # Enhance context_dict with participant information from participant_ids if not present
+                # This helps with participant name mapping in event identification
+                if participant_ids and ("participants" not in context_dict or not context_dict.get("participants")):
+                    if "participants" not in context_dict:
+                        context_dict["participants"] = []
+                    # Add participant info from participant_ids
+                    for p_id in participant_ids:
+                        # Check if this participant is already in the list
+                        existing = any(p.get("id") == p_id or p.get("email") == p_id for p in context_dict["participants"])
+                        if not existing:
+                            # Try to extract name from email (e.g., "jraiff@concord.org" -> "Judi Raiff" or "jraiff")
+                            # For now, just use the email as both id and email
+                            context_dict["participants"].append({
+                                "id": p_id,
+                                "email": p_id,
+                                "name": p_id.split("@")[0]  # Use email prefix as name fallback
+                            })
+                
                 # Ensure event_identifiers is a dict (not a string)
                 event_identifiers_dict = scheduling_problem.event_identifiers
                 if isinstance(event_identifiers_dict, str):

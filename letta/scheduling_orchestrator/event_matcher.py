@@ -173,47 +173,92 @@ def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.
 
 def map_participant_names_to_emails(
     participant_names: List[str],
-    context_json: Optional[Dict[str, Any]]
+    context_json: Optional[Dict[str, Any]],
+    participant_ids: Optional[List[str]] = None
 ) -> List[str]:
     """
-    Map participant names to email addresses using context.
+    Map participant names to email addresses using context and participant_ids.
     
     Args:
-        participant_names: List of participant names (e.g., ["Judi", "Alex"])
+        participant_names: List of participant names (e.g., ["Judi Raiff", "Alex"])
         context_json: Context containing participant information
+        participant_ids: Optional list of participant email addresses to use as fallback
         
     Returns:
         List of email addresses corresponding to the names
     """
+    emails = []
+    
     # Handle both dict and string (JSON) formats
     if isinstance(context_json, str):
         try:
             import json
             context_json = json.loads(context_json)
         except:
-            return []
+            context_json = None
     
-    if not context_json or not isinstance(context_json, dict) or "participants" not in context_json:
-        return []
+    # Try to match from context_json participants first
+    if context_json and isinstance(context_json, dict) and "participants" in context_json:
+        participants = context_json.get("participants", [])
+        
+        for name in participant_names:
+            name_lower = name.lower().strip()
+            # Try to find matching participant
+            for p in participants:
+                p_name = p.get("name", "").lower()
+                p_email = p.get("email", "")
+                p_id = p.get("id", "").lower()
+                
+                # Match by name or ID
+                if name_lower == p_name or name_lower == p_id or name_lower == p_email.lower():
+                    if p_email:
+                        emails.append(p_email)
+                    elif p_id:
+                        emails.append(p_id)
+                    break
     
-    emails = []
-    participants = context_json.get("participants", [])
-    
-    for name in participant_names:
-        name_lower = name.lower().strip()
-        # Try to find matching participant
-        for p in participants:
-            p_name = p.get("name", "").lower()
-            p_email = p.get("email", "")
-            p_id = p.get("id", "").lower()
+    # If we still have unmatched names and participant_ids is available, try fuzzy matching
+    if participant_ids:
+        from difflib import SequenceMatcher
+        
+        for name in participant_names:
+            # Skip if already matched
+            name_lower = name.lower().strip()
+            already_matched = any(name_lower in email.lower() or email.lower() in name_lower for email in emails)
+            if already_matched:
+                continue
             
-            # Match by name or ID
-            if name_lower == p_name or name_lower == p_id or name_lower == p_email.lower():
-                if p_email:
-                    emails.append(p_email)
-                elif p_id:
-                    emails.append(p_id)
-                break
+            # Try to match name to email prefix or full email
+            # e.g., "Judi Raiff" -> "jraiff@concord.org" (match "jraiff" or "judi")
+            best_match = None
+            best_score = 0.0
+            
+            for p_id in participant_ids:
+                email_prefix = p_id.split("@")[0].lower()
+                email_lower = p_id.lower()
+                
+                # Try matching name parts to email prefix
+                name_parts = name_lower.split()
+                for name_part in name_parts:
+                    # Exact match on email prefix
+                    if name_part == email_prefix:
+                        best_match = p_id
+                        best_score = 1.0
+                        break
+                    # Fuzzy match on email prefix
+                    similarity = SequenceMatcher(None, name_part, email_prefix).ratio()
+                    if similarity > best_score and similarity > 0.6:  # 60% similarity threshold
+                        best_score = similarity
+                        best_match = p_id
+                    # Check if name contains email prefix or vice versa
+                    if name_part in email_prefix or email_prefix in name_part:
+                        if len(name_part) >= 3:  # At least 3 characters
+                            best_match = p_id
+                            best_score = 0.8
+                            break
+            
+            if best_match and best_match not in emails:
+                emails.append(best_match)
     
     return emails
 
@@ -221,7 +266,8 @@ def map_participant_names_to_emails(
 def score_event_match(
     event: Dict[str, Any],
     event_identifiers: Dict[str, Any],
-    context_json: Optional[Dict[str, Any]] = None
+    context_json: Optional[Dict[str, Any]] = None,
+    events_by_participant: Optional[Dict[str, List[Dict[str, Any]]]] = None
 ) -> float:
     """
     Score how well an event matches the extracted identifiers.
@@ -293,7 +339,11 @@ def score_event_match(
     participant_names = event_identifiers.get("participant_names", [])
     if participant_names:
         max_score += 0.3
-        participant_emails = map_participant_names_to_emails(participant_names, context_json)
+        # Extract participant_ids from events_by_participant if available
+        participant_ids = None
+        if isinstance(events_by_participant, dict):
+            participant_ids = list(events_by_participant.keys())
+        participant_emails = map_participant_names_to_emails(participant_names, context_json, participant_ids)
         if participant_emails:
             # Check if any participant email is in event attendees
             matching_participants = [email for email in participant_emails if email in event_attendees]
@@ -408,7 +458,7 @@ def identify_event_from_natural_language(
     # Score all events across all participants
     for participant_id, events in events_by_participant.items():
         for event in events:
-            score = score_event_match(event, event_identifiers, context_json)
+            score = score_event_match(event, event_identifiers, context_json, events_by_participant)
             if score > best_score:
                 best_score = score
                 best_match = event
