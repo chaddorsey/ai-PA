@@ -323,6 +323,9 @@ def orchestrate_scheduling(
         start_time = time.time()
         debug_info = DebugInfo()
         
+        # Initialize variable for fetched event (used for rescheduling)
+        fetched_event_by_id = None
+        
         # Handle participant_ids - fetch events via MCP if provided
         if participant_ids:
             # Parse if it's a JSON string
@@ -397,7 +400,6 @@ def orchestrate_scheduling(
             )
             
             # Fetch specific event by ID if provided (for rescheduling)
-            fetched_event_by_id = None
             if event_id and event_participant_id:
                 try:
                     async def fetch_specific_event():
@@ -679,6 +681,59 @@ def orchestrate_scheduling(
                 error_message=str(e),
                 debug=debug_info
             ).model_dump() | {"error_traceback": error_traceback}
+        
+        # 3. Identify event from natural language if rescheduling and event_id not provided
+        if (scheduling_problem.is_rescheduling and 
+            not event_id and 
+            scheduling_problem.event_identifiers and
+            events_by_participant):
+            try:
+                # Import event matcher
+                try:
+                    from .event_matcher import identify_event_from_natural_language
+                except (ImportError, ValueError):
+                    try:
+                        from scheduling_orchestrator.event_matcher import identify_event_from_natural_language
+                    except ImportError:
+                        from event_matcher import identify_event_from_natural_language
+                
+                # Convert context_json to dict if needed
+                context_dict = context_json
+                if isinstance(context_json, str):
+                    context_dict = json.loads(context_json)
+                
+                # Identify event from natural language
+                match_result = identify_event_from_natural_language(
+                    event_identifiers=scheduling_problem.event_identifiers,
+                    events_by_participant=events_by_participant,
+                    context_json=context_dict
+                )
+                
+                if match_result:
+                    matched_event, matched_participant = match_result
+                    fetched_event_by_id = matched_event
+                    # Log successful identification
+                    try:
+                        print(f"[orchestrate_scheduling] Identified event '{matched_event.get('summary', '')}' (ID: {matched_event.get('id', '')}) from natural language in calendar {matched_participant}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                else:
+                    # No match found - return helpful error
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Could not identify the meeting to reschedule from your request. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
+                        proposals=[],
+                        error_message="Event not identified from natural language",
+                        debug=debug_info
+                    ).model_dump()
+                    
+            except Exception as e:
+                error_traceback = traceback.format_exc()
+                # Log error but continue - might still work with other identifiers
+                try:
+                    print(f"[orchestrate_scheduling] Error identifying event from natural language: {str(e)}", file=sys.stderr, flush=True)
+                except:
+                    pass
         
         # CRITICAL: Map scheduling_problem.participants to actual keys in events_by_participant
         # This ensures the solver uses the correct participant IDs that match busy_slots keys
