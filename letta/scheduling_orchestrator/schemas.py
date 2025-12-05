@@ -92,6 +92,9 @@ class SchedulingProblem(BaseModel):
     location: Optional[str] = Field(default=None, description="Proposed meeting location")
     min_gap_minutes: Optional[int] = Field(default=0, description="Minimum gap between meetings in minutes (default: 0)")
     allow_off_hours: bool = Field(default=False, description="Allow scheduling outside work hours if needed")
+    # Rescheduling metadata (optional, only present for rescheduling requests)
+    is_rescheduling: Optional[bool] = Field(default=None, description="True if this is a rescheduling request (finding new time for existing meeting)")
+    event_identifiers: Optional[Dict[str, Any]] = Field(default=None, description="Extracted event identifiers for rescheduling: participant_names (list), dates (list), times (list), titles (list). Used to match against existing events.")
 
 
 class MovedEvent(BaseModel):
