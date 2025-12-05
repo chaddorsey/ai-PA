@@ -185,7 +185,15 @@ def map_participant_names_to_emails(
     Returns:
         List of email addresses corresponding to the names
     """
-    if not context_json or "participants" not in context_json:
+    # Handle both dict and string (JSON) formats
+    if isinstance(context_json, str):
+        try:
+            import json
+            context_json = json.loads(context_json)
+        except:
+            return []
+    
+    if not context_json or not isinstance(context_json, dict) or "participants" not in context_json:
         return []
     
     emails = []
@@ -226,6 +234,28 @@ def score_event_match(
     Returns:
         Match score between 0.0 and 1.0 (higher is better)
     """
+    # Defensive handling: ensure event_identifiers is a dict
+    if event_identifiers is None:
+        return 0.0
+    
+    if isinstance(event_identifiers, str):
+        try:
+            import json
+            event_identifiers = json.loads(event_identifiers)
+        except (json.JSONDecodeError, ValueError):
+            return 0.0
+    
+    if not isinstance(event_identifiers, dict):
+        return 0.0
+    
+    # Handle context_json as string (defensive)
+    if isinstance(context_json, str):
+        try:
+            import json
+            context_json = json.loads(context_json)
+        except (json.JSONDecodeError, ValueError):
+            context_json = None
+    
     score = 0.0
     max_score = 0.0
     
@@ -328,6 +358,30 @@ def identify_event_from_natural_language(
     Returns:
         Tuple of (event_dict, participant_id) for the best match, or None if no good match
     """
+    # Handle case where event_identifiers might be None, string, or not a dict
+    if event_identifiers is None:
+        return None
+    
+    # If event_identifiers is a string (JSON), parse it
+    if isinstance(event_identifiers, str):
+        try:
+            import json
+            event_identifiers = json.loads(event_identifiers)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    
+    # Ensure it's a dict
+    if not isinstance(event_identifiers, dict):
+        return None
+    
+    # Handle case where context_json might be a string
+    if isinstance(context_json, str):
+        try:
+            import json
+            context_json = json.loads(context_json)
+        except (json.JSONDecodeError, ValueError):
+            context_json = None
+    
     best_match = None
     best_score = 0.0
     best_participant = None
