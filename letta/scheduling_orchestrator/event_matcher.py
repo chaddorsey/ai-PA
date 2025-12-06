@@ -335,10 +335,10 @@ def score_event_match(
         except (ValueError, AttributeError):
             pass
     
-    # Score participant match (weight: 0.3)
+    # Score participant match (weight: 0.4 - increased for rescheduling)
     participant_names = event_identifiers.get("participant_names", [])
     if participant_names:
-        max_score += 0.3
+        max_score += 0.4
         # Extract participant_ids from events_by_participant if available
         participant_ids = None
         if isinstance(events_by_participant, dict):
@@ -347,11 +347,28 @@ def score_event_match(
         if participant_emails:
             # Check if any participant email is in event attendees
             matching_participants = [email for email in participant_emails if email in event_attendees]
+            # Also check if the event owner (from events_by_participant key) is a participant
+            # This handles cases where the event is in one participant's calendar
+            event_owner = None
+            if isinstance(events_by_participant, dict):
+                for owner_id, events_list in events_by_participant.items():
+                    if event in events_list:
+                        event_owner = owner_id
+                        break
+            
+            # Count how many required participants are present
+            all_participants_present = set(participant_emails)
+            if event_owner and event_owner in all_participants_present:
+                all_participants_present.add(event_owner)
             if matching_participants:
-                score += 0.3
-            # Partial match (at least one participant matches)
-            elif len(participant_emails) > 0:
-                score += 0.15
+                all_participants_present.update(matching_participants)
+            
+            # Full match: all participants are present
+            if len(all_participants_present) >= len(participant_emails):
+                score += 0.4
+            # Partial match: at least one participant matches
+            elif matching_participants or (event_owner and event_owner in participant_emails):
+                score += 0.2
     
     # Score date match (weight: 0.3)
     dates = event_identifiers.get("dates", [])
@@ -366,9 +383,9 @@ def score_event_match(
                 if event_date == parsed_date_only:
                     score += 0.3
                     break
-                # Allow 1 day tolerance
-                elif abs((event_date - parsed_date_only).days) <= 1:
-                    score += 0.15
+                # Allow 1 day tolerance (but with lower score)
+                elif abs((event_date - parsed_date_only).days) == 1:
+                    score += 0.1
                     break
     
     # Score time match (weight: 0.2)
@@ -468,12 +485,32 @@ def identify_event_from_natural_language(
             if score >= 0.2:
                 top_candidates.append((score, event.get("summary", ""), event.get("id", ""), participant_id))
     
-    # Log top candidates for debugging
+    # Log top candidates for debugging with more details
     try:
         top_candidates.sort(reverse=True, key=lambda x: x[0])
         print(f"[identify_event_from_natural_language] Top 5 candidates:", file=sys.stderr, flush=True)
         for i, (score, title, event_id, part_id) in enumerate(top_candidates[:5], 1):
-            print(f"  {i}. Score {score:.2f}: '{title}' (ID: {event_id[:50]}...) in {part_id}", file=sys.stderr, flush=True)
+            # Try to get more event details for logging
+            event_details = ""
+            for p_id, events in events_by_participant.items():
+                for evt in events:
+                    if evt.get("id", "") == event_id:
+                        # Get date info
+                        start_raw = evt.get("start", {})
+                        if isinstance(start_raw, str):
+                            start_str = start_raw[:10] if len(start_raw) >= 10 else start_raw
+                        elif isinstance(start_raw, dict):
+                            start_str = start_raw.get("dateTime", start_raw.get("date", ""))[:10]
+                        else:
+                            start_str = ""
+                        # Get attendees count
+                        attendees = evt.get("attendees_list", [])
+                        num_attendees = len(attendees) if isinstance(attendees, list) else 0
+                        event_details = f" | Date: {start_str} | Attendees: {num_attendees}"
+                        break
+                if event_details:
+                    break
+            print(f"  {i}. Score {score:.2f}: '{title}' (ID: {event_id[:50]}...){event_details} in {part_id}", file=sys.stderr, flush=True)
     except:
         pass
     
