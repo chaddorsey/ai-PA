@@ -124,14 +124,16 @@ def parse_time_reference(time_str: str) -> Optional[Tuple[int, int]]:
     return None
 
 
-def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.6) -> float:
+def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.4) -> float:
     """
     Calculate fuzzy match score between search title and event title.
     
+    Handles partial matches well (e.g., "Support Team meeting" matches "Weekly Support Team Standup").
+    
     Args:
-        search_title: Title keyword to search for
-        event_title: Event title to match against
-        threshold: Minimum similarity score to consider a match
+        search_title: Title keyword to search for (may be partial, e.g., "Support Team meeting")
+        event_title: Event title to match against (full title, e.g., "Weekly Support Team Standup")
+        threshold: Minimum similarity score to consider a match (lowered to 0.4 for better partial matching)
         
     Returns:
         Similarity score between 0.0 and 1.0
@@ -139,22 +141,41 @@ def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.
     search_title = search_title.lower().strip()
     event_title = event_title.lower().strip()
     
+    if not search_title or not event_title:
+        return 0.0
+    
     # Exact match
     if search_title == event_title:
         return 1.0
     
-    # Substring match
-    if search_title in event_title or event_title in search_title:
+    # Substring match (either direction) - high score for partial matches
+    if search_title in event_title:
+        # Search title is contained in event title (e.g., "support team" in "weekly support team standup")
         return 0.9
+    if event_title in search_title:
+        # Event title is contained in search (less common but still good match)
+        return 0.85
     
-    # Word-based matching
-    search_words = set(search_title.split())
-    event_words = set(event_title.split())
+    # Word-based matching - better for partial references
+    search_words = set(word for word in search_title.split() if len(word) > 2)  # Ignore short words
+    event_words = set(word for word in event_title.split() if len(word) > 2)
     
     if not search_words:
         return 0.0
     
-    # Calculate Jaccard similarity
+    # Calculate how many search words appear in event title
+    matching_words = search_words & event_words
+    word_coverage = len(matching_words) / len(search_words) if search_words else 0.0
+    
+    # If most/all search words match, give high score even if event has more words
+    if word_coverage >= 0.8:  # 80%+ of search words match
+        return 0.85
+    elif word_coverage >= 0.6:  # 60%+ of search words match
+        return 0.7
+    elif word_coverage >= 0.4:  # 40%+ of search words match
+        return 0.5
+    
+    # Calculate Jaccard similarity (for cases where word order matters)
     intersection = search_words & event_words
     union = search_words | event_words
     if union:
@@ -162,11 +183,11 @@ def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.
     else:
         jaccard = 0.0
     
-    # Sequence similarity
+    # Sequence similarity (for character-level matching)
     sequence_sim = SequenceMatcher(None, search_title, event_title).ratio()
     
-    # Combined score
-    combined = (jaccard * 0.6 + sequence_sim * 0.4)
+    # Combined score (weighted toward word coverage for partial matches)
+    combined = (word_coverage * 0.5 + jaccard * 0.3 + sequence_sim * 0.2)
     
     return combined if combined >= threshold else 0.0
 
@@ -335,10 +356,37 @@ def score_event_match(
         except (ValueError, AttributeError):
             pass
     
-    # Score participant match (weight: 0.4 - increased for rescheduling)
+    # Extract participant names from titles if not explicitly provided
+    # Handles cases like "Kate/Chad check in" where participants are in the title
     participant_names = event_identifiers.get("participant_names", [])
+    titles = event_identifiers.get("titles", [])
+    
+    # If no explicit participant names but we have titles, try to extract names from titles
+    if not participant_names and titles:
+        for title_ref in titles:
+            # Look for patterns like "Name1/Name2", "Name1 & Name2", "Name1 and Name2"
+            # Split on common separators
+            title_lower = title_ref.lower()
+            # Common patterns: "kate/chad", "kate & chad", "kate and chad", "kate, chad"
+            import re
+            # Try to find name patterns (2-3 words separated by /, &, and, or comma)
+            name_patterns = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*[/&,]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', title_ref)
+            if name_patterns:
+                for name1, name2 in name_patterns:
+                    if name1.strip() not in participant_names:
+                        participant_names.append(name1.strip())
+                    if name2.strip() not in participant_names:
+                        participant_names.append(name2.strip())
+    
+    # Track individual component scores for combination bonuses
+    participant_score = 0.0
+    date_score = 0.0
+    title_score = 0.0
+    time_score = 0.0
+    
+    # Score participant match (weight: 0.35)
     if participant_names:
-        max_score += 0.4
+        max_score += 0.35
         # Extract participant_ids from events_by_participant if available
         participant_ids = None
         if isinstance(events_by_participant, dict):
@@ -348,7 +396,6 @@ def score_event_match(
             # Check if any participant email is in event attendees
             matching_participants = [email for email in participant_emails if email in event_attendees]
             # Also check if the event owner (from events_by_participant key) is a participant
-            # This handles cases where the event is in one participant's calendar
             event_owner = None
             if isinstance(events_by_participant, dict):
                 for owner_id, events_list in events_by_participant.items():
@@ -358,22 +405,23 @@ def score_event_match(
             
             # Count how many required participants are present
             all_participants_present = set(participant_emails)
-            if event_owner and event_owner in all_participants_present:
+            if event_owner and event_owner in participant_emails:
                 all_participants_present.add(event_owner)
             if matching_participants:
                 all_participants_present.update(matching_participants)
             
             # Full match: all participants are present
             if len(all_participants_present) >= len(participant_emails):
-                score += 0.4
+                participant_score = 0.35
             # Partial match: at least one participant matches
             elif matching_participants or (event_owner and event_owner in participant_emails):
-                score += 0.2
+                participant_score = 0.2
+            score += participant_score
     
-    # Score date match (weight: 0.3)
+    # Score date match (weight: 0.35)
     dates = event_identifiers.get("dates", [])
     if dates and event_start_dt:
-        max_score += 0.3
+        max_score += 0.35
         for date_ref in dates:
             parsed_date = parse_date_reference(date_ref, datetime.now(pytz.UTC))
             if parsed_date and event_start_dt:
@@ -381,17 +429,29 @@ def score_event_match(
                 event_date = event_start_dt.date()
                 parsed_date_only = parsed_date.date()
                 if event_date == parsed_date_only:
-                    score += 0.3
+                    date_score = 0.35
+                    score += date_score
                     break
                 # Allow 1 day tolerance (but with lower score)
                 elif abs((event_date - parsed_date_only).days) == 1:
-                    score += 0.1
+                    date_score = 0.15
+                    score += date_score
                     break
     
-    # Score time match (weight: 0.2)
+    # Score title match (weight: 0.35 - increased for rescheduling)
+    if titles:
+        max_score += 0.35
+        best_title_score_raw = 0.0
+        for title_ref in titles:
+            title_score_raw = fuzzy_match_title(title_ref, event_title)
+            best_title_score_raw = max(best_title_score_raw, title_score_raw)
+        title_score = best_title_score_raw * 0.35
+        score += title_score
+    
+    # Score time match (weight: 0.15 - lower priority, often not specified)
     times = event_identifiers.get("times", [])
     if times and event_start_dt:
-        max_score += 0.2
+        max_score += 0.15
         for time_ref in times:
             parsed_time = parse_time_reference(time_ref)
             if parsed_time:
@@ -399,22 +459,42 @@ def score_event_match(
                 event_hour = event_start_dt.hour
                 # Allow 2 hour tolerance
                 if abs(event_hour - hour) <= 2:
-                    score += 0.2
+                    time_score = 0.15
+                    score += time_score
                     break
     
-    # Score title match (weight: 0.2)
-    titles = event_identifiers.get("titles", [])
-    if titles:
-        max_score += 0.2
-        best_title_score = 0.0
-        for title_ref in titles:
-            title_score = fuzzy_match_title(title_ref, event_title)
-            best_title_score = max(best_title_score, title_score)
-        score += best_title_score * 0.2
+    # COMBINATION BONUSES: Reward common patterns
+    # Pattern 1: Title + Date (very common: "tomorrow's Support Team meeting")
+    if title_score > 0 and date_score > 0:
+        # Both title and date match - this is a strong signal
+        bonus = min(title_score, date_score) * 0.3  # 30% bonus of the lower score
+        score += bonus
+        max_score += bonus
+    
+    # Pattern 2: Participants + Date (very common: "Dec. 12 Kate/Chad check in")
+    if participant_score > 0 and date_score > 0:
+        # Both participants and date match - this is a strong signal
+        bonus = min(participant_score, date_score) * 0.3  # 30% bonus of the lower score
+        score += bonus
+        max_score += bonus
+    
+    # Pattern 3: Title + Participants (less common but still valuable)
+    if title_score > 0 and participant_score > 0:
+        # Both title and participants match
+        bonus = min(title_score, participant_score) * 0.2  # 20% bonus
+        score += bonus
+        max_score += bonus
+    
+    # Pattern 4: All three (Title + Participants + Date) - very strong match
+    if title_score > 0 and participant_score > 0 and date_score > 0:
+        # Triple match - maximum confidence
+        bonus = (title_score + participant_score + date_score) * 0.15  # 15% bonus on sum
+        score += bonus
+        max_score += bonus
     
     # Normalize score
     if max_score > 0:
-        return score / max_score
+        return min(score / max_score, 1.0)  # Cap at 1.0
     return 0.0
 
 
