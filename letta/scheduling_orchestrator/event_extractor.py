@@ -199,7 +199,8 @@ def extract_event_details_for_rescheduling(
 def merge_event_details_with_utterance(
     extracted_event_details: Optional[Dict[str, Any]],
     scheduling_problem: SchedulingProblem,
-    context_json: Optional[Dict[str, Any]] = None
+    context_json: Optional[Dict[str, Any]] = None,
+    participant_ids: Optional[List[str]] = None
 ) -> SchedulingProblem:
     """
     Merge extracted event details with utterance constraints to create complete SchedulingProblem.
@@ -238,21 +239,37 @@ def merge_event_details_with_utterance(
         event_start_utc = None
         event_end_utc = None
     
-    # Merge participants: Use event participants as base, but utterance may add participants
-    # If utterance specifies participants, use those (they may include additional people)
-    # Otherwise, use event participants
-    merged_participants = scheduling_problem.participants if scheduling_problem.participants else event_participants
-    
-    # If utterance participants are empty but event has participants, use event participants
-    if not merged_participants and event_participants:
+    # Merge participants: Prefer participant_ids from input, then event participants, then utterance participants
+    # For rescheduling, participant_ids (from the tool call) is the most authoritative source
+    if participant_ids:
+        merged_participants = participant_ids
+    elif scheduling_problem.participants:
+        merged_participants = scheduling_problem.participants
+    elif event_participants:
         merged_participants = event_participants
+    else:
+        merged_participants = []
     
     # Ensure we have at least one participant
     if not merged_participants:
         raise ValueError("Cannot determine participants: event has no participants and utterance did not specify any")
     
-    # Merge duration: Use event duration unless utterance specifies different
-    merged_duration = scheduling_problem.duration_minutes if scheduling_problem.duration_minutes > 0 else event_duration
+    # Merge duration: For rescheduling, prefer event duration over utterance duration
+    # Only use utterance duration if it's explicitly specified AND significantly different from event duration
+    # This prevents DSPy from incorrectly extracting a default duration (e.g., 30 min) when the event is actually longer
+    if extracted_event_details and event_duration > 0:
+        # If utterance specifies a duration that's very different from event duration, use utterance
+        # (e.g., user says "make it 30 minutes" for a 4-hour event)
+        utterance_duration = scheduling_problem.duration_minutes if scheduling_problem.duration_minutes > 0 else 0
+        if utterance_duration > 0 and abs(utterance_duration - event_duration) > event_duration * 0.3:
+            # Utterance duration is significantly different (>30% difference), use it
+            merged_duration = utterance_duration
+        else:
+            # Use event duration (preserve original meeting length)
+            merged_duration = event_duration
+    else:
+        # No event details available, use utterance duration
+        merged_duration = scheduling_problem.duration_minutes if scheduling_problem.duration_minutes > 0 else event_duration
     
     if merged_duration <= 0:
         raise ValueError(f"Invalid duration: {merged_duration} minutes")

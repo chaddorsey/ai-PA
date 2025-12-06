@@ -905,7 +905,8 @@ def orchestrate_scheduling(
                 scheduling_problem = merge_event_details_with_utterance(
                     extracted_event_details=extracted_event_details,  # None if identification failed
                     scheduling_problem=scheduling_problem,
-                    context_json=context_dict
+                    context_json=context_dict,
+                    participant_ids=participant_ids  # Pass participant_ids to ensure correct participants are used
                 )
                 
                 # Log successful merge/expansion

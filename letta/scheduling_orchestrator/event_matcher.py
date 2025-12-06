@@ -405,7 +405,7 @@ def identify_event_from_natural_language(
     event_identifiers: Dict[str, Any],
     events_by_participant: Dict[str, List[Dict[str, Any]]],
     context_json: Optional[Dict[str, Any]] = None,
-    min_score: float = 0.4
+    min_score: float = 0.5
 ) -> Optional[Tuple[Dict[str, Any], str]]:
     """
     Identify an event from natural language identifiers.
@@ -456,6 +456,7 @@ def identify_event_from_natural_language(
         pass
     
     # Score all events across all participants
+    top_candidates = []  # Track top candidates for debugging
     for participant_id, events in events_by_participant.items():
         for event in events:
             score = score_event_match(event, event_identifiers, context_json, events_by_participant)
@@ -463,6 +464,18 @@ def identify_event_from_natural_language(
                 best_score = score
                 best_match = event
                 best_participant = participant_id
+            # Track top candidates (score >= 0.2)
+            if score >= 0.2:
+                top_candidates.append((score, event.get("summary", ""), event.get("id", ""), participant_id))
+    
+    # Log top candidates for debugging
+    try:
+        top_candidates.sort(reverse=True, key=lambda x: x[0])
+        print(f"[identify_event_from_natural_language] Top 5 candidates:", file=sys.stderr, flush=True)
+        for i, (score, title, event_id, part_id) in enumerate(top_candidates[:5], 1):
+            print(f"  {i}. Score {score:.2f}: '{title}' (ID: {event_id[:50]}...) in {part_id}", file=sys.stderr, flush=True)
+    except:
+        pass
     
     # Log best match found
     try:
