@@ -341,7 +341,26 @@ def score_event_match(
         # Fallback: try to get as string or empty
         event_start_dt_str = str(event_start) if event_start else ""
     
+    # Extract attendees - prefer attendees_details (with names) over attendees_list
     event_attendees = event.get("attendees_list", [])
+    event_attendees_details = event.get("attendees_details", [])
+    
+    # Build attendee emails and names from attendees_details if available
+    attendee_emails_from_details = []
+    attendee_names_from_details = []
+    if event_attendees_details and isinstance(event_attendees_details, list):
+        for attendee in event_attendees_details:
+            if isinstance(attendee, dict):
+                email = attendee.get("email", "")
+                name = attendee.get("name", "")
+                if email:
+                    attendee_emails_from_details.append(email)
+                if name:
+                    attendee_names_from_details.append(name.lower())
+    
+    # Use attendees_details emails if available, fallback to attendees_list
+    if attendee_emails_from_details:
+        event_attendees = attendee_emails_from_details
     
     # Parse event start time
     event_start_dt = None
@@ -362,6 +381,7 @@ def score_event_match(
     titles = event_identifiers.get("titles", [])
     
     # If no explicit participant names but we have titles, try to extract names from titles
+    # Now we can also match extracted names to attendee names from attendees_details
     if not participant_names and titles:
         for title_ref in titles:
             # Look for patterns like "Name1/Name2", "Name1 & Name2", "Name1 and Name2"
@@ -378,6 +398,25 @@ def score_event_match(
                     if name2.strip() not in participant_names:
                         participant_names.append(name2.strip())
     
+    # Enhanced: If we have attendee names from attendees_details, try to match title-extracted names
+    # This helps with cases like "Kate/Chad check in" where Kate and Chad are in attendees_details
+    if participant_names and attendee_names_from_details:
+        # Check if any extracted name matches attendee names (case-insensitive)
+        matched_names = []
+        for p_name in participant_names:
+            p_name_lower = p_name.lower()
+            # Try exact match
+            if p_name_lower in attendee_names_from_details:
+                matched_names.append(p_name)
+            else:
+                # Try partial match (first name only)
+                p_first_name = p_name_lower.split()[0] if p_name_lower.split() else ""
+                for attendee_name in attendee_names_from_details:
+                    attendee_first_name = attendee_name.split()[0] if attendee_name.split() else ""
+                    if p_first_name and attendee_first_name and p_first_name == attendee_first_name:
+                        matched_names.append(p_name)
+                        break
+    
     # Track individual component scores for combination bonuses
     participant_score = 0.0
     date_score = 0.0
@@ -392,6 +431,26 @@ def score_event_match(
         if isinstance(events_by_participant, dict):
             participant_ids = list(events_by_participant.keys())
         participant_emails = map_participant_names_to_emails(participant_names, context_json, participant_ids)
+        
+        # ENHANCED: Direct name matching using attendees_details
+        name_matches = 0
+        if attendee_names_from_details:
+            participant_names_lower = [name.lower() for name in participant_names]
+            for p_name_lower in participant_names_lower:
+                # Try exact match
+                if p_name_lower in attendee_names_from_details:
+                    name_matches += 1
+                else:
+                    # Try partial match (first name only)
+                    p_first_name = p_name_lower.split()[0] if p_name_lower.split() else ""
+                    for attendee_name in attendee_names_from_details:
+                        attendee_first_name = attendee_name.split()[0] if attendee_name.split() else ""
+                        if p_first_name and attendee_first_name and p_first_name == attendee_first_name:
+                            name_matches += 1
+                            break
+        
+        # Email-based matching (fallback or supplement)
+        email_matches = 0
         if participant_emails:
             # Check if any participant email is in event attendees
             matching_participants = [email for email in participant_emails if email in event_attendees]
@@ -410,12 +469,20 @@ def score_event_match(
             if matching_participants:
                 all_participants_present.update(matching_participants)
             
+            email_matches = len(all_participants_present)
+        
+        # Combine name and email matches - prefer name matches (more accurate)
+        total_matches = max(name_matches, email_matches) if name_matches > 0 or email_matches > 0 else 0
+        total_participants = max(len(participant_names), len(participant_emails) if participant_emails else 0)
+        
+        if total_matches > 0 and total_participants > 0:
             # Full match: all participants are present
-            if len(all_participants_present) >= len(participant_emails):
+            if total_matches >= total_participants:
                 participant_score = 0.35
             # Partial match: at least one participant matches
-            elif matching_participants or (event_owner and event_owner in participant_emails):
-                participant_score = 0.2
+            elif total_matches >= 1:
+                # Scale score based on match ratio
+                participant_score = 0.2 + (0.15 * (total_matches / total_participants))
             score += participant_score
     
     # Score date match (weight: 0.35)

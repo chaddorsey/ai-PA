@@ -516,7 +516,7 @@ def orchestrate_scheduling(
                                 if not start_dt or not end_dt:
                                     continue  # Skip events without valid start/end
                                 
-                                # Extract attendees_list
+                                # Extract attendees_list (for backward compatibility)
                                 attendees_list = evt.get("attendees_list", [])
                                 if isinstance(attendees_list, str):
                                     try:
@@ -527,6 +527,19 @@ def orchestrate_scheduling(
                                 elif not isinstance(attendees_list, list):
                                     attendees_list = []
                                 
+                                # Extract attendees_details (new field with names)
+                                attendees_details = evt.get("attendees_details", [])
+                                if not isinstance(attendees_details, list):
+                                    attendees_details = []
+                                
+                                # If attendees_details not available, construct from attendees_list
+                                if not attendees_details and attendees_list:
+                                    attendees_details = [
+                                        {"email": email, "name": email.split("@")[0]}  # Use email prefix as name fallback
+                                        for email in attendees_list
+                                        if isinstance(email, str)
+                                    ]
+                                
                                 # Normalize to orchestrator format
                                 normalized_events.append({
                                     "id": evt.get("id", ""),
@@ -536,7 +549,8 @@ def orchestrate_scheduling(
                                     "locked": evt.get("locked", False),
                                     "protected": evt.get("protected", False),
                                     "flexible": evt.get("flexible", True),
-                                    "attendees": attendees_list
+                                    "attendees": attendees_list,  # Keep for backward compatibility
+                                    "attendees_details": attendees_details  # New field with names
                                 })
                             
                             return participant_id, normalized_events
@@ -702,22 +716,36 @@ def orchestrate_scheduling(
                 if isinstance(context_json, str):
                     context_dict = json.loads(context_json)
                 
-                # Enhance context_dict with participant information from participant_ids if not present
+                # Enhance context_dict with participant information from participant_ids and events
                 # This helps with participant name mapping in event identification
+                # Extract names from attendees_details in events if available
+                participant_name_map = {}  # email -> name mapping from events
+                if events_by_participant:
+                    for owner_id, events_list in events_by_participant.items():
+                        for evt in events_list:
+                            attendees_details = evt.get("attendees_details", [])
+                            if attendees_details and isinstance(attendees_details, list):
+                                for attendee in attendees_details:
+                                    if isinstance(attendee, dict):
+                                        email = attendee.get("email", "")
+                                        name = attendee.get("name", "")
+                                        if email and name and email not in participant_name_map:
+                                            participant_name_map[email] = name
+                
                 if participant_ids and ("participants" not in context_dict or not context_dict.get("participants")):
                     if "participants" not in context_dict:
                         context_dict["participants"] = []
-                    # Add participant info from participant_ids
+                    # Add participant info from participant_ids, using names from events if available
                     for p_id in participant_ids:
                         # Check if this participant is already in the list
                         existing = any(p.get("id") == p_id or p.get("email") == p_id for p in context_dict["participants"])
                         if not existing:
-                            # Try to extract name from email (e.g., "jraiff@concord.org" -> "Judi Raiff" or "jraiff")
-                            # For now, just use the email as both id and email
+                            # Use name from events if available, otherwise use email prefix
+                            participant_name = participant_name_map.get(p_id, p_id.split("@")[0])
                             context_dict["participants"].append({
                                 "id": p_id,
                                 "email": p_id,
-                                "name": p_id.split("@")[0]  # Use email prefix as name fallback
+                                "name": participant_name
                             })
                 
                 # Ensure event_identifiers is a dict (not a string)
@@ -2267,7 +2295,7 @@ def orchestrate_scheduling(
                                         if not start_dt or not end_dt:
                                             continue
                                         
-                                        # Extract attendees_list
+                                        # Extract attendees_list (for backward compatibility)
                                         attendees_list = evt.get("attendees_list", [])
                                         if isinstance(attendees_list, str):
                                             try:
@@ -2278,6 +2306,19 @@ def orchestrate_scheduling(
                                         elif not isinstance(attendees_list, list):
                                             attendees_list = []
                                         
+                                        # Extract attendees_details (new field with names)
+                                        attendees_details = evt.get("attendees_details", [])
+                                        if not isinstance(attendees_details, list):
+                                            attendees_details = []
+                                        
+                                        # If attendees_details not available, construct from attendees_list
+                                        if not attendees_details and attendees_list:
+                                            attendees_details = [
+                                                {"email": email, "name": email.split("@")[0]}  # Use email prefix as name fallback
+                                                for email in attendees_list
+                                                if isinstance(email, str)
+                                            ]
+                                        
                                         normalized_events.append({
                                             "id": evt.get("id", ""),
                                             "title": evt.get("summary", ""),
@@ -2286,7 +2327,8 @@ def orchestrate_scheduling(
                                             "locked": evt.get("locked", False),
                                             "protected": evt.get("protected", False),
                                             "flexible": evt.get("flexible", True),
-                                            "attendees": attendees_list
+                                            "attendees": attendees_list,  # Keep for backward compatibility
+                                            "attendees_details": attendees_details  # New field with names
                                         })
                                     
                                     return participant_id, normalized_events

@@ -246,7 +246,11 @@ class MCPCalendarClient:
                 "flexible": true,
                 "number_of_attendees": 0,
                 "internal_only": true,
-                "attendees_list": ["email1@example.com", ...]
+                "attendees_list": ["email1@example.com", ...],  # Legacy field (for backward compatibility)
+                "attendees_details": [  # New field with names
+                  {"email": "email1@example.com", "name": "Full Name"},
+                  ...
+                ]
               },
               ...
             ]

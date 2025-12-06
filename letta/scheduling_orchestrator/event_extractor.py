@@ -153,16 +153,30 @@ def extract_event_details_for_rescheduling(
     except (ValueError, AttributeError) as e:
         raise ValueError(f"Failed to parse event start/end times: {str(e)}")
     
-    # Extract participants
+    # Extract participants - prefer attendees_details (with names) over attendees_list
     attendees_list = event.get("attendees_list", [])
     if not isinstance(attendees_list, list):
         attendees_list = []
     
+    attendees_details = event.get("attendees_details", [])
+    if not isinstance(attendees_details, list):
+        attendees_details = []
+    
     # Build participants list: owner + attendees (deduplicated)
+    # Use emails from attendees_details if available, otherwise from attendees_list
     participants = [event_owner_id]
-    for attendee in attendees_list:
-        if attendee and attendee not in participants:
-            participants.append(attendee)
+    if attendees_details:
+        # Extract emails from attendees_details
+        for attendee in attendees_details:
+            if isinstance(attendee, dict):
+                email = attendee.get("email", "")
+                if email and email not in participants:
+                    participants.append(email)
+    else:
+        # Fallback to attendees_list
+        for attendee in attendees_list:
+            if attendee and attendee not in participants:
+                participants.append(attendee)
     
     # Extract flags
     internal_only = event.get("internal_only", True)  # Default to True for backwards compatibility
