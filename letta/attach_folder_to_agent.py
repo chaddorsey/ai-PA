@@ -48,7 +48,9 @@ def main():
         
         # Find the folder
         print(f"\n📁 Looking for folder '{FOLDER_NAME}'...")
-        folders = client.folders.list()
+        # Handle SDK v1.0 pagination (returns page object with .items)
+        folders_result = client.folders.list()
+        folders = folders_result.items if hasattr(folders_result, 'items') else folders_result
         
         folder = None
         for f in folders:

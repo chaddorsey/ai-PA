@@ -63,7 +63,9 @@ def get_or_create_folder(client: Letta, folder_name: str):
     
     try:
         # Try to retrieve existing folder
-        folders = client.folders.list()
+        # Handle SDK v1.0 pagination (returns page object with .items)
+        folders_result = client.folders.list()
+        folders = folders_result.items if hasattr(folders_result, 'items') else folders_result
         for folder in folders:
             if hasattr(folder, 'name') and folder.name == folder_name:
                 print(f"✅ Found existing folder: {folder_name}")
@@ -78,7 +80,9 @@ def get_or_create_folder(client: Letta, folder_name: str):
     print(f"📝 Creating new folder '{folder_name}'...")
     try:
         # Get available embedding models
-        embedding_configs = client.embeddingModels.list()
+        # Handle SDK v1.0 pagination (returns page object with .items)
+        embedding_configs_result = client.embeddingModels.list()
+        embedding_configs = embedding_configs_result.items if hasattr(embedding_configs_result, 'items') else embedding_configs_result
         if not embedding_configs:
             raise Exception("No embedding models available")
         

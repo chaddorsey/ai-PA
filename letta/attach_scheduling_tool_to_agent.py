@@ -61,7 +61,9 @@ def main():
         
         try:
             # Try to get tools list and find our tool
-            tools = client.tools.list()
+            # Handle SDK v1.0 pagination (returns page object with .items)
+            tools_result = client.tools.list()
+            tools = tools_result.items if hasattr(tools_result, 'items') else tools_result
             tool_id = None
             
             for tool in tools:
@@ -97,7 +99,7 @@ def main():
                 else:
                     # Add tool to the list and update agent
                     updated_tool_ids = list(current_tool_ids) + [tool_id]
-                    client.agents.modify(
+                    client.agents.update(
                         agent_id=LETTA_AGENT_ID,
                         tool_ids=updated_tool_ids
                     )

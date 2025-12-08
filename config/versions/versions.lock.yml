@@ -3,8 +3,8 @@
 # Purpose: Lock all framework and dependency versions for controlled upgrades
 
 version: "1.0"
-last_updated: "2025-01-21T04:40:00Z"
-lock_reason: "Initial version lock establishment for PBI 11"
+last_updated: "2025-01-21T15:00:00Z"
+lock_reason: "Updated Letta to v0.14.0 with SDK v1.0 compatibility (PBI 23)"
 
 # Core Framework Versions
 frameworks:
@@ -18,11 +18,11 @@ frameworks:
 
   letta:
     image: "letta/letta"
-    tag: "0.11.7"
-    version: "0.11.7"
+    tag: "0.14.0"
+    version: "0.14.0"
     locked: true
     upgrade_path: "minor"
-    notes: "Detected actual version from running container API"
+    notes: "Upgraded from 0.12.1 to 0.14.0 on 2025-01-21. SDK v1.0 compatibility implemented."
 
   graphiti:
     image: "custom"  # Built from source

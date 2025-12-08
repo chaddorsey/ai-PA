@@ -44,7 +44,9 @@ def main():
     # Find and delete existing tool
     print(f"Looking for existing tool: {TOOL_NAME}...")
     try:
-        tools = client.tools.list()
+        # Handle SDK v1.0 pagination (returns page object with .items)
+        tools_result = client.tools.list()
+        tools = tools_result.items if hasattr(tools_result, 'items') else tools_result
         for tool in tools:
             tool_name_attr = tool.name if hasattr(tool, 'name') else (tool.get("name") if isinstance(tool, dict) else None)
             tool_id_attr = tool.id if hasattr(tool, 'id') else (tool.get("id") if isinstance(tool, dict) else None)
