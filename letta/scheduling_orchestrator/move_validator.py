@@ -253,6 +253,33 @@ def validate_proposal_meeting_time(
                         moved_event_slots.update(slots)
                         found_original = True
         
+        # CRITICAL: For ASP multi-move solutions, also exclude flexible/protected events that overlap
+        # with the meeting's occurs_slots. These events are implicitly "moved" by the ASP solver,
+        # even if they're not explicitly in the moved_events list computed by compute_move_deltas.
+        # This is necessary because ASP allows overlaps with flexible/protected events (penalized
+        # in soft constraints), but compute_move_deltas only identifies events that directly overlap.
+        event_protection = normalized_data.get("event_protection", {})
+        for (p_id, e_id), slots in event_slots_map.items():
+            if p_id in participants:
+                # Check if this event overlaps with the meeting slots
+                if meeting_slots.intersection(slots):
+                    # Check if it's already excluded (moved or original)
+                    if (p_id, e_id) in moved_event_keys:
+                        continue
+                    
+                    # Check protection level
+                    protection_level = event_protection.get((p_id, e_id), "flexible")
+                    
+                    # Check if it's internal-only (external events cannot be moved)
+                    event_meta = event_metadata.get((p_id, e_id), {})
+                    internal_only = event_meta.get("internal_only", True)  # Default to True for backwards compatibility
+                    
+                    # Exclude flexible/protected (not locked) internal-only events
+                    # These are implicitly moved by ASP multi-move solutions
+                    if protection_level in ("flexible", "protected") and internal_only:
+                        moved_event_keys.add((p_id, e_id))
+                        moved_event_slots.update(slots)
+        
         # Check each participant's calendar
         for participant_id in participants:
             # Check if we have calendar data for this participant

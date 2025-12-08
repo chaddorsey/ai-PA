@@ -301,23 +301,23 @@ class MCPCalendarClient:
         self,
         calendar_id: str,
         event_id: str,
-        days_forward: int = 30
+        days_forward: int = 14
     ) -> Optional[Dict[str, Any]]:
         """
         Fetch a specific event by ID from a calendar.
         
         Since Core_Event_Data only supports date range queries, this method:
-        1. Fetches events in a date range (default: today to 30 days in the future)
+        1. Fetches events in a date range (default: today to 14 days in the future)
         2. Filters the results to find the event with the matching ID
         3. Returns the event if found, None otherwise
         
         This method is optimized for rescheduling use cases, which only need to look
-        at current and future events.
+        at current and future events (it's unusual to reschedule past meetings).
         
         Args:
             calendar_id: Calendar identifier (user ID or email address of a participant)
             event_id: The ID of the event to fetch
-            days_forward: Number of days in the future to search (default: 30)
+            days_forward: Number of days in the future to search (default: 14)
             
         Returns:
             Event dictionary with structure matching Core_Event_Data format, or None if not found.

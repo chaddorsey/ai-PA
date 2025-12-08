@@ -22,6 +22,50 @@ if False:  # Never executes, but satisfies type checkers
 # These will be imported when the function is actually called
 
 
+def _is_internal_participant(participant_id: str, internal_domains: Optional[List[str]] = None) -> bool:
+    """
+    Determine if a participant is internal (e.g., @concord.org) or external.
+    
+    Args:
+        participant_id: Email address of the participant
+        internal_domains: List of internal domain suffixes (default: ["@concord.org"])
+    
+    Returns:
+        True if participant is internal, False if external
+    """
+    if internal_domains is None:
+        internal_domains = ["@concord.org"]
+    
+    if not participant_id or "@" not in participant_id:
+        return False
+    
+    participant_lower = participant_id.lower()
+    return any(participant_lower.endswith(domain.lower()) for domain in internal_domains)
+
+
+def _separate_internal_external_participants(participants: List[str], internal_domains: Optional[List[str]] = None) -> tuple[List[str], List[str]]:
+    """
+    Separate participants into internal and external lists.
+    
+    Args:
+        participants: List of participant email addresses
+        internal_domains: List of internal domain suffixes (default: ["@concord.org"])
+    
+    Returns:
+        Tuple of (internal_participants, external_participants)
+    """
+    internal = []
+    external = []
+    
+    for p in participants:
+        if _is_internal_participant(p, internal_domains):
+            internal.append(p)
+        else:
+            external.append(p)
+    
+    return internal, external
+
+
 def orchestrate_scheduling(
     utterance: str,
         participant_ids: Optional[List[str]] = None,  # NEW: List of participant email addresses for automatic event fetching (optional for rescheduling when event_id is provided)
@@ -103,11 +147,11 @@ def orchestrate_scheduling(
                   as the base for finding alternative time slots. Use this when the agent has already identified the
                   event to reschedule. If provided, event_participant_id must also be provided.
                   The tool searches for the event in the calendar of the specified participant, looking from today
-                  forward up to 30 days. Example: "evt_abc123xyz"
+                  forward up to 14 days. Example: "evt_abc123xyz"
         
         event_participant_id: (Optional) Email address or calendar ID of one of the event participants. This is used
                               to fetch the event via MCP Core_Event_Data. The event will be searched in this
-                              participant's calendar from today forward up to 30 days. For rescheduling, if not provided
+                              participant's calendar from today forward up to 14 days. For rescheduling, if not provided
                               when event_id is provided, defaults to user_id (assuming requester is an attendee).
                               Can be any participant of the event, not necessarily the owner.
                               Example: "cdorsey@concord.org"
@@ -408,7 +452,39 @@ def orchestrate_scheduling(
         if participant_ids or (is_rescheduling and (event_id or user_id)):
             # Mode 1: Fetch events automatically via MCP
             if not context_json:
-                if is_rescheduling:
+                # For natural language rescheduling (title-based, no event_id), default to 2 weeks forward
+                if is_rescheduling and not event_id and user_id and scheduling_problem_preview:
+                    event_identifiers_dict = scheduling_problem_preview.event_identifiers if hasattr(scheduling_problem_preview, 'event_identifiers') and scheduling_problem_preview.event_identifiers else {}
+                    titles = event_identifiers_dict.get("titles", []) if isinstance(event_identifiers_dict, dict) else []
+                    # If we have a title, default to 2 weeks forward for natural language rescheduling
+                    if titles:
+                        from datetime import timedelta
+                        tz = pytz.timezone("America/New_York")  # Default timezone
+                        now = datetime.now(tz)
+                        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)  # Start of today
+                        end_dt = now + timedelta(days=14)  # 14 days forward
+                        context_json = {
+                            "timeframe": {
+                                "from": start_dt.strftime("%Y-%m-%d"),
+                                "to": end_dt.strftime("%Y-%m-%d"),
+                                "tz": "America/New_York"
+                            }
+                        }
+                        try:
+                            print(f"[orchestrate_scheduling] Defaulting to 2-week forward timeframe for natural language rescheduling: {context_json['timeframe']}", file=sys.stderr, flush=True)
+                        except:
+                            pass
+                    else:
+                        # No title, require context_json
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation="context_json with timeframe is required for rescheduling. Provide timeframe with 'from', 'to', and 'tz' fields to search for the meeting and find alternative times.",
+                            proposals=[],
+                            error_message="Missing context_json with timeframe",
+                            debug=debug_info
+                        ).model_dump()
+                elif is_rescheduling:
+                    # Rescheduling with event_id but no context_json - require it
                     return ResponseEnvelope(
                         status="bad_input",
                         explanation="context_json with timeframe is required for rescheduling. Provide timeframe with 'from', 'to', and 'tz' fields to search for the meeting and find alternative times.",
@@ -417,6 +493,7 @@ def orchestrate_scheduling(
                         debug=debug_info
                     ).model_dump()
                 else:
+                    # Not rescheduling, require context_json
                     return ResponseEnvelope(
                         status="bad_input",
                         explanation="context_json with timeframe is required when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
@@ -485,7 +562,7 @@ def orchestrate_scheduling(
                     if fetched_event_by_id is None:
                         return ResponseEnvelope(
                             status="bad_input",
-                            explanation=f"Event with ID '{event_id}' not found in calendar '{event_participant_id}'. The event may not exist, may be outside the search range (today to 30 days in the future), or you may not have access to it. Please provide participant_ids if you know them, or check that the event_id and event_participant_id are correct.",
+                            explanation=f"Event with ID '{event_id}' not found in calendar '{event_participant_id}'. The event may not exist, may be outside the search range (today to 14 days in the future), or you may not have access to it. Please provide participant_ids if you know them, or check that the event_id and event_participant_id are correct.",
                             proposals=[],
                             error_message=f"Event {event_id} not found in calendar {event_participant_id}",
                             debug=debug_info
@@ -558,7 +635,7 @@ def orchestrate_scheduling(
                     if fetched_event_by_id is None:
                         return ResponseEnvelope(
                             status="bad_input",
-                            explanation=f"Event with ID '{event_id}' not found in calendar '{event_participant_id}'. The event may not exist, may be outside the search range (today to 30 days in the future), or you may not have access to it.",
+                            explanation=f"Event with ID '{event_id}' not found in calendar '{event_participant_id}'. The event may not exist, may be outside the search range (today to 14 days in the future), or you may not have access to it.",
                             proposals=[],
                             error_message=f"Event {event_id} not found in calendar {event_participant_id}",
                             debug=debug_info
@@ -724,8 +801,101 @@ def orchestrate_scheduling(
                 # Use asyncio.run() since this function is not async
                 async def fetch_all():
                     await mcp_client.initialize()
+                    
+                    # For rescheduling with title + ambiguous dates, expand date range for initial fetch
+                    # This ensures the event is included in the search results
+                    timeframe_to_use = context_json["timeframe"].copy()
+                    if is_rescheduling and scheduling_problem_preview:
+                        event_identifiers_dict = scheduling_problem_preview.event_identifiers if hasattr(scheduling_problem_preview, 'event_identifiers') and scheduling_problem_preview.event_identifiers else {}
+                        titles = event_identifiers_dict.get("titles", []) if isinstance(event_identifiers_dict, dict) else []
+                        dates = event_identifiers_dict.get("dates", []) if isinstance(event_identifiers_dict, dict) else []
+                        participant_names = event_identifiers_dict.get("participant_names", []) if isinstance(event_identifiers_dict, dict) else []
+                        
+                        has_title = bool(titles)
+                        has_specific_dates = bool(dates)
+                        has_participants = bool(participant_names)
+                        dates_are_ambiguous = len(dates) > 1
+                        
+                        import pytz
+                        from datetime import datetime, timedelta
+                        tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
+                        
+                        # CRITICAL: If we have a single specific date (e.g., "Dec. 11"), use it to expand/narrow the search
+                        # This ensures we find the meeting even if it's outside the context_json timeframe
+                        use_date_specific_range = False
+                        if dates and len(dates) == 1 and not dates_are_ambiguous:
+                            # Single date provided - parse it and use it to expand/narrow the search window
+                            try:
+                                try:
+                                    from .event_matcher import parse_date_reference
+                                except (ImportError, ValueError):
+                                    try:
+                                        from scheduling_orchestrator.event_matcher import parse_date_reference
+                                    except ImportError:
+                                        from event_matcher import parse_date_reference
+                                
+                                target_date_dt = parse_date_reference(dates[0], datetime.now(tz))
+                                if target_date_dt:
+                                    # Use the target date ± 1 day for safety (in case of timezone issues or edge cases)
+                                    use_date_specific_range = True
+                                    start_dt = target_date_dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                                    end_dt = target_date_dt.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
+                                    
+                                    # CRITICAL: If the target date is outside the context_json timeframe, expand the range
+                                    # to include both the target date AND the context timeframe
+                                    context_start = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                    context_start = tz.localize(context_start)
+                                    context_end = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                    context_end = tz.localize(context_end.replace(hour=23, minute=59, second=59))
+                                    
+                                    # Expand to include both ranges
+                                    start_dt = min(start_dt, context_start)
+                                    end_dt = max(end_dt, context_end)
+                                    
+                                    timeframe_to_use = {
+                                        "from": start_dt.strftime("%Y-%m-%d"),
+                                        "to": end_dt.strftime("%Y-%m-%d"),
+                                        "tz": context_json["timeframe"].get("tz", "America/New_York")
+                                    }
+                                    try:
+                                        print(f"[orchestrate_scheduling] Using date-specific range for event fetch: '{dates[0]}' -> {timeframe_to_use['from']} to {timeframe_to_use['to']}", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
+                            except Exception as e:
+                                # If date parsing fails, fall through to other logic
+                                try:
+                                    print(f"[orchestrate_scheduling] Failed to parse date '{dates[0]}' for expanding search: {e}", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                        
+                        # Use broad range if title + multiple dates (likely search window, not event date)
+                        # Only if we didn't already set a date-specific range
+                        if not use_date_specific_range:
+                            use_broad_range = has_title and (
+                                not has_specific_dates or 
+                                dates_are_ambiguous or 
+                                (has_specific_dates and not has_participants) or
+                                (has_title and len(dates) > 1)
+                            )
+                            
+                            if use_broad_range:
+                                now = datetime.now(tz)
+                                # Use 14 days forward from today for event identification
+                                # Only look forward since it's unusual to reschedule past meetings
+                                start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)  # Start of today
+                                end_dt = now + timedelta(days=14)  # 14 days forward
+                                timeframe_to_use = {
+                                    "from": start_dt.strftime("%Y-%m-%d"),
+                                    "to": end_dt.strftime("%Y-%m-%d"),
+                                    "tz": context_json["timeframe"].get("tz", "America/New_York")
+                                }
+                                try:
+                                    print(f"[orchestrate_scheduling] Expanded date range for initial event fetch: {timeframe_to_use['from']} to {timeframe_to_use['to']} (14 days forward, title: {titles}, dates: {dates})", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                    
                     return await fetch_calendar_events(
-                        participant_ids, user_id, context_json["timeframe"], mcp_client
+                        participant_ids, user_id, timeframe_to_use, mcp_client
                     )
                 
                 fetched_events = asyncio.run(fetch_all())
@@ -828,15 +998,32 @@ def orchestrate_scheduling(
                 debug=debug_info
             ).model_dump()
         
-        for participant_id, events in events_by_participant.items():
-            if len(events) > MAX_EVENTS_PER_PARTICIPANT:
-                return ResponseEnvelope(
-                    status="bad_input",
-                    explanation=f"Participant {participant_id} has {len(events)} events, exceeding maximum ({MAX_EVENTS_PER_PARTICIPANT}).",
-                    proposals=[],
-                    error_message=f"Too many events for {participant_id}: {len(events)}",
-                    debug=debug_info
-                ).model_dump()
+        # Track if we used expanded date range for event identification
+        # If so, we'll filter events to the narrower timeframe after identification
+        used_expanded_range_for_identification = False
+        
+        # For rescheduling with expanded range, defer limit check until after filtering
+        # Check if this is rescheduling with title + ambiguous dates (would use expanded range)
+        should_defer_limit_check = False
+        if is_rescheduling and scheduling_problem_preview:
+            event_identifiers_dict = scheduling_problem_preview.event_identifiers if hasattr(scheduling_problem_preview, 'event_identifiers') and scheduling_problem_preview.event_identifiers else {}
+            titles = event_identifiers_dict.get("titles", []) if isinstance(event_identifiers_dict, dict) else []
+            dates = event_identifiers_dict.get("dates", []) if isinstance(event_identifiers_dict, dict) else []
+            if titles and len(dates) > 1:
+                should_defer_limit_check = True
+                used_expanded_range_for_identification = True
+        
+        # Only check limit now if we're NOT deferring (i.e., not using expanded range for identification)
+        if not should_defer_limit_check:
+            for participant_id, events in events_by_participant.items():
+                if len(events) > MAX_EVENTS_PER_PARTICIPANT:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Participant {participant_id} has {len(events)} events, exceeding maximum ({MAX_EVENTS_PER_PARTICIPANT}).",
+                        proposals=[],
+                        error_message=f"Too many events for {participant_id}: {len(events)}",
+                        debug=debug_info
+                    ).model_dump()
         
         # 2. Extract scheduling problem from utterance using DSPy
         extraction_start = time.time()
@@ -852,6 +1039,66 @@ def orchestrate_scheduling(
             if is_rescheduling and not scheduling_problem.is_rescheduling:
                 scheduling_problem.is_rescheduling = True
                 print(f"[orchestrate_scheduling] Set is_rescheduling=True because event_id is provided or rescheduling keywords detected", file=sys.stderr, flush=True)
+            
+            # Post-process event_identifiers to fix common DSPy extraction errors
+            # Sometimes DSPy extracts meeting titles as participant names (e.g., "Concord Audit Drafts")
+            if scheduling_problem.event_identifiers and isinstance(scheduling_problem.event_identifiers, dict):
+                participant_names = scheduling_problem.event_identifiers.get("participant_names", [])
+                titles = scheduling_problem.event_identifiers.get("titles", [])
+                
+                # Heuristic: If participant_names contains phrases that look like meeting titles,
+                # and titles is empty or only contains generic words, move them to titles
+                if participant_names and (not titles or all(t.lower() in ["meeting", "meetings"] for t in titles)):
+                    title_like_phrases = []
+                    remaining_participants = []
+                    
+                    for pn in participant_names:
+                        pn_lower = pn.lower()
+                        # Check if this looks like a meeting title:
+                        # - Contains multiple capitalized words (e.g., "Concord Audit Drafts")
+                        # - Contains organization names or project names
+                        # - Contains words like "Audit", "Drafts", "Team", "Review", etc.
+                        # - Does NOT look like a personal name (e.g., "Judi", "Chad", "Kate")
+                        is_title_like = False
+                        
+                        # Multiple words with capitals suggests a title
+                        words = pn.split()
+                        if len(words) >= 2:
+                            # Check if most words start with capital letters
+                            capitalized_words = sum(1 for w in words if w and w[0].isupper())
+                            if capitalized_words >= 2:
+                                is_title_like = True
+                        
+                        # Check for title-like keywords
+                        title_keywords = ["audit", "drafts", "team", "review", "meeting", "standup", "sync", "check-in", "planning", "design", "development", "finance", "grants", "consortium"]
+                        if any(keyword in pn_lower for keyword in title_keywords):
+                            is_title_like = True
+                        
+                        # Check if it's clearly NOT a personal name
+                        # Personal names are typically 1-2 words, don't contain organization terms
+                        personal_name_indicators = ["with", "and", "&", "/"]
+                        if not any(indicator in pn_lower for indicator in personal_name_indicators):
+                            # If it's 2+ words and doesn't contain personal name indicators, likely a title
+                            if len(words) >= 2:
+                                is_title_like = True
+                        
+                        if is_title_like:
+                            title_like_phrases.append(pn)
+                        else:
+                            remaining_participants.append(pn)
+                    
+                    # If we found title-like phrases, move them to titles
+                    if title_like_phrases:
+                        if not titles:
+                            scheduling_problem.event_identifiers["titles"] = title_like_phrases
+                        else:
+                            # Merge with existing titles
+                            scheduling_problem.event_identifiers["titles"] = titles + title_like_phrases
+                        scheduling_problem.event_identifiers["participant_names"] = remaining_participants
+                        try:
+                            print(f"[orchestrate_scheduling] Post-processed event_identifiers: moved {title_like_phrases} from participant_names to titles", file=sys.stderr, flush=True)
+                        except:
+                            pass
         except Exception as e:
             error_traceback = traceback.format_exc()
             return ResponseEnvelope(
@@ -1063,15 +1310,194 @@ def orchestrate_scheduling(
                         async def fetch_calendars_for_search():
                             await mcp_client.initialize()
                             import pytz
-                            from datetime import datetime
+                            from datetime import datetime, timedelta
                             
                             tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
-                            start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
-                            start_dt = tz.localize(start_dt)
-                            after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
                             
-                            end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                            end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                            # Determine date range for event identification
+                            # If title is primary identifier (and dates are ambiguous or missing),
+                            # use a broader range to find the meeting
+                            # NOTE: Use scheduling_problem_preview since scheduling_problem hasn't been created yet
+                            event_identifiers_dict = {}
+                            if scheduling_problem_preview and hasattr(scheduling_problem_preview, 'event_identifiers') and scheduling_problem_preview.event_identifiers:
+                                event_identifiers_dict = scheduling_problem_preview.event_identifiers
+                            elif 'scheduling_problem' in locals() and hasattr(scheduling_problem, 'event_identifiers') and scheduling_problem.event_identifiers:
+                                event_identifiers_dict = scheduling_problem.event_identifiers
+                            
+                            titles = event_identifiers_dict.get("titles", []) if isinstance(event_identifiers_dict, dict) else []
+                            dates = event_identifiers_dict.get("dates", []) if isinstance(event_identifiers_dict, dict) else []
+                            participant_names = event_identifiers_dict.get("participant_names", []) if isinstance(event_identifiers_dict, dict) else []
+                            
+                            try:
+                                print(f"[orchestrate_scheduling] DEBUG: event_identifiers_dict={event_identifiers_dict}, dates={dates}, len(dates)={len(dates) if dates else 0}", file=sys.stderr, flush=True)
+                            except:
+                                pass
+                            
+                            # If we have a title but no specific dates (or ambiguous dates like "Wednesday through Friday"
+                            # which could be the search window), expand the search range
+                            has_title = bool(titles)
+                            has_specific_dates = bool(dates)
+                            has_participants = bool(participant_names)
+                            
+                            # Check if dates are ambiguous (multiple days likely means search window, not event date)
+                            # Examples: "Wednesday through Friday", "between Monday and Wednesday" → likely search window
+                            # Also: "Wednesday" and "Friday" as separate dates likely means search window, not event date
+                            dates_are_ambiguous = False
+                            if dates and len(dates) > 1:
+                                # Multiple dates in event_identifiers likely means search window, not event date
+                                dates_are_ambiguous = True
+                            
+                            try:
+                                print(f"[orchestrate_scheduling] DEBUG: dates_are_ambiguous={dates_are_ambiguous}, dates={dates}, len(dates)={len(dates) if dates else 0}", file=sys.stderr, flush=True)
+                            except:
+                                pass
+                            
+                            # CRITICAL: If we have a single specific date (e.g., "Dec. 11"), use it to expand/narrow the search
+                            # This ensures we find the meeting even if it's outside the context_json timeframe
+                            use_date_specific_range = False
+                            target_date_dt = None
+                            if dates and len(dates) == 1 and not dates_are_ambiguous:
+                                try:
+                                    print(f"[orchestrate_scheduling] DEBUG: Entering date-specific range logic for date: '{dates[0]}'", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                                # Single date provided - parse it and use it to expand/narrow the search window
+                                try:
+                                    try:
+                                        from .event_matcher import parse_date_reference
+                                    except (ImportError, ValueError):
+                                        try:
+                                            from scheduling_orchestrator.event_matcher import parse_date_reference
+                                        except ImportError:
+                                            from event_matcher import parse_date_reference
+                                    
+                                    target_date_dt = parse_date_reference(dates[0], datetime.now(tz))
+                                    if target_date_dt:
+                                        # Use the target date ± 1 day for safety (in case of timezone issues or edge cases)
+                                        use_date_specific_range = True
+                                        start_dt = target_date_dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                                        end_dt = target_date_dt.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
+                                        
+                                        # CRITICAL: If the target date is outside the context_json timeframe, expand the range
+                                        # to include both the target date AND the context timeframe
+                                        if context_json and "timeframe" in context_json:
+                                            context_start = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                            context_start = tz.localize(context_start)
+                                            context_end = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                            context_end = tz.localize(context_end.replace(hour=23, minute=59, second=59))
+                                            
+                                            # Expand to include both ranges
+                                            start_dt = min(start_dt, context_start)
+                                            end_dt = max(end_dt, context_end)
+                                        
+                                        try:
+                                            print(f"[orchestrate_scheduling] Using date-specific range for event identification: '{dates[0]}' -> {start_dt.date()} to {end_dt.date()}", file=sys.stderr, flush=True)
+                                        except:
+                                            pass
+                                except Exception as e:
+                                    # If date parsing fails, fall through to other logic
+                                    try:
+                                        print(f"[orchestrate_scheduling] Failed to parse date '{dates[0]}' for narrowing search: {e}", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
+                            
+                            # CRITICAL: If no date was extracted but title contains a day-of-week reference,
+                            # extract it from the title and use it to narrow the search window
+                            # Example: "Tuesday Inquisitive & Concord Consortium meeting" -> search Tuesday
+                            if not use_date_specific_range and titles:
+                                import re
+                                # Day-of-week names (case-insensitive)
+                                day_names = {
+                                    'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
+                                    'friday': 4, 'saturday': 5, 'sunday': 6,
+                                    'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3,
+                                    'fri': 4, 'sat': 5, 'sun': 6
+                                }
+                                
+                                # Search for day names in titles
+                                for title in titles:
+                                    if not isinstance(title, str):
+                                        continue
+                                    title_lower = title.lower()
+                                    
+                                    # Look for day names as whole words (word boundaries)
+                                    for day_name, day_num in day_names.items():
+                                        # Use word boundary regex to match whole words only
+                                        pattern = r'\b' + re.escape(day_name) + r'\b'
+                                        if re.search(pattern, title_lower):
+                                            # Found a day name - parse it to get the actual date
+                                            try:
+                                                try:
+                                                    from .event_matcher import parse_date_reference
+                                                except (ImportError, ValueError):
+                                                    try:
+                                                        from scheduling_orchestrator.event_matcher import parse_date_reference
+                                                    except ImportError:
+                                                        from event_matcher import parse_date_reference
+                                                
+                                                # Parse the day name (e.g., "Tuesday" -> next Tuesday)
+                                                target_date_dt = parse_date_reference(day_name.capitalize(), datetime.now(tz))
+                                                if target_date_dt:
+                                                    # Use the target date ± 1 day for safety
+                                                    use_date_specific_range = True
+                                                    start_dt = target_date_dt.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                                                    end_dt = target_date_dt.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1)
+                                                    try:
+                                                        print(f"[orchestrate_scheduling] Extracted day-of-week '{day_name}' from title '{title}' and using date-specific range: {start_dt.date()} to {end_dt.date()}", file=sys.stderr, flush=True)
+                                                    except:
+                                                        pass
+                                                    break  # Found a day, stop searching
+                                            except Exception as e:
+                                                # If date parsing fails, continue to next title
+                                                try:
+                                                    print(f"[orchestrate_scheduling] Failed to parse day-of-week '{day_name}' from title '{title}': {e}", file=sys.stderr, flush=True)
+                                                except:
+                                                    pass
+                                    
+                                    if use_date_specific_range:
+                                        break  # Found a day in this title, stop searching titles
+                            
+                            if not use_date_specific_range:
+                                # No specific date or ambiguous dates - determine range based on other factors
+                                # Use broader range if:
+                                # 1. Title is primary identifier (has_title)
+                                # 2. AND either:
+                                #    - No dates provided, OR
+                                #    - Dates are ambiguous (multiple days = likely search window), OR
+                                #    - Dates provided but no participant names (title is the main identifier)
+                                # CRITICAL: If we have a title and multiple dates, always use broad range
+                                # because multiple dates almost certainly means search window, not event date
+                                use_broad_range = has_title and (
+                                    not has_specific_dates or 
+                                    dates_are_ambiguous or 
+                                    (has_specific_dates and not has_participants) or
+                                    (has_title and len(dates) > 1)  # Title + multiple dates = always broad range
+                                )
+                                
+                                # Debug logging
+                                try:
+                                    print(f"[orchestrate_scheduling] Date range expansion check: has_title={has_title}, has_specific_dates={has_specific_dates}, dates_are_ambiguous={dates_are_ambiguous}, has_participants={has_participants}, use_broad_range={use_broad_range}", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                                
+                                if use_broad_range:
+                                    # Use 14 days forward from today for event identification
+                                    # Only look forward since it's unusual to reschedule past meetings
+                                    now = datetime.now(tz)
+                                    start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)  # Start of today
+                                    end_dt = now + timedelta(days=14)  # 14 days forward
+                                    try:
+                                        print(f"[orchestrate_scheduling] Using expanded date range (14 days forward from today) for event identification with title: {titles}", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
+                                else:
+                                    # Use the timeframe from context_json (for rescheduling search window)
+                                    start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                    start_dt = tz.localize(start_dt)
+                                    end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                    end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                            
+                            after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
                             before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
                             
                             all_events = {}
@@ -1356,6 +1782,7 @@ def orchestrate_scheduling(
         
         # 4. Extract event details if event was fetched (for rescheduling)
         extracted_event_details = None
+        external_participants_for_display = []  # Store external participants for rescheduling display
         if fetched_event_by_id:
             try:
                 # Import event extractor
@@ -1420,7 +1847,110 @@ def orchestrate_scheduling(
                     proposals=[],
                     error_message=f"Event extraction failed: {str(e)}",
                     debug=debug_info
-                ).model_dump()
+                    ).model_dump()
+        
+        # Filter events to narrower timeframe if we used expanded range for identification
+        if used_expanded_range_for_identification and context_json and "timeframe" in context_json:
+            try:
+                import pytz
+                from datetime import datetime
+                tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
+                filter_start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                filter_start_dt = tz.localize(filter_start_dt)
+                filter_end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                filter_end_dt = tz.localize(filter_end_dt.replace(hour=23, minute=59, second=59))
+                
+                # Filter events for each participant to only include those within the narrower timeframe
+                total_before = sum(len(events) for events in events_by_participant.values())
+                filtered_events_by_participant = {}
+                for participant_id, events in events_by_participant.items():
+                    filtered_events = []
+                    for event in events:
+                        # Extract event start time
+                        event_start = event.get("start", {})
+                        if isinstance(event_start, str):
+                            try:
+                                event_start_dt = datetime.fromisoformat(event_start.replace("Z", "+00:00"))
+                            except:
+                                continue
+                        elif isinstance(event_start, dict):
+                            event_start_str = event_start.get("dateTime") or event_start.get("date", "")
+                            if not event_start_str:
+                                continue
+                            try:
+                                event_start_dt = datetime.fromisoformat(event_start_str.replace("Z", "+00:00"))
+                            except:
+                                continue
+                        else:
+                            continue
+                        
+                        # Convert to timezone-aware if needed
+                        if event_start_dt.tzinfo is None:
+                            event_start_dt = tz.localize(event_start_dt)
+                        else:
+                            event_start_dt = event_start_dt.astimezone(tz)
+                        
+                        # Check if event is within the narrower timeframe
+                        if filter_start_dt <= event_start_dt <= filter_end_dt:
+                            filtered_events.append(event)
+                    
+                    filtered_events_by_participant[participant_id] = filtered_events
+                
+                # Ensure the identified event is included in filtered events (even if outside narrower timeframe)
+                # This is critical - we need the event to reschedule even if it's outside the search window
+                if fetched_event_by_id:
+                    event_id = fetched_event_by_id.get("id", "")
+                    # Find which participant's calendar contains this event
+                    for participant_id, events in events_by_participant.items():
+                        # Check if event is already in filtered events
+                        event_already_included = any(
+                            evt.get("id", "") == event_id for evt in filtered_events_by_participant.get(participant_id, [])
+                        )
+                        if not event_already_included:
+                            # Check if event is in original events for this participant
+                            event_in_original = any(
+                                evt.get("id", "") == event_id for evt in events
+                            )
+                            if event_in_original:
+                                # Add the identified event to filtered events (even if outside timeframe)
+                                if participant_id not in filtered_events_by_participant:
+                                    filtered_events_by_participant[participant_id] = []
+                                # Find the event in original events
+                                for evt in events:
+                                    if evt.get("id", "") == event_id:
+                                        filtered_events_by_participant[participant_id].append(evt)
+                                        try:
+                                            print(f"[orchestrate_scheduling] Added identified event '{fetched_event_by_id.get('summary', '')}' to filtered events (outside narrower timeframe but needed for rescheduling)", file=sys.stderr, flush=True)
+                                        except:
+                                            pass
+                                        break
+                                break
+                
+                # Replace events_by_participant with filtered events
+                events_by_participant = filtered_events_by_participant
+                
+                # Now check the limit on filtered events
+                for participant_id, events in events_by_participant.items():
+                    if len(events) > MAX_EVENTS_PER_PARTICIPANT:
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Participant {participant_id} has {len(events)} events in the specified timeframe, exceeding maximum ({MAX_EVENTS_PER_PARTICIPANT}).",
+                            proposals=[],
+                            error_message=f"Too many events for {participant_id}: {len(events)}",
+                            debug=debug_info
+                        ).model_dump()
+                
+                try:
+                    total_after = sum(len(events) for events in filtered_events_by_participant.values())
+                    print(f"[orchestrate_scheduling] Filtered events from expanded range: {total_before} -> {total_after} events (timeframe: {context_json['timeframe']['from']} to {context_json['timeframe']['to']})", file=sys.stderr, flush=True)
+                except:
+                    pass
+            except Exception as e:
+                # If filtering fails, log but continue (better to have too many events than fail completely)
+                try:
+                    print(f"[orchestrate_scheduling] Warning: Failed to filter events to narrower timeframe: {e}", file=sys.stderr, flush=True)
+                except:
+                    pass
         
         # 5. Merge event details with utterance constraints if rescheduling
         # For rescheduling, we MUST have successfully identified and extracted the event
@@ -1466,7 +1996,15 @@ def orchestrate_scheduling(
                         participant_ids = event_participants
                         missing_participants = event_participants
                     
-                    # Fetch calendars for missing participants
+                    # Filter to only internal participants for calendar fetching
+                    # External participants' calendars are not accessible, so we only fetch internal ones
+                    internal_domains = ["@concord.org"]
+                    missing_participants = [
+                        p for p in missing_participants 
+                        if p and "@" in p and any(p.lower().endswith(domain.lower()) for domain in internal_domains)
+                    ]
+                    
+                    # Fetch calendars for missing participants (only internal ones)
                     if missing_participants:
                         try:
                             import os
@@ -1710,6 +2248,60 @@ def orchestrate_scheduling(
                         print(f"[orchestrate_scheduling] Expanded time window for rescheduling (event identification failed): {scheduling_problem.time_window_start} to {scheduling_problem.time_window_end}", file=sys.stderr, flush=True)
                 except:
                     pass
+                
+                # 5a. Handle external participants for rescheduling
+                # If the original event has external participants, filter to only internal participants for scheduling
+                # but preserve external participant info for display purposes
+                external_participants_for_display = []
+                if extracted_event_details and scheduling_problem.is_rescheduling:
+                    original_participants = extracted_event_details.get("participants", [])
+                    if original_participants:
+                        # Separate internal and external participants (inline to avoid scoping issues)
+                        internal_domains = ["@concord.org"]
+                        internal_participants = []
+                        external_participants = []
+                        for p in original_participants:
+                            if p and "@" in p:
+                                participant_lower = p.lower()
+                                is_internal = any(participant_lower.endswith(domain.lower()) for domain in internal_domains)
+                                if is_internal:
+                                    internal_participants.append(p)
+                                else:
+                                    external_participants.append(p)
+                            else:
+                                # If no @, assume internal (shouldn't happen but be safe)
+                                internal_participants.append(p)
+                        
+                        if external_participants:
+                            # Store external participants for display
+                            external_participants_for_display = external_participants
+                            
+                            # Filter scheduling_problem.participants to only internal participants
+                            # This allows us to find slots when internal staff are available
+                            # even though external participants' calendars aren't accessible
+                            original_participant_list = scheduling_problem.participants.copy() if scheduling_problem.participants else []
+                            internal_only_participants = []
+                            for p in original_participant_list:
+                                if p and "@" in p:
+                                    participant_lower = p.lower()
+                                    is_internal = any(participant_lower.endswith(domain.lower()) for domain in internal_domains)
+                                    if is_internal:
+                                        internal_only_participants.append(p)
+                            
+                            # If we have internal participants, use them; otherwise keep original list
+                            if internal_only_participants:
+                                scheduling_problem.participants = internal_only_participants
+                                try:
+                                    print(f"[orchestrate_scheduling] External participants detected: {external_participants}. Filtering to internal participants only: {internal_only_participants}", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                            else:
+                                # No internal participants found - this shouldn't happen for rescheduling
+                                # but log a warning and continue with original participants
+                                try:
+                                    print(f"[orchestrate_scheduling] WARNING: No internal participants found in {original_participant_list}. External participants: {external_participants}", file=sys.stderr, flush=True)
+                                except:
+                                    pass
                     
             except ValueError as e:
                 # Merge failed (e.g., missing participants, invalid duration)
@@ -3810,23 +4402,40 @@ def orchestrate_scheduling(
                 else:
                     context_json_for_formatting = context_json
             
+            # Limit proposals for user-facing display to prevent response size issues
+            # Keep all proposals in agent_data, but limit user-facing formats
+            MAX_DISPLAY_PROPOSALS = 10  # Reduced from 20 to keep response under 50k chars
+            limited_free_proposals = free_proposals[:MAX_DISPLAY_PROPOSALS] if len(free_proposals) > MAX_DISPLAY_PROPOSALS else free_proposals
+            limited_move_proposals = single_move_proposals[:MAX_DISPLAY_PROPOSALS] if len(single_move_proposals) > MAX_DISPLAY_PROPOSALS else single_move_proposals
+            limited_override_proposals = solo_override_proposals[:MAX_DISPLAY_PROPOSALS] if len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS else solo_override_proposals
+            
+            # Get external_participants_for_display if it exists, otherwise use empty list
+            external_participants_for_formatting = external_participants_for_display if 'external_participants_for_display' in locals() and external_participants_for_display else None
+            
             refined_display_text = format_refined_user_display(
-                free_proposals=free_proposals,
-                move_proposals=single_move_proposals,
-                override_proposals=solo_override_proposals,
+                free_proposals=limited_free_proposals,
+                move_proposals=limited_move_proposals,
+                override_proposals=limited_override_proposals,
                 event_registry=event_registry,
                 normalized_data=formatting_normalized_data,
                 user_id=user_id,
                 timezone_str=timezone_str,
-                context_json=context_json_for_formatting
+                context_json=context_json_for_formatting,
+                external_participants=external_participants_for_formatting
             )
+            
+            # Add note if proposals were truncated
+            if len(free_proposals) > MAX_DISPLAY_PROPOSALS or len(single_move_proposals) > MAX_DISPLAY_PROPOSALS or len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS:
+                total_displayed = len(limited_free_proposals) + len(limited_move_proposals) + len(limited_override_proposals)
+                refined_display_text += f"\n\n*Note: Showing top {total_displayed} of {len(all_proposals)} total options. All options are available in the proposals array.*"
             
             # Also keep the old format for backward compatibility
             # Group by category for display
+            # Use limited proposals for formatted_proposals to prevent response size issues
             display_categories = {
-                "best_options": free_proposals,
-                "with_moves": single_move_proposals,
-                "with_overrides": solo_override_proposals
+                "best_options": limited_free_proposals,
+                "with_moves": limited_move_proposals,
+                "with_overrides": limited_override_proposals
             }
             
             for cat_key, prop_list in display_categories.items():
@@ -3854,8 +4463,20 @@ def orchestrate_scheduling(
                             description="Options available by overriding solo/blocking events"
                         )
             
+            # Update summary if proposals were truncated
+            proposals_were_truncated = (
+                len(free_proposals) > MAX_DISPLAY_PROPOSALS or 
+                len(single_move_proposals) > MAX_DISPLAY_PROPOSALS or 
+                len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS
+            )
+            if proposals_were_truncated:
+                total_displayed = len(formatted_proposals)
+                summary_text = f"Found {len(all_proposals)} meeting option(s) (showing top {total_displayed})"
+            else:
+                summary_text = f"Found {len(all_proposals)} meeting option(s)"
+            
             user_display = UserDisplay(
-                summary=f"Found {len(all_proposals)} meeting option(s)",
+                summary=summary_text,
                 explanation=explanation,
                 formatted_proposals=formatted_proposals,
                 categories=categories_info,
@@ -3911,10 +4532,14 @@ def orchestrate_scheduling(
                 category_to_proposals=category_to_proposals
             )
             
+            # Limit main proposals array to prevent response size issues
+            # Agent can still access all proposals via agent_data.proposals
+            limited_proposals_for_response = all_proposals[:MAX_DISPLAY_PROPOSALS * 3] if len(all_proposals) > MAX_DISPLAY_PROPOSALS * 3 else all_proposals
+            
             # Return response with dual format
             result = ResponseEnvelope(
                 status="ok",
-                proposals=all_proposals,  # Backward compatibility
+                proposals=limited_proposals_for_response,  # Limited for response size, full list in agent_data
                 explanation=explanation,  # Backward compatibility
                 debug=debug_info,
                 user_display=user_display,

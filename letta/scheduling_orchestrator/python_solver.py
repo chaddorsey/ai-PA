@@ -694,6 +694,11 @@ def _find_slots_with_single_move(
             if not event_meta:
                 continue
             
+            # CRITICAL: Skip external events - they cannot be moved
+            internal_only = event_meta.get("internal_only", True)  # Default to True for backwards compatibility
+            if not internal_only:
+                continue  # Skip external events - they cannot be moved
+            
             protection = event_protection.get(event_key, "flexible")
             current_event_slots = event_slots_map_full.get(event_key, set())
             

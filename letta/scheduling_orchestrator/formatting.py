@@ -337,7 +337,8 @@ def format_refined_user_display(
     normalized_data: Optional[Dict[str, Any]] = None,
     user_id: Optional[str] = None,
     timezone_str: str = "America/New_York",
-    context_json: Optional[Dict[str, Any]] = None
+    context_json: Optional[Dict[str, Any]] = None,
+    external_participants: Optional[List[str]] = None
 ) -> str:
     """
     Generate refined user-facing display with grouped, prioritized formatting.
@@ -396,6 +397,20 @@ def format_refined_user_display(
                 participant_display.append(f"and {len(original_participants) - 3} more")
             if participant_display:
                 lines.append(f"**Participants:** {', '.join(participant_display)}")
+        
+        # Add note about external participants if present
+        if external_participants:
+            external_names = []
+            for ext_p in external_participants:
+                if "@" in ext_p:
+                    name = ext_p.split("@")[0].capitalize()
+                    external_names.append(name)
+            if external_names:
+                if len(external_names) == 1:
+                    lines.append(f"*Note: This meeting includes external participant {external_names[0]}. The suggested times below are when all internal participants could attend an alternate meeting.*")
+                else:
+                    names_str = ", ".join(external_names[:-1]) + f" and {external_names[-1]}"
+                    lines.append(f"*Note: This meeting includes external participants ({names_str}). The suggested times below are when all internal participants could attend an alternate meeting.*")
         
         lines.append("")
         lines.append("Here are alternative time options:")

@@ -60,6 +60,8 @@ def parse_date_reference(date_str: str, reference_date: Optional[datetime] = Non
     
     # Remove ordinal suffixes (th, st, nd, rd)
     date_str_clean = re.sub(r'(\d+)(st|nd|rd|th)', r'\1', date_str)
+    # Remove periods after month abbreviations (e.g., "Dec." -> "Dec")
+    date_str_clean = re.sub(r'(\w+)\.', r'\1', date_str_clean)
     
     # Try pattern: "month day" or "month day, year"
     pattern = r'(\w+)\s+(\d+)(?:\s*,\s*(\d+))?'
@@ -157,6 +159,7 @@ def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.
         return 0.85
     
     # Word-based matching - better for partial references
+    # But be more strict to avoid false positives (e.g., "Concord" matching "Concord Consortium/Hewlett" vs "Concord Audit Drafts")
     search_words = set(word for word in search_title.split() if len(word) > 2)  # Ignore short words
     event_words = set(word for word in event_title.split() if len(word) > 2)
     
@@ -166,6 +169,19 @@ def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.
     # Calculate how many search words appear in event title
     matching_words = search_words & event_words
     word_coverage = len(matching_words) / len(search_words) if search_words else 0.0
+    
+    # CRITICAL: Require at least 2 matching words (not just one common word like "Concord")
+    # This prevents "Concord Audit Drafts" from matching "Concord Consortium/Hewlett" 
+    # when only "Concord" matches
+    if len(matching_words) < 2 and len(search_words) >= 2:
+        # If search has 2+ words but only 1 matches, it's likely a false positive
+        # Only allow if it's a very short search (e.g., "Support Team" with 2 words, 1 matches)
+        if len(search_words) == 2 and word_coverage >= 0.5:
+            # Allow if 50%+ coverage and only 2 words total
+            pass
+        else:
+            # Too few matching words - likely false positive
+            return 0.0
     
     # If most/all search words match, give high score even if event has more words
     if word_coverage >= 0.8:  # 80%+ of search words match
@@ -421,7 +437,7 @@ def score_event_match(
     # If no explicit participant names but we have titles, try to extract names from titles
     # Now we can also match extracted names to attendee names from attendees_details
     if not participant_names and titles:
-        import re
+        # Note: 're' is already imported at the module level
         for title_ref in titles:
             # Look for patterns like "Name1/Name2", "Name1 & Name2", "Name1 and Name2"
             # Also handle possessive forms like "kmiller's", "kmiller"
@@ -567,45 +583,181 @@ def score_event_match(
         total_matches = max(name_matches, email_matches) if name_matches > 0 or email_matches > 0 else 0
         total_participants = max(len(participant_names), len(participant_emails) if participant_emails else 0)
         
+        # Count total event attendees for penalty calculation
+        total_event_attendees = len(event_attendees) if isinstance(event_attendees, list) else 0
+        if attendee_names_from_details:
+            total_event_attendees = max(total_event_attendees, len(attendee_names_from_details))
+        # Include event owner if available
+        event_owner = None
+        if isinstance(events_by_participant, dict):
+            for owner_id, events_list in events_by_participant.items():
+                if event in events_list:
+                    event_owner = owner_id
+                    total_event_attendees += 1  # Count owner as attendee
+                    break
+        
         if total_matches > 0 and total_participants > 0:
             # Full match: all participants are present
             if total_matches >= total_participants:
                 participant_score = 0.35
+                # PENALTY: If event has many more attendees than specified participants, reduce score
+                # This prevents large meetings (e.g., "All-hands") from matching small meeting requests
+                if total_event_attendees > total_participants * 3:
+                    # Event has 3x+ more attendees than specified - significant penalty
+                    participant_score = 0.20  # Reduce from 0.35 to 0.20
+                elif total_event_attendees > total_participants * 2:
+                    # Event has 2x+ more attendees than specified - moderate penalty
+                    participant_score = 0.28  # Reduce from 0.35 to 0.28
             # Partial match: at least one participant matches
             elif total_matches >= 1:
                 # Scale score based on match ratio
                 participant_score = 0.2 + (0.15 * (total_matches / total_participants))
+                # Apply same penalty for large meetings
+                if total_event_attendees > total_participants * 3:
+                    participant_score *= 0.6  # 40% penalty
+                elif total_event_attendees > total_participants * 2:
+                    participant_score *= 0.8  # 20% penalty
             score += participant_score
     
     # Score date match (weight: 0.35)
+    # CRITICAL: If we have multiple dates AND a title, the dates are likely the search window,
+    # not the event date. In this case, prioritize title matching and ignore date matching.
     dates = event_identifiers.get("dates", [])
-    if dates and event_start_dt:
+    titles = event_identifiers.get("titles", [])
+    
+    # If we have both title and multiple dates, dates are likely search window - skip date matching
+    skip_date_matching = bool(titles) and len(dates) > 1
+    
+    if dates and event_start_dt and not skip_date_matching:
         max_score += 0.35
+        date_score = 0.0
+        date_mismatch_days = None
         for date_ref in dates:
             parsed_date = parse_date_reference(date_ref, datetime.now(pytz.UTC))
+            try:
+                import sys
+                print(f"[score_event_match] DEBUG: Parsing date_ref='{date_ref}', parsed_date={parsed_date}, event_start_dt={event_start_dt}", file=sys.stderr, flush=True)
+            except:
+                pass
             if parsed_date and event_start_dt:
                 # Compare dates (ignore time)
                 event_date = event_start_dt.date()
                 parsed_date_only = parsed_date.date()
+                date_mismatch_days = abs((event_date - parsed_date_only).days)
+                try:
+                    import sys
+                    print(f"[score_event_match] DEBUG: event_date={event_date}, parsed_date_only={parsed_date_only}, date_mismatch_days={date_mismatch_days}", file=sys.stderr, flush=True)
+                except:
+                    pass
                 if event_date == parsed_date_only:
                     date_score = 0.35
                     score += date_score
                     break
-                # Allow 1 day tolerance (but with lower score)
-                elif abs((event_date - parsed_date_only).days) == 1:
-                    date_score = 0.15
-                    score += date_score
+                # CRITICAL: Reduce or eliminate 1-day tolerance to prevent wrong-day matches
+                # Only allow 1-day tolerance if no participant names are specified (less specific request)
+                elif date_mismatch_days == 1:
+                    # If participant names are specified, be strict about date matching
+                    # This prevents "Wednesday meeting with Judi" from matching Thursday events
+                    if participant_names or (participant_ids and len(participant_ids) > 0):
+                        # Participant specified - no tolerance for wrong day
+                        date_score = 0.0
+                    else:
+                        # No participant specified - allow small tolerance
+                        date_score = 0.10  # Reduced from 0.15 to 0.10
+                    if date_score > 0:
+                        score += date_score
+                    break
+                else:
+                    # Date mismatch is more than 1 day - record for penalty calculation
+                    date_score = 0.0
+                    break
+        
+        # CRITICAL: Apply penalty for date mismatches beyond 1 day when participants are specified
+        # This ensures that "Chad/Sue meeting on Dec. 11" doesn't match "Chad/Sue/Kathy on Dec. 18"
+        try:
+            import sys
+            print(f"[score_event_match] DEBUG: date_mismatch_days={date_mismatch_days}, participant_names={participant_names}, participant_ids={participant_ids}", file=sys.stderr, flush=True)
+        except:
+            pass
+        if date_mismatch_days is not None and date_mismatch_days > 1:
+            if participant_names or (participant_ids and len(participant_ids) > 0):
+                # Both participants and specific date provided - date mismatch is a strong negative signal
+                # Apply penalty proportional to the mismatch (more days = bigger penalty)
+                # Penalty reduces the overall score, not just the date component
+                penalty = min(0.3, date_mismatch_days * 0.05)  # Up to 0.3 penalty (6+ days)
+                score_before_penalty = score
+                score = max(0.0, score - penalty)
+                try:
+                    import sys
+                    print(f"[score_event_match] Applying date mismatch penalty: {penalty:.2f} for {date_mismatch_days} day(s) difference (participants specified). Score: {score_before_penalty:.2f} -> {score:.2f}", file=sys.stderr, flush=True)
+                except:
+                    pass
+            else:
+                try:
+                    import sys
+                    print(f"[score_event_match] DEBUG: Skipping penalty - no participant_names or participant_ids", file=sys.stderr, flush=True)
+                except:
+                    pass
+        else:
+            try:
+                import sys
+                print(f"[score_event_match] DEBUG: Skipping penalty - date_mismatch_days={date_mismatch_days} (not > 1)", file=sys.stderr, flush=True)
+            except:
+                pass
+    elif skip_date_matching:
+        # Log that we're skipping date matching due to ambiguous dates
+        try:
+            import sys
+            print(f"[score_event_match] Skipping date matching - title present ({titles}) and multiple dates ({dates}) likely represent search window, not event date", file=sys.stderr, flush=True)
+        except:
+            pass
+    
+    # BONUS: Check if participant names appear in event title (e.g., "Judi / Chad meeting")
+    # This is a strong signal that this is the right event
+    participant_name_in_title_bonus = 0.0
+    if participant_names and event_title:
+        event_title_lower = event_title.lower()
+        for p_name in participant_names:
+            p_name_lower = p_name.lower()
+            # Check if participant name appears in title (exact word match or as part of name pattern)
+            if p_name_lower in event_title_lower:
+                # Check if it's a word boundary match (not just substring)
+                # Note: 're' is already imported at the top of the file
+                if re.search(r'\b' + re.escape(p_name_lower) + r'\b', event_title_lower):
+                    participant_name_in_title_bonus = 0.15  # Strong bonus for name in title
+                    break
+                # Also check for patterns like "Judi/Chad" or "Judi & Chad"
+                if re.search(r'\b' + re.escape(p_name_lower) + r'[/&,]', event_title_lower) or \
+                   re.search(r'[/&,]\s*' + re.escape(p_name_lower) + r'\b', event_title_lower):
+                    participant_name_in_title_bonus = 0.15  # Strong bonus for name in title pattern
                     break
     
     # Score title match (weight: 0.35 - increased for rescheduling)
+    # CRITICAL: Exact title matches get maximum priority
     if titles:
         max_score += 0.35
         best_title_score_raw = 0.0
+        has_exact_match = False
         for title_ref in titles:
             title_score_raw = fuzzy_match_title(title_ref, event_title)
+            # Check for exact match (case-insensitive)
+            if title_ref.lower().strip() == event_title.lower().strip():
+                has_exact_match = True
+                best_title_score_raw = 1.0  # Force exact match to 1.0
+                break  # Exact match found - no need to check other titles
             best_title_score_raw = max(best_title_score_raw, title_score_raw)
-        title_score = best_title_score_raw * 0.35
-        score += title_score
+        
+        # If exact match found, give it maximum weight (0.35) and add significant bonus
+        if has_exact_match:
+            title_score = 0.35  # Full weight for exact match
+            score += title_score
+            # Add bonus for exact match to ensure it beats fuzzy matches
+            score += 0.2  # Additional bonus for exact match
+            max_score += 0.2
+        else:
+            # Fuzzy match - use normal scoring
+            title_score = best_title_score_raw * 0.35
+            score += title_score
     
     # Score time match (weight: 0.15 - lower priority, often not specified)
     times = event_identifiers.get("times", [])
@@ -650,6 +802,11 @@ def score_event_match(
         bonus = (title_score + participant_score + date_score) * 0.15  # 15% bonus on sum
         score += bonus
         max_score += bonus
+    
+    # Apply participant name in title bonus (after combination bonuses)
+    if participant_name_in_title_bonus > 0:
+        score += participant_name_in_title_bonus
+        max_score += participant_name_in_title_bonus
     
     # Normalize score
     if max_score > 0:

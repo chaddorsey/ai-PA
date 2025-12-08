@@ -196,6 +196,36 @@ def normalize_events(
                 if not isinstance(attendees, list):
                     attendees = []
                 
+                # Check if event has external participants
+                # If any participant (owner or attendee) is external, mark event as not internal_only
+                # This prevents external meetings from being moved
+                internal_only_from_dict = event_dict.get("internal_only", True)  # Default to True for backwards compatibility
+                
+                # Helper function to check if a participant is internal
+                def _is_internal_participant(participant_id: str, internal_domains: Optional[List[str]] = None) -> bool:
+                    """Check if participant is internal (e.g., @concord.org) or external."""
+                    if not participant_id or "@" not in participant_id:
+                        return True  # Default to internal if no email domain
+                    
+                    if internal_domains is None:
+                        # Default internal domains
+                        internal_domains = ["concord.org"]
+                    
+                    participant_domain = participant_id.split("@")[-1].lower()
+                    return participant_domain in [d.lower() for d in internal_domains]
+                
+                # Check all participants (owner + attendees) for external participants
+                all_event_participants = [participant_id] + attendees
+                has_external_participants = False
+                for p in all_event_participants:
+                    if not _is_internal_participant(p):
+                        has_external_participants = True
+                        break
+                
+                # If event has external participants, it cannot be moved (mark as not internal_only)
+                # Override the internal_only flag from the event dict if external participants are detected
+                final_internal_only = internal_only_from_dict and not has_external_participants
+                
                 # Store event metadata for move logic
                 # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
                 event_title = event_dict.get("title") or event_dict.get("summary", "")
@@ -210,7 +240,7 @@ def normalize_events(
                     "locked": locked,
                     "protected": protected,
                     "flexible": flexible,
-                    "internal_only": event_dict.get("internal_only", True),  # Default to True for backwards compatibility
+                    "internal_only": final_internal_only,  # Mark as False if external participants detected
                     "number_of_attendees": len(attendees),  # Use actual count from attendees list
                     "attendees": attendees  # Store full attendees list for validation
                 }
