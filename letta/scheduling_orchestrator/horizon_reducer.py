@@ -305,6 +305,35 @@ def reduce_horizon_to_feasible_window(
     updated_data["event_slots_map"] = new_event_slots_map
     updated_data["event_metadata"] = new_event_metadata
     
+    # CRITICAL: Recalculate free slots for the reduced horizon
+    # Free slots need to be recalculated because:
+    # 1. Slot indices have changed (shifted by min_slot)
+    # 2. Work hours and busy slots have been recalculated for the new horizon
+    # 3. The reduced horizon may have different free slots than the original
+    try:
+        from .fact_generator import _find_free_slots
+    except (ImportError, ValueError):
+        try:
+            from fact_generator import _find_free_slots
+        except ImportError:
+            from scheduling_orchestrator.fact_generator import _find_free_slots
+    
+    # Recalculate free slots for the reduced horizon
+    duration_slots = max(1, scheduling_problem.duration_minutes // 15)
+    min_gap_slots = normalized_data.get("min_gap_slots", 0)
+    
+    new_all_slots = new_slot_indexer.get_all_slots()
+    new_free_slots = _find_free_slots(
+        new_all_slots,
+        new_busy_slots,
+        new_work_hours_slots,
+        scheduling_problem.participants,
+        duration_slots,
+        min_gap_slots
+    )
+    
+    updated_data["free_slots"] = new_free_slots
+    
     return updated_data
 
 

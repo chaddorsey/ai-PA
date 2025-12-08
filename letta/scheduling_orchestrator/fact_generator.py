@@ -415,26 +415,117 @@ def generate_asp_facts(
         
         # Find slots in the window
         window_slots = slot_indexer.get_slots_in_range(start_dt, end_dt)
+        window_slots_set = set(window_slots)
         
         # Only allow slots where the meeting would fit (start + duration <= horizon_end)
         if allow_overlaps:
             # Multi-move: Use candidate_slots_set (already limited and prioritized)
             # This ensures window facts only reference slots we'll actually consider
             candidate_slots_set = set(candidate_slots_limited) if 'candidate_slots_limited' in locals() else set()
+            import sys
+            window_facts_generated = 0
+            debug_window_slots_not_in_candidates = []
             for slot in window_slots:
                 if slot + duration_slots <= max_slot + 1:
                     # Check if slot is in candidate slots
                     if slot in candidate_slots_set:
                         facts.append(f"window({request_id}, {slot}).")
                         used_slots.add(slot)
+                        window_facts_generated += 1
+                    else:
+                        # Debug: Track slots that are in window but not in candidates
+                        slot_dt = slot_indexer.slot_to_datetime(slot)
+                        if slot_dt:
+                            debug_window_slots_not_in_candidates.append((slot, slot_dt))
+            
+            # Debug logging for multi-move mode
+            if window_facts_generated == 0:
+                if len(window_slots) == 0:
+                    # Critical: window_slots is empty - this means get_slots_in_range returned nothing
+                    print(f"[FACT_GEN] ERROR (multi-move): window_slots is EMPTY - get_slots_in_range returned 0 slots!", file=sys.stderr, flush=True)
+                    print(f"  Window range: {start_dt.isoformat()} to {end_dt.isoformat()}", file=sys.stderr, flush=True)
+                    print(f"  Candidate slots (limited): {len(candidate_slots_limited)} slots", file=sys.stderr, flush=True)
+                    # Check horizon bounds
+                    horizon_start = slot_indexer.horizon_start
+                    horizon_end = slot_indexer.horizon_end
+                    print(f"  Horizon range: {horizon_start.isoformat()} to {horizon_end.isoformat()}", file=sys.stderr, flush=True)
+                    print(f"  Window overlaps horizon? {start_dt < horizon_end and end_dt > horizon_start}", file=sys.stderr, flush=True)
+                    if len(candidate_slots_limited) > 0 and len(candidate_slots_limited) <= 10:
+                        print(f"  Candidate slot indices: {sorted(candidate_slots_limited)}", file=sys.stderr, flush=True)
+                        # Check first candidate slot's time
+                        first_candidate = sorted(candidate_slots_limited)[0]
+                        first_candidate_dt = slot_indexer.slot_to_datetime(first_candidate)
+                        if first_candidate_dt:
+                            print(f"  First candidate slot {first_candidate} time: {first_candidate_dt.isoformat()}", file=sys.stderr, flush=True)
+                            print(f"  In window range? {start_dt <= first_candidate_dt <= end_dt}", file=sys.stderr, flush=True)
+                elif len(window_slots) > 0:
+                    # Window slots exist but no facts generated - intersection issue
+                    print(f"[FACT_GEN] WARNING (multi-move): {len(window_slots)} window slots but 0 window facts generated", file=sys.stderr, flush=True)
+                    print(f"  Window range: {start_dt.isoformat()} to {end_dt.isoformat()}", file=sys.stderr, flush=True)
+                    print(f"  Window slots from get_slots_in_range: {len(window_slots)} slots", file=sys.stderr, flush=True)
+                    print(f"  Candidate slots (limited): {len(candidate_slots_limited)} slots", file=sys.stderr, flush=True)
+                    if len(window_slots) > 0 and len(window_slots) <= 10:
+                        print(f"  Window slot indices: {sorted(window_slots)}", file=sys.stderr, flush=True)
+                    if len(candidate_slots_limited) > 0 and len(candidate_slots_limited) <= 10:
+                        print(f"  Candidate slot indices: {sorted(candidate_slots_limited)}", file=sys.stderr, flush=True)
+                    # Check intersection
+                    window_slots_set = set(window_slots)
+                    candidate_slots_set_check = set(candidate_slots_limited)
+                    intersection = window_slots_set.intersection(candidate_slots_set_check)
+                    print(f"  Intersection: {len(intersection)} slots", file=sys.stderr, flush=True)
+                    if len(intersection) > 0 and len(intersection) <= 10:
+                        print(f"  Intersection slot indices: {sorted(intersection)}", file=sys.stderr, flush=True)
+                    if debug_window_slots_not_in_candidates:
+                        print(f"  Sample window slots not in candidates (first 3):", file=sys.stderr, flush=True)
+                        for slot, slot_dt in debug_window_slots_not_in_candidates[:3]:
+                            print(f"    Slot {slot} at {slot_dt.isoformat()}: in_candidates={slot in candidate_slots_set}", file=sys.stderr, flush=True)
         else:
-            # Normal mode: Only include free slots (inverse approach)
-            for slot in window_slots:
+            # Normal mode: Generate window facts for free slots that fall within the window
+            # CRITICAL: For new meeting requests (where time_window is set for sliding window),
+            # we need to ensure window facts are generated for all free slots in the window.
+            # The issue is that after horizon reduction, free_slots use the reduced horizon's indices,
+            # so we need to check if free slots fall within the window range.
+            import sys
+            window_facts_generated = 0
+            debug_mismatches = []
+            for slot in sorted(free_slots):
                 if slot + duration_slots <= max_slot + 1:
-                    # Only add window fact if slot is in free_slots
-                    if slot in free_slots:
+                    # Check if this free slot falls within the time window
+                    # Since free_slots are already in the reduced horizon's slot indices,
+                    # and window_slots are also from the same slot_indexer (after horizon reduction),
+                    # we can directly check membership
+                    if slot in window_slots_set:
                         facts.append(f"window({request_id}, {slot}).")
                         used_slots.add(slot)
+                        window_facts_generated += 1
+                    else:
+                        # Debug: Check what time this slot represents
+                        slot_dt = slot_indexer.slot_to_datetime(slot)
+                        if slot_dt:
+                            debug_mismatches.append((slot, slot_dt))
+            
+            # Debug logging
+            if window_facts_generated == 0 and len(free_slots) > 0:
+                print(f"[FACT_GEN] WARNING: {len(free_slots)} free slots but 0 window facts generated", file=sys.stderr, flush=True)
+                print(f"  Window range: {start_dt.isoformat()} to {end_dt.isoformat()}", file=sys.stderr, flush=True)
+                print(f"  Window slots from get_slots_in_range: {len(window_slots)} slots", file=sys.stderr, flush=True)
+                if len(window_slots) > 0 and len(window_slots) <= 10:
+                    print(f"  Window slot indices: {sorted(window_slots)}", file=sys.stderr, flush=True)
+                if len(free_slots) <= 10:
+                    print(f"  Free slot indices: {sorted(free_slots)}", file=sys.stderr, flush=True)
+                    # Check first free slot's time
+                    first_free = sorted(free_slots)[0]
+                    first_free_dt = slot_indexer.slot_to_datetime(first_free)
+                    if first_free_dt:
+                        print(f"  First free slot {first_free} time: {first_free_dt.isoformat()}", file=sys.stderr, flush=True)
+                        print(f"  In window range? {start_dt <= first_free_dt <= end_dt}", file=sys.stderr, flush=True)
+                        # Check if it's in window_slots_set
+                        print(f"  In window_slots_set? {first_free in window_slots_set}", file=sys.stderr, flush=True)
+                if debug_mismatches:
+                    print(f"  Sample mismatches (first 3):", file=sys.stderr, flush=True)
+                    for slot, slot_dt in debug_mismatches[:3]:
+                        in_range = start_dt <= slot_dt <= end_dt
+                        print(f"    Slot {slot} at {slot_dt.isoformat()}: in_range={in_range}, in_set={slot in window_slots_set}", file=sys.stderr, flush=True)
     else:
         # No window specified
         if allow_overlaps:
