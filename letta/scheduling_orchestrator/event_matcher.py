@@ -195,15 +195,18 @@ def fuzzy_match_title(search_title: str, event_title: str, threshold: float = 0.
 def map_participant_names_to_emails(
     participant_names: List[str],
     context_json: Optional[Dict[str, Any]],
-    participant_ids: Optional[List[str]] = None
+    participant_ids: Optional[List[str]] = None,
+    default_domain: str = "@concord.org"
 ) -> List[str]:
     """
     Map participant names to email addresses using context and participant_ids.
+    Also constructs emails from shortened user IDs (e.g., "kmiller" -> "kmiller@concord.org").
     
     Args:
-        participant_names: List of participant names (e.g., ["Judi Raiff", "Alex"])
+        participant_names: List of participant names (e.g., ["Judi Raiff", "Alex", "kmiller"])
         context_json: Context containing participant information
         participant_ids: Optional list of participant email addresses to use as fallback
+        default_domain: Default domain to use when constructing emails from shortened IDs (default: "@concord.org")
         
     Returns:
         List of email addresses corresponding to the names
@@ -218,12 +221,25 @@ def map_participant_names_to_emails(
         except:
             context_json = None
     
+    # Extract domain from context if available (e.g., from existing participant emails)
+    domain_to_use = default_domain
+    if context_json and isinstance(context_json, dict) and "participants" in context_json:
+        participants = context_json.get("participants", [])
+        # Try to infer domain from existing participant emails
+        for p in participants:
+            p_email = p.get("email", "")
+            if p_email and "@" in p_email:
+                domain_to_use = "@" + p_email.split("@")[1]
+                break
+    
     # Try to match from context_json participants first
+    matched_names = set()
     if context_json and isinstance(context_json, dict) and "participants" in context_json:
         participants = context_json.get("participants", [])
         
         for name in participant_names:
             name_lower = name.lower().strip()
+            matched = False
             # Try to find matching participant
             for p in participants:
                 p_name = p.get("name", "").lower()
@@ -236,7 +252,27 @@ def map_participant_names_to_emails(
                         emails.append(p_email)
                     elif p_id:
                         emails.append(p_id)
+                    matched = True
+                    matched_names.add(name_lower)
                     break
+    
+    # For unmatched names, try to construct emails from shortened IDs
+    for name in participant_names:
+        name_lower = name.lower().strip()
+        # Skip if already matched or if it already looks like an email
+        if name_lower in matched_names or "@" in name:
+            continue
+        
+        # If name looks like a shortened user ID (no spaces, reasonable length, no @)
+        if " " not in name and 2 <= len(name) <= 20:
+            # Try to construct email from shortened ID
+            constructed_email = name_lower + domain_to_use
+            if constructed_email not in emails:
+                emails.append(constructed_email)
+                try:
+                    print(f"[map_participant_names_to_emails] Constructed email from shortened ID: {name_lower} -> {constructed_email}", file=sys.stderr, flush=True)
+                except:
+                    pass
     
     # If we still have unmatched names and participant_ids is available, try fuzzy matching
     if participant_ids:
@@ -288,7 +324,8 @@ def score_event_match(
     event: Dict[str, Any],
     event_identifiers: Dict[str, Any],
     context_json: Optional[Dict[str, Any]] = None,
-    events_by_participant: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    events_by_participant: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    participant_ids: Optional[List[str]] = None
 ) -> float:
     """
     Score how well an event matches the extracted identifiers.
@@ -327,7 +364,8 @@ def score_event_match(
     max_score = 0.0
     
     # Extract event details
-    event_title = event.get("summary", "").strip()
+    # Check both 'title' (normalized) and 'summary' (raw MCP) fields
+    event_title = (event.get("title", "") or event.get("summary", "")).strip()
     event_start = event.get("start", {})
     
     # Handle both dict format (with dateTime/date fields) and string format (ISO 8601)
@@ -376,20 +414,21 @@ def score_event_match(
             pass
     
     # Extract participant names from titles if not explicitly provided
-    # Handles cases like "Kate/Chad check in" where participants are in the title
+    # Handles cases like "Kate/Chad check in" or "kmiller's Hold meeting" where participants are in the title
     participant_names = event_identifiers.get("participant_names", [])
     titles = event_identifiers.get("titles", [])
     
     # If no explicit participant names but we have titles, try to extract names from titles
     # Now we can also match extracted names to attendee names from attendees_details
     if not participant_names and titles:
+        import re
         for title_ref in titles:
             # Look for patterns like "Name1/Name2", "Name1 & Name2", "Name1 and Name2"
-            # Split on common separators
+            # Also handle possessive forms like "kmiller's", "kmiller"
             title_lower = title_ref.lower()
+            
+            # Pattern 1: Two names separated by /, &, and, or comma
             # Common patterns: "kate/chad", "kate & chad", "kate and chad", "kate, chad"
-            import re
-            # Try to find name patterns (2-3 words separated by /, &, and, or comma)
             name_patterns = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s*[/&,]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)', title_ref)
             if name_patterns:
                 for name1, name2 in name_patterns:
@@ -397,6 +436,17 @@ def score_event_match(
                         participant_names.append(name1.strip())
                     if name2.strip() not in participant_names:
                         participant_names.append(name2.strip())
+            
+            # Pattern 2: Possessive forms like "kmiller's", "kmiller" (email prefix patterns)
+            # Matches word patterns that look like email prefixes (2-20 chars, no spaces, may have 's)
+            possessive_pattern = r"\b([a-z]{2,20})('s)?\b"
+            possessive_matches = re.findall(possessive_pattern, title_lower)
+            for match in possessive_matches:
+                name_part = match[0]  # The name part without 's
+                # Skip common words that aren't names
+                skip_words = {'the', 'and', 'or', 'for', 'with', 'from', 'this', 'that', 'meeting', 'check', 'in', 'hold', 'block'}
+                if name_part not in skip_words and name_part not in [p.lower() for p in participant_names]:
+                    participant_names.append(name_part)
     
     # Enhanced: If we have attendee names from attendees_details, try to match title-extracted names
     # This helps with cases like "Kate/Chad check in" where Kate and Chad are in attendees_details
@@ -424,13 +474,55 @@ def score_event_match(
     time_score = 0.0
     
     # Score participant match (weight: 0.35)
-    if participant_names:
+    # ENHANCED: If participant_ids are provided directly, use them for exact matching
+    if participant_ids and isinstance(participant_ids, list) and len(participant_ids) > 0:
+        # Direct participant_ids provided - check for exact matches
         max_score += 0.35
-        # Extract participant_ids from events_by_participant if available
-        participant_ids = None
+        
+        # Get event attendees (emails)
+        event_attendee_emails = set(event_attendees)
+        # Also include event owner if available
+        event_owner = None
         if isinstance(events_by_participant, dict):
-            participant_ids = list(events_by_participant.keys())
-        participant_emails = map_participant_names_to_emails(participant_names, context_json, participant_ids)
+            for owner_id, events_list in events_by_participant.items():
+                if event in events_list:
+                    event_owner = owner_id
+                    event_attendee_emails.add(owner_id)  # Owner is always an attendee
+                    break
+        
+        # Check if ALL participant_ids are in event attendees
+        participant_ids_set = set(participant_ids)
+        matching_participants = participant_ids_set.intersection(event_attendee_emails)
+        all_participants_present = len(matching_participants) == len(participant_ids_set)
+        
+        # Count total attendees (excluding organizer if it's one of the participant_ids)
+        total_event_attendees = len(event_attendee_emails)
+        # If event owner is one of the participant_ids, don't count it as "extra"
+        if event_owner and event_owner in participant_ids_set:
+            total_event_attendees -= 1
+        
+        if all_participants_present:
+            # All required participants are present
+            # BONUS: Favor events that have ONLY the specified participants (or those + organizer)
+            # If event has exactly the specified participants (or those + 1 organizer), give full score
+            if total_event_attendees == len(participant_ids_set) or (total_event_attendees == len(participant_ids_set) + 1 and event_owner):
+                participant_score = 0.35  # Perfect match - exact participants
+            else:
+                # Has all required participants but also has extras - slightly lower score
+                participant_score = 0.30  # All present but has extras
+            score += participant_score
+        elif len(matching_participants) > 0:
+            # Partial match - some but not all participants
+            participant_score = 0.15 + (0.10 * (len(matching_participants) / len(participant_ids_set)))
+            score += participant_score
+    
+    elif participant_names:
+        max_score += 0.35
+        # Extract participant_ids from events_by_participant if available (fallback)
+        fallback_participant_ids = None
+        if isinstance(events_by_participant, dict):
+            fallback_participant_ids = list(events_by_participant.keys())
+        participant_emails = map_participant_names_to_emails(participant_names, context_json, fallback_participant_ids)
         
         # ENHANCED: Direct name matching using attendees_details
         name_matches = 0
@@ -569,7 +661,8 @@ def identify_event_from_natural_language(
     event_identifiers: Dict[str, Any],
     events_by_participant: Dict[str, List[Dict[str, Any]]],
     context_json: Optional[Dict[str, Any]] = None,
-    min_score: float = 0.5
+    min_score: float = 0.5,
+    participant_ids: Optional[List[str]] = None
 ) -> Optional[Tuple[Dict[str, Any], str]]:
     """
     Identify an event from natural language identifiers.
@@ -623,22 +716,40 @@ def identify_event_from_natural_language(
     top_candidates = []  # Track top candidates for debugging
     for participant_id, events in events_by_participant.items():
         for event in events:
-            score = score_event_match(event, event_identifiers, context_json, events_by_participant)
+            score = score_event_match(event, event_identifiers, context_json, events_by_participant, participant_ids)
             if score > best_score:
                 best_score = score
                 best_match = event
                 best_participant = participant_id
             # Track top candidates (score >= 0.2)
             if score >= 0.2:
-                top_candidates.append((score, event.get("summary", ""), event.get("id", ""), participant_id))
+                # Get more details for logging
+                # Check both 'title' (normalized) and 'summary' (raw MCP) fields
+                event_summary = event.get("title", "") or event.get("summary", "")
+                event_id = event.get("id", "")
+                # Get attendees for logging
+                attendees = event.get("attendees_list", [])
+                attendees_details = event.get("attendees_details", [])
+                num_attendees = len(attendees) if isinstance(attendees, list) else 0
+                if attendees_details and isinstance(attendees_details, list):
+                    num_attendees = len(attendees_details)
+                top_candidates.append((score, event_summary, event_id, participant_id, num_attendees))
     
     # Log top candidates for debugging with more details
     try:
         top_candidates.sort(reverse=True, key=lambda x: x[0])
         print(f"[identify_event_from_natural_language] Top 5 candidates:", file=sys.stderr, flush=True)
-        for i, (score, title, event_id, part_id) in enumerate(top_candidates[:5], 1):
+        for i, candidate in enumerate(top_candidates[:5], 1):
+            if len(candidate) >= 5:
+                score, title, event_id, part_id, num_attendees = candidate[:5]
+            else:
+                score, title, event_id, part_id = candidate[:4]
+                num_attendees = 0
+            
             # Try to get more event details for logging
             event_details = ""
+            event_summary_from_mcp = ""
+            event_attendees_list = []
             for p_id, events in events_by_participant.items():
                 for evt in events:
                     if evt.get("id", "") == event_id:
@@ -650,16 +761,29 @@ def identify_event_from_natural_language(
                             start_str = start_raw.get("dateTime", start_raw.get("date", ""))[:10]
                         else:
                             start_str = ""
-                        # Get attendees count
+                        
+                        # Get summary from MCP (to verify it was returned)
+                        # Check both 'title' (normalized) and 'summary' (raw MCP) fields
+                        event_summary_from_mcp = evt.get("title", "") or evt.get("summary", "")
+                        
+                        # Get attendees list
                         attendees = evt.get("attendees_list", [])
-                        num_attendees = len(attendees) if isinstance(attendees, list) else 0
-                        event_details = f" | Date: {start_str} | Attendees: {num_attendees}"
+                        attendees_details = evt.get("attendees_details", [])
+                        if isinstance(attendees, list):
+                            event_attendees_list = attendees
+                        elif attendees_details and isinstance(attendees_details, list):
+                            event_attendees_list = [a.get("email", "") for a in attendees_details if isinstance(a, dict)]
+                        
+                        event_details = f" | Date: {start_str} | Attendees: {len(event_attendees_list)} | Summary from MCP: '{event_summary_from_mcp}' | Attendee emails: {event_attendees_list}"
                         break
                 if event_details:
                     break
+            
             print(f"  {i}. Score {score:.2f}: '{title}' (ID: {event_id[:50]}...){event_details} in {part_id}", file=sys.stderr, flush=True)
-    except:
-        pass
+    except Exception as e:
+        import traceback
+        print(f"[identify_event_from_natural_language] Error logging candidates: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc(file=sys.stderr)
     
     # Log best match found
     try:
@@ -671,8 +795,19 @@ def identify_event_from_natural_language(
         pass
     
     # Return best match if it meets minimum threshold
-    if best_match and best_score >= min_score:
+    # Use a small epsilon (0.01) for floating point comparison to handle edge cases
+    # This accounts for rounding differences in score calculations
+    epsilon = 0.01
+    if best_match and best_score >= (min_score - epsilon):
+        try:
+            print(f"[identify_event_from_natural_language] Returning match: score={best_score:.3f}, min={min_score:.3f}, threshold={min_score - epsilon:.3f}, match={best_match is not None}, participant={best_participant}", file=sys.stderr, flush=True)
+        except:
+            pass
         return (best_match, best_participant)
     
+    try:
+        print(f"[identify_event_from_natural_language] NOT returning match: score={best_score:.3f}, min={min_score:.3f}, threshold={min_score - epsilon:.3f}, match={best_match is not None}", file=sys.stderr, flush=True)
+    except:
+        pass
     return None
 

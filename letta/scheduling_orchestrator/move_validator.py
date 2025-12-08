@@ -17,7 +17,8 @@ def validate_move_for_all_participants(
     event_metadata: Dict[Tuple[str, str], Dict[str, Any]],
     event_participants: Dict[Tuple[str, str], List[str]],
     normalized_data: Dict[str, Any],
-    slot_indexer: Any
+    slot_indexer: Any,
+    exclude_event_keys: Optional[set] = None
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate that a moved event doesn't conflict with any of its participants' calendars.
@@ -54,12 +55,14 @@ def validate_move_for_all_participants(
             # Participant not available - should have been fetched proactively
             return False, f"Participant {participant_id} calendar not available (should have been fetched proactively)"
         
-        # Check for conflicts (excluding the event being moved)
-        # Get all events for this participant except the one being moved
+        # Check for conflicts (excluding the event being moved and other moved events)
+        # Get all events for this participant except the one being moved and other moved events
         participant_other_events = set()
+        exclude_keys = exclude_event_keys or set()
+        exclude_keys.add(event_key)  # Always exclude the event being moved
         
         for (p_id, e_id), slots in event_slots_map.items():
-            if p_id == participant_id and (p_id, e_id) != event_key:
+            if p_id == participant_id and (p_id, e_id) not in exclude_keys:
                 participant_other_events.update(slots)
         
         # Check if new location conflicts with other events
@@ -68,7 +71,7 @@ def validate_move_for_all_participants(
             # Find which event(s) conflict
             conflicting_events = []
             for (p_id, e_id), slots in event_slots_map.items():
-                if p_id == participant_id and (p_id, e_id) != event_key:
+                if p_id == participant_id and (p_id, e_id) not in exclude_keys:
                     if new_event_slots.intersection(slots):
                         event_meta = event_metadata.get((p_id, e_id), {})
                         event_title = event_meta.get("title", e_id)
@@ -86,7 +89,8 @@ def validate_move_for_all_participants(
 def validate_moved_event_dict(
     moved_event_dict: Dict[str, Any],
     normalized_data: Dict[str, Any],
-    slot_indexer: Any
+    slot_indexer: Any,
+    exclude_event_keys: Optional[set] = None
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate a moved event from a dictionary format.
@@ -147,7 +151,8 @@ def validate_moved_event_dict(
             event_metadata,
             event_participants,
             normalized_data,
-            slot_indexer
+            slot_indexer,
+            exclude_event_keys=exclude_event_keys
         )
     except Exception as e:
         return False, f"Error validating moved event: {str(e)}"
@@ -159,7 +164,9 @@ def validate_proposal_meeting_time(
     participants: List[str],
     normalized_data: Dict[str, Any],
     slot_indexer: Any,
-    is_solo_override: bool = False
+    is_solo_override: bool = False,
+    moved_events: Optional[List[Dict[str, Any]]] = None,
+    original_event_id: Optional[str] = None
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate that a proposed meeting time doesn't conflict with any participant's calendar.
@@ -207,6 +214,45 @@ def validate_proposal_meeting_time(
         event_slots_map = normalized_data.get("event_slots_map", {})
         event_metadata = normalized_data.get("event_metadata", {})
         
+        # Build set of event keys that are being moved (to exclude from conflict check)
+        # This must be done BEFORE checking for conflicts
+        moved_event_keys = set()
+        moved_event_slots = set()  # All slots occupied by moved events
+        if moved_events:
+            for moved_event in moved_events:
+                owner = moved_event.get("owner")
+                event_id = moved_event.get("event_id")
+                if owner and event_id:
+                    moved_event_keys.add((owner, event_id))
+                    # Find all slots for this moved event
+                    event_key = (owner, event_id)
+                    if event_key in event_slots_map:
+                        moved_event_slots.update(event_slots_map[event_key])
+        
+        # Also exclude the original event being rescheduled (if provided)
+        # This prevents the original event from being counted as a conflict
+        if original_event_id:
+            # Try exact match first
+            found_original = False
+            for (p_id, e_id), slots in event_slots_map.items():
+                if e_id == original_event_id and p_id in participants:
+                    moved_event_keys.add((p_id, e_id))
+                    moved_event_slots.update(slots)
+                    found_original = True
+            
+            # If exact match failed, try partial match (event IDs might have date suffixes)
+            # e.g., original_event_id might be "abc123_20251211T160000Z" but event_slots_map has "abc123"
+            if not found_original:
+                # Extract base event ID (before underscore if present)
+                base_event_id = original_event_id.split('_')[0] if '_' in original_event_id else original_event_id
+                for (p_id, e_id), slots in event_slots_map.items():
+                    # Check if e_id matches base_event_id or if e_id starts with base_event_id
+                    e_id_base = e_id.split('_')[0] if '_' in e_id else e_id
+                    if (e_id_base == base_event_id or e_id == original_event_id or original_event_id in e_id or e_id in original_event_id) and p_id in participants:
+                        moved_event_keys.add((p_id, e_id))
+                        moved_event_slots.update(slots)
+                        found_original = True
+        
         # Check each participant's calendar
         for participant_id in participants:
             # Check if we have calendar data for this participant
@@ -236,18 +282,27 @@ def validate_proposal_meeting_time(
                         if num_attendees > 0:  # Only include non-solo events
                             non_solo_busy_slots.update(slots)
                 
-                # Check for conflicts with non-solo events only
+                # Exclude slots from moved events
+                non_solo_busy_slots -= moved_event_slots
+                
+                # Check for conflicts with non-solo events only (excluding moved events)
                 conflicts = meeting_slots.intersection(non_solo_busy_slots)
             else:
-                # Normal validation: check all conflicts
-                conflicts = meeting_slots.intersection(participant_busy)
+                # Normal validation: check all conflicts, but exclude moved event slots
+                # Build participant's busy slots excluding moved events
+                participant_busy_excluding_moved = participant_busy - moved_event_slots
+                conflicts = meeting_slots.intersection(participant_busy_excluding_moved)
             
             if conflicts:
-                # Find which event(s) conflict
+                # Find which event(s) conflict (excluding events that are being moved)
                 conflicting_events = []
                 for (p_id, e_id), slots in event_slots_map.items():
                     if p_id == participant_id:
                         if meeting_slots.intersection(slots):
+                            # Skip events that are being moved
+                            if (p_id, e_id) in moved_event_keys:
+                                continue
+                            
                             event_meta = event_metadata.get((p_id, e_id), {})
                             # If this is a solo_override proposal, skip solo events (num_attendees == 0)
                             if is_solo_override:

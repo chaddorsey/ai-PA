@@ -59,7 +59,9 @@ def extract_event_details_for_rescheduling(
         raise ValueError("Event missing required 'id' field")
     
     # Extract title
-    title = event.get("summary", "").strip()
+    # Check both 'title' (normalized) and 'summary' (raw MCP) fields
+    # Normalized events have 'title', raw MCP events have 'summary'
+    title = (event.get("title", "") or event.get("summary", "")).strip()
     if not title:
         title = "Untitled Meeting"
     
@@ -214,7 +216,8 @@ def merge_event_details_with_utterance(
     extracted_event_details: Optional[Dict[str, Any]],
     scheduling_problem: SchedulingProblem,
     context_json: Optional[Dict[str, Any]] = None,
-    participant_ids: Optional[List[str]] = None
+    participant_ids: Optional[List[str]] = None,
+    utterance: Optional[str] = None
 ) -> SchedulingProblem:
     """
     Merge extracted event details with utterance constraints to create complete SchedulingProblem.
@@ -253,9 +256,37 @@ def merge_event_details_with_utterance(
         event_start_utc = None
         event_end_utc = None
     
-    # Merge participants: Prefer participant_ids from input, then event participants, then utterance participants
-    # For rescheduling, participant_ids (from the tool call) is the most authoritative source
-    if participant_ids:
+    # Merge participants: For rescheduling, prioritize event participants unless utterance explicitly changes them
+    # Check if utterance explicitly adds/removes participants (e.g., "add X", "remove Y", "with X and Y")
+    def has_explicit_participant_changes(utt: str) -> bool:
+        """Check if utterance explicitly mentions adding/removing participants."""
+        if not utt:
+            return False
+        utt_lower = utt.lower()
+        # Keywords that suggest participant changes
+        change_keywords = ["add", "remove", "without", "excluding", "also include", "and also"]
+        # Check for patterns like "with X and Y" when rescheduling (might indicate adding)
+        # But "my meeting with X" is just identifying, not changing
+        has_with = " with " in utt_lower or " and " in utt_lower
+        has_change_keyword = any(kw in utt_lower for kw in change_keywords)
+        return has_change_keyword or (has_with and any(kw in utt_lower for kw in ["add", "also"]))
+    
+    # For rescheduling, use event participants as base unless explicitly changed
+    if extracted_event_details and event_participants:
+        # Event was identified - use its participants as base
+        if has_explicit_participant_changes(utterance):
+            # Utterance explicitly changes participants - use participant_ids or utterance participants
+            if participant_ids:
+                merged_participants = participant_ids
+            elif scheduling_problem.participants:
+                merged_participants = scheduling_problem.participants
+            else:
+                merged_participants = event_participants
+        else:
+            # No explicit changes - use event participants
+            merged_participants = event_participants
+    elif participant_ids:
+        # No event identified or no event participants - use participant_ids
         merged_participants = participant_ids
     elif scheduling_problem.participants:
         merged_participants = scheduling_problem.participants
@@ -268,18 +299,37 @@ def merge_event_details_with_utterance(
     if not merged_participants:
         raise ValueError("Cannot determine participants: event has no participants and utterance did not specify any")
     
-    # Merge duration: For rescheduling, prefer event duration over utterance duration
-    # Only use utterance duration if it's explicitly specified AND significantly different from event duration
-    # This prevents DSPy from incorrectly extracting a default duration (e.g., 30 min) when the event is actually longer
+    # Merge duration: For rescheduling, ALWAYS prefer event duration unless utterance explicitly mentions a different duration
+    # This prevents DSPy from incorrectly extracting a default duration (e.g., 30 or 60 min) when the event is actually longer
+    def has_explicit_duration(utt: str) -> bool:
+        """Check if utterance explicitly mentions a duration."""
+        if not utt:
+            return False
+        utt_lower = utt.lower()
+        # Duration keywords that indicate explicit mention
+        duration_keywords = [
+            "minute", "minutes", "min", "mins",
+            "hour", "hours", "hr", "hrs",
+            "30 min", "45 min", "60 min", "90 min", "120 min",
+            "1 hour", "2 hour", "3 hour",
+            "half hour", "quarter hour"
+        ]
+        return any(kw in utt_lower for kw in duration_keywords)
+    
     if extracted_event_details and event_duration > 0:
-        # If utterance specifies a duration that's very different from event duration, use utterance
-        # (e.g., user says "make it 30 minutes" for a 4-hour event)
         utterance_duration = scheduling_problem.duration_minutes if scheduling_problem.duration_minutes > 0 else 0
-        if utterance_duration > 0 and abs(utterance_duration - event_duration) > event_duration * 0.3:
-            # Utterance duration is significantly different (>30% difference), use it
-            merged_duration = utterance_duration
+        
+        # For rescheduling, always prefer event duration unless utterance explicitly mentions a different duration
+        if utterance_duration > 0 and has_explicit_duration(utterance):
+            # Utterance explicitly mentions a duration - check if it's significantly different
+            if abs(utterance_duration - event_duration) > event_duration * 0.3:
+                # Utterance duration is significantly different (>30% difference) - use it
+                merged_duration = utterance_duration
+            else:
+                # Utterance duration is close to event duration - use event duration (more authoritative)
+                merged_duration = event_duration
         else:
-            # Use event duration (preserve original meeting length)
+            # No explicit duration in utterance - always use event duration
             merged_duration = event_duration
     else:
         # No event details available, use utterance duration
@@ -288,8 +338,31 @@ def merge_event_details_with_utterance(
     if merged_duration <= 0:
         raise ValueError(f"Invalid duration: {merged_duration} minutes")
     
-    # Merge title: Use event title unless utterance specifies different
-    merged_title = scheduling_problem.title if scheduling_problem.title else event_title
+    # Merge title: For rescheduling, prefer utterance title if event title is empty or default
+    # If event title is "Untitled Meeting" or empty, try to get title from:
+    # 1. Utterance-extracted title (scheduling_problem.title)
+    # 2. Event identifiers (titles from natural language extraction)
+    # 3. Fall back to event title
+    if event_title in ("Untitled Meeting", "", None):
+        # Try utterance title first
+        if scheduling_problem.title:
+            merged_title = scheduling_problem.title
+        # Try event_identifiers titles
+        elif scheduling_problem.event_identifiers and isinstance(scheduling_problem.event_identifiers, dict):
+            titles = scheduling_problem.event_identifiers.get("titles", [])
+            if titles and isinstance(titles, list) and len(titles) > 0:
+                # Use the first title from identifiers
+                merged_title = titles[0]
+            else:
+                merged_title = event_title
+        else:
+            merged_title = event_title
+    elif scheduling_problem.title:
+        # Utterance explicitly specifies a title, use it
+        merged_title = scheduling_problem.title
+    else:
+        # Use event title
+        merged_title = event_title
     
     # Merge location: Use event location unless utterance specifies different
     merged_location = scheduling_problem.location if scheduling_problem.location else event_location
@@ -317,6 +390,12 @@ def merge_event_details_with_utterance(
     merged_time_window_start = None
     merged_time_window_end = None
     
+    # Debug logging
+    import sys
+    print(f"[merge_event_details] context_json type: {type(context_json)}, has timeframe: {context_json and 'timeframe' in context_json if context_json else False}", file=sys.stderr, flush=True)
+    if context_json:
+        print(f"[merge_event_details] context_json keys: {list(context_json.keys()) if isinstance(context_json, dict) else 'not a dict'}", file=sys.stderr, flush=True)
+    
     if context_json and "timeframe" in context_json:
         timeframe = context_json["timeframe"]
         tz_str = timeframe.get("tz", "America/New_York")
@@ -339,10 +418,30 @@ def merge_event_details_with_utterance(
                     datetime.combine(to_date, time.max)
                 )
                 
-                # Convert to ISO format with timezone
-                merged_time_window_start = merged_time_window_start_dt.isoformat()
-                merged_time_window_end = merged_time_window_end_dt.isoformat()
-            except Exception:
+                # Convert to UTC for consistency with the rest of the system
+                if merged_time_window_start_dt.tzinfo is None:
+                    merged_time_window_start_dt = pytz.UTC.localize(merged_time_window_start_dt)
+                else:
+                    merged_time_window_start_dt = merged_time_window_start_dt.astimezone(pytz.UTC)
+                
+                if merged_time_window_end_dt.tzinfo is None:
+                    merged_time_window_end_dt = pytz.UTC.localize(merged_time_window_end_dt)
+                else:
+                    merged_time_window_end_dt = merged_time_window_end_dt.astimezone(pytz.UTC)
+                
+                # Convert to ISO format in UTC (use 'Z' suffix for UTC)
+                merged_time_window_start = merged_time_window_start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                merged_time_window_end = merged_time_window_end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                # Debug logging
+                import sys
+                print(f"[merge_event_details] Set time window: {merged_time_window_start} to {merged_time_window_end}", file=sys.stderr, flush=True)
+            except Exception as e:
+                # If parsing fails, log the error and fall back to utterance's time window
+                import sys
+                import traceback
+                print(f"[merge_event_details] Error setting time window from context_json: {e}", file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
                 # If parsing fails, fall back to utterance's time window
                 merged_time_window_start = scheduling_problem.time_window_start
                 merged_time_window_end = scheduling_problem.time_window_end

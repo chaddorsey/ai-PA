@@ -197,12 +197,16 @@ def normalize_events(
                     attendees = []
                 
                 # Store event metadata for move logic
+                # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
+                event_title = event_dict.get("title") or event_dict.get("summary", "")
+                event_summary = event_dict.get("summary", "") or event_dict.get("title", "")
                 event_metadata[event_key] = {
                     "start_dt": start_dt,
                     "end_dt": end_dt,
                     "start_str": start_str_clean,
                     "end_str": end_str_clean,
-                    "title": event_dict.get("title") or event_dict.get("summary", ""),
+                    "title": event_title,
+                    "summary": event_summary,  # Preserve summary field for event extraction
                     "locked": locked,
                     "protected": protected,
                     "flexible": flexible,

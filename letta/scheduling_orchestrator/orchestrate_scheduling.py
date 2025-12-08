@@ -24,12 +24,12 @@ if False:  # Never executes, but satisfies type checkers
 
 def orchestrate_scheduling(
     utterance: str,
-    participant_ids: Optional[List[str]] = None,  # NEW: List of participant email addresses for automatic event fetching
-    user_id: Optional[str] = None,  # NEW: User's own email address (for reference)
-    context_json: Optional[str] = None,  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences (REQUIRED when using participant_ids)
-    events_by_participant: Optional[str] = None,  # JSON string: Dict[str, List[Dict[str, Any]]] - LEGACY: Pre-fetched events (use participant_ids instead)
-    event_id: Optional[str] = None,  # NEW: Explicit event ID for rescheduling (when provided by agent)
-    event_participant_id: Optional[str] = None  # NEW: ID of one of the event participants (required when event_id is provided, used to fetch the event)
+        participant_ids: Optional[List[str]] = None,  # NEW: List of participant email addresses for automatic event fetching (optional for rescheduling when event_id is provided)
+        user_id: Optional[str] = None,  # NEW: User's own email address (REQUIRED for rescheduling - assumed to be an attendee)
+        context_json: Optional[str] = None,  # JSON string: Optional[Dict[str, Any]] - optional scheduling context and preferences (REQUIRED when using participant_ids or for rescheduling)
+        events_by_participant: Optional[str] = None,  # JSON string: Dict[str, List[Dict[str, Any]]] - LEGACY: Pre-fetched events (use participant_ids instead)
+        event_id: Optional[str] = None,  # NEW: Explicit event ID for rescheduling (when provided by agent)
+        event_participant_id: Optional[str] = None  # NEW: ID of one of the event participants (optional when event_id is provided - defaults to user_id for rescheduling)
 ) -> dict:
     """
     Orchestrate scheduling by finding optimal meeting times that satisfy constraints and preferences.
@@ -63,15 +63,25 @@ def orchestrate_scheduling(
                    For rescheduling, can be a simple request like "Find new time options" when event_id is provided,
                    or can identify the meeting: "Find me a new time for the check-in with Judi on Dec. 10th"
         
-        participant_ids: (RECOMMENDED) List of participant email addresses. The tool will automatically fetch
-                        their calendar events via MCP Core_Event_Data. Example: ["cdorsey@concord.org", "alex@example.com"]
+        participant_ids: (Optional for rescheduling) List of participant email addresses. The tool will automatically fetch
+                        their calendar events via MCP Core_Event_Data. For rescheduling with event_id, if not provided,
+                        participants will be derived from the event after it's fetched. For new meeting scheduling,
+                        this is required. Example: ["cdorsey@concord.org", "alex@example.com"]
                         If provided, context_json must include timeframe.
         
-        user_id: (Optional) User's own email address. For reference only - Core_Event_Data treats all calendars the same.
+        user_id: (REQUIRED for rescheduling) User's own email address. For rescheduling requests, the tool will
+                 use this as a fallback to search the requester's calendar if participants cannot be determined
+                 from the utterance (e.g., "When else this week can we hold Friday's Grants Team Meeting?").
+                 However, if participants are explicitly provided via participant_ids or can be inferred from the
+                 utterance (e.g., "Can Leslie and Kirk's check-in meeting..."), those will be used instead.
+                 If not provided for rescheduling, the tool will return an error.
         
         context_json: (REQUIRED when using participant_ids) JSON string containing:
                       - timeframe: {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD", "tz": "America/New_York"} (REQUIRED for participant_ids mode)
-                      - participants: [{"id": "exec", "email": "me@acme.com", "work_hours": "M-F 09:00-17:30"}, ...]
+                      - participants: [{"id": "exec", "email": "me@acme.com", "name": "John Doe", "work_hours": "M-F 09:00-17:30"}, ...]
+                         **RECOMMENDED**: Include participant names and IDs in this list. The orchestrator will match utterance
+                         text against these names to identify participants for event searches. This is the preferred method
+                         for participant identification, as it avoids incorrect extraction from natural language.
                       - policy: {
                           "hard": {"min_gap_min": 10},
                           "soft": {
@@ -97,8 +107,9 @@ def orchestrate_scheduling(
         
         event_participant_id: (Optional) Email address or calendar ID of one of the event participants. This is used
                               to fetch the event via MCP Core_Event_Data. The event will be searched in this
-                              participant's calendar from today forward up to 30 days. Required when event_id is
-                              provided. Can be any participant of the event, not necessarily the owner.
+                              participant's calendar from today forward up to 30 days. For rescheduling, if not provided
+                              when event_id is provided, defaults to user_id (assuming requester is an attendee).
+                              Can be any participant of the event, not necessarily the owner.
                               Example: "cdorsey@concord.org"
     
     Returns:
@@ -121,20 +132,22 @@ def orchestrate_scheduling(
         ...     context_json='{"timeframe": {"from": "2025-11-24", "to": "2025-11-28", "tz": "America/New_York"}}'
         ... )
         
-        Rescheduling with explicit event ID:
+        Rescheduling with explicit event ID (participants derived from event):
         >>> result = orchestrate_scheduling(
         ...     utterance="Find new time options",
         ...     event_id="evt_abc123xyz",
-        ...     event_participant_id="cdorsey@concord.org",
-        ...     participant_ids=["cdorsey@concord.org"],
+        ...     user_id="cdorsey@concord.org",  # Required - assumed to be attendee
         ...     context_json='{"timeframe": {"from": "2025-12-01", "to": "2025-12-15", "tz": "America/New_York"}}'
+        ...     # participant_ids not needed - will be derived from event
+        ...     # event_participant_id not needed - defaults to user_id
         ... )
         
-        Rescheduling with natural language:
+        Rescheduling with natural language (searches requester's calendar first):
         >>> result = orchestrate_scheduling(
         ...     utterance="Find me a new time for the check-in with Judi on Dec. 10th",
-        ...     participant_ids=["cdorsey@concord.org", "judi@example.com"],
+        ...     user_id="cdorsey@concord.org",  # Required - searches this calendar first
         ...     context_json='{"timeframe": {"from": "2025-12-01", "to": "2025-12-15", "tz": "America/New_York"}}'
+        ...     # participant_ids optional - will search user_id calendar first, then expand if needed
         ... )
     """
     # Import traceback, json, time, datetime, and pytz (ensure they're available)
@@ -310,15 +323,47 @@ def orchestrate_scheduling(
                 "debug": {}
             }
         
-        # Validate event_id and event_participant_id parameters
-        if event_id is not None and event_participant_id is None:
+        # Early extraction to check for rescheduling intent
+        # We need to know if this is rescheduling to determine parameter requirements
+        scheduling_problem_preview = None
+        try:
+            scheduling_problem_preview = extract_with_fallback(utterance, context_json)
+        except:
+            pass  # Will extract again later, this is just for early validation
+        
+        # Check if this is a rescheduling request
+        is_rescheduling = (
+            event_id is not None or
+            (scheduling_problem_preview and scheduling_problem_preview.is_rescheduling) or
+            any(keyword in utterance.lower() for keyword in ["reschedule", "move", "new time", "alternative time", "different time"])
+        )
+        
+        # For rescheduling, require user_id (used as fallback if no other participants can be determined)
+        if is_rescheduling and not user_id:
             return {
                 "status": "bad_input",
-                "explanation": "event_participant_id is required when event_id is provided. Please provide the email address of one of the event participants to fetch the event from their calendar.",
+                "explanation": "user_id is required for rescheduling requests. It will be used as a fallback to search the requester's calendar if participants cannot be determined from the utterance or event. Please provide the requester's email address.",
                 "proposals": [],
-                "error_message": "event_participant_id is required when event_id is provided",
+                "error_message": "user_id is required for rescheduling",
                 "debug": {}
             }
+        
+        # For rescheduling with event_id, default event_participant_id to user_id if not provided (as fallback)
+        if event_id is not None and event_participant_id is None:
+            if user_id:
+                event_participant_id = user_id
+                try:
+                    print(f"[orchestrate_scheduling] Using user_id ({user_id}) as fallback event_participant_id for rescheduling", file=sys.stderr, flush=True)
+                except:
+                    pass
+            else:
+                return {
+                    "status": "bad_input",
+                    "explanation": "event_participant_id or user_id is required when event_id is provided. For rescheduling, provide user_id and it will be used as a fallback to fetch the event from the requester's calendar.",
+                    "proposals": [],
+                    "error_message": "event_participant_id or user_id required when event_id is provided",
+                    "debug": {}
+                }
         
         start_time = time.time()
         debug_info = DebugInfo()
@@ -351,26 +396,52 @@ def orchestrate_scheduling(
                     debug=debug_info
                 ).model_dump()
         
+        # For rescheduling with event_id but no participant_ids, fetch event first to derive participants
+        derived_participant_ids = None
+        if is_rescheduling and event_id and not participant_ids:
+            # We'll fetch the event first, extract participants, then fetch calendars
+            # This will be handled after we initialize the MCP client
+            derived_participant_ids = []  # Will be populated after event fetch
+        
         # Determine which mode to use: participant_ids (automatic fetching) or events_by_participant (legacy)
-        if participant_ids:
+        # For rescheduling, we may need to fetch event first to get participant_ids, or fetch user's calendar for natural language identification
+        if participant_ids or (is_rescheduling and (event_id or user_id)):
             # Mode 1: Fetch events automatically via MCP
             if not context_json:
-                return ResponseEnvelope(
-                    status="bad_input",
-                    explanation="context_json with timeframe is required when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
-                    proposals=[],
-                    error_message="Missing context_json with timeframe",
-                    debug=debug_info
-                ).model_dump()
+                if is_rescheduling:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation="context_json with timeframe is required for rescheduling. Provide timeframe with 'from', 'to', and 'tz' fields to search for the meeting and find alternative times.",
+                        proposals=[],
+                        error_message="Missing context_json with timeframe",
+                        debug=debug_info
+                    ).model_dump()
+                else:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation="context_json with timeframe is required when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
+                        proposals=[],
+                        error_message="Missing context_json with timeframe",
+                        debug=debug_info
+                    ).model_dump()
             
             if "timeframe" not in context_json:
-                return ResponseEnvelope(
-                    status="bad_input",
-                    explanation="timeframe is required in context_json when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
-                    proposals=[],
-                    error_message="Missing timeframe in context_json",
-                    debug=debug_info
-                ).model_dump()
+                if is_rescheduling:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation="timeframe is required in context_json for rescheduling. Provide timeframe with 'from', 'to', and 'tz' fields to search for the meeting and find alternative times.",
+                        proposals=[],
+                        error_message="Missing timeframe in context_json",
+                        debug=debug_info
+                    ).model_dump()
+                else:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation="timeframe is required in context_json when using participant_ids. Provide timeframe with 'from', 'to', and 'tz' fields.",
+                        proposals=[],
+                        error_message="Missing timeframe in context_json",
+                        debug=debug_info
+                    ).model_dump()
             
             # Fetch events from MCP
             import os
@@ -399,8 +470,81 @@ def orchestrate_scheduling(
                 max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
             )
             
-            # Fetch specific event by ID if provided (for rescheduling)
-            if event_id and event_participant_id:
+            # For rescheduling with event_id but no participant_ids, fetch event first to derive participants
+            if is_rescheduling and event_id and event_participant_id and not participant_ids:
+                try:
+                    async def fetch_specific_event():
+                        await mcp_client.initialize()
+                        return await mcp_client.fetch_event_by_id(
+                            calendar_id=event_participant_id,
+                            event_id=event_id
+                        )
+                    
+                    fetched_event_by_id = asyncio.run(fetch_specific_event())
+                    
+                    if fetched_event_by_id is None:
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Event with ID '{event_id}' not found in calendar '{event_participant_id}'. The event may not exist, may be outside the search range (today to 30 days in the future), or you may not have access to it. Please provide participant_ids if you know them, or check that the event_id and event_participant_id are correct.",
+                            proposals=[],
+                            error_message=f"Event {event_id} not found in calendar {event_participant_id}",
+                            debug=debug_info
+                        ).model_dump()
+                    
+                    # Extract participants from the event
+                    try:
+                        from .event_extractor import extract_event_details_for_rescheduling
+                    except (ImportError, ValueError):
+                        try:
+                            from scheduling_orchestrator.event_extractor import extract_event_details_for_rescheduling
+                        except ImportError:
+                            from event_extractor import extract_event_details_for_rescheduling
+                    
+                    # Use event_participant_id as the owner for extraction
+                    extracted_details = extract_event_details_for_rescheduling(
+                        event=fetched_event_by_id,
+                        event_owner_id=event_participant_id
+                    )
+                    
+                    # Derive participant_ids from extracted event details
+                    participant_ids = extracted_details.get("participants", [])
+                    
+                    if not participant_ids:
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Could not extract participants from event '{event_id}'. The event may be missing attendee information. Please provide participant_ids explicitly.",
+                            proposals=[],
+                            error_message="Could not extract participants from event",
+                            debug=debug_info
+                        ).model_dump()
+                    
+                    # Log successful derivation
+                    try:
+                        print(f"[orchestrate_scheduling] Derived participant_ids from event: {participant_ids}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                        
+                except MCPError as e:
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Error fetching event '{event_id}' from calendar '{event_participant_id}': {e.message}. The event may be inaccessible or there may be a connection issue.",
+                        proposals=[],
+                        error_message=f"MCP error fetching event: {e.message}",
+                        debug=debug_info
+                    ).model_dump()
+                except Exception as e:
+                    error_traceback = traceback.format_exc()
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Unexpected error fetching or processing event '{event_id}': {str(e)}",
+                        proposals=[],
+                        error_message=f"Error processing event by ID: {str(e)}",
+                        error_traceback=error_traceback,
+                        debug=debug_info
+                    ).model_dump()
+            
+            # Fetch specific event by ID if provided (for rescheduling with participant_ids already known)
+            elif event_id and event_participant_id:
                 try:
                     async def fetch_specific_event():
                         await mcp_client.initialize()
@@ -541,9 +685,13 @@ def orchestrate_scheduling(
                                     ]
                                 
                                 # Normalize to orchestrator format
+                                # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
+                                # This ensures summary is available for event extraction later
+                                evt_summary = evt.get("summary", "")
                                 normalized_events.append({
                                     "id": evt.get("id", ""),
-                                    "title": evt.get("summary", ""),
+                                    "title": evt_summary,  # Use summary as title for normalized format
+                                    "summary": evt_summary,  # Preserve original summary field
                                     "start": start_dt,
                                     "end": end_dt,
                                     "locked": evt.get("locked", False),
@@ -621,7 +769,19 @@ def orchestrate_scheduling(
         debug_info.input_summary = input_summary
         
         # 1. Validate inputs
-        if not events_by_participant:
+        # For rescheduling with user_id but no participant_ids, we may need to fetch events
+        # for natural language identification, so don't fail here - let the rescheduling logic handle it
+        # Use scheduling_problem_preview (extracted earlier) or is_rescheduling flag
+        is_rescheduling_with_natural_language = (
+            is_rescheduling and 
+            not event_id and 
+            scheduling_problem_preview and 
+            scheduling_problem_preview.event_identifiers and
+            user_id and
+            not participant_ids
+        )
+        
+        if not events_by_participant and not is_rescheduling_with_natural_language:
             return ResponseEnvelope(
                 status="bad_input",
                 explanation="No events provided or fetched. Please provide events_by_participant or participant_ids with a valid timeframe in context.",
@@ -686,6 +846,12 @@ def orchestrate_scheduling(
             debug_info.extraction_time_ms = extraction_time_ms
             if extraction_time_ms == 0:
                 print(f"[orchestrate_scheduling] WARNING: Extraction time is 0ms - DSPy may not have been used", file=sys.stderr, flush=True)
+            
+            # Ensure is_rescheduling is set correctly if event_id is provided or local is_rescheduling is True
+            # DSPy might not detect rescheduling from utterance alone, but we know it's rescheduling if event_id is provided
+            if is_rescheduling and not scheduling_problem.is_rescheduling:
+                scheduling_problem.is_rescheduling = True
+                print(f"[orchestrate_scheduling] Set is_rescheduling=True because event_id is provided or rescheduling keywords detected", file=sys.stderr, flush=True)
         except Exception as e:
             error_traceback = traceback.format_exc()
             return ResponseEnvelope(
@@ -697,140 +863,496 @@ def orchestrate_scheduling(
             ).model_dump() | {"error_traceback": error_traceback}
         
         # 3. Identify event from natural language if rescheduling and event_id not provided
+        # Determine which calendar(s) to search based on priority:
+        # 1. Explicit participant_ids parameter
+        # 2. Participants from context_json (agent-supplied names and IDs)
+        # 3. Conservative utterance extraction (only if title/date aren't sufficient)
+        # 4. Fallback to user_id if no other participants can be determined
         if (scheduling_problem.is_rescheduling and 
             not event_id and 
-            scheduling_problem.event_identifiers and
-            events_by_participant):
-            try:
-                # Import event matcher
+            scheduling_problem.event_identifiers):
+            
+            # Determine participants to search from (priority order)
+            # Check for possessive pronoun "my" or "mine" to prioritize user_id calendar
+            utterance_lower = utterance.lower() if utterance else ""
+            has_possessive = user_id and (" my " in utterance_lower or " mine " in utterance_lower or utterance_lower.startswith("my ") or utterance_lower.startswith("mine "))
+            
+            # If "my" is detected, prioritize user_id calendar for rescheduling
+            if has_possessive and user_id and scheduling_problem.is_rescheduling:
+                calendars_to_search = [user_id]
                 try:
-                    from .event_matcher import identify_event_from_natural_language
-                except (ImportError, ValueError):
-                    try:
-                        from scheduling_orchestrator.event_matcher import identify_event_from_natural_language
-                    except ImportError:
-                        from event_matcher import identify_event_from_natural_language
-                
-                # Convert context_json to dict if needed
-                context_dict = context_json
-                if isinstance(context_json, str):
-                    context_dict = json.loads(context_json)
-                
-                # Enhance context_dict with participant information from participant_ids and events
-                # This helps with participant name mapping in event identification
-                # Extract names from attendees_details in events if available
-                participant_name_map = {}  # email -> name mapping from events
-                if events_by_participant:
-                    for owner_id, events_list in events_by_participant.items():
-                        for evt in events_list:
-                            attendees_details = evt.get("attendees_details", [])
-                            if attendees_details and isinstance(attendees_details, list):
-                                for attendee in attendees_details:
-                                    if isinstance(attendee, dict):
-                                        email = attendee.get("email", "")
-                                        name = attendee.get("name", "")
-                                        if email and name and email not in participant_name_map:
-                                            participant_name_map[email] = name
-                
-                if participant_ids and ("participants" not in context_dict or not context_dict.get("participants")):
-                    if "participants" not in context_dict:
-                        context_dict["participants"] = []
-                    # Add participant info from participant_ids, using names from events if available
-                    for p_id in participant_ids:
-                        # Check if this participant is already in the list
-                        existing = any(p.get("id") == p_id or p.get("email") == p_id for p in context_dict["participants"])
-                        if not existing:
-                            # Use name from events if available, otherwise use email prefix
-                            participant_name = participant_name_map.get(p_id, p_id.split("@")[0])
-                            context_dict["participants"].append({
-                                "id": p_id,
-                                "email": p_id,
-                                "name": participant_name
-                            })
-                
-                # Ensure event_identifiers is a dict (not a string)
-                event_identifiers_dict = scheduling_problem.event_identifiers
-                if isinstance(event_identifiers_dict, str):
-                    try:
-                        event_identifiers_dict = json.loads(event_identifiers_dict)
-                    except (json.JSONDecodeError, ValueError):
-                        # If parsing fails, try to extract from the string
-                        import re
-                        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', event_identifiers_dict, re.DOTALL)
-                        if json_match:
-                            try:
-                                event_identifiers_dict = json.loads(json_match.group(0))
-                            except (json.JSONDecodeError, ValueError):
-                                event_identifiers_dict = None
-                        else:
-                            event_identifiers_dict = None
-                
-                # If event_identifiers is still not a dict, we can't proceed
-                if not isinstance(event_identifiers_dict, dict):
-                    return ResponseEnvelope(
-                        status="bad_input",
-                        explanation="Could not parse event identifiers from the request. Please provide more specific details like: participant names, date, time, or meeting title.",
-                        proposals=[],
-                        error_message="Event identifiers not in valid format",
-                        debug=debug_info
-                    ).model_dump()
-                
-                # Log event identifiers for debugging
-                try:
-                    print(f"[orchestrate_scheduling] Event identifiers: {event_identifiers_dict}", file=sys.stderr, flush=True)
+                    print(f"[orchestrate_scheduling] Detected possessive pronoun 'my' - prioritizing user_id calendar: {calendars_to_search}", file=sys.stderr, flush=True)
                 except:
                     pass
+            else:
+                # Inline participant extraction logic (no separate function to avoid Letta schema issues)
+                import re
+                calendars_to_search = []
                 
-                # Identify event from natural language
-                match_result = identify_event_from_natural_language(
-                    event_identifiers=event_identifiers_dict,
-                    events_by_participant=events_by_participant,
-                    context_json=context_dict
-                )
-                
-                if match_result:
-                    matched_event, matched_participant = match_result
-                    fetched_event_by_id = matched_event
-                    # Store matched participant for later use in event extraction
-                    if not event_participant_id:
-                        event_participant_id = matched_participant
-                    # Log successful identification
+                # Priority 1: Explicit participant_ids parameter
+                if participant_ids:
+                    calendars_to_search = participant_ids
                     try:
-                        print(f"[orchestrate_scheduling] Identified event '{matched_event.get('summary', '')}' (ID: {matched_event.get('id', '')}) from natural language in calendar {matched_participant}", file=sys.stderr, flush=True)
+                        print(f"[extract_participants] Using explicit participant_ids: {participant_ids}", file=sys.stderr, flush=True)
                     except:
                         pass
                 else:
-                    # No match found - return helpful error
-                    return ResponseEnvelope(
-                        status="bad_input",
-                        explanation=f"Could not identify the meeting to reschedule from your request. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
-                        proposals=[],
+                    # Priority 2: Match utterance against context_json.participants
+                    context_dict = context_json
+                    if isinstance(context_json, str):
+                        try:
+                            context_dict = json.loads(context_json)
+                        except:
+                            context_dict = {}
+                    
+                    matched_emails = []
+                    if isinstance(context_dict, dict) and "participants" in context_dict:
+                        participants_list = context_dict.get("participants", [])
+                        utterance_lower_check = utterance.lower() if utterance else ""
+                        
+                        for p in participants_list:
+                            if isinstance(p, dict):
+                                p_name = p.get("name", "")
+                                p_email = p.get("email", "")
+                                p_id = p.get("id", "")
+                                
+                                if p_name:
+                                    name_parts = p_name.split()
+                                    first_name = name_parts[0] if name_parts else ""
+                                    
+                                    name_patterns = [
+                                        rf'\b{re.escape(first_name)}\b',
+                                        rf'\b{re.escape(p_name)}\b',
+                                    ]
+                                    
+                                    for pattern in name_patterns:
+                                        if re.search(pattern, utterance, re.IGNORECASE):
+                                            email_to_use = p_email or p_id
+                                            if email_to_use and email_to_use not in matched_emails:
+                                                matched_emails.append(email_to_use)
+                                                try:
+                                                    print(f"[extract_participants] Matched '{p_name}' from context_json to {email_to_use}", file=sys.stderr, flush=True)
+                                                except:
+                                                    pass
+                                            break
+                    
+                    if matched_emails:
+                        calendars_to_search = matched_emails
+                    else:
+                        # Priority 3: Conservative utterance extraction
+                        proper_noun_pattern = r'\b([A-Z][a-z]{2,15})\b'
+                        capitalized_words = re.findall(proper_noun_pattern, utterance)
+                        
+                        skip_capitalized = {
+                            'What', 'We', 'The', 'There', 'This', 'That', 'These', 'Those', 'They', 'It',
+                            'When', 'Where', 'Why', 'How', 'Which', 'Who', 'Whose', 'Whom',
+                            'But', 'And', 'Or', 'For', 'With', 'From', 'To', 'Of', 'In', 'On', 'At', 'By',
+                            'Friday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Saturday', 'Sunday',
+                            'Grants', 'Team', 'Meeting', 'Week', 'Next', 'Time', 'New', 'Alternative', 'Different',
+                            'Check', 'Hold', 'Block', 'Review', 'Planning', 'Standup', 'Sync', 'Retro', 'All-hands',
+                            'Weekly', 'Daily', 'Monthly', 'Quarterly', 'Annual', 'Finance', 'Engineering', 'Product',
+                            'Design', 'Marketing', 'Sales', 'Support', 'HR', 'IT',
+                            'Need', 'Have', 'Are', 'Other', 'Options', 'Timeslot', 'Timeslots'
+                        }
+                        
+                        candidate_names = [w for w in capitalized_words if w not in skip_capitalized]
+                        confirmed_names = []
+                        utterance_lower_check = utterance.lower()
+                        
+                        for name in candidate_names:
+                            name_lower = name.lower()
+                            name_pos = utterance_lower_check.find(name_lower)
+                            if name_pos == -1:
+                                continue
+                            
+                            context_before = utterance_lower_check[max(0, name_pos - 20):name_pos]
+                            context_after = utterance_lower_check[name_pos + len(name_lower):name_pos + len(name_lower) + 20]
+                            
+                            has_signifier = (
+                                re.search(r'\bwith\s+' + re.escape(name_lower) + r'\b', context_before + ' ' + name_lower + ' ' + context_after) or
+                                re.search(r'\b' + re.escape(name_lower) + r'\s+and\s+i\b', context_before + ' ' + name_lower + ' ' + context_after) or
+                                re.search(r'\b' + re.escape(name_lower) + r"'s\b", utterance_lower_check) or
+                                any(re.search(p, utterance) for p in [
+                                    rf'\b{re.escape(name)}\s*[/&]\s*([A-Z][a-z]+)\b',
+                                    rf'\b([A-Z][a-z]+)\s*[/&]\s*{re.escape(name)}\b',
+                                    rf'\b{re.escape(name)}\s+and\s+([A-Z][a-z]+)\b',
+                                    rf'\b([A-Z][a-z]+)\s+and\s+{re.escape(name)}\b',
+                                ])
+                            )
+                            
+                            if has_signifier:
+                                confirmed_names.append(name)
+                                try:
+                                    print(f"[extract_participants] Confirmed participant name from utterance: {name} (context signifier found)", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                        
+                        # Map confirmed names to emails
+                        if confirmed_names:
+                            try:
+                                from .event_matcher import map_participant_names_to_emails
+                            except (ImportError, ValueError):
+                                try:
+                                    from scheduling_orchestrator.event_matcher import map_participant_names_to_emails
+                                except ImportError:
+                                    from event_matcher import map_participant_names_to_emails
+                            
+                            mapped_emails = map_participant_names_to_emails(
+                                confirmed_names,
+                                context_dict,
+                                participant_ids
+                            )
+                            
+                            if mapped_emails:
+                                valid_emails = []
+                                invalid_patterns = [
+                                    'grants@', 'team@', 'meeting@', 'find@', 'me@', 'next@', 'week@',
+                                    'friday@', 'monday@', 'tuesday@', 'wednesday@', 'thursday@', 'saturday@', 'sunday@'
+                                ]
+                                for email in mapped_emails:
+                                    if '@' in email and '.' in email.split('@')[1]:
+                                        email_lower = email.lower()
+                                        if not any(pattern in email_lower for pattern in invalid_patterns):
+                                            valid_emails.append(email)
+                                
+                                if valid_emails:
+                                    calendars_to_search = valid_emails
+                        
+                        # Priority 4: Fallback to user_id
+                        if not calendars_to_search and user_id:
+                            calendars_to_search = [user_id]
+                            try:
+                                print(f"[extract_participants] Falling back to user_id: {user_id}", file=sys.stderr, flush=True)
+                            except:
+                                pass
+                
+                if not calendars_to_search:
+                    # No participants found - this will be handled by the fallback logic below
+                    try:
+                        print(f"[orchestrate_scheduling] No participants found for event search, will use user_id fallback", file=sys.stderr, flush=True)
+                    except:
+                        pass
+            
+            # Fetch calendars for determined participants if not already available
+            if calendars_to_search and not events_by_participant:
+                # Need to fetch user_id calendar first to search for the event
+                if context_json and "timeframe" in context_json:
+                    try:
+                        import os
+                        import asyncio
+                        try:
+                            from .mcp_client import MCPCalendarClient, MCPError
+                        except (ImportError, ValueError):
+                            try:
+                                from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
+                            except ImportError:
+                                from mcp_client import MCPCalendarClient, MCPError
+                        
+                        mcp_url = os.getenv(
+                            "MCP_CALENDAR_SERVER_URL",
+                            "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+                        )
+                        
+                        mcp_client = MCPCalendarClient(
+                            base_url=mcp_url,
+                            timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
+                            max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
+                        )
+                        
+                        # Fetch calendars for determined participants
+                        async def fetch_calendars_for_search():
+                            await mcp_client.initialize()
+                            import pytz
+                            from datetime import datetime
+                            
+                            tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
+                            start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                            start_dt = tz.localize(start_dt)
+                            after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
+                            
+                            end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                            end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                            before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
+                            
+                            all_events = {}
+                            for calendar_id in calendars_to_search:
+                                try:
+                                    result = await mcp_client.get_core_event_data(
+                                        calendar_id=calendar_id,
+                                        before=before_date_iso,
+                                        after=after_date_iso
+                                    )
+                                    
+                                    if isinstance(result, list):
+                                        events = result
+                                    elif isinstance(result, dict):
+                                        events = result.get("events", result.get("items", result.get("data", [])))
+                                    else:
+                                        events = []
+                                    
+                                    all_events[calendar_id] = events
+                                except Exception as e:
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.error(f"Failed to fetch events for {calendar_id}: {e}")
+                                    all_events[calendar_id] = []
+                            
+                            return all_events
+                        
+                        fetched_events_by_calendar = asyncio.run(fetch_calendars_for_search())
+                        
+                        # Normalize events for all calendars
+                        normalized_events_by_participant = {}
+                        for calendar_id, events in fetched_events_by_calendar.items():
+                            normalized_events = []
+                            for evt in events:
+                                if evt.get("start", {}).get("date"):
+                                    continue
+                                start_dt = evt.get("start", {}).get("dateTime")
+                                end_dt = evt.get("end", {}).get("dateTime")
+                                if not start_dt or not end_dt:
+                                    continue
+                                
+                                attendees_list = evt.get("attendees_list", [])
+                                if isinstance(attendees_list, str):
+                                    try:
+                                        import ast
+                                        attendees_list = ast.literal_eval(attendees_list)
+                                    except:
+                                        attendees_list = []
+                                elif not isinstance(attendees_list, list):
+                                    attendees_list = []
+                                
+                                attendees_details = evt.get("attendees_details", [])
+                                if not isinstance(attendees_details, list):
+                                    attendees_details = []
+                                if not attendees_details and attendees_list:
+                                    attendees_details = [
+                                        {"email": email, "name": email.split("@")[0]}
+                                        for email in attendees_list
+                                        if isinstance(email, str)
+                                    ]
+                                
+                                # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
+                                # This ensures summary is available for event extraction later
+                                evt_summary = evt.get("summary", "")
+                                normalized_events.append({
+                                    "id": evt.get("id", ""),
+                                    "title": evt_summary,  # Use summary as title for normalized format
+                                    "summary": evt_summary,  # Preserve original summary field
+                                    "start": start_dt,
+                                    "end": end_dt,
+                                    "locked": evt.get("locked", False),
+                                    "protected": evt.get("protected", False),
+                                    "flexible": evt.get("flexible", True),
+                                    "attendees": attendees_list,
+                                    "attendees_details": attendees_details
+                                })
+                            
+                            normalized_events_by_participant[calendar_id] = normalized_events
+                        
+                        # Create events_by_participant with fetched calendars
+                        events_by_participant = normalized_events_by_participant
+                        
+                        try:
+                            total_events = sum(len(events) for events in normalized_events_by_participant.values())
+                            print(f"[orchestrate_scheduling] Fetched {total_events} events from {len(calendars_to_search)} calendar(s) ({', '.join(calendars_to_search)}) for natural language event identification", file=sys.stderr, flush=True)
+                        except:
+                            pass
+                    except Exception as e:
+                        # If fetching fails, we'll try to continue with natural language identification
+                        # but may need to ask for more information
+                        try:
+                            print(f"[orchestrate_scheduling] Warning: Could not fetch requester's calendar for event identification: {str(e)}", file=sys.stderr, flush=True)
+                        except:
+                            pass
+            
+            if events_by_participant:
+                try:
+                    # Import event matcher
+                    try:
+                        from .event_matcher import identify_event_from_natural_language
+                    except (ImportError, ValueError):
+                        try:
+                            from scheduling_orchestrator.event_matcher import identify_event_from_natural_language
+                        except ImportError:
+                            from event_matcher import identify_event_from_natural_language
+                    
+                    # Convert context_json to dict if needed
+                    context_dict = context_json
+                    if isinstance(context_json, str):
+                        context_dict = json.loads(context_json)
+                    
+                    # Enhance context_dict with participant information from participant_ids and events
+                    # This helps with participant name mapping in event identification
+                    # Extract names from attendees_details in events if available
+                    participant_name_map = {}  # email -> name mapping from events
+                    if events_by_participant:
+                        for owner_id, events_list in events_by_participant.items():
+                            for evt in events_list:
+                                attendees_details = evt.get("attendees_details", [])
+                                if attendees_details and isinstance(attendees_details, list):
+                                    for attendee in attendees_details:
+                                        if isinstance(attendee, dict):
+                                            email = attendee.get("email", "")
+                                            name = attendee.get("name", "")
+                                            if email and name and email not in participant_name_map:
+                                                participant_name_map[email] = name
+                    
+                    if participant_ids and ("participants" not in context_dict or not context_dict.get("participants")):
+                        if "participants" not in context_dict:
+                            context_dict["participants"] = []
+                        # Add participant info from participant_ids, using names from events if available
+                        for p_id in participant_ids:
+                            # Check if this participant is already in the list
+                            existing = any(p.get("id") == p_id or p.get("email") == p_id for p in context_dict["participants"])
+                            if not existing:
+                                # Use name from events if available, otherwise use email prefix
+                                participant_name = participant_name_map.get(p_id, p_id.split("@")[0])
+                                context_dict["participants"].append({
+                                    "id": p_id,
+                                    "email": p_id,
+                                    "name": participant_name
+                                })
+                    
+                    # Ensure event_identifiers is a dict (not a string)
+                    event_identifiers_dict = scheduling_problem.event_identifiers
+                    if isinstance(event_identifiers_dict, str):
+                        try:
+                            event_identifiers_dict = json.loads(event_identifiers_dict)
+                        except (json.JSONDecodeError, ValueError):
+                            # If parsing fails, try to extract from the string
+                            import re
+                            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', event_identifiers_dict, re.DOTALL)
+                            if json_match:
+                                try:
+                                    event_identifiers_dict = json.loads(json_match.group(0))
+                                except (json.JSONDecodeError, ValueError):
+                                    event_identifiers_dict = None
+                            else:
+                                event_identifiers_dict = None
+                    
+                    # If event_identifiers is still not a dict, we can't proceed
+                    if not isinstance(event_identifiers_dict, dict):
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation="Could not parse event identifiers from the request. Please provide more specific details like: participant names, date, time, or meeting title.",
+                            proposals=[],
+                            error_message="Event identifiers not in valid format",
+                            debug=debug_info
+                        ).model_dump()
+                    
+                    # Log event identifiers for debugging
+                    try:
+                        print(f"[orchestrate_scheduling] Event identifiers: {event_identifiers_dict}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                    
+                    # Identify event from natural language
+                    # Pass participant_ids directly for exact matching
+                    match_result = identify_event_from_natural_language(
+                        event_identifiers=event_identifiers_dict,
+                        events_by_participant=events_by_participant,
+                        context_json=context_dict,
+                        participant_ids=participant_ids  # Pass participant_ids for exact participant matching
+                    )
+                    
+                    # Debug logging for match result
+                    try:
+                        print(f"[orchestrate_scheduling] Match result: {match_result is not None}, type: {type(match_result)}", file=sys.stderr, flush=True)
+                        if match_result:
+                            print(f"[orchestrate_scheduling] Match result details: event_id={match_result[0].get('id', '') if match_result[0] else 'None'}, participant={match_result[1] if len(match_result) > 1 else 'None'}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                    
+                    if match_result:
+                        matched_event, matched_participant = match_result
+                        fetched_event_by_id = matched_event
+                        # Store matched participant for later use in event extraction
+                        if not event_participant_id:
+                            event_participant_id = matched_participant
+                        # Log successful identification with full MCP response details
+                        try:
+                            event_summary = matched_event.get("summary", "")
+                            event_id = matched_event.get("id", "")
+                            event_attendees = matched_event.get("attendees_list", [])
+                            event_attendees_details = matched_event.get("attendees_details", [])
+                            event_start = matched_event.get("start", {})
+                            
+                            print(f"[orchestrate_scheduling] Identified event '{event_summary}' (ID: {event_id}) from natural language in calendar {matched_participant}", file=sys.stderr, flush=True)
+                            print(f"[orchestrate_scheduling] MCP Response Details:", file=sys.stderr, flush=True)
+                            print(f"  - summary field: '{event_summary}' (type: {type(event_summary).__name__}, empty: {not event_summary})", file=sys.stderr, flush=True)
+                            print(f"  - attendees_list: {event_attendees} (type: {type(event_attendees).__name__}, count: {len(event_attendees) if isinstance(event_attendees, list) else 0})", file=sys.stderr, flush=True)
+                            print(f"  - attendees_details: {event_attendees_details} (type: {type(event_attendees_details).__name__}, count: {len(event_attendees_details) if isinstance(event_attendees_details, list) else 0})", file=sys.stderr, flush=True)
+                            print(f"  - start: {event_start} (type: {type(event_start).__name__})", file=sys.stderr, flush=True)
+                            if participant_ids:
+                                print(f"  - participant_ids provided: {participant_ids}", file=sys.stderr, flush=True)
+                                # Check if all participant_ids are in attendees
+                                all_attendees = set(event_attendees) if isinstance(event_attendees, list) else set()
+                                if event_attendees_details and isinstance(event_attendees_details, list):
+                                    all_attendees.update([a.get("email", "") for a in event_attendees_details if isinstance(a, dict) and a.get("email")])
+                                all_attendees.add(matched_participant)  # Owner is always an attendee
+                                matching = set(participant_ids).intersection(all_attendees)
+                                print(f"  - participant_ids matching: {list(matching)} / {len(participant_ids)} required", file=sys.stderr, flush=True)
+                        except Exception as e:
+                            import traceback
+                            print(f"[orchestrate_scheduling] Error logging event details: {e}", file=sys.stderr, flush=True)
+                            traceback.print_exc(file=sys.stderr)
+                        
+                        # If we identified the event but don't have participant_ids, extract participants from event
+                        # and fetch their calendars (will happen after event extraction)
+                        if not participant_ids:
+                            # Extract participants from the matched event for later calendar fetching
+                            event_attendees = matched_event.get("attendees_list", [])
+                            event_attendees_details = matched_event.get("attendees_details", [])
+                            
+                            # Build participant list from event
+                            if event_attendees_details:
+                                participant_ids = [attendee.get("email") for attendee in event_attendees_details if isinstance(attendee, dict) and attendee.get("email")]
+                            elif event_attendees:
+                                participant_ids = [email for email in event_attendees if isinstance(email, str)]
+                            
+                            # Add the matched participant (owner) if not already in list
+                            if matched_participant and matched_participant not in (participant_ids or []):
+                                if not participant_ids:
+                                    participant_ids = []
+                                participant_ids.insert(0, matched_participant)
+                            
+                            try:
+                                print(f"[orchestrate_scheduling] Derived participant_ids from identified event: {participant_ids}", file=sys.stderr, flush=True)
+                            except:
+                                pass
+                    else:
+                        # No match found - return helpful error
+                        return ResponseEnvelope(
+                            status="bad_input",
+                            explanation=f"Could not identify the meeting to reschedule from your request. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
+                            proposals=[],
                         error_message="Event not identified from natural language",
                         debug=debug_info
                     ).model_dump()
-                    
-            except Exception as e:
-                error_traceback = traceback.format_exc()
-                # Log detailed error for debugging
-                try:
-                    print(f"[orchestrate_scheduling] Event identification error details:", file=sys.stderr, flush=True)
-                    print(f"  - event_identifiers type: {type(scheduling_problem.event_identifiers)}", file=sys.stderr, flush=True)
-                    print(f"  - event_identifiers value: {scheduling_problem.event_identifiers}", file=sys.stderr, flush=True)
-                    print(f"  - events_by_participant type: {type(events_by_participant)}", file=sys.stderr, flush=True)
-                    print(f"  - context_json type: {type(context_json)}", file=sys.stderr, flush=True)
-                    print(f"  - Error: {str(e)}", file=sys.stderr, flush=True)
-                    print(f"  - Traceback: {error_traceback}", file=sys.stderr, flush=True)
-                except:
-                    pass
-                # For rescheduling, if event identification fails, return error
-                # Don't silently continue - user asked to reschedule a specific meeting
-                return ResponseEnvelope(
-                    status="bad_input",
-                    explanation=f"Error identifying the meeting to reschedule: {str(e)}. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
-                    proposals=[],
-                    error_message=f"Event identification failed: {str(e)}",
-                    debug=debug_info
-                ).model_dump()
+                except Exception as e:
+                    error_traceback = traceback.format_exc()
+                    # Log detailed error for debugging
+                    try:
+                        print(f"[orchestrate_scheduling] Event identification error details:", file=sys.stderr, flush=True)
+                        print(f"  - event_identifiers type: {type(scheduling_problem.event_identifiers)}", file=sys.stderr, flush=True)
+                        print(f"  - event_identifiers value: {scheduling_problem.event_identifiers}", file=sys.stderr, flush=True)
+                        print(f"  - events_by_participant type: {type(events_by_participant)}", file=sys.stderr, flush=True)
+                        print(f"  - context_json type: {type(context_json)}", file=sys.stderr, flush=True)
+                        print(f"  - Error: {str(e)}", file=sys.stderr, flush=True)
+                        print(f"  - Traceback: {error_traceback}", file=sys.stderr, flush=True)
+                    except:
+                        pass
+                    # For rescheduling, if event identification fails, return error
+                    # Don't silently continue - user asked to reschedule a specific meeting
+                    return ResponseEnvelope(
+                        status="bad_input",
+                        explanation=f"Error identifying the meeting to reschedule: {str(e)}. Please provide more specific details like: participant names, date, time, or meeting title. Alternatively, you can provide the event ID directly.",
+                        proposals=[],
+                        error_message=f"Event identification failed: {str(e)}",
+                        debug=debug_info
+                    ).model_dump()
         
         # 4. Extract event details if event was fetched (for rescheduling)
         extracted_event_details = None
@@ -928,19 +1450,262 @@ def orchestrate_scheduling(
                 if isinstance(context_json, str):
                     context_dict = json.loads(context_json)
                 
+                # If event was identified and we don't have calendars for all participants,
+                # fetch calendars for all participants from the event
+                event_participants = extracted_event_details.get("participants", [])
+                if event_participants and context_json and "timeframe" in context_json:
+                    # Check if we need to fetch calendars for missing participants
+                    missing_participants = []
+                    if participant_ids:
+                        # Check which participants we don't have calendars for
+                        for pid in event_participants:
+                            if pid not in (events_by_participant or {}):
+                                missing_participants.append(pid)
+                    else:
+                        # No participant_ids provided - use event participants
+                        participant_ids = event_participants
+                        missing_participants = event_participants
+                    
+                    # Fetch calendars for missing participants
+                    if missing_participants:
+                        try:
+                            import os
+                            import asyncio
+                            try:
+                                from .mcp_client import MCPCalendarClient, MCPError
+                            except (ImportError, ValueError):
+                                try:
+                                    from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
+                                except ImportError:
+                                    from mcp_client import MCPCalendarClient, MCPError
+                            
+                            mcp_url = os.getenv(
+                                "MCP_CALENDAR_SERVER_URL",
+                                "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+                            )
+                            
+                            mcp_client = MCPCalendarClient(
+                                base_url=mcp_url,
+                                timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
+                                max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
+                            )
+                            
+                            # Reuse the fetch_calendar_events function logic
+                            async def fetch_all_participant_calendars():
+                                await mcp_client.initialize()
+                                import pytz
+                                from datetime import datetime
+                                
+                                tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
+                                start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                start_dt = tz.localize(start_dt)
+                                after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
+                                
+                                end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                                before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
+                                
+                                all_events = {}
+                                for pid in participant_ids:
+                                    try:
+                                        result = await mcp_client.get_core_event_data(
+                                            calendar_id=pid,
+                                            before=before_date_iso,
+                                            after=after_date_iso
+                                        )
+                                        
+                                        if isinstance(result, list):
+                                            events = result
+                                        elif isinstance(result, dict):
+                                            events = result.get("events", result.get("items", result.get("data", [])))
+                                        else:
+                                            events = []
+                                        
+                                        normalized_events = []
+                                        for evt in events:
+                                            if evt.get("start", {}).get("date"):
+                                                continue
+                                            start_dt = evt.get("start", {}).get("dateTime")
+                                            end_dt = evt.get("end", {}).get("dateTime")
+                                            if not start_dt or not end_dt:
+                                                continue
+                                            
+                                            attendees_list = evt.get("attendees_list", [])
+                                            if isinstance(attendees_list, str):
+                                                try:
+                                                    import ast
+                                                    attendees_list = ast.literal_eval(attendees_list)
+                                                except:
+                                                    attendees_list = []
+                                            elif not isinstance(attendees_list, list):
+                                                attendees_list = []
+                                            
+                                            attendees_details = evt.get("attendees_details", [])
+                                            if not isinstance(attendees_details, list):
+                                                attendees_details = []
+                                            if not attendees_details and attendees_list:
+                                                attendees_details = [
+                                                    {"email": email, "name": email.split("@")[0]}
+                                                    for email in attendees_list
+                                                    if isinstance(email, str)
+                                                ]
+                                            
+                                            # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
+                                            evt_summary = evt.get("summary", "")
+                                            normalized_events.append({
+                                                "id": evt.get("id", ""),
+                                                "title": evt_summary,  # Use summary as title for normalized format
+                                                "summary": evt_summary,  # Preserve original summary field
+                                                "start": start_dt,
+                                                "end": end_dt,
+                                                "locked": evt.get("locked", False),
+                                                "protected": evt.get("protected", False),
+                                                "flexible": evt.get("flexible", True),
+                                                "attendees": attendees_list,
+                                                "attendees_details": attendees_details
+                                            })
+                                        
+                                        all_events[pid] = normalized_events
+                                    except Exception as e:
+                                        import logging
+                                        logger = logging.getLogger(__name__)
+                                        logger.error(f"Failed to fetch events for {pid}: {e}")
+                                        all_events[pid] = []
+                                
+                                return all_events
+                            
+                            # Fetch calendars only for missing participants
+                            async def fetch_missing_calendars():
+                                await mcp_client.initialize()
+                                import pytz
+                                from datetime import datetime
+                                
+                                tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
+                                start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                start_dt = tz.localize(start_dt)
+                                after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
+                                
+                                end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                                before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
+                                
+                                all_events = {}
+                                for pid in missing_participants:
+                                    try:
+                                        result = await mcp_client.get_core_event_data(
+                                            calendar_id=pid,
+                                            before=before_date_iso,
+                                            after=after_date_iso
+                                        )
+                                        
+                                        if isinstance(result, list):
+                                            events = result
+                                        elif isinstance(result, dict):
+                                            events = result.get("events", result.get("items", result.get("data", [])))
+                                        else:
+                                            events = []
+                                        
+                                        normalized_events = []
+                                        for evt in events:
+                                            if evt.get("start", {}).get("date"):
+                                                continue
+                                            start_dt = evt.get("start", {}).get("dateTime")
+                                            end_dt = evt.get("end", {}).get("dateTime")
+                                            if not start_dt or not end_dt:
+                                                continue
+                                            
+                                            attendees_list = evt.get("attendees_list", [])
+                                            if isinstance(attendees_list, str):
+                                                try:
+                                                    import ast
+                                                    attendees_list = ast.literal_eval(attendees_list)
+                                                except:
+                                                    attendees_list = []
+                                            elif not isinstance(attendees_list, list):
+                                                attendees_list = []
+                                            
+                                            attendees_details = evt.get("attendees_details", [])
+                                            if not isinstance(attendees_details, list):
+                                                attendees_details = []
+                                            if not attendees_details and attendees_list:
+                                                attendees_details = [
+                                                    {"email": email, "name": email.split("@")[0]}
+                                                    for email in attendees_list
+                                                    if isinstance(email, str)
+                                                ]
+                                            
+                                            # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
+                                            evt_summary = evt.get("summary", "")
+                                            normalized_events.append({
+                                                "id": evt.get("id", ""),
+                                                "title": evt_summary,  # Use summary as title for normalized format
+                                                "summary": evt_summary,  # Preserve original summary field
+                                                "start": start_dt,
+                                                "end": end_dt,
+                                                "locked": evt.get("locked", False),
+                                                "protected": evt.get("protected", False),
+                                                "flexible": evt.get("flexible", True),
+                                                "attendees": attendees_list,
+                                                "attendees_details": attendees_details
+                                            })
+                                        
+                                        all_events[pid] = normalized_events
+                                    except Exception as e:
+                                        import logging
+                                        logger = logging.getLogger(__name__)
+                                        logger.error(f"Failed to fetch events for {pid}: {e}")
+                                        all_events[pid] = []
+                                
+                                return all_events
+                            
+                            # Fetch calendars for missing participants
+                            additional_events = asyncio.run(fetch_missing_calendars())
+                            
+                            # Merge with existing events_by_participant
+                            if events_by_participant:
+                                for pid, events in additional_events.items():
+                                    if pid in events_by_participant:
+                                        # Merge, avoiding duplicates
+                                        existing_ids = {evt.get("id") for evt in events_by_participant[pid]}
+                                        for evt in events:
+                                            if evt.get("id") not in existing_ids:
+                                                events_by_participant[pid].append(evt)
+                                    else:
+                                        events_by_participant[pid] = events
+                            else:
+                                events_by_participant = additional_events
+                            
+                            try:
+                                print(f"[orchestrate_scheduling] Fetched calendars for {len(missing_participants)} missing participants derived from event", file=sys.stderr, flush=True)
+                            except:
+                                pass
+                        except Exception as e:
+                            # If fetching fails, log but continue - we at least have the event details
+                            try:
+                                print(f"[orchestrate_scheduling] Warning: Could not fetch all participant calendars: {str(e)}", file=sys.stderr, flush=True)
+                            except:
+                                pass
+                
                 # If event was identified, merge event details with utterance constraints
                 # If event identification failed, still expand time window (use None for extracted_event_details)
+                print(f"[orchestrate_scheduling] About to call merge_event_details_with_utterance", file=sys.stderr, flush=True)
+                print(f"[orchestrate_scheduling] context_dict type: {type(context_dict)}, value: {context_dict}", file=sys.stderr, flush=True)
+                print(f"[orchestrate_scheduling] scheduling_problem.time_window_start before merge: {scheduling_problem.time_window_start}", file=sys.stderr, flush=True)
+                print(f"[orchestrate_scheduling] scheduling_problem.time_window_end before merge: {scheduling_problem.time_window_end}", file=sys.stderr, flush=True)
                 scheduling_problem = merge_event_details_with_utterance(
                     extracted_event_details=extracted_event_details,  # None if identification failed
                     scheduling_problem=scheduling_problem,
                     context_json=context_dict,
-                    participant_ids=participant_ids  # Pass participant_ids to ensure correct participants are used
+                    participant_ids=participant_ids,  # Pass participant_ids for fallback
+                    utterance=utterance  # Pass utterance to check for explicit changes
                 )
+                print(f"[orchestrate_scheduling] After merge_event_details_with_utterance call", file=sys.stderr, flush=True)
                 
                 # Log successful merge/expansion
                 try:
                     if extracted_event_details:
                         print(f"[orchestrate_scheduling] Merged event details: {len(scheduling_problem.participants)} participants, {scheduling_problem.duration_minutes} min, title: '{scheduling_problem.title}'", file=sys.stderr, flush=True)
+                        print(f"[orchestrate_scheduling] Time window after merge: start={scheduling_problem.time_window_start}, end={scheduling_problem.time_window_end}", file=sys.stderr, flush=True)
                     else:
                         print(f"[orchestrate_scheduling] Expanded time window for rescheduling (event identification failed): {scheduling_problem.time_window_start} to {scheduling_problem.time_window_end}", file=sys.stderr, flush=True)
                 except:
@@ -1857,21 +2622,81 @@ def orchestrate_scheduling(
                                 
                                 # CRITICAL: Validate that the converted slot doesn't conflict in the original horizon
                                 # The reduced horizon's busy_slots might be different from the original
+                                # BUT: ASP solutions may require moving events, so we need to compute moves first
                                 duration_slots = max(1, window_problem.duration_minutes // 15)
                                 meeting_slots = range(original_slot, original_slot + duration_slots)
                                 original_busy_slots = original_normalized_data.get("busy_slots", {})
                                 
-                                # Check if this slot conflicts in the original horizon
-                                has_conflict = False
+                                # Compute which events the ASP solution would move (in the reduced horizon)
+                                # This tells us which events are being moved to make this slot work
+                                try:
+                                    from .clingo_wrapper import compute_move_deltas
+                                except (ImportError, ValueError):
+                                    try:
+                                        from scheduling_orchestrator.clingo_wrapper import compute_move_deltas
+                                    except ImportError:
+                                        from clingo_wrapper import compute_move_deltas
+                                
+                                # Compute moved events in the reduced horizon context
+                                moved_events_reduced = compute_move_deltas(
+                                    asp_solution,
+                                    window_normalized_data,
+                                    window_problem
+                                )
+                                
+                                # Build set of event keys that are being moved
+                                moved_event_keys = set()
+                                for moved_event in moved_events_reduced:
+                                    owner = moved_event.get("owner")
+                                    event_id = moved_event.get("event_id")
+                                    if owner and event_id:
+                                        moved_event_keys.add((owner, event_id))
+                                
+                                # Check if this slot conflicts with events that CAN'T be moved (locked events)
+                                # Events that are being moved are OK (they'll be moved out of the way)
+                                event_protection = original_normalized_data.get("event_protection", {})
+                                event_slots_map = original_normalized_data.get("event_slots_map", {})
+                                
+                                has_locked_conflict = False
                                 for participant_id in window_problem.participants:
                                     participant_busy = original_busy_slots.get(participant_id, set())
-                                    if any(slot in participant_busy for slot in meeting_slots):
-                                        has_conflict = True
-                                        break
+                                    conflicting_slots = set(meeting_slots).intersection(participant_busy)
+                                    
+                                    if conflicting_slots:
+                                        # Check which events are causing the conflict
+                                        for (p_id, e_id), slots in event_slots_map.items():
+                                            if p_id == participant_id and slots.intersection(conflicting_slots):
+                                                event_key = (p_id, e_id)
+                                                # If this event is being moved, it's OK
+                                                if event_key in moved_event_keys:
+                                                    continue
+                                                # If this event is locked, it can't be moved - conflict!
+                                                protection = event_protection.get(event_key, "flexible")
+                                                if protection == "locked":
+                                                    has_locked_conflict = True
+                                                    break
+                                        
+                                        if has_locked_conflict:
+                                            break
                                 
-                                if has_conflict:
-                                    # Skip this solution - it conflicts in the original horizon
+                                if has_locked_conflict:
+                                    # Skip this solution - it conflicts with locked events that can't be moved
+                                    try:
+                                        import sys
+                                        print(f"[WINDOW_SOLUTION] Rejecting ASP solution {model_idx}: conflicts with locked events", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
                                     continue
+                                
+                                # Solution is valid - log if it has moves
+                                try:
+                                    import sys
+                                    if moved_events_reduced:
+                                        print(f"[WINDOW_SOLUTION] Accepting ASP solution {model_idx}: slot {original_slot}, {len(moved_events_reduced)} events to move", file=sys.stderr, flush=True)
+                                    else:
+                                        print(f"[WINDOW_SOLUTION] Accepting ASP solution {model_idx}: slot {original_slot}, no moves needed", file=sys.stderr, flush=True)
+                                except:
+                                    pass
                                 
                                 # Create solution dict
                                 asp_solution_dict = {
@@ -2180,8 +3005,14 @@ def orchestrate_scheduling(
                     original_event_details_value = None
                     if extracted_event_details and scheduling_problem.is_rescheduling:
                         original_event_id_value = extracted_event_details.get("event_id")
+                        # Use merged title from scheduling_problem if extracted title is "Untitled Meeting"
+                        # This handles cases where the event's summary was empty but the title was extracted from utterance
+                        extracted_title = extracted_event_details.get("title", "")
+                        display_title = extracted_title
+                        if extracted_title in ("Untitled Meeting", "", None) and scheduling_problem.title:
+                            display_title = scheduling_problem.title
                         original_event_details_value = {
-                            "title": extracted_event_details.get("title"),
+                            "title": display_title,
                             "start_utc": extracted_event_details.get("current_start_utc"),
                             "end_utc": extracted_event_details.get("current_end_utc"),
                             "participants": extracted_event_details.get("participants", []),
@@ -2319,9 +3150,12 @@ def orchestrate_scheduling(
                                                 if isinstance(email, str)
                                             ]
                                         
+                                        # Preserve both 'summary' (raw MCP) and 'title' (normalized) fields
+                                        evt_summary = evt.get("summary", "")
                                         normalized_events.append({
                                             "id": evt.get("id", ""),
-                                            "title": evt.get("summary", ""),
+                                            "title": evt_summary,  # Use summary as title for normalized format
+                                            "summary": evt_summary,  # Preserve original summary field
                                             "start": start_dt,
                                             "end": end_dt,
                                             "locked": evt.get("locked", False),
@@ -2479,13 +3313,36 @@ def orchestrate_scheduling(
                     # Check if this is a solo_override proposal
                     is_solo_override = getattr(prop, '_solution_method', None) == "solo_override"
                     
+                    # Convert moved_events to dict format for validation
+                    moved_events_for_validation = None
+                    if prop.moved_events:
+                        moved_events_for_validation = [
+                            {
+                                "owner": me.owner,
+                                "event_id": me.event_id,
+                                "old_start": me.old_start,
+                                "new_start": me.new_start,
+                                "old_end": me.old_end,
+                                "new_end": me.new_end,
+                                "shift_minutes": me.shift_minutes
+                            }
+                            for me in prop.moved_events
+                        ]
+                    
+                    # Get original_event_id from proposal if it exists
+                    original_event_id_for_validation = None
+                    if hasattr(prop, 'original_event_id') and prop.original_event_id:
+                        original_event_id_for_validation = prop.original_event_id
+                    
                     meeting_valid, meeting_error = validate_proposal_meeting_time(
                         prop.start_utc,
                         prop.end_utc,
                         prop.participants,
                         original_normalized_data,
                         original_normalized_data["slot_indexer"],
-                        is_solo_override=is_solo_override
+                        is_solo_override=is_solo_override,
+                        moved_events=moved_events_for_validation,
+                        original_event_id=original_event_id_for_validation
                     )
                     
                     if not meeting_valid:
@@ -2513,6 +3370,24 @@ def orchestrate_scheduling(
                 # Validate each moved event
                 all_moves_valid = True
                 move_validation_errors = []
+                
+                # Build set of all event keys being moved (to exclude from conflict checks)
+                all_moved_event_keys = set()
+                for me in prop.moved_events:
+                    try:
+                        if hasattr(me, 'model_dump'):
+                            me_dict = me.model_dump()
+                        elif isinstance(me, dict):
+                            me_dict = me
+                        else:
+                            me_dict = {
+                                "owner": getattr(me, 'owner', None),
+                                "event_id": getattr(me, 'event_id', None)
+                            }
+                        if me_dict.get("owner") and me_dict.get("event_id"):
+                            all_moved_event_keys.add((me_dict["owner"], me_dict["event_id"]))
+                    except:
+                        pass
                 
                 for moved_event in prop.moved_events:
                     # Convert Pydantic model to dict if needed
@@ -2565,7 +3440,8 @@ def orchestrate_scheduling(
                         is_valid, error_msg = validate_moved_event_dict(
                             moved_event_dict,
                             original_normalized_data,
-                            original_normalized_data["slot_indexer"]
+                            original_normalized_data["slot_indexer"],
+                            exclude_event_keys=all_moved_event_keys
                         )
                         
                         if not is_valid:
@@ -2922,6 +3798,18 @@ def orchestrate_scheduling(
             # CRITICAL: Use original_normalized_data to ensure slot indices match between
             # proposals (converted from UTC times) and event_slots_map (which uses original horizon)
             formatting_normalized_data = original_normalized_data if 'original_normalized_data' in locals() else normalized_data
+            # Parse context_json if it's a string
+            context_json_for_formatting = None
+            if context_json:
+                if isinstance(context_json, str):
+                    try:
+                        import json
+                        context_json_for_formatting = json.loads(context_json)
+                    except:
+                        context_json_for_formatting = None
+                else:
+                    context_json_for_formatting = context_json
+            
             refined_display_text = format_refined_user_display(
                 free_proposals=free_proposals,
                 move_proposals=single_move_proposals,
@@ -2929,7 +3817,8 @@ def orchestrate_scheduling(
                 event_registry=event_registry,
                 normalized_data=formatting_normalized_data,
                 user_id=user_id,
-                timezone_str=timezone_str
+                timezone_str=timezone_str,
+                context_json=context_json_for_formatting
             )
             
             # Also keep the old format for backward compatibility

@@ -336,7 +336,8 @@ def format_refined_user_display(
     event_registry: Dict[str, EventMetadata],
     normalized_data: Optional[Dict[str, Any]] = None,
     user_id: Optional[str] = None,
-    timezone_str: str = "America/New_York"
+    timezone_str: str = "America/New_York",
+    context_json: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Generate refined user-facing display with grouped, prioritized formatting.
