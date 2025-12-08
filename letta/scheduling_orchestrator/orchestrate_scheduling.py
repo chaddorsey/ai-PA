@@ -376,11 +376,121 @@ def orchestrate_scheduling(
             pass  # Will extract again later, this is just for early validation
         
         # Check if this is a rescheduling request
-        is_rescheduling = (
-            event_id is not None or
-            (scheduling_problem_preview and scheduling_problem_preview.is_rescheduling) or
-            any(keyword in utterance.lower() for keyword in ["reschedule", "move", "new time", "alternative time", "different time"])
-        )
+        # CRITICAL: Rescheduling requires reference to an EXISTING meeting
+        # Primary indicators:
+        # 1. Explicit event_id provided
+        # 2. Event identifiers (titles, specific dates/times for existing event) present
+        # 3. Explicit rescheduling keywords (reschedule, move meeting, new time for, etc.)
+        
+        # First, check for phrases that explicitly indicate a NEW meeting (not rescheduling)
+        utterance_lower = utterance.lower()
+        new_meeting_phrases = [
+            "schedule a new",
+            "create a new",
+            "set up a new",
+            "book a new",
+            "arrange a new",
+            "plan a new",
+            "organize a new",
+            "schedule new",
+            "create new",
+            "set up new",
+            "book new",
+            "arrange new",
+            "plan new",
+            "organize new"
+        ]
+        is_new_meeting_by_phrase = any(phrase in utterance_lower for phrase in new_meeting_phrases)
+        
+        # Check for event identifiers in the preview extraction
+        has_event_identifiers = False
+        if scheduling_problem_preview and scheduling_problem_preview.event_identifiers:
+            event_identifiers = scheduling_problem_preview.event_identifiers
+            # Handle both dict and string formats
+            if isinstance(event_identifiers, str):
+                try:
+                    import json
+                    event_identifiers = json.loads(event_identifiers)
+                except:
+                    event_identifiers = {}
+            
+            if isinstance(event_identifiers, dict):
+                # Check if there are any meaningful event identifiers
+                titles = event_identifiers.get("titles", []) or []
+                dates = event_identifiers.get("dates", []) or []
+                times = event_identifiers.get("times", []) or []
+                participant_names = event_identifiers.get("participant_names", []) or []
+                
+                # Has event identifiers if there are titles, specific dates, or times
+                # (participant names alone don't indicate an existing meeting - they could be for a new meeting)
+                has_event_identifiers = bool(titles or (dates and len(dates) > 0) or (times and len(times) > 0))
+        
+        # Check for explicit rescheduling keywords (only if NOT a new meeting phrase)
+        has_rescheduling_keyword = False
+        if not is_new_meeting_by_phrase:
+            import re
+            rescheduling_patterns = [
+                r'\breschedule\b',
+                r'\bmove\b.*\bmeeting\b',
+                r'\bnew time\b.*\bfor\b',  # "new time for" indicates rescheduling
+                r'\balternative time\b.*\bfor\b',  # "alternative time for" indicates rescheduling
+                r'\bdifferent time\b.*\bfor\b',  # "different time for" indicates rescheduling
+                r'\bfind.*new time\b.*\bfor\b',  # "find new time for" indicates rescheduling
+                r'\bchange.*time\b.*\bfor\b',  # "change time for" indicates rescheduling
+                r'\bfind.*alternative\b.*\bfor\b',  # "find alternative for" indicates rescheduling
+                r'\bfind.*different\b.*\bfor\b',  # "find different for" indicates rescheduling
+                r'\breschedule.*meeting\b',
+                r'\bmove.*meeting\b',
+                r'\bthe meeting\b',  # "the meeting" suggests an existing meeting
+                r'\bthat meeting\b',  # "that meeting" suggests an existing meeting
+                r'\bthis meeting\b'  # "this meeting" suggests an existing meeting
+            ]
+            has_rescheduling_keyword = any(re.search(pattern, utterance_lower) for pattern in rescheduling_patterns)
+        
+        # Determine if this is rescheduling
+        # Rescheduling requires: event_id OR (event identifiers AND rescheduling keyword) OR explicit rescheduling keyword
+        # If no event identifiers and no explicit rescheduling keywords → it's a NEW meeting
+        is_rescheduling = False
+        if event_id:
+            # Explicit event_id always means rescheduling
+            is_rescheduling = True
+        elif is_new_meeting_by_phrase:
+            # Explicit new meeting phrases override everything
+            is_rescheduling = False
+        elif has_event_identifiers and has_rescheduling_keyword:
+            # Both event identifiers AND rescheduling keywords → rescheduling
+            is_rescheduling = True
+        elif has_rescheduling_keyword:
+            # Explicit rescheduling keywords → rescheduling
+            is_rescheduling = True
+        elif has_event_identifiers:
+            # Event identifiers alone might be rescheduling, but check DSPy's detection
+            if scheduling_problem_preview and scheduling_problem_preview.is_rescheduling:
+                is_rescheduling = True
+            else:
+                # Event identifiers but no rescheduling keywords and DSPy didn't detect it → likely new meeting
+                is_rescheduling = False
+        else:
+            # No event identifiers, no rescheduling keywords → NEW meeting (default)
+            is_rescheduling = False
+        
+        # Log the detection result
+        try:
+            if is_new_meeting_by_phrase:
+                print(f"[orchestrate_scheduling] Detected NEW meeting request (not rescheduling) - phrases like 'schedule a new' found", file=sys.stderr, flush=True)
+            elif is_rescheduling:
+                reason = []
+                if event_id:
+                    reason.append("event_id provided")
+                if has_event_identifiers:
+                    reason.append("event identifiers found")
+                if has_rescheduling_keyword:
+                    reason.append("rescheduling keywords found")
+                print(f"[orchestrate_scheduling] Detected rescheduling request - {', '.join(reason)}", file=sys.stderr, flush=True)
+            else:
+                print(f"[orchestrate_scheduling] Detected NEW meeting request (default) - no event identifiers or rescheduling keywords", file=sys.stderr, flush=True)
+        except:
+            pass
         
         # For rescheduling, require user_id (used as fallback if no other participants can be determined)
         if is_rescheduling and not user_id:
@@ -1036,7 +1146,41 @@ def orchestrate_scheduling(
             
             # Ensure is_rescheduling is set correctly if event_id is provided or local is_rescheduling is True
             # DSPy might not detect rescheduling from utterance alone, but we know it's rescheduling if event_id is provided
-            if is_rescheduling and not scheduling_problem.is_rescheduling:
+            # CRITICAL: If this is a NEW meeting request, override any rescheduling detection
+            # Re-check for new meeting phrases and event identifiers (variables from earlier scope may not be accessible here)
+            utterance_lower_check = utterance.lower()
+            new_meeting_phrases_check = [
+                "schedule a new", "create a new", "set up a new", "book a new",
+                "arrange a new", "plan a new", "organize a new",
+                "schedule new", "create new", "set up new", "book new",
+                "arrange new", "plan new", "organize new"
+            ]
+            is_new_meeting_by_phrase_check = any(phrase in utterance_lower_check for phrase in new_meeting_phrases_check)
+            
+            # Also check if there are no event identifiers (default to new meeting)
+            has_event_identifiers_check = False
+            if scheduling_problem.event_identifiers:
+                event_identifiers_check = scheduling_problem.event_identifiers
+                if isinstance(event_identifiers_check, str):
+                    try:
+                        import json
+                        event_identifiers_check = json.loads(event_identifiers_check)
+                    except:
+                        event_identifiers_check = {}
+                if isinstance(event_identifiers_check, dict):
+                    titles = event_identifiers_check.get("titles", []) or []
+                    dates = event_identifiers_check.get("dates", []) or []
+                    times = event_identifiers_check.get("times", []) or []
+                    has_event_identifiers_check = bool(titles or (dates and len(dates) > 0) or (times and len(times) > 0))
+            
+            # Override rescheduling if it's a new meeting by phrase OR no event identifiers and no explicit rescheduling
+            if is_new_meeting_by_phrase_check or (not has_event_identifiers_check and not scheduling_problem.is_rescheduling):
+                scheduling_problem.is_rescheduling = False
+                try:
+                    print(f"[orchestrate_scheduling] Overriding rescheduling detection - this is a NEW meeting request", file=sys.stderr, flush=True)
+                except:
+                    pass
+            elif is_rescheduling and not scheduling_problem.is_rescheduling:
                 scheduling_problem.is_rescheduling = True
                 print(f"[orchestrate_scheduling] Set is_rescheduling=True because event_id is provided or rescheduling keywords detected", file=sys.stderr, flush=True)
             
@@ -2939,6 +3083,10 @@ def orchestrate_scheduling(
                 debug_info.free_slots_found = len(free_slots)
                 debug_info.free_slots_ratio = len(free_slots) / num_slots if num_slots > 0 else 0
                 
+                # CRITICAL: Store free slots in normalized_data so ASP can use them
+                normalized_data["free_slots"] = free_slots
+                original_normalized_data["free_slots"] = free_slots
+                
                 # Debug: Log participant ID matching
                 print(f"[DEBUG] Free slot calculation - participants: {scheduling_problem.participants}", file=sys.stderr, flush=True)
                 print(f"[DEBUG] Free slot calculation - busy_slots keys: {list(busy_slots.keys())[:5]}", file=sys.stderr, flush=True)
@@ -3063,10 +3211,16 @@ def orchestrate_scheduling(
                         window_slots = window_days * 96  # 96 slots per day (24 hours * 4 slots/hour)
                         
                         # Get the full time window from scheduling problem
+                        # For new meeting requests, time_window_start/end may be null, so use context_json timeframe
                         from datetime import datetime, timedelta
                         import pytz
                         
+                        # Determine time window: use scheduling_problem if available, otherwise fall back to context_json
+                        full_start_dt = None
+                        full_end_dt = None
+                        
                         if scheduling_problem.time_window_start and scheduling_problem.time_window_end:
+                            # Use explicit time window from scheduling problem
                             full_start_dt = datetime.fromisoformat(scheduling_problem.time_window_start.replace("Z", "+00:00"))
                             full_end_dt = datetime.fromisoformat(scheduling_problem.time_window_end.replace("Z", "+00:00"))
                             
@@ -3079,6 +3233,42 @@ def orchestrate_scheduling(
                                 full_end_dt = pytz.UTC.localize(full_end_dt)
                             else:
                                 full_end_dt = full_end_dt.astimezone(pytz.UTC)
+                        elif context_json and isinstance(context_json, dict) and "timeframe" in context_json:
+                            # Fall back to context_json timeframe for new meeting requests
+                            try:
+                                timeframe = context_json["timeframe"]
+                                tz_str = timeframe.get("tz", "America/New_York")
+                                tz = pytz.timezone(tz_str)
+                                
+                                # Parse date strings and localize to the specified timezone
+                                from_date_str = timeframe.get("from")
+                                to_date_str = timeframe.get("to")
+                                
+                                if from_date_str and to_date_str:
+                                    # Parse as date and set to start/end of day in the specified timezone
+                                    from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
+                                    to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+                                    
+                                    # Set to start of day (00:00:00) and end of day (23:59:59) in the specified timezone
+                                    full_start_dt = tz.localize(datetime.combine(from_date, datetime.min.time()))
+                                    full_end_dt = tz.localize(datetime.combine(to_date, datetime.max.time().replace(microsecond=0)))
+                                    
+                                    # Convert to UTC for consistency
+                                    full_start_dt = full_start_dt.astimezone(pytz.UTC)
+                                    full_end_dt = full_end_dt.astimezone(pytz.UTC)
+                                    
+                                    try:
+                                        print(f"[orchestrate_scheduling] Using context_json timeframe for ASP solver: {from_date_str} to {to_date_str} ({tz_str})", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
+                            except Exception as e:
+                                try:
+                                    print(f"[orchestrate_scheduling] Failed to parse context_json timeframe for ASP solver: {e}", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                        
+                        if full_start_dt and full_end_dt:
+                            # Calculate number of windows needed
                             
                             # Calculate number of windows needed
                             total_days = (full_end_dt.date() - full_start_dt.date()).days + 1
@@ -3116,6 +3306,22 @@ def orchestrate_scheduling(
                                     prefer_time_window=True
                                 )
                                 
+                                # Debug: Check what free slots are available before generating ASP program
+                                try:
+                                    import sys
+                                    free_slots_before_asp = asp_normalized_data.get("free_slots", set())
+                                    if isinstance(free_slots_before_asp, dict):
+                                        free_slots_before_asp = set()
+                                        for slots in free_slots_before_asp.values():
+                                            free_slots_before_asp.update(slots)
+                                    elif not isinstance(free_slots_before_asp, set):
+                                        free_slots_before_asp = set(free_slots_before_asp) if free_slots_before_asp else set()
+                                    print(f"[ASP_WINDOW] Window {window_idx+1}: Free slots before ASP program generation: {len(free_slots_before_asp)} slots", file=sys.stderr, flush=True)
+                                    if len(free_slots_before_asp) > 0 and len(free_slots_before_asp) <= 10:
+                                        print(f"  Free slot indices: {sorted(free_slots_before_asp)}", file=sys.stderr, flush=True)
+                                except:
+                                    pass
+                                
                                 # Generate ASP program for this window
                                 asp_program = generate_asp_program(
                                     asp_normalized_data,
@@ -3132,6 +3338,76 @@ def orchestrate_scheduling(
                                 # Solve this window
                                 asp_solver = ClingoSolver(timeout=30)
                                 asp_model, asp_stats, asp_result = asp_solver.solve(asp_program)
+                                
+                                # Debug: Log ASP solver results for each window
+                                try:
+                                    import sys
+                                    from datetime import datetime
+                                    import pytz
+                                    reduced_start = asp_normalized_data["slot_indexer"].horizon_start
+                                    reduced_end = asp_normalized_data["slot_indexer"].horizon_end
+                                    et_start = reduced_start.astimezone(pytz.timezone('America/New_York'))
+                                    et_end = reduced_end.astimezone(pytz.timezone('America/New_York'))
+                                    
+                                    # Count facts in program (rough estimate)
+                                    fact_lines = asp_program.count('\n') - asp_program.count('%')
+                                    program_size = len(asp_program)
+                                    
+                                    # Check if there are free slots in this window
+                                    # Free slots might be stored as a set or dict
+                                    free_slots_in_window = asp_normalized_data.get("free_slots", set())
+                                    if isinstance(free_slots_in_window, dict):
+                                        total_free_slots = sum(len(slots) for slots in free_slots_in_window.values())
+                                    elif isinstance(free_slots_in_window, (set, list)):
+                                        total_free_slots = len(free_slots_in_window)
+                                    else:
+                                        total_free_slots = 0
+                                    
+                                    # Check work hours slots
+                                    work_hours_slots = asp_normalized_data.get("work_hours_slots", {})
+                                    total_work_hours_slots = sum(len(slots) for slots in work_hours_slots.values()) if isinstance(work_hours_slots, dict) else 0
+                                    
+                                    # Check busy slots
+                                    busy_slots = asp_normalized_data.get("busy_slots", {})
+                                    total_busy_slots = sum(len(slots) for slots in busy_slots.values()) if isinstance(busy_slots, dict) else 0
+                                    
+                                    # Count free_slot facts in ASP program
+                                    free_slot_facts = asp_program.count("free_slot(")
+                                    
+                                    print(f"[ASP_WINDOW] Window {window_idx+1} ({window_start_dt.strftime('%b %d')}-{window_end_dt.strftime('%b %d')}):", file=sys.stderr, flush=True)
+                                    print(f"  Horizon: {et_start.strftime('%Y-%m-%d %H:%M')} to {et_end.strftime('%Y-%m-%d %H:%M')}", file=sys.stderr, flush=True)
+                                    print(f"  ASP satisfiable: {asp_result.satisfiable}, models found: {len(asp_solver.models) if hasattr(asp_solver, 'models') else 0}", file=sys.stderr, flush=True)
+                                    print(f"  ASP stats: {asp_stats.get('models_found', 0)} models, solve_time={asp_stats.get('solve_time_ms', 0)}ms, ground_time={asp_stats.get('ground_time_ms', 0)}ms", file=sys.stderr, flush=True)
+                                    # Count window facts
+                                    window_facts = asp_program.count(f"window({window_problem.request_id if hasattr(window_problem, 'request_id') else 'q1'}, ")
+                                    min_gap_facts = asp_program.count("min_gap(")
+                                    locked_event_facts = asp_program.count("locked_event(")
+                                    workhours_facts = asp_program.count("workhours(")
+                                    
+                                    print(f"  Program size: {program_size} chars, ~{fact_lines} lines, free_slot facts: {free_slot_facts}", file=sys.stderr, flush=True)
+                                    print(f"  Free slots in normalized_data: {total_free_slots}, work_hours_slots: {total_work_hours_slots}, busy_slots: {total_busy_slots}", file=sys.stderr, flush=True)
+                                    print(f"  Window facts: {window_facts}, min_gap facts: {min_gap_facts}, locked_event facts: {locked_event_facts}, workhours facts: {workhours_facts}", file=sys.stderr, flush=True)
+                                    
+                                    # If UNSAT and we have free slots, try to understand why
+                                    if not asp_result.satisfiable and total_free_slots > 0:
+                                        print(f"  WARNING: UNSAT despite {total_free_slots} free slots - constraints may be too strict", file=sys.stderr, flush=True)
+                                        # Check if window facts match free slots
+                                        if window_facts == 0 and total_free_slots > 0:
+                                            print(f"  ERROR: No window facts generated despite {total_free_slots} free slots!", file=sys.stderr, flush=True)
+                                        elif window_facts < total_free_slots:
+                                            print(f"  NOTE: Only {window_facts} window facts for {total_free_slots} free slots (some may be filtered)", file=sys.stderr, flush=True)
+                                    if asp_stats.get('error'):
+                                        print(f"  ASP error: {asp_stats.get('error')}", file=sys.stderr, flush=True)
+                                    if asp_stats.get('timeout'):
+                                        print(f"  ASP timeout: {asp_stats.get('timeout')}", file=sys.stderr, flush=True)
+                                    if asp_stats.get('unsat'):
+                                        print(f"  ASP UNSAT: Problem is unsatisfiable", file=sys.stderr, flush=True)
+                                except Exception as e:
+                                    try:
+                                        import sys
+                                        print(f"[ASP_WINDOW] Error logging window {window_idx+1}: {e}", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
                                 
                                 # Collect models from this window
                                 asp_models_list = asp_solver.models if hasattr(asp_solver, 'models') else []
@@ -3153,6 +3429,17 @@ def orchestrate_scheduling(
                                         et_start = reduced_start.astimezone(pytz.timezone('America/New_York'))
                                         et_end = reduced_end.astimezone(pytz.timezone('America/New_York'))
                                         print(f"[SLIDING_WINDOW] Window {window_idx+1} ({window_start_dt.strftime('%b %d')}-{window_end_dt.strftime('%b %d')}): {window_solution_count} models found, horizon={et_start.strftime('%Y-%m-%d %H:%M')} to {et_end.strftime('%Y-%m-%d %H:%M')}", file=sys.stderr, flush=True)
+                                    except:
+                                        pass
+                                else:
+                                    # Debug: log why no models were found
+                                    try:
+                                        import sys
+                                        print(f"[ASP_WINDOW] Window {window_idx+1}: No models found - satisfiable={asp_result.satisfiable}, models_list_len={len(asp_models_list) if hasattr(asp_solver, 'models') else 0}", file=sys.stderr, flush=True)
+                                        if not asp_result.satisfiable:
+                                            print(f"  → Problem is UNSAT (unsatisfiable)", file=sys.stderr, flush=True)
+                                        elif not asp_models_list:
+                                            print(f"  → Problem is satisfiable but no models returned (may be timeout or constraint too tight)", file=sys.stderr, flush=True)
                                     except:
                                         pass
                                     # CRITICAL: Make a deep copy of asp_normalized_data to avoid it being overwritten

@@ -82,28 +82,16 @@ def main():
                 print(f"  python3 register_scheduling_tool.py\n")
                 return 1
             
-            # Attach tool to agent
+            # Attach tool to agent using SDK v1.0 API
             print(f"\nAttaching tool to agent {LETTA_AGENT_ID}...")
             
             try:
-                # Get current agent to check existing tools
-                agent = client.agents.retrieve(LETTA_AGENT_ID)
-                current_tool_ids = agent.tools or []
-                
-                # Convert to list of strings if needed
-                current_tool_ids = [t.id if hasattr(t, 'id') else (t.get('id') if isinstance(t, dict) else str(t)) for t in current_tool_ids]
-                
-                # Check if tool is already attached
-                if tool_id in current_tool_ids:
-                    print(f"  → Tool already attached to agent")
-                else:
-                    # Add tool to the list and update agent
-                    updated_tool_ids = list(current_tool_ids) + [tool_id]
-                    client.agents.update(
-                        agent_id=LETTA_AGENT_ID,
-                        tool_ids=updated_tool_ids
-                    )
-                    print(f"  ✓ Tool attached successfully")
+                # Use the SDK v1.0 method: client.agents.tools.attach()
+                client.agents.tools.attach(
+                    agent_id=LETTA_AGENT_ID,
+                    tool_id=tool_id
+                )
+                print(f"  ✓ Tool attached successfully")
                 
             except Exception as e:
                 error_str = str(e).lower()
