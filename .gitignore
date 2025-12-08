@@ -42,6 +42,9 @@ docker-compose.override.yml
 **/logs/
 /volumes/
 /mounts/
+# Docker Compose backup files (timestamped)
+docker-compose.yml.backup-*
+*.backup-*
 
 # Backup Files
 /backups/
