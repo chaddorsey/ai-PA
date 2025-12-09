@@ -177,8 +177,34 @@ export interface TaskInfo extends PlannedDates, TimestampedEntity {
 /**
  * Call OmniFocus via its JavaScript‐for‐Automation plugin.
  * All debug output goes to **stderr** so stdout stays JSON-only.
+ * 
+ * If HOST_BRIDGE_URL is set, uses HTTP service on host instead of direct osascript.
  */
 export async function callOmniFocus(params: { command: string; args?: any }) {
+  // Check if we should use host bridge service (for Docker)
+  const hostBridgeUrl = process.env.HOST_BRIDGE_URL;
+  if (hostBridgeUrl) {
+    try {
+      // Node.js 18+ has built-in fetch
+      const response = await fetch(`${hostBridgeUrl}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: params.command, args: params.args }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        return data.result;
+      } else {
+        console.error("🟥 Host bridge call failed:", data.error, data.details);
+        return { error: "Bridge call failed", details: data.details || data.error };
+      }
+    } catch (err: any) {
+      console.error("🟥 Host bridge HTTP error:", err);
+      return { error: "Bridge HTTP call failed", details: String(err) };
+    }
+  }
+
+  // Direct osascript execution (for host-side execution)
   const payload = JSON.stringify({
     method: params.command,
     params: params.args ?? {},
