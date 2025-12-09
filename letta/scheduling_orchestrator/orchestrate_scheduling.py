@@ -2561,13 +2561,29 @@ def orchestrate_scheduling(
         # This handles cases where DSPy doesn't extract participants from the utterance
         if not scheduling_problem.participants and participant_ids:
             scheduling_problem.participants = participant_ids
-            print(f"[orchestrate_scheduling] Using participant_ids parameter as fallback: {participant_ids}", file=sys.stderr, flush=True)
+            print(f"[orchestrate_scheduling] Using participant_ids parameter as fallback (empty participants): {participant_ids}", file=sys.stderr, flush=True)
         
         # Map scheduling_problem.participants to actual keys
         mapped_participants = [participant_id_mapping.get(p_id, p_id) for p_id in scheduling_problem.participants]
         
-        # Validate that all participants have events (even if empty)
+        # Check if any mapped participants are missing from events_by_participant
         missing_participants = [p for p in mapped_participants if p not in events_by_participant]
+        
+        # CRITICAL: If participants are missing AND participant_ids is provided, use participant_ids as fallback
+        # This handles cases where DSPy extracts invalid/example.com emails instead of real participant IDs
+        if missing_participants and participant_ids:
+            # Check if participant_ids would work better
+            mapped_participant_ids = [participant_id_mapping.get(p_id, p_id) for p_id in participant_ids]
+            missing_from_participant_ids = [p for p in mapped_participant_ids if p not in events_by_participant]
+            
+            # If participant_ids has fewer or no missing participants, use it instead
+            if len(missing_from_participant_ids) < len(missing_participants):
+                scheduling_problem.participants = participant_ids
+                mapped_participants = mapped_participant_ids
+                missing_participants = missing_from_participant_ids
+                print(f"[orchestrate_scheduling] Using participant_ids parameter as fallback (invalid extracted participants): {participant_ids}", file=sys.stderr, flush=True)
+        
+        # Validate that all participants have events (even if empty)
         if missing_participants:
             return ResponseEnvelope(
                 status="bad_input",
@@ -4223,6 +4239,10 @@ def orchestrate_scheduling(
                         moved_events=moved_events_for_validation,
                         original_event_id=original_event_id_for_validation
                     )
+                    
+                    # Debug: Log validation result for all proposals, especially Dec 16 ones
+                    if "2025-12-16" in prop.start_utc or prop.proposal_id in ["prop_a01a243fa33b", "prop_95e6382bcf9d", "prop_77c6c5bdf7dd", "prop_eaf5d91de7a9", "prop_ee576526aec2"]:
+                        print(f"[VALIDATION] Proposal {prop.proposal_id}: meeting_valid={meeting_valid}, error={meeting_error}, is_solo_override={is_solo_override}, start={prop.start_utc}", file=sys.stderr, flush=True)
                     
                     if not meeting_valid:
                         # Meeting time itself conflicts - reject proposal

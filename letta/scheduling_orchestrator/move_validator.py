@@ -210,6 +210,11 @@ def validate_proposal_meeting_time(
         
         # Get meeting slots
         meeting_slots = set(range(start_slot, end_slot))
+        
+        # Debug: Log slot calculation for Dec 16 proposals
+        if "2025-12-16" in proposal_start_utc:
+            import sys
+            print(f"[VALIDATION] Slot calculation: start_utc={proposal_start_utc}, end_utc={proposal_end_utc}, start_slot={start_slot}, end_slot={end_slot}, meeting_slots={sorted(meeting_slots)}", file=sys.stderr, flush=True)
         busy_slots = normalized_data.get("busy_slots", {})
         event_slots_map = normalized_data.get("event_slots_map", {})
         event_metadata = normalized_data.get("event_metadata", {})
@@ -308,12 +313,35 @@ def validate_proposal_meeting_time(
                         num_attendees = event_meta.get("number_of_attendees", 0)
                         if num_attendees > 0:  # Only include non-solo events
                             non_solo_busy_slots.update(slots)
+                            # Debug: Log "Judi/Sue" meeting specifically
+                            event_title = event_meta.get("title", "")
+                            if "Judi" in event_title and "Sue" in event_title:
+                                import sys
+                                print(f"[VALIDATION] Found Judi/Sue meeting for {participant_id}: event_id={e_id}, num_attendees={num_attendees}, slots={sorted(slots)[:5]}...", file=sys.stderr, flush=True)
                 
                 # Exclude slots from moved events
                 non_solo_busy_slots -= moved_event_slots
                 
+                # Debug: Log conflicts for Dec 16 proposals
+                if "2025-12-16" in proposal_start_utc:
+                    import sys
+                    print(f"[VALIDATION] {participant_id}: meeting_slots={sorted(meeting_slots)}, non_solo_busy_slots (after excluding moved) has {len(non_solo_busy_slots)} slots", file=sys.stderr, flush=True)
+                
                 # Check for conflicts with non-solo events only (excluding moved events)
                 conflicts = meeting_slots.intersection(non_solo_busy_slots)
+                
+                # Debug: Log conflicts for Dec 16 proposals with Judi/Sue
+                if "2025-12-16" in proposal_start_utc and conflicts:
+                    import sys
+                    print(f"[VALIDATION] {participant_id}: Found conflicts! meeting_slots={sorted(meeting_slots)}, conflicting_slots={sorted(conflicts)}", file=sys.stderr, flush=True)
+                    # Find which events conflict
+                    for (p_id, e_id), slots in event_slots_map.items():
+                        if p_id == participant_id and meeting_slots.intersection(slots):
+                            event_meta = event_metadata.get((p_id, e_id), {})
+                            event_title = event_meta.get("title", "")
+                            num_attendees = event_meta.get("number_of_attendees", 0)
+                            if num_attendees > 0:
+                                print(f"[VALIDATION] {participant_id}: Conflicting event: {event_title} (num_attendees={num_attendees}), slots={sorted(slots)[:5]}...", file=sys.stderr, flush=True)
             else:
                 # Normal validation: check all conflicts, but exclude moved event slots
                 # Build participant's busy slots excluding moved events

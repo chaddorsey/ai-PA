@@ -1011,7 +1011,8 @@ def _find_slots_with_solo_override(
             
             # Debug: Log what we're checking for problematic slots
             import sys
-            if candidate_slot in [544, 545]:  # Only log for the problematic slots
+            debug_slots = [544, 545, 622, 623, 624, 625, 626, 627, 628]  # Log for problematic slots
+            if candidate_slot in debug_slots:
                 print(f"[SOLVER] Slot {candidate_slot}: Checking participant {participant_id}, meeting_slots={list(meeting_slots)}, participant_busy has {len(participant_busy)} slots, conflicting_slots={list(conflicting_slots)}", file=sys.stderr, flush=True)
             
             if conflicting_slots:
@@ -1020,11 +1021,12 @@ def _find_slots_with_solo_override(
                 
                 # Debug: Log all events that cover conflicting slots
                 import sys
-                if candidate_slot in [544, 545]:
+                if candidate_slot in debug_slots:
                     all_covering_events = []
                     for (p_id, e_id), slots in event_slots_map_full.items():
                         if p_id == participant_id and slots.intersection(conflicting_slots):
-                            all_covering_events.append(((p_id, e_id), list(slots.intersection(conflicting_slots))))
+                            event_meta = event_metadata_map.get((p_id, e_id), {})
+                            all_covering_events.append(((p_id, e_id), list(slots.intersection(conflicting_slots)), event_meta.get("number_of_attendees", 0), event_meta.get("title", "unknown")))
                     print(f"[SOLVER] Slot {candidate_slot}: Participant {participant_id} - All events covering conflicting slots: {all_covering_events}", file=sys.stderr, flush=True)
                 
                 for (p_id, e_id), slots in event_slots_map_full.items():

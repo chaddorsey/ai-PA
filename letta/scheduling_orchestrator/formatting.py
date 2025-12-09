@@ -447,269 +447,133 @@ def format_refined_user_display(
         
         # Subsection 2a: Override Options
         if override_proposals:
-            # Group override proposals by the overridden event, then by proposal day
-            # Structure: (owner, event_id) -> {proposal_day: [proposals]}
-            override_groups: Dict[Tuple[str, str], Dict[str, List[Proposal]]] = {}
+            # Group override proposals by the requester's (user_id's) overridden event, then by proposal day
+            # Structure: (requester_event_key) -> {proposal_day: [proposals]}
+            # If no requester event, use a fallback key
+            override_groups: Dict[Optional[Tuple[str, str]], Dict[str, List[Proposal]]] = {}
             
             for prop in override_proposals:
-                # Find the solo event being overridden
-                solo_event_info = _find_overridden_solo_event(prop, normalized_data, event_registry, timezone_str)
+                # Find all overlapping solo events for this proposal
+                overlapping_events = _find_all_overlapping_solo_events(prop, normalized_data, event_registry, timezone_str)
                 
-                if solo_event_info:
-                    owner, event_id, event_title, event_time_range = solo_event_info
-                    key = (owner, event_id)
-                else:
-                    # Try to find the event by checking which solo events overlap with this proposal
-                    # This is a fallback when _find_overridden_solo_event fails
-                    key = None
-                    if normalized_data:
-                        try:
-                            from .slot_indexer import SlotIndexer
-                        except (ImportError, ValueError):
-                            try:
-                                from scheduling_orchestrator.slot_indexer import SlotIndexer
-                            except ImportError:
-                                from slot_indexer import SlotIndexer
-                        
-                        slot_indexer = normalized_data.get("slot_indexer")
-                        if slot_indexer:
-                            start_dt = datetime.fromisoformat(prop.start_utc.replace("Z", "+00:00"))
-                            end_dt = datetime.fromisoformat(prop.end_utc.replace("Z", "+00:00"))
-                            if start_dt.tzinfo is None:
-                                start_dt = pytz.UTC.localize(start_dt)
-                            if end_dt.tzinfo is None:
-                                end_dt = pytz.UTC.localize(end_dt)
-                            
-                            start_slot = slot_indexer.datetime_to_slot(start_dt)
-                            end_slot = slot_indexer.datetime_to_slot(end_dt)
-                            
-                            if start_slot is not None and end_slot is not None:
-                                proposal_slots = set(range(start_slot, end_slot))
-                                event_slots_map = normalized_data.get("event_slots_map", {})
-                                event_metadata = normalized_data.get("event_metadata", {})
-                                
-                                import sys
-                                print(f"[formatting] DEBUG: Grouping solo_override proposal - proposal_slots: {proposal_slots} (start_slot={start_slot}, end_slot={end_slot}), event_slots_map has {len(event_slots_map)} entries", file=sys.stderr, flush=True)
-                                
-                                # Sample a few event_slots_map entries to see their slot ranges
-                                sample_entries = list(event_slots_map.items())[:5]
-                                for (owner_sample, event_id_sample), slots_sample in sample_entries:
-                                    event_meta_sample = event_metadata.get((owner_sample, event_id_sample), {})
-                                    num_attendees_sample = event_meta_sample.get("number_of_attendees", -1)
-                                    slots_list = sorted(list(slots_sample))
-                                    print(f"[formatting] DEBUG: Sample event - owner: {owner_sample}, event_id: {event_id_sample[:30]}..., num_attendees: {num_attendees_sample}, slots: {slots_list[:10]}...", file=sys.stderr, flush=True)
-                                
-                                # Find the solo event with the most overlap
-                                best_overlap = 0
-                                best_key = None
-                                overlaps_found = 0
-                                solo_events_checked = 0
-                                for (owner_check, event_id_check), event_slots in event_slots_map.items():
-                                    overlap = proposal_slots.intersection(event_slots)
-                                    if overlap:
-                                        overlaps_found += 1
-                                        event_meta = event_metadata.get((owner_check, event_id_check), {})
-                                        num_attendees = event_meta.get("number_of_attendees", -1)
-                                        if num_attendees == 0:
-                                            solo_events_checked += 1
-                                            overlap_size = len(overlap)
-                                            print(f"[formatting] DEBUG: Found solo event overlap - owner: {owner_check}, event_id: {event_id_check[:30]}..., event_slots: {sorted(list(event_slots))[:10]}..., overlap_size: {overlap_size}", file=sys.stderr, flush=True)
-                                            if overlap_size > best_overlap:
-                                                best_overlap = overlap_size
-                                                best_key = (owner_check, event_id_check)
-                                
-                                print(f"[formatting] DEBUG: Overlap search complete - overlaps_found: {overlaps_found}, solo_events_checked: {solo_events_checked}, best_key: {best_key}", file=sys.stderr, flush=True)
-                                
-                                if best_key:
-                                    print(f"[formatting] DEBUG: Selected best solo event - owner: {best_key[0]}, event_id: {best_key[1][:30]}..., overlap: {best_overlap}", file=sys.stderr, flush=True)
-                                    key = best_key
-                                else:
-                                    print(f"[formatting] DEBUG: No solo event overlap found, will use fallback key", file=sys.stderr, flush=True)
-                    
-                    if not key:
-                        # Last resort: group by proposal time
-                        key = ("unknown", prop.start_utc)
+                # Find the requester's (user_id's) event if it exists
+                requester_event_key = None
+                if user_id:
+                    for owner, event_id, event_title, event_time_range in overlapping_events:
+                        if owner == user_id:
+                            requester_event_key = (owner, event_id)
+                            break
                 
-                if key not in override_groups:
-                    override_groups[key] = {}
+                # If no requester event found, use None as the key (will be grouped separately)
+                if requester_event_key not in override_groups:
+                    override_groups[requester_event_key] = {}
                 
                 # Group by proposal day
                 proposal_day = format_day_header(prop.start_utc, timezone_str)
-                if proposal_day not in override_groups[key]:
-                    override_groups[key][proposal_day] = []
-                override_groups[key][proposal_day].append(prop)
+                if proposal_day not in override_groups[requester_event_key]:
+                    override_groups[requester_event_key][proposal_day] = []
+                override_groups[requester_event_key][proposal_day].append(prop)
             
-            # Format override section
-            for (owner, event_id), day_groups in override_groups.items():
-                # Get event info for header
-                if day_groups:
-                    # Get first proposal to find event info
-                    first_prop = None
-                    for day_props in day_groups.values():
-                        if day_props:
-                            first_prop = day_props[0]
-                            break
+            # Format override section - group by requester's event
+            # Sort groups: requester events first (by event), then fallback groups
+            sorted_group_keys = sorted(
+                override_groups.keys(),
+                key=lambda k: (
+                    k is None,  # None (no requester event) goes last
+                    k[0] if k else "",  # Then by owner
+                    k[1] if k else ""   # Then by event_id
+                )
+            )
+            
+            for requester_event_key in sorted_group_keys:
+                day_groups = override_groups[requester_event_key]
+                sorted_days = sorted(day_groups.keys(), key=lambda d: _get_day_sort_key(d, day_groups[d][0].start_utc))
+                
+                for proposal_day in sorted_days:
+                    day_props = day_groups[proposal_day]
                     
-                    # Try to get event info from normalized_data directly using the key first
-                    # (This is more reliable than _find_overridden_solo_event since we already have the key)
-                    solo_event_info = None
-                    if owner != "unknown" and normalized_data:
-                        import sys
-                        print(f"[formatting] DEBUG: Looking up event ({owner}, {event_id})", file=sys.stderr, flush=True)
-                        event_metadata = normalized_data.get("event_metadata", {})
-                        print(f"[formatting] DEBUG: event_metadata has {len(event_metadata)} entries", file=sys.stderr, flush=True)
-                        print(f"[formatting] DEBUG: Sample keys: {list(event_metadata.keys())[:3] if event_metadata else []}", file=sys.stderr, flush=True)
-                        event_meta = event_metadata.get((owner, event_id), {})
-                        print(f"[formatting] DEBUG: event_meta found: {bool(event_meta)}, keys: {list(event_meta.keys()) if event_meta else []}", file=sys.stderr, flush=True)
-                        num_attendees = event_meta.get("number_of_attendees", -1)
-                        print(f"[formatting] DEBUG: num_attendees: {num_attendees}", file=sys.stderr, flush=True)
+                    # Collect all unique solo events that are overridden by any proposal in this group
+                    all_overridden_events: Dict[Tuple[str, str], Tuple[str, str, str, str]] = {}
+                    
+                    for prop in day_props:
+                        overlapping_events = _find_all_overlapping_solo_events(prop, normalized_data, event_registry, timezone_str)
+                        for owner, event_id, event_title, event_time_range in overlapping_events:
+                            key = (owner, event_id)
+                            if key not in all_overridden_events:
+                                all_overridden_events[key] = (owner, event_id, event_title, event_time_range)
+                    
+                    # Format the header
+                    if all_overridden_events:
+                        # Separate requester's events from other participants' events
+                        requester_events = []
+                        other_events = []
                         
-                        if num_attendees == 0:  # It's a solo event
-                            event_title = event_meta.get("title") or event_meta.get("summary") or ""
-                            print(f"[formatting] DEBUG: event_title: '{event_title}'", file=sys.stderr, flush=True)
-                            if not event_title:
-                                event_title = "solo/blocking events"
-                            
-                            event_start = event_meta.get("start_str")
-                            event_end = event_meta.get("end_str")
-                            print(f"[formatting] DEBUG: start_str: '{event_start}', end_str: '{event_end}'", file=sys.stderr, flush=True)
-                            
-                            # If start_str/end_str not available, try start_dt/end_dt
-                            if not event_start or not event_end:
-                                start_dt = event_meta.get("start_dt")
-                                end_dt = event_meta.get("end_dt")
-                                print(f"[formatting] DEBUG: start_dt: {start_dt}, end_dt: {end_dt}", file=sys.stderr, flush=True)
-                                if start_dt and end_dt:
-                                    if isinstance(start_dt, datetime):
-                                        event_start = start_dt.isoformat()
-                                    else:
-                                        event_start = str(start_dt)
-                                    if isinstance(end_dt, datetime):
-                                        event_end = end_dt.isoformat()
-                                    else:
-                                        event_end = str(end_dt)
-                                    print(f"[formatting] DEBUG: Converted to start_str: '{event_start}', end_str: '{event_end}'", file=sys.stderr, flush=True)
-                            
-                            if event_start and event_end:
-                                event_time_range = format_time_range(event_start, event_end, timezone_str)
-                                print(f"[formatting] DEBUG: event_time_range: '{event_time_range}'", file=sys.stderr, flush=True)
-                                solo_event_info = (owner, event_id, event_title, event_time_range)
+                        for owner, event_id, event_title, event_time_range in all_overridden_events.values():
+                            if user_id and owner == user_id:
+                                requester_events.append((owner, event_id, event_title, event_time_range))
                             else:
-                                print(f"[formatting] DEBUG: Missing event_start or event_end", file=sys.stderr, flush=True)
-                        else:
-                            print(f"[formatting] DEBUG: Event is not solo (num_attendees={num_attendees})", file=sys.stderr, flush=True)
-                    else:
-                        import sys
-                        print(f"[formatting] DEBUG: Skipping lookup - owner='{owner}', normalized_data={bool(normalized_data)}", file=sys.stderr, flush=True)
-                    
-                    # Fallback: try _find_overridden_solo_event if direct lookup failed
-                    if not solo_event_info and first_prop:
-                        solo_event_info = _find_overridden_solo_event(first_prop, normalized_data, event_registry, timezone_str)
-                    
-                    if solo_event_info:
-                        event_owner, event_id_key, event_title, event_time_range = solo_event_info
+                                other_events.append((owner, event_id, event_title, event_time_range))
                         
-                        # Get owner's name (trim domain)
-                        if event_owner == user_id:
-                            owner_display = "your"
-                        else:
-                            # Remove @domain.com from email
-                            owner_name = event_owner.split("@")[0]
-                            owner_display = f"{owner_name}'s"
-                        
-                        # Format each day group
-                        sorted_days = sorted(day_groups.keys(), key=lambda d: _get_day_sort_key(d, day_groups[d][0].start_utc))
-                        
-                        for proposal_day in sorted_days:
-                            day_props = day_groups[proposal_day]
-                            # Format: "Day — Overrides owner's time_range "title" event"
-                            # Only show title if it's not empty and not the generic fallback
-                            if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
-                                lines.append(f"{proposal_day}  — Overrides {owner_display} {event_time_range} \"{event_title}\" event")
-                            else:
-                                # If title is missing, still show the override but without quotes
-                                lines.append(f"{proposal_day}  — Overrides {owner_display} {event_time_range} solo/blocking event")
+                        # Build the override description
+                        if requester_events:
+                            # Primary: requester's event(s)
+                            requester_descriptions = []
+                            for owner, event_id, event_title, event_time_range in requester_events:
+                                if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
+                                    requester_descriptions.append(f"{event_time_range} \"{event_title}\" event")
+                                else:
+                                    requester_descriptions.append(f"{event_time_range} solo/blocking event")
                             
-                            # List proposal times
-                            for prop in day_props:
-                                time_range = format_time_range(prop.start_utc, prop.end_utc, timezone_str)
-                                lines.append(f"* {time_range}")
-                            lines.append("")
-                    else:
-                        # Fallback: generic description - try to get owner from key
-                        if owner != "unknown" and first_prop:
-                            # Try to get event info from normalized_data directly
-                            if normalized_data:
-                                event_metadata = normalized_data.get("event_metadata", {})
-                                event_meta = event_metadata.get((owner, event_id), {})
-                                event_title = event_meta.get("title") or event_meta.get("summary") or "solo/blocking events"
-                                
-                                event_start = event_meta.get("start_str")
-                                event_end = event_meta.get("end_str")
-                                
-                                # If start_str/end_str not available, try start_dt/end_dt
-                                if not event_start or not event_end:
-                                    start_dt = event_meta.get("start_dt")
-                                    end_dt = event_meta.get("end_dt")
-                                    if start_dt and end_dt:
-                                        if isinstance(start_dt, datetime):
-                                            event_start = start_dt.isoformat()
-                                        else:
-                                            event_start = str(start_dt)
-                                        if isinstance(end_dt, datetime):
-                                            event_end = end_dt.isoformat()
-                                        else:
-                                            event_end = str(end_dt)
-                                
-                                if event_start and event_end:
-                                    event_time_range = format_time_range(event_start, event_end, timezone_str)
-                                else:
-                                    event_time_range = format_time_range(first_prop.start_utc, first_prop.end_utc, timezone_str)
-                                
-                                # Get owner's name (trim domain)
-                                if owner == user_id:
-                                    owner_display = "your"
-                                else:
+                            primary_text = "your " + requester_descriptions[0]  # Use first requester event
+                            
+                            # Secondary: other participants' events as annotation
+                            if other_events:
+                                other_descriptions = []
+                                for owner, event_id, event_title, event_time_range in other_events:
                                     owner_name = owner.split("@")[0]
-                                    owner_display = f"{owner_name}'s"
-                                
-                                sorted_days = sorted(day_groups.keys(), key=lambda d: _get_day_sort_key(d, day_groups[d][0].start_utc))
-                                for proposal_day in sorted_days:
-                                    day_props = day_groups[proposal_day]
-                                    # Only show title if it's not empty and not the generic fallback
                                     if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
-                                        lines.append(f"{proposal_day}  — Overrides {owner_display} {event_time_range} \"{event_title}\" event")
+                                        other_descriptions.append(f"{owner_name}'s {event_time_range} \"{event_title}\" event")
                                     else:
-                                        # If title is missing, still show the override but without quotes
-                                        lines.append(f"{proposal_day}  — Overrides {owner_display} {event_time_range} solo/blocking event")
-                                    for prop in day_props:
-                                        time_range = format_time_range(prop.start_utc, prop.end_utc, timezone_str)
-                                        lines.append(f"* {time_range}")
-                                    lines.append("")
+                                        other_descriptions.append(f"{owner_name}'s {event_time_range} solo/blocking event")
+                                
+                                # Join other events with ", " and "and" for the last one
+                                if len(other_descriptions) == 1:
+                                    annotation_text = other_descriptions[0]
+                                elif len(other_descriptions) == 2:
+                                    annotation_text = f"{other_descriptions[0]} and {other_descriptions[1]}"
+                                else:
+                                    annotation_text = ", ".join(other_descriptions[:-1]) + f", and {other_descriptions[-1]}"
+                                
+                                lines.append(f"{proposal_day}  — Overrides {primary_text} (and {annotation_text})")
                             else:
-                                # No normalized_data, use generic
-                                sorted_days = sorted(day_groups.keys(), key=lambda d: _get_day_sort_key(d, day_groups[d][0].start_utc))
-                                for proposal_day in sorted_days:
-                                    day_props = day_groups[proposal_day]
-                                    override_time = format_time_range(first_prop.start_utc, first_prop.end_utc, timezone_str)
-                                    user_display_name = user_id.split("@")[0] if user_id else "the user"
-                                    lines.append(f"{proposal_day}  — Overrides {user_display_name}'s {override_time} \"solo/blocking events\" event")
-                                    for prop in day_props:
-                                        time_range = format_time_range(prop.start_utc, prop.end_utc, timezone_str)
-                                        lines.append(f"* {time_range}")
-                                    lines.append("")
-                        elif first_prop:
-                            # Unknown owner, use generic
-                            sorted_days = sorted(day_groups.keys(), key=lambda d: _get_day_sort_key(d, day_groups[d][0].start_utc))
-                            for proposal_day in sorted_days:
-                                day_props = day_groups[proposal_day]
-                                override_time = format_time_range(first_prop.start_utc, first_prop.end_utc, timezone_str)
-                                user_display_name = user_id.split("@")[0] if user_id else "the user"
-                                lines.append(f"{proposal_day}  — Overrides {user_display_name}'s {override_time} \"solo/blocking events\" event")
-                                for prop in day_props:
-                                    time_range = format_time_range(prop.start_utc, prop.end_utc, timezone_str)
-                                    lines.append(f"* {time_range}")
-                                lines.append("")
+                                lines.append(f"{proposal_day}  — Overrides {primary_text}")
+                        else:
+                            # No requester event, fall back to listing all events
+                            override_descriptions = []
+                            for owner, event_id, event_title, event_time_range in sorted(all_overridden_events.values(), key=lambda x: x[0].lower()):
+                                owner_name = owner.split("@")[0] if owner != user_id else "your"
+                                if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
+                                    override_descriptions.append(f"{owner_name}'s {event_time_range} \"{event_title}\" event")
+                                else:
+                                    override_descriptions.append(f"{owner_name}'s {event_time_range} solo/blocking event")
+                            
+                            if len(override_descriptions) == 1:
+                                override_text = override_descriptions[0]
+                            elif len(override_descriptions) == 2:
+                                override_text = f"{override_descriptions[0]} and {override_descriptions[1]}"
+                            else:
+                                override_text = ", ".join(override_descriptions[:-1]) + f", and {override_descriptions[-1]}"
+                            
+                            lines.append(f"{proposal_day}  — Overrides {override_text}")
+                    else:
+                        # Fallback: no solo events found, use generic description
+                        lines.append(f"{proposal_day}  — Overrides solo/blocking events")
+                    
+                    # List proposal times
+                    for prop in day_props:
+                        time_range = format_time_range(prop.start_utc, prop.end_utc, timezone_str)
+                        lines.append(f"* {time_range}")
+                    lines.append("")
         
         # Subsection 2b: Move Options
         if move_proposals:
@@ -931,4 +795,105 @@ def _find_overridden_solo_event(
         import sys
         print(f"[formatting] Error finding overridden solo event: {e}", file=sys.stderr, flush=True)
         return None
+
+
+def _find_all_overlapping_solo_events(
+    proposal: Proposal,
+    normalized_data: Optional[Dict[str, Any]],
+    event_registry: Dict[str, EventMetadata],
+    timezone_str: str = "America/New_York"
+) -> List[Tuple[str, str, str, str]]:
+    """
+    Find ALL solo events being overridden by this proposal.
+    
+    Returns:
+        List of tuples: [(owner, event_id, event_title, event_time_range), ...]
+    """
+    results = []
+    if not normalized_data:
+        return results
+    
+    try:
+        # Convert proposal time to slots
+        try:
+            from .slot_indexer import SlotIndexer
+        except (ImportError, ValueError):
+            try:
+                from scheduling_orchestrator.slot_indexer import SlotIndexer
+            except ImportError:
+                from slot_indexer import SlotIndexer
+        
+        slot_indexer = normalized_data.get("slot_indexer")
+        if not slot_indexer:
+            return results
+        
+        start_dt = datetime.fromisoformat(proposal.start_utc.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(proposal.end_utc.replace("Z", "+00:00"))
+        if start_dt.tzinfo is None:
+            start_dt = pytz.UTC.localize(start_dt)
+        if end_dt.tzinfo is None:
+            end_dt = pytz.UTC.localize(end_dt)
+        
+        start_slot = slot_indexer.datetime_to_slot(start_dt)
+        end_slot = slot_indexer.datetime_to_slot(end_dt)
+        
+        if start_slot is None or end_slot is None:
+            return results
+        
+        proposal_slots = set(range(start_slot, end_slot))
+        
+        # Check event_slots_map for overlapping solo events
+        event_slots_map = normalized_data.get("event_slots_map", {})
+        event_metadata = normalized_data.get("event_metadata", {})
+        
+        # Collect all overlapping solo events
+        for (owner, event_id), event_slots in event_slots_map.items():
+            overlap = proposal_slots.intersection(event_slots)
+            if overlap:
+                # Check if this is a solo event (num_attendees == 0)
+                event_meta = event_metadata.get((owner, event_id), {})
+                num_attendees = event_meta.get("number_of_attendees", -1)
+                
+                if num_attendees == 0:
+                    # Get event title
+                    event_title = event_meta.get("title") or event_meta.get("summary") or ""
+                    if not event_title:
+                        event_title = event_id[:40]
+                    
+                    # Get event start/end from metadata
+                    event_start = event_meta.get("start_str")
+                    event_end = event_meta.get("end_str")
+                    
+                    # If start_str/end_str not available, try start_dt/end_dt
+                    if not event_start or not event_end:
+                        start_dt_meta = event_meta.get("start_dt")
+                        end_dt_meta = event_meta.get("end_dt")
+                        if start_dt_meta and end_dt_meta:
+                            if isinstance(start_dt_meta, datetime):
+                                event_start = start_dt_meta.isoformat()
+                            else:
+                                event_start = str(start_dt_meta)
+                            if isinstance(end_dt_meta, datetime):
+                                event_end = end_dt_meta.isoformat()
+                            else:
+                                event_end = str(end_dt_meta)
+                    
+                    if event_start and event_end:
+                        event_time_range = format_time_range(event_start, event_end, timezone_str)
+                    else:
+                        # Fallback: try to get from event_registry
+                        event_reg_meta = event_registry.get(event_id)
+                        if event_reg_meta and event_reg_meta.start_utc and event_reg_meta.end_utc:
+                            event_time_range = format_time_range(event_reg_meta.start_utc, event_reg_meta.end_utc, timezone_str)
+                        else:
+                            # Last resort: use proposal time
+                            event_time_range = format_time_range(proposal.start_utc, proposal.end_utc, timezone_str)
+                    
+                    results.append((owner, event_id, event_title, event_time_range))
+        
+        return results
+    except Exception as e:
+        import sys
+        print(f"[formatting] Error finding all overlapping solo events: {e}", file=sys.stderr, flush=True)
+        return results
 
