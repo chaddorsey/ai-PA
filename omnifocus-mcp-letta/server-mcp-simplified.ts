@@ -303,7 +303,8 @@ const tools = [
               description: "Maximum number of results",
             },
           },
-          additionalProperties: false,
+          required: [],
+          additionalProperties: true,
           description: "Optional filters for list operations",
         },
         detailLevel: {
@@ -343,6 +344,8 @@ const tools = [
         },
         filters: {
           type: "object",
+          properties: {},
+          required: [],
           additionalProperties: false,
           description: "Advanced filter object (dates, duration, status, tags)",
         },

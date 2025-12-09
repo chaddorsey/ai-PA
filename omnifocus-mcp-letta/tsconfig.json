@@ -18,7 +18,6 @@
     "server-streamable-8124.ts",
     "server-mcp-official-8124.ts",
     "server-mcp-full-8124.ts",
-    "server-mcp-full.ts",
     "server-mcp-simplified.ts",
     "bridge.ts",
     "http-bridge.ts",

@@ -26,5 +26,5 @@ EXPOSE 8888
 ENV NODE_ENV=production
 ENV PORT=8888
 
-# Start the HTTP bridge server
-CMD ["npm", "run", "start:http"]
+# Start the simplified MCP server (has built-in HTTP server)
+CMD ["npm", "run", "start:simplified"]
