@@ -796,12 +796,29 @@ def orchestrate_scheduling(
                     # ⚠️ IMPORTANT: Parameter names are REVERSED!
                     # "Before" = END date, "After" = START date
                     tz = pytz.timezone(timeframe.get("tz", "America/New_York"))
-                    start_dt = datetime.strptime(timeframe["from"], "%Y-%m-%d")
+                    
+                    # Parse start date (handles both date-only and ISO 8601 datetime formats)
+                    try:
+                        start_dt = datetime.fromisoformat(timeframe["from"].replace('Z', '+00:00'))
+                        if start_dt.tzinfo:
+                            start_dt = start_dt.replace(tzinfo=None)
+                    except (ValueError, AttributeError):
+                        start_dt = datetime.strptime(timeframe["from"], "%Y-%m-%d")
+                    # If the input was a datetime, extract just the date part; otherwise use start of day
+                    start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                     start_dt = tz.localize(start_dt)
                     after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
                     
-                    end_dt = datetime.strptime(timeframe["to"], "%Y-%m-%d")
-                    end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                    # Parse end date (handles both date-only and ISO 8601 datetime formats)
+                    try:
+                        end_dt = datetime.fromisoformat(timeframe["to"].replace('Z', '+00:00'))
+                        if end_dt.tzinfo:
+                            end_dt = end_dt.replace(tzinfo=None)
+                    except (ValueError, AttributeError):
+                        end_dt = datetime.strptime(timeframe["to"], "%Y-%m-%d")
+                    # If the input was a datetime, extract just the date part; otherwise use end of day
+                    end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+                    end_dt = tz.localize(end_dt)
                     before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
                     
                     # Fetch events for each participant concurrently
@@ -953,10 +970,24 @@ def orchestrate_scheduling(
                                     
                                     # CRITICAL: If the target date is outside the context_json timeframe, expand the range
                                     # to include both the target date AND the context timeframe
-                                    context_start = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                    # Parse context start date (handles both date-only and ISO 8601 datetime formats)
+                                    try:
+                                        context_start = datetime.fromisoformat(context_json["timeframe"]["from"].replace('Z', '+00:00'))
+                                        if context_start.tzinfo:
+                                            context_start = context_start.replace(tzinfo=None)
+                                    except (ValueError, AttributeError):
+                                        context_start = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                    context_start = context_start.replace(hour=0, minute=0, second=0, microsecond=0)
                                     context_start = tz.localize(context_start)
-                                    context_end = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                                    context_end = tz.localize(context_end.replace(hour=23, minute=59, second=59))
+                                    # Parse context end date (handles both date-only and ISO 8601 datetime formats)
+                                    try:
+                                        context_end = datetime.fromisoformat(context_json["timeframe"]["to"].replace('Z', '+00:00'))
+                                        if context_end.tzinfo:
+                                            context_end = context_end.replace(tzinfo=None)
+                                    except (ValueError, AttributeError):
+                                        context_end = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                    context_end = context_end.replace(hour=23, minute=59, second=59, microsecond=0)
+                                    context_end = tz.localize(context_end)
                                     
                                     # Expand to include both ranges
                                     start_dt = min(start_dt, context_start)
@@ -1525,10 +1556,24 @@ def orchestrate_scheduling(
                                         # CRITICAL: If the target date is outside the context_json timeframe, expand the range
                                         # to include both the target date AND the context timeframe
                                         if context_json and "timeframe" in context_json:
-                                            context_start = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                            # Parse context start date (handles both date-only and ISO 8601 datetime formats)
+                                            try:
+                                                context_start = datetime.fromisoformat(context_json["timeframe"]["from"].replace('Z', '+00:00'))
+                                                if context_start.tzinfo:
+                                                    context_start = context_start.replace(tzinfo=None)
+                                            except (ValueError, AttributeError):
+                                                context_start = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                            context_start = context_start.replace(hour=0, minute=0, second=0, microsecond=0)
                                             context_start = tz.localize(context_start)
-                                            context_end = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                                            context_end = tz.localize(context_end.replace(hour=23, minute=59, second=59))
+                                            # Parse context end date (handles both date-only and ISO 8601 datetime formats)
+                                            try:
+                                                context_end = datetime.fromisoformat(context_json["timeframe"]["to"].replace('Z', '+00:00'))
+                                                if context_end.tzinfo:
+                                                    context_end = context_end.replace(tzinfo=None)
+                                            except (ValueError, AttributeError):
+                                                context_end = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                            context_end = context_end.replace(hour=23, minute=59, second=59, microsecond=0)
+                                            context_end = tz.localize(context_end)
                                             
                                             # Expand to include both ranges
                                             start_dt = min(start_dt, context_start)
@@ -1636,10 +1681,24 @@ def orchestrate_scheduling(
                                         pass
                                 else:
                                     # Use the timeframe from context_json (for rescheduling search window)
-                                    start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                    # Parse start date (handles both date-only and ISO 8601 datetime formats)
+                                    try:
+                                        start_dt = datetime.fromisoformat(context_json["timeframe"]["from"].replace('Z', '+00:00'))
+                                        if start_dt.tzinfo:
+                                            start_dt = start_dt.replace(tzinfo=None)
+                                    except (ValueError, AttributeError):
+                                        start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                    start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                                     start_dt = tz.localize(start_dt)
-                                    end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                                    end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                                    # Parse end date (handles both date-only and ISO 8601 datetime formats)
+                                    try:
+                                        end_dt = datetime.fromisoformat(context_json["timeframe"]["to"].replace('Z', '+00:00'))
+                                        if end_dt.tzinfo:
+                                            end_dt = end_dt.replace(tzinfo=None)
+                                    except (ValueError, AttributeError):
+                                        end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                    end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+                                    end_dt = tz.localize(end_dt)
                             
                             after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
                             before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
@@ -1999,10 +2058,24 @@ def orchestrate_scheduling(
                 import pytz
                 from datetime import datetime
                 tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
-                filter_start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                # Parse filter start date (handles both date-only and ISO 8601 datetime formats)
+                try:
+                    filter_start_dt = datetime.fromisoformat(context_json["timeframe"]["from"].replace('Z', '+00:00'))
+                    if filter_start_dt.tzinfo:
+                        filter_start_dt = filter_start_dt.replace(tzinfo=None)
+                except (ValueError, AttributeError):
+                    filter_start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                filter_start_dt = filter_start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                 filter_start_dt = tz.localize(filter_start_dt)
-                filter_end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                filter_end_dt = tz.localize(filter_end_dt.replace(hour=23, minute=59, second=59))
+                # Parse filter end date (handles both date-only and ISO 8601 datetime formats)
+                try:
+                    filter_end_dt = datetime.fromisoformat(context_json["timeframe"]["to"].replace('Z', '+00:00'))
+                    if filter_end_dt.tzinfo:
+                        filter_end_dt = filter_end_dt.replace(tzinfo=None)
+                except (ValueError, AttributeError):
+                    filter_end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                filter_end_dt = filter_end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+                filter_end_dt = tz.localize(filter_end_dt)
                 
                 # Filter events for each participant to only include those within the narrower timeframe
                 total_before = sum(len(events) for events in events_by_participant.values())
@@ -2179,12 +2252,27 @@ def orchestrate_scheduling(
                                 from datetime import datetime
                                 
                                 tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
-                                start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                
+                                # Parse start date (handles both date-only and ISO 8601 datetime formats)
+                                try:
+                                    start_dt = datetime.fromisoformat(context_json["timeframe"]["from"].replace('Z', '+00:00'))
+                                    if start_dt.tzinfo:
+                                        start_dt = start_dt.replace(tzinfo=None)
+                                except (ValueError, AttributeError):
+                                    start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                                 start_dt = tz.localize(start_dt)
                                 after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
                                 
-                                end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                                end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                                # Parse end date (handles both date-only and ISO 8601 datetime formats)
+                                try:
+                                    end_dt = datetime.fromisoformat(context_json["timeframe"]["to"].replace('Z', '+00:00'))
+                                    if end_dt.tzinfo:
+                                        end_dt = end_dt.replace(tzinfo=None)
+                                except (ValueError, AttributeError):
+                                    end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+                                end_dt = tz.localize(end_dt)
                                 before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
                                 
                                 all_events = {}
@@ -2263,12 +2351,27 @@ def orchestrate_scheduling(
                                 from datetime import datetime
                                 
                                 tz = pytz.timezone(context_json["timeframe"].get("tz", "America/New_York"))
-                                start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                
+                                # Parse start date (handles both date-only and ISO 8601 datetime formats)
+                                try:
+                                    start_dt = datetime.fromisoformat(context_json["timeframe"]["from"].replace('Z', '+00:00'))
+                                    if start_dt.tzinfo:
+                                        start_dt = start_dt.replace(tzinfo=None)
+                                except (ValueError, AttributeError):
+                                    start_dt = datetime.strptime(context_json["timeframe"]["from"], "%Y-%m-%d")
+                                start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
                                 start_dt = tz.localize(start_dt)
                                 after_date_iso = start_dt.strftime("%Y-%m-%dT00:00:00Z")
                                 
-                                end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
-                                end_dt = tz.localize(end_dt.replace(hour=23, minute=59, second=59))
+                                # Parse end date (handles both date-only and ISO 8601 datetime formats)
+                                try:
+                                    end_dt = datetime.fromisoformat(context_json["timeframe"]["to"].replace('Z', '+00:00'))
+                                    if end_dt.tzinfo:
+                                        end_dt = end_dt.replace(tzinfo=None)
+                                except (ValueError, AttributeError):
+                                    end_dt = datetime.strptime(context_json["timeframe"]["to"], "%Y-%m-%d")
+                                end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=0)
+                                end_dt = tz.localize(end_dt)
                                 before_date_iso = end_dt.strftime("%Y-%m-%dT23:59:59Z")
                                 
                                 all_events = {}
@@ -3262,8 +3365,22 @@ def orchestrate_scheduling(
                                 
                                 if from_date_str and to_date_str:
                                     # Parse as date and set to start/end of day in the specified timezone
-                                    from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
-                                    to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+                                    # Parse from_date (handles both date-only and ISO 8601 datetime formats)
+                                    try:
+                                        from_date_dt = datetime.fromisoformat(from_date_str.replace('Z', '+00:00'))
+                                        if from_date_dt.tzinfo:
+                                            from_date_dt = from_date_dt.replace(tzinfo=None)
+                                    except (ValueError, AttributeError):
+                                        from_date_dt = datetime.strptime(from_date_str, "%Y-%m-%d")
+                                    from_date = from_date_dt.date()
+                                    # Parse to_date (handles both date-only and ISO 8601 datetime formats)
+                                    try:
+                                        to_date_dt = datetime.fromisoformat(to_date_str.replace('Z', '+00:00'))
+                                        if to_date_dt.tzinfo:
+                                            to_date_dt = to_date_dt.replace(tzinfo=None)
+                                    except (ValueError, AttributeError):
+                                        to_date_dt = datetime.strptime(to_date_str, "%Y-%m-%d")
+                                    to_date = to_date_dt.date()
                                     
                                     # Set to start of day (00:00:00) and end of day (23:59:59) in the specified timezone
                                     full_start_dt = tz.localize(datetime.combine(from_date, datetime.min.time()))
@@ -4711,15 +4828,18 @@ def orchestrate_scheduling(
             
             # Limit proposals for user-facing display to prevent response size issues
             # Keep all proposals in agent_data, but limit user-facing formats
-            MAX_DISPLAY_PROPOSALS = 10  # Reduced from 20 to keep response under 50k chars
-            limited_free_proposals = free_proposals[:MAX_DISPLAY_PROPOSALS] if len(free_proposals) > MAX_DISPLAY_PROPOSALS else free_proposals
-            limited_move_proposals = single_move_proposals[:MAX_DISPLAY_PROPOSALS] if len(single_move_proposals) > MAX_DISPLAY_PROPOSALS else single_move_proposals
-            limited_override_proposals = solo_override_proposals[:MAX_DISPLAY_PROPOSALS] if len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS else solo_override_proposals
+            # Use higher limits for solo_override since users often want to see more override options
+            MAX_DISPLAY_PROPOSALS_FREE = 5
+            MAX_DISPLAY_PROPOSALS_MOVE = 5
+            MAX_DISPLAY_PROPOSALS_OVERRIDE = 10  # Higher limit for override proposals
+            limited_free_proposals = free_proposals[:MAX_DISPLAY_PROPOSALS_FREE] if len(free_proposals) > MAX_DISPLAY_PROPOSALS_FREE else free_proposals
+            limited_move_proposals = single_move_proposals[:MAX_DISPLAY_PROPOSALS_MOVE] if len(single_move_proposals) > MAX_DISPLAY_PROPOSALS_MOVE else single_move_proposals
+            limited_override_proposals = solo_override_proposals[:MAX_DISPLAY_PROPOSALS_OVERRIDE] if len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS_OVERRIDE else solo_override_proposals
             
             # Get external_participants_for_display if it exists, otherwise use empty list
             external_participants_for_formatting = external_participants_for_display if 'external_participants_for_display' in locals() and external_participants_for_display else None
             
-            refined_display_text = format_refined_user_display(
+            verbatim_user_output_text = format_refined_user_display(
                 free_proposals=limited_free_proposals,
                 move_proposals=limited_move_proposals,
                 override_proposals=limited_override_proposals,
@@ -4731,10 +4851,19 @@ def orchestrate_scheduling(
                 external_participants=external_participants_for_formatting
             )
             
-            # Add note if proposals were truncated
-            if len(free_proposals) > MAX_DISPLAY_PROPOSALS or len(single_move_proposals) > MAX_DISPLAY_PROPOSALS or len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS:
+            # Add note if proposals were truncated, with specific counts per category
+            truncation_notes = []
+            if len(free_proposals) > MAX_DISPLAY_PROPOSALS_FREE:
+                truncation_notes.append(f"{len(limited_free_proposals)} of {len(free_proposals)} free slot options")
+            if len(single_move_proposals) > MAX_DISPLAY_PROPOSALS_MOVE:
+                truncation_notes.append(f"{len(limited_move_proposals)} of {len(single_move_proposals)} single-move options")
+            if len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS_OVERRIDE:
+                truncation_notes.append(f"{len(limited_override_proposals)} of {len(solo_override_proposals)} override options")
+            
+            if truncation_notes:
                 total_displayed = len(limited_free_proposals) + len(limited_move_proposals) + len(limited_override_proposals)
-                refined_display_text += f"\n\n*Note: Showing top {total_displayed} of {len(all_proposals)} total options. All options are available in the proposals array.*"
+                truncation_msg = f"\n\n*Note: Showing top options ({', '.join(truncation_notes)}). {total_displayed} of {len(all_proposals)} total options shown. All {len(all_proposals)} options are available in the proposals array.*"
+                verbatim_user_output_text += truncation_msg
             
             # Also keep the old format for backward compatibility
             # Group by category for display
@@ -4772,9 +4901,9 @@ def orchestrate_scheduling(
             
             # Update summary if proposals were truncated
             proposals_were_truncated = (
-                len(free_proposals) > MAX_DISPLAY_PROPOSALS or 
-                len(single_move_proposals) > MAX_DISPLAY_PROPOSALS or 
-                len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS
+                len(free_proposals) > MAX_DISPLAY_PROPOSALS_FREE or 
+                len(single_move_proposals) > MAX_DISPLAY_PROPOSALS_MOVE or 
+                len(solo_override_proposals) > MAX_DISPLAY_PROPOSALS_OVERRIDE
             )
             if proposals_were_truncated:
                 total_displayed = len(formatted_proposals)
@@ -4787,7 +4916,7 @@ def orchestrate_scheduling(
                 explanation=explanation,
                 formatted_proposals=formatted_proposals,
                 categories=categories_info,
-                refined_display=refined_display_text
+                verbatim_user_output=verbatim_user_output_text
             )
             
             # Build agent data - ensure functions are available
@@ -4800,12 +4929,17 @@ def orchestrate_scheduling(
                     except ImportError:
                         from agent_data_builder import generate_ranking_rationale, build_optimization_summary, build_constraints_applied
             
-            ranking_rationale = generate_ranking_rationale(all_proposals)
-            optimization_summary = build_optimization_summary(all_proposals, scheduling_problem)
+            # Limit proposals in agent_data to prevent response size issues
+            # Keep top proposals for agent analysis, but limit to prevent truncation
+            MAX_AGENT_DATA_PROPOSALS = 20  # Limit agent_data proposals to prevent response size issues
+            limited_agent_proposals = all_proposals[:MAX_AGENT_DATA_PROPOSALS] if len(all_proposals) > MAX_AGENT_DATA_PROPOSALS else all_proposals
+            
+            ranking_rationale = generate_ranking_rationale(limited_agent_proposals)
+            optimization_summary = build_optimization_summary(limited_agent_proposals, scheduling_problem)
             constraints_applied = build_constraints_applied(normalized_data, scheduling_problem, context_json)
             
             agent_data = AgentData(
-                proposals=all_proposals,
+                proposals=limited_agent_proposals,  # Limited to prevent response size issues
                 event_registry=event_registry,
                 ranking_rationale=ranking_rationale,
                 optimization_summary=optimization_summary,
@@ -4840,19 +4974,51 @@ def orchestrate_scheduling(
             )
             
             # Limit main proposals array to prevent response size issues
-            # Agent can still access all proposals via agent_data.proposals
-            limited_proposals_for_response = all_proposals[:MAX_DISPLAY_PROPOSALS * 3] if len(all_proposals) > MAX_DISPLAY_PROPOSALS * 3 else all_proposals
+            # Agent can still access proposals via agent_data.proposals
+            # Use a higher limit to include more proposals, especially override options
+            MAX_PROPOSALS_IN_RESPONSE = 20  # Increased from 10 to show more options
+            limited_proposals_for_response = all_proposals[:MAX_PROPOSALS_IN_RESPONSE] if len(all_proposals) > MAX_PROPOSALS_IN_RESPONSE else all_proposals
             
             # Return response with dual format
             result = ResponseEnvelope(
                 status="ok",
-                proposals=limited_proposals_for_response,  # Limited for response size, full list in agent_data
+                proposals=limited_proposals_for_response,  # Limited for response size, more in agent_data
                 explanation=explanation,  # Backward compatibility
                 debug=debug_info,
                 user_display=user_display,
                 agent_data=agent_data,
                 mapping=mapping
             ).model_dump()
+            
+            # Reorder response to put verbatim_user_output first for better agent visibility
+            # Extract verbatim_user_output and add it as top-level field, and reorder user_display
+            if "user_display" in result and result["user_display"] and "verbatim_user_output" in result["user_display"]:
+                verbatim_output = result["user_display"]["verbatim_user_output"]
+                
+                # Reorder user_display dict to put verbatim_user_output first
+                user_display_dict = result["user_display"]
+                reordered_user_display = {
+                    "verbatim_user_output": verbatim_output,
+                }
+                # Add remaining user_display fields
+                for key, value in user_display_dict.items():
+                    if key != "verbatim_user_output":
+                        reordered_user_display[key] = value
+                result["user_display"] = reordered_user_display
+                
+                # Also add verbatim_user_output as top-level field for easier access
+                # Create a new ordered dict with verbatim_user_output first
+                reordered_result = {
+                    "verbatim_user_output": verbatim_output,
+                    "status": result["status"],
+                    "proposals": result["proposals"],
+                    "explanation": result["explanation"],
+                }
+                # Add remaining fields
+                for key, value in result.items():
+                    if key not in reordered_result:
+                        reordered_result[key] = value
+                result = reordered_result
             
             # Ensure result is JSON-serializable before returning
             try:

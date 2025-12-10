@@ -219,7 +219,7 @@ class UserDisplay(BaseModel):
     formatted_proposals: List[FormattedProposal] = Field(default_factory=list, description="Pre-formatted proposals")
     categories: Dict[str, CategoryInfo] = Field(default_factory=dict, description="Category information")
     grouped_by_event: Optional[Dict[str, List[EventGroup]]] = Field(default=None, description="Proposals grouped by moved event")
-    refined_display: Optional[str] = Field(default=None, description="Refined user-facing formatted text with grouped proposals by day")
+    verbatim_user_output: Optional[str] = Field(default=None, description="Verbatim user-facing formatted text with grouped proposals by day, wrapped in [VERBATIM_USER_OUTPUT] tags")
 
 
 class EventMetadata(BaseModel):

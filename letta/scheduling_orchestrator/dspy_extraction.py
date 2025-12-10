@@ -195,11 +195,17 @@ def extract_scheduling_request(
             # Try to find JSON object in the string
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', problem_json_str, re.DOTALL)
             if json_match:
+                json_str = json_match.group(0)
+                # Strip JavaScript-style comments (// and /* */)
+                # Remove single-line comments
+                json_str = re.sub(r'//.*?$', '', json_str, flags=re.MULTILINE)
+                # Remove multi-line comments
+                json_str = re.sub(r'/\*.*?\*/', '', json_str, flags=re.DOTALL)
                 try:
-                    problem_data = json.loads(json_match.group(0))
-                    print(f"[extract_scheduling_request] Extracted JSON from response", file=sys.stderr, flush=True)
-                except json.JSONDecodeError:
-                    raise ValueError(f"Failed to parse JSON from DSPy output: {problem_json_str[:500]}")
+                    problem_data = json.loads(json_str)
+                    print(f"[extract_scheduling_request] Extracted JSON from response (after stripping comments)", file=sys.stderr, flush=True)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Failed to parse JSON from DSPy output (after comment stripping): {json_str[:500]}")
             else:
                 raise ValueError(f"Failed to parse JSON from DSPy output: {problem_json_str[:500]}")
         

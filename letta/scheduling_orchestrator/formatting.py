@@ -666,7 +666,10 @@ def format_refined_user_display(
                                 lines.append(f"* {time_range}")
                             lines.append("")
     
-    return "\n".join(lines)
+    # Wrap the output with bracketing tags for better agent recognition
+    # Add explicit instruction to use verbatim - this is critical for agent to preserve event titles
+    output_text = "\n".join(lines)
+    return f"[VERBATIM_USER_OUTPUT]\n**CRITICAL: This output contains specific event titles in quotes (e.g., \"Hold\", \"Weekly Review\"). You MUST use this text exactly as written, including all event titles, time ranges, and formatting. Do NOT paraphrase, summarize, or modify any part of this output.**\n\n{output_text}\n[/VERBATIM_USER_OUTPUT]"
 
 
 def _get_day_sort_key(day_str: str, fallback_dt_str: str) -> float:
@@ -855,8 +858,18 @@ def _find_all_overlapping_solo_events(
                 num_attendees = event_meta.get("number_of_attendees", -1)
                 
                 if num_attendees == 0:
-                    # Get event title
+                    # Get event title - try event_meta first (both title and summary), then event_registry as fallback
                     event_title = event_meta.get("title") or event_meta.get("summary") or ""
+                    
+                    # If title is missing or generic, try event_registry
+                    if not event_title or event_title.lower() in ["hold", "solo/blocking events", ""]:
+                        event_reg_meta = event_registry.get(event_id)
+                        if event_reg_meta:
+                            # Try title first, then fallback to event_id
+                            if event_reg_meta.title and event_reg_meta.title.lower() not in ["hold", "solo/blocking events", ""]:
+                                event_title = event_reg_meta.title
+                    
+                    # Last resort fallback
                     if not event_title:
                         event_title = event_id[:40]
                     

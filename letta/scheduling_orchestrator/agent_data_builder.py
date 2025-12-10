@@ -43,7 +43,8 @@ def build_event_registry(
         owner, event_id = event_key
         if event_id not in registry:
             # Build human-readable description
-            title = meta.get("title", event_id[:40])
+            # Try title first, then summary, then fallback to event_id
+            title = meta.get("title") or meta.get("summary") or event_id[:40]
             start_dt_str = meta.get("start_str", start_utc)
             try:
                 dt = datetime.fromisoformat(start_dt_str.replace("Z", "+00:00"))

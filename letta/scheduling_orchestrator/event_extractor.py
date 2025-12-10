@@ -11,6 +11,31 @@ import pytz
 from .schemas import SchedulingProblem
 
 
+def _parse_date_string(date_str: str) -> datetime:
+    """
+    Parse a date string that may be in date-only format (%Y-%m-%d) or ISO 8601 datetime format.
+    
+    Args:
+        date_str: Date string in either format
+        
+    Returns:
+        datetime object (naive, without timezone)
+    """
+    # Try ISO 8601 format first (handles both date-only and datetime)
+    try:
+        dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        # Return naive datetime (strip timezone)
+        if dt.tzinfo:
+            dt = dt.replace(tzinfo=None)
+        return dt
+    except (ValueError, AttributeError):
+        # Fall back to date-only format
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError(f"Unable to parse date string: {date_str}")
+
+
 def extract_event_details_for_rescheduling(
     event: Dict[str, Any],
     event_owner_id: str
@@ -406,8 +431,8 @@ def merge_event_details_with_utterance(
             try:
                 participant_tz = pytz.timezone(tz_str)
                 # Parse dates and set to start/end of day in participant timezone
-                from_date = datetime.strptime(from_date_str, "%Y-%m-%d").date()
-                to_date = datetime.strptime(to_date_str, "%Y-%m-%d").date()
+                from_date = _parse_date_string(from_date_str).date()
+                to_date = _parse_date_string(to_date_str).date()
                 
                 # Start of first day
                 merged_time_window_start_dt = participant_tz.localize(
