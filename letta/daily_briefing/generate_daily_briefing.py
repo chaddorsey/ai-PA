@@ -400,6 +400,187 @@ def _format_time(dt: datetime) -> str:
         return dt.strftime("%I:%M %p").lstrip("0")  # Windows-compatible
 
 
+def _format_event_markdown(event: Dict[str, Any], tz: pytz.BaseTzInfo) -> str:
+    """
+    Format a single event as a Markdown bullet point.
+    
+    Format for regular meetings: `• **start–end** — **Bold meeting title** (*attendee names italicized*)`
+    Format for solo blocks: `• **Email & Tasks** (*Chad Dorsey*) — *9:00–11:00 AM*`
+    
+    Args:
+        event: Event dictionary
+        tz: Timezone for time formatting
+    
+    Returns:
+        Formatted Markdown string
+    """
+    try:
+        start = _parse_datetime(event["start"], tz)
+        end = _parse_datetime(event["end"], tz)
+        start_str = _format_time(start)
+        end_str = _format_time(end)
+        time_range = f"{start_str}–{end_str}"
+        
+        title = event.get("title", "")
+        attendees = event.get("attendees", [])
+        
+        # Check if it's a solo block (Email & Tasks, Hold, etc.)
+        title_lower = title.lower()
+        is_solo = (
+            ("email" in title_lower and "task" in title_lower) or
+            "hold" in title_lower
+        )
+        
+        # Format attendees
+        if attendees:
+            # Extract names from "Name <email>" format or use as-is
+            attendee_names = []
+            for attendee in attendees:
+                if "<" in attendee and ">" in attendee:
+                    # Extract name part before <
+                    name = attendee.split("<")[0].strip()
+                    if name:
+                        attendee_names.append(name)
+                    else:
+                        # Fallback to email
+                        email = attendee.split("<")[1].split(">")[0].strip()
+                        attendee_names.append(email)
+                else:
+                    attendee_names.append(attendee)
+            attendee_str = ", ".join(attendee_names)
+        else:
+            attendee_str = "Chad Dorsey"  # Default if no attendees
+        
+        attendee_part = f" (*{attendee_str}*)"
+        
+        if is_solo:
+            # Solo blocks: bold title, italicize time range
+            return f"• **{title}**{attendee_part} — *{time_range}*"
+        else:
+            # Regular meetings: bold time range, bold title, italicize attendees
+            return f"• **{time_range}** — **{title}**{attendee_part}"
+    
+    except Exception as e:
+        logger.warning(f"Error formatting event: {e}")
+        return f"• **{event.get('title', 'Unknown Event')}**"
+
+
+def _format_available_time_blocks(
+    blocks: List[Dict[str, Any]],
+    tz: pytz.BaseTzInfo
+) -> str:
+    """
+    Format available time blocks as Markdown list.
+    
+    Format:
+    - First block: `- start – end (X min left)`
+    - Subsequent: `- start – end (X min)`
+    - All parenthetical times italicized
+    
+    Args:
+        blocks: List of available time block dicts with start, end, duration_minutes
+        tz: Timezone for time formatting
+    
+    Returns:
+        Formatted Markdown string
+    """
+    if not blocks:
+        return ""
+    
+    lines = []
+    for i, block in enumerate(blocks):
+        try:
+            start = _parse_datetime(block["start"], tz) if isinstance(block["start"], str) else block["start"]
+            end = _parse_datetime(block["end"], tz) if isinstance(block["end"], str) else block["end"]
+            
+            start_str = _format_time(start)
+            end_str = _format_time(end)
+            duration = block["duration_minutes"]
+            
+            # First block uses "left", others don't
+            if i == 0:
+                duration_str = f"*({duration} min left)*"
+            else:
+                duration_str = f"*({duration} min)*"
+            
+            lines.append(f"- {start_str} – {end_str} {duration_str}")
+        except Exception as e:
+            logger.warning(f"Error formatting available block: {e}")
+            continue
+    
+    return "\n".join(lines)
+
+
+def _format_briefing_markdown(
+    now: datetime,
+    events: List[Dict[str, Any]],
+    available_blocks: List[Dict[str, Any]],
+    total_available_minutes: int,
+    tz: pytz.BaseTzInfo
+) -> str:
+    """
+    Format the complete briefing in Markdown format.
+    
+    Args:
+        now: Current datetime
+        events: List of filtered events (for today)
+        available_blocks: List of available time blocks
+        total_available_minutes: Total available minutes
+        tz: Timezone for formatting
+    
+    Returns:
+        Complete Markdown-formatted briefing
+    """
+    # Format header
+    try:
+        current_time_formatted = _format_time(now)
+    except ValueError:
+        current_time_formatted = now.strftime("%I:%M %p").lstrip("0")
+    
+    day_name = now.strftime("%a")
+    month_name = now.strftime("%b")
+    day_number = now.strftime("%d")
+    
+    header = f"# Today's Schedule (updated {day_name}. {month_name} {day_number} at {current_time_formatted})"
+    
+    # Format schedule section
+    schedule_lines = ["**Today's Schedule**"]
+    
+    # Filter events to only today's events
+    today_events = []
+    for event in events:
+        try:
+            event_start = _parse_datetime(event["start"], tz)
+            if event_start.date() == now.date():
+                today_events.append(event)
+        except Exception:
+            continue
+    
+    if today_events:
+        for event in today_events:
+            schedule_lines.append(_format_event_markdown(event, tz))
+    else:
+        schedule_lines.append("*No meetings scheduled*")
+    
+    schedule_section = "\n".join(schedule_lines)
+    
+    # Format available time section
+    available_time_formatted = _format_duration(total_available_minutes)
+    available_time_header = f"### Available Time Remaining — **{available_time_formatted}**"
+    
+    available_time_blocks_str = _format_available_time_blocks(available_blocks, tz)
+    
+    if available_time_blocks_str:
+        available_time_section = f"{available_time_header}\n{available_time_blocks_str}"
+    else:
+        available_time_section = f"{available_time_header}\n*No available time remaining*"
+    
+    # Combine all sections
+    briefing = f"{header}\n\n{schedule_section}\n\n{available_time_section}"
+    
+    return briefing
+
+
 def _filter_events(events: List[Dict[str, Any]], tz: pytz.BaseTzInfo) -> List[Dict[str, Any]]:
     """
     Filter events according to gold-standard rules.
@@ -630,23 +811,15 @@ def generate_daily_briefing(
             filtered_events, now, tz
         )
         
-        # TODO: Implement Markdown formatting (task 24-6)
-        
-        # Placeholder return structure with available time info
-        available_time_formatted = _format_duration(total_available_minutes)
-        briefing = f"""# Today's Schedule (updated {day_name}. {month_name} {day_number} at {current_time_formatted})
-
-**Today's Schedule**
-*Retrieved {events_retrieved} events, {events_included} included after filtering - formatting in progress*
-
-### Available Time Remaining — **{available_time_formatted}**
-*Formatting in progress - {len(available_blocks)} blocks calculated*
-"""
+        # Format briefing in Markdown
+        briefing = _format_briefing_markdown(
+            now, filtered_events, available_blocks, total_available_minutes, tz
+        )
         
         return {
             "status": "ok",
             "briefing": briefing,
-            "memory_content": briefing,
+            "memory_content": briefing,  # Same content for memory block
             "timestamp": now.isoformat(),
             "current_time_eastern": current_time_formatted,
             "events_retrieved": events_retrieved,
@@ -654,8 +827,8 @@ def generate_daily_briefing(
             "total_available_minutes": total_available_minutes,
             "available_blocks": [
                 {
-                    "start": block["start"].isoformat(),
-                    "end": block["end"].isoformat(),
+                    "start": block["start"].isoformat() if isinstance(block["start"], datetime) else block["start"],
+                    "end": block["end"].isoformat() if isinstance(block["end"], datetime) else block["end"],
                     "duration_minutes": block["duration_minutes"]
                 }
                 for block in available_blocks
