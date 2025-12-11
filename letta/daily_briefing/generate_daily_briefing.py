@@ -27,6 +27,120 @@ except ImportError:
     MCPError = None
 
 
+async def _fetch_calendar_events(
+    mcp_client: MCPCalendarClient,
+    calendar_id: str,
+    tz: pytz.BaseTzInfo
+) -> List[Dict[str, Any]]:
+    """
+    Fetch calendar events for a 3-day window (today-1 to today+1).
+    
+    Args:
+        mcp_client: Initialized MCP calendar client
+        calendar_id: Calendar identifier (email address)
+        tz: Timezone for date calculations
+    
+    Returns:
+        List of normalized event dictionaries
+    """
+    # Calculate date range: today-1 to today+1 (3-day window)
+    now = datetime.now(tz)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_before_start = today_start - timedelta(days=1)
+    day_after_end = today_start + timedelta(days=2)  # End of day after tomorrow
+    
+    # Format dates for MCP Core_Event_Data
+    # ⚠️ IMPORTANT: Parameter names are REVERSED!
+    # "Before" = END date, "After" = START date
+    # Use ISO format with timezone - convert to UTC for API
+    after_date_iso = day_before_start.astimezone(pytz.UTC).strftime("%Y-%m-%dT00:00:00Z")
+    before_date_iso = day_after_end.astimezone(pytz.UTC).strftime("%Y-%m-%dT23:59:59Z")
+    
+    try:
+        # Fetch events via MCP
+        # ⚠️ Remember: Before=end, After=start
+        events = await mcp_client.get_core_event_data(
+            calendar_id=calendar_id,
+            before=before_date_iso,  # END date
+            after=after_date_iso      # START date
+        )
+        
+        # Normalize event data
+        normalized_events = []
+        for evt in events:
+            # Skip all-day events (they have "date" not "dateTime")
+            start_data = evt.get("start", {})
+            end_data = evt.get("end", {})
+            
+            if "date" in start_data:
+                # All-day event, skip it
+                continue
+            
+            start_dt_str = start_data.get("dateTime")
+            end_dt_str = end_data.get("dateTime")
+            
+            if not start_dt_str or not end_dt_str:
+                # Missing required time data, skip
+                continue
+            
+            # Extract attendees information
+            attendees_list = evt.get("attendees_list", [])
+            attendees_details = evt.get("attendees_details", [])
+            
+            # Normalize attendees to a consistent format
+            if isinstance(attendees_list, str):
+                try:
+                    import ast
+                    attendees_list = ast.literal_eval(attendees_list)
+                except:
+                    attendees_list = []
+            elif not isinstance(attendees_list, list):
+                attendees_list = []
+            
+            # Build attendees list with names if available
+            attendees = []
+            if attendees_details and isinstance(attendees_details, list):
+                for attendee in attendees_details:
+                    if isinstance(attendee, dict):
+                        name = attendee.get("name", "")
+                        email = attendee.get("email", "")
+                        if name and email:
+                            attendees.append(f"{name} <{email}>")
+                        elif email:
+                            attendees.append(email)
+                        elif name:
+                            attendees.append(name)
+            
+            # Fallback to attendees_list if no details
+            if not attendees and attendees_list:
+                attendees = [str(a) for a in attendees_list if a]
+            
+            # Create normalized event
+            normalized_event = {
+                "id": evt.get("id", ""),
+                "title": evt.get("summary", ""),
+                "start": start_dt_str,
+                "end": end_dt_str,
+                "locked": evt.get("locked", False),
+                "protected": evt.get("protected", False),
+                "flexible": evt.get("flexible", True),
+                "attendees": attendees,
+                "number_of_attendees": evt.get("number_of_attendees", len(attendees)),
+                "internal_only": evt.get("internal_only", False)
+            }
+            
+            normalized_events.append(normalized_event)
+        
+        return normalized_events
+    
+    except MCPError as e:
+        logger.error(f"MCP error fetching events: {e.message}")
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching calendar events: {e}", exc_info=True)
+        raise
+
+
 def generate_daily_briefing(
     calendar_id: Optional[str] = None,
     timezone: Optional[str] = None
@@ -146,7 +260,32 @@ def generate_daily_briefing(
             max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
         )
         
-        # TODO: Implement calendar event retrieval (task 24-3)
+        # Fetch calendar events
+        try:
+            events = asyncio.run(_fetch_calendar_events(mcp_client, calendar_id, tz))
+            events_retrieved = len(events)
+        except MCPError as e:
+            return {
+                "status": "error",
+                "briefing": "",
+                "memory_content": "",
+                "timestamp": now.isoformat(),
+                "current_time_eastern": current_time_formatted,
+                "error_message": f"Failed to retrieve calendar events: {e.message}",
+                "events_retrieved": 0
+            }
+        except Exception as e:
+            logger.error(f"Error fetching events: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "briefing": "",
+                "memory_content": "",
+                "timestamp": now.isoformat(),
+                "current_time_eastern": current_time_formatted,
+                "error_message": f"Error fetching calendar events: {str(e)}",
+                "events_retrieved": 0
+            }
+        
         # TODO: Implement event filtering (task 24-4)
         # TODO: Implement available time calculation (task 24-5)
         # TODO: Implement Markdown formatting (task 24-6)
@@ -155,7 +294,7 @@ def generate_daily_briefing(
         briefing = f"""# Today's Schedule (updated {day_name}. {month_name} {day_number} at {current_time_formatted})
 
 **Today's Schedule**
-*No events retrieved yet - implementation in progress*
+*Retrieved {events_retrieved} events - filtering and formatting in progress*
 
 ### Available Time Remaining — **0h, 0 min**
 *Time calculation in progress*
@@ -167,7 +306,7 @@ def generate_daily_briefing(
             "memory_content": briefing,
             "timestamp": now.isoformat(),
             "current_time_eastern": current_time_formatted,
-            "events_retrieved": 0,
+            "events_retrieved": events_retrieved,
             "events_included": 0
         }
     
