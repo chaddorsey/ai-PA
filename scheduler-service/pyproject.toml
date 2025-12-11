@@ -25,9 +25,7 @@ scikit-learn = "^1.5.2"
 python-dotenv = "^1.0.1"
 dateparser = "^1.2.0"
 python-dateutil = "^2.9.0"
-
-[tool.poetry.extras]
-embeddings = ["sentence-transformers"]
+sentence-transformers = "^3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.2"

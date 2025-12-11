@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
@@ -44,6 +44,7 @@ class SchedulerClient:
         status_filter: str = None,
         created_by_filter: str = None,
         category_filter: str = None,
+        include_archived: bool = False,
     ) -> Dict[str, Any]:
         try:
             # Build query parameters
@@ -54,22 +55,54 @@ class SchedulerClient:
                 params["created_by_filter"] = created_by_filter
             if category_filter:
                 params["category_filter"] = category_filter
+            if include_archived:
+                params["include_archived"] = "true"
             
             response = await self._request("GET", "/jobs", params=params)
             return response.json()
         except RetryError as exc:  # pragma: no cover
-            raise SchedulerClientError("Scheduler service unavailable after retries") from exc
+            raise SchedulerClientError(
+                "Scheduler service unavailable after retries. "
+                "The scheduler service may be down or not responding. "
+                "Please check the service status and try again."
+            ) from exc
         except httpx.HTTPStatusError as exc:
-            raise SchedulerClientError(f"Failed to list jobs: {exc.response.text}") from exc
+            error_detail = exc.response.text
+            try:
+                error_json = exc.response.json()
+                if "detail" in error_json:
+                    error_detail = error_json["detail"]
+            except:
+                pass
+            raise SchedulerClientError(
+                f"Failed to list jobs: {error_detail}. "
+                f"Status code: {exc.response.status_code}. "
+                f"Check your filter parameters (status_filter, category_filter, created_by_filter) are valid."
+            ) from exc
 
     async def get_job(self, job_id: str) -> Dict[str, Any]:
         try:
             response = await self._request("GET", f"/jobs/{job_id}")
             return response.json()
         except httpx.HTTPStatusError as exc:
+            error_detail = exc.response.text
+            try:
+                error_json = exc.response.json()
+                if "detail" in error_json:
+                    error_detail = error_json["detail"]
+            except:
+                pass
             if exc.response.status_code == 404:
-                raise SchedulerClientError(f"Job '{job_id}' not found") from exc
-            raise SchedulerClientError(f"Failed to retrieve job '{job_id}': {exc.response.text}") from exc
+                raise SchedulerClientError(
+                    f"Job not found: '{job_id}'. "
+                    f"The job may have been deleted, or the ID is incorrect. "
+                    f"Use scheduler_list_jobs() or scheduler_search_jobs() to find valid job IDs."
+                ) from exc
+            raise SchedulerClientError(
+                f"Failed to retrieve job '{job_id}': {error_detail}. "
+                f"Status code: {exc.response.status_code}. "
+                f"Ensure the job_id is a valid UUID format."
+            ) from exc
 
     async def create_job(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -84,6 +117,31 @@ class SchedulerClient:
             return response.json()
         except httpx.HTTPStatusError as exc:
             raise SchedulerClientError(_format_error("update job", exc)) from exc
+
+    async def batch_archive_jobs(self, job_ids: List[str]) -> Dict[str, Any]:
+        """Archive multiple jobs at once."""
+        try:
+            response = await self._request("POST", "/jobs/batch/archive", json=job_ids)
+            return response.json()
+        except RetryError as exc:  # pragma: no cover
+            raise SchedulerClientError(
+                "Scheduler service unavailable after retries. "
+                "The scheduler service may be down or not responding. "
+                "Please check the service status and try again."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            error_detail = exc.response.text
+            try:
+                error_json = exc.response.json()
+                if "detail" in error_json:
+                    error_detail = error_json["detail"]
+            except:
+                pass
+            raise SchedulerClientError(
+                f"Failed to batch archive jobs: {error_detail}. "
+                f"Status code: {exc.response.status_code}. "
+                f"Ensure all job_ids are valid UUIDs. Use scheduler_list_jobs() to find valid job IDs."
+            ) from exc
 
     async def delete_job(self, job_id: str) -> Dict[str, Any]:
         try:
@@ -108,14 +166,74 @@ class SchedulerClient:
         except httpx.HTTPStatusError as exc:
             raise SchedulerClientError(_format_error("get execution", exc)) from exc
 
+    async def search_jobs(
+        self,
+        query_text: str,
+        limit: int = 10,
+        min_score: float = 0.5,
+        status_filter: Optional[str] = None,
+        category_filter: Optional[str] = None,
+        include_archived: bool = False,
+    ) -> Dict[str, Any]:
+        """Search jobs using semantic similarity on embeddings."""
+        try:
+            params = {
+                "query_text": query_text,
+                "limit": limit,
+                "min_score": min_score,
+            }
+            if status_filter:
+                params["status_filter"] = status_filter
+            if category_filter:
+                params["category_filter"] = category_filter
+            if include_archived:
+                params["include_archived"] = "true"
+            
+            response = await self._request("GET", "/jobs/search", params=params)
+            return response.json()
+        except RetryError as exc:  # pragma: no cover
+            raise SchedulerClientError(
+                "Scheduler service unavailable after retries. "
+                "The scheduler service may be down or not responding. "
+                "Please check the service status and try again."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            error_detail = exc.response.text
+            try:
+                error_json = exc.response.json()
+                if "detail" in error_json:
+                    error_detail = error_json["detail"]
+            except:
+                pass
+            raise SchedulerClientError(
+                f"Failed to search jobs: {error_detail}. "
+                f"Status code: {exc.response.status_code}. "
+                f"Check your search parameters (query_text, status_filter, category_filter) are valid. "
+                f"Valid status_filter values: scheduled, active, paused, cancelled, completed, archived, or 'all'."
+            ) from exc
+
 
 def _format_error(action: str, exc: httpx.HTTPStatusError) -> str:
+    """Format error messages with helpful guidance for LLMs."""
     detail: str
     try:
         data = exc.response.json()
-        detail = json.dumps(data, indent=2)
+        if isinstance(data, dict) and "detail" in data:
+            detail = data["detail"]
+        else:
+            detail = json.dumps(data, indent=2)
     except Exception:
-        detail = exc.response.text
-    return f"Failed to {action}: HTTP {exc.response.status_code}. Response: {detail}"
+        detail = exc.response.text or f"HTTP {exc.response.status_code}"
+    
+    # Add context-specific guidance
+    guidance = ""
+    if exc.response.status_code == 400:
+        guidance = " Check your input parameters match the expected schema."
+    elif exc.response.status_code == 404:
+        guidance = " The resource may not exist. Verify the ID is correct."
+    elif exc.response.status_code >= 500:
+        guidance = " This appears to be a server error. Please try again or check service logs."
+    
+    return f"Failed to {action}: {detail}.{guidance} HTTP status: {exc.response.status_code}"
 
 

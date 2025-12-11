@@ -36,4 +36,3 @@ RUN poetry install --only main
 EXPOSE 8087
 
 CMD ["uvicorn", "scheduler_service.main:app", "--host", "0.0.0.0", "--port", "8087"]
-

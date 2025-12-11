@@ -198,6 +198,15 @@ class SchedulerService:
                 log.warning("Execution failed", error=str(exc))
             finally:
                 execution.completed_at = datetime.now(timezone.utc)
+                
+                # For one-off jobs, mark as COMPLETED after execution
+                if job.schedule_type == ScheduleType.ONE_OFF.value:
+                    job.status = JobStatus.COMPLETED.value
+                    job.updated_at = datetime.now(timezone.utc)
+                    # Remove from scheduler since it won't run again
+                    await scheduler_service.remove_job(job.job_id)
+                    log.info("One-off job marked as completed")
+                
                 await session.commit()
                 record_execution("success" if execution.status == ExecutionStatus.SUCCEEDED.value else "failed")
 

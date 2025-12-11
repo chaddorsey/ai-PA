@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         description="Base URL for the scheduler REST API",
     )
     api_key: Optional[str] = Field(default=None, env="SCHEDULER_API_KEY")
-    timeout_seconds: float = Field(default=10.0)
+    timeout_seconds: float = Field(default=30.0)
     request_retries: int = Field(default=3)
 
     class Config:
