@@ -38,6 +38,7 @@ except ImportError:
 from daily_briefing.generate_daily_briefing import generate_daily_briefing
 
 # Configuration
+# Use localhost for custom tool registration (server runs on localhost)
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 
 def main():

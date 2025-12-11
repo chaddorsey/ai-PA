@@ -32,6 +32,7 @@ except ImportError:
         sys.exit(1)
 
 # Configuration
+# Use localhost for custom tool attachment (server runs on localhost)
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 AGENT_ID = "agent-a3f3940f-2dcb-4b73-a01c-132df63d5ae2"
 
