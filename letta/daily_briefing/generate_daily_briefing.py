@@ -141,6 +141,195 @@ async def _fetch_calendar_events(
         raise
 
 
+def _parse_datetime(dt_str: str, tz: pytz.BaseTzInfo) -> datetime:
+    """
+    Parse ISO 8601 datetime string to timezone-aware datetime.
+    
+    Args:
+        dt_str: ISO 8601 datetime string
+        tz: Target timezone
+    
+    Returns:
+        Timezone-aware datetime object
+    """
+    # Try parsing with dateutil if available, otherwise use basic parsing
+    try:
+        from dateutil import parser
+        dt = parser.isoparse(dt_str)
+    except ImportError:
+        # Fallback to basic parsing
+        try:
+            dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+        except ValueError:
+            # Try another format
+            dt = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M:%S%z")
+    
+    # Ensure timezone-aware
+    if dt.tzinfo is None:
+        dt = pytz.UTC.localize(dt)
+    
+    # Convert to target timezone
+    return dt.astimezone(tz)
+
+
+def _events_overlap(event1: Dict[str, Any], event2: Dict[str, Any], tz: pytz.BaseTzInfo) -> bool:
+    """
+    Check if two events overlap in time.
+    
+    Args:
+        event1: First event dict with 'start' and 'end' ISO strings
+        event2: Second event dict with 'start' and 'end' ISO strings
+        tz: Timezone for parsing
+    
+    Returns:
+        True if events overlap, False otherwise
+    """
+    try:
+        start1 = _parse_datetime(event1["start"], tz)
+        end1 = _parse_datetime(event1["end"], tz)
+        start2 = _parse_datetime(event2["start"], tz)
+        end2 = _parse_datetime(event2["end"], tz)
+        
+        # Events overlap if one starts before the other ends
+        return start1 < end2 and start2 < end1
+    except Exception as e:
+        logger.warning(f"Error checking event overlap: {e}")
+        return False
+
+
+def _is_email_tasks_event(event: Dict[str, Any], tz: pytz.BaseTzInfo) -> bool:
+    """
+    Check if event is "Email & Tasks" (9:00-11:00 AM).
+    
+    Args:
+        event: Event dict
+        tz: Timezone for parsing
+    
+    Returns:
+        True if event is "Email & Tasks" in the 9:00-11:00 AM slot
+    """
+    title = event.get("title", "").lower()
+    if "email" not in title or "task" not in title:
+        return False
+    
+    try:
+        start = _parse_datetime(event["start"], tz)
+        end = _parse_datetime(event["end"], tz)
+        
+        # Check if it's in the 9:00-11:00 AM range
+        hour_start = start.hour
+        hour_end = end.hour
+        
+        # Should start at 9 AM and end at 11 AM (or close)
+        return hour_start == 9 and hour_end == 11
+    except Exception:
+        return False
+
+
+def _is_hold_event(event: Dict[str, Any]) -> bool:
+    """
+    Check if event is a "Hold" event.
+    
+    Args:
+        event: Event dict
+    
+    Returns:
+        True if event title contains "Hold"
+    """
+    title = event.get("title", "").lower()
+    return "hold" in title
+
+
+def _is_chad_out_event(event: Dict[str, Any]) -> bool:
+    """
+    Check if event is "Chad out".
+    
+    Args:
+        event: Event dict
+    
+    Returns:
+        True if event title indicates "Chad out"
+    """
+    title = event.get("title", "").lower()
+    return "chad out" in title or "chad's out" in title
+
+
+def _filter_events(events: List[Dict[str, Any]], tz: pytz.BaseTzInfo) -> List[Dict[str, Any]]:
+    """
+    Filter events according to gold-standard rules.
+    
+    Rules:
+    - Include ALL events where Chad is a participant
+    - Exclude "Email & Tasks" (9:00-11:00 AM) unless overlapped by real meeting
+    - Exclude "Hold" events unless overlapped by real meeting
+    - Include "Chad out" events (they represent busy time)
+    - Sort chronologically by start time
+    
+    Args:
+        events: List of normalized event dictionaries
+        tz: Timezone for time parsing
+    
+    Returns:
+        Filtered and sorted list of events
+    """
+    if not events:
+        return []
+    
+    # Separate events into categories
+    email_tasks_events = []
+    hold_events = []
+    chad_out_events = []
+    real_meetings = []
+    
+    for event in events:
+        if _is_email_tasks_event(event, tz):
+            email_tasks_events.append(event)
+        elif _is_hold_event(event):
+            hold_events.append(event)
+        elif _is_chad_out_event(event):
+            chad_out_events.append(event)
+        else:
+            real_meetings.append(event)
+    
+    # Check for overlaps: if a real meeting overlaps email_tasks or hold, include the real meeting
+    # and mark the email_tasks/hold as overlapped (so we don't exclude it)
+    overlapped_email_tasks = set()
+    overlapped_holds = set()
+    
+    for real_meeting in real_meetings:
+        for i, email_task in enumerate(email_tasks_events):
+            if _events_overlap(real_meeting, email_task, tz):
+                overlapped_email_tasks.add(i)
+        
+        for i, hold_event in enumerate(hold_events):
+            if _events_overlap(real_meeting, hold_event, tz):
+                overlapped_holds.add(i)
+    
+    # Build final list:
+    # - All real meetings
+    # - Email & Tasks that are overlapped
+    # - Hold events that are overlapped
+    # - All Chad out events
+    filtered_events = list(real_meetings)
+    
+    for i in overlapped_email_tasks:
+        filtered_events.append(email_tasks_events[i])
+    
+    for i in overlapped_holds:
+        filtered_events.append(hold_events[i])
+    
+    filtered_events.extend(chad_out_events)
+    
+    # Sort chronologically by start time
+    try:
+        filtered_events.sort(key=lambda e: _parse_datetime(e["start"], tz))
+    except Exception as e:
+        logger.warning(f"Error sorting events: {e}")
+        # Keep original order if sorting fails
+    
+    return filtered_events
+
+
 def generate_daily_briefing(
     calendar_id: Optional[str] = None,
     timezone: Optional[str] = None
@@ -286,7 +475,10 @@ def generate_daily_briefing(
                 "events_retrieved": 0
             }
         
-        # TODO: Implement event filtering (task 24-4)
+        # Filter events according to gold-standard rules
+        filtered_events = _filter_events(events, tz)
+        events_included = len(filtered_events)
+        
         # TODO: Implement available time calculation (task 24-5)
         # TODO: Implement Markdown formatting (task 24-6)
         
@@ -294,7 +486,7 @@ def generate_daily_briefing(
         briefing = f"""# Today's Schedule (updated {day_name}. {month_name} {day_number} at {current_time_formatted})
 
 **Today's Schedule**
-*Retrieved {events_retrieved} events - filtering and formatting in progress*
+*Retrieved {events_retrieved} events, {events_included} included after filtering - formatting in progress*
 
 ### Available Time Remaining — **0h, 0 min**
 *Time calculation in progress*
@@ -307,7 +499,7 @@ def generate_daily_briefing(
             "timestamp": now.isoformat(),
             "current_time_eastern": current_time_formatted,
             "events_retrieved": events_retrieved,
-            "events_included": 0
+            "events_included": events_included
         }
     
     except Exception as e:
