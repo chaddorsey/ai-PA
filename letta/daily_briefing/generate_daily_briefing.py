@@ -10,7 +10,9 @@ from typing import Dict, Any, Optional
 
 def generate_daily_briefing(
     calendar_id: Optional[str] = None,
-    timezone: Optional[str] = None
+    timezone: Optional[str] = None,
+    target_date: Optional[str] = None,
+    include_troop_meetings: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Generate a daily briefing with formatted schedule and available time calculations.
@@ -22,13 +24,15 @@ def generate_daily_briefing(
     Args:
         calendar_id: Calendar identifier (email address). Defaults to "cdorsey@concord.org".
         timezone: Timezone for time calculations and display. Defaults to "America/New_York".
+        target_date: Date for the briefing in YYYY-MM-DD format. Defaults to today.
+        include_troop_meetings: Whether to include troop meetings. Defaults to False.
     
     Returns:
-        Dictionary with status, briefing, memory_content, timestamp, and other metadata.
+        Dictionary with status, briefing, instructions, timestamp, and other metadata.
     """
     # Import required modules inside function for Letta tool extraction
     import traceback
-    import json
+    import re
     import os
     import sys
     import asyncio
@@ -42,10 +46,52 @@ def generate_daily_briefing(
             calendar_id = "cdorsey@concord.org"
         if timezone is None:
             timezone = "America/New_York"
+        if include_troop_meetings is None:
+            include_troop_meetings = False
         
         # Get current time in specified timezone
         tz = pytz.timezone(timezone)
         now = datetime.now(tz)
+        
+        # Parse target_date if provided, otherwise use today
+        if target_date:
+            try:
+                # Parse YYYY-MM-DD format
+                target_dt = datetime.strptime(target_date, "%Y-%m-%d")
+                target_dt = tz.localize(target_dt.replace(hour=0, minute=0, second=0, microsecond=0))
+            except ValueError:
+                # Try other common formats
+                try:
+                    target_dt = datetime.strptime(target_date, "%m/%d/%Y")
+                    target_dt = tz.localize(target_dt.replace(hour=0, minute=0, second=0, microsecond=0))
+                except ValueError:
+                    target_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            target_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Determine if this is for today or another date
+        is_today = target_dt.date() == now.date()
+        
+        # For available time calculation:
+        # - Work hours are 8:00 AM to 5:00 PM
+        # - If called before 8 AM or for future dates, start at 8:00 AM
+        # - If called during work hours, start at current time
+        # - If called after 5 PM, start at 8:00 AM (for the target date's schedule)
+        work_start = target_dt.replace(hour=8, minute=0, second=0, microsecond=0)
+        work_end = target_dt.replace(hour=17, minute=0, second=0, microsecond=0)
+        
+        if is_today:
+            # During work hours: use current time
+            # Before work hours: use 8 AM
+            # After work hours: use 8 AM (shows full day's available time)
+            if now < work_start:
+                time_reference = work_start
+            elif now > work_end:
+                time_reference = work_start  # Show from 8 AM for next day's planning
+            else:
+                time_reference = now
+        else:
+            time_reference = work_start  # For future dates, always start at 8 AM
         
         # Format current time for display
         try:
@@ -53,9 +99,14 @@ def generate_daily_briefing(
         except ValueError:
             current_time_formatted = now.strftime("%I:%M %p").lstrip("0")
         
-        day_name = now.strftime("%a")
-        month_name = now.strftime("%b")
-        day_number = now.strftime("%d")
+        # Format target date for display
+        day_name = target_dt.strftime("%a")
+        month_name = target_dt.strftime("%b")
+        day_number = target_dt.strftime("%-d") if hasattr(target_dt, 'strftime') else str(target_dt.day)
+        try:
+            day_number = target_dt.strftime("%-d")
+        except ValueError:
+            day_number = str(target_dt.day)
         
         # Add parent directory to path for imports
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -72,7 +123,7 @@ def generate_daily_briefing(
             return {
                 "status": "error",
                 "briefing": "",
-                "memory_content": "",
+                "instructions": "An error occurred. Do not update memory.",
                 "timestamp": now.isoformat(),
                 "current_time_eastern": current_time_formatted,
                 "error_message": "MCP calendar client not available. Ensure scheduling_orchestrator.mcp_client is accessible."
@@ -92,16 +143,14 @@ def generate_daily_briefing(
         )
         
         # ========== FETCH CALENDAR EVENTS ==========
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_before_start = today_start - timedelta(days=1)
-        day_after_end = today_start + timedelta(days=2)
+        # Fetch a window around the target date
+        day_before_start = target_dt - timedelta(days=1)
+        day_after_end = target_dt + timedelta(days=2)
         after_date_iso = day_before_start.astimezone(pytz.UTC).strftime("%Y-%m-%dT00:00:00Z")
         before_date_iso = day_after_end.astimezone(pytz.UTC).strftime("%Y-%m-%dT23:59:59Z")
         
-        # Use inline async execution with asyncio.run and lambda-style inline function
+        # Use inline async execution
         try:
-            import asyncio
-            
             async def _async_fetch():
                 if not mcp_client._initialized:
                     await mcp_client.initialize()
@@ -115,12 +164,91 @@ def generate_daily_briefing(
             return {
                 "status": "error",
                 "briefing": "",
-                "memory_content": "",
+                "instructions": "An error occurred. Do not update memory.",
                 "timestamp": now.isoformat(),
                 "current_time_eastern": current_time_formatted,
                 "error_message": f"Error fetching calendar events: {str(e)}",
                 "events_retrieved": 0
             }
+        
+        # ========== INLINE HELPERS (using lambdas to avoid def statements) ==========
+        
+        # Aggressive sanitization - removes ALL formatting artifacts
+        _sanitize = lambda s: re.sub(r'\s+', ' ', re.sub(r'\s*\.\s*', '.', re.sub(r'\s*@\s*', '@', re.sub(r'[\*\n\r\t]+', '', str(s).replace('\n', ' ').replace('\r', ' ') if s else '')))).strip() if s else ''
+        
+        # Clean string alias
+        _clean_str = _sanitize
+        
+        # ========== NAME LOOKUP TABLE ==========
+        # Concord Staff and contacts - email to full name mapping
+        _name_lookup = {
+            # Concord Staff
+            "emcelroy@concord.org": "Ethan McElroy",
+            "kswenson@concord.org": "Kirk Swenson",
+            "scytacki@concord.org": "Scott Cytacki",
+            "phorwitz@concord.org": "Paul Horwitz",
+            "hlee@concord.org": "Hee-Sun Lee",
+            "tlord@concord.org": "Trudi Lord",
+            "ddamelin@concord.org": "Dan Damelin",
+            "jraiff@concord.org": "Judi Raiff",
+            "cmcintyre@concord.org": "Cynthia McIntyre",
+            "wfinzer@concord.org": "Bill Finzer",
+            "kbrown@concord.org": "Kiley Brown",
+            "lbondaryk@concord.org": "Leslie Bondaryk",
+            "jchao@concord.org": "Jie Chao",
+            "apallant@concord.org": "Amy Pallant",
+            "clore@concord.org": "Chris Lore",
+            "kmiller@concord.org": "Kate Miller",
+            "kjesseneller@concord.org": "Kathy Jessen Eller",
+            "rellis@concord.org": "Rebecca Ellis",
+            "tfristoe@concord.org": "Teale Fristoe",
+            "lbuoncuore@concord.org": "Lisa Buoncuore",
+            "dkehoe@concord.org": "Danielle Kehoe",
+            "sbrau@concord.org": "Sue Brau",
+            "dmartin@concord.org": "Doug Martin",
+            "lstephens@concord.org": "Lynn Stephens",
+            "mtirenin@concord.org": "Michael Tirenin",
+            "awagh@concord.org": "Aditi Wagh",
+            # Family
+            "sophiadorsey@gmail.com": "Sophia Dorsey",
+            "sdorsey@oberlin.edu": "Sophia Dorsey",
+            "liamdorsey00@gmail.com": "Liam Dorsey",
+            "lizdorsey@gmail.com": "Liz Dorsey",
+            "cdorsey@concord.org": "Chad Dorsey",
+            "chaddorsey@gmail.com": "Chad Dorsey",
+        }
+        
+        # Get name from email - first check lookup table, then try display name, then derive
+        _get_name = lambda email, display_name=None: (
+            # Priority 1: Lookup table
+            _name_lookup.get(email.lower().strip(), None) if email else None
+        ) or (
+            # Priority 2: Display name from event (if provided and not just the email)
+            _sanitize(display_name) if display_name and "@" not in display_name and display_name != email else None
+        ) or (
+            # Priority 3: Derive from email
+            (lambda u: (
+                ' '.join(word.capitalize() for word in u.replace('.', ' ').replace('_', ' ').replace('-', ' ').split() if word)
+                if ('.' in u or '_' in u or '-' in u) else
+                (f"{u[0].upper()} {u[1:].capitalize()}" if (len(u) > 2 and u[0].islower()) else
+                (u.capitalize() if u else ""))
+            ))(re.sub(r'[0-9]+', '', (email.split('@')[0] if '@' in str(email) else str(email)))) if email else ""
+        )
+        
+        # Check if %-I format is supported (Linux vs macOS difference)
+        _use_dash_format = True
+        try:
+            now.strftime("%-I:%M %p")
+        except ValueError:
+            _use_dash_format = False
+        
+        # Format time helper - ALWAYS produces clean "H:MM AM/PM" format from datetime
+        # This should NEVER have spaces in the output since it uses strftime
+        # Added type check to ensure we only call strftime on datetime objects
+        _format_time_str = lambda dt: (
+            (dt.strftime("%-I:%M %p") if _use_dash_format else dt.strftime("%I:%M %p").lstrip("0"))
+            if dt and hasattr(dt, 'strftime') else ""
+        )
         
         # Normalize events
         normalized_events = []
@@ -134,6 +262,10 @@ def generate_daily_briefing(
             end_dt_str = end_data.get("dateTime")
             if not start_dt_str or not end_dt_str:
                 continue
+            
+            # Clean the title
+            title = _clean_str(evt.get("summary", ""))
+            
             # Process attendees
             attendees_list = evt.get("attendees_list", [])
             attendees_details = evt.get("attendees_details", [])
@@ -145,23 +277,29 @@ def generate_daily_briefing(
                     attendees_list = []
             elif not isinstance(attendees_list, list):
                 attendees_list = []
+            
             attendees = []
             if attendees_details and isinstance(attendees_details, list):
                 for attendee in attendees_details:
                     if isinstance(attendee, dict):
-                        name = attendee.get("name", "")
-                        email = attendee.get("email", "")
+                        name = _clean_str(attendee.get("name", ""))
+                        email = _clean_str(attendee.get("email", ""))
                         if name and email:
-                            attendees.append(f"{name} <{email}>")
+                            attendees.append({"name": name, "email": email})
                         elif email:
-                            attendees.append(email)
+                            attendees.append({"name": "", "email": email})
                         elif name:
-                            attendees.append(name)
+                            attendees.append({"name": name, "email": ""})
             if not attendees and attendees_list:
-                attendees = [str(a) for a in attendees_list if a]
+                for a in attendees_list:
+                    if a:
+                        cleaned = _clean_str(str(a))
+                        if cleaned:
+                            attendees.append({"name": "", "email": cleaned})
+            
             normalized_events.append({
                 "id": evt.get("id", ""),
-                "title": evt.get("summary", ""),
+                "title": title,
                 "start": start_dt_str,
                 "end": end_dt_str,
                 "attendees": attendees
@@ -169,13 +307,11 @@ def generate_daily_briefing(
         
         events_retrieved = len(normalized_events)
         
-        # ========== HELPER: Parse datetime string (inline) ==========
-        # This helper parses ISO datetime strings - used throughout
-        # We'll store parsed datetimes in a dict keyed by (event_id, field)
+        # ========== PARSE DATETIMES ==========
         parsed_dt_cache = {}
         
         for event in normalized_events:
-            event_id = event.get("id", id(event))
+            event_id = event.get("id") or id(event)
             for field in ["start", "end"]:
                 dt_str = event.get(field)
                 if dt_str:
@@ -191,17 +327,21 @@ def generate_daily_briefing(
                         parsed_dt_cache[(event_id, field)] = None
         
         # ========== FILTER EVENTS ==========
-        # Categorize events
         email_tasks_events = []
         hold_events = []
         chad_out_events = []
+        troop_events = []
         real_meetings = []
         
         for event in normalized_events:
-            event_id = event.get("id", id(event))
+            event_id = event.get("id") or id(event)
             title = event.get("title", "").lower()
             start_dt = parsed_dt_cache.get((event_id, "start"))
             end_dt = parsed_dt_cache.get((event_id, "end"))
+            
+            # Skip events not on target date
+            if start_dt and start_dt.date() != target_dt.date():
+                continue
             
             # Check if Email & Tasks (9:00-11:00 AM)
             is_email_tasks = False
@@ -216,12 +356,17 @@ def generate_daily_briefing(
             # Check if Chad out
             is_chad_out = "chad out" in title or "chad's out" in title
             
+            # Check if Troop meeting
+            is_troop = "troop" in title
+            
             if is_email_tasks:
                 email_tasks_events.append((event, event_id, start_dt, end_dt))
             elif is_hold:
                 hold_events.append((event, event_id, start_dt, end_dt))
             elif is_chad_out:
                 chad_out_events.append((event, event_id, start_dt, end_dt))
+            elif is_troop:
+                troop_events.append((event, event_id, start_dt, end_dt))
             else:
                 real_meetings.append((event, event_id, start_dt, end_dt))
         
@@ -236,55 +381,73 @@ def generate_daily_briefing(
             for i, (et_event, et_id, et_start, et_end) in enumerate(email_tasks_events):
                 if et_start is None or et_end is None:
                     continue
-                # Check overlap: rm_start < et_end and et_start < rm_end
                 if rm_start < et_end and et_start < rm_end:
                     overlapped_email_tasks.add(i)
             # Check overlaps with holds
             for i, (h_event, h_id, h_start, h_end) in enumerate(hold_events):
                 if h_start is None or h_end is None:
                     continue
-                # Check overlap
                 if rm_start < h_end and h_start < rm_end:
                     overlapped_holds.add(i)
         
-        # Build filtered events list with parsed times
+        # Build filtered events list - ONLY real meetings + chad_out + optionally troop
+        # Do NOT include Email & Tasks or Holds in the display list
         filtered_events_with_times = []
         for event, event_id, start_dt, end_dt in real_meetings:
-            filtered_events_with_times.append((event, start_dt, end_dt))
-        for i in overlapped_email_tasks:
-            event, event_id, start_dt, end_dt = email_tasks_events[i]
-            filtered_events_with_times.append((event, start_dt, end_dt))
-        for i in overlapped_holds:
-            event, event_id, start_dt, end_dt = hold_events[i]
-            filtered_events_with_times.append((event, start_dt, end_dt))
+            if start_dt:
+                filtered_events_with_times.append((event, start_dt, end_dt, "meeting"))
         for event, event_id, start_dt, end_dt in chad_out_events:
-            filtered_events_with_times.append((event, start_dt, end_dt))
+            if start_dt:
+                filtered_events_with_times.append((event, start_dt, end_dt, "chad_out"))
+        
+        # Include troop meetings only if requested
+        if include_troop_meetings:
+            for event, event_id, start_dt, end_dt in troop_events:
+                if start_dt:
+                    filtered_events_with_times.append((event, start_dt, end_dt, "troop"))
         
         # Sort by start time
         filtered_events_with_times.sort(key=lambda x: x[1] if x[1] else datetime.max.replace(tzinfo=tz))
         
-        filtered_events = [e[0] for e in filtered_events_with_times]
-        events_included = len(filtered_events)
+        events_included = len(filtered_events_with_times)
         
         # ========== CALCULATE AVAILABLE TIME ==========
-        cutoff_time = today_start.replace(hour=17, minute=0)
+        # For available time, we need to consider ALL busy events (including chad_out, troop, email/tasks, holds)
+        all_busy_events = []
+        for event, event_id, start_dt, end_dt in real_meetings:
+            if start_dt and end_dt:
+                all_busy_events.append({"start": start_dt, "end": end_dt})
+        for event, event_id, start_dt, end_dt in chad_out_events:
+            if start_dt and end_dt:
+                all_busy_events.append({"start": start_dt, "end": end_dt})
+        for event, event_id, start_dt, end_dt in troop_events:
+            if start_dt and end_dt:
+                all_busy_events.append({"start": start_dt, "end": end_dt})
+        # Email & Tasks and Holds count as busy time
+        for event, event_id, start_dt, end_dt in email_tasks_events:
+            if start_dt and end_dt:
+                all_busy_events.append({"start": start_dt, "end": end_dt})
+        for event, event_id, start_dt, end_dt in hold_events:
+            if start_dt and end_dt:
+                all_busy_events.append({"start": start_dt, "end": end_dt})
         
-        if now >= cutoff_time:
+        # Filter to target date only
+        today_busy = [e for e in all_busy_events if e["start"].date() == target_dt.date()]
+        today_busy.sort(key=lambda e: e["start"])
+        
+        cutoff_time = target_dt.replace(hour=17, minute=0)
+        
+        if time_reference >= cutoff_time:
             total_available_minutes = 0
             available_blocks = []
         else:
-            # Get today's events that are after now
-            today_events = []
-            for event, start_dt, end_dt in filtered_events_with_times:
-                if start_dt and end_dt:
-                    if start_dt.date() == now.date() and end_dt > now:
-                        today_events.append({"start": start_dt, "end": end_dt})
-            today_events.sort(key=lambda e: e["start"])
+            # Filter to events after time_reference
+            today_busy = [e for e in today_busy if e["end"] > time_reference]
             
             # Find available blocks
             available_blocks = []
-            current_time = now
-            for event_info in today_events:
+            current_time = time_reference
+            for event_info in today_busy:
                 event_start = event_info["start"]
                 event_end = event_info["end"]
                 if current_time < event_start:
@@ -328,7 +491,7 @@ def generate_daily_briefing(
             total_available_minutes = sum(b["duration_minutes"] for b in available_blocks)
         
         # ========== FORMAT BRIEFING ==========
-        # Format duration
+        # Format duration for available time
         hours = total_available_minutes // 60
         minutes = total_available_minutes % 60
         if hours == 0:
@@ -338,96 +501,179 @@ def generate_daily_briefing(
         else:
             available_time_formatted = f"{hours}h, {minutes} min"
         
-        # Build header
-        header = f"# Today's Schedule (updated {day_name}. {month_name} {day_number} at {current_time_formatted})"
+        # Get day name for header (e.g., "Thursday's Schedule")
+        full_day_name = target_dt.strftime("%A")  # Full day name like "Thursday"
         
-        # Build schedule section
-        schedule_lines = ["**Today's Schedule**"]
-        today_filtered = []
-        for event, start_dt, end_dt in filtered_events_with_times:
-            if start_dt and start_dt.date() == now.date():
-                today_filtered.append((event, start_dt, end_dt))
+        # Build header: "**Thursday's Schedule** (updated Dec. 12 at 3:00 AM)"
+        header = f"**{full_day_name}'s Schedule** (updated {month_name}. {day_number} at {current_time_formatted})"
         
-        if today_filtered:
-            for event, start_dt, end_dt in today_filtered:
+        # Schedule section - meetings are bulleted below the header
+        schedule_lines = []
+        
+        if filtered_events_with_times:
+            for event, start_dt, end_dt, event_type in filtered_events_with_times:
                 try:
-                    # Format times
-                    try:
-                        start_str = start_dt.strftime("%-I:%M %p")
-                    except ValueError:
-                        start_str = start_dt.strftime("%I:%M %p").lstrip("0")
-                    try:
-                        end_str = end_dt.strftime("%-I:%M %p")
-                    except ValueError:
-                        end_str = end_dt.strftime("%I:%M %p").lstrip("0")
-                    time_range = f"{start_str}–{end_str}"
-                    title = event.get("title", "")
-                    attendees = event.get("attendees", [])
+                    # Format times - these MUST be datetime objects from parsed cache
+                    start_str = _format_time_str(start_dt) if start_dt else ""
+                    end_str = _format_time_str(end_dt) if end_dt else ""
                     
-                    # Format attendees
-                    if attendees:
-                        attendee_names = []
-                        for attendee in attendees:
-                            if "<" in attendee and ">" in attendee:
-                                name = attendee.split("<")[0].strip()
-                                if name:
-                                    attendee_names.append(name)
-                                else:
-                                    email = attendee.split("<")[1].split(">")[0].strip()
-                                    attendee_names.append(email)
-                            else:
-                                attendee_names.append(attendee)
-                        attendee_str = ", ".join(attendee_names)
+                    # Skip if times couldn't be formatted
+                    if not start_str or not end_str:
+                        continue
+                    
+                    # Time range is always bolded
+                    time_range = f"**{start_str}–{end_str}**"
+                    title = str(event.get("title", "") or "")
+                    attendees = event.get("attendees", []) or []
+                    
+                    # Format attendees - use lookup table, then display name, then derive
+                    attendee_names = []
+                    attendee_emails = []
+                    for att in attendees:
+                        try:
+                            if not isinstance(att, dict):
+                                continue
+                            display_name = _sanitize(str(att.get("name", "") or ""))
+                            email = _sanitize(str(att.get("email", "") or "")).lower()
+                            
+                            if email:
+                                attendee_emails.append(email)
+                            
+                            # Use _get_name which checks lookup table first
+                            resolved_name = _get_name(email, display_name)
+                            if resolved_name:
+                                attendee_names.append(resolved_name)
+                        except:
+                            continue
+                    
+                    # Check if this is a solo meeting (only Chad as attendee)
+                    chad_emails = ["cdorsey@concord.org", "chaddorsey@gmail.com"]
+                    non_chad_emails = [e for e in attendee_emails if e not in chad_emails]
+                    is_solo_meeting = len(non_chad_emails) == 0
+                    
+                    # Remove duplicates, Chad, and room names from display
+                    seen = set()
+                    unique_attendees = []
+                    for name in attendee_names:
+                        try:
+                            cleaned_name = _sanitize(name)
+                            name_lower = cleaned_name.lower()
+                            # Skip Chad, room names, and generic entries
+                            if (cleaned_name and 
+                                name_lower not in seen and 
+                                "chad" not in name_lower and
+                                not name_lower.startswith("(") and
+                                "zoom" not in name_lower and
+                                "cottage" not in name_lower and
+                                "conference" not in name_lower and
+                                "room" not in name_lower and
+                                "café" not in name_lower and
+                                "cafe" not in name_lower and
+                                "employees" not in name_lower):
+                                seen.add(name_lower)
+                                unique_attendees.append(cleaned_name)
+                        except:
+                            continue
+                    
+                    # Limit display to 5 attendees max
+                    if len(unique_attendees) > 5:
+                        attendee_str = ", ".join(unique_attendees[:5]) + f", +{len(unique_attendees) - 5} more"
+                    elif unique_attendees:
+                        attendee_str = ", ".join(unique_attendees)
                     else:
-                        attendee_str = "Chad Dorsey"
+                        attendee_str = ""
                     
-                    attendee_part = f" (*{attendee_str}*)"
-                    title_lower = title.lower()
-                    is_solo = (("email" in title_lower and "task" in title_lower) or "hold" in title_lower)
+                    # Clean title for display (remove any stray markdown)
+                    clean_title = _clean_str(title)
                     
-                    if is_solo:
-                        schedule_lines.append(f"• **{title}**{attendee_part} — *{time_range}*")
+                    # Format based on event type and attendees
+                    # - Chad out events: title in italics with (busy)
+                    # - Solo meetings (only Chad): title in italics
+                    # - Meetings with others: title in bold, attendees in italicized parens
+                    if event_type == "chad_out":
+                        schedule_lines.append(f"• {time_range} — *{clean_title}* (busy)")
+                    elif is_solo_meeting:
+                        # Solo meeting - title in italics
+                        schedule_lines.append(f"• {time_range} — *{clean_title}*")
+                    elif attendee_str:
+                        # Meeting with others - title in bold, attendees in italicized parens
+                        schedule_lines.append(f"• {time_range} — **{clean_title}** *({attendee_str})*")
                     else:
-                        schedule_lines.append(f"• **{time_range}** — **{title}**{attendee_part}")
-                except:
-                    schedule_lines.append(f"• **{event.get('title', 'Unknown Event')}**")
+                        # Meeting with others but no displayable attendees
+                        schedule_lines.append(f"• {time_range} — **{clean_title}**")
+                except Exception as evt_err:
+                    # Skip problematic events but note them
+                    schedule_lines.append(f"• (Error processing event: {str(evt_err)[:50]})")
         else:
             schedule_lines.append("*No meetings scheduled*")
         
         schedule_section = "\n".join(schedule_lines)
         
         # Build available time section
-        available_time_header = f"### Available Time Remaining — **{available_time_formatted}**"
+        # Format: "**Available Time Remaining** — 2h, 15 min remaining"
+        #         "• **8:00 AM-9:00 AM** - (1h)"
         
-        if available_blocks:
-            block_lines = []
-            for i, block in enumerate(available_blocks):
-                try:
-                    block_start_str = block["start"].strftime("%-I:%M %p")
-                except ValueError:
-                    block_start_str = block["start"].strftime("%I:%M %p").lstrip("0")
-                try:
-                    block_end_str = block["end"].strftime("%-I:%M %p")
-                except ValueError:
-                    block_end_str = block["end"].strftime("%I:%M %p").lstrip("0")
-                duration = block["duration_minutes"]
-                if i == 0:
-                    duration_str = f"*({duration} min left)*"
-                else:
-                    duration_str = f"*({duration} min)*"
-                block_lines.append(f"- {block_start_str} – {block_end_str} {duration_str}")
-            available_time_section = f"{available_time_header}\n" + "\n".join(block_lines)
-        else:
-            available_time_section = f"{available_time_header}\n*No available time remaining*"
+        try:
+            available_time_lines = []
+            # Header is bold with em dash
+            available_time_lines.append(f"**Available Time Remaining** — {available_time_formatted} remaining")
+            
+            if available_blocks:
+                for block in available_blocks:
+                    try:
+                        block_start = block.get("start")
+                        block_end = block.get("end")
+                        duration = block.get("duration_minutes", 0)
+                        
+                        block_start_str = _format_time_str(block_start) if block_start else ""
+                        block_end_str = _format_time_str(block_end) if block_end else ""
+                        
+                        if not block_start_str or not block_end_str:
+                            continue
+                        
+                        # Format duration for block
+                        block_hours = duration // 60
+                        block_mins = duration % 60
+                        if block_hours == 0:
+                            dur_str = f"{block_mins} min"
+                        elif block_mins == 0:
+                            dur_str = f"{block_hours}h"
+                        else:
+                            dur_str = f"{block_hours}h {block_mins} min"
+                        
+                        # Time slots are bulleted with bold times
+                        available_time_lines.append(f"• **{block_start_str}–{block_end_str}** - ({dur_str})")
+                    except:
+                        continue
+            else:
+                available_time_lines.append("*No available time blocks*")
+            
+            available_time_section = "\n".join(available_time_lines)
+        except Exception as avail_err:
+            available_time_section = f"**Available Time Remaining** — error calculating"
         
         # Combine into briefing
         briefing = f"{header}\n\n{schedule_section}\n\n{available_time_section}"
         
+        # Wrap in VERBATIM tags so the agent passes it through unchanged
+        verbatim_briefing = f"[VERBATIM_USER_OUTPUT]\n{briefing}\n[/VERBATIM_USER_OUTPUT]"
+        
+        # Instructions for the agent - use memory_rethink for complete replacement
+        memory_instructions = (
+            "CRITICAL INSTRUCTIONS:\n"
+            "1. Display the briefing content to the user EXACTLY as provided within the VERBATIM tags. "
+            "Do NOT modify, reformat, or retype any characters. Times use COLONS (e.g., 8:00 AM), not semicolons.\n"
+            "2. Use memory_rethink (NOT memory_replace) to update 'current_daily_schedule_and_available_time'. "
+            "Copy the briefing content EXACTLY - character for character - without any modifications.\n"
+            "3. Do NOT retype or regenerate any part of this output. Use copy/paste semantics only."
+        )
+        
         return {
             "status": "ok",
-            "briefing": briefing,
-            "memory_content": briefing,
+            "briefing": verbatim_briefing,
+            "instructions": memory_instructions,
             "timestamp": now.isoformat(),
+            "target_date": target_dt.strftime("%Y-%m-%d"),
             "current_time_eastern": current_time_formatted,
             "events_retrieved": events_retrieved,
             "events_included": events_included,
@@ -454,7 +700,7 @@ def generate_daily_briefing(
         return {
             "status": "error",
             "briefing": "",
-            "memory_content": "",
+            "instructions": "An error occurred. Do not update memory.",
             "timestamp": error_timestamp,
             "current_time_eastern": "",
             "error_message": f"Error generating daily briefing: {str(e)}\n{traceback.format_exc()}"
