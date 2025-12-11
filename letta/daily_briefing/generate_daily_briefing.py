@@ -7,7 +7,8 @@ from calendar events retrieved via MCP.
 
 import os
 import sys
-from typing import Dict, Any, Optional
+import asyncio
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import pytz
 import logging
@@ -16,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import MCP client from scheduling orchestrator
+try:
+    from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
+except ImportError:
+    # Fallback if import fails
+    MCPCalendarClient = None
+    MCPError = None
 
 
 def generate_daily_briefing(
@@ -103,10 +112,39 @@ def generate_daily_briefing(
         now = datetime.now(tz)
         
         # Format current time for display
-        current_time_formatted = now.strftime("%-I:%M %p")
+        # Use strftime format that works on both Unix and Windows
+        try:
+            current_time_formatted = now.strftime("%-I:%M %p")  # Unix format
+        except ValueError:
+            current_time_formatted = now.strftime("%I:%M %p").lstrip("0")  # Windows-compatible
+        
         day_name = now.strftime("%a")
         month_name = now.strftime("%b")
         day_number = now.strftime("%d")
+        
+        # Initialize MCP client if available
+        if MCPCalendarClient is None:
+            return {
+                "status": "error",
+                "briefing": "",
+                "memory_content": "",
+                "timestamp": now.isoformat(),
+                "current_time_eastern": current_time_formatted,
+                "error_message": "MCP calendar client not available. Ensure scheduling_orchestrator.mcp_client is accessible."
+            }
+        
+        # Get MCP server URL from environment or use default
+        mcp_url = os.getenv(
+            "MCP_CALENDAR_SERVER_URL",
+            "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+        )
+        
+        # Create MCP client
+        mcp_client = MCPCalendarClient(
+            base_url=mcp_url,
+            timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
+            max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
+        )
         
         # TODO: Implement calendar event retrieval (task 24-3)
         # TODO: Implement event filtering (task 24-4)

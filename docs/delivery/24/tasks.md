@@ -9,7 +9,7 @@ This document lists all tasks associated with PBI 24.
 | Task ID | Name | Status | Description |
 | :------ | :----------------------------------------------- | :------- | :----------------------------------------------- |
 | 24-1 | [Define daily briefing tool interface & schemas](./24-1.md) | Done | Specify the Letta tool `generate_daily_briefing` with typed args/docstring or Pydantic models. Define input/output schemas. |
-| 24-2 | [Set up MCP calendar client integration](./24-2.md) | Proposed | Reuse or extend MCPCalendarClient from scheduling orchestrator for calendar event retrieval. Configure MCP server connection. |
+| 24-2 | [Set up MCP calendar client integration](./24-2.md) | Done | Reuse or extend MCPCalendarClient from scheduling orchestrator for calendar event retrieval. Configure MCP server connection. |
 | 24-3 | [Implement calendar event retrieval](./24-3.md) | Proposed | Implement logic to retrieve events from cdorsey@concord.org for 3-day window (today-1 to today+1) via MCP Core_Event_Data. |
 | 24-4 | [Implement event filtering and processing](./24-4.md) | Proposed | Filter events according to gold-standard rules: exclude "Email & Tasks" and "Hold" unless overlapped, include all Chad's events, handle overlaps. |
 | 24-5 | [Implement available time calculation](./24-5.md) | Proposed | Calculate available time blocks from current Eastern time to 5:00 PM. Merge adjacent blocks, subtract elapsed time, include gaps. |
