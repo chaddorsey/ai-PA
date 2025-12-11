@@ -51,11 +51,14 @@ def my_custom_tool(param1: str, param2: Optional[int] = None) -> Dict[str, Any]:
 
 **Common Mistake**: Putting imports after default value assignments or other code. This will cause `NameError` because the imports haven't executed yet when that code runs.
 
-### 2. Helper Functions Must Be Nested Inside the Main Function
+### 2. AVOID Nested Function Definitions (def statements)
 
-**Problem**: Module-level helper functions are not included when Letta extracts the function, causing `NameError` at runtime.
+**Problem**: When Letta extracts the function, it may also extract nested `def` statements as separate tools, leading to unexpected behavior. Nested functions with missing docstrings or type annotations cause schema generation errors.
 
-**Solution**: Define all helper functions inside the main function, before they are used.
+**Solution**: **DO NOT use `def` statements inside the main function.** Instead:
+1. Inline all helper logic directly
+2. Use lambdas only for simple sorting/filtering callbacks
+3. Store computed values in dictionaries/lists for reuse
 
 ```python
 def my_custom_tool(param1: str, param2: Optional[int] = None) -> Dict[str, Any]:
@@ -63,131 +66,46 @@ def my_custom_tool(param1: str, param2: Optional[int] = None) -> Dict[str, Any]:
     Tool description here.
     """
     # Imports here...
-    
-    # Define helper functions inside main function so they're included when Letta extracts the function
-    
-    def helper_function_1(arg1: str, arg2: str) -> str:
-        """Helper function description.
-        
-        Args:
-            arg1: Description of arg1
-            arg2: Description of arg2
-        """
-        # Implementation...
-        return result
-    
-    def helper_function_2(data: str) -> int:
-        """Helper function description.
-        
-        Args:
-            data: Description of data
-        """
-        # Implementation...
-        return result
-    
-    # Main function logic that uses helpers...
-    result = helper_function_1(param1, "value")
-    return {"status": "ok", "result": result}
-```
-
-### 3. Type Annotations Are Required for Nested Functions
-
-**Problem**: Letta's schema generator requires type annotations for all function parameters, including nested helper functions.
-
-**Solution**: Add type annotations to all nested function parameters and return types.
-
-```python
-def my_custom_tool(param1: str) -> Dict[str, Any]:
-    """Tool description."""
-    # Imports...
-    
-    def helper(data: str, count: int) -> str:  # ✅ Type annotations required
-        """Helper description.
-        
-        Args:
-            data: Description
-            count: Description
-        """
-        return f"{data} {count}"
-    
-    # ❌ This will fail:
-    # def helper(data, count):  # Missing type annotations
-    #     return f"{data} {count}"
-```
-
-### 4. Only Basic JSON Types Supported for Nested Functions
-
-**Problem**: Letta's schema generator only supports basic JSON-serializable types: `str`, `int`, `bool`, `float`, `None`, and simple `List`/`Dict` with these types. Complex types like `datetime`, `pytz.BaseTzInfo`, or custom classes cause schema generation errors.
-
-**Solution**: Use basic JSON types for nested function type annotations, even if they're not semantically correct. Python doesn't enforce types at runtime, so the code will work correctly.
-
-```python
-def my_custom_tool(param1: str) -> Dict[str, Any]:
-    """Tool description."""
-    # Imports...
-    from datetime import datetime
     import pytz
+    from datetime import datetime
     
-    # ✅ Use basic JSON types for nested functions
-    def parse_datetime(dt_str: str, tz_obj: str) -> str:
-        """Parse datetime string.
-        
-        Args:
-            dt_str: Datetime string
-            tz_obj: Timezone object (annotated as str for Letta)
-        """
-        # Implementation can still use actual datetime/pytz objects
-        tz = pytz.timezone(tz_obj)  # Works at runtime
-        dt = datetime.fromisoformat(dt_str)
-        return dt.astimezone(tz)
+    # ❌ DO NOT DO THIS - Letta may extract nested functions as separate tools:
+    # def helper_function(data):
+    #     return data.upper()
     
-    # ❌ This will fail schema generation:
-    # def parse_datetime(dt_str: str, tz_obj: pytz.BaseTzInfo) -> datetime:
-    #     # pytz.BaseTzInfo and datetime are not JSON-serializable types
+    # ✅ INSTEAD - Inline the logic or use lambdas for simple operations:
+    
+    # For complex reused logic, compute once and store in a dict/list
+    processed_items = {}
+    for item in items:
+        # Inline the processing logic
+        processed = item.get("value", "").upper()
+        processed_items[item["id"]] = processed
+    
+    # For simple sorting, lambdas are OK (but no def statements)
+    items.sort(key=lambda x: x.get("date", ""))
+    
+    return {"status": "ok", "result": processed_items}
 ```
 
-**Supported Types for Nested Functions**:
-- `str`
-- `int`
-- `bool`
-- `float`
-- `None` (or `Optional[...]`)
-- `List[str]`, `List[int]`, etc. (with basic types)
-- `Dict[str, str]`, `Dict[str, int]`, etc. (with basic types)
-
-**Not Supported**:
-- `datetime`
-- `pytz.BaseTzInfo`
-- Custom classes
-- `Any` (causes schema generation errors)
-- `object` (causes schema generation errors)
-- Complex generic types like `Dict[str, Any]` in nested functions
-
-### 5. Docstrings with Args Sections Required for Nested Functions
-
-**Problem**: Letta's schema generator requires docstrings with `Args:` sections for all nested functions, describing each parameter.
-
-**Solution**: Add docstrings with `Args:` sections to all nested functions.
+**Exception**: `async def` for asyncio operations may be needed but should be kept minimal:
 
 ```python
-def my_custom_tool(param1: str) -> Dict[str, Any]:
-    """Tool description."""
-    # Imports...
-    
-    def helper_function(data: str, count: int) -> str:
-        """Helper function description.
-        
-        Args:
-            data: Description of what data represents
-            count: Description of what count represents
-        """
-        return f"{data} {count}"
-    
-    # ❌ This will fail:
-    # def helper_function(data: str, count: int) -> str:
-    #     """Helper function description."""  # Missing Args section
-    #     return f"{data} {count}"
+    # This pattern is acceptable for async operations
+    async def _async_fetch():
+        await client.initialize()
+        return await client.get_data()
+    result = asyncio.run(_async_fetch())
 ```
+
+### 3. If You MUST Use Nested Functions (Not Recommended)
+
+If you absolutely must use nested `def` statements (e.g., for complex async operations), they require:
+- Type annotations on all parameters
+- Docstrings with `Args:` sections
+- Only basic JSON types (`str`, `int`, `bool`, `float`, `None`)
+
+**However, it's strongly recommended to avoid nested functions entirely** - see section 2.
 
 ### 6. Main Function Requirements
 
@@ -224,7 +142,7 @@ def my_custom_tool(
 
 ## Complete Example
 
-Here's a complete example following all conventions:
+Here's a complete example following all conventions (NO nested `def` statements):
 
 ```python
 """
@@ -233,8 +151,11 @@ Custom Tool Example
 This module demonstrates a custom Letta tool following all required conventions.
 """
 
+from typing import Dict, Any, Optional
+
+
 def generate_report(
-    report_type: str,
+    report_type: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -244,7 +165,7 @@ def generate_report(
     This tool generates reports based on the specified type and date range.
     
     Args:
-        report_type: Type of report to generate (e.g., "daily", "weekly")
+        report_type: Type of report to generate (e.g., "daily", "weekly"). Defaults to "daily".
         start_date: Start date in ISO format (optional, defaults to today)
         end_date: End date in ISO format (optional, defaults to today)
     
@@ -256,112 +177,84 @@ def generate_report(
         - error_message: Error message if status is "error"
     """
     # Import required modules inside function for Letta tool extraction
+    import traceback
     import os
     import sys
-    from typing import Dict, Any, Optional, List
     from datetime import datetime, timedelta
     import pytz
-    import logging
     
-    # Initialize logger
-    logger = logging.getLogger(__name__)
-    
-    # Add parent directory to path for imports if needed
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    
-    # Import from other modules
-    try:
-        from some_module import SomeClass, SomeError
-    except ImportError:
-        SomeClass = None
-        SomeError = None
-    
-    # Define helper functions inside main function so they're included when Letta extracts the function
-    
-    def parse_date(date_str: str) -> str:
-        """Parse date string.
-        
-        Args:
-            date_str: Date string in ISO format
-        """
-        # Implementation uses actual datetime but type annotation is str
-        try:
-            dt = datetime.fromisoformat(date_str)
-            return dt.isoformat()
-        except ValueError:
-            return date_str
-    
-    def format_report_content(data: str, report_type: str) -> str:
-        """Format report content.
-        
-        Args:
-            data: Report data as string
-            report_type: Type of report
-        """
-        if report_type == "daily":
-            return f"# Daily Report\n\n{data}"
-        elif report_type == "weekly":
-            return f"# Weekly Report\n\n{data}"
-        else:
-            return f"# Report\n\n{data}"
-    
-    def calculate_date_range(start: str, end: str) -> str:
-        """Calculate date range.
-        
-        Args:
-            start: Start date string
-            end: End date string
-        """
-        # Implementation can use actual datetime objects
-        start_dt = datetime.fromisoformat(start)
-        end_dt = datetime.fromisoformat(end)
-        days = (end_dt - start_dt).days
-        return f"{days} days"
-    
-    # Main function logic
+    # Wrap entire function in try-except
     try:
         # Set defaults
+        if report_type is None:
+            report_type = "daily"
+        
+        tz = pytz.timezone("America/New_York")
+        now = datetime.now(tz)
+        
         if start_date is None:
-            tz = pytz.timezone("America/New_York")
-            start_date = datetime.now(tz).isoformat()
-        
+            start_date = now.isoformat()
         if end_date is None:
-            tz = pytz.timezone("America/New_York")
-            end_date = datetime.now(tz).isoformat()
+            end_date = now.isoformat()
         
-        # Use helper functions
-        parsed_start = parse_date(start_date)
-        parsed_end = parse_date(end_date)
-        date_range = calculate_date_range(parsed_start, parsed_end)
+        # Parse dates (inline, no helper function)
+        try:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if start_dt.tzinfo is None:
+                start_dt = pytz.UTC.localize(start_dt)
+            start_dt = start_dt.astimezone(tz)
+        except:
+            start_dt = now
         
-        # Generate report
+        try:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            if end_dt.tzinfo is None:
+                end_dt = pytz.UTC.localize(end_dt)
+            end_dt = end_dt.astimezone(tz)
+        except:
+            end_dt = now
+        
+        # Calculate date range (inline)
+        days = (end_dt - start_dt).days
+        date_range = f"{days} days"
+        
+        # Format report (inline)
         report_data = f"Report for {date_range}"
-        formatted_report = format_report_content(report_data, report_type)
+        if report_type == "daily":
+            formatted_report = f"# Daily Report\n\n{report_data}"
+        elif report_type == "weekly":
+            formatted_report = f"# Weekly Report\n\n{report_data}"
+        else:
+            formatted_report = f"# Report\n\n{report_data}"
         
         return {
             "status": "ok",
             "report": formatted_report,
-            "timestamp": datetime.now(pytz.timezone("America/New_York")).isoformat()
+            "timestamp": now.isoformat()
         }
     
     except Exception as e:
-        logger.error(f"Error generating report: {e}", exc_info=True)
+        # Safe error handling
+        try:
+            error_timestamp = datetime.now(pytz.timezone("America/New_York")).isoformat()
+        except:
+            from datetime import datetime as dt
+            error_timestamp = dt.now().isoformat()
         return {
             "status": "error",
             "report": "",
-            "timestamp": datetime.now(pytz.timezone("America/New_York")).isoformat(),
-            "error_message": str(e)
+            "timestamp": error_timestamp,
+            "error_message": f"Error: {str(e)}\n{traceback.format_exc()}"
         }
 ```
 
 ## Common Pitfalls
 
 1. **Module-level imports**: Will cause `NameError` at runtime
-2. **Module-level helper functions**: Will cause `NameError` at runtime
-3. **Missing type annotations on nested functions**: Will fail schema generation
-4. **Complex types in nested functions**: Will fail schema generation (use `str` instead)
-5. **Missing docstrings on nested functions**: Will fail schema generation
-6. **Missing Args sections in docstrings**: Will fail schema generation
+2. **Nested `def` statements**: Letta extracts these as separate tools - **AVOID**
+3. **Module-level helper functions**: Will cause `NameError` at runtime
+4. **Missing try-except wrapper**: Errors may not be handled gracefully
+5. **Using complex types (datetime, custom classes)**: Stick to basic JSON types in signatures
 
 ## Registration
 
@@ -383,49 +276,56 @@ created_tool = client.tools.create_from_function(
 The order of code inside the main function is critical:
 
 1. **Imports** (first, immediately after docstring)
-2. **Logger initialization**
-3. **Path setup** (if needed)
-4. **Module imports** (from other packages)
-5. **Helper function definitions** (all nested functions)
-6. **Default value assignments**
-7. **Main logic** (try/except blocks, business logic)
+2. **try-except wrapper** (wrap all logic)
+3. **Default value assignments** (inside try block)
+4. **Path setup** (if needed)
+5. **Module imports** (from other packages, with fallbacks)
+6. **Main logic** (inline all helper logic, no nested `def` statements)
+7. **Error handling** (safe fallbacks in except block)
 
 ```python
-def my_tool(param: str) -> Dict[str, Any]:
+from typing import Dict, Any, Optional
+
+
+def my_tool(param: Optional[str] = None) -> Dict[str, Any]:
     """Tool description."""
     # 1. IMPORTS FIRST
+    import traceback
     import os
     import sys
-    # ... all imports
+    from datetime import datetime
+    import pytz
     
-    # 2. LOGGER
-    logger = logging.getLogger(__name__)
-    
-    # 3. PATH SETUP
-    sys.path.insert(0, ...)
-    
-    # 4. MODULE IMPORTS
+    # 2. TRY-EXCEPT WRAPPER
     try:
-        from module import Class
-    except ImportError:
-        Class = None
-    
-    # 5. HELPER FUNCTIONS
-    def helper(...):
-        """Helper."""
-        ...
-    
-    # 6. DEFAULTS
-    if param is None:
-        param = "default"
-    
-    # 7. MAIN LOGIC
-    try:
-        result = helper(param)
+        # 3. DEFAULTS
+        if param is None:
+            param = "default"
+        
+        # 4. PATH SETUP
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        # 5. MODULE IMPORTS
+        try:
+            from some_module import SomeClass
+        except ImportError:
+            SomeClass = None
+        
+        # 6. MAIN LOGIC (inline everything, NO nested def statements)
+        result = param.upper()  # Inline helper logic
+        
         return {"status": "ok", "result": result}
+    
     except Exception as e:
-        logger.error(f"Error: {e}")
-        return {"status": "error", "error_message": str(e)}
+        # 7. SAFE ERROR HANDLING
+        try:
+            error_timestamp = datetime.now(pytz.timezone("America/New_York")).isoformat()
+        except:
+            error_timestamp = datetime.now().isoformat()
+        return {
+            "status": "error",
+            "error_message": f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
 ```
 
 ## Summary Checklist
@@ -433,14 +333,22 @@ def my_tool(param: str) -> Dict[str, Any]:
 When creating a custom Letta tool, ensure:
 
 - [ ] All imports are inside the main function **at the very beginning** (before any other code)
-- [ ] All helper functions are nested inside the main function
-- [ ] All nested functions have type annotations
-- [ ] Nested function types use only basic JSON types (`str`, `int`, `bool`, `float`, `None`, simple `List`/`Dict`)
-- [ ] All nested functions have docstrings with `Args:` sections
+- [ ] **NO nested `def` statements** - inline all helper logic
+- [ ] Module-level imports only for type hints (`from typing import Dict, Any, Optional`)
+- [ ] Entire function body wrapped in try-except
 - [ ] Main function has comprehensive docstring with `Args:` and `Returns:` sections
-- [ ] Error handling is in place with proper logging
+- [ ] Safe error handling with fallbacks if imports fail
 - [ ] Return value is a `Dict[str, Any]` with consistent structure
-- [ ] Code follows the correct order: imports → helpers → defaults → logic
+- [ ] Code follows the correct order: imports → try-except → defaults → logic → error handling
 
 Following these conventions will ensure your tool registers successfully on the first attempt.
+
+## Key Discovery
+
+**Letta extracts ALL `def` statements** from within your function and attempts to register them as separate tools. This means:
+- Nested helper functions become separate tools
+- Each extracted function needs its own docstring and type annotations
+- This is usually NOT what you want
+
+**The solution is to avoid `def` statements entirely** and inline all logic directly in the main function body.
 
