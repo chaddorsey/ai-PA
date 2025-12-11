@@ -254,6 +254,152 @@ def _is_chad_out_event(event: Dict[str, Any]) -> bool:
     return "chad out" in title or "chad's out" in title
 
 
+def _calculate_available_time(
+    events: List[Dict[str, Any]],
+    now: datetime,
+    tz: pytz.BaseTzInfo
+) -> tuple[int, List[Dict[str, Any]]]:
+    """
+    Calculate available time blocks from current time to 5:00 PM.
+    
+    Args:
+        events: List of filtered events (already sorted chronologically)
+        now: Current datetime in timezone
+        tz: Timezone for calculations
+    
+    Returns:
+        Tuple of (total_minutes, list_of_blocks)
+        Each block is a dict with: start, end, duration_minutes
+    """
+    # Set 5:00 PM cutoff
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff_time = today_start.replace(hour=17, minute=0)  # 5:00 PM
+    
+    # If current time is after 5:00 PM, no available time
+    if now >= cutoff_time:
+        return 0, []
+    
+    # Filter events to only today's events that end after current time
+    today_events = []
+    for event in events:
+        try:
+            event_start = _parse_datetime(event["start"], tz)
+            event_end = _parse_datetime(event["end"], tz)
+            
+            # Only include events that:
+            # 1. Are today (same date as now)
+            # 2. End after current time
+            if event_start.date() == now.date() and event_end > now:
+                today_events.append({
+                    "start": event_start,
+                    "end": event_end,
+                    "event": event
+                })
+        except Exception as e:
+            logger.warning(f"Error parsing event for available time: {e}")
+            continue
+    
+    # Sort by start time
+    today_events.sort(key=lambda e: e["start"])
+    
+    # Calculate available blocks
+    available_blocks = []
+    current_time = now
+    
+    for event_info in today_events:
+        event_start = event_info["start"]
+        event_end = event_info["end"]
+        
+        # If there's a gap before this event
+        if current_time < event_start:
+            # Block ends at event start or 5:00 PM, whichever is earlier
+            block_end = min(event_start, cutoff_time)
+            if block_end > current_time:
+                duration_minutes = int((block_end - current_time).total_seconds() / 60)
+                if duration_minutes > 0:
+                    available_blocks.append({
+                        "start": current_time,
+                        "end": block_end,
+                        "duration_minutes": duration_minutes
+                    })
+        
+        # Update current_time to after this event
+        current_time = max(current_time, event_end)
+        
+        # If we've passed 5:00 PM, stop
+        if current_time >= cutoff_time:
+            break
+    
+    # Check for gap from last event to 5:00 PM
+    if current_time < cutoff_time:
+        duration_minutes = int((cutoff_time - current_time).total_seconds() / 60)
+        if duration_minutes > 0:
+            available_blocks.append({
+                "start": current_time,
+                "end": cutoff_time,
+                "duration_minutes": duration_minutes
+            })
+    
+    # Merge adjacent blocks (they should already be merged, but just in case)
+    merged_blocks = []
+    for block in available_blocks:
+        if not merged_blocks:
+            merged_blocks.append(block)
+        else:
+            last_block = merged_blocks[-1]
+            # If this block starts right after the last one ends, merge them
+            if block["start"] <= last_block["end"]:
+                # Merge: extend last block
+                last_block["end"] = block["end"]
+                last_block["duration_minutes"] = int(
+                    (last_block["end"] - last_block["start"]).total_seconds() / 60
+                )
+            else:
+                merged_blocks.append(block)
+    
+    # Calculate total minutes
+    total_minutes = sum(block["duration_minutes"] for block in merged_blocks)
+    
+    return total_minutes, merged_blocks
+
+
+def _format_duration(total_minutes: int) -> str:
+    """
+    Format duration as "Xh, Y min".
+    
+    Args:
+        total_minutes: Total minutes
+    
+    Returns:
+        Formatted string like "3h, 15 min"
+    """
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    
+    if hours == 0:
+        return f"{minutes} min"
+    elif minutes == 0:
+        return f"{hours}h"
+    else:
+        return f"{hours}h, {minutes} min"
+
+
+def _format_time(dt: datetime) -> str:
+    """
+    Format datetime as "H:MM AM/PM".
+    
+    Args:
+        dt: Datetime object
+    
+    Returns:
+        Formatted time string
+    """
+    try:
+        return dt.strftime("%-I:%M %p")  # Unix format
+    except ValueError:
+        return dt.strftime("%I:%M %p").lstrip("0")  # Windows-compatible
+
+
 def _filter_events(events: List[Dict[str, Any]], tz: pytz.BaseTzInfo) -> List[Dict[str, Any]]:
     """
     Filter events according to gold-standard rules.
@@ -479,17 +625,22 @@ def generate_daily_briefing(
         filtered_events = _filter_events(events, tz)
         events_included = len(filtered_events)
         
-        # TODO: Implement available time calculation (task 24-5)
+        # Calculate available time blocks
+        total_available_minutes, available_blocks = _calculate_available_time(
+            filtered_events, now, tz
+        )
+        
         # TODO: Implement Markdown formatting (task 24-6)
         
-        # Placeholder return structure
+        # Placeholder return structure with available time info
+        available_time_formatted = _format_duration(total_available_minutes)
         briefing = f"""# Today's Schedule (updated {day_name}. {month_name} {day_number} at {current_time_formatted})
 
 **Today's Schedule**
 *Retrieved {events_retrieved} events, {events_included} included after filtering - formatting in progress*
 
-### Available Time Remaining — **0h, 0 min**
-*Time calculation in progress*
+### Available Time Remaining — **{available_time_formatted}**
+*Formatting in progress - {len(available_blocks)} blocks calculated*
 """
         
         return {
@@ -499,7 +650,16 @@ def generate_daily_briefing(
             "timestamp": now.isoformat(),
             "current_time_eastern": current_time_formatted,
             "events_retrieved": events_retrieved,
-            "events_included": events_included
+            "events_included": events_included,
+            "total_available_minutes": total_available_minutes,
+            "available_blocks": [
+                {
+                    "start": block["start"].isoformat(),
+                    "end": block["end"].isoformat(),
+                    "duration_minutes": block["duration_minutes"]
+                }
+                for block in available_blocks
+            ]
         }
     
     except Exception as e:
