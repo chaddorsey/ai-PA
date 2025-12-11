@@ -18,8 +18,11 @@ def generate_daily_briefing(
     Generate a daily briefing with formatted schedule and available time calculations.
     
     This tool retrieves calendar events from the specified calendar, filters them
-    according to gold-standard rules, calculates available time from the current
-    moment to 5:00 PM Eastern, and generates a Markdown-formatted briefing report.
+    according to gold-standard rules, calculates available time from 8:00 AM to 
+    5:00 PM Eastern, and generates a Markdown-formatted briefing report.
+    
+    The tool automatically updates the 'current_daily_schedule_and_available_time' 
+    memory block with the briefing content. No agent action is needed to update memory.
     
     Args:
         calendar_id: Calendar identifier (email address). Defaults to "cdorsey@concord.org".
@@ -28,7 +31,7 @@ def generate_daily_briefing(
         include_troop_meetings: Whether to include troop meetings. Defaults to False.
     
     Returns:
-        Dictionary with status, briefing, instructions, timestamp, and other metadata.
+        Dictionary with status, briefing, memory_updated, timestamp, and other metadata.
     """
     # Import required modules inside function for Letta tool extraction
     import traceback
@@ -658,20 +661,50 @@ def generate_daily_briefing(
         # Wrap in VERBATIM tags so the agent passes it through unchanged
         verbatim_briefing = f"[VERBATIM_USER_OUTPUT]\n{briefing}\n[/VERBATIM_USER_OUTPUT]"
         
-        # Instructions for the agent - use memory_rethink for complete replacement
-        memory_instructions = (
-            "CRITICAL INSTRUCTIONS:\n"
-            "1. Display the briefing content to the user EXACTLY as provided within the VERBATIM tags. "
-            "Do NOT modify, reformat, or retype any characters. Times use COLONS (e.g., 8:00 AM), not semicolons.\n"
-            "2. Use memory_rethink (NOT memory_replace) to update 'current_daily_schedule_and_available_time'. "
-            "Copy the briefing content EXACTLY - character for character - without any modifications.\n"
-            "3. Do NOT retype or regenerate any part of this output. Use copy/paste semantics only."
-        )
+        # ========== DIRECTLY UPDATE MEMORY BLOCK ==========
+        # Update the memory block programmatically instead of relying on the agent
+        memory_block_id = "block-28c6e49e-e2bf-4682-8b0c-68623fcee0c7"
+        memory_updated = False
+        memory_error = None
+        
+        try:
+            from letta_client import Letta
+            
+            # Get Letta server URL - inside Docker it's letta:8283, outside it's localhost:8283
+            letta_url = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+            
+            letta_client = Letta(base_url=letta_url)
+            
+            # Update the block directly with the briefing content (without VERBATIM tags)
+            letta_client.blocks.update(
+                block_id=memory_block_id,
+                value=briefing
+            )
+            memory_updated = True
+        except Exception as mem_err:
+            memory_error = str(mem_err)
+        
+        # Build agent instruction based on memory update status
+        if memory_updated:
+            agent_note = (
+                "MEMORY ALREADY UPDATED: The current_daily_schedule_and_available_time block "
+                "has been automatically updated by this tool. DO NOT call memory_rethink, "
+                "memory_replace, memory_insert, or memory_finish_edits. Simply display the "
+                "briefing to the user."
+            )
+        else:
+            agent_note = (
+                f"MEMORY UPDATE FAILED: {memory_error}. You may need to manually update "
+                "the current_daily_schedule_and_available_time block."
+            )
         
         return {
             "status": "ok",
+            "agent_note": agent_note,
             "briefing": verbatim_briefing,
-            "instructions": memory_instructions,
+            "memory_updated": memory_updated,
+            "memory_block_id": memory_block_id if memory_updated else None,
+            "memory_error": memory_error,
             "timestamp": now.isoformat(),
             "target_date": target_dt.strftime("%Y-%m-%d"),
             "current_time_eastern": current_time_formatted,
@@ -699,8 +732,10 @@ def generate_daily_briefing(
             error_timestamp = dt.now().isoformat()
         return {
             "status": "error",
+            "agent_note": "Tool failed. DO NOT attempt to update memory.",
             "briefing": "",
-            "instructions": "An error occurred. Do not update memory.",
+            "memory_updated": False,
+            "memory_error": "Tool execution failed before memory update",
             "timestamp": error_timestamp,
             "current_time_eastern": "",
             "error_message": f"Error generating daily briefing: {str(e)}\n{traceback.format_exc()}"
