@@ -101,16 +101,21 @@ TOOL_1_SOURCE = '''import json
 def trigger_slack_analytics_export(analytics_type: str = "channels", days_ago: int = 3, date_range_days: int = 1) -> str:
     """Trigger Slack analytics CSV export with custom date range.
     
+    IMPORTANT: Slack does not allow exports when start_date == end_date.
+    If date_range_days=1, the service automatically adjusts the end_date to be one day later
+    to avoid this error.
+    
     Args:
         analytics_type: Type of analytics (channels or members)
         days_ago: How many days ago to start (default 3, since recent data may not be available)
-        date_range_days: Number of days to include (default 1 for single day)
+        date_range_days: Number of days to include (default 1). Note: If this results in the same
+                        start and end date, the end date will be automatically adjusted.
     
     Returns:
-        Success message with date range used
+        Success message with date range used, or error message if export failed
     
     Example:
-        # Get channels data from 7 days ago
+        # Get channels data from 7 days ago (will use 7 days ago to 6 days ago)
         trigger_slack_analytics_export("channels", days_ago=7, date_range_days=1)
         
         # Get members data from last week (7 days starting 7 days ago)
@@ -153,23 +158,55 @@ def trigger_slack_analytics_export(analytics_type: str = "channels", days_ago: i
             date_info = result.get("date_range", {})
             start = date_info.get("start", "?") if date_info else "?"
             end = date_info.get("end", "?") if date_info else "?"
-            return f"✓ Triggered {analytics_type} export for {start} to {end}. CSV will be in Slack Files in 1-2 min. Use list_recent_slack_files() to find it."
+            
+            # Include diagnostic info from stdout
+            stdout_msg = result.get("stdout", "")
+            diagnostic_info = ""
+            
+            # Check for key indicators in stdout
+            if "button_clicked" in stdout_msg.lower() or "Clicked Export CSV" in stdout_msg:
+                diagnostic_info = " (Button was clicked)"
+            if "error" in stdout_msg.lower() or "failed" in stdout_msg.lower():
+                # Extract error lines
+                error_lines = [line for line in stdout_msg.split('\\n') if 'error' in line.lower() or 'failed' in line.lower() or '×' in line]
+                if error_lines:
+                    diagnostic_info += " | Warnings: " + ", ".join(error_lines[:2])
+            
+            note = "\\n\\nNote: If no file appears, check the service logs: docker logs slack-analytics-mcp-server --tail 50"
+            return f"✓ Triggered {analytics_type} export for {start} to {end}. CSV will be in Slack Files in 1-2 min. Use list_recent_slack_files() to find it.{diagnostic_info}{note}"
         else:
             error_msg = result.get("error", "")
             stdout_msg = result.get("stdout", "")
+            stderr_msg = result.get("stderr", "")
             
             # Build detailed error message
             msg_parts = []
+            
+            # Check stdout for specific error messages
+            if stdout_msg:
+                if "Unable to export your CSV" in stdout_msg:
+                    msg_parts.append("Slack error: Unable to export your CSV. Please try again later.")
+                elif "Export failed" in stdout_msg:
+                    # Extract the error line
+                    error_lines = [line for line in stdout_msg.split('\\n') if 'Export failed' in line or '✗' in line]
+                    if error_lines:
+                        msg_parts.append(error_lines[0])
+                elif "Could not find or click Export CSV button" in stdout_msg:
+                    msg_parts.append("Could not find or click the Export CSV button. The UI may have changed.")
+            
+            # Add generic error message if available
             if error_msg:
-                # Truncate very long errors
                 if len(error_msg) > 500:
                     msg_parts.append(error_msg[:500] + "...")
                 else:
                     msg_parts.append(error_msg)
-            if stdout_msg and "FAILED" in stdout_msg:
-                msg_parts.append(f"Output: {stdout_msg[-200:]}")
+            
+            # Add stderr if present
+            if stderr_msg:
+                msg_parts.append(f"Error details: {stderr_msg[:200]}")
+            
             if not msg_parts:
-                msg_parts.append(f"Unknown error. Response: {json.dumps(result)[:200]}")
+                msg_parts.append(f"Unknown error. Check service logs: docker logs slack-analytics-mcp-server --tail 50")
             
             return f"❌ Export failed: {' | '.join(msg_parts)}"
     except urllib.error.URLError as e:
@@ -468,6 +505,400 @@ def analyze_slack_analytics(file_url: str, top_n: int = 10) -> str:
 
 '''
 
+# Tool 5: Resolve DM channel ID from user ID
+TOOL_5_SOURCE = '''import os
+import json
+
+def resolve_dm_channel_id(user_id: str) -> str:
+    """Resolve a user ID to a DM channel ID using Slack's conversations.open API.
+    
+    When the MCP server returns channel information like "#U09C3N5LZ" (a user ID),
+    this function converts it to the actual DM channel ID like "D09C3JMB9".
+    
+    Args:
+        user_id: The Slack user ID (e.g., "U09C3N5LZ" or "#U09C3N5LZ")
+    
+    Returns:
+        JSON string with DM channel ID or error message
+    
+    Example:
+        resolve_dm_channel_id("U09C3N5LZ")
+        # Returns: {"channel_id": "D09C3JMB9", "user_id": "U09C3N5LZ"}
+    """
+    import urllib.request
+    import urllib.parse
+    
+    TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+    if not TOKEN:
+        return json.dumps({
+            "error": "SLACK_MCP_XOXP_TOKEN not set in environment",
+            "message": "Slack authentication token is required"
+        }, indent=2)
+    
+    # Remove # prefix if present
+    clean_user_id = user_id.lstrip("#")
+    
+    # Validate user ID format (should start with U)
+    if not clean_user_id.startswith("U"):
+        return json.dumps({
+            "error": f"Invalid user ID format: {user_id}",
+            "message": "User ID should start with 'U' (e.g., 'U09C3N5LZ')"
+        }, indent=2)
+    
+    try:
+        # Call Slack API conversations.open to get/create DM channel
+        url = "https://slack.com/api/conversations.open"
+        params = {
+            "users": clean_user_id
+        }
+        data = urllib.parse.urlencode(params).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Authorization": f"Bearer {TOKEN}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+        )
+        
+        with urllib.request.urlopen(req, timeout=10) as r:
+            response_data = json.loads(r.read().decode('utf-8'))
+        
+        if not response_data.get("ok"):
+            error = response_data.get("error", "Unknown error")
+            return json.dumps({
+                "error": f"Slack API error: {error}",
+                "user_id": clean_user_id,
+                "message": f"Failed to resolve DM channel: {error}"
+            }, indent=2)
+        
+        channel = response_data.get("channel", {})
+        channel_id = channel.get("id")
+        
+        if not channel_id:
+            return json.dumps({
+                "error": "No channel ID returned from Slack API",
+                "user_id": clean_user_id
+            }, indent=2)
+        
+        return json.dumps({
+            "success": True,
+            "channel_id": channel_id,
+            "user_id": clean_user_id,
+            "message": "DM channel ID resolved successfully"
+        }, indent=2)
+        
+    except urllib.error.URLError as e:
+        return json.dumps({
+            "error": f"Network error: {str(e)}",
+            "user_id": clean_user_id
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Unexpected error: {str(e)}",
+            "user_id": clean_user_id
+        }, indent=2)
+
+'''
+
+# Tool 6: Get Slack message permalink
+TOOL_6_SOURCE = '''import os
+import json
+
+def get_slack_message_permalink(channel_id: str, message_ts: str) -> str:
+    """Get a permalink URL for a specific Slack message.
+    
+    Uses Slack's chat.getPermalink API method to generate a permanent link
+    to a message in a channel. For DM/MPDM channels where the API doesn't work,
+    constructs the permalink manually using the standard format.
+    
+    Args:
+        channel_id: The Slack channel ID (e.g., "C1234567890", "D1234567890", "mpdm-...")
+        message_ts: The message timestamp (e.g., "1234567890.123456")
+                   Can be in format "1234567890.123456" or "1234567890123456"
+    
+    Returns:
+        JSON string with permalink URL or error message
+    
+    Example:
+        get_slack_message_permalink("C1234567890", "1234567890.123456")
+        # Returns: {"permalink": "https://concord-consortium.slack.com/archives/C1234567890/p1234567890123456"}
+    """
+    import urllib.request
+    import urllib.parse
+    
+    TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+    if not TOKEN:
+        return json.dumps({
+            "error": "SLACK_MCP_XOXP_TOKEN not set in environment",
+            "message": "Slack authentication token is required"
+        }, indent=2)
+    
+    # Store original message_ts for permalink construction
+    original_message_ts = message_ts
+    
+    # Normalize message_ts format (Slack API expects format like "1234567890.123456")
+    # If provided as integer or without decimal, add decimal point
+    try:
+        if '.' not in message_ts:
+            # If it's a long integer, insert decimal point 10 digits from the end
+            if len(message_ts) > 10:
+                message_ts = message_ts[:-6] + '.' + message_ts[-6:]
+            else:
+                message_ts = message_ts + '.000000'
+    except Exception:
+        pass  # Keep original format if parsing fails
+    
+    # Slack workspace URL
+    SLACK_WORKSPACE_URL = "https://concord-consortium.slack.com"
+    
+    # Check if channel_id is actually a user ID (starts with #U or U)
+    # This happens when MCP server returns "#U09C3N5LZ" instead of "D09C3JMB9"
+    if channel_id.startswith("#U") or (channel_id.startswith("U") and not channel_id.startswith("D")):
+        # Resolve user ID to DM channel ID using conversations.open
+        user_id = channel_id.lstrip("#")
+        try:
+            import urllib.request
+            import urllib.parse
+            
+            TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+            if TOKEN:
+                url = "https://slack.com/api/conversations.open"
+                params = {"users": user_id}
+                data = urllib.parse.urlencode(params).encode('utf-8')
+                req = urllib.request.Request(
+                    url,
+                    data=data,
+                    headers={
+                        "Authorization": f"Bearer {TOKEN}",
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    resolve_data = json.loads(r.read().decode('utf-8'))
+                if resolve_data.get("ok"):
+                    channel = resolve_data.get("channel", {})
+                    resolved_channel_id = channel.get("id")
+                    if resolved_channel_id:
+                        channel_id = resolved_channel_id
+        except Exception:
+            pass  # If resolution fails, continue with original channel_id
+    
+    # Check if this looks like a DM/MPDM channel (starts with D or mpdm-)
+    is_dm_or_mpdm = channel_id.startswith("D") or channel_id.startswith("mpdm-")
+    
+    try:
+        # Try Slack API chat.getPermalink first (works for regular channels)
+        url = "https://slack.com/api/chat.getPermalink"
+        params = {
+            "channel": channel_id,
+            "message_ts": message_ts
+        }
+        data = urllib.parse.urlencode(params).encode('utf-8')
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Authorization": f"Bearer {TOKEN}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+        )
+        
+        with urllib.request.urlopen(req, timeout=10) as r:
+            response_data = json.loads(r.read().decode('utf-8'))
+        
+        if response_data.get("ok"):
+            permalink = response_data.get("permalink", "")
+            if permalink:
+                return json.dumps({
+                    "success": True,
+                    "permalink": permalink,
+                    "channel_id": channel_id,
+                    "message_ts": message_ts,
+                    "message": "Permalink generated successfully via API"
+                }, indent=2)
+        
+        # If API failed and this is a DM/MPDM channel, construct permalink manually
+        error = response_data.get("error", "Unknown error")
+        if (error == "channel_not_found" and is_dm_or_mpdm) or is_dm_or_mpdm:
+            # Construct permalink manually for DM/MPDM channels
+            # Format: https://workspace.slack.com/archives/CHANNEL_ID/pTIMESTAMP
+            # Where TIMESTAMP is message_ts without the decimal point
+            permalink_ts = original_message_ts.replace('.', '')
+            permalink = f"{SLACK_WORKSPACE_URL}/archives/{channel_id}/p{permalink_ts}"
+            
+            return json.dumps({
+                "success": True,
+                "permalink": permalink,
+                "channel_id": channel_id,
+                "message_ts": message_ts,
+                "message": "Permalink constructed manually for DM/MPDM channel",
+                "note": "DM/MPDM channels don't support chat.getPermalink API, so permalink was constructed using standard format"
+            }, indent=2)
+        
+        # For other errors, return the error
+        return json.dumps({
+            "error": f"Slack API error: {error}",
+            "channel_id": channel_id,
+            "message_ts": message_ts,
+            "message": f"Failed to get permalink: {error}"
+        }, indent=2)
+        
+    except urllib.error.URLError as e:
+        # If network error and it's a DM/MPDM, try constructing manually anyway
+        if is_dm_or_mpdm:
+            permalink_ts = original_message_ts.replace('.', '')
+            permalink = f"{SLACK_WORKSPACE_URL}/archives/{channel_id}/p{permalink_ts}"
+            return json.dumps({
+                "success": True,
+                "permalink": permalink,
+                "channel_id": channel_id,
+                "message_ts": message_ts,
+                "message": "Permalink constructed manually (API unavailable)",
+                "note": "Network error occurred, but permalink was constructed using standard format"
+            }, indent=2)
+        
+        return json.dumps({
+            "error": f"Network error: {str(e)}",
+            "channel_id": channel_id,
+            "message_ts": message_ts
+        }, indent=2)
+    except Exception as e:
+        # If unexpected error and it's a DM/MPDM, try constructing manually anyway
+        if is_dm_or_mpdm:
+            permalink_ts = original_message_ts.replace('.', '')
+            permalink = f"{SLACK_WORKSPACE_URL}/archives/{channel_id}/p{permalink_ts}"
+            return json.dumps({
+                "success": True,
+                "permalink": permalink,
+                "channel_id": channel_id,
+                "message_ts": message_ts,
+                "message": "Permalink constructed manually (fallback)",
+                "note": "Unexpected error occurred, but permalink was constructed using standard format"
+            }, indent=2)
+        
+        return json.dumps({
+            "error": f"Unexpected error: {str(e)}",
+            "channel_id": channel_id,
+            "message_ts": message_ts
+        }, indent=2)
+
+'''
+
+# Tool 7: List files from a specific channel (including MPDMs)
+TOOL_7_SOURCE = '''import os
+import json
+from datetime import datetime
+
+def list_files_from_channel(channel_id: str, limit: int = 100) -> str:
+    """List files posted to a specific Slack channel (including MPDM channels).
+    
+    Retrieves messages from the channel using conversations.history, then extracts
+    files from messages that contain file attachments. This is the recommended
+    approach for getting files from specific channels, especially MPDMs.
+    
+    Args:
+        channel_id: The Slack channel ID (e.g., "C1234567890", "mpdm-user1--user2-1", "G1234567890")
+        limit: Maximum number of messages to retrieve (default: 100, max: 1000)
+    
+    Returns:
+        JSON string with list of files found in the channel
+    
+    Example:
+        files = list_files_from_channel("mpdm-cmcintyre--lstephens--cdorsey-1", limit=50)
+        # Returns JSON with files posted in that MPDM channel
+    """
+    import urllib.request
+    import urllib.parse
+    
+    TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+    if not TOKEN:
+        return json.dumps({
+            "error": "SLACK_MCP_XOXP_TOKEN not set in environment",
+            "message": "Slack authentication token is required"
+        }, indent=2)
+    
+    try:
+        # Step 1: Get messages from the channel
+        url = "https://slack.com/api/conversations.history"
+        params = {
+            "channel": channel_id,
+            "limit": str(min(limit, 1000))  # Slack API max is 1000
+        }
+        query_string = urllib.parse.urlencode(params)
+        full_url = f"{url}?{query_string}"
+        
+        req = urllib.request.Request(
+            full_url,
+            headers={
+                "Authorization": f"Bearer {TOKEN}"
+            }
+        )
+        
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode('utf-8'))
+        
+        if not data.get("ok"):
+            error = data.get("error", "Unknown error")
+            return json.dumps({
+                "error": f"Slack API error: {error}",
+                "channel_id": channel_id,
+                "message": f"Failed to retrieve messages from channel: {error}"
+            }, indent=2)
+        
+        messages = data.get("messages", [])
+        
+        # Step 2: Extract files from messages
+        files_found = []
+        for message in messages:
+            if "files" in message and message["files"]:
+                for file_obj in message["files"]:
+                    created_ts = file_obj.get("created")
+                    created_iso = None
+                    if created_ts:
+                        try:
+                            created_iso = datetime.fromtimestamp(created_ts).isoformat()
+                        except:
+                            pass
+                    
+                    file_data = {
+                        "file_id": file_obj.get("id"),
+                        "name": file_obj.get("name"),
+                        "title": file_obj.get("title"),
+                        "mimetype": file_obj.get("mimetype"),
+                        "filetype": file_obj.get("filetype"),
+                        "pretty_type": file_obj.get("pretty_type"),
+                        "size": file_obj.get("size"),
+                        "url_private_download": file_obj.get("url_private_download"),
+                        "created": created_ts,
+                        "created_iso": created_iso,
+                        "user": file_obj.get("user"),
+                        "message_ts": message.get("ts"),
+                        "channel_id": channel_id
+                    }
+                    files_found.append(file_data)
+        
+        return json.dumps({
+            "success": True,
+            "channel_id": channel_id,
+            "files_count": len(files_found),
+            "messages_scanned": len(messages),
+            "files": files_found,
+            "message": f"Found {len(files_found)} file(s) in {len(messages)} message(s)"
+        }, indent=2)
+        
+    except urllib.error.URLError as e:
+        return json.dumps({
+            "error": f"Network error: {str(e)}",
+            "channel_id": channel_id
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Unexpected error: {str(e)}",
+            "channel_id": channel_id
+        }, indent=2)
+
+'''
 
 
 def main():
@@ -484,6 +915,9 @@ def main():
         ("list_recent_slack_files", TOOL_2_SOURCE, "List recent files from Slack workspace"),
         ("download_slack_analytics_file", TOOL_3_SOURCE, "Download a Slack file by URL"),
         ("analyze_slack_analytics", TOOL_4_SOURCE, "Analyze Slack analytics CSV files and generate summaries"),
+        ("resolve_dm_channel_id", TOOL_5_SOURCE, "Resolve a user ID to a DM channel ID (useful when MCP server returns #U... format)"),
+        ("get_slack_message_permalink", TOOL_6_SOURCE, "Get a permalink URL for a specific Slack message (automatically handles user IDs from MCP server)"),
+        ("list_files_from_channel", TOOL_7_SOURCE, "List files posted to a specific Slack channel (including MPDM channels)"),
     ]
     
     created_tool_ids = []
@@ -493,17 +927,25 @@ def main():
         
         existing = find_tool_by_name(tool_name)
         if existing:
-            print(f"  → Tool already exists (ID: {existing['id']})")
-            created_tool_ids.append(existing['id'])
+            print(f"  → Tool already exists (ID: {existing['id']}), deleting to update...")
+            # Delete old tool to recreate with updated code
+            delete_url = f"{LETTA_BASE}/v1/tools/{existing['id']}"
+            try:
+                req = urllib.request.Request(delete_url, method='DELETE')
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    print(f"  ✓ Deleted old tool")
+            except Exception as e:
+                print(f"  ⚠ Could not delete old tool: {e}")
+        
+        # Always create/update the tool
+        result = create_tool(source_code, tags=["slack", "analytics", "custom"])
+        if result and result.get('id'):
+            tool_id = result['id']
+            print(f"  ✓ Created/updated tool (ID: {tool_id})")
+            print(f"    {description}")
+            created_tool_ids.append(tool_id)
         else:
-            result = create_tool(source_code, tags=["slack", "analytics", "custom"])
-            if result and result.get('id'):
-                tool_id = result['id']
-                print(f"  ✓ Created tool (ID: {tool_id})")
-                print(f"    {description}")
-                created_tool_ids.append(tool_id)
-            else:
-                print(f"  ✗ Failed to create tool")
+            print(f"  ✗ Failed to create tool")
     
     if not created_tool_ids:
         print("\n❌ No tools to attach")

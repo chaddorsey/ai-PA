@@ -85,17 +85,24 @@ def attach_tools_to_agent(agent_id, tool_ids):
     if not agent:
         return False
     
-    current_tool_ids = agent.get("tools", [])
+    current_tool_refs = agent.get("tools", [])
     
-    # Ensure all IDs are strings (handle dicts if needed)
-    current_tool_ids = [t if isinstance(t, str) else t.get("id", t) for t in current_tool_ids]
-    tool_ids = [t if isinstance(t, str) else t.get("id", t) for t in tool_ids]
+    # Extract current tool IDs (handle both string and dict formats)
+    current_tool_ids = set()
+    for ref in current_tool_refs:
+        if isinstance(ref, dict):
+            current_tool_ids.add(ref.get("id"))
+        elif isinstance(ref, str):
+            current_tool_ids.add(ref)
     
-    # Merge tool lists
-    all_tool_ids = list(set(current_tool_ids + tool_ids))
+    # Ensure new tool IDs are strings
+    new_tool_ids = [t if isinstance(t, str) else t.get("id", t) for t in tool_ids]
     
-    # Update agent
-    result = http_patch(f"{LETTA_BASE}/v1/agents/{agent_id}", {"tools": all_tool_ids})
+    # Merge tool lists (convert to list of strings, dedupe, preserve order)
+    all_tool_ids = list(dict.fromkeys(list(current_tool_ids) + new_tool_ids))
+    
+    # Update agent - use 'tool_ids' field (not 'tools')
+    result = http_patch(f"{LETTA_BASE}/v1/agents/{agent_id}", {"tool_ids": all_tool_ids})
     return result is not None
 
 
@@ -153,6 +160,7 @@ TOOLS = [
     {"name": "get_document_activity", "tags": ["drive", "analytics", "query"]},
     {"name": "get_top_documents", "tags": ["drive", "analytics", "query"]},
     {"name": "get_recent_my_activity", "tags": ["drive", "analytics", "query"]},
+    {"name": "get_drive_file_info", "tags": ["drive", "query", "metadata"]},
 ]
 
 
@@ -332,11 +340,13 @@ def {tool_name}({param_string}){return_annotation}:
     print("    • get_document_activity")
     print("    • get_top_documents")
     print("    • get_recent_my_activity")
+    print("    • get_drive_file_info - Get document metadata from Drive URL")
     print()
     print("Try asking your agent:")
     print('  "Collect yesterday\'s Drive activity"')
     print('  "Show me the top edited documents"')
     print('  "Get documents I\'ve been viewing recently"')
+    print('  "Get info about this document: https://docs.google.com/document/d/..."')
     print()
     
     return 0

@@ -226,6 +226,100 @@ def get_slack_analytics_files(hours_back: int = 2) -> str:
         return f"❌ Error getting analytics files: {str(e)}"
 
 
+def list_files_from_channel(channel_id: str, limit: int = 100) -> str:
+    """
+    List files posted to a specific Slack channel (including MPDM channels).
+    
+    Retrieves messages from the channel using conversations.history, then extracts
+    files from messages that contain file attachments. This is the recommended
+    approach for getting files from specific channels, especially MPDMs.
+    
+    Args:
+        channel_id: The Slack channel ID (e.g., "C1234567890", "mpdm-user1--user2-1", "G1234567890")
+        limit: Maximum number of messages to retrieve (default: 100, max: 1000)
+    
+    Returns:
+        str: JSON string with list of files found in the channel
+    
+    Example:
+        files = list_files_from_channel("mpdm-cmcintyre--lstephens--cdorsey-1", limit=50)
+        # Returns JSON with files posted in that MPDM channel
+    """
+    if not SLACK_TOKEN:
+        return json.dumps({
+            "error": "SLACK_MCP_XOXP_TOKEN not set in environment",
+            "message": "Slack authentication token is required"
+        }, indent=2)
+    
+    try:
+        # Step 1: Get messages from the channel
+        url = "https://slack.com/api/conversations.history"
+        params = {
+            "channel": channel_id,
+            "limit": min(limit, 1000)  # Slack API max is 1000
+        }
+        headers = {
+            "Authorization": f"Bearer {SLACK_TOKEN}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data.get("ok"):
+            error = data.get("error", "Unknown error")
+            return json.dumps({
+                "error": f"Slack API error: {error}",
+                "channel_id": channel_id,
+                "message": f"Failed to retrieve messages from channel: {error}"
+            }, indent=2)
+        
+        messages = data.get("messages", [])
+        
+        # Step 2: Extract files from messages
+        files_found = []
+        for message in messages:
+            if "files" in message and message["files"]:
+                for file_obj in message["files"]:
+                    file_data = {
+                        "file_id": file_obj.get("id"),
+                        "name": file_obj.get("name"),
+                        "title": file_obj.get("title"),
+                        "mimetype": file_obj.get("mimetype"),
+                        "filetype": file_obj.get("filetype"),
+                        "pretty_type": file_obj.get("pretty_type"),
+                        "size": file_obj.get("size"),
+                        "url_private_download": file_obj.get("url_private_download"),
+                        "created": file_obj.get("created"),
+                        "created_iso": datetime.fromtimestamp(file_obj.get("created", 0)).isoformat() if file_obj.get("created") else None,
+                        "user": file_obj.get("user"),
+                        "message_ts": message.get("ts"),
+                        "channel_id": channel_id
+                    }
+                    files_found.append(file_data)
+        
+        return json.dumps({
+            "success": True,
+            "channel_id": channel_id,
+            "files_count": len(files_found),
+            "messages_scanned": len(messages),
+            "files": files_found,
+            "message": f"Found {len(files_found)} file(s) in {len(messages)} message(s)"
+        }, indent=2)
+        
+    except requests.exceptions.RequestException as e:
+        return json.dumps({
+            "error": f"Network error: {str(e)}",
+            "channel_id": channel_id
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Unexpected error: {str(e)}",
+            "channel_id": channel_id
+        }, indent=2)
+
+
 def download_slack_file(file_url: str, save_path: Optional[str] = None) -> str:
     """
     Download a file from Slack using its private download URL.
@@ -281,6 +375,255 @@ def download_slack_file(file_url: str, save_path: Optional[str] = None) -> str:
         
     except Exception as e:
         return f"❌ Error downloading file: {str(e)}"
+
+
+def resolve_dm_channel_id(user_id: str) -> str:
+    """
+    Resolve a user ID to a DM channel ID using Slack's conversations.open API.
+    
+    When the MCP server returns channel information like "#U09C3N5LZ" (a user ID),
+    this function converts it to the actual DM channel ID like "D09C3JMB9".
+    
+    Args:
+        user_id: The Slack user ID (e.g., "U09C3N5LZ" or "#U09C3N5LZ")
+    
+    Returns:
+        str: JSON string with DM channel ID or error message
+    
+    Example:
+        resolve_dm_channel_id("U09C3N5LZ")
+        # Returns: {"channel_id": "D09C3JMB9", "user_id": "U09C3N5LZ"}
+    """
+    if not SLACK_TOKEN:
+        return json.dumps({
+            "error": "SLACK_MCP_XOXP_TOKEN not set in environment",
+            "message": "Slack authentication token is required"
+        }, indent=2)
+    
+    # Remove # prefix if present
+    clean_user_id = user_id.lstrip("#")
+    
+    # Validate user ID format (should start with U)
+    if not clean_user_id.startswith("U"):
+        return json.dumps({
+            "error": f"Invalid user ID format: {user_id}",
+            "message": "User ID should start with 'U' (e.g., 'U09C3N5LZ')"
+        }, indent=2)
+    
+    try:
+        # Call Slack API conversations.open to get/create DM channel
+        url = "https://slack.com/api/conversations.open"
+        params = {
+            "users": clean_user_id
+        }
+        headers = {
+            "Authorization": f"Bearer {SLACK_TOKEN}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        response = requests.post(url, data=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if not data.get("ok"):
+            error = data.get("error", "Unknown error")
+            return json.dumps({
+                "error": f"Slack API error: {error}",
+                "user_id": clean_user_id,
+                "message": f"Failed to resolve DM channel: {error}"
+            }, indent=2)
+        
+        channel = data.get("channel", {})
+        channel_id = channel.get("id")
+        
+        if not channel_id:
+            return json.dumps({
+                "error": "No channel ID returned from Slack API",
+                "user_id": clean_user_id
+            }, indent=2)
+        
+        return json.dumps({
+            "success": True,
+            "channel_id": channel_id,
+            "user_id": clean_user_id,
+            "message": "DM channel ID resolved successfully"
+        }, indent=2)
+        
+    except requests.exceptions.RequestException as e:
+        return json.dumps({
+            "error": f"Network error: {str(e)}",
+            "user_id": clean_user_id
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({
+            "error": f"Unexpected error: {str(e)}",
+            "user_id": clean_user_id
+        }, indent=2)
+
+
+def get_slack_message_permalink(channel_id: str, message_ts: str) -> str:
+    """
+    Get a permalink URL for a specific Slack message.
+    
+    Uses Slack's chat.getPermalink API method to generate a permanent link
+    to a message in a channel. For DM/MPDM channels where the API doesn't work,
+    constructs the permalink manually using the standard format.
+    
+    Args:
+        channel_id: The Slack channel ID (e.g., "C1234567890", "D1234567890", "mpdm-...")
+        message_ts: The message timestamp (e.g., "1234567890.123456")
+                   Can be in format "1234567890.123456" or "1234567890123456"
+    
+    Returns:
+        str: JSON string with permalink URL or error message
+    
+    Example:
+        get_slack_message_permalink("C1234567890", "1234567890.123456")
+        # Returns: {"permalink": "https://concord-consortium.slack.com/archives/C1234567890/p1234567890123456"}
+    """
+    if not SLACK_TOKEN:
+        return json.dumps({
+            "error": "SLACK_MCP_XOXP_TOKEN not set in environment",
+            "message": "Slack authentication token is required"
+        }, indent=2)
+    
+    # Store original message_ts for permalink construction
+    original_message_ts = message_ts
+    
+    # Normalize message_ts format (Slack API expects format like "1234567890.123456")
+    # If provided as integer or without decimal, add decimal point
+    try:
+        if '.' not in message_ts:
+            # If it's a long integer, insert decimal point 10 digits from the end
+            if len(message_ts) > 10:
+                message_ts = message_ts[:-6] + '.' + message_ts[-6:]
+            else:
+                message_ts = message_ts + '.000000'
+    except Exception:
+        pass  # Keep original format if parsing fails
+    
+    # Slack workspace URL
+    SLACK_WORKSPACE_URL = "https://concord-consortium.slack.com"
+    
+    # Check if channel_id is actually a user ID (starts with #U or U)
+    # This happens when MCP server returns "#U09C3N5LZ" instead of "D09C3JMB9"
+    if channel_id.startswith("#U") or (channel_id.startswith("U") and not channel_id.startswith("D")):
+        # Resolve user ID to DM channel ID
+        user_id = channel_id.lstrip("#")
+        resolve_result = resolve_dm_channel_id(user_id)
+        try:
+            resolve_data = json.loads(resolve_result)
+            if resolve_data.get("success") and resolve_data.get("channel_id"):
+                channel_id = resolve_data.get("channel_id")
+            else:
+                # If resolution fails, return error
+                return json.dumps({
+                    "error": f"Failed to resolve user ID to DM channel: {resolve_data.get('error', 'Unknown error')}",
+                    "user_id": user_id,
+                    "message_ts": message_ts,
+                    "message": "Could not convert user ID to DM channel ID. Make sure the user ID is correct and the bot has access to DM with this user."
+                }, indent=2)
+        except json.JSONDecodeError:
+            return json.dumps({
+                "error": "Failed to parse DM channel resolution result",
+                "user_id": user_id,
+                "message_ts": message_ts
+            }, indent=2)
+    
+    # Check if this looks like a DM/MPDM channel (starts with D or mpdm-)
+    is_dm_or_mpdm = channel_id.startswith("D") or channel_id.startswith("mpdm-")
+    
+    try:
+        # Try Slack API chat.getPermalink first (works for regular channels)
+        url = "https://slack.com/api/chat.getPermalink"
+        params = {
+            "channel": channel_id,
+            "message_ts": message_ts
+        }
+        headers = {
+            "Authorization": f"Bearer {SLACK_TOKEN}",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        response = requests.post(url, data=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("ok"):
+            permalink = data.get("permalink", "")
+            if permalink:
+                return json.dumps({
+                    "success": True,
+                    "permalink": permalink,
+                    "channel_id": channel_id,
+                    "message_ts": message_ts,
+                    "message": "Permalink generated successfully via API"
+                }, indent=2)
+        
+        # If API failed and this is a DM/MPDM channel, construct permalink manually
+        error = data.get("error", "Unknown error")
+        if (error == "channel_not_found" and is_dm_or_mpdm) or is_dm_or_mpdm:
+            # Construct permalink manually for DM/MPDM channels
+            # Format: https://workspace.slack.com/archives/CHANNEL_ID/pTIMESTAMP
+            # Where TIMESTAMP is message_ts without the decimal point
+            permalink_ts = original_message_ts.replace('.', '')
+            permalink = f"{SLACK_WORKSPACE_URL}/archives/{channel_id}/p{permalink_ts}"
+            
+            return json.dumps({
+                "success": True,
+                "permalink": permalink,
+                "channel_id": channel_id,
+                "message_ts": message_ts,
+                "message": "Permalink constructed manually for DM/MPDM channel",
+                "note": "DM/MPDM channels don't support chat.getPermalink API, so permalink was constructed using standard format"
+            }, indent=2)
+        
+        # For other errors, return the error
+        return json.dumps({
+            "error": f"Slack API error: {error}",
+            "channel_id": channel_id,
+            "message_ts": message_ts,
+            "message": f"Failed to get permalink: {error}"
+        }, indent=2)
+        
+    except requests.exceptions.RequestException as e:
+        # If network error and it's a DM/MPDM, try constructing manually anyway
+        if is_dm_or_mpdm:
+            permalink_ts = original_message_ts.replace('.', '')
+            permalink = f"{SLACK_WORKSPACE_URL}/archives/{channel_id}/p{permalink_ts}"
+            return json.dumps({
+                "success": True,
+                "permalink": permalink,
+                "channel_id": channel_id,
+                "message_ts": message_ts,
+                "message": "Permalink constructed manually (API unavailable)",
+                "note": "Network error occurred, but permalink was constructed using standard format"
+            }, indent=2)
+        
+        return json.dumps({
+            "error": f"Network error: {str(e)}",
+            "channel_id": channel_id,
+            "message_ts": message_ts
+        }, indent=2)
+    except Exception as e:
+        # If unexpected error and it's a DM/MPDM, try constructing manually anyway
+        if is_dm_or_mpdm:
+            permalink_ts = original_message_ts.replace('.', '')
+            permalink = f"{SLACK_WORKSPACE_URL}/archives/{channel_id}/p{permalink_ts}"
+            return json.dumps({
+                "success": True,
+                "permalink": permalink,
+                "channel_id": channel_id,
+                "message_ts": message_ts,
+                "message": "Permalink constructed manually (fallback)",
+                "note": "Unexpected error occurred, but permalink was constructed using standard format"
+            }, indent=2)
+        
+        return json.dumps({
+            "error": f"Unexpected error: {str(e)}",
+            "channel_id": channel_id,
+            "message_ts": message_ts
+        }, indent=2)
 
 
 def get_slack_analytics_data(
