@@ -490,18 +490,10 @@ EOF
     
     log_success "Git reference saved: $git_ref_file"
     
-    # Create snapshot of tracked files (exclude backup directory)
-    log "Creating snapshot of tracked files..."
-    local backup_dir_name=$(basename "$BACKUP_DIR")
-    git ls-files -z | tar --null --files-from=- --exclude="$backup_dir_name/*" -czf "$repo_snapshot_file" 2>/dev/null || {
-        log_warning "Git snapshot creation had warnings (this is usually safe)"
-    }
-    
-    if [[ -s "$repo_snapshot_file" ]]; then
-        log_success "Git snapshot created: $(basename "$repo_snapshot_file")"
-    else
-        log_warning "Git snapshot is empty or failed"
-    fi
+    # Skip creating full git snapshot - redundant since GitHub already stores all commits
+    # The GIT_REFERENCE.txt file above provides enough metadata to identify the exact commit
+    # If source files are needed, they can be restored from GitHub using the commit hash
+    log "Skipping git snapshot creation (source code already backed up in GitHub)"
 }
 
 # Function to create backup manifest
