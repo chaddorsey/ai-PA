@@ -32,10 +32,13 @@ async def trigger_export_with_dates(
     """
     Trigger Slack analytics CSV export with custom date range.
     
+    IMPORTANT: Slack does not allow exports when start_date == end_date.
+    If both dates are the same, the end_date will be automatically adjusted to be one day later.
+    
     Args:
         analytics_type: Type of analytics (channels, members)
-        start_date: Start date in YYYY-MM-DD format (defaults to yesterday)
-        end_date: End date in YYYY-MM-DD format (defaults to yesterday)
+        start_date: Start date in YYYY-MM-DD format (defaults to 3 days ago)
+        end_date: End date in YYYY-MM-DD format (defaults to start_date + 1 day)
         headless: Run browser in headless mode
         screenshot_dir: Directory to save screenshots
         auth_save_path: Path to save/load authentication state
@@ -47,7 +50,20 @@ async def trigger_export_with_dates(
         start_date = default_date.strftime('%Y-%m-%d')
     
     if not end_date:
-        end_date = start_date  # Same day by default
+        # IMPORTANT: Slack requires start_date != end_date, so default to start_date + 1 day
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = start_dt + timedelta(days=1)
+        end_date = end_dt.strftime('%Y-%m-%d')
+        print(f"⚠ Note: end_date not specified. Using {end_date} (start_date + 1 day) to avoid Slack export error.")
+    
+    # Validate: Slack does not allow exports when start_date == end_date
+    if start_date == end_date:
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = start_dt + timedelta(days=1)
+        end_date = end_dt.strftime('%Y-%m-%d')
+        print(f"⚠ Warning: start_date and end_date were the same ({start_date}).")
+        print(f"  Adjusted end_date to {end_date} to avoid Slack export error.")
+        print(f"  Slack requires at least a 1-day range for CSV exports.")
     
     screenshot_path_dir = Path(screenshot_dir).resolve()
     screenshot_path_dir.mkdir(parents=True, exist_ok=True)
@@ -266,14 +282,124 @@ async def trigger_export_with_dates(
                     button_clicked = True
                     results["button_clicked"] = True
                     
-                    await page.wait_for_timeout(2000)
+                    # Wait for any modals/notifications to appear
+                    await page.wait_for_timeout(3000)
+                    
+                    # Check for error modals/toasts
+                    print("→ Checking for error messages...")
+                    error_detected = False
+                    
+                    # Look for error toast/modal
+                    error_selectors = [
+                        '.c-toast:has-text("Unable to export")',
+                        '.c-toast:has-text("error")',
+                        '.c-toast:has-text("Error")',
+                        '[data-qa="toast"]:has-text("Unable")',
+                        '.ReactModal__Content:has-text("Unable to export")',
+                    ]
+                    
+                    for error_sel in error_selectors:
+                        try:
+                            error_element = page.locator(error_sel).first
+                            if await error_element.count() > 0:
+                                error_text = await error_element.text_content()
+                                if error_text and ("Unable to export" in error_text or "error" in error_text.lower()):
+                                    print(f"✗ Error detected: {error_text}")
+                                    results["errors"].append(f"Export failed: {error_text}")
+                                    results["success"] = False
+                                    error_detected = True
+                                    break
+                        except Exception as e:
+                            continue
+                    
+                    # Also check for the specific error message in toast elements
+                    if not error_detected:
+                        try:
+                            # Check for toast with error message using the structure you provided
+                            toast_selector = '.c-toast, .ReactModal__Content--after-open.c-toast'
+                            toasts = page.locator(toast_selector)
+                            toast_count = await toasts.count()
+                            
+                            for i in range(toast_count):
+                                toast = toasts.nth(i)
+                                toast_text = await toast.text_content()
+                                if toast_text and ("Unable to export" in toast_text or "error" in toast_text.lower()):
+                                    print(f"✗ Error toast detected: {toast_text}")
+                                    results["errors"].append(f"Export failed: {toast_text.strip()}")
+                                    results["success"] = False
+                                    error_detected = True
+                                    break
+                        except Exception as e:
+                            print(f"  Note: Could not check toasts: {e}")
+                    
+                    # Also check page content as fallback
+                    if not error_detected:
+                        try:
+                            page_content = await page.content()
+                            if "Unable to export your CSV" in page_content:
+                                print("✗ Error message found in page: 'Unable to export your CSV'")
+                                results["errors"].append("Export failed: Unable to export your CSV. Please try again later.")
+                                results["success"] = False
+                                error_detected = True
+                        except:
+                            pass
+                    
+                    # Check for success indicators (only if no error)
+                    if not error_detected:
+                        try:
+                            # Look for success message with download icon
+                            # Success modal has: "Generating CSV. It will be sent to you in Slack when it's ready."
+                            # and includes data-qa="download" icon
+                            success_selectors = [
+                                '.c-toast:has([data-qa="download"]):has-text("Generating CSV")',
+                                '.c-toast:has-text("Generating CSV")',
+                                '.c-toast:has-text("It will be sent to you in Slack")',
+                                '.c-toast:has([data-qa="download"])',
+                            ]
+                            success_found = False
+                            for success_sel in success_selectors:
+                                try:
+                                    success_element = page.locator(success_sel).first
+                                    if await success_element.count() > 0:
+                                        success_text = await success_element.text_content()
+                                        # Check for download icon
+                                        download_icon = success_element.locator('[data-qa="download"]')
+                                        has_download_icon = await download_icon.count() > 0
+                                        
+                                        if success_text and ("Generating CSV" in success_text or "sent to you in Slack" in success_text):
+                                            print(f"✓ Success indicator found: {success_text}")
+                                            if has_download_icon:
+                                                print("  ✓ Download icon present - export is being generated")
+                                            success_found = True
+                                            break
+                                except:
+                                    continue
+                            
+                            if not success_found:
+                                print("⚠ No clear success or error indicator found")
+                                print("  → Checking for any toast messages...")
+                                # Fallback: check for any toast that doesn't contain error text
+                                try:
+                                    all_toasts = page.locator('.c-toast')
+                                    toast_count = await all_toasts.count()
+                                    for i in range(toast_count):
+                                        toast = all_toasts.nth(i)
+                                        toast_text = await toast.text_content()
+                                        if toast_text and "Unable to export" not in toast_text and "error" not in toast_text.lower():
+                                            print(f"  → Found toast: {toast_text[:100]}")
+                                except:
+                                    pass
+                        except Exception as e:
+                            print(f"  Note: Could not check for success indicators: {e}")
                     
                     # Take "after" screenshot
                     screenshot_after = screenshot_path_dir / f"slack_{analytics_type}_after_dates_{timestamp}.png"
                     await page.screenshot(path=str(screenshot_after), full_page=True)
                     print(f"✓ Post-click screenshot: {screenshot_after}")
                     
-                    results["success"] = True
+                    # Only mark as success if no error was detected
+                    if not error_detected:
+                        results["success"] = True
                     break
             except Exception as e:
                 print(f"  × Selector failed ({selector}): {e}")

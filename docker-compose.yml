@@ -471,6 +471,7 @@ services:
     volumes:
       - ./slack_auth_state.json:/app/slack_auth_state.json
       - ./slack_analytics_screenshots:/app/slack_analytics_screenshots
+      - ./scripts/slack_analytics_with_dates.py:/app/slack_analytics_with_dates.py:ro
     ports:
       - "8097:8087"
     healthcheck:

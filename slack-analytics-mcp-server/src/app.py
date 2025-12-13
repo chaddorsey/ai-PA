@@ -59,10 +59,26 @@ async def healthcheck() -> dict:
 
 
 def _calculate_dates(days_ago: int, range_days: int) -> Tuple[str, str]:
-    """Translate relative offsets into concrete ISO date strings."""
+    """
+    Translate relative offsets into concrete ISO date strings.
+    
+    IMPORTANT: Slack does not allow exports when start_date == end_date.
+    If range_days would result in the same date, it's automatically adjusted to ensure
+    at least a 1-day range.
+    """
 
     end_date = datetime.now() - timedelta(days=days_ago)
     start_date = end_date - timedelta(days=range_days - 1)
+    
+    # Ensure start_date != end_date (Slack requirement)
+    if start_date.date() == end_date.date():
+        # If they're the same, make end_date one day later
+        end_date = start_date + timedelta(days=1)
+        logger.warning(
+            "Date range would be same day, adjusted end_date to %s",
+            end_date.strftime("%Y-%m-%d")
+        )
+    
     return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
 
 
