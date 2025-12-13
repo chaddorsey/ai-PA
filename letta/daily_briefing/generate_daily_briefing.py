@@ -28,7 +28,7 @@ def generate_daily_briefing(
         calendar_id: Calendar identifier (email address). Defaults to "cdorsey@concord.org".
         timezone: Timezone for time calculations and display. Defaults to "America/New_York".
         target_date: Date for the briefing in YYYY-MM-DD format. Defaults to today.
-        include_troop_meetings: Whether to include troop meetings. Defaults to False.
+        include_troop_meetings: Deprecated - troop meetings are always ignored (not displayed, not counted as busy). Defaults to False.
     
     Returns:
         Dictionary with status, briefing, memory_updated, timestamp, and other metadata.
@@ -427,11 +427,8 @@ def generate_daily_briefing(
             if start_dt:
                 filtered_events_with_times.append((event, start_dt, end_dt, "solo_available"))
         
-        # Include troop meetings only if requested
-        if include_troop_meetings:
-            for event, event_id, start_dt, end_dt in troop_events:
-                if start_dt:
-                    filtered_events_with_times.append((event, start_dt, end_dt, "troop"))
+        # Troop meetings are completely ignored - not displayed, not counted as busy
+        # (include_troop_meetings parameter is kept for backward compatibility but has no effect)
         
         # Sort by start time
         filtered_events_with_times.sort(key=lambda x: x[1] if x[1] else datetime.max.replace(tzinfo=tz))
@@ -442,12 +439,12 @@ def generate_daily_briefing(
         # Busy events that block available time:
         # - Real meetings (always busy)
         # - Chad out (always busy)
-        # - Troop meetings (always busy)
         # 
         # NOT busy (still available):
         # - Email & Tasks (solo time, available unless overlapped)
         # - Hold (solo time, available unless overlapped)
         # - Weekly Review (solo time, available unless overlapped)
+        # - Troop meetings (completely ignored - treated as if they don't exist)
         all_busy_events = []
         for event, event_id, start_dt, end_dt in real_meetings:
             if start_dt and end_dt:
@@ -455,10 +452,7 @@ def generate_daily_briefing(
         for event, event_id, start_dt, end_dt in chad_out_events:
             if start_dt and end_dt:
                 all_busy_events.append({"start": start_dt, "end": end_dt})
-        for event, event_id, start_dt, end_dt in troop_events:
-            if start_dt and end_dt:
-                all_busy_events.append({"start": start_dt, "end": end_dt})
-        # NOTE: Email & Tasks and Holds are NOT included - they count as available time
+        # NOTE: Email & Tasks, Holds, Weekly Review, and Troop meetings are NOT included - they count as available time or are ignored
         
         # Filter to target date only
         today_busy = [e for e in all_busy_events if e["start"].date() == target_dt.date()]
