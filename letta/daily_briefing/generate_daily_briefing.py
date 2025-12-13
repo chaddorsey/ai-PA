@@ -102,14 +102,20 @@ def generate_daily_briefing(
         except ValueError:
             current_time_formatted = now.strftime("%I:%M %p").lstrip("0")
         
-        # Format target date for display
-        day_name = target_dt.strftime("%a")
-        month_name = target_dt.strftime("%b")
-        day_number = target_dt.strftime("%-d") if hasattr(target_dt, 'strftime') else str(target_dt.day)
+        # Format target date for display (the schedule being shown)
+        target_day_name = target_dt.strftime("%a")  # Short day name for schedule
+        target_month_name = target_dt.strftime("%b")
         try:
-            day_number = target_dt.strftime("%-d")
+            target_day_number = target_dt.strftime("%-d")
         except ValueError:
-            day_number = str(target_dt.day)
+            target_day_number = str(target_dt.day)
+        
+        # Format current date for "updated" timestamp (when the report was generated)
+        update_month_name = now.strftime("%b")
+        try:
+            update_day_number = now.strftime("%-d")
+        except ValueError:
+            update_day_number = str(now.day)
         
         # Add parent directory to path for imports
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -507,8 +513,10 @@ def generate_daily_briefing(
         # Get day name for header (e.g., "Thursday's Schedule")
         full_day_name = target_dt.strftime("%A")  # Full day name like "Thursday"
         
-        # Build header: "**Thursday's Schedule** (updated Dec. 12 at 3:00 AM)"
-        header = f"**{full_day_name}'s Schedule** (updated {month_name}. {day_number} at {current_time_formatted})"
+        # Build header: "**Saturday's Schedule** (updated Dec. 12 at 7:00 PM)"
+        # - Day name comes from target_dt (the schedule being shown)
+        # - "updated" date/time comes from now (when the report was generated)
+        header = f"**{full_day_name}'s Schedule** (updated {update_month_name}. {update_day_number} at {current_time_formatted})"
         
         # Schedule section - meetings are bulleted below the header
         schedule_lines = []
