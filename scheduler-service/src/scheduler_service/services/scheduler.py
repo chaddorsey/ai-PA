@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -163,6 +164,19 @@ class SchedulerService:
                 log.warning("Job not found, removing from scheduler")
                 self.scheduler.remove_job(str(job_id))
                 return
+            
+            # Skip execution if this is the off-hours job running on Friday evening (6 PM - 11 PM)
+            # The off-hours job should stop at 7 AM Friday and resume Sunday 6 PM
+            if job.title == "Gold-Standard Briefing Update (Off-Hours - Next Day)":
+                et = pytz.timezone("America/New_York")
+                now_et = datetime.now(et)
+                # Check if it's Friday (weekday 4) and hour is 18-23 (6 PM - 11 PM)
+                if now_et.weekday() == 4 and 18 <= now_et.hour <= 23:
+                    log.info(
+                        "Skipping execution: off-hours job should not run Friday evening (6 PM - 11 PM)",
+                        current_time_et=now_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                    )
+                    return
 
             execution = Execution(
                 job_id=job.job_id,
