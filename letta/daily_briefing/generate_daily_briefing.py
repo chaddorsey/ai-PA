@@ -338,6 +338,7 @@ def generate_daily_briefing(
         # ========== FILTER EVENTS ==========
         email_tasks_events = []
         hold_events = []
+        weekly_review_events = []
         chad_out_events = []
         troop_events = []
         real_meetings = []
@@ -362,6 +363,9 @@ def generate_daily_briefing(
             # Check if Hold event
             is_hold = "hold" in title
             
+            # Check if Weekly Review event (solo-available like Email & Tasks and Hold)
+            is_weekly_review = "weekly review" in title
+            
             # Check if Chad out
             is_chad_out = "chad out" in title or "chad's out" in title
             
@@ -372,6 +376,8 @@ def generate_daily_briefing(
                 email_tasks_events.append((event, event_id, start_dt, end_dt))
             elif is_hold:
                 hold_events.append((event, event_id, start_dt, end_dt))
+            elif is_weekly_review:
+                weekly_review_events.append((event, event_id, start_dt, end_dt))
             elif is_chad_out:
                 chad_out_events.append((event, event_id, start_dt, end_dt))
             elif is_troop:
@@ -399,8 +405,8 @@ def generate_daily_briefing(
                 if rm_start < h_end and h_start < rm_end:
                     overlapped_holds.add(i)
         
-        # Build filtered events list - ONLY real meetings + chad_out + optionally troop
-        # Do NOT include Email & Tasks or Holds in the display list
+        # Build filtered events list
+        # Include: real meetings, chad_out, Email & Tasks, Hold, and optionally troop
         filtered_events_with_times = []
         for event, event_id, start_dt, end_dt in real_meetings:
             if start_dt:
@@ -408,6 +414,18 @@ def generate_daily_briefing(
         for event, event_id, start_dt, end_dt in chad_out_events:
             if start_dt:
                 filtered_events_with_times.append((event, start_dt, end_dt, "chad_out"))
+        
+        # Include Email & Tasks, Hold, and Weekly Review as solo events (displayed with italics)
+        # These count as AVAILABLE time unless overlapped by real meetings
+        for event, event_id, start_dt, end_dt in email_tasks_events:
+            if start_dt:
+                filtered_events_with_times.append((event, start_dt, end_dt, "solo_available"))
+        for event, event_id, start_dt, end_dt in hold_events:
+            if start_dt:
+                filtered_events_with_times.append((event, start_dt, end_dt, "solo_available"))
+        for event, event_id, start_dt, end_dt in weekly_review_events:
+            if start_dt:
+                filtered_events_with_times.append((event, start_dt, end_dt, "solo_available"))
         
         # Include troop meetings only if requested
         if include_troop_meetings:
@@ -421,7 +439,15 @@ def generate_daily_briefing(
         events_included = len(filtered_events_with_times)
         
         # ========== CALCULATE AVAILABLE TIME ==========
-        # For available time, we need to consider ALL busy events (including chad_out, troop, email/tasks, holds)
+        # Busy events that block available time:
+        # - Real meetings (always busy)
+        # - Chad out (always busy)
+        # - Troop meetings (always busy)
+        # 
+        # NOT busy (still available):
+        # - Email & Tasks (solo time, available unless overlapped)
+        # - Hold (solo time, available unless overlapped)
+        # - Weekly Review (solo time, available unless overlapped)
         all_busy_events = []
         for event, event_id, start_dt, end_dt in real_meetings:
             if start_dt and end_dt:
@@ -432,13 +458,7 @@ def generate_daily_briefing(
         for event, event_id, start_dt, end_dt in troop_events:
             if start_dt and end_dt:
                 all_busy_events.append({"start": start_dt, "end": end_dt})
-        # Email & Tasks and Holds count as busy time
-        for event, event_id, start_dt, end_dt in email_tasks_events:
-            if start_dt and end_dt:
-                all_busy_events.append({"start": start_dt, "end": end_dt})
-        for event, event_id, start_dt, end_dt in hold_events:
-            if start_dt and end_dt:
-                all_busy_events.append({"start": start_dt, "end": end_dt})
+        # NOTE: Email & Tasks and Holds are NOT included - they count as available time
         
         # Filter to target date only
         today_busy = [e for e in all_busy_events if e["start"].date() == target_dt.date()]
@@ -599,10 +619,14 @@ def generate_daily_briefing(
                     
                     # Format based on event type and attendees
                     # - Chad out events: title in italics with (busy)
+                    # - Solo available events (Email & Tasks, Hold): title in italics
                     # - Solo meetings (only Chad): title in italics
                     # - Meetings with others: title in bold, attendees in italicized parens
                     if event_type == "chad_out":
                         schedule_lines.append(f"• {time_range} — *{clean_title}* (busy)")
+                    elif event_type == "solo_available":
+                        # Email & Tasks, Hold - displayed as solo events with italics
+                        schedule_lines.append(f"• {time_range} — *{clean_title}*")
                     elif is_solo_meeting:
                         # Solo meeting - title in italics
                         schedule_lines.append(f"• {time_range} — *{clean_title}*")
