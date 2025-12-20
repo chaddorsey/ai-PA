@@ -236,3 +236,4 @@ docs/technical/slack-analytics-export.md
 .gitignore
 .gitignore
 docs/technical/slack-analytics-export.md
+*.code-workspace
