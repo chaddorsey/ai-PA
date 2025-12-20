@@ -349,7 +349,7 @@ services:
     volumes:
       - ./scheduler-service/scripts:/app/scripts:ro
       - ./deployment/scripts:/workspace/deployment/scripts:ro
-      - "/Volumes/T7 Shield/ai-PA-backups:/workspace/deployment/backups"
+      - "/Volumes/main-filestore/ai-PA-backups:/workspace/deployment/backups"
       - ./deployment/logs:/workspace/deployment/logs
       - ./.env:/workspace/.env:ro
       - ./docker-compose.yml:/workspace/docker-compose.yml:ro
