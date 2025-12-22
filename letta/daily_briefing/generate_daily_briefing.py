@@ -694,21 +694,39 @@ def generate_daily_briefing(
         memory_error = None
         
         try:
-            from letta_client import Letta
+            # Use localhost:8283 directly - tools run inside the Letta container
+            # Use urllib.request to match the pattern used in other Letta scripts
+            # Use /v1/blocks/{block_id} endpoint (works reliably)
+            letta_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
             
-            # Get Letta server URL - inside Docker it's letta:8283, outside it's localhost:8283
-            letta_url = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+            import urllib.request
+            import json as json_lib
             
-            letta_client = Letta(base_url=letta_url)
-            
-            # Update the block directly with the briefing content (without VERBATIM tags)
-            letta_client.blocks.update(
-                block_id=memory_block_id,
-                value=briefing
+            url = f"{letta_url}/v1/blocks/{memory_block_id}"
+            data = json_lib.dumps({"value": briefing}).encode('utf-8')
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={'Content-Type': 'application/json'},
+                method='PATCH'
             )
-            memory_updated = True
+            with urllib.request.urlopen(req, timeout=10) as response:
+                if response.status == 200:
+                    memory_updated = True
         except Exception as mem_err:
             memory_error = str(mem_err)
+            # Log the full error for debugging (truncate to avoid huge error messages)
+            import traceback
+            error_trace = traceback.format_exc()
+            # Include more context about what failed
+            error_details = f"{type(mem_err).__name__}: {str(mem_err)}"
+            if len(error_trace) > 0:
+                # Extract key lines from traceback
+                tb_lines = error_trace.split('\n')
+                relevant_lines = [l for l in tb_lines if 'httpx' in l or 'Connection' in l or 'Error' in l or 'Exception' in l][:3]
+                if relevant_lines:
+                    error_details += f" | Traceback: {' | '.join(relevant_lines)}"
+            memory_error = error_details[:500]  # Limit error message length
         
         # Build agent instruction based on memory update status
         if memory_updated:
