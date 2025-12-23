@@ -123,42 +123,58 @@ def main():
                 print("Attempting authentication (may see duplicate access_type warning in browser)...")
                 print()
                 
-                # Try to use port from redirect_uri if available
+                # Collect ports to try from redirect_uris
+                ports_to_try = []
                 client_info = client_config['web']
                 if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
                     import re
-                    first_uri = client_info['redirect_uris'][0]
-                    match = re.search(r':(\d+)', first_uri)
-                    if match:
-                        port = int(match.group(1))
-                        print(f"Attempting to use port {port} to match registered redirect URI")
+                    for uri in client_info['redirect_uris']:
+                        match = re.search(r':(\d+)', uri)
+                        if match:
+                            ports_to_try.append(int(match.group(1)))
+                
+                if ports_to_try:
+                    port = ports_to_try[0]
+                    print(f"Will try ports from registered redirect URIs: {ports_to_try}")
             else:
                 print("Detected 'Desktop app' client type.")
+                ports_to_try = [port] if port != 0 else []
             
             # Try authentication - start local server
-            try:
-                print("Starting local server...")
-                creds = flow.run_local_server(port=port, open_browser=False)
-                print("✓ Authentication successful!")
-            except OSError as port_error:
-                # Handle port already in use error
-                if "Address already in use" in str(port_error) or "address already in use" in str(port_error).lower():
-                    if is_web_client and port != 0:
-                        print(f"⚠ Port {port} is already in use (likely by Docker/gmail-mcp service).")
-                        print("Falling back to random available port...")
-                        print()
-                        print("NOTE: If authentication fails due to redirect_uri_mismatch,")
-                        print("you'll need to add the redirect URI shown below to your OAuth client")
-                        print("in Google Cloud Console under 'Authorized redirect URIs'.")
-                        print()
-                        # Use random port
-                        port = 0
-                        creds = flow.run_local_server(port=port, open_browser=False)
-                        print("✓ Authentication successful!")
+            creds = None
+            last_error = None
+            
+            # Try each port in the list
+            ports_to_attempt = ports_to_try if ports_to_try else [port]
+            for attempt_port in ports_to_attempt:
+                try:
+                    print(f"Attempting to start local server on port {attempt_port}...")
+                    creds = flow.run_local_server(port=attempt_port, open_browser=False)
+                    print("✓ Authentication successful!")
+                    break
+                except OSError as port_error:
+                    if "Address already in use" in str(port_error) or "address already in use" in str(port_error).lower():
+                        print(f"⚠ Port {attempt_port} is already in use, trying next port...")
+                        last_error = port_error
+                        continue
                     else:
                         raise
-                else:
+                except Exception as e:
+                    last_error = e
                     raise
+            
+            # If all registered ports failed and we haven't gotten credentials yet
+            if not creds and is_web_client:
+                print()
+                print("⚠ All registered redirect URI ports are in use.")
+                print("Trying random available port (this may cause redirect_uri_mismatch error)...")
+                print()
+                print("If authentication fails, you'll need to either:")
+                print("1. Stop the service using the registered port(s), or")
+                print("2. Add the redirect URI used below to your OAuth client in Google Cloud Console")
+                print()
+                creds = flow.run_local_server(port=0, open_browser=False)
+                print("✓ Authentication successful!")
             except Exception as server_error:
                 # If server start fails, try with auto-browser (for desktop clients)
                 error_str = str(server_error).lower()
