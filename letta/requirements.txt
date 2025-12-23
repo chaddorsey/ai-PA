@@ -1,7 +1,17 @@
-# Letta Calendar Tools Requirements
-
-# Google API Client Libraries
-google-auth>=2.23.0
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
-google-api-python-client>=2.100.0
+aiohttp>=3.8.0
+python-dotenv>=1.0.0
+letta-client>=0.1.0
+livekit-agents>=0.9.0
+livekit-plugins-openai>=0.9.0
+livekit-plugins-cartesia>=0.9.0
+livekit-plugins-deepgram>=0.9.0
+google-api-python-client>=2.0.0
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+pytz>=2023.3
+# Scheduling orchestrator dependencies
+clingo>=5.6.0
+dspy-ai>=2.4.0
+pydantic>=2.0.0
+httpx>=0.25.0  # For MCP calendar event retrieval
