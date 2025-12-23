@@ -248,6 +248,7 @@ def create_calendar_event(
         
         # Validate datetime format (basic ISO 8601 check)
         import re
+        from datetime import datetime
         datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         if not re.match(datetime_pattern, start_datetime):
             return {
@@ -265,7 +266,6 @@ def create_calendar_event(
         
         # Validate end is after start
         try:
-            from datetime import datetime
             start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
             end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
             if end_dt <= start_dt:
@@ -497,6 +497,7 @@ def get_calendar_events(
         
         # Validate datetime format
         import re
+        from datetime import datetime
         datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         if not re.match(datetime_pattern, time_min):
             return {
@@ -516,7 +517,6 @@ def get_calendar_events(
         
         # Validate time_max is after time_min
         try:
-            from datetime import datetime
             min_dt = datetime.fromisoformat(time_min.replace('Z', '+00:00'))
             max_dt = datetime.fromisoformat(time_max.replace('Z', '+00:00'))
             if max_dt <= min_dt:
@@ -904,6 +904,7 @@ def update_calendar_event(
         
         # Validate datetime formats if provided
         import re
+        from datetime import datetime
         datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         
         if start_datetime is not None:
@@ -925,7 +926,6 @@ def update_calendar_event(
         # Validate end is after start if both provided
         if start_datetime is not None and end_datetime is not None:
             try:
-                from datetime import datetime
                 start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
                 end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
                 if end_dt <= start_dt:
