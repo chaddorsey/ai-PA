@@ -49,6 +49,15 @@ def validate_move_for_all_participants(
     busy_slots = normalized_data.get("busy_slots", {})
     event_slots_map = normalized_data.get("event_slots_map", {})
     
+    # CRITICAL: Build exclude_keys to include ALL instances of the moved event
+    # (one per participant), not just the owner's instance
+    exclude_keys = exclude_event_keys.copy() if exclude_event_keys else set()
+    event_id = moved_event["event_id"]
+    # Add all participant instances of this event to exclude_keys
+    for participant_id in participants:
+        participant_event_key = (participant_id, event_id)
+        exclude_keys.add(participant_event_key)
+    
     for participant_id in participants:
         # Check if we have calendar data for this participant
         if participant_id not in busy_slots:
@@ -58,8 +67,6 @@ def validate_move_for_all_participants(
         # Check for conflicts (excluding the event being moved and other moved events)
         # Get all events for this participant except the one being moved and other moved events
         participant_other_events = set()
-        exclude_keys = exclude_event_keys or set()
-        exclude_keys.add(event_key)  # Always exclude the event being moved
         
         for (p_id, e_id), slots in event_slots_map.items():
             if p_id == participant_id and (p_id, e_id) not in exclude_keys:
