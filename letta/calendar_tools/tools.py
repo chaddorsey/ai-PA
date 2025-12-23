@@ -107,11 +107,29 @@ def list_calendars() -> Dict[str, Any]:
         }
     
     except HttpError as e:
+        # Map HTTP status codes to meaningful error messages
+        status_code = e.resp.status if hasattr(e.resp, 'status') else None
+        error_details = e.error_details if hasattr(e, 'error_details') else None
+        
+        if status_code == 401:
+            error_msg = "Authentication required. Please run the tool again to complete OAuth flow."
+        elif status_code == 403:
+            error_msg = "Permission denied. Ensure your account has access to the calendar API and required scopes."
+        elif status_code == 404:
+            error_msg = "Calendar not found. Check that the calendar ID is correct."
+        elif status_code == 400:
+            error_msg = f"Invalid request: {str(e)}"
+        else:
+            error_msg = f"Calendar API error ({status_code}): {str(e)}"
+        
+        if error_details:
+            error_msg += f" Details: {error_details}"
+        
         return {
             "status": "error",
             "calendars": [],
             "count": 0,
-            "error_message": f"Calendar API error: {str(e)}"
+            "error_message": error_msg
         }
     except Exception as e:
         return {
@@ -185,8 +203,90 @@ def create_calendar_event(
         if attachment_file_ids is None:
             attachment_file_ids = []
         
-        # TODO: Add validation (task 25-8)
-        # Validate datetime format, end after start, email addresses, etc.
+        # Validation (inline - no helper functions)
+        # Validate calendar_id
+        if not calendar_id or not isinstance(calendar_id, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "calendar_id is required and must be a string"
+            }
+        
+        # Validate required fields
+        if not summary or not isinstance(summary, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "summary is required and must be a string"
+            }
+        
+        if not start_datetime or not isinstance(start_datetime, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "start_datetime is required and must be an ISO 8601 datetime string"
+            }
+        
+        if not end_datetime or not isinstance(end_datetime, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "end_datetime is required and must be an ISO 8601 datetime string"
+            }
+        
+        # Validate datetime format (basic ISO 8601 check)
+        import re
+        datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        if not re.match(datetime_pattern, start_datetime):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": f"start_datetime must be in ISO 8601 format (e.g., '2025-12-30T14:00:00'). Got: {start_datetime}"
+            }
+        
+        if not re.match(datetime_pattern, end_datetime):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": f"end_datetime must be in ISO 8601 format (e.g., '2025-12-30T15:00:00'). Got: {end_datetime}"
+            }
+        
+        # Validate end is after start
+        try:
+            from datetime import datetime
+            start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+            end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
+            if end_dt <= start_dt:
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": "end_datetime must be after start_datetime"
+                }
+        except ValueError as e:
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": f"Invalid datetime format: {str(e)}"
+            }
+        
+        # Validate email addresses in attendees
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        for attendee in attendees:
+            if not isinstance(attendee, str) or not re.match(email_pattern, attendee):
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": f"Invalid email address in attendees: {attendee}"
+                }
+        
+        # Validate attachment file IDs are strings
+        for file_id in attachment_file_ids:
+            if not isinstance(file_id, str) or not file_id:
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": f"Invalid file ID in attachment_file_ids: {file_id}"
+                }
         
         # Authentication logic (inline - will be documented in task 25-2)
         OAUTH_KEY_FILE = os.getenv(
@@ -277,10 +377,28 @@ def create_calendar_event(
         }
     
     except HttpError as e:
+        # Map HTTP status codes to meaningful error messages
+        status_code = e.resp.status if hasattr(e.resp, 'status') else None
+        error_details = e.error_details if hasattr(e, 'error_details') else None
+        
+        if status_code == 401:
+            error_msg = "Authentication required. Please run the tool again to complete OAuth flow."
+        elif status_code == 403:
+            error_msg = "Permission denied. The calendar may not be shared with your account, or you don't have write access. Ensure the calendar is shared with 'Make changes to events' permission."
+        elif status_code == 404:
+            error_msg = "Calendar not found. Check that the calendar ID is correct."
+        elif status_code == 400:
+            error_msg = f"Invalid request: {str(e)}"
+        else:
+            error_msg = f"Calendar API error ({status_code}): {str(e)}"
+        
+        if error_details:
+            error_msg += f" Details: {error_details}"
+        
         return {
             "status": "error",
             "event": {},
-            "error_message": f"Calendar API error: {str(e)}"
+            "error_message": error_msg
         }
     except Exception as e:
         return {
@@ -338,7 +456,89 @@ def get_calendar_events(
         if order_by is None:
             order_by = "startTime"
         
-        # TODO: Add validation (task 25-8)
+        # Validation (inline - no helper functions)
+        # Validate calendar_id
+        if not calendar_id or not isinstance(calendar_id, str):
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": "calendar_id is required and must be a string"
+            }
+        
+        # Validate required fields
+        if not time_min or not isinstance(time_min, str):
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": "time_min is required and must be an ISO 8601 datetime string"
+            }
+        
+        if not time_max or not isinstance(time_max, str):
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": "time_max is required and must be an ISO 8601 datetime string"
+            }
+        
+        # Validate datetime format
+        import re
+        datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        if not re.match(datetime_pattern, time_min):
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": f"time_min must be in ISO 8601 format. Got: {time_min}"
+            }
+        
+        if not re.match(datetime_pattern, time_max):
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": f"time_max must be in ISO 8601 format. Got: {time_max}"
+            }
+        
+        # Validate time_max is after time_min
+        try:
+            from datetime import datetime
+            min_dt = datetime.fromisoformat(time_min.replace('Z', '+00:00'))
+            max_dt = datetime.fromisoformat(time_max.replace('Z', '+00:00'))
+            if max_dt <= min_dt:
+                return {
+                    "status": "error",
+                    "events": [],
+                    "count": 0,
+                    "error_message": "time_max must be after time_min"
+                }
+        except ValueError as e:
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": f"Invalid datetime format: {str(e)}"
+            }
+        
+        # Validate max_results
+        if not isinstance(max_results, int) or max_results < 1 or max_results > 2500:
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": "max_results must be an integer between 1 and 2500"
+            }
+        
+        # Validate order_by
+        if order_by not in ["startTime", "updated"]:
+            return {
+                "status": "error",
+                "events": [],
+                "count": 0,
+                "error_message": "order_by must be 'startTime' or 'updated'"
+            }
         
         # Authentication logic (inline)
         OAUTH_KEY_FILE = os.getenv(
@@ -432,11 +632,29 @@ def get_calendar_events(
         }
     
     except HttpError as e:
+        # Map HTTP status codes to meaningful error messages
+        status_code = e.resp.status if hasattr(e.resp, 'status') else None
+        error_details = e.error_details if hasattr(e, 'error_details') else None
+        
+        if status_code == 401:
+            error_msg = "Authentication required. Please run the tool again to complete OAuth flow."
+        elif status_code == 403:
+            error_msg = "Permission denied. The calendar may not be shared with your account. Ensure the calendar is shared with at least 'See all event details' permission."
+        elif status_code == 404:
+            error_msg = "Calendar not found. Check that the calendar ID is correct."
+        elif status_code == 400:
+            error_msg = f"Invalid request: {str(e)}"
+        else:
+            error_msg = f"Calendar API error ({status_code}): {str(e)}"
+        
+        if error_details:
+            error_msg += f" Details: {error_details}"
+        
         return {
             "status": "error",
             "events": [],
             "count": 0,
-            "error_message": f"Calendar API error: {str(e)}"
+            "error_message": error_msg
         }
     except Exception as e:
         return {
@@ -488,7 +706,22 @@ def get_calendar_event(
     from googleapiclient.errors import HttpError
     
     try:
-        # TODO: Add validation (task 25-8)
+        # Validation (inline - no helper functions)
+        # Validate calendar_id
+        if not calendar_id or not isinstance(calendar_id, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "calendar_id is required and must be a string"
+            }
+        
+        # Validate event_id
+        if not event_id or not isinstance(event_id, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "event_id is required and must be a string"
+            }
         
         # Authentication logic (inline)
         OAUTH_KEY_FILE = os.getenv(
@@ -558,10 +791,28 @@ def get_calendar_event(
         }
     
     except HttpError as e:
+        # Map HTTP status codes to meaningful error messages
+        status_code = e.resp.status if hasattr(e.resp, 'status') else None
+        error_details = e.error_details if hasattr(e, 'error_details') else None
+        
+        if status_code == 401:
+            error_msg = "Authentication required. Please run the tool again to complete OAuth flow."
+        elif status_code == 403:
+            error_msg = "Permission denied. The calendar may not be shared with your account, or you don't have write access. Ensure the calendar is shared with 'Make changes to events' permission."
+        elif status_code == 404:
+            error_msg = "Calendar not found. Check that the calendar ID is correct."
+        elif status_code == 400:
+            error_msg = f"Invalid request: {str(e)}"
+        else:
+            error_msg = f"Calendar API error ({status_code}): {str(e)}"
+        
+        if error_details:
+            error_msg += f" Details: {error_details}"
+        
         return {
             "status": "error",
             "event": {},
-            "error_message": f"Calendar API error: {str(e)}"
+            "error_message": error_msg
         }
     except Exception as e:
         return {
@@ -622,7 +873,82 @@ def update_calendar_event(
         if timezone is None:
             timezone = "America/New_York"
         
-        # TODO: Add validation (task 25-8)
+        # Validation (inline - no helper functions)
+        # Validate calendar_id
+        if not calendar_id or not isinstance(calendar_id, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "calendar_id is required and must be a string"
+            }
+        
+        # Validate event_id
+        if not event_id or not isinstance(event_id, str):
+            return {
+                "status": "error",
+                "event": {},
+                "error_message": "event_id is required and must be a string"
+            }
+        
+        # Validate datetime formats if provided
+        import re
+        datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        
+        if start_datetime is not None:
+            if not isinstance(start_datetime, str) or not re.match(datetime_pattern, start_datetime):
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": f"start_datetime must be in ISO 8601 format. Got: {start_datetime}"
+                }
+        
+        if end_datetime is not None:
+            if not isinstance(end_datetime, str) or not re.match(datetime_pattern, end_datetime):
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": f"end_datetime must be in ISO 8601 format. Got: {end_datetime}"
+                }
+        
+        # Validate end is after start if both provided
+        if start_datetime is not None and end_datetime is not None:
+            try:
+                from datetime import datetime
+                start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
+                end_dt = datetime.fromisoformat(end_datetime.replace('Z', '+00:00'))
+                if end_dt <= start_dt:
+                    return {
+                        "status": "error",
+                        "event": {},
+                        "error_message": "end_datetime must be after start_datetime"
+                    }
+            except ValueError as e:
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": f"Invalid datetime format: {str(e)}"
+                }
+        
+        # Validate email addresses in attendees if provided
+        if attendees is not None:
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            for attendee in attendees:
+                if not isinstance(attendee, str) or not re.match(email_pattern, attendee):
+                    return {
+                        "status": "error",
+                        "event": {},
+                        "error_message": f"Invalid email address in attendees: {attendee}"
+                    }
+        
+        # Validate attachment file IDs if provided
+        if attachment_file_ids is not None:
+            for file_id in attachment_file_ids:
+                if not isinstance(file_id, str) or not file_id:
+                    return {
+                        "status": "error",
+                        "event": {},
+                        "error_message": f"Invalid file ID in attachment_file_ids: {file_id}"
+                    }
         
         # Authentication logic (inline)
         OAUTH_KEY_FILE = os.getenv(
@@ -720,10 +1046,28 @@ def update_calendar_event(
         }
     
     except HttpError as e:
+        # Map HTTP status codes to meaningful error messages
+        status_code = e.resp.status if hasattr(e.resp, 'status') else None
+        error_details = e.error_details if hasattr(e, 'error_details') else None
+        
+        if status_code == 401:
+            error_msg = "Authentication required. Please run the tool again to complete OAuth flow."
+        elif status_code == 403:
+            error_msg = "Permission denied. The calendar may not be shared with your account, or you don't have write access. Ensure the calendar is shared with 'Make changes to events' permission."
+        elif status_code == 404:
+            error_msg = "Calendar not found. Check that the calendar ID is correct."
+        elif status_code == 400:
+            error_msg = f"Invalid request: {str(e)}"
+        else:
+            error_msg = f"Calendar API error ({status_code}): {str(e)}"
+        
+        if error_details:
+            error_msg += f" Details: {error_details}"
+        
         return {
             "status": "error",
             "event": {},
-            "error_message": f"Calendar API error: {str(e)}"
+            "error_message": error_msg
         }
     except Exception as e:
         return {
@@ -774,7 +1118,33 @@ def delete_calendar_event(
         if send_updates is None:
             send_updates = "all"
         
-        # TODO: Add validation (task 25-8)
+        # Validation (inline - no helper functions)
+        # Validate calendar_id
+        if not calendar_id or not isinstance(calendar_id, str):
+            return {
+                "status": "error",
+                "message": "",
+                "event_id": event_id if event_id else "",
+                "error_message": "calendar_id is required and must be a string"
+            }
+        
+        # Validate event_id
+        if not event_id or not isinstance(event_id, str):
+            return {
+                "status": "error",
+                "message": "",
+                "event_id": "",
+                "error_message": "event_id is required and must be a string"
+            }
+        
+        # Validate send_updates
+        if send_updates not in ["all", "externalOnly", "none"]:
+            return {
+                "status": "error",
+                "message": "",
+                "event_id": event_id,
+                "error_message": "send_updates must be 'all', 'externalOnly', or 'none'"
+            }
         
         # Authentication logic (inline)
         OAUTH_KEY_FILE = os.getenv(
@@ -835,11 +1205,29 @@ def delete_calendar_event(
         }
     
     except HttpError as e:
+        # Map HTTP status codes to meaningful error messages
+        status_code = e.resp.status if hasattr(e.resp, 'status') else None
+        error_details = e.error_details if hasattr(e, 'error_details') else None
+        
+        if status_code == 401:
+            error_msg = "Authentication required. Please run the tool again to complete OAuth flow."
+        elif status_code == 403:
+            error_msg = "Permission denied. You may not have delete access to this event, or the calendar is not shared with your account."
+        elif status_code == 404:
+            error_msg = f"Event not found. The event ID '{event_id}' may be incorrect or the event may have been deleted."
+        elif status_code == 400:
+            error_msg = f"Invalid request: {str(e)}"
+        else:
+            error_msg = f"Calendar API error ({status_code}): {str(e)}"
+        
+        if error_details:
+            error_msg += f" Details: {error_details}"
+        
         return {
             "status": "error",
             "message": "",
             "event_id": event_id,
-            "error_message": f"Calendar API error: {str(e)}"
+            "error_message": error_msg
         }
     except Exception as e:
         return {
