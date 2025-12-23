@@ -198,8 +198,10 @@ def create_calendar_event(
     """
     # Import required modules inside function for Letta tool extraction
     import traceback
+    import re
     import os
     from pathlib import Path
+    from datetime import datetime
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
@@ -247,8 +249,6 @@ def create_calendar_event(
             }
         
         # Validate datetime format (basic ISO 8601 check)
-        import re
-        from datetime import datetime
         datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         if not re.match(datetime_pattern, start_datetime):
             return {
@@ -451,8 +451,10 @@ def get_calendar_events(
     """
     # Import required modules inside function for Letta tool extraction
     import traceback
+    import re
     import os
     from pathlib import Path
+    from datetime import datetime
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
@@ -496,8 +498,6 @@ def get_calendar_events(
             }
         
         # Validate datetime format
-        import re
-        from datetime import datetime
         datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         if not re.match(datetime_pattern, time_min):
             return {
@@ -872,8 +872,10 @@ def update_calendar_event(
     """
     # Import required modules inside function for Letta tool extraction
     import traceback
+    import re
     import os
     from pathlib import Path
+    from datetime import datetime
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
@@ -903,8 +905,6 @@ def update_calendar_event(
             }
         
         # Validate datetime formats if provided
-        import re
-        from datetime import datetime
         datetime_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         
         if start_datetime is not None:
