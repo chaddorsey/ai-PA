@@ -120,14 +120,16 @@ def main():
                 client_info = client_config['web']
                 # Extract port from first redirect_uri if it exists, otherwise use default
                 redirect_uri_port = 8080
+                redirect_uri = None
+                
                 if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
+                    # Use the first redirect_uri from the config (must match registered URI exactly)
+                    redirect_uri = client_info['redirect_uris'][0]
                     # Parse port from redirect_uri (e.g., "http://localhost:3000/oauth2callback" -> 3000)
                     import re
-                    first_uri = client_info['redirect_uris'][0]
-                    match = re.search(r':(\d+)', first_uri)
+                    match = re.search(r':(\d+)', redirect_uri)
                     if match:
                         redirect_uri_port = int(match.group(1))
-                    redirect_uri = f'http://localhost:{redirect_uri_port}/oauth2callback'
                 else:
                     redirect_uri = f'http://localhost:{redirect_uri_port}/oauth2callback'
                 
@@ -137,10 +139,11 @@ def main():
                     redirect_uri=redirect_uri
                 )
                 
-                # Start local server on the specified port (or let it pick if 0)
-                # Note: run_local_server may use a different port, so we'll let it choose
-                # and it should handle the redirect properly
-                creds = flow.run_local_server(port=0, open_browser=False)
+                # Start local server on the port that matches the redirect_uri
+                # This ensures the redirect URI matches what's registered in Google Cloud Console
+                print(f"Using redirect URI: {redirect_uri}")
+                print(f"Starting local server on port {redirect_uri_port}...")
+                creds = flow.run_local_server(port=redirect_uri_port, open_browser=False)
                 print("✓ Authentication successful!")
             else:
                 # For Desktop/Installed clients, use InstalledAppFlow
