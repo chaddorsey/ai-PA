@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Import required modules
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
 
 # Configuration - same paths as the tools use
@@ -99,16 +99,40 @@ def main():
         print()
         
         try:
-            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+            # Load client secrets
+            import json
+            with open(OAUTH_KEY_FILE, 'r') as f:
+                client_config = json.load(f)
+            
+            # Determine client type (web or installed)
+            client_info = client_config.get('web') or client_config.get('installed')
+            if not client_info:
+                raise ValueError("Invalid OAuth key file: missing 'web' or 'installed' section")
+            
+            # Create Flow with explicit redirect_uri to match client config
+            # Use first redirect_uri from config, or default for installed apps
+            redirect_uri = None
+            if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
+                redirect_uri = client_info['redirect_uris'][0]
+            elif 'web' in client_config:
+                redirect_uri = 'http://localhost:8080/'  # Default for web apps
+            
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=redirect_uri
+            )
             
             # Try local server first (works if browser is available)
             try:
                 print("Attempting browser-based authentication...")
-                creds = flow.run_local_server(port=0)
+                # run_local_server automatically sets access_type='offline' for refresh tokens
+                creds = flow.run_local_server(port=0, open_browser=True)
                 print("✓ Authentication successful via browser!")
             except Exception as browser_error:
                 # Fall back to console flow for headless environments
-                if "browser" in str(browser_error).lower() or "runnable" in str(browser_error).lower():
+                error_str = str(browser_error).lower()
+                if "browser" in error_str or "runnable" in error_str:
                     print("⚠ Browser not available, using console flow...")
                     print()
                     creds = flow.run_console()
