@@ -4,6 +4,18 @@ Google Calendar CRUD Tools
 Comprehensive calendar event management tools following Letta conventions.
 All functions follow the pattern: imports → try-except → defaults → logic → error handling
 No nested def statements - all logic is inlined.
+
+This module provides full CRUD (Create, Read, Update, Delete) operations for Google Calendar events
+using user OAuth authentication. All tools use direct Google Calendar API integration for
+low latency and full API flexibility.
+
+Authentication:
+- Uses user OAuth 2.0 flow (same pattern as drive_analytics_tools.py)
+- Credentials stored in ~/.gmail-mcp/calendar.credentials.json
+- OAuth key file: ~/.gmail-mcp/gcp-oauth.calendar.desktop.json
+- Scope: https://www.googleapis.com/auth/calendar
+
+All tools support calendars that are already shared with the authenticated user account.
 """
 
 from typing import Dict, Any, Optional, List
