@@ -63,12 +63,11 @@ def list_calendars() -> Dict[str, Any]:
             )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
+        # IMPORTANT: Don't use GMAIL_CREDENTIALS_PATH as it points to admin-reports.credentials.json
+        # Always use calendar.credentials.json for calendar tools
         TOKEN_PATH = os.getenv(
             "CALENDAR_CREDENTIALS_PATH",
-            os.getenv(
-                "GMAIL_CREDENTIALS_PATH",
-                str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
-            )
+            str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
         )
         SCOPES = ["https://www.googleapis.com/auth/calendar"]
         
@@ -369,12 +368,11 @@ def create_calendar_event(
             )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
+        # IMPORTANT: Don't use GMAIL_CREDENTIALS_PATH as it points to admin-reports.credentials.json
+        # Always use calendar.credentials.json for calendar tools
         TOKEN_PATH = os.getenv(
             "CALENDAR_CREDENTIALS_PATH",
-            os.getenv(
-                "GMAIL_CREDENTIALS_PATH",
-                str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
-            )
+            str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
         )
         SCOPES = ["https://www.googleapis.com/auth/calendar"]
         
@@ -638,12 +636,11 @@ def get_calendar_events(
             )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
+        # IMPORTANT: Don't use GMAIL_CREDENTIALS_PATH as it points to admin-reports.credentials.json
+        # Always use calendar.credentials.json for calendar tools
         TOKEN_PATH = os.getenv(
             "CALENDAR_CREDENTIALS_PATH",
-            os.getenv(
-                "GMAIL_CREDENTIALS_PATH",
-                str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
-            )
+            str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
         )
         SCOPES = ["https://www.googleapis.com/auth/calendar"]
         
@@ -838,12 +835,11 @@ def get_calendar_event(
             )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
+        # IMPORTANT: Don't use GMAIL_CREDENTIALS_PATH as it points to admin-reports.credentials.json
+        # Always use calendar.credentials.json for calendar tools
         TOKEN_PATH = os.getenv(
             "CALENDAR_CREDENTIALS_PATH",
-            os.getenv(
-                "GMAIL_CREDENTIALS_PATH",
-                str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
-            )
+            str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
         )
         SCOPES = ["https://www.googleapis.com/auth/calendar"]
         
@@ -1082,12 +1078,11 @@ def update_calendar_event(
             )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
+        # IMPORTANT: Don't use GMAIL_CREDENTIALS_PATH as it points to admin-reports.credentials.json
+        # Always use calendar.credentials.json for calendar tools
         TOKEN_PATH = os.getenv(
             "CALENDAR_CREDENTIALS_PATH",
-            os.getenv(
-                "GMAIL_CREDENTIALS_PATH",
-                str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
-            )
+            str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
         )
         SCOPES = ["https://www.googleapis.com/auth/calendar"]
         
@@ -1295,12 +1290,11 @@ def delete_calendar_event(
             )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
+        # IMPORTANT: Don't use GMAIL_CREDENTIALS_PATH as it points to admin-reports.credentials.json
+        # Always use calendar.credentials.json for calendar tools
         TOKEN_PATH = os.getenv(
             "CALENDAR_CREDENTIALS_PATH",
-            os.getenv(
-                "GMAIL_CREDENTIALS_PATH",
-                str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
-            )
+            str(Path.home() / ".gmail-mcp" / "calendar.credentials.json")
         )
         SCOPES = ["https://www.googleapis.com/auth/calendar"]
         
