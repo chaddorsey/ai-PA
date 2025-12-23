@@ -700,6 +700,7 @@ def generate_daily_briefing(
             letta_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
             
             import urllib.request
+            import urllib.error
             import json as json_lib
             
             url = f"{letta_url}/v1/blocks/{memory_block_id}"
@@ -710,23 +711,24 @@ def generate_daily_briefing(
                 headers={'Content-Type': 'application/json'},
                 method='PATCH'
             )
-            with urllib.request.urlopen(req, timeout=10) as response:
+            # Use 30 second timeout to match other Letta scripts
+            with urllib.request.urlopen(req, timeout=30) as response:
                 if response.status == 200:
                     memory_updated = True
+        except urllib.error.HTTPError as http_err:
+            # Handle HTTP errors (4xx, 5xx) with status code and error body
+            try:
+                error_body = http_err.read().decode('utf-8')
+                memory_error = f"HTTP {http_err.code}: {error_body[:200]}"
+            except:
+                memory_error = f"HTTP {http_err.code}: {str(http_err)}"
+        except urllib.error.URLError as url_err:
+            # Handle URL/connection errors (connection refused, timeout, etc.)
+            error_reason = str(url_err.reason) if hasattr(url_err, 'reason') else str(url_err)
+            memory_error = f"Connection error: {error_reason}"
         except Exception as mem_err:
-            memory_error = str(mem_err)
-            # Log the full error for debugging (truncate to avoid huge error messages)
-            import traceback
-            error_trace = traceback.format_exc()
-            # Include more context about what failed
-            error_details = f"{type(mem_err).__name__}: {str(mem_err)}"
-            if len(error_trace) > 0:
-                # Extract key lines from traceback
-                tb_lines = error_trace.split('\n')
-                relevant_lines = [l for l in tb_lines if 'httpx' in l or 'Connection' in l or 'Error' in l or 'Exception' in l][:3]
-                if relevant_lines:
-                    error_details += f" | Traceback: {' | '.join(relevant_lines)}"
-            memory_error = error_details[:500]  # Limit error message length
+            # Handle any other unexpected errors
+            memory_error = f"{type(mem_err).__name__}: {str(mem_err)}"
         
         # Build agent instruction based on memory update status
         if memory_updated:
