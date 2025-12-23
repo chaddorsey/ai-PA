@@ -16,8 +16,12 @@ from pathlib import Path
 
 # Import required modules
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow, Flow
+from google_auth_oauthlib.flow import Flow
 from google.auth.transport.requests import Request
+import http.server
+import socketserver
+import webbrowser
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 # Configuration - same paths as the tools use
 # Prefer CALENDAR_OAUTH_PATH for dedicated calendar OAuth client
@@ -123,40 +127,135 @@ def main():
                 print("⚠ Unknown client type in OAuth key file.")
                 print()
             
-            # Use InstalledAppFlow (works with both types, but Desktop app is preferred)
-            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+            # Use Flow directly to have full control over authorization URL parameters
+            # This avoids duplicate access_type issues with InstalledAppFlow
+            client_info = client_config.get('installed') or client_config.get('web')
+            if not client_info:
+                raise ValueError("Invalid OAuth key file: missing 'installed' or 'web' section")
             
-            # For Desktop app clients, use random port (they handle redirect URIs flexibly)
-            # For Web clients, try to use a specific port if registered
-            port = 0  # Random port (default - works for Desktop app clients)
+            # Use localhost redirect URI for Desktop app clients
+            port = 0  # Will use random available port
+            redirect_uri = "http://localhost"
             
-            if is_web_client:
-                # Try to use port from redirect_uris if available
-                client_info = client_config['web']
-                if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
-                    import re
-                    first_uri = client_info['redirect_uris'][0]
-                    match = re.search(r':(\d+)', first_uri)
-                    if match:
-                        port = int(match.group(1))
-                        print(f"Using port {port} from registered redirect URI")
+            # Create Flow with explicit redirect_uri
+            flow = Flow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=redirect_uri
+            )
             
-            # Start local server for authentication
+            # Generate authorization URL - only specify access_type once
+            # Don't pass it if Flow might add it automatically
+            auth_url, state = flow.authorization_url(
+                access_type='offline',
+                include_granted_scopes='true',
+                prompt='consent'
+            )
+            
+            # Check for and remove duplicate access_type parameter
+            parsed = urlparse(auth_url)
+            query_params = parse_qs(parsed.query, keep_blank_values=True)
+            
+            if 'access_type' in query_params:
+                if len(query_params['access_type']) > 1:
+                    print("⚠ Detected duplicate access_type parameter, fixing...")
+                # Ensure only one access_type with value 'offline'
+                query_params['access_type'] = ['offline']
+            
+            # Reconstruct URL with cleaned parameters
+            clean_query = urlencode([(k, v[0] if isinstance(v, list) and len(v) > 0 else v) 
+                                    for k, v in query_params.items()], doseq=False)
+            clean_auth_url = urlunparse((
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                clean_query,
+                parsed.fragment
+            ))
+            
+            # Start local server for OAuth callback
             print("Starting local server...")
-            try:
-                creds = flow.run_local_server(port=port, open_browser=False)
-                print("✓ Authentication successful!")
-            except OSError as port_error:
-                if "Address already in use" in str(port_error) or "address already in use" in str(port_error).lower():
-                    if port != 0:
-                        print(f"⚠ Port {port} is already in use (likely by Docker/gmail-mcp).")
-                        print("Trying random available port...")
-                        creds = flow.run_local_server(port=0, open_browser=False)
-                        print("✓ Authentication successful!")
+            
+            class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    parsed_path = urlparse(self.path)
+                    query_params = parse_qs(parsed_path.query)
+                    
+                    if 'code' in query_params:
+                        auth_code = query_params['code'][0]
+                        try:
+                            # Update redirect_uri to match what the server is using
+                            flow.redirect_uri = f"http://localhost:{self.server.server_address[1]}"
+                            flow.fetch_token(code=auth_code)
+                            self.send_response(200)
+                            self.send_header('Content-type', 'text/html')
+                            self.end_headers()
+                            self.wfile.write(b'<html><body><h1>Authentication successful!</h1><p>You can close this window.</p></body></html>')
+                            self.server.should_shutdown = True
+                            self.server.auth_success = True
+                        except Exception as e:
+                            self.send_response(400)
+                            self.send_header('Content-type', 'text/plain')
+                            self.end_headers()
+                            self.wfile.write(f'Error: {str(e)}'.encode())
+                            self.server.should_shutdown = True
+                            self.server.auth_error = str(e)
                     else:
-                        raise
-                else:
-                    raise
+                        error_msg = query_params.get('error', ['Unknown error'])[0]
+                        self.send_response(400)
+                        self.send_header('Content-type', 'text/plain')
+                        self.end_headers()
+                        self.wfile.write(f'Authorization failed: {error_msg}'.encode())
+                        self.server.should_shutdown = True
+                        self.server.auth_error = error_msg
+                
+                def log_message(self, format, *args):
+                    pass  # Suppress default logging
+            
+            # Start server
+            with socketserver.TCPServer(("", port), OAuthCallbackHandler) as httpd:
+                actual_port = httpd.server_address[1]
+                actual_redirect_uri = f"http://localhost:{actual_port}"
+                
+                # Update the authorization URL with the actual redirect URI
+                parsed_clean = urlparse(clean_auth_url)
+                query_params_clean = parse_qs(parsed_clean.query, keep_blank_values=True)
+                query_params_clean['redirect_uri'] = [actual_redirect_uri]
+                final_query = urlencode([(k, v[0] if isinstance(v, list) and len(v) > 0 else v) 
+                                        for k, v in query_params_clean.items()], doseq=False)
+                final_auth_url = urlunparse((
+                    parsed_clean.scheme,
+                    parsed_clean.netloc,
+                    parsed_clean.path,
+                    parsed_clean.params,
+                    final_query,
+                    parsed_clean.fragment
+                ))
+                
+                print(f"\nPlease visit this URL to authorize the application:\n{final_auth_url}\n")
+                print(f"(Listening on {actual_redirect_uri} for callback)\n")
+                
+                try:
+                    webbrowser.open(final_auth_url)
+                    print("(Browser should have opened automatically)")
+                except Exception:
+                    print("(Could not open browser automatically - please copy/paste the URL above)")
+                
+                print("\nWaiting for authorization...")
+                
+                httpd.timeout = 600
+                httpd.should_shutdown = False
+                httpd.auth_success = False
+                
+                while not httpd.should_shutdown:
+                    httpd.handle_request()
+                
+                if hasattr(httpd, 'auth_error'):
+                    raise Exception(f"Authentication failed: {httpd.auth_error}")
+                
+                creds = flow.credentials
+                print("✓ Authentication successful!")
             
             # Save credentials
             os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
