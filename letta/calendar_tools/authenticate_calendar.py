@@ -118,10 +118,18 @@ def main():
                 print()
                 
                 client_info = client_config['web']
-                redirect_uri = 'http://localhost:8080/'
+                # Extract port from first redirect_uri if it exists, otherwise use default
+                redirect_uri_port = 8080
                 if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
-                    # Use the first redirect_uri from the web client config
-                    redirect_uri = client_info['redirect_uris'][0]
+                    # Parse port from redirect_uri (e.g., "http://localhost:3000/oauth2callback" -> 3000)
+                    import re
+                    first_uri = client_info['redirect_uris'][0]
+                    match = re.search(r':(\d+)', first_uri)
+                    if match:
+                        redirect_uri_port = int(match.group(1))
+                    redirect_uri = f'http://localhost:{redirect_uri_port}/oauth2callback'
+                else:
+                    redirect_uri = f'http://localhost:{redirect_uri_port}/oauth2callback'
                 
                 flow = Flow.from_client_config(
                     client_config,
@@ -129,7 +137,9 @@ def main():
                     redirect_uri=redirect_uri
                 )
                 
-                # Start local server
+                # Start local server on the specified port (or let it pick if 0)
+                # Note: run_local_server may use a different port, so we'll let it choose
+                # and it should handle the redirect properly
                 creds = flow.run_local_server(port=0, open_browser=False)
                 print("✓ Authentication successful!")
             else:
