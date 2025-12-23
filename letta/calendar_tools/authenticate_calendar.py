@@ -152,10 +152,24 @@ def main():
                 prompt='consent'
             )
             
-            # Check for and remove duplicate access_type parameter
+            # Parse and inspect the authorization URL
             parsed = urlparse(auth_url)
             query_params = parse_qs(parsed.query, keep_blank_values=True)
             
+            # Debug: Print what scopes are actually being requested
+            if 'scope' in query_params:
+                scopes_list = query_params['scope']
+                if isinstance(scopes_list, list) and len(scopes_list) > 0:
+                    scopes = scopes_list[0].split(' ')
+                    print(f"DEBUG: Scopes in authorization URL: {scopes}")
+                    # Filter out any unexpected scopes (only keep calendar scope)
+                    filtered_scopes = [s for s in scopes if 'calendar' in s]
+                    if len(filtered_scopes) != len(scopes):
+                        print(f"⚠ WARNING: Found unexpected scopes: {[s for s in scopes if 'calendar' not in s]}")
+                        print(f"   Filtering to only calendar scope: {filtered_scopes}")
+                        query_params['scope'] = [' '.join(filtered_scopes)]
+            
+            # Check for and remove duplicate access_type parameter
             if 'access_type' in query_params:
                 if len(query_params['access_type']) > 1:
                     print("⚠ Detected duplicate access_type parameter, fixing...")
