@@ -105,65 +105,50 @@ def main():
         print()
         
         try:
+            # Use InstalledAppFlow for both client types
+            # It should work with web clients, though Desktop app clients are preferred
+            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+            
+            # For web clients, we'll use a specific port if available
             import json
             with open(OAUTH_KEY_FILE, 'r') as f:
                 client_config = json.load(f)
             
             is_web_client = 'web' in client_config
+            port = 0  # Let it pick a random port by default
             
             if is_web_client:
-                # For web clients, use Flow directly with explicit redirect_uri to avoid conflicts
                 print("Detected 'Web application' client type.")
-                print("Using Flow with explicit redirect URI to avoid parameter conflicts...")
+                print("Note: Desktop app client type is recommended for better compatibility.")
+                print("Attempting authentication (may see duplicate access_type warning in browser)...")
                 print()
                 
+                # Try to use port from redirect_uri if available
                 client_info = client_config['web']
-                # Extract port from first redirect_uri if it exists, otherwise use default
-                redirect_uri_port = 8080
-                redirect_uri = None
-                
                 if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
-                    # Use the first redirect_uri from the config (must match registered URI exactly)
-                    redirect_uri = client_info['redirect_uris'][0]
-                    # Parse port from redirect_uri (e.g., "http://localhost:3000/oauth2callback" -> 3000)
                     import re
-                    match = re.search(r':(\d+)', redirect_uri)
+                    first_uri = client_info['redirect_uris'][0]
+                    match = re.search(r':(\d+)', first_uri)
                     if match:
-                        redirect_uri_port = int(match.group(1))
-                else:
-                    redirect_uri = f'http://localhost:{redirect_uri_port}/oauth2callback'
-                
-                flow = Flow.from_client_config(
-                    client_config,
-                    scopes=SCOPES,
-                    redirect_uri=redirect_uri
-                )
-                
-                # Start local server on the port that matches the redirect_uri
-                # This ensures the redirect URI matches what's registered in Google Cloud Console
-                print(f"Using redirect URI: {redirect_uri}")
-                print(f"Starting local server on port {redirect_uri_port}...")
-                creds = flow.run_local_server(port=redirect_uri_port, open_browser=False)
-                print("✓ Authentication successful!")
+                        port = int(match.group(1))
+                        print(f"Using port {port} to match registered redirect URI")
             else:
-                # For Desktop/Installed clients, use InstalledAppFlow
                 print("Detected 'Desktop app' client type.")
-                flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                
-                try:
-                    print("Attempting browser-based authentication...")
-                    creds = flow.run_local_server(port=0, open_browser=True)
+            
+            # Try authentication - start local server
+            try:
+                print("Starting local server...")
+                creds = flow.run_local_server(port=port, open_browser=False)
+                print("✓ Authentication successful!")
+            except Exception as server_error:
+                # If server start fails, try with auto-browser (for desktop clients)
+                error_str = str(server_error).lower()
+                if not is_web_client and ("browser" not in error_str and "runnable" not in error_str):
+                    print("⚠ Local server failed, trying with browser auto-open...")
+                    creds = flow.run_local_server(port=port, open_browser=True)
                     print("✓ Authentication successful via browser!")
-                except Exception as browser_error:
-                    # Fall back to manual URL if browser fails
-                    error_str = str(browser_error).lower()
-                    if "browser" in error_str or "runnable" in error_str:
-                        print("⚠ Browser not available, starting local server manually...")
-                        print()
-                        creds = flow.run_local_server(port=0, open_browser=False)
-                        print("✓ Authentication successful!")
-                    else:
-                        raise
+                else:
+                    raise
             
             # Save credentials
             os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
