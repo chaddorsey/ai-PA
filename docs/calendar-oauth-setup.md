@@ -2,38 +2,57 @@
 
 This guide walks you through creating a Desktop app OAuth client for the Google Calendar tools.
 
-## Step 1: Access Google Cloud Console
+**Recommended: Create a New Project**
+
+To avoid conflicts with existing OAuth configurations (like n8n), we recommend creating a new Google Cloud project specifically for the calendar tools.
+
+## Step 1: Create a New Google Cloud Project
 
 1. Navigate to [Google Cloud Console](https://console.cloud.google.com/)
 2. Sign in with your Google account (e.g., cdorsey@concord.org)
-3. Select your project (or create a new one if needed)
+3. Click the project dropdown at the top of the page (next to "Google Cloud")
+4. Click **NEW PROJECT**
+5. Enter project details:
+   - **Project name**: "Letta Calendar Tools" (or your preferred name)
+   - **Project ID**: Will be auto-generated (or customize it)
+   - **Organization**: Select your organization if applicable
+6. Click **CREATE**
+7. Wait for the project to be created, then select it from the project dropdown
 
 ## Step 2: Enable Google Calendar API
 
 1. In the left menu, go to **APIs & Services** > **Library**
 2. Search for "Google Calendar API"
 3. Click on **Google Calendar API**
-4. Click **Enable** (if not already enabled)
+4. Click **Enable**
 
-## Step 3: Configure OAuth Consent Screen (if not already done)
+   (If you see a billing prompt, you can enable billing or skip - the Calendar API has a free tier that should be sufficient)
+
+## Step 3: Configure OAuth Consent Screen
+
+Since this is a new project, you'll need to set up the OAuth consent screen:
 
 1. In the left menu, go to **APIs & Services** > **OAuth consent screen**
-2. If this is your first time:
-   - Choose **External** (unless you're in a Google Workspace organization)
-   - Fill in required fields:
-     - **App name**: "Letta Calendar Tools" (or your preferred name)
-     - **User support email**: Your email address
-     - **Developer contact information**: Your email address
+2. Choose **External** (unless you're in a Google Workspace organization and want to restrict to your organization)
+3. Fill in the required fields:
+   - **App name**: "Letta Calendar Tools" (or your preferred name)
+   - **User support email**: Your email address
+   - **App logo** (optional): You can skip this
+   - **App domain** (optional): You can skip this
+   - **Developer contact information**: Your email address
+4. Click **Save and Continue**
+5. On the **Scopes** step:
+   - Click **Add or Remove Scopes**
+   - In the filter/search box, type: `calendar`
+   - Find and check: `https://www.googleapis.com/auth/calendar`
+   - Click **Update** (at the bottom)
    - Click **Save and Continue**
-   - **IMPORTANT**: On the Scopes step:
-     - Click **Add or Remove Scopes**
-     - **Only add**: `https://www.googleapis.com/auth/calendar`
-     - **Remove any other scopes** (especially `https://www.googleapis.com/auth/keep` if present)
-     - Click **Update** then **Save and Continue**
-   - Skip Test users if not needed
-   - Click **Back to Dashboard**
+6. On the **Test users** step (if shown):
+   - You can skip this for now, or add your email if you want to test
+   - Click **Save and Continue**
+7. Review the summary and click **Back to Dashboard**
 
-**Note**: If you're using an existing OAuth consent screen (like for n8n), make sure it only includes the scopes you actually need. The calendar tools only require the calendar scope.
+**Important**: Only the calendar scope should be added. Do not add any other scopes.
 
 ## Step 4: Create Desktop App OAuth Client
 
@@ -46,7 +65,7 @@ This guide walks you through creating a Desktop app OAuth client for the Google 
 ## Step 5: Download the Credentials
 
 1. A dialog will appear showing your Client ID and Client Secret
-2. Click the **Download JSON** button (or the download icon next to the client in the list)
+2. Click the **Download JSON** button (download icon in the top-right of the dialog, or use the download icon next to the client in the credentials list)
 3. **IMPORTANT**: Save this file as `gcp-oauth.calendar.desktop.json` in your `~/.gmail-mcp/` directory:
 
 ```bash
@@ -54,7 +73,11 @@ This guide walks you through creating a Desktop app OAuth client for the Google 
 mkdir -p ~/.gmail-mcp
 
 # Move the downloaded file to the correct location
+# (Adjust the path if your downloads are in a different location)
 mv ~/Downloads/client_secret_*.json ~/.gmail-mcp/gcp-oauth.calendar.desktop.json
+
+# Verify the file exists and has the correct structure
+ls -la ~/.gmail-mcp/gcp-oauth.calendar.desktop.json
 ```
 
 ## Step 6: Verify the File Structure
