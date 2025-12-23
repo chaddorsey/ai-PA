@@ -8,7 +8,7 @@ This document lists all tasks associated with PBI 25.
 
 | Task ID | Name | Status | Description |
 | :------ | :----------------------------------------------- | :------- | :----------------------------------------------- |
-| 25-1 | [Define calendar tool interfaces and schemas](./25-1.md) | Proposed | Define all calendar tool functions (create, read, update, delete, list calendars) with typed signatures following Letta conventions, comprehensive docstrings with Args/Returns sections, and proper function structure (no nested def statements). |
+| 25-1 | [Define calendar tool interfaces and schemas](./25-1.md) | Done | Define all calendar tool functions (create, read, update, delete, list calendars) with typed signatures following Letta conventions, comprehensive docstrings with Args/Returns sections, and proper function structure (no nested def statements). |
 | 25-2 | [Implement authentication module](./25-2.md) | Proposed | Document authentication code pattern (to be inlined in each tool) following Drive API pattern for loading OAuth credentials, handling token refresh, and building Calendar API service. |
 | 25-8 | [Implement error handling and validation](./25-8.md) | Proposed | Document validation and error handling patterns (to be inlined in each tool) for API errors, permission issues, invalid parameters, and authentication failures. Input validation for datetime formats, email addresses, etc. |
 | 25-9 | [Assemble calendar tools module](./25-9.md) | Proposed | Ensure all tools follow Letta conventions consistently, verify no nested def statements, ensure proper function structure, consistent error handling patterns, and comprehensive documentation. |
