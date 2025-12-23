@@ -99,88 +99,64 @@ def main():
     if not creds:
         print("Starting OAuth flow...")
         print()
-        print("NOTE: If you encounter a 'duplicate access_type' error in the browser,")
-        print("this is likely because your OAuth client is configured as 'Web application'")
-        print("instead of 'Desktop app'. You can either:")
-        print("1. Create a new 'Desktop app' OAuth client in Google Cloud Console")
-        print("2. Or check if the error persists (sometimes it works despite the warning)")
-        print()
         
         try:
-            # Use InstalledAppFlow for both client types
-            # It should work with web clients, though Desktop app clients are preferred
-            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-            
-            # For web clients, we'll use a specific port if available
+            # Check client type to provide helpful feedback
             import json
             with open(OAUTH_KEY_FILE, 'r') as f:
                 client_config = json.load(f)
             
             is_web_client = 'web' in client_config
-            port = 0  # Let it pick a random port by default
+            is_desktop_client = 'installed' in client_config
             
             if is_web_client:
-                print("Detected 'Web application' client type.")
-                print("Note: Desktop app client type is recommended for better compatibility.")
-                print("Attempting authentication (may see duplicate access_type warning in browser)...")
+                print("⚠ WARNING: Detected 'Web application' client type.")
+                print("Desktop app clients work better with InstalledAppFlow.")
+                print("You may encounter duplicate access_type errors.")
+                print("Consider creating a Desktop app OAuth client instead.")
+                print("See docs/calendar-oauth-setup.md for instructions.")
                 print()
-                
-                # Collect ports to try from redirect_uris
-                ports_to_try = []
+            elif is_desktop_client:
+                print("✓ Detected 'Desktop app' client type - optimal for this use case.")
+                print()
+            else:
+                print("⚠ Unknown client type in OAuth key file.")
+                print()
+            
+            # Use InstalledAppFlow (works with both types, but Desktop app is preferred)
+            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+            
+            # For Desktop app clients, use random port (they handle redirect URIs flexibly)
+            # For Web clients, try to use a specific port if registered
+            port = 0  # Random port (default - works for Desktop app clients)
+            
+            if is_web_client:
+                # Try to use port from redirect_uris if available
                 client_info = client_config['web']
                 if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
                     import re
-                    for uri in client_info['redirect_uris']:
-                        match = re.search(r':(\d+)', uri)
-                        if match:
-                            ports_to_try.append(int(match.group(1)))
-                
-                if ports_to_try:
-                    port = ports_to_try[0]
-                    print(f"Will try ports from registered redirect URIs: {ports_to_try}")
-            else:
-                print("Detected 'Desktop app' client type.")
-                ports_to_try = [port] if port != 0 else []
+                    first_uri = client_info['redirect_uris'][0]
+                    match = re.search(r':(\d+)', first_uri)
+                    if match:
+                        port = int(match.group(1))
+                        print(f"Using port {port} from registered redirect URI")
             
-            # Try authentication - start local server
-            creds = None
-            last_error = None
-            
-            # Try each port in the list
-            ports_to_attempt = ports_to_try if ports_to_try else [port]
-            for attempt_port in ports_to_attempt:
-                try:
-                    print(f"Attempting to start local server on port {attempt_port}...")
-                    creds = flow.run_local_server(port=attempt_port, open_browser=False)
-                    print("✓ Authentication successful!")
-                    break
-                except OSError as port_error:
-                    if "Address already in use" in str(port_error) or "address already in use" in str(port_error).lower():
-                        print(f"⚠ Port {attempt_port} is already in use, trying next port...")
-                        last_error = port_error
-                        continue
+            # Start local server for authentication
+            print("Starting local server...")
+            try:
+                creds = flow.run_local_server(port=port, open_browser=False)
+                print("✓ Authentication successful!")
+            except OSError as port_error:
+                if "Address already in use" in str(port_error) or "address already in use" in str(port_error).lower():
+                    if port != 0:
+                        print(f"⚠ Port {port} is already in use (likely by Docker/gmail-mcp).")
+                        print("Trying random available port...")
+                        creds = flow.run_local_server(port=0, open_browser=False)
+                        print("✓ Authentication successful!")
                     else:
                         raise
-                except Exception as e:
-                    last_error = e
+                else:
                     raise
-            
-            # If all registered ports failed and we haven't gotten credentials yet
-            if not creds and is_web_client:
-                print()
-                print("⚠ All registered redirect URI ports are in use.")
-                print("Trying random available port (this may cause redirect_uri_mismatch error)...")
-                print()
-                print("If authentication fails, you'll need to either:")
-                print("1. Stop the service using the registered port(s), or")
-                print("2. Add the redirect URI used below to your OAuth client in Google Cloud Console")
-                print()
-                creds = flow.run_local_server(port=0, open_browser=False)
-                print("✓ Authentication successful!")
-            
-            # Ensure we got credentials
-            if not creds:
-                raise Exception("Failed to start local server and obtain credentials")
             
             # Save credentials
             os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
