@@ -97,7 +97,20 @@ def list_calendars() -> Dict[str, Any]:
                     }
                 
                 flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
+                # Browser-based auth doesn't work in Docker - need manual authentication
+                # Return error with instructions for user to authenticate manually
+                return {
+                    "status": "error",
+                    "calendars": [],
+                    "count": 0,
+                    "error_message": (
+                        "OAuth authentication required. Calendar credentials not found. "
+                        "Please run the authentication script on your host machine:\n\n"
+                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
+                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
+                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                    )
+                }
                 
                 os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
                 with open(TOKEN_PATH, "w") as token:
