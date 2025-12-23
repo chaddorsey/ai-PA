@@ -109,8 +109,8 @@ def main():
             # If using 'Web application' client type, you may see duplicate access_type errors
             flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
             
-            # For 'Web application' client types, console flow often works better
-            # Try console flow first if it's a web client type
+            # Use run_local_server with open_browser=False for web clients
+            # This prints the URL for manual access, avoiding duplicate access_type errors
             import json
             with open(OAUTH_KEY_FILE, 'r') as f:
                 client_config = json.load(f)
@@ -119,24 +119,26 @@ def main():
             
             if is_web_client:
                 print("Detected 'Web application' client type.")
-                print("Using console flow to avoid parameter conflicts...")
+                print("Starting local server without auto-opening browser...")
+                print("(This avoids duplicate access_type parameter issues)")
                 print()
-                creds = flow.run_console()
-                print("✓ Authentication successful via console!")
+                # Don't auto-open browser - user will visit URL manually
+                creds = flow.run_local_server(port=0, open_browser=False)
+                print("✓ Authentication successful!")
             else:
-                # For Desktop/Installed clients, try local server first
+                # For Desktop/Installed clients, try to auto-open browser
                 try:
                     print("Attempting browser-based authentication...")
-                    creds = flow.run_local_server(port=0)
+                    creds = flow.run_local_server(port=0, open_browser=True)
                     print("✓ Authentication successful via browser!")
                 except Exception as browser_error:
-                    # Fall back to console flow if browser fails
+                    # Fall back to manual URL if browser fails
                     error_str = str(browser_error).lower()
-                    if "browser" in error_str or "runnable" in error_str or "access_type" in error_str or "duplicate" in error_str:
-                        print("⚠ Browser authentication failed, using console flow...")
+                    if "browser" in error_str or "runnable" in error_str:
+                        print("⚠ Browser not available, starting local server manually...")
                         print()
-                        creds = flow.run_console()
-                        print("✓ Authentication successful via console!")
+                        creds = flow.run_local_server(port=0, open_browser=False)
+                        print("✓ Authentication successful!")
                     else:
                         raise
             
