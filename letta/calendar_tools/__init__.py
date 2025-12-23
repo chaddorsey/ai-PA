@@ -8,7 +8,7 @@ using Google Calendar API with user OAuth authentication.
 from typing import Dict, Any
 
 # Export all tool functions
-from letta.calendar_tools.tools import (
+from .tools import (
     create_calendar_event,
     get_calendar_events,
     get_calendar_event,

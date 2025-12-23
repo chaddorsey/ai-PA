@@ -7,16 +7,23 @@ This script registers all calendar tools with Letta using create_from_function.
 
 import os
 import sys
+from pathlib import Path
+
+# Add letta directory to path so we can import the calendar tools
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Letta client import
 try:
     from letta_client import Letta
 except ImportError:
-    print("Error: letta_client not found. Install with: pip install letta-client")
-    sys.exit(1)
+    try:
+        from letta import Letta
+    except ImportError:
+        print("Error: letta_client not found. Install with: pip install letta-client")
+        sys.exit(1)
 
 # Import calendar tools
-from letta.calendar_tools.tools import (
+from calendar_tools.tools import (
     list_calendars,
     create_calendar_event,
     get_calendar_events,
@@ -122,18 +129,35 @@ def main():
         # Attach tools to agent
         print(f"\n→ Attaching {len(registered_tool_ids)} tools to agent {AGENT_ID}...")
         
-        try:
-            # Attach tools to agent
-            # Note: This may vary based on Letta API version
-            if hasattr(client, 'agents') and hasattr(client.agents, 'attach_tools'):
-                client.agents.attach_tools(AGENT_ID, registered_tool_ids)
-                print(f"  ✓ Attached {len(registered_tool_ids)} tools to agent")
-            else:
-                print(f"  ⚠ Tool attachment API not available. Attach manually via Letta dashboard.")
-                print(f"  Tool IDs: {registered_tool_ids}")
-        except Exception as e:
-            print(f"  ⚠ Could not attach tools automatically: {str(e)}")
-            print(f"  Attach manually via Letta dashboard using tool IDs: {registered_tool_ids}")
+        tools_attached = 0
+        for tool_id in registered_tool_ids:
+            try:
+                # Try newer SDK v1.0 method first
+                if hasattr(client, 'agents') and hasattr(client.agents, 'tools') and hasattr(client.agents.tools, 'attach'):
+                    client.agents.tools.attach(agent_id=AGENT_ID, tool_id=tool_id)
+                    print(f"  ✓ Attached tool: {tool_id}")
+                    tools_attached += 1
+                # Fallback to older method
+                elif hasattr(client, 'add_tool_to_agent'):
+                    client.add_tool_to_agent(agent_id=AGENT_ID, tool_id=tool_id)
+                    print(f"  ✓ Attached tool: {tool_id}")
+                    tools_attached += 1
+                else:
+                    print(f"  ⚠ Tool attachment API not available for tool: {tool_id}")
+            except Exception as e:
+                error_str = str(e).lower()
+                if "already attached" in error_str or "already exists" in error_str or "409" in error_str:
+                    print(f"  → Tool already attached: {tool_id}")
+                    tools_attached += 1
+                else:
+                    print(f"  ✗ Error attaching tool {tool_id}: {str(e)}")
+        
+        if tools_attached == len(registered_tool_ids):
+            print(f"\n  ✓ Successfully attached all {tools_attached} tools to agent")
+        elif tools_attached > 0:
+            print(f"\n  ⚠ Attached {tools_attached}/{len(registered_tool_ids)} tools to agent")
+        else:
+            print(f"\n  ⚠ Could not attach tools automatically. Tool IDs: {registered_tool_ids}")
         
         print(f"\n{'='*60}")
         print("Registration Complete")
