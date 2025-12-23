@@ -3,26 +3,21 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.omnifocus.bridge</string>
+    <string>com.omnifocus.bridge.startup</string>
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>cd /Volumes/main-drive/ai-PA/omnifocus-mcp-letta; exec /opt/homebrew/bin/node host-bridge-service.js 8889</string>
+        <string>if [ -f /Volumes/main-drive/ai-PA/omnifocus-mcp-letta/ensure-bridge-running.sh ]; then exec /Volumes/main-drive/ai-PA/omnifocus-mcp-letta/ensure-bridge-running.sh; else exit 0; fi</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
-    <dict>
-        <key>SuccessfulExit</key>
-        <false/>
-    </dict>
+    <key>StartInterval</key>
+    <integer>300</integer>
     <key>StandardOutPath</key>
-    <string>/Volumes/main-drive/ai-PA/omnifocus-mcp-letta/bridge-service.log</string>
+    <string>~/Library/Logs/omnifocus-bridge-startup.log</string>
     <key>StandardErrorPath</key>
-    <string>/Volumes/main-drive/ai-PA/omnifocus-mcp-letta/bridge-service.error.log</string>
-    <key>WorkingDirectory</key>
-    <string>/Volumes/main-drive/ai-PA/omnifocus-mcp-letta</string>
+    <string>~/Library/Logs/omnifocus-bridge-startup.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

@@ -131,7 +131,8 @@ def main():
         "auth_header": None,
         "auth_token": None,
         "custom_headers": {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream"
         }
     }
     
