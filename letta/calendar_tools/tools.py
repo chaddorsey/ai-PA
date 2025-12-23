@@ -366,11 +366,19 @@ def create_calendar_event(
                     }
                 
                 flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-                
-                os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
+                # Browser-based auth doesn't work in Docker - need manual authentication
+                # Return error with instructions for user to authenticate manually
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": (
+                        "OAuth authentication required. Calendar credentials not found. "
+                        "Please run the authentication script on your host machine:\n\n"
+                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
+                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
+                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                    )
+                }
         
         # Build Calendar service
         service = build("calendar", "v3", credentials=creds)
@@ -628,11 +636,19 @@ def get_calendar_events(
                     }
                 
                 flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-                
-                os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
+                # Browser-based auth doesn't work in Docker - need manual authentication
+                # Return error with instructions for user to authenticate manually
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": (
+                        "OAuth authentication required. Calendar credentials not found. "
+                        "Please run the authentication script on your host machine:\n\n"
+                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
+                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
+                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                    )
+                }
         
         # Build Calendar service
         service = build("calendar", "v3", credentials=creds)
@@ -819,11 +835,19 @@ def get_calendar_event(
                     }
                 
                 flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-                
-                os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
+                # Browser-based auth doesn't work in Docker - need manual authentication
+                # Return error with instructions for user to authenticate manually
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": (
+                        "OAuth authentication required. Calendar credentials not found. "
+                        "Please run the authentication script on your host machine:\n\n"
+                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
+                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
+                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                    )
+                }
         
         # Build Calendar service
         service = build("calendar", "v3", credentials=creds)
@@ -1055,11 +1079,19 @@ def update_calendar_event(
                     }
                 
                 flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-                
-                os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
+                # Browser-based auth doesn't work in Docker - need manual authentication
+                # Return error with instructions for user to authenticate manually
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": (
+                        "OAuth authentication required. Calendar credentials not found. "
+                        "Please run the authentication script on your host machine:\n\n"
+                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
+                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
+                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                    )
+                }
         
         # Build Calendar service
         service = build("calendar", "v3", credentials=creds)
@@ -1261,11 +1293,19 @@ def delete_calendar_event(
                     }
                 
                 flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-                
-                os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
+                # Browser-based auth doesn't work in Docker - need manual authentication
+                # Return error with instructions for user to authenticate manually
+                return {
+                    "status": "error",
+                    "event": {},
+                    "error_message": (
+                        "OAuth authentication required. Calendar credentials not found. "
+                        "Please run the authentication script on your host machine:\n\n"
+                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
+                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
+                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                    )
+                }
         
         # Build Calendar service
         service = build("calendar", "v3", credentials=creds)
