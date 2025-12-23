@@ -172,11 +172,17 @@ def main():
         print("  • delete_calendar_event - Delete events")
         print()
         print("Next steps:")
-        print("1. Ensure OAuth credentials are set up:")
-        print("   - OAuth key file: ~/.gmail-mcp/gcp-oauth.calendar.desktop.json")
-        print("   - Credentials will be saved to: ~/.gmail-mcp/calendar.credentials.json")
+        print("1. Authenticate with Google Calendar API (if not already done):")
+        print("   Run on your host machine (not in Docker):")
+        print("     python3 letta/calendar_tools/authenticate_calendar.py")
+        print()
+        print("   This will:")
+        print("   - Use OAuth key file: ~/.gmail-mcp/gcp-oauth.keys.json")
+        print("   - Save credentials to: ~/.gmail-mcp/calendar.credentials.json")
+        print("   - Credentials will be accessible in Docker container via mounted volume")
+        print()
         print("2. Test tools by calling them through Letta")
-        print("3. Tools will prompt for OAuth authentication on first use")
+        print("   If credentials are missing, tools will return helpful error messages")
         
         return 0
         
