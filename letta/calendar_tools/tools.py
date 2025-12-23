@@ -571,9 +571,14 @@ def get_calendar_events(
             }
         
         # Authentication logic (inline)
+        # Check for calendar-specific OAuth path first, then fall back to shared GMAIL_OAUTH_PATH
+        # The same OAuth key file can be used for multiple scopes
         OAUTH_KEY_FILE = os.getenv(
-            "GMAIL_OAUTH_PATH",
-            str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            "CALENDAR_OAUTH_PATH",
+            os.getenv(
+                "GMAIL_OAUTH_PATH",
+                str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
         TOKEN_PATH = os.getenv(
@@ -758,9 +763,14 @@ def get_calendar_event(
             }
         
         # Authentication logic (inline)
+        # Check for calendar-specific OAuth path first, then fall back to shared GMAIL_OAUTH_PATH
+        # The same OAuth key file can be used for multiple scopes
         OAUTH_KEY_FILE = os.getenv(
-            "GMAIL_OAUTH_PATH",
-            str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            "CALENDAR_OAUTH_PATH",
+            os.getenv(
+                "GMAIL_OAUTH_PATH",
+                str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
         TOKEN_PATH = os.getenv(
@@ -989,9 +999,14 @@ def update_calendar_event(
                     }
         
         # Authentication logic (inline)
+        # Check for calendar-specific OAuth path first, then fall back to shared GMAIL_OAUTH_PATH
+        # The same OAuth key file can be used for multiple scopes
         OAUTH_KEY_FILE = os.getenv(
-            "GMAIL_OAUTH_PATH",
-            str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            "CALENDAR_OAUTH_PATH",
+            os.getenv(
+                "GMAIL_OAUTH_PATH",
+                str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
         TOKEN_PATH = os.getenv(
@@ -1189,9 +1204,14 @@ def delete_calendar_event(
             }
         
         # Authentication logic (inline)
+        # Check for calendar-specific OAuth path first, then fall back to shared GMAIL_OAUTH_PATH
+        # The same OAuth key file can be used for multiple scopes
         OAUTH_KEY_FILE = os.getenv(
-            "GMAIL_OAUTH_PATH",
-            str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            "CALENDAR_OAUTH_PATH",
+            os.getenv(
+                "GMAIL_OAUTH_PATH",
+                str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
+            )
         )
         # Use calendar-specific token path (separate from admin-reports tokens)
         TOKEN_PATH = os.getenv(
