@@ -565,7 +565,8 @@ services:
       # Slack tokens for analytics tools
       SLACK_MCP_XOXP_TOKEN: $SLACK_MCP_XOXP_TOKEN
       # Drive analytics OAuth paths (container paths)
-      GMAIL_OAUTH_PATH: "/root/.gmail-mcp/gcp-oauth.admin-reports.desktop.json"
+      # Note: Using gcp-oauth.keys.json (the actual file name) which works for all Google API scopes
+      GMAIL_OAUTH_PATH: "/root/.gmail-mcp/gcp-oauth.keys.json"
       GMAIL_CREDENTIALS_PATH: "/root/.gmail-mcp/admin-reports.credentials.json"
       MY_EMAIL: "${MY_EMAIL:-cdorsey@concord.org}"
     extra_hosts:
