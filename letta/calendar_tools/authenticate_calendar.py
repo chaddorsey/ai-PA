@@ -97,19 +97,23 @@ def main():
     if not creds:
         print("Starting OAuth flow...")
         print()
+        print("NOTE: If you encounter a 'duplicate access_type' error in the browser,")
+        print("this is likely because your OAuth client is configured as 'Web application'")
+        print("instead of 'Desktop app'. You can either:")
+        print("1. Create a new 'Desktop app' OAuth client in Google Cloud Console")
+        print("2. Or check if the error persists (sometimes it works despite the warning)")
+        print()
         
         try:
-            # Use InstalledAppFlow - it works with both 'web' and 'installed' client types
-            # The library automatically handles access_type='offline' for refresh tokens
-            # If you see duplicate access_type errors, check your OAuth client configuration
-            # in Google Cloud Console - the client should not have access_type hardcoded
+            # Use InstalledAppFlow - works best with 'Desktop app' client type
+            # If using 'Web application' client type, you may see duplicate access_type errors
             flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
             
             # Try local server first (works if browser is available)
             try:
                 print("Attempting browser-based authentication...")
-                print("  (If you see 'duplicate access_type' error, check OAuth client config in Google Cloud Console)")
                 # run_local_server will start a local server and open browser
+                # It automatically adds access_type='offline' to get refresh tokens
                 creds = flow.run_local_server(port=0)
                 print("✓ Authentication successful via browser!")
             except Exception as browser_error:
