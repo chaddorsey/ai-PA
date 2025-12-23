@@ -131,7 +131,7 @@ def main():
                     match = re.search(r':(\d+)', first_uri)
                     if match:
                         port = int(match.group(1))
-                        print(f"Using port {port} to match registered redirect URI")
+                        print(f"Attempting to use port {port} to match registered redirect URI")
             else:
                 print("Detected 'Desktop app' client type.")
             
@@ -140,6 +140,25 @@ def main():
                 print("Starting local server...")
                 creds = flow.run_local_server(port=port, open_browser=False)
                 print("✓ Authentication successful!")
+            except OSError as port_error:
+                # Handle port already in use error
+                if "Address already in use" in str(port_error) or "address already in use" in str(port_error).lower():
+                    if is_web_client and port != 0:
+                        print(f"⚠ Port {port} is already in use (likely by Docker/gmail-mcp service).")
+                        print("Falling back to random available port...")
+                        print()
+                        print("NOTE: If authentication fails due to redirect_uri_mismatch,")
+                        print("you'll need to add the redirect URI shown below to your OAuth client")
+                        print("in Google Cloud Console under 'Authorized redirect URIs'.")
+                        print()
+                        # Use random port
+                        port = 0
+                        creds = flow.run_local_server(port=port, open_browser=False)
+                        print("✓ Authentication successful!")
+                    else:
+                        raise
+                else:
+                    raise
             except Exception as server_error:
                 # If server start fails, try with auto-browser (for desktop clients)
                 error_str = str(server_error).lower()
