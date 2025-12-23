@@ -74,11 +74,34 @@ def list_calendars() -> Dict[str, Any]:
         
         # Load credentials
         creds = None
-        if os.path.exists(TOKEN_PATH):
+        credential_load_error = None
+        
+        # Debug: Check path resolution
+        token_path_exists = os.path.exists(TOKEN_PATH)
+        oauth_key_exists = os.path.exists(OAUTH_KEY_FILE)
+        
+        if not token_path_exists:
+            # Return early with diagnostic info
+            return {
+                "status": "error",
+                "calendars": [],
+                "count": 0,
+                "error_message": (
+                    f"Credentials file not found at {TOKEN_PATH}. "
+                    f"File exists check: {token_path_exists}. "
+                    f"Current directory: {os.getcwd()}. "
+                    f"HOME: {os.path.expanduser('~')}. "
+                    f"Please run: python3 letta/calendar_tools/authenticate_calendar.py"
+                )
+            }
+        
+        if token_path_exists:
             try:
                 creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
             except Exception as e:
-                pass
+                # Store error for debugging
+                credential_load_error = f"Failed to load credentials from {TOKEN_PATH}: {type(e).__name__}: {str(e)}"
+                creds = None
         
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
@@ -88,28 +111,41 @@ def list_calendars() -> Dict[str, Any]:
                     creds = None
             
             if not creds:
-                if not os.path.exists(OAUTH_KEY_FILE):
+                # Include diagnostic information in error message
+                error_parts = [
+                    "OAuth authentication required. Calendar credentials not found or invalid.",
+                    f"TOKEN_PATH: {TOKEN_PATH}",
+                    f"TOKEN_PATH exists: {token_path_exists}",
+                    f"OAUTH_KEY_FILE: {OAUTH_KEY_FILE}",
+                    f"OAUTH_KEY_FILE exists: {oauth_key_exists}",
+                ]
+                
+                if credential_load_error:
+                    error_parts.append(f"Load error: {credential_load_error}")
+                
+                error_parts.extend([
+                    "",
+                    "Please run the authentication script on your host machine:",
+                    "",
+                    "  python3 letta/calendar_tools/authenticate_calendar.py",
+                    "",
+                    "This will save credentials to ~/.gmail-mcp/calendar.credentials.json",
+                    "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
+                ])
+                
+                if not oauth_key_exists:
                     return {
                         "status": "error",
                         "calendars": [],
                         "count": 0,
-                        "error_message": f"OAuth key file not found at {OAUTH_KEY_FILE}. Set GMAIL_OAUTH_PATH environment variable or place file at default location."
+                        "error_message": f"OAuth key file not found at {OAUTH_KEY_FILE}. Set CALENDAR_OAUTH_PATH or GMAIL_OAUTH_PATH environment variable."
                     }
                 
-                flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-                # Browser-based auth doesn't work in Docker - need manual authentication
-                # Return error with instructions for user to authenticate manually
                 return {
                     "status": "error",
                     "calendars": [],
                     "count": 0,
-                    "error_message": (
-                        "OAuth authentication required. Calendar credentials not found. "
-                        "Please run the authentication script on your host machine:\n\n"
-                        "  python3 letta/calendar_tools/authenticate_calendar.py\n\n"
-                        "This will save credentials to ~/.gmail-mcp/calendar.credentials.json "
-                        "which is mounted in the Docker container at /root/.gmail-mcp/calendar.credentials.json"
-                    )
+                    "error_message": "\n".join(error_parts)
                 }
                 
                 os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
