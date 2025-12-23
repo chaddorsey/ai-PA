@@ -20,11 +20,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from google.auth.transport.requests import Request
 
 # Configuration - same paths as the tools use
+# Prefer CALENDAR_OAUTH_PATH for dedicated calendar OAuth client
+# Falls back to GMAIL_OAUTH_PATH for shared client, then default
 OAUTH_KEY_FILE = os.getenv(
     "CALENDAR_OAUTH_PATH",
     os.getenv(
         "GMAIL_OAUTH_PATH",
-        str(Path.home() / ".gmail-mcp" / "gcp-oauth.keys.json")
+        str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json")
     )
 )
 
