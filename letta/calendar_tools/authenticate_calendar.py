@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Import required modules
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from google.auth.transport.requests import Request
 
 # Configuration - same paths as the tools use
@@ -105,12 +105,6 @@ def main():
         print()
         
         try:
-            # Use InstalledAppFlow - works best with 'Desktop app' client type
-            # If using 'Web application' client type, you may see duplicate access_type errors
-            flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
-            
-            # Use run_local_server with open_browser=False for web clients
-            # This prints the URL for manual access, avoiding duplicate access_type errors
             import json
             with open(OAUTH_KEY_FILE, 'r') as f:
                 client_config = json.load(f)
@@ -118,15 +112,31 @@ def main():
             is_web_client = 'web' in client_config
             
             if is_web_client:
+                # For web clients, use Flow directly with explicit redirect_uri to avoid conflicts
                 print("Detected 'Web application' client type.")
-                print("Starting local server without auto-opening browser...")
-                print("(This avoids duplicate access_type parameter issues)")
+                print("Using Flow with explicit redirect URI to avoid parameter conflicts...")
                 print()
-                # Don't auto-open browser - user will visit URL manually
+                
+                client_info = client_config['web']
+                redirect_uri = 'http://localhost:8080/'
+                if 'redirect_uris' in client_info and len(client_info['redirect_uris']) > 0:
+                    # Use the first redirect_uri from the web client config
+                    redirect_uri = client_info['redirect_uris'][0]
+                
+                flow = Flow.from_client_config(
+                    client_config,
+                    scopes=SCOPES,
+                    redirect_uri=redirect_uri
+                )
+                
+                # Start local server
                 creds = flow.run_local_server(port=0, open_browser=False)
                 print("✓ Authentication successful!")
             else:
-                # For Desktop/Installed clients, try to auto-open browser
+                # For Desktop/Installed clients, use InstalledAppFlow
+                print("Detected 'Desktop app' client type.")
+                flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+                
                 try:
                     print("Attempting browser-based authentication...")
                     creds = flow.run_local_server(port=0, open_browser=True)
