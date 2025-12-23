@@ -175,15 +175,10 @@ def main():
                 print()
                 creds = flow.run_local_server(port=0, open_browser=False)
                 print("✓ Authentication successful!")
-            except Exception as server_error:
-                # If server start fails, try with auto-browser (for desktop clients)
-                error_str = str(server_error).lower()
-                if not is_web_client and ("browser" not in error_str and "runnable" not in error_str):
-                    print("⚠ Local server failed, trying with browser auto-open...")
-                    creds = flow.run_local_server(port=port, open_browser=True)
-                    print("✓ Authentication successful via browser!")
-                else:
-                    raise
+            
+            # Ensure we got credentials
+            if not creds:
+                raise Exception("Failed to start local server and obtain credentials")
             
             # Save credentials
             os.makedirs(os.path.dirname(TOKEN_PATH), exist_ok=True)
