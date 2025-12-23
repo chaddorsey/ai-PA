@@ -25,9 +25,15 @@ This guide walks you through creating a Desktop app OAuth client for the Google 
      - **User support email**: Your email address
      - **Developer contact information**: Your email address
    - Click **Save and Continue**
-   - Skip the Scopes step for now (we'll add them during OAuth flow)
+   - **IMPORTANT**: On the Scopes step:
+     - Click **Add or Remove Scopes**
+     - **Only add**: `https://www.googleapis.com/auth/calendar`
+     - **Remove any other scopes** (especially `https://www.googleapis.com/auth/keep` if present)
+     - Click **Update** then **Save and Continue**
    - Skip Test users if not needed
    - Click **Back to Dashboard**
+
+**Note**: If you're using an existing OAuth consent screen (like for n8n), make sure it only includes the scopes you actually need. The calendar tools only require the calendar scope.
 
 ## Step 4: Create Desktop App OAuth Client
 
