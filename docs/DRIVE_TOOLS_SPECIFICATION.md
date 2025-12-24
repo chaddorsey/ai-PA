@@ -161,3 +161,13 @@ These existing tools remain available:
 3. **Date format**: Always use YYYY-MM-DD
 4. **Combine filters**: Multiple filters work together (AND logic)
 5. **Sort strategically**: Use `sort_by="edit_count"` to find most-edited docs
+
+## API Path Selection
+
+| Query Type | API Used | Date Limit | View Counts |
+|------------|----------|------------|-------------|
+| Owner + view filter/sort | Admin Reports | 180 days | ✓ Accurate |
+| Owner only (edits/comments) | Drive Activity | No limit | ✗ Not tracked |
+| User queries | Admin Reports | 180 days | ✓ Accurate |
+
+**Note**: Drive Activity API doesn't track views. Queries needing view data automatically use Admin Reports API.

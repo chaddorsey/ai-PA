@@ -1575,7 +1575,10 @@ def search_drive_activity(
         # OPTIMIZED PATH: When filtering by owner only (no user filter),
         # use Drive API to get files, then Drive Activity API for activity.
         # This is MUCH faster than scanning all workspace activity.
-        if owner_list and not user_list:
+        # NOTE: Drive Activity API does NOT track views - only Admin Reports API does.
+        # So if user wants view counts (filter or sort), we must use the standard path.
+        needs_view_data = activity_type == "view" or sort_by == "view_count"
+        if owner_list and not user_list and not needs_view_data:
             # Get files owned by the specified owner(s)
             drive_service = build("drive", "v3", credentials=creds)
             owner_queries = []
@@ -1631,8 +1634,13 @@ def search_drive_activity(
                     try:
                         response = activity_service.activity().query(body=request_body).execute()
                     except HttpError as api_err:
-                        if "SERVICE_DISABLED" in str(api_err) or "403" in str(api_err):
+                        err_str = str(api_err)
+                        if "SERVICE_DISABLED" in err_str or "403" in err_str:
                             # Drive Activity API not enabled - fall back to standard path
+                            api_available = False
+                            break
+                        if "429" in err_str or "RATE_LIMIT" in err_str:
+                            # Rate limited - fall back to standard path
                             api_available = False
                             break
                         raise
@@ -1699,8 +1707,9 @@ def search_drive_activity(
                 except Exception:
                     continue
             
-            # If Drive Activity API was available and we got results, return them
-            if api_available and documents:
+            # If Drive Activity API was available, return results (even if empty)
+            # Don't fall through to slow Admin Reports path unnecessarily
+            if api_available:
                 doc_list = list(documents.values())
                 if sort_by == "edit_count":
                     doc_list.sort(key=lambda x: x["edit_count"], reverse=True)
@@ -1753,7 +1762,9 @@ def search_drive_activity(
         activities = []
         next_page_token = None
         MAX_RESULTS_PER_PAGE = 1000
-        MAX_PAGES = 15  # Limit to ~15,000 activities to prevent timeouts
+        # Use higher page limit for owner queries needing view data (slower but more complete)
+        # These queries must scan all activity and post-filter, so need more pages
+        MAX_PAGES = 50 if (owner_list and needs_view_data) else 15
         pages_fetched = 0
         hit_page_limit = False
         

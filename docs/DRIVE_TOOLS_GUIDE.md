@@ -43,6 +43,9 @@ get_drive_documents(name="budget", file_type="spreadsheet")
 | Feature | search_drive_activity | get_drive_documents |
 |---------|----------------------|---------------------|
 | Partial emails | ✓ Email prefix only | ✗ Full email required |
-| Date range | 1-2 weeks recommended | No limit |
+| Date range | See notes below | No limit |
 
-**Note**: Long date ranges (>1 month) may return truncated results with a warning.
+**Important Notes:**
+- **View counts** require Admin Reports API (180-day limit)
+- **Edit/comment queries** can use optimized path (no date limit)
+- Long ranges may return truncated results with warning
