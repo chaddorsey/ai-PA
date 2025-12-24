@@ -1039,18 +1039,25 @@ def get_drive_mentions(days: int = 7, unread_only: bool = False, start_date: Opt
     })
 
 
-def get_document_activity(doc_ids: List[str], days: int = 7) -> str:
+def get_document_events(doc_ids: List[str], days: int = 7) -> str:
     """
-    Get activity for specific documents.
+    Get individual events (timeline) for specific documents.
     
-    Queries Admin Reports API for activity on specific documents.
+    Returns a detailed timeline of who did what and when on specific documents.
+    Use this for audit trails or understanding the sequence of activity.
+    For aggregated counts, use search_drive_activity instead.
     
     Args:
         doc_ids: List of document IDs to query
         days: Number of days to look back (default: 7)
     
     Returns:
-        str: JSON string with activity details for each document
+        str: JSON with events list (time, actor, action) and summary counts per document
+    
+    Example:
+        # Get timeline for a specific document
+        get_document_events(doc_ids=["1abc...xyz"])
+        # Returns: {"documents": [{"doc_id": "...", "activities": [{"time": "...", "actor": "jie@", "event": "edit"}, ...]}]}
     """
     try:
         creds = _load_credentials()

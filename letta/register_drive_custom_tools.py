@@ -27,7 +27,8 @@ except ImportError:
 # Import the Drive custom tools
 from drive_analytics_tools import (
     search_drive_activity,
-    get_drive_documents
+    get_drive_documents,
+    get_document_events
 )
 
 # Configuration
@@ -48,6 +49,7 @@ def main():
     tools_to_register = [
         ("search_drive_activity", search_drive_activity, "Unified Drive activity search with user/owner/date/type filters"),
         ("get_drive_documents", get_drive_documents, "Document discovery with owner/name/type/folder filters"),
+        ("get_document_events", get_document_events, "Event timeline for specific documents (who did what, when)"),
     ]
     
     registered_tool_ids = []

@@ -152,6 +152,7 @@ These existing tools remain available:
 | Tool | Purpose |
 |------|---------|
 | `get_drive_file_info` | Get metadata for single file from URL |
+| `get_document_events` | Get event timeline for specific doc IDs (who did what, when) |
 | `get_drive_mentions` | Get @-mentions from memory blocks |
 | `get_drive_analytics_summary` | Get activity summary from memory blocks |
 | `collect_daily_workspace_activity` | Collect workspace activity for a date |
