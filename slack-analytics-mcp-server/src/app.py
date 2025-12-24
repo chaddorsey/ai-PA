@@ -160,7 +160,7 @@ async def trigger_export(request: ExportRequest) -> dict:
     # Log detailed error information
     stdout_preview = (completed.stdout or "")[-1000:] if completed.stdout else "(empty)"
     stderr_preview = (completed.stderr or "")[-1000:] if completed.stderr else "(empty)"
-    
+
     logger.error(
         "Slack analytics export failed (returncode=%d)\nSTDOUT (last 1000 chars):\n%s\n\nSTDERR (last 1000 chars):\n%s",
         completed.returncode,

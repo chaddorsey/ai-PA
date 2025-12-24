@@ -90,8 +90,8 @@ async def trigger_export_with_dates(
                 # Validate it's valid JSON before using it
                 with open(auth_path, 'r') as f:
                     json.load(f)
-                print(f"✓ Loading saved authentication from {auth_path}")
-                context_options["storage_state"] = str(auth_path)
+            print(f"✓ Loading saved authentication from {auth_path}")
+            context_options["storage_state"] = str(auth_path)
             except (json.JSONDecodeError, ValueError) as e:
                 print(f"⚠ Auth file exists but is invalid JSON: {e}")
                 print("  Will proceed without saved authentication")
@@ -128,8 +128,8 @@ async def trigger_export_with_dates(
             print("\n⚠ Not logged in. Detected sign-in page.")
             print(f"  URL: {current_url}")
             results["errors"].append("Authentication required but cannot log in in headless mode. Please provide a valid auth file.")
-            await browser.close()
-            return results
+                await browser.close()
+                return results
         else:
             print("✓ Already authenticated")
         
