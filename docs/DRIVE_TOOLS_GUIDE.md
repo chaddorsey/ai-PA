@@ -38,5 +38,11 @@ get_drive_documents(owner="leslie@company.com")
 get_drive_documents(name="budget", file_type="spreadsheet")
 ```
 
-## Key Difference
-`search_drive_activity` accepts partial emails; `get_drive_documents` requires full email for owner.
+## Key Differences
+
+| Feature | search_drive_activity | get_drive_documents |
+|---------|----------------------|---------------------|
+| Partial emails | ✓ Email prefix only | ✗ Full email required |
+| Date range | 1-2 weeks recommended | No limit |
+
+**Note**: Long date ranges (>1 month) may return truncated results with a warning.

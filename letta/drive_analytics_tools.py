@@ -1591,22 +1591,26 @@ def search_drive_activity(
         service = build("admin", "reports_v1", credentials=creds)
         activities = []
         next_page_token = None
-        MAX_RESULTS = 1000
+        MAX_RESULTS_PER_PAGE = 1000
+        MAX_PAGES = 15  # Limit to ~15,000 activities to prevent timeouts
+        pages_fetched = 0
+        hit_page_limit = False
         
         api_params = {
             "userKey": user_key,
             "applicationName": "drive",
             "startTime": start_time,
             "endTime": end_time,
-            "maxResults": MAX_RESULTS,
+            "maxResults": MAX_RESULTS_PER_PAGE,
         }
         
-        while True:
+        while pages_fetched < MAX_PAGES:
             if next_page_token:
                 api_params["pageToken"] = next_page_token
             try:
                 response = service.activities().list(**api_params).execute()
                 activities.extend(response.get("items", []))
+                pages_fetched += 1
                 next_page_token = response.get("nextPageToken")
                 if not next_page_token:
                     break
@@ -1617,6 +1621,9 @@ def search_drive_activity(
                     "data": {},
                     "error_message": f"Admin Reports API error: {str(e)}"
                 }
+        
+        if next_page_token:
+            hit_page_limit = True
         
         # Process activities into document-centric view
         documents = {}
@@ -1762,9 +1769,11 @@ def search_drive_activity(
                 "total_documents": len(doc_list),
                 "total_activities": sum(d["total_activity"] for d in doc_list),
                 "documents": doc_list,
+                "truncated": hit_page_limit,
+                "warning": "Results may be incomplete. For better results, use a shorter date range (1-2 weeks recommended)." if hit_page_limit else None,
             }
         }
-        
+
     except Exception as e:
         import traceback
         return {
