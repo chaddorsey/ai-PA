@@ -10,18 +10,30 @@
 | `"exact phrase"` | Exact phrase | `"code review"` |
 | `term*` | Suffix wildcard | `deploy*` |
 | `NOT term` or `-term` | Exclude | `python NOT javascript` |
+| `@username` | Mentions of user | `@cdorsey` |
 
-## Automatic OR Handling
+## @-Mentions
 
-Slack's API treats OR as AND when filters (user/channel) are present. The tool automatically works around this by splitting OR queries into separate searches and combining results.
-
-**Auto-split triggers when:** OR in query + user or channel filter
+Use `@username` in query to find messages mentioning a user:
 
 ```python
-# These are automatically split and combined:
-search_slack_messages(query="travel OR vacation", user="sue")
-search_slack_messages(query="python OR code", channel="#random")
+# All mentions of a user
+search_slack_messages(query="@cdorsey")
+
+# Mentions in a specific channel
+search_slack_messages(query="@cdorsey", channel="random")
+
+# Mentions from a specific person
+search_slack_messages(query="@cdorsey", user="dougmartin")
+
+# Mentions in the past week
+search_slack_messages(query="@cdorsey", start_date="2024-12-17")
 ```
+
+## Automatic Handling
+
+- **OR + filter**: Split into separate searches (Slack treats OR as AND with filters)
+- **Date filters**: Uses Slack's `after:/before:` syntax for accurate filtering
 
 ## Known Limitation
 

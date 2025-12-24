@@ -1158,7 +1158,9 @@ def search_slack_messages(
     When query is omitted or empty, returns recent messages across workspace.
     Supports filtering by user(s) and/or channel(s) using Slack's query syntax.
     
-    Query Syntax: "term1 term2" (AND), "term1 OR term2", "NOT term", '"exact phrase"', "prefix*" (wildcard).
+    Query Syntax: "term1 term2" (AND), "term1 OR term2", "NOT term", '"exact phrase"', "prefix*" (wildcard), "@username" (mentions).
+    
+    @-Mentions: Use "@username" in query to find messages mentioning a user. Combine with filters as needed.
     
     Automatic Handling: OR queries with user/channel filters are automatically split into separate 
     searches and combined (Slack API treats OR as AND when filters present).
@@ -1166,7 +1168,7 @@ def search_slack_messages(
     Known Limitation: Prefix wildcards "*term" match literal, not wildcard. Use "term*" instead.
     
     Args:
-        query: Search query string. When omitted or empty, returns recent messages. Default: None.
+        query: Search query string. Supports @username for mentions. Default: None.
         user: User ID(s) or username(s) (e.g., "sue" or "sue,dan"). Use usernames for efficiency. Default: None.
         channel: Channel ID(s) or name(s) (e.g., "#random" or "#general,#random"). Use names for efficiency. Default: None.
         start_date: Start date in YYYY-MM-DD format or ISO 8601 datetime. Default: None.
@@ -1382,6 +1384,34 @@ def search_slack_messages(
                 # Use "in:chan1 OR in:chan2" instead of "(in:chan1 OR in:chan2)"
                 channel_query = " OR ".join(channel_filters)
                 search_query_parts.insert(0, channel_query)
+        
+        # Add date filters using Slack's native syntax (more accurate than post-filtering)
+        if start_date:
+            # Convert to YYYY-MM-DD format for after: syntax
+            try:
+                if 'T' in start_date:
+                    date_part = start_date.split('T')[0]
+                else:
+                    date_part = start_date
+                search_query_parts.append(f"after:{date_part}")
+            except Exception:
+                pass
+        
+        if end_date:
+            # Convert to YYYY-MM-DD format for before: syntax
+            # Add 1 day because before: is exclusive
+            try:
+                if 'T' in end_date:
+                    date_part = end_date.split('T')[0]
+                else:
+                    date_part = end_date
+                # Parse and add 1 day for inclusive end date
+                from datetime import timedelta
+                end_dt_temp = datetime.strptime(date_part, "%Y-%m-%d")
+                end_dt_plus_one = end_dt_temp + timedelta(days=1)
+                search_query_parts.append(f"before:{end_dt_plus_one.strftime('%Y-%m-%d')}")
+            except Exception:
+                pass
         
         # Combine query parts
         final_query = " ".join(search_query_parts) if search_query_parts else ""
