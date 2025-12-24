@@ -78,20 +78,24 @@ def attach_tools_to_agent(agent_id, tool_ids):
     if not agent:
         return False
     
-    current_tools = agent.get("tools", [])
+    current_tool_refs = agent.get("tools", [])
     
-    # Extract IDs from current tools (they might be dicts)
-    current_tool_ids = []
-    for tool in current_tools:
-        if isinstance(tool, dict):
-            current_tool_ids.append(tool.get("id"))
-        else:
-            current_tool_ids.append(tool)
+    # Extract current tool IDs (handle both string and dict formats)
+    current_tool_ids = set()
+    for ref in current_tool_refs:
+        if isinstance(ref, dict):
+            current_tool_ids.add(ref.get("id"))
+        elif isinstance(ref, str):
+            current_tool_ids.add(ref)
     
-    # Merge and deduplicate
-    all_tool_ids = list(set(current_tool_ids + tool_ids))
+    # Ensure new tool IDs are strings
+    new_tool_ids = [t if isinstance(t, str) else str(t) for t in tool_ids]
     
-    result = http_patch(f"{LETTA_BASE}/v1/agents/{agent_id}", {"tools": all_tool_ids})
+    # Merge tool lists (convert to list of strings, dedupe, preserve order)
+    all_tool_ids = list(dict.fromkeys(list(current_tool_ids) + new_tool_ids))
+    
+    # Update agent - use 'tool_ids' field (not 'tools')
+    result = http_patch(f"{LETTA_BASE}/v1/agents/{agent_id}", {"tool_ids": all_tool_ids})
     return result is not None
 
 
@@ -220,17 +224,23 @@ def trigger_slack_analytics_export(analytics_type: str = "channels", days_ago: i
 # Tool 2: List recent files
 TOOL_2_SOURCE = '''import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
-def list_recent_slack_files(types: str = "csv", count: int = 10) -> str:
+def list_recent_slack_files(types: str = "csv", count: int = 10, hours_back: int = None) -> str:
     """List recent files in Slack workspace.
     
     Args:
         types: File types to filter (csv, pdf, all)  
-        count: Number of files (max 100)
+        count: Number of files to retrieve from API (max 100)
+        hours_back: Optional filter to only show files created within last N hours
     
     Returns:
-        JSON with recent files including name, URL, timestamp
+        JSON with recent files including name, URL, timestamp, sorted by creation time (newest first)
+    
+    Note:
+        Slack API may have a short delay (10-60 seconds) before newly created files appear.
+        If you just ran an export and don't see it, wait a minute and try again, or use hours_back
+        to filter for very recent files.
     """
     import urllib.request
     
@@ -239,7 +249,14 @@ def list_recent_slack_files(types: str = "csv", count: int = 10) -> str:
         return "❌ SLACK_MCP_XOXP_TOKEN not set"
     
     try:
-        params = {"count": str(min(count, 100))}
+        # Request more files than needed to account for filtering
+        request_count = min(count * 3, 100) if hours_back else min(count, 100)
+        
+        params = {
+            "count": str(request_count),
+            "sort": "timestamp",  # Sort by creation time
+            "page": 1
+        }
         if types != "all":
             params["types"] = types
         
@@ -253,19 +270,51 @@ def list_recent_slack_files(types: str = "csv", count: int = 10) -> str:
             return f"❌ API error: {data.get('error')}"
         
         files = []
+        now = datetime.now()
+        cutoff_time = now - timedelta(hours=hours_back) if hours_back else None
+        
         for f in data.get("files", []):
-            created_dt = datetime.fromtimestamp(f.get("created", 0))
+            created_ts = f.get("created", 0)
+            created_dt = datetime.fromtimestamp(created_ts)
+            
+            # Filter by time if specified
+            if cutoff_time and created_dt < cutoff_time:
+                continue
+            
+            age_seconds = (now - created_dt).total_seconds()
+            age_hours = round(age_seconds / 3600, 1)
+            age_minutes = round(age_seconds / 60, 1)
+            
             files.append({
                 "id": f.get("id"),
                 "name": f.get("name"),
                 "title": f.get("title"),
                 "created": created_dt.isoformat(),
-                "age_hours": round((datetime.now() - created_dt).total_seconds() / 3600, 1),
+                "age_hours": age_hours,
+                "age_minutes": age_minutes if age_minutes < 120 else None,  # Only show minutes for recent files
                 "url_download": f.get("url_private_download"),
                 "size_kb": round(f.get("size", 0) / 1024, 1)
             })
         
-        return json.dumps({"count": len(files), "files": files}, indent=2)
+        # Sort by creation time (newest first) - API should do this but ensure it
+        files.sort(key=lambda x: x["created"], reverse=True)
+        
+        # Limit to requested count
+        files = files[:count]
+        
+        result = {
+            "count": len(files),
+            "files": files
+        }
+        
+        if hours_back:
+            result["filter_hours_back"] = hours_back
+        
+        # Add note if no very recent files
+        if files and files[0].get("age_hours", 999) > 24:
+            result["note"] = "Most recent file is more than 24 hours old. New exports may take 10-60 seconds to appear."
+        
+        return json.dumps(result, indent=2)
     except Exception as e:
         return f"❌ Error: {str(e)}"
 '''

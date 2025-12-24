@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Tuple
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +30,8 @@ app = FastAPI(title="Slack Analytics Export Service")
 
 class ExportRequest(BaseModel):
     """Incoming payload describing the desired export."""
+
+    model_config = ConfigDict(extra="ignore")  # Ignore extra fields like request_heartbeat
 
     analytics_type: Literal["channels", "members"] = "channels"
     days_ago: int = Field(default=3, ge=0, le=60)
@@ -155,13 +157,15 @@ async def trigger_export(request: ExportRequest) -> dict:
         logger.info("Slack analytics export succeeded")
         return response_payload
 
+    # Log detailed error information
+    stdout_preview = (completed.stdout or "")[-1000:] if completed.stdout else "(empty)"
+    stderr_preview = (completed.stderr or "")[-1000:] if completed.stderr else "(empty)"
+    
     logger.error(
-        "Slack analytics export failed",
-        extra={
-            "returncode": completed.returncode,
-            "stdout_tail": (completed.stdout or "")[-200:],
-            "stderr_tail": (completed.stderr or "")[-200:],
-        },
+        "Slack analytics export failed (returncode=%d)\nSTDOUT (last 1000 chars):\n%s\n\nSTDERR (last 1000 chars):\n%s",
+        completed.returncode,
+        stdout_preview,
+        stderr_preview,
     )
     raise HTTPException(status_code=500, detail=response_payload)
 

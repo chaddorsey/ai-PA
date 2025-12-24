@@ -15,6 +15,7 @@ Usage:
 
 import asyncio
 import argparse
+import json
 from pathlib import Path
 from playwright.async_api import async_playwright
 from datetime import datetime, timedelta
@@ -83,9 +84,17 @@ async def trigger_export_with_dates(
         browser = await p.chromium.launch(headless=headless)
         
         context_options = {}
-        if auth_path.exists():
-            print(f"✓ Loading saved authentication from {auth_path}")
-            context_options["storage_state"] = str(auth_path)
+        # Only load auth file if it exists and contains valid JSON
+        if auth_path.exists() and auth_path.stat().st_size > 0:
+            try:
+                # Validate it's valid JSON before using it
+                with open(auth_path, 'r') as f:
+                    json.load(f)
+                print(f"✓ Loading saved authentication from {auth_path}")
+                context_options["storage_state"] = str(auth_path)
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"⚠ Auth file exists but is invalid JSON: {e}")
+                print("  Will proceed without saved authentication")
         
         context = await browser.new_context(**context_options)
         page = await context.new_page()
@@ -104,26 +113,34 @@ async def trigger_export_with_dates(
         
         # Handle login if needed
         current_url = page.url
-        if "/signin" in current_url:
-            print("\n⚠ Not logged in. Please log in...")
-            try:
-                await page.wait_for_url(
-                    lambda url: "/signin" not in url,
-                    timeout=120000
-                )
-                print("✓ Login successful!")
-                await context.storage_state(path=str(auth_path))
-                await page.goto(target_url, wait_until="domcontentloaded")
-                await page.wait_for_timeout(2000)
-            except Exception as e:
-                results["errors"].append(f"Login failed: {e}")
-                await browser.close()
-                return results
+        page_content = await page.content()
+        
+        # Check for sign-in page indicators (URL or page content)
+        is_signin_page = (
+            "/signin" in current_url or 
+            "Sign in to" in page_content or
+            "You need to sign in" in page_content or
+            "sign_in" in current_url.lower() or
+            'data-qa="sign_in"' in page_content
+        )
+        
+        if is_signin_page:
+            print("\n⚠ Not logged in. Detected sign-in page.")
+            print(f"  URL: {current_url}")
+            results["errors"].append("Authentication required but cannot log in in headless mode. Please provide a valid auth file.")
+            await browser.close()
+            return results
         else:
             print("✓ Already authenticated")
         
         # Wait for page load
         await page.wait_for_timeout(3000)
+        
+        # Diagnostic: Log current URL and page title
+        current_url = page.url
+        page_title = await page.title()
+        print(f"→ Current URL: {current_url}")
+        print(f"→ Page title: {page_title}")
         
         # Click the tab
         print(f"→ Clicking {analytics_type} tab...")
@@ -159,7 +176,16 @@ async def trigger_export_with_dates(
         try:
             # Step 1: Click the date range dropdown
             print("  Step 1: Opening date range dropdown...")
-            date_dropdown = page.locator(f'div[data-qa="analytics_{analytics_type}-table-header-filter-button"]')
+            date_dropdown_selector = f'div[data-qa="analytics_{analytics_type}-table-header-filter-button"]'
+            date_dropdown = page.locator(date_dropdown_selector)
+            
+            # Check if element exists before clicking
+            count = await date_dropdown.count()
+            if count == 0:
+                print(f"  ⚠ Date dropdown not found with selector: {date_dropdown_selector}")
+                print(f"  → Current URL: {page.url}")
+                raise Exception(f"Date range dropdown button not found")
+            
             await date_dropdown.click(timeout=5000)
             await page.wait_for_timeout(1000)
             print("  ✓ Dropdown opened")
