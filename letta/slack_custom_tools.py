@@ -1160,9 +1160,10 @@ def search_slack_messages(
     
     Query Syntax: "term1 term2" (AND), "term1 OR term2", "NOT term", '"exact phrase"', "prefix*" (wildcard).
     
-    Known Limitations (Slack API):
-    - OR + NOT + filter: "python OR java NOT script" with user/channel returns 0. Split into separate searches instead.
-    - Prefix wildcards: "*term" matches literal, not wildcard. Use suffix wildcards "term*" instead.
+    Automatic Handling: OR queries with user/channel filters are automatically split into separate 
+    searches and combined (Slack API treats OR as AND when filters present).
+    
+    Known Limitation: Prefix wildcards "*term" match literal, not wildcard. Use "term*" instead.
     
     Args:
         query: Search query string. When omitted or empty, returns recent messages. Default: None.
@@ -1386,13 +1387,12 @@ def search_slack_messages(
         final_query = " ".join(search_query_parts) if search_query_parts else ""
         
         # Check if we need to split OR query (workaround for Slack API limitation)
-        # When query contains OR and both user and channel filters are present,
-        # Slack returns 0 results. We split into separate searches and combine.
-        # Also handles: phrase OR phrase + any filter (user OR channel)
+        # Slack treats "OR" as "AND" when from: or in: filters are present.
+        # We split OR queries into separate searches and combine results.
         or_pattern = re.compile(r'\s+OR\s+', re.IGNORECASE)
         
-        # Check if OR is inside quotes (inline - no nested def allowed by Letta)
-        has_or = False
+        # Check if OR is outside quotes (inline - no nested def allowed by Letta)
+        has_unquoted_or = False
         if query:
             in_quote = False
             cleaned_query = []
@@ -1401,16 +1401,10 @@ def search_slack_messages(
                     in_quote = not in_quote
                 elif not in_quote:
                     cleaned_query.append(char)
-            has_or = bool(or_pattern.search(''.join(cleaned_query)))
+            has_unquoted_or = bool(or_pattern.search(''.join(cleaned_query)))
         
-        # Detect if we need to split:
-        # 1. OR + user + channel (confirmed issue)
-        # 2. phrase OR phrase + any filter (user or channel)
-        is_phrase_or_phrase = query and has_or and query.count('"') >= 4  # At least 2 phrases
-        needs_or_split = query and has_or and (
-            (user and channel) or  # Original case: OR + user + channel
-            (is_phrase_or_phrase and (user or channel))  # phrase OR phrase + filter
-        )
+        # Split if: query has unquoted OR AND any filter is present
+        needs_or_split = query and has_unquoted_or and (user or channel)
         
         if needs_or_split:
             # Split query into separate terms and search each
