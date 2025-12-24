@@ -1767,9 +1767,15 @@ def search_drive_activity(
         activities = []
         next_page_token = None
         MAX_RESULTS_PER_PAGE = 1000
-        # Use higher page limit for owner queries needing view data (slower but more complete)
-        # These queries must scan all activity and post-filter, so need more pages
-        MAX_PAGES = 50 if (owner_list and needs_view_data) else 15
+        
+        # Determine MAX_PAGES based on query type and date range
+        # - Owner + view data: needs more pages (post-filtering from all activity)
+        # - Org-wide queries (no owner/user): also need more pages for longer date ranges
+        date_range_days = (end_dt - start_dt).days + 1
+        is_org_wide = not owner_list and not user_list
+        needs_more_pages = (owner_list and needs_view_data) or (is_org_wide and date_range_days > 7)
+        MAX_PAGES = 50 if needs_more_pages else 15
+        
         pages_fetched = 0
         hit_page_limit = False
         
