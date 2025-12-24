@@ -32,6 +32,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 24 | Executive / EA | As a user, I want a daily briefing tool that generates a formatted schedule report with available time calculations, so that Letta can provide me with an up-to-date view of my day at any time. | Agreed | (1) Tool retrieves calendar events from cdorsey@concord.org via MCP Core_Event_Data; (2) Filters and formats events according to gold-standard rules; (3) Calculates available time from current time to 5:00 PM Eastern; (4) Generates Markdown-formatted briefing with proper time formatting; (5) Updates memory block with briefing content; (6) Handles Eastern time with daylight savings correctly - [View Details](./24/prd.md) |
 | 25 | Executive / EA | As a user, I want comprehensive Google Calendar CRUD tools for Letta agents so that I can create, read, update, and delete calendar events through natural language, supporting all standard event properties including times with timezone, attendees, location, description, and file attachments. | Proposed | (1) Tools use user OAuth authentication following Drive API pattern; (2) Full CRUD operations (create, read, update, delete events); (3) Support for all event properties (summary, times with timezone, description, location, attendees, attachments); (4) Support for both own calendar and shared calendars; (5) Comprehensive error handling and validation; (6) All tools registered with Letta with proper schemas - [View Details](./25/prd.md) |
 
+|| 26 | Executive / EA | As a user, I want consolidated Drive analytics tools with user, owner, and date range filtering so that I can answer questions like "What did Cynthia edit last week?" without multiple tool calls. | Agreed | (1) Unified search_drive_activity tool with user/owner/date/activity filters; (2) get_drive_documents for document discovery; (3) Preserved analytics capabilities; (4) All example questions answerable; (5) Old tools deprecated but functional; (6) New tools registered with Letta - [View Details](./26/prd.md) |
 ## PBI History Log
 
 | Timestamp | PBI_ID | Event_Type | Details | User |
@@ -60,6 +61,8 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 2025-01-21 15:00:00 | 24 | create_pbi | Added PBI 24 to create daily briefing tool that generates formatted schedule reports with available time calculations | AI_Agent |
 | 2025-01-21 15:30:00 | 24 | propose_for_backlog | PBI 24 moved from Proposed to Agreed - ready for implementation | AI_Agent |
 | 2025-01-21 20:00:00 | 25 | create_pbi | Added PBI 25 to create comprehensive Google Calendar CRUD tools for Letta agents with full event property support | AI_Agent |
+| 2024-12-24 10:00:00 | 26 | create_pbi | Added PBI 26 to consolidate Drive analytics tools with user/owner/date filtering | AI_Agent |
+| 2024-12-24 10:05:00 | 26 | propose_for_backlog | PBI 26 moved from Proposed to Agreed - ready for implementation | AI_Agent |
 
 ## Backlog Notes
 
