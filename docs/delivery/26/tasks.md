@@ -9,7 +9,7 @@ This document lists all tasks associated with PBI 26.
 | Task ID | Name | Status | Description |
 | :------ | :--- | :----- | :---------- |
 | 26-1 | [Implement search_drive_activity tool](./26-1.md) | Review | Create unified activity search with user, owner, date range, activity type filters |
-| 26-2 | [Implement get_drive_documents tool](./26-2.md) | Proposed | Create document discovery tool with owner, name, folder filtering |
+| 26-2 | [Implement get_drive_documents tool](./26-2.md) | Review | Create document discovery tool with owner, name, folder filtering |
 | 26-3 | [Refine get_drive_file_info tool](./26-3.md) | Proposed | Ensure file info tool follows consolidated patterns |
 | 26-4 | [Consolidate get_drive_mentions tool](./26-4.md) | Proposed | Add date range support, simplify interface |
 | 26-5 | [Preserve get_drive_analytics_summary](./26-5.md) | Proposed | Ensure analytics capabilities remain intact |
