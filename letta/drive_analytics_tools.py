@@ -1481,11 +1481,55 @@ def search_drive_activity(
     import time
     from datetime import datetime, timedelta
     from typing import Dict, List, Any, Optional
+    from pathlib import Path
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
     
     # Wrap in try-except (Letta compliance)
     try:
-        # Load credentials
-        creds = _load_credentials()
+        # Load credentials (inlined for Letta compliance)
+        OAUTH_KEY_FILE = os.getenv(
+            "GMAIL_OAUTH_PATH",
+            str(Path.home() / ".gmail-mcp" / "gcp-oauth.admin-reports.desktop.json")
+        )
+        TOKEN_PATH = os.getenv(
+            "GMAIL_CREDENTIALS_PATH",
+            str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+        )
+        SCOPES = [
+            "https://www.googleapis.com/auth/admin.reports.audit.readonly",
+            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/drive.activity.readonly",
+        ]
+        
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception:
+                pass
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception:
+                    creds = None
+            if not creds:
+                if not os.path.exists(OAUTH_KEY_FILE):
+                    return {
+                        "status": "error",
+                        "data": {},
+                        "error_message": f"OAuth key file not found at {OAUTH_KEY_FILE}"
+                    }
+                flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+            if creds:
+                with open(TOKEN_PATH, "w") as token:
+                    token.write(creds.to_json())
         
         # Parse user list
         user_list = []
@@ -1543,15 +1587,36 @@ def search_drive_activity(
         else:
             user_key = "all"
         
-        activities = _query_admin_reports_api(start_time, end_time, user_key)
+        # Query Admin Reports API (inlined for Letta compliance)
+        service = build("admin", "reports_v1", credentials=creds)
+        activities = []
+        next_page_token = None
+        MAX_RESULTS = 1000
         
-        if isinstance(activities, str):  # Error response from helper
-            error_data = json.loads(activities)
-            return {
-                "status": "error",
-                "data": {},
-                "error_message": error_data.get("error", "Unknown API error")
-            }
+        api_params = {
+            "userKey": user_key,
+            "applicationName": "drive",
+            "startTime": start_time,
+            "endTime": end_time,
+            "maxResults": MAX_RESULTS,
+        }
+        
+        while True:
+            if next_page_token:
+                api_params["pageToken"] = next_page_token
+            try:
+                response = service.activities().list(**api_params).execute()
+                activities.extend(response.get("items", []))
+                next_page_token = response.get("nextPageToken")
+                if not next_page_token:
+                    break
+                time.sleep(0.1)
+            except HttpError as e:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"Admin Reports API error: {str(e)}"
+                }
         
         # Process activities into document-centric view
         documents = {}
@@ -1757,11 +1822,55 @@ def get_drive_documents(
     import json
     from datetime import datetime
     from typing import Dict, List, Any, Optional
+    from pathlib import Path
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     
     try:
-        creds = _load_credentials()
+        # Load credentials (inlined for Letta compliance)
+        OAUTH_KEY_FILE = os.getenv(
+            "GMAIL_OAUTH_PATH",
+            str(Path.home() / ".gmail-mcp" / "gcp-oauth.admin-reports.desktop.json")
+        )
+        TOKEN_PATH = os.getenv(
+            "GMAIL_CREDENTIALS_PATH",
+            str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+        )
+        SCOPES = [
+            "https://www.googleapis.com/auth/admin.reports.audit.readonly",
+            "https://www.googleapis.com/auth/drive.readonly",
+            "https://www.googleapis.com/auth/drive.activity.readonly",
+        ]
+        
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception:
+                pass
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception:
+                    creds = None
+            if not creds:
+                if not os.path.exists(OAUTH_KEY_FILE):
+                    return {
+                        "status": "error",
+                        "data": {},
+                        "error_message": f"OAuth key file not found at {OAUTH_KEY_FILE}"
+                    }
+                flow = InstalledAppFlow.from_client_secrets_file(OAUTH_KEY_FILE, SCOPES)
+                creds = flow.run_local_server(port=0)
+            if creds:
+                with open(TOKEN_PATH, "w") as token:
+                    token.write(creds.to_json())
+        
         service = build("drive", "v3", credentials=creds)
         
         # Build query parts
