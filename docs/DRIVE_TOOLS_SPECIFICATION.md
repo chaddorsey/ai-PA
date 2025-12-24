@@ -23,7 +23,7 @@ Unified activity search with flexible filtering.
 | `end_date` | str | today | End date (YYYY-MM-DD) |
 | `activity_type` | str | "all" | Filter: "edit", "view", "share", "comment", "all" |
 | `count` | int | 50 | Max documents (max 200) |
-| `sort_by` | str | "recent" | Sort: "recent", "edit_count", "view_count", "name" |
+| `sort_by` | str | "recent" | Sort: "recent", "edit_count", "view_count", "view_actor_count", "edit_actor_count", "name" |
 
 ### Examples
 
@@ -75,6 +75,10 @@ search_drive_activity(
         "total_activity": 28,
         "actors": ["user1@", "user2@"],
         "actor_count": 2,
+        "view_actors": ["user1@"],
+        "view_actor_count": 1,
+        "edit_actors": ["user2@"],
+        "edit_actor_count": 1,
         "last_activity": "2024-12-23T14:30:00Z",
         "link": "https://docs.google.com/...",
         "is_accessible": true

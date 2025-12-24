@@ -1460,10 +1460,15 @@ def search_drive_activity(
         activity_type: Filter by type: "edit", "view", "share", "comment", or "all". Default: "all".
         folder: Optional folder ID to scope search.
         count: Maximum documents to return. Default: 50, max: 200.
-        sort_by: Sort results by "recent", "edit_count", "view_count", "name". Default: "recent".
+        sort_by: Sort results by "recent", "edit_count", "view_count", "view_actor_count", 
+                 "edit_actor_count", "name". Default: "recent".
     
     Returns:
-        Dict with status, data (documents with activity counts), and error_message if applicable.
+        Dict with status, data (documents with activity counts and actor details).
+        Each document includes:
+        - view_count, edit_count, share_count, comment_count (activity counts)
+        - view_actors, edit_actors, share_actors, comment_actors (who did each action)
+        - view_actor_count, edit_actor_count, etc. (unique people per action type)
     
     Examples:
         # What did Jie and Rebecca work on Monday?
@@ -1577,7 +1582,7 @@ def search_drive_activity(
         # This is MUCH faster than scanning all workspace activity.
         # NOTE: Drive Activity API does NOT track views - only Admin Reports API does.
         # So if user wants view counts (filter or sort), we must use the standard path.
-        needs_view_data = activity_type == "view" or sort_by == "view_count"
+        needs_view_data = activity_type == "view" or sort_by in ["view_count", "view_actor_count"]
         if owner_list and not user_list and not needs_view_data:
             # Get files owned by the specified owner(s)
             drive_service = build("drive", "v3", credentials=creds)
@@ -1861,20 +1866,28 @@ def search_drive_activity(
                         "comment_count": 0,
                         "total_activity": 0,
                         "actors": set(),
+                        "view_actors": set(),
+                        "edit_actors": set(),
+                        "share_actors": set(),
+                        "comment_actors": set(),
                         "last_activity": "",
                         "link": "",
                         "is_accessible": False,
                     }
                 
-                # Update counts
+                # Update counts and track actors by activity type
                 if event_name == "edit":
                     documents[doc_id]["edit_count"] += 1
+                    documents[doc_id]["edit_actors"].add(actor_email)
                 elif event_name == "view":
                     documents[doc_id]["view_count"] += 1
+                    documents[doc_id]["view_actors"].add(actor_email)
                 elif event_name in ["change_user_access", "change_acl_editors", "change_document_visibility"]:
                     documents[doc_id]["share_count"] += 1
+                    documents[doc_id]["share_actors"].add(actor_email)
                 elif event_name in ["create_comment", "resolve_comment", "edit_comment", "delete_comment"]:
                     documents[doc_id]["comment_count"] += 1
+                    documents[doc_id]["comment_actors"].add(actor_email)
                 
                 documents[doc_id]["total_activity"] += 1
                 documents[doc_id]["actors"].add(actor_email)
@@ -1887,6 +1900,14 @@ def search_drive_activity(
         for doc in documents.values():
             doc["actors"] = list(doc["actors"])
             doc["actor_count"] = len(doc["actors"])
+            doc["view_actors"] = list(doc["view_actors"])
+            doc["view_actor_count"] = len(doc["view_actors"])
+            doc["edit_actors"] = list(doc["edit_actors"])
+            doc["edit_actor_count"] = len(doc["edit_actors"])
+            doc["share_actors"] = list(doc["share_actors"])
+            doc["share_actor_count"] = len(doc["share_actors"])
+            doc["comment_actors"] = list(doc["comment_actors"])
+            doc["comment_actor_count"] = len(doc["comment_actors"])
         
         # Sort documents
         doc_list = list(documents.values())
@@ -1894,6 +1915,10 @@ def search_drive_activity(
             doc_list.sort(key=lambda x: x["edit_count"], reverse=True)
         elif sort_by == "view_count":
             doc_list.sort(key=lambda x: x["view_count"], reverse=True)
+        elif sort_by == "view_actor_count":
+            doc_list.sort(key=lambda x: x["view_actor_count"], reverse=True)
+        elif sort_by == "edit_actor_count":
+            doc_list.sort(key=lambda x: x["edit_actor_count"], reverse=True)
         elif sort_by == "name":
             doc_list.sort(key=lambda x: x["title"].lower())
         else:  # recent

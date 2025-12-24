@@ -7,7 +7,7 @@ Find activity: "What did X work on?", "Who edited Y?"
 
 - `user`/`owner`: Partial emails work (`"cynthia@"` or `"cynthia"`)
 - `activity_type`: `edit`, `view`, `share`, `comment`, `all`
-- `sort_by`: `recent`, `edit_count`, `view_count`, `name`
+- `sort_by`: `recent`, `edit_count`, `view_count`, `view_actor_count`, `edit_actor_count`, `name`
 - Dates: YYYY-MM-DD (default: last 7 days)
 
 ```python
@@ -19,6 +19,9 @@ search_drive_activity(user="cynthia@", activity_type="edit", sort_by="edit_count
 
 # Docs owned by Leslie by view count
 search_drive_activity(owner="leslie@", sort_by="view_count")
+
+# Which doc was viewed by most people?
+search_drive_activity(owner="kiley@", sort_by="view_actor_count")
 ```
 
 ## get_drive_documents
