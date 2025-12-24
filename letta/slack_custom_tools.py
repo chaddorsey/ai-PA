@@ -1,0 +1,1898 @@
+"""
+Slack Custom Tools for Letta
+
+Four optimized tools for Slack monitoring and information extraction:
+1. get_slack_channels - Channel discovery and information
+2. get_slack_messages - Messages from channels with complete context
+3. search_slack_messages - Workspace-wide message search
+4. get_slack_users - User discovery and information
+
+All tools follow Letta compliance requirements:
+- Return Dict[str, Any] (not JSON strings)
+- Imports inside functions at the beginning
+- No nested def statements (all logic inlined)
+- Comprehensive try-except wrappers
+"""
+
+from typing import Dict, Any, Optional, List
+
+
+def get_slack_channels(
+    channel: Optional[str] = None,
+    types: Optional[str] = None,
+    exclude_archived: Optional[bool] = True,
+    include_members: Optional[bool] = False,
+    limit: Optional[int] = 500
+) -> Dict[str, Any]:
+    """
+    Get Slack channel information - list all channels, get specific channel details, or resolve channel names.
+
+    When channel parameter is provided, returns single channel (or multiple if comma-separated).
+    When channel parameter is omitted, returns list of all channels.
+
+    Args:
+        channel: Channel ID(s) or name(s) (e.g., "C1234567890", "#random", or "#general,#random").
+                 Can be a single channel or comma-separated list. If omitted, returns list of all channels.
+        types: Filter channel types when listing. Comma-separated: "public_channel,private_channel,mpim,im".
+               Default: all types.
+        exclude_archived: Exclude archived channels when listing. Default: True.
+        include_members: Include member list for single channel. Default: False.
+        limit: Maximum number of channels to return when listing. Default: 500.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - data: Channel data (single channel object, list of channels, or array for multiple channels)
+        - error_message: Error message if status is "error"
+    """
+    # Imports inside function at the very beginning
+    import os
+    import traceback
+    import json
+    import urllib.request
+    import urllib.parse
+    from datetime import datetime
+    
+    # Wrap entire function in try-except
+    try:
+        # Get token
+        TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+        if not TOKEN:
+            return {
+                "status": "error",
+                "data": {},
+                "error_message": "SLACK_MCP_XOXP_TOKEN not set in environment"
+            }
+        
+        # Normalize channel parameter - handle both single value and list
+        channel_list = []
+        is_single = False
+        is_multiple = False
+        
+        if channel is not None:
+            if isinstance(channel, str):
+                channel_list = [channel]
+                is_single = True
+            elif isinstance(channel, list):
+                channel_list = channel
+                is_multiple = len(channel) > 1
+                is_single = len(channel) == 1
+            else:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"channel parameter must be string or list, got {type(channel)}"
+                }
+        
+        # Set defaults
+        if limit is None:
+            limit = 500
+        if exclude_archived is None:
+            exclude_archived = True
+        if include_members is None:
+            include_members = False
+        
+        # If channel(s) specified, get specific channel(s)
+        if channel_list:
+            resolved_channels = []
+            for ch in channel_list:
+                # Inline channel resolution logic
+                resolved_id = ch
+                if not ch.startswith(("C", "G", "D", "mpdm-")):
+                    # Need to resolve name to ID
+                    channel_name = ch.lstrip("#")
+                    try:
+                        url = "https://slack.com/api/conversations.list"
+                        params = {"limit": "1000", "exclude_archived": "true"}
+                        query_string = urllib.parse.urlencode(params)
+                        req = urllib.request.Request(
+                            f"{url}?{query_string}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(req, timeout=30) as r:
+                            data = json.loads(r.read().decode('utf-8'))
+                            if data.get("ok"):
+                                found = False
+                                for ch_item in data.get("channels", []):
+                                    if ch_item.get("name") == channel_name:
+                                        resolved_id = ch_item.get("id")
+                                        found = True
+                                        break
+                                if not found:
+                                    resolved_id = ch
+                    except Exception:
+                        resolved_id = ch
+                else:
+                    resolved_id = ch.lstrip("#")
+                
+                # Get channel info (inline)
+                try:
+                    url = "https://slack.com/api/conversations.info"
+                    params = {"channel": resolved_id}
+                    if include_members:
+                        params["include_num_members"] = "true"
+                    query_string = urllib.parse.urlencode(params)
+                    req = urllib.request.Request(
+                        f"{url}?{query_string}",
+                        headers={"Authorization": f"Bearer {TOKEN}"}
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        data = json.loads(r.read().decode('utf-8'))
+                        if not data.get("ok"):
+                            if is_single:
+                                return {
+                                    "status": "error",
+                                    "data": {},
+                                    "error_message": f"Error getting channel {ch}: {data.get('error', 'Unknown error')}"
+                                }
+                            continue
+                        
+                        channel_data = data.get("channel", {})
+                        
+                        # Format response (inline)
+                        ch_info = {
+                            "id": channel_data.get("id"),
+                            "name": channel_data.get("name"),
+                            "is_channel": channel_data.get("is_channel", False),
+                            "is_group": channel_data.get("is_group", False),
+                            "is_im": channel_data.get("is_im", False),
+                            "is_mpim": channel_data.get("is_mpim", False),
+                            "is_private": channel_data.get("is_private", False),
+                            "is_archived": channel_data.get("is_archived", False),
+                            "created": channel_data.get("created"),
+                            "creator": channel_data.get("creator"),
+                            "topic": channel_data.get("topic", {}).get("value", ""),
+                            "purpose": channel_data.get("purpose", {}).get("value", ""),
+                            "num_members": channel_data.get("num_members")
+                        }
+                        
+                        # Get members if requested (inline)
+                        if include_members:
+                            members = []
+                            try:
+                                members_url = "https://slack.com/api/conversations.members"
+                                members_params = {"channel": resolved_id, "limit": "1000"}
+                                members_query = urllib.parse.urlencode(members_params)
+                                members_req = urllib.request.Request(
+                                    f"{members_url}?{members_query}",
+                                    headers={"Authorization": f"Bearer {TOKEN}"}
+                                )
+                                with urllib.request.urlopen(members_req, timeout=30) as mr:
+                                    members_data = json.loads(mr.read().decode('utf-8'))
+                                    if members_data.get("ok"):
+                                        members = members_data.get("members", [])
+                            except Exception:
+                                pass
+                            ch_info["members"] = members
+                        
+                        resolved_channels.append(ch_info)
+                except Exception as e:
+                    if is_single:
+                        return {
+                            "status": "error",
+                            "data": {},
+                            "error_message": f"Error getting channel {ch}: {str(e)}"
+                        }
+                    continue
+            
+            # Return appropriate structure
+            if is_single:
+                return {
+                    "status": "ok",
+                    "data": {
+                        "channel": resolved_channels[0] if resolved_channels else {}
+                    }
+                }
+            else:
+                return {
+                    "status": "ok",
+                    "data": {
+                        "channels": resolved_channels
+                    }
+                }
+        
+        # Otherwise, list all channels
+        url = "https://slack.com/api/conversations.list"
+        params = {"limit": str(limit)}
+        if exclude_archived:
+            params["exclude_archived"] = "true"
+        
+        # Handle types filter
+        if types:
+            type_list = [t.strip() for t in types.split(",")]
+            params["types"] = ",".join(type_list)
+        
+        query_string = urllib.parse.urlencode(params)
+        req = urllib.request.Request(
+            f"{url}?{query_string}",
+            headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+        
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode('utf-8'))
+            
+            if not data.get("ok"):
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": data.get("error", "Unknown Slack API error")
+                }
+            
+            channels = data.get("channels", [])
+            
+            # Format channels (inline)
+            formatted_channels = []
+            for ch in channels:
+                formatted_channels.append({
+                    "id": ch.get("id"),
+                    "name": ch.get("name"),
+                    "is_channel": ch.get("is_channel", False),
+                    "is_group": ch.get("is_group", False),
+                    "is_im": ch.get("is_im", False),
+                    "is_mpim": ch.get("is_mpim", False),
+                    "is_private": ch.get("is_private", False),
+                    "is_archived": ch.get("is_archived", False),
+                    "created": ch.get("created"),
+                    "creator": ch.get("creator"),
+                    "topic": ch.get("topic", {}).get("value", ""),
+                    "purpose": ch.get("purpose", {}).get("value", ""),
+                    "num_members": ch.get("num_members")
+                })
+            
+            return {
+                "status": "ok",
+                "data": {
+                    "channels": formatted_channels,
+                    "total": len(formatted_channels)
+                }
+            }
+    
+    except Exception as e:
+        return {
+            "status": "error",
+            "data": {},
+            "error_message": f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_slack_messages(
+    channel: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    message_ts: Optional[str] = None,
+    limit: Optional[int] = 100,
+    include_thread_replies: Optional[bool] = True,
+    include_context: Optional[bool] = False,
+    context_count: Optional[int] = 5,
+    only_thread_parents: Optional[bool] = False,
+    min_reply_count: Optional[int] = None,
+    sort_by: Optional[str] = "timestamp",
+    sort_order: Optional[str] = "desc",
+    min_reactions: Optional[int] = None,
+    has_reactions: Optional[bool] = False
+) -> Dict[str, Any]:
+    """
+    Get messages from Slack channel(s) with complete context including threads, files, links, and reactions.
+    
+    Supports both single channel and multiple channels. When multiple channels provided,
+    returns messages grouped by channel.
+    
+    Args:
+        channel: Channel ID(s) or name(s) (e.g., "C1234567890", "#random", or "#general,#random").
+                 Can be a single channel or comma-separated list of channels.
+        start_date: Start date in YYYY-MM-DD format or ISO 8601 datetime. Default: None (no start limit).
+        end_date: End date in YYYY-MM-DD format or ISO 8601 datetime. Default: None (no end limit).
+        message_ts: Specific message timestamp to retrieve (e.g., "1703001234.567890"). When provided, returns single message with optional context. Default: None.
+        limit: Maximum messages to return per channel. Default: 100, max: 1000.
+        include_thread_replies: Fetch all thread replies. Default: True.
+        include_context: Include surrounding messages when message_ts provided. Default: False.
+        context_count: Number of messages before/after to include. Default: 5.
+        only_thread_parents: Return only messages that have replies. Default: False.
+        min_reply_count: Filter messages with at least N replies (thread parents only). Default: None.
+        sort_by: Sort order: "timestamp" (default), "reactions", "reply_count", "user".
+        sort_order: "asc" or "desc". Default: "desc" for timestamp, "desc" for reactions/reply_count.
+        min_reactions: Filter messages with at least N reactions. Default: None.
+        has_reactions: Return only messages with reactions. Default: False.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - data: Message data (varies based on single vs multiple channels, see specification)
+        - error_message: Error message if status is "error"
+    """
+    # Imports inside function at the very beginning
+    import os
+    import traceback
+    import json
+    import urllib.request
+    import urllib.parse
+    from datetime import datetime
+    import re
+    import pytz
+    
+    # Wrap entire function in try-except
+    try:
+        # Get token
+        TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+        if not TOKEN:
+            return {
+                "status": "error",
+                "data": {},
+                "error_message": "SLACK_MCP_XOXP_TOKEN not set in environment"
+            }
+        
+        # Normalize channel parameter - handle single value, comma-separated, or list (for backward compatibility)
+        if isinstance(channel, str):
+            # Single channel or comma-separated
+            if ',' in channel:
+                channel_list = [ch.strip() for ch in channel.split(',')]
+            else:
+                channel_list = [channel]
+        elif isinstance(channel, list):
+            # Support list for backward compatibility (though Letta schema only allows str)
+            channel_list = channel
+        else:
+            return {
+                "status": "error",
+                "data": {},
+                "error_message": f"channel parameter must be string or list, got {type(channel)}"
+            }
+        
+        # Set defaults
+        if limit is None:
+            limit = 100
+        if include_thread_replies is None:
+            include_thread_replies = True
+        if include_context is None:
+            include_context = False
+        if context_count is None:
+            context_count = 5
+        if only_thread_parents is None:
+            only_thread_parents = False
+        if sort_by is None:
+            sort_by = "timestamp"
+        if sort_order is None:
+            sort_order = "desc"
+        if has_reactions is None:
+            has_reactions = False
+        
+        # Limit max
+        if limit > 1000:
+            limit = 1000
+        
+        # Date parsing (inline logic)
+        oldest_ts = None
+        latest_ts = None
+        if start_date:
+            try:
+                if 'T' in start_date or start_date.endswith('Z'):
+                    dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                    if dt.tzinfo is None:
+                        dt = pytz.UTC.localize(dt)
+                    oldest_ts = dt.timestamp()
+                else:
+                    dt = datetime.strptime(start_date, "%Y-%m-%d")
+                    dt = pytz.UTC.localize(dt)
+                    oldest_ts = dt.timestamp()
+            except Exception:
+                pass
+        
+        if end_date:
+            try:
+                if 'T' in end_date or end_date.endswith('Z'):
+                    dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                    if dt.tzinfo is None:
+                        dt = pytz.UTC.localize(dt)
+                    latest_ts = dt.timestamp()
+                else:
+                    dt = datetime.strptime(end_date, "%Y-%m-%d")
+                    dt = pytz.UTC.localize(dt)
+                    # End of day
+                    dt = dt.replace(hour=23, minute=59, second=59)
+                    latest_ts = dt.timestamp()
+            except Exception:
+                pass
+        
+        # Get workspace URL and team ID for permalinks (inline)
+        workspace_url = "https://concord-consortium.slack.com"
+        team_id = None
+        try:
+            auth_url = "https://slack.com/api/auth.test"
+            auth_req = urllib.request.Request(auth_url, headers={"Authorization": f"Bearer {TOKEN}"})
+            with urllib.request.urlopen(auth_req, timeout=10) as ar:
+                auth_data = json.loads(ar.read().decode('utf-8'))
+                if auth_data.get("ok"):
+                    url_value = auth_data.get("url", "")
+                    if url_value:
+                        # Normalize workspace URL - remove any existing https:// prefix and trailing slash
+                        url_value = url_value.rstrip('/').replace('https://', '').replace('http://', '')
+                        workspace_url = f"https://{url_value}"
+                    # Get team ID for desktop deep links
+                    team_id = auth_data.get("team_id") or (auth_data.get("team", {}).get("id") if isinstance(auth_data.get("team"), dict) else None)
+        except Exception:
+            pass
+        
+        # Normalize workspace_url to ensure it's clean (no double prefixes, no trailing slash)
+        workspace_url = workspace_url.rstrip('/')
+        if workspace_url.startswith('https://https://') or workspace_url.startswith('http://https://'):
+            workspace_url = 'https://' + workspace_url.split('://', 1)[-1].split('://', 1)[-1]
+        elif not workspace_url.startswith('https://'):
+            workspace_url = f"https://{workspace_url}"
+        
+        # User cache for efficient lookups (inline, stored in dict)
+        user_cache = {}
+        
+        # Resolve channel names to IDs (inline, similar to get_slack_channels)
+        resolved_channels = []
+        channel_name_map = {}
+        for ch in channel_list:
+            resolved_id = ch
+            if not ch.startswith(("C", "G", "D", "mpdm-")):
+                channel_name = ch.lstrip("#")
+                try:
+                    url = "https://slack.com/api/conversations.list"
+                    params = {"limit": "1000", "exclude_archived": "true"}
+                    query_string = urllib.parse.urlencode(params)
+                    req = urllib.request.Request(
+                        f"{url}?{query_string}",
+                        headers={"Authorization": f"Bearer {TOKEN}"}
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        data = json.loads(r.read().decode('utf-8'))
+                        if data.get("ok"):
+                            found = False
+                            for ch_item in data.get("channels", []):
+                                if ch_item.get("name") == channel_name:
+                                    resolved_id = ch_item.get("id")
+                                    channel_name_map[resolved_id] = channel_name
+                                    found = True
+                                    break
+                            if not found:
+                                resolved_id = ch
+                except Exception:
+                    resolved_id = ch
+            else:
+                resolved_id = ch.lstrip("#")
+                channel_name_map[resolved_id] = ch.lstrip("#")
+            resolved_channels.append((resolved_id, channel_name_map.get(resolved_id, ch.lstrip("#"))))
+        
+        # Normalize message_ts - handle empty strings as None
+        if message_ts == "":
+            message_ts = None
+        
+        # Handle single message mode
+        if message_ts and len(channel_list) == 1:
+            channel_id, channel_name = resolved_channels[0]
+            # INLINED: Process single message (all logic inlined for Letta compliance)
+            url = "https://slack.com/api/conversations.history"
+            params = {"channel": channel_id, "limit": "1", "latest": message_ts, "inclusive": "true"}
+            
+            query_string = urllib.parse.urlencode(params)
+            req = urllib.request.Request(
+                f"{url}?{query_string}",
+                headers={"Authorization": f"Bearer {TOKEN}"}
+            )
+            
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                    
+                    if not data.get("ok"):
+                        return {
+                            "status": "error",
+                            "data": {},
+                            "error_message": data.get("error", "Unknown error")
+                        }
+                    
+                    messages = data.get("messages", [])
+                    if not messages:
+                        return {
+                            "status": "error",
+                            "data": {},
+                            "error_message": f"Message {message_ts} not found in channel {channel_name}"
+                        }
+                    
+                    # Process the single message (inline logic)
+                    msg = messages[0]
+                    ts = msg.get("ts", "")
+                    user_id = msg.get("user", "")
+                    text = msg.get("text", "")
+                    
+                    # Get user info (inline, with cache)
+                    user_info = {"id": "", "username": "", "real_name": "", "display_name": ""}
+                    if user_id:
+                        if user_id in user_cache:
+                            user_info = user_cache[user_id]
+                        else:
+                            try:
+                                user_url = "https://slack.com/api/users.info"
+                                user_params = {"user": user_id}
+                                user_query = urllib.parse.urlencode(user_params)
+                                user_req = urllib.request.Request(
+                                    f"{user_url}?{user_query}",
+                                    headers={"Authorization": f"Bearer {TOKEN}"}
+                                )
+                                with urllib.request.urlopen(user_req, timeout=30) as ur:
+                                    user_data = json.loads(ur.read().decode('utf-8'))
+                                    if user_data.get("ok"):
+                                        u_data = user_data.get("user", {})
+                                        profile = u_data.get("profile", {})
+                                        user_info = {
+                                            "id": user_id,
+                                            "username": u_data.get("name", ""),
+                                            "real_name": profile.get("real_name", ""),
+                                            "display_name": profile.get("display_name", "")
+                                        }
+                                        user_cache[user_id] = user_info
+                            except Exception:
+                                pass
+                    
+                    # Convert timestamp
+                    dt = datetime.fromtimestamp(float(ts)) if ts else datetime.now()
+                    dt_iso = dt.isoformat() + "Z"
+                    
+                    # Build permalink (HTTPS) and desktop deep link (slack://)
+                    permalink_ts = ts.replace('.', '')
+                    permalink = f"{workspace_url}/archives/{channel_id}/p{permalink_ts}"
+                    # Build app_redirect deep link for better browser compatibility
+                    desktop_link = None
+                    if team_id and channel_id:
+                        # Use app_redirect with the permalink URL for consistent browser behavior
+                        encoded_permalink = urllib.parse.quote(permalink, safe='')
+                        desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_permalink}"
+                    
+                    # Extract files (inline)
+                    files = []
+                    for file_data in msg.get("files", []):
+                        files.append({
+                            "id": file_data.get("id"),
+                            "name": file_data.get("name"),
+                            "title": file_data.get("title"),
+                            "mimetype": file_data.get("mimetype"),
+                            "filetype": file_data.get("filetype"),
+                            "size": file_data.get("size"),
+                            "url_private_download": file_data.get("url_private_download"),
+                            "created": file_data.get("created")
+                        })
+                    
+                    # Extract links from text (inline regex)
+                    links = []
+                    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                    matches = re.finditer(url_pattern, text)
+                    for match in matches:
+                        url = match.group(0).rstrip('.,;:)!?')
+                        links.append({
+                            "url": url,
+                            "display_text": url,
+                            "type": "link"
+                        })
+                    
+                    # Extract reactions (inline)
+                    reactions = []
+                    for reaction_data in msg.get("reactions", []):
+                        reactions.append({
+                            "name": reaction_data.get("name"),
+                            "count": reaction_data.get("count"),
+                            "users": reaction_data.get("users", [])
+                        })
+                    
+                    reply_count = msg.get("reply_count", 0)
+                    is_thread_parent = reply_count > 0
+                    
+                    processed_message = {
+                        "ts": ts,
+                        "text": text,
+                        "user": user_id,
+                        "username": user_info.get("username", ""),
+                        "real_name": user_info.get("real_name", ""),
+                        "datetime": dt_iso,
+                        "permalink": permalink,
+                        "desktop_link": desktop_link,
+                        "channel_id": channel_id,
+                        "channel_name": channel_name,
+                        "thread_ts": msg.get("thread_ts"),
+                        "is_thread_parent": is_thread_parent,
+                        "reply_count": reply_count,
+                        "reply_users_count": msg.get("reply_users_count", 0),
+                        "reactions": reactions,
+                        "files": files,
+                        "links": links,
+                        "thread_replies": []
+                    }
+                    
+                    # Get thread replies if requested (inline)
+                    if include_thread_replies and is_thread_parent:
+                        thread_ts = ts
+                        replies_url = "https://slack.com/api/conversations.replies"
+                        replies_params = {"channel": channel_id, "ts": thread_ts, "limit": "1000"}
+                        replies_query = urllib.parse.urlencode(replies_params)
+                        replies_req = urllib.request.Request(
+                            f"{replies_url}?{replies_query}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        
+                        try:
+                            with urllib.request.urlopen(replies_req, timeout=30) as rr:
+                                replies_data = json.loads(rr.read().decode('utf-8'))
+                                if replies_data.get("ok"):
+                                    replies = replies_data.get("messages", [])
+                                    # Process replies (skip first - it's the parent)
+                                    for reply in replies[1:]:
+                                        reply_ts = reply.get("ts", "")
+                                        reply_user_id = reply.get("user", "")
+                                        reply_text = reply.get("text", "")
+                                        
+                                        # Get user info for reply
+                                        reply_user_info = {"id": "", "username": "", "real_name": ""}
+                                        if reply_user_id:
+                                            if reply_user_id in user_cache:
+                                                reply_user_info = user_cache[reply_user_id]
+                                            else:
+                                                try:
+                                                    user_url = "https://slack.com/api/users.info"
+                                                    user_params = {"user": reply_user_id}
+                                                    user_query = urllib.parse.urlencode(user_params)
+                                                    user_req = urllib.request.Request(
+                                                        f"{user_url}?{user_query}",
+                                                        headers={"Authorization": f"Bearer {TOKEN}"}
+                                                    )
+                                                    with urllib.request.urlopen(user_req, timeout=30) as ur:
+                                                        user_data = json.loads(ur.read().decode('utf-8'))
+                                                        if user_data.get("ok"):
+                                                            u_data = user_data.get("user", {})
+                                                            profile = u_data.get("profile", {})
+                                                            reply_user_info = {
+                                                                "id": reply_user_id,
+                                                                "username": u_data.get("name", ""),
+                                                                "real_name": profile.get("real_name", "")
+                                                            }
+                                                            user_cache[reply_user_id] = reply_user_info
+                                                except Exception:
+                                                    pass
+                                        
+                                        reply_dt = datetime.fromtimestamp(float(reply_ts)) if reply_ts else datetime.now()
+                                        # Thread reply permalink format: path uses reply timestamp WITHOUT decimal, query uses thread_ts WITH decimal
+                                        reply_permalink_ts = reply_ts.replace('.', '')
+                                        reply_permalink = f"{workspace_url}/archives/{channel_id}/p{reply_permalink_ts}?thread_ts={thread_ts}&cid={channel_id}"
+                                        # Build app_redirect deep link for better browser compatibility
+                                        reply_desktop_link = None
+                                        if team_id and channel_id and thread_ts:
+                                            # Use app_redirect with the permalink URL for consistent browser behavior
+                                            encoded_reply_permalink = urllib.parse.quote(reply_permalink, safe='')
+                                            reply_desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_reply_permalink}"
+                                        
+                                        # Extract files for reply
+                                        reply_files = []
+                                        for file_data in reply.get("files", []):
+                                            reply_files.append({
+                                                "id": file_data.get("id"),
+                                                "name": file_data.get("name"),
+                                                "title": file_data.get("title"),
+                                                "mimetype": file_data.get("mimetype"),
+                                                "filetype": file_data.get("filetype"),
+                                                "size": file_data.get("size"),
+                                                "url_private_download": file_data.get("url_private_download"),
+                                                "created": file_data.get("created")
+                                            })
+                                        
+                                        # Extract links for reply
+                                        reply_links = []
+                                        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                                        reply_matches = re.finditer(url_pattern, reply_text)
+                                        for match in reply_matches:
+                                            url = match.group(0).rstrip('.,;:)!?')
+                                            reply_links.append({
+                                                "url": url,
+                                                "display_text": url,
+                                                "type": "link"
+                                            })
+                                        
+                                        # Extract reactions for reply
+                                        reply_reactions = []
+                                        for reaction_data in reply.get("reactions", []):
+                                            reply_reactions.append({
+                                                "name": reaction_data.get("name"),
+                                                "count": reaction_data.get("count"),
+                                                "users": reaction_data.get("users", [])
+                                            })
+                                        
+                                        processed_reply = {
+                                            "ts": reply_ts,
+                                            "text": reply_text,
+                                            "user": reply_user_id,
+                                            "username": reply_user_info.get("username", ""),
+                                            "real_name": reply_user_info.get("real_name", ""),
+                                            "datetime": reply_dt.isoformat() + "Z",
+                                            "permalink": reply_permalink,
+                                            "desktop_link": reply_desktop_link,
+                                            "channel_id": channel_id,
+                                            "channel_name": channel_name,
+                                            "thread_ts": thread_ts,
+                                            "reactions": reply_reactions,
+                                            "files": reply_files,
+                                            "links": reply_links
+                                        }
+                                        
+                                        processed_message["thread_replies"].append(processed_reply)
+                        except Exception:
+                            pass
+                    
+                    # Get context if requested (inline, simplified - fetch before/after messages)
+                    context_before = []
+                    context_after = []
+                    if include_context:
+                        # Get messages before (simplified implementation)
+                        try:
+                            before_url = "https://slack.com/api/conversations.history"
+                            before_params = {"channel": channel_id, "limit": str(context_count), "latest": message_ts}
+                            before_query = urllib.parse.urlencode(before_params)
+                            before_req = urllib.request.Request(
+                                f"{before_url}?{before_query}",
+                                headers={"Authorization": f"Bearer {TOKEN}"}
+                            )
+                            with urllib.request.urlopen(before_req, timeout=30) as br:
+                                before_data = json.loads(br.read().decode('utf-8'))
+                                if before_data.get("ok"):
+                                    before_messages = before_data.get("messages", [])
+                                    # Skip the current message and get previous ones
+                                    for bmsg in before_messages[1:context_count+1]:
+                                        # Simplified processing for context messages
+                                        context_before.append({
+                                            "ts": bmsg.get("ts"),
+                                            "text": bmsg.get("text", "")[:200],  # Truncate for context
+                                            "user": bmsg.get("user")
+                                        })
+                        except Exception:
+                            pass
+                    
+                    return {
+                        "status": "ok",
+                        "data": {
+                            "message": processed_message,
+                            "context": {
+                                "before": context_before,
+                                "after": context_after
+                            }
+                        }
+                    }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"Error retrieving message: {str(e)}"
+                }
+        
+        # Get messages for all channels
+        all_channel_results = []
+        for channel_id, channel_name in resolved_channels:
+            # INLINED: Process messages from channel (all logic inlined for Letta compliance)
+            # Get messages from channel
+            url = "https://slack.com/api/conversations.history"
+            params = {"channel": channel_id, "limit": str(min(limit, 1000))}
+            if oldest_ts:
+                params["oldest"] = str(int(oldest_ts))
+            if latest_ts:
+                params["latest"] = str(int(latest_ts))
+            if oldest_ts or latest_ts:
+                params["inclusive"] = "true"
+            
+            query_string = urllib.parse.urlencode(params)
+            req = urllib.request.Request(
+                f"{url}?{query_string}",
+                headers={"Authorization": f"Bearer {TOKEN}"}
+            )
+            
+            channel_error = None
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                    
+                    if not data.get("ok"):
+                        channel_error = data.get("error", "Unknown error")
+                    else:
+                        messages = data.get("messages", [])
+                        has_more = data.get("has_more", False)
+                        
+                        # Process each message (inline logic)
+                        processed_messages = []
+                        thread_ts_set = set()
+                        
+                        for msg in messages:
+                            ts = msg.get("ts", "")
+                            user_id = msg.get("user", "")
+                            text = msg.get("text", "")
+                            
+                            # Get user info (inline, with cache)
+                            user_info = {"id": "", "username": "", "real_name": "", "display_name": ""}
+                            if user_id:
+                                if user_id in user_cache:
+                                    user_info = user_cache[user_id]
+                                else:
+                                    try:
+                                        user_url = "https://slack.com/api/users.info"
+                                        user_params = {"user": user_id}
+                                        user_query = urllib.parse.urlencode(user_params)
+                                        user_req = urllib.request.Request(
+                                            f"{user_url}?{user_query}",
+                                            headers={"Authorization": f"Bearer {TOKEN}"}
+                                        )
+                                        with urllib.request.urlopen(user_req, timeout=30) as ur:
+                                            user_data = json.loads(ur.read().decode('utf-8'))
+                                            if user_data.get("ok"):
+                                                u_data = user_data.get("user", {})
+                                                profile = u_data.get("profile", {})
+                                                user_info = {
+                                                    "id": user_id,
+                                                    "username": u_data.get("name", ""),
+                                                    "real_name": profile.get("real_name", ""),
+                                                    "display_name": profile.get("display_name", "")
+                                                }
+                                                user_cache[user_id] = user_info
+                                    except Exception:
+                                        pass
+                            
+                            # Convert timestamp
+                            dt = datetime.fromtimestamp(float(ts)) if ts else datetime.now()
+                            dt_iso = dt.isoformat() + "Z"
+                            
+                            # Build permalink (HTTPS) and desktop deep link (slack://)
+                            permalink_ts = ts.replace('.', '')
+                            permalink = f"{workspace_url}/archives/{channel_id}/p{permalink_ts}"
+                            # Build app_redirect deep link for better browser compatibility
+                            desktop_link = None
+                            if team_id and channel_id:
+                                # Use app_redirect with the permalink URL for consistent browser behavior
+                                encoded_permalink = urllib.parse.quote(permalink, safe='')
+                                desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_permalink}"
+                            
+                            # Extract files (inline)
+                            files = []
+                            for file_data in msg.get("files", []):
+                                files.append({
+                                    "id": file_data.get("id"),
+                                    "name": file_data.get("name"),
+                                    "title": file_data.get("title"),
+                                    "mimetype": file_data.get("mimetype"),
+                                    "filetype": file_data.get("filetype"),
+                                    "size": file_data.get("size"),
+                                    "url_private_download": file_data.get("url_private_download"),
+                                    "created": file_data.get("created")
+                                })
+                            
+                            # Extract links from text (inline regex)
+                            links = []
+                            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                            matches = re.finditer(url_pattern, text)
+                            for match in matches:
+                                url = match.group(0).rstrip('.,;:)!?')
+                                links.append({
+                                    "url": url,
+                                    "display_text": url,
+                                    "type": "link"
+                                })
+                            
+                            # Extract reactions (inline)
+                            reactions = []
+                            for reaction_data in msg.get("reactions", []):
+                                reactions.append({
+                                    "name": reaction_data.get("name"),
+                                    "count": reaction_data.get("count"),
+                                    "users": reaction_data.get("users", [])
+                                })
+                            
+                            reply_count = msg.get("reply_count", 0)
+                            is_thread_parent = reply_count > 0
+                            
+                            processed_msg = {
+                                "ts": ts,
+                                "text": text,
+                                "user": user_id,
+                                "username": user_info.get("username", ""),
+                                "real_name": user_info.get("real_name", ""),
+                                "datetime": dt_iso,
+                                "permalink": permalink,
+                                "desktop_link": desktop_link,
+                                "channel_id": channel_id,
+                                "channel_name": channel_name,
+                                "thread_ts": msg.get("thread_ts"),
+                                "is_thread_parent": is_thread_parent,
+                                "reply_count": reply_count,
+                                "reply_users_count": msg.get("reply_users_count", 0),
+                                "reactions": reactions,
+                                "files": files,
+                                "links": links,
+                                "thread_replies": []
+                            }
+                            
+                            # Apply filters (inline)
+                            if only_thread_parents and not is_thread_parent:
+                                continue
+                            
+                            if min_reply_count is not None and reply_count < min_reply_count:
+                                continue
+                            
+                            reaction_count = sum(r.get("count", 0) for r in reactions)
+                            if min_reactions is not None and reaction_count < min_reactions:
+                                continue
+                            
+                            if has_reactions and len(reactions) == 0:
+                                continue
+                            
+                            processed_messages.append(processed_msg)
+                            
+                            if is_thread_parent:
+                                thread_ts_set.add(ts)
+                        
+                        # Get thread replies if requested (inline)
+                        if include_thread_replies and thread_ts_set:
+                            for thread_ts in thread_ts_set:
+                                # Find parent message
+                                parent_msg = None
+                                for pmsg in processed_messages:
+                                    if pmsg["ts"] == thread_ts:
+                                        parent_msg = pmsg
+                                        break
+                                
+                                if parent_msg:
+                                    # Get replies
+                                    replies_url = "https://slack.com/api/conversations.replies"
+                                    replies_params = {"channel": channel_id, "ts": thread_ts, "limit": "1000"}
+                                    replies_query = urllib.parse.urlencode(replies_params)
+                                    replies_req = urllib.request.Request(
+                                        f"{replies_url}?{replies_query}",
+                                        headers={"Authorization": f"Bearer {TOKEN}"}
+                                    )
+                                    
+                                    try:
+                                        with urllib.request.urlopen(replies_req, timeout=30) as rr:
+                                            replies_data = json.loads(rr.read().decode('utf-8'))
+                                            if replies_data.get("ok"):
+                                                replies = replies_data.get("messages", [])
+                                                # Process replies (skip first - it's the parent)
+                                                for reply in replies[1:]:
+                                                    reply_ts = reply.get("ts", "")
+                                                    reply_user_id = reply.get("user", "")
+                                                    reply_text = reply.get("text", "")
+                                                    
+                                                    # Get user info for reply
+                                                    reply_user_info = {"id": "", "username": "", "real_name": ""}
+                                                    if reply_user_id:
+                                                        if reply_user_id in user_cache:
+                                                            reply_user_info = user_cache[reply_user_id]
+                                                        else:
+                                                            try:
+                                                                user_url = "https://slack.com/api/users.info"
+                                                                user_params = {"user": reply_user_id}
+                                                                user_query = urllib.parse.urlencode(user_params)
+                                                                user_req = urllib.request.Request(
+                                                                    f"{user_url}?{user_query}",
+                                                                    headers={"Authorization": f"Bearer {TOKEN}"}
+                                                                )
+                                                                with urllib.request.urlopen(user_req, timeout=30) as ur:
+                                                                    user_data = json.loads(ur.read().decode('utf-8'))
+                                                                    if user_data.get("ok"):
+                                                                        u_data = user_data.get("user", {})
+                                                                        profile = u_data.get("profile", {})
+                                                                        reply_user_info = {
+                                                                            "id": reply_user_id,
+                                                                            "username": u_data.get("name", ""),
+                                                                            "real_name": profile.get("real_name", "")
+                                                                        }
+                                                                        user_cache[reply_user_id] = reply_user_info
+                                                            except Exception:
+                                                                pass
+                                                    
+                                                    reply_dt = datetime.fromtimestamp(float(reply_ts)) if reply_ts else datetime.now()
+                                                    # Thread reply permalink format: path uses reply timestamp WITHOUT decimal, query uses thread_ts WITH decimal
+                                                    reply_permalink_ts = reply_ts.replace('.', '')
+                                                    reply_permalink = f"{workspace_url}/archives/{channel_id}/p{reply_permalink_ts}?thread_ts={thread_ts}&cid={channel_id}"
+                                                    # Build app_redirect deep link for better browser compatibility
+                                                    reply_desktop_link = None
+                                                    if team_id and channel_id and thread_ts:
+                                                        # Use app_redirect with the permalink URL for consistent browser behavior
+                                                        encoded_reply_permalink = urllib.parse.quote(reply_permalink, safe='')
+                                                        reply_desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_reply_permalink}"
+                                                    
+                                                    # Extract files for reply
+                                                    reply_files = []
+                                                    for file_data in reply.get("files", []):
+                                                        reply_files.append({
+                                                            "id": file_data.get("id"),
+                                                            "name": file_data.get("name"),
+                                                            "title": file_data.get("title"),
+                                                            "mimetype": file_data.get("mimetype"),
+                                                            "filetype": file_data.get("filetype"),
+                                                            "size": file_data.get("size"),
+                                                            "url_private_download": file_data.get("url_private_download"),
+                                                            "created": file_data.get("created")
+                                                        })
+                                                    
+                                                    # Extract links for reply
+                                                    reply_links = []
+                                                    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                                                    reply_matches = re.finditer(url_pattern, reply_text)
+                                                    for match in reply_matches:
+                                                        url = match.group(0).rstrip('.,;:)!?')
+                                                        reply_links.append({
+                                                            "url": url,
+                                                            "display_text": url,
+                                                            "type": "link"
+                                                        })
+                                                    
+                                                    # Extract reactions for reply
+                                                    reply_reactions = []
+                                                    for reaction_data in reply.get("reactions", []):
+                                                        reply_reactions.append({
+                                                            "name": reaction_data.get("name"),
+                                                            "count": reaction_data.get("count"),
+                                                            "users": reaction_data.get("users", [])
+                                                        })
+                                                    
+                                                    processed_reply = {
+                                                        "ts": reply_ts,
+                                                        "text": reply_text,
+                                                        "user": reply_user_id,
+                                                        "username": reply_user_info.get("username", ""),
+                                                        "real_name": reply_user_info.get("real_name", ""),
+                                                        "datetime": reply_dt.isoformat() + "Z",
+                                                        "permalink": reply_permalink,
+                                                        "desktop_link": reply_desktop_link,
+                                                        "channel_id": channel_id,
+                                                        "channel_name": channel_name,
+                                                        "thread_ts": thread_ts,
+                                                        "reactions": reply_reactions,
+                                                        "files": reply_files,
+                                                        "links": reply_links
+                                                    }
+                                                    
+                                                    parent_msg["thread_replies"].append(processed_reply)
+                                    except Exception:
+                                        pass
+                        
+                        # Sort messages (inline)
+                        if sort_by == "timestamp":
+                            reverse = (sort_order == "desc")
+                            processed_messages.sort(key=lambda m: float(m.get("ts", 0)), reverse=reverse)
+                        elif sort_by == "reactions":
+                            reverse = (sort_order == "desc")
+                            processed_messages.sort(key=lambda m: sum(r.get("count", 0) for r in m.get("reactions", [])), reverse=reverse)
+                        elif sort_by == "reply_count":
+                            reverse = (sort_order == "desc")
+                            processed_messages.sort(key=lambda m: m.get("reply_count", 0), reverse=reverse)
+                        elif sort_by == "user":
+                            reverse = (sort_order == "desc")
+                            processed_messages.sort(key=lambda m: m.get("username", ""), reverse=reverse)
+                        
+                        # Add to results
+                        all_channel_results.append({
+                            "channel_id": channel_id,
+                            "channel_name": channel_name,
+                            "messages": processed_messages,
+                            "has_more": has_more
+                        })
+            except Exception as e:
+                channel_error = str(e)
+            
+            # Skip channel if error occurred
+            if channel_error:
+                continue
+        
+        # Return structure based on single vs multiple channels
+        if len(channel_list) == 1:
+            if all_channel_results:
+                ch_result = all_channel_results[0]
+                return {
+                    "status": "ok",
+                    "data": {
+                        "channel_id": ch_result["channel_id"],
+                        "channel_name": ch_result["channel_name"],
+                        "messages": ch_result["messages"],
+                        "has_more": ch_result["has_more"],
+                        "total_returned": len(ch_result["messages"]),
+                        "date_range": {
+                            "start": datetime.fromtimestamp(oldest_ts).isoformat() + "Z" if oldest_ts else None,
+                            "end": datetime.fromtimestamp(latest_ts).isoformat() + "Z" if latest_ts else None
+                        }
+                    }
+                }
+            else:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": "Failed to retrieve messages from channel"
+                }
+        else:
+            return {
+                "status": "ok",
+                "data": {
+                    "channels": all_channel_results,
+                    "total_channels": len(all_channel_results)
+                }
+            }
+    
+    except Exception as e:
+        return {
+            "status": "error",
+            "data": {},
+            "error_message": f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def search_slack_messages(
+    query: Optional[str] = None,
+    user: Optional[str] = None,
+    channel: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    count: Optional[int] = 20,
+    sort: Optional[str] = "score",
+    sort_by: Optional[str] = None,
+    min_reactions: Optional[int] = None,
+    min_reply_count: Optional[int] = None,
+    only_thread_parents: Optional[bool] = False,
+    has_reactions: Optional[bool] = False
+) -> Dict[str, Any]:
+    """
+    Search for messages across the entire Slack workspace.
+    
+    When query is omitted or empty, returns recent messages across workspace.
+    Supports filtering by user(s) and/or channel(s) using Slack's query syntax.
+    
+    Args:
+        query: Search query string. When omitted or empty, returns recent messages. Default: None.
+        user: User ID(s) or username(s) (e.g., "U1234567890", "sue", or "sue,dan"). Can be a single user or comma-separated list. Recommendation: Use usernames when available for better efficiency (avoids ID-to-username resolution). Default: None.
+        channel: Channel ID(s) or name(s) (e.g., "C1234567890", "#random", or "#general,#random"). Can be a single channel or comma-separated list. Recommendation: Use channel names (e.g., "#channel-name") when available for better efficiency, as Slack's search API requires channel names and IDs must be resolved first (adds API calls). Default: None.
+        start_date: Start date in YYYY-MM-DD format or ISO 8601 datetime. Default: None (no start limit).
+        end_date: End date in YYYY-MM-DD format or ISO 8601 datetime. Default: None (no end limit).
+        count: Maximum number of messages to return. Default: 20, max: 100.
+        sort: Sort order for search results: "score" (default), "timestamp".
+        sort_by: Additional sort criteria (used internally). Default: None.
+        min_reactions: Filter messages with at least N reactions. Default: None.
+        min_reply_count: Filter messages with at least N replies (thread parents only). Default: None.
+        only_thread_parents: Return only messages that have replies. Default: False.
+        has_reactions: Return only messages with reactions. Default: False.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - data: Search results with messages array and metadata
+        - error_message: Error message if status is "error"
+    """
+    # Imports inside function at the very beginning
+    import os
+    import traceback
+    import json
+    import urllib.request
+    import urllib.parse
+    from datetime import datetime
+    import re
+    import pytz
+    
+    # Wrap entire function in try-except
+    try:
+        # Get token
+        TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+        if not TOKEN:
+            return {
+                "status": "error",
+                "data": {},
+                "error_message": "SLACK_MCP_XOXP_TOKEN not set in environment"
+            }
+        
+        # Set defaults
+        if count is None:
+            count = 20
+        if sort is None:
+            sort = "score"
+        if only_thread_parents is None:
+            only_thread_parents = False
+        if has_reactions is None:
+            has_reactions = False
+        
+        # Limit max
+        if count > 100:
+            count = 100
+        
+        # Build search query with user/channel filters (inline logic)
+        search_query_parts = []
+        
+        if query:
+            search_query_parts.append(query)
+        
+        # Handle user filter (support multiple users with OR syntax) - inline
+        if user:
+            if isinstance(user, str):
+                # Single user or comma-separated
+                if ',' in user:
+                    user_list = [u.strip() for u in user.split(',')]
+                else:
+                    user_list = [user]
+            elif isinstance(user, list):
+                # Support list for backward compatibility (though Letta schema only allows str)
+                user_list = user
+            else:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"user parameter must be string or list, got {type(user)}"
+                }
+            
+            # Build user filters (use OR syntax for multiple)
+            # Resolve user IDs to usernames for search queries (Slack search works better with usernames)
+            user_filters = []
+            user_cache_for_search = {}
+            
+            # First pass: collect all user IDs that need resolution
+            user_ids_to_resolve = []
+            for u in user_list:
+                if u.startswith("U"):
+                    user_ids_to_resolve.append(u)
+            
+            # Resolve user IDs to usernames
+            if user_ids_to_resolve:
+                try:
+                    url = "https://slack.com/api/users.list"
+                    params = {"limit": "1000"}
+                    query_string = urllib.parse.urlencode(params)
+                    req = urllib.request.Request(
+                        f"{url}?{query_string}",
+                        headers={"Authorization": f"Bearer {TOKEN}"}
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as ur:
+                        user_data = json.loads(ur.read().decode('utf-8'))
+                        if user_data.get("ok"):
+                            for user_item in user_data.get("members", []):
+                                user_id = user_item.get("id")
+                                if user_id in user_ids_to_resolve:
+                                    user_cache_for_search[user_id] = user_item.get("name", "")
+                except Exception:
+                    pass
+            
+            # Build filters using usernames when available, otherwise use the provided value
+            for u in user_list:
+                if u.startswith("U") and u in user_cache_for_search:
+                    # Use resolved username
+                    user_filters.append(f"from:{user_cache_for_search[u]}")
+                else:
+                    # Use as-is (username or unresolved ID)
+                    user_filters.append(f"from:{u}")
+            
+            if len(user_filters) == 1:
+                search_query_parts.insert(0, user_filters[0])
+            else:
+                # Slack search API doesn't support parentheses around OR clauses
+                # Use "from:user1 OR from:user2" instead of "(from:user1 OR from:user2)"
+                user_query = " OR ".join(user_filters)
+                search_query_parts.insert(0, user_query)
+        
+        # Handle channel filter (support multiple channels with OR syntax) - inline
+        if channel:
+            if isinstance(channel, str):
+                # Single channel or comma-separated
+                if ',' in channel:
+                    channel_list = [ch.strip() for ch in channel.split(',')]
+                else:
+                    channel_list = [channel]
+            elif isinstance(channel, list):
+                # Support list for backward compatibility (though Letta schema only allows str)
+                channel_list = channel
+            else:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"channel parameter must be string or list, got {type(channel)}"
+                }
+            
+            # Build channel filters (resolve IDs to names - Slack search requires channel names, not IDs)
+            channel_filters = []
+            channel_id_to_name_cache = {}
+            
+            # First pass: resolve channel IDs to names
+            channel_ids_to_resolve = []
+            for ch in channel_list:
+                channel_name = ch.lstrip("#")
+                if channel_name.startswith(("C", "G", "D", "mpdm-")):
+                    channel_ids_to_resolve.append(channel_name)
+            
+            # Resolve channel IDs to names
+            if channel_ids_to_resolve:
+                try:
+                    url = "https://slack.com/api/conversations.list"
+                    params = {"limit": "1000", "exclude_archived": "false"}
+                    query_string = urllib.parse.urlencode(params)
+                    req = urllib.request.Request(
+                        f"{url}?{query_string}",
+                        headers={"Authorization": f"Bearer {TOKEN}"}
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as cr:
+                        channel_data = json.loads(cr.read().decode('utf-8'))
+                        if channel_data.get("ok"):
+                            for ch_item in channel_data.get("channels", []):
+                                ch_id = ch_item.get("id")
+                                ch_name = ch_item.get("name", "")
+                                if ch_id in channel_ids_to_resolve and ch_name:
+                                    channel_id_to_name_cache[ch_id] = ch_name
+                    
+                    # Also try conversations.info for each ID individually (in case it's a private channel not in list)
+                    for ch_id in channel_ids_to_resolve:
+                        if ch_id not in channel_id_to_name_cache:
+                            try:
+                                info_url = "https://slack.com/api/conversations.info"
+                                info_params = {"channel": ch_id}
+                                info_query = urllib.parse.urlencode(info_params)
+                                info_req = urllib.request.Request(
+                                    f"{info_url}?{info_query}",
+                                    headers={"Authorization": f"Bearer {TOKEN}"}
+                                )
+                                with urllib.request.urlopen(info_req, timeout=30) as ir:
+                                    info_data = json.loads(ir.read().decode('utf-8'))
+                                    if info_data.get("ok"):
+                                        ch_info = info_data.get("channel", {})
+                                        ch_name = ch_info.get("name", "")
+                                        if ch_name:
+                                            channel_id_to_name_cache[ch_id] = ch_name
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            
+            # Build filters using channel names (Slack search requires names, not IDs)
+            for ch in channel_list:
+                channel_name = ch.lstrip("#")
+                if channel_name.startswith(("C", "G", "D", "mpdm-")):
+                    # It's a channel ID - use resolved name if available
+                    if channel_name in channel_id_to_name_cache:
+                        channel_filters.append(f"in:{channel_id_to_name_cache[channel_name]}")
+                    else:
+                        # Fallback: try using ID anyway (might work for some cases, but not recommended)
+                        channel_filters.append(f"in:{channel_name}")
+                else:
+                    # It's already a channel name - use directly
+                    channel_filters.append(f"in:{channel_name}")
+            
+            if len(channel_filters) == 1:
+                search_query_parts.insert(0, channel_filters[0])
+            else:
+                # Slack search API doesn't support parentheses around OR clauses
+                # Use "in:chan1 OR in:chan2" instead of "(in:chan1 OR in:chan2)"
+                channel_query = " OR ".join(channel_filters)
+                search_query_parts.insert(0, channel_query)
+        
+        # Combine query parts
+        final_query = " ".join(search_query_parts) if search_query_parts else ""
+        
+        # Build API request
+        url = "https://slack.com/api/search.messages"
+        params = {
+            "query": final_query,
+            "count": str(count),
+            "sort": sort
+        }
+        
+        query_string = urllib.parse.urlencode(params)
+        req = urllib.request.Request(
+            f"{url}?{query_string}",
+            headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+        
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode('utf-8'))
+            
+            if not data.get("ok"):
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": data.get("error", "Unknown Slack API error")
+                }
+            
+            matches = data.get("messages", {}).get("matches", [])
+            total = data.get("messages", {}).get("total", 0)
+            pagination = data.get("messages", {}).get("pagination", {})
+            
+            # User cache for efficient lookups
+            user_cache = {}
+            
+            # Parse dates for filtering (inline)
+            start_dt = None
+            end_dt = None
+            if start_date:
+                try:
+                    if 'T' in start_date or start_date.endswith('Z'):
+                        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                    else:
+                        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                        start_dt = pytz.UTC.localize(start_dt)
+                except Exception:
+                    pass
+            
+            if end_date:
+                try:
+                    if 'T' in end_date or end_date.endswith('Z'):
+                        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                    else:
+                        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                        end_dt = pytz.UTC.localize(end_dt)
+                        end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                except Exception:
+                    pass
+            
+            # Get workspace URL and team ID for permalinks
+            workspace_url = "https://concord-consortium.slack.com"
+            team_id = None
+            try:
+                auth_url = "https://slack.com/api/auth.test"
+                auth_req = urllib.request.Request(auth_url, headers={"Authorization": f"Bearer {TOKEN}"})
+                with urllib.request.urlopen(auth_req, timeout=10) as ar:
+                    auth_data = json.loads(ar.read().decode('utf-8'))
+                    if auth_data.get("ok"):
+                        url_value = auth_data.get("url", "")
+                        if url_value:
+                            # Normalize workspace URL - remove any existing https:// prefix and trailing slash
+                            url_value = url_value.rstrip('/').replace('https://', '').replace('http://', '')
+                            workspace_url = f"https://{url_value}"
+                        # Get team ID for desktop deep links
+                        team_id = auth_data.get("team_id") or (auth_data.get("team", {}).get("id") if isinstance(auth_data.get("team"), dict) else None)
+            except Exception:
+                pass
+            
+            # Normalize workspace_url to ensure it's clean (no double prefixes, no trailing slash)
+            workspace_url = workspace_url.rstrip('/')
+            if workspace_url.startswith('https://https://') or workspace_url.startswith('http://https://'):
+                workspace_url = 'https://' + workspace_url.split('://', 1)[-1].split('://', 1)[-1]
+            elif not workspace_url.startswith('https://'):
+                workspace_url = f"https://{workspace_url}"
+            
+            # Process search results (inline)
+            processed_messages = []
+            for match in matches:
+                ts = match.get("ts", "")
+                user_id = match.get("user", "")
+                text = match.get("text", "")
+                
+                # Filter by date if provided
+                if start_dt or end_dt:
+                    try:
+                        msg_dt = datetime.fromtimestamp(float(ts))
+                        msg_dt = pytz.UTC.localize(msg_dt)
+                        if start_dt and msg_dt < start_dt:
+                            continue
+                        if end_dt and msg_dt > end_dt:
+                            continue
+                    except Exception:
+                        pass
+                
+                # Get user info (inline with cache)
+                user_info = {"id": "", "username": "", "real_name": ""}
+                if user_id:
+                    if user_id in user_cache:
+                        user_info = user_cache[user_id]
+                    else:
+                        try:
+                            user_url = "https://slack.com/api/users.info"
+                            user_params = {"user": user_id}
+                            user_query = urllib.parse.urlencode(user_params)
+                            user_req = urllib.request.Request(
+                                f"{user_url}?{user_query}",
+                                headers={"Authorization": f"Bearer {TOKEN}"}
+                            )
+                            with urllib.request.urlopen(user_req, timeout=30) as ur:
+                                user_data = json.loads(ur.read().decode('utf-8'))
+                                if user_data.get("ok"):
+                                    u_data = user_data.get("user", {})
+                                    profile = u_data.get("profile", {})
+                                    user_info = {
+                                        "id": user_id,
+                                        "username": u_data.get("name", ""),
+                                        "real_name": profile.get("real_name", "")
+                                    }
+                                    user_cache[user_id] = user_info
+                        except Exception:
+                            pass
+                
+                # Convert timestamp
+                dt = datetime.fromtimestamp(float(ts)) if ts else datetime.now()
+                dt_iso = dt.isoformat() + "Z"
+                
+                # Build permalink (HTTPS) and desktop deep link (slack://)
+                channel_id = match.get("channel", {}).get("id", "")
+                permalink_ts = ts.replace('.', '')
+                permalink = f"{workspace_url}/archives/{channel_id}/p{permalink_ts}"
+                # Build app_redirect deep link for better browser compatibility
+                desktop_link = None
+                if team_id and channel_id:
+                    # Use app_redirect with the permalink URL for consistent browser behavior
+                    encoded_permalink = urllib.parse.quote(permalink, safe='')
+                    desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_permalink}"
+                
+                # Extract files (inline)
+                files = []
+                for file_data in match.get("files", []):
+                    files.append({
+                        "id": file_data.get("id"),
+                        "name": file_data.get("name"),
+                        "title": file_data.get("title"),
+                        "mimetype": file_data.get("mimetype"),
+                        "filetype": file_data.get("filetype"),
+                        "size": file_data.get("size"),
+                        "url_private_download": file_data.get("url_private_download"),
+                        "created": file_data.get("created")
+                    })
+                
+                # Extract links (inline regex)
+                links = []
+                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+                url_matches = re.finditer(url_pattern, text)
+                for url_match in url_matches:
+                    url = url_match.group(0).rstrip('.,;:)!?')
+                    links.append({
+                        "url": url,
+                        "display_text": url,
+                        "type": "link"
+                    })
+                
+                # Extract reactions (inline)
+                reactions = []
+                for reaction_data in match.get("reactions", []):
+                    reactions.append({
+                        "name": reaction_data.get("name"),
+                        "count": reaction_data.get("count"),
+                        "users": reaction_data.get("users", [])
+                    })
+                
+                # Check thread info
+                reply_count = match.get("reply_count", 0)
+                is_thread_parent = reply_count > 0
+                
+                # Apply filters (inline)
+                if only_thread_parents and not is_thread_parent:
+                    continue
+                
+                if min_reply_count is not None and reply_count < min_reply_count:
+                    continue
+                
+                reaction_count = sum(r.get("count", 0) for r in reactions)
+                if min_reactions is not None and reaction_count < min_reactions:
+                    continue
+                
+                if has_reactions and len(reactions) == 0:
+                    continue
+                
+                processed_msg = {
+                    "ts": ts,
+                    "text": text,
+                    "user": user_id,
+                    "username": user_info.get("username", ""),
+                    "real_name": user_info.get("real_name", ""),
+                    "datetime": dt_iso,
+                    "permalink": permalink,
+                    "desktop_link": desktop_link,
+                    "channel_id": channel_id,
+                    "channel_name": match.get("channel", {}).get("name", ""),
+                    "thread_ts": match.get("thread_ts"),
+                    "is_thread_parent": is_thread_parent,
+                    "reply_count": reply_count,
+                    "reply_users_count": match.get("reply_users_count", 0),
+                    "reactions": reactions,
+                    "files": files,
+                    "links": links
+                }
+                
+                # Add highlight if present
+                if "highlight" in match:
+                    processed_msg["highlight"] = match["highlight"]
+                
+                processed_messages.append(processed_msg)
+            
+            # Apply post-search sort if requested (inline)
+            if sort_by:
+                if sort_by == "timestamp":
+                    processed_messages.sort(key=lambda m: float(m.get("ts", 0)), reverse=True)
+                elif sort_by == "reactions":
+                    processed_messages.sort(key=lambda m: sum(r.get("count", 0) for r in m.get("reactions", [])), reverse=True)
+                elif sort_by == "reply_count":
+                    processed_messages.sort(key=lambda m: m.get("reply_count", 0), reverse=True)
+            
+            return {
+                "status": "ok",
+                "data": {
+                    "query": final_query,
+                    "total_results": total,
+                    "messages": processed_messages,
+                    "pagination": pagination
+                }
+            }
+    
+    except Exception as e:
+        return {
+            "status": "error",
+            "data": {},
+            "error_message": f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_slack_users(
+    user: Optional[str] = None,
+    include_deleted: Optional[bool] = False,
+    limit: Optional[int] = 1000
+) -> Dict[str, Any]:
+    """
+    Get Slack user information - list all users, get specific user details, or resolve usernames.
+
+    When user parameter is provided, returns single user (or multiple if comma-separated).
+    When user parameter is omitted, returns list of all users.
+
+    Args:
+        user: User ID(s) or username(s) (e.g., "U1234567890", "sue", or "sue,dan").
+              Can be a single user or comma-separated list. If omitted, returns list of all users.
+        include_deleted: Include deleted users when listing. Default: False.
+        limit: Maximum number of users to return when listing. Default: 1000.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - data: User data (single user object, list of users, or array for multiple users)
+        - error_message: Error message if status is "error"
+    """
+    # Imports inside function at the very beginning
+    import os
+    import traceback
+    import json
+    import urllib.request
+    import urllib.parse
+    from datetime import datetime
+    
+    # Wrap entire function in try-except
+    try:
+        # Get token
+        TOKEN = os.getenv("SLACK_MCP_XOXP_TOKEN", "")
+        if not TOKEN:
+            return {
+                "status": "error",
+                "data": {},
+                "error_message": "SLACK_MCP_XOXP_TOKEN not set in environment"
+            }
+        
+        # Normalize user parameter - handle single value, comma-separated, or list (for backward compatibility)
+        user_list = []
+        is_single = False
+        is_multiple = False
+
+        if user is not None:
+            if isinstance(user, str):
+                # Single user or comma-separated
+                if ',' in user:
+                    user_list = [u.strip() for u in user.split(',')]
+                    is_multiple = True
+                else:
+                    user_list = [user]
+                    is_single = True
+            elif isinstance(user, list):
+                # Support list for backward compatibility (though Letta schema only allows str)
+                user_list = user
+                is_multiple = len(user) > 1
+                is_single = len(user) == 1
+            else:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"user parameter must be string or list, got {type(user)}"
+                }
+        
+        # Set defaults
+        if limit is None:
+            limit = 1000
+        if include_deleted is None:
+            include_deleted = False
+        
+        # If user(s) specified, get specific user(s)
+        if user_list:
+            resolved_users = []
+            # Get full user list once to resolve usernames/emails to IDs (more efficient)
+            all_users_map = {}  # Map username -> user_data
+            all_users_by_email = {}  # Map email -> user_data
+            try:
+                url = "https://slack.com/api/users.list"
+                params = {"limit": "1000"}
+                query_string = urllib.parse.urlencode(params)
+                req = urllib.request.Request(
+                    f"{url}?{query_string}",
+                    headers={"Authorization": f"Bearer {TOKEN}"}
+                )
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                    if data.get("ok"):
+                        for user_item in data.get("members", []):
+                            user_id = user_item.get("id")
+                            username = user_item.get("name", "")
+                            profile = user_item.get("profile", {})
+                            email = profile.get("email", "")
+                            
+                            if username:
+                                all_users_map[username] = user_item
+                            if user_id:
+                                all_users_map[user_id] = user_item
+                            if email:
+                                all_users_by_email[email] = user_item
+            except Exception:
+                pass
+            
+            for u in user_list:
+                # Resolve username/email/userID to user item
+                user_item = None
+                if u.startswith("U"):
+                    # It's a user ID
+                    if u in all_users_map:
+                        user_item = all_users_map[u]
+                elif "@" in u:
+                    # It's an email address
+                    if u in all_users_by_email:
+                        user_item = all_users_by_email[u]
+                else:
+                    # It's a username
+                    if u in all_users_map:
+                        user_item = all_users_map[u]
+                
+                # If not found in cache, try users.info API (for user IDs only)
+                if not user_item and u.startswith("U"):
+                    try:
+                        url = "https://slack.com/api/users.info"
+                        params = {"user": u}
+                        query_string = urllib.parse.urlencode(params)
+                        req = urllib.request.Request(
+                            f"{url}?{query_string}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(req, timeout=30) as r:
+                            data = json.loads(r.read().decode('utf-8'))
+                            if data.get("ok"):
+                                user_item = data.get("user")
+                    except Exception:
+                        pass
+                
+                if not user_item:
+                    if is_single:
+                        return {
+                            "status": "error",
+                            "data": {},
+                            "error_message": f"User not found: {u}"
+                        }
+                    continue
+                
+                # Process user data
+                user_data = user_item
+                profile = user_data.get("profile", {})
+                
+                # Format response (inline)
+                user_info = {
+                    "id": user_data.get("id"),
+                    "name": user_data.get("name"),
+                    "username": user_data.get("name"),
+                    "real_name": profile.get("real_name", ""),
+                    "display_name": profile.get("display_name", ""),
+                    "email": profile.get("email", ""),
+                    "image_24": profile.get("image_24", ""),
+                    "image_32": profile.get("image_32", ""),
+                    "image_48": profile.get("image_48", ""),
+                    "image_72": profile.get("image_72", ""),
+                    "image_192": profile.get("image_192", ""),
+                    "image_512": profile.get("image_512", ""),
+                    "status_text": profile.get("status_text", ""),
+                    "status_emoji": profile.get("status_emoji", ""),
+                    "is_admin": user_data.get("is_admin", False),
+                    "is_owner": user_data.get("is_owner", False),
+                    "is_bot": user_data.get("is_bot", False),
+                    "deleted": user_data.get("deleted", False),
+                    "tz": user_data.get("tz"),
+                    "tz_label": user_data.get("tz_label"),
+                    "tz_offset": user_data.get("tz_offset")
+                }
+                
+                resolved_users.append(user_info)
+            
+            # Return appropriate structure
+            if is_single:
+                return {
+                    "status": "ok",
+                    "data": {
+                        "user": resolved_users[0] if resolved_users else {}
+                    }
+                }
+            else:
+                return {
+                    "status": "ok",
+                    "data": {
+                        "users": resolved_users
+                    }
+                }
+        
+        # Otherwise, list all users
+        url = "https://slack.com/api/users.list"
+        params = {"limit": str(limit)}
+        if include_deleted:
+            params["include_deleted"] = "true"
+        
+        query_string = urllib.parse.urlencode(params)
+        req = urllib.request.Request(
+            f"{url}?{query_string}",
+            headers={"Authorization": f"Bearer {TOKEN}"}
+        )
+        
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode('utf-8'))
+            
+            if not data.get("ok"):
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": data.get("error", "Unknown Slack API error")
+                }
+            
+            members = data.get("members", [])
+            
+            # Filter deleted if not requested
+            if not include_deleted:
+                members = [m for m in members if not m.get("deleted", False)]
+            
+            # Format users (inline)
+            formatted_users = []
+            for member in members:
+                profile = member.get("profile", {})
+                formatted_users.append({
+                    "id": member.get("id"),
+                    "name": member.get("name"),
+                    "username": member.get("name"),
+                    "real_name": profile.get("real_name", ""),
+                    "display_name": profile.get("display_name", ""),
+                    "email": profile.get("email", ""),
+                    "image_24": profile.get("image_24", ""),
+                    "image_32": profile.get("image_32", ""),
+                    "image_48": profile.get("image_48", ""),
+                    "image_72": profile.get("image_72", ""),
+                    "image_192": profile.get("image_192", ""),
+                    "image_512": profile.get("image_512", ""),
+                    "status_text": profile.get("status_text", ""),
+                    "status_emoji": profile.get("status_emoji", ""),
+                    "is_admin": member.get("is_admin", False),
+                    "is_owner": member.get("is_owner", False),
+                    "is_bot": member.get("is_bot", False),
+                    "deleted": member.get("deleted", False),
+                    "tz": member.get("tz"),
+                    "tz_label": member.get("tz_label"),
+                    "tz_offset": member.get("tz_offset")
+                })
+            
+            return {
+                "status": "ok",
+                "data": {
+                    "users": formatted_users,
+                    "total": len(formatted_users)
+                }
+            }
+    
+    except Exception as e:
+        return {
+            "status": "error",
+            "data": {},
+            "error_message": f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
