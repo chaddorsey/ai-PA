@@ -1039,7 +1039,7 @@ def get_drive_mentions(days: int = 7, unread_only: bool = False, start_date: Opt
     })
 
 
-def get_document_events(doc_ids: List[str], days: int = 7) -> str:
+def get_document_events(doc_ids: List[str], days: int = 7) -> Dict[str, Any]:
     """
     Get individual events (timeline) for specific documents.
     
@@ -1052,15 +1052,47 @@ def get_document_events(doc_ids: List[str], days: int = 7) -> str:
         days: Number of days to look back (default: 7)
     
     Returns:
-        str: JSON with events list (time, actor, action) and summary counts per document
+        Dict with events list (time, actor, action) and summary counts per document
     
     Example:
         # Get timeline for a specific document
         get_document_events(doc_ids=["1abc...xyz"])
-        # Returns: {"documents": [{"doc_id": "...", "activities": [{"time": "...", "actor": "jie@", "event": "edit"}, ...]}]}
+        # Returns: {"status": "ok", "data": {"documents": [{"doc_id": "...", "events": [...]}]}}
     """
+    # Imports inside function (Letta compliance)
+    import os
+    import json
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Any
+    from pathlib import Path
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    
     try:
-        creds = _load_credentials()
+        # Load credentials (inlined for Letta compliance)
+        TOKEN_PATH = os.getenv(
+            "GMAIL_CREDENTIALS_PATH",
+            str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+        )
+        
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            creds = Credentials.from_authorized_user_file(TOKEN_PATH)
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                if creds:
+                    with open(TOKEN_PATH, "w") as token:
+                        token.write(creds.to_json())
+            else:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": "No valid credentials found. Please authenticate first."
+                }
         
         # Calculate date range
         end_date = datetime.now()
@@ -1069,19 +1101,47 @@ def get_document_events(doc_ids: List[str], days: int = 7) -> str:
         start_time = start_date.strftime("%Y-%m-%dT00:00:00Z")
         end_time = end_date.strftime("%Y-%m-%dT23:59:59Z")
         
-        # Query activities
-        activities = _query_admin_reports_api(start_time, end_time, "all")
+        # Query Admin Reports API
+        service = build("admin", "reports_v1", credentials=creds)
+        activities = []
+        next_page_token = None
+        MAX_PAGES = 15
+        pages_fetched = 0
         
-        if isinstance(activities, str):  # Error response
-            return activities
+        while pages_fetched < MAX_PAGES:
+            api_params = {
+                "userKey": "all",
+                "applicationName": "drive",
+                "startTime": start_time,
+                "endTime": end_time,
+                "maxResults": 1000,
+            }
+            if next_page_token:
+                api_params["pageToken"] = next_page_token
+            
+            try:
+                response = service.activities().list(**api_params).execute()
+                activities.extend(response.get("items", []))
+                next_page_token = response.get("nextPageToken")
+                pages_fetched += 1
+                
+                if not next_page_token:
+                    break
+            except HttpError as e:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"Admin Reports API error: {str(e)}"
+                }
         
         # Filter activities for specified documents
         doc_activities = {}
+        doc_id_set = set(doc_ids)
         
         for doc_id in doc_ids:
             doc_activities[doc_id] = {
                 "doc_id": doc_id,
-                "activities": [],
+                "events": [],
                 "summary": {
                     "edit_count": 0,
                     "view_count": 0,
@@ -1095,12 +1155,12 @@ def get_document_events(doc_ids: List[str], days: int = 7) -> str:
                 for param in event.get("parameters", []):
                     if param.get("name") == "doc_id":
                         doc_id = param.get("value")
-                        if doc_id in doc_activities:
+                        if doc_id in doc_id_set:
                             event_name = event.get("name", "unknown")
-                            doc_activities[doc_id]["activities"].append({
+                            doc_activities[doc_id]["events"].append({
                                 "time": activity.get("id", {}).get("time"),
                                 "actor": activity.get("actor", {}).get("email", "(unknown)"),
-                                "event": event_name,
+                                "action": event_name,
                             })
                             
                             # Update summary
@@ -1113,16 +1173,26 @@ def get_document_events(doc_ids: List[str], days: int = 7) -> str:
                             elif event_name in ["create_comment", "resolve_comment"]:
                                 doc_activities[doc_id]["summary"]["comment_count"] += 1
         
-        return json.dumps({
-            "documents": list(doc_activities.values()),
-            "period_days": days,
-        }, indent=2)
+        # Sort events by time for each document
+        for doc in doc_activities.values():
+            doc["events"].sort(key=lambda x: x["time"] or "", reverse=True)
+        
+        return {
+            "status": "ok",
+            "data": {
+                "documents": list(doc_activities.values()),
+                "period_days": days,
+                "truncated": pages_fetched >= MAX_PAGES,
+            }
+        }
         
     except Exception as e:
-        return json.dumps({
-            "error": f"Error getting document activity: {str(e)}",
-            "type": "error"
-        })
+        import traceback
+        return {
+            "status": "error",
+            "data": {},
+            "error_message": f"Error getting document events: {str(e)}\n{traceback.format_exc()}"
+        }
 
 
 def get_top_documents(category: str = "edited", count: int = 5, include_links: bool = True, date: Optional[str] = None) -> str:
