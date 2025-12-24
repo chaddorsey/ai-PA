@@ -311,7 +311,7 @@ When `query` is omitted or empty, returns recent messages across workspace (enab
 
 ### Parameters
 
-- `query` (optional, `str`): Search query/keywords. If omitted or empty, returns recent messages across workspace.
+- `query` (optional, `str`): Search query/keywords. If omitted or empty, returns recent messages across workspace. **Note**: OR queries combined with both `user` and `channel` are automatically split into separate searches and combined (Slack API limitation workaround). See `docs/SLACK_SEARCH_QUERY_SYNTAX.md` for details.
 - `user` (optional, `str | List[str]`): Filter by user ID(s) or username(s). Can be single value or list. When list provided, uses Slack OR query syntax. **Recommendation**: Use usernames when available for better efficiency (avoids ID-to-username resolution).
 - `channel` (optional, `str | List[str]`): Limit to specific channel(s) (ID or name). Can be single value or list. When list provided, uses Slack OR query syntax. **Recommendation**: Use channel names (e.g., `"#channel-name"`) when available for better efficiency, as Slack's search API requires channel names and IDs must be resolved first (adds API calls).
 - `start_date` (optional, `str`): Start date (YYYY-MM-DD or ISO 8601).

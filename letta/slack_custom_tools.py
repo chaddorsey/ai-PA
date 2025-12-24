@@ -1158,25 +1158,28 @@ def search_slack_messages(
     When query is omitted or empty, returns recent messages across workspace.
     Supports filtering by user(s) and/or channel(s) using Slack's query syntax.
     
+    Query Syntax: "term1 term2" (AND), "term1 OR term2", "NOT term", '"exact phrase"', "prefix*" (wildcard).
+    
+    Known Limitations (Slack API):
+    - OR + NOT + filter: "python OR java NOT script" with user/channel returns 0. Split into separate searches instead.
+    - Prefix wildcards: "*term" matches literal, not wildcard. Use suffix wildcards "term*" instead.
+    
     Args:
         query: Search query string. When omitted or empty, returns recent messages. Default: None.
-        user: User ID(s) or username(s) (e.g., "U1234567890", "sue", or "sue,dan"). Can be a single user or comma-separated list. Recommendation: Use usernames when available for better efficiency (avoids ID-to-username resolution). Default: None.
-        channel: Channel ID(s) or name(s) (e.g., "C1234567890", "#random", or "#general,#random"). Can be a single channel or comma-separated list. Recommendation: Use channel names (e.g., "#channel-name") when available for better efficiency, as Slack's search API requires channel names and IDs must be resolved first (adds API calls). Default: None.
-        start_date: Start date in YYYY-MM-DD format or ISO 8601 datetime. Default: None (no start limit).
-        end_date: End date in YYYY-MM-DD format or ISO 8601 datetime. Default: None (no end limit).
+        user: User ID(s) or username(s) (e.g., "sue" or "sue,dan"). Use usernames for efficiency. Default: None.
+        channel: Channel ID(s) or name(s) (e.g., "#random" or "#general,#random"). Use names for efficiency. Default: None.
+        start_date: Start date in YYYY-MM-DD format or ISO 8601 datetime. Default: None.
+        end_date: End date in YYYY-MM-DD format or ISO 8601 datetime. Default: None.
         count: Maximum number of messages to return. Default: 20, max: 100.
-        sort: Sort order for search results: "score" (default), "timestamp".
-        sort_by: Additional sort criteria (used internally). Default: None.
+        sort: Sort order: "score" (default) or "timestamp".
+        sort_by: Additional sort criteria. Default: None.
         min_reactions: Filter messages with at least N reactions. Default: None.
-        min_reply_count: Filter messages with at least N replies (thread parents only). Default: None.
+        min_reply_count: Filter messages with at least N replies. Default: None.
         only_thread_parents: Return only messages that have replies. Default: False.
         has_reactions: Return only messages with reactions. Default: False.
     
     Returns:
-        Dictionary with keys:
-        - status: "ok" or "error"
-        - data: Search results with messages array and metadata
-        - error_message: Error message if status is "error"
+        Dictionary with status, data (messages array and metadata), and error_message if applicable.
     """
     # Imports inside function at the very beginning
     import os
@@ -1216,8 +1219,9 @@ def search_slack_messages(
         # Build search query with user/channel filters (inline logic)
         search_query_parts = []
         
-        if query:
-            search_query_parts.append(query)
+        # Use "*" as fallback for empty queries (Slack returns internal_error for empty)
+        effective_query = query if query else "*"
+        search_query_parts.append(effective_query)
         
         # Handle user filter (support multiple users with OR syntax) - inline
         if user:
@@ -1381,238 +1385,320 @@ def search_slack_messages(
         # Combine query parts
         final_query = " ".join(search_query_parts) if search_query_parts else ""
         
-        # Build API request
-        url = "https://slack.com/api/search.messages"
-        params = {
-            "query": final_query,
-            "count": str(count),
-            "sort": sort
-        }
+        # Check if we need to split OR query (workaround for Slack API limitation)
+        # When query contains OR and both user and channel filters are present,
+        # Slack returns 0 results. We split into separate searches and combine.
+        # Also handles: phrase OR phrase + any filter (user OR channel)
+        or_pattern = re.compile(r'\s+OR\s+', re.IGNORECASE)
         
-        query_string = urllib.parse.urlencode(params)
-        req = urllib.request.Request(
-            f"{url}?{query_string}",
-            headers={"Authorization": f"Bearer {TOKEN}"}
+        # Check if OR is inside quotes (inline - no nested def allowed by Letta)
+        has_or = False
+        if query:
+            in_quote = False
+            cleaned_query = []
+            for char in query:
+                if char == '"':
+                    in_quote = not in_quote
+                elif not in_quote:
+                    cleaned_query.append(char)
+            has_or = bool(or_pattern.search(''.join(cleaned_query)))
+        
+        # Detect if we need to split:
+        # 1. OR + user + channel (confirmed issue)
+        # 2. phrase OR phrase + any filter (user or channel)
+        is_phrase_or_phrase = query and has_or and query.count('"') >= 4  # At least 2 phrases
+        needs_or_split = query and has_or and (
+            (user and channel) or  # Original case: OR + user + channel
+            (is_phrase_or_phrase and (user or channel))  # phrase OR phrase + filter
         )
         
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read().decode('utf-8'))
+        if needs_or_split:
+            # Split query into separate terms and search each
+            or_terms = [term.strip() for term in or_pattern.split(query)]
+            all_matches = []
+            all_total = 0
+            seen_message_ids = set()
             
-            if not data.get("ok"):
-                return {
-                    "status": "error",
-                    "data": {},
-                    "error_message": data.get("error", "Unknown Slack API error")
-                }
-            
-            matches = data.get("messages", {}).get("matches", [])
-            total = data.get("messages", {}).get("total", 0)
-            pagination = data.get("messages", {}).get("pagination", {})
-            
-            # User cache for efficient lookups
-            user_cache = {}
-            
-            # Parse dates for filtering (inline)
-            start_dt = None
-            end_dt = None
-            if start_date:
-                try:
-                    if 'T' in start_date or start_date.endswith('Z'):
-                        start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            for or_term in or_terms:
+                # Build query for this single term (reuse the already-built filters)
+                # Extract the filter parts from search_query_parts (user and channel filters)
+                term_query_parts = []
+                for part in search_query_parts:
+                    if part == query:
+                        term_query_parts.append(or_term)
                     else:
-                        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-                        start_dt = pytz.UTC.localize(start_dt)
+                        term_query_parts.append(part)
+                term_final_query = " ".join(term_query_parts) if term_query_parts else or_term
+                
+                # Make API call for this term
+                try:
+                    term_url = "https://slack.com/api/search.messages"
+                    term_params = {
+                        "query": term_final_query,
+                        "count": str(count),
+                        "sort": sort
+                    }
+                    term_query_string = urllib.parse.urlencode(term_params)
+                    term_req = urllib.request.Request(
+                        f"{term_url}?{term_query_string}",
+                        headers={"Authorization": f"Bearer {TOKEN}"}
+                    )
+                    with urllib.request.urlopen(term_req, timeout=30) as tr:
+                        term_data = json.loads(tr.read().decode('utf-8'))
+                        if term_data.get("ok"):
+                            term_matches = term_data.get("messages", {}).get("matches", [])
+                            term_total = term_data.get("messages", {}).get("total", 0)
+                            all_total += term_total
+                            
+                            # Deduplicate by channel_id + ts
+                            for match in term_matches:
+                                match_id = f"{match.get('channel', {}).get('id', '')}_{match.get('ts', '')}"
+                                if match_id not in seen_message_ids:
+                                    seen_message_ids.add(match_id)
+                                    all_matches.append(match)
                 except Exception:
                     pass
             
-            if end_date:
-                try:
-                    if 'T' in end_date or end_date.endswith('Z'):
-                        end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    else:
-                        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-                        end_dt = pytz.UTC.localize(end_dt)
-                        end_dt = end_dt.replace(hour=23, minute=59, second=59)
-                except Exception:
-                    pass
+            # Use combined results
+            matches = all_matches
+            total = len(all_matches)  # Use deduplicated count
+            pagination = {"total_count": total, "page": 1, "per_page": count}
+            final_query = f"{query} (split into {len(or_terms)} searches)"
+        else:
+            # Normal path: single API call
+            # Build API request
+            url = "https://slack.com/api/search.messages"
+            params = {
+                "query": final_query,
+                "count": str(count),
+                "sort": sort
+            }
             
-            # Get workspace URL and team ID for permalinks
-            workspace_url = "https://concord-consortium.slack.com"
-            team_id = None
+            query_string = urllib.parse.urlencode(params)
+            req = urllib.request.Request(
+                f"{url}?{query_string}",
+                headers={"Authorization": f"Bearer {TOKEN}"}
+            )
+            
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.loads(r.read().decode('utf-8'))
+                
+                if not data.get("ok"):
+                    return {
+                        "status": "error",
+                        "data": {},
+                        "error_message": data.get("error", "Unknown Slack API error")
+                    }
+                
+                matches = data.get("messages", {}).get("matches", [])
+                total = data.get("messages", {}).get("total", 0)
+                pagination = data.get("messages", {}).get("pagination", {})
+        
+        # Continue processing (both paths have set matches, total, pagination)
+        # User cache for efficient lookups
+        user_cache = {}
+        
+        # Parse dates for filtering (inline)
+        start_dt = None
+        end_dt = None
+        if start_date:
             try:
-                auth_url = "https://slack.com/api/auth.test"
-                auth_req = urllib.request.Request(auth_url, headers={"Authorization": f"Bearer {TOKEN}"})
-                with urllib.request.urlopen(auth_req, timeout=10) as ar:
-                    auth_data = json.loads(ar.read().decode('utf-8'))
-                    if auth_data.get("ok"):
-                        url_value = auth_data.get("url", "")
-                        if url_value:
-                            # Normalize workspace URL - remove any existing https:// prefix and trailing slash
-                            url_value = url_value.rstrip('/').replace('https://', '').replace('http://', '')
-                            workspace_url = f"https://{url_value}"
-                        # Get team ID for desktop deep links
-                        team_id = auth_data.get("team_id") or (auth_data.get("team", {}).get("id") if isinstance(auth_data.get("team"), dict) else None)
+                if 'T' in start_date or start_date.endswith('Z'):
+                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                else:
+                    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                    start_dt = pytz.UTC.localize(start_dt)
             except Exception:
                 pass
+        
+        if end_date:
+            try:
+                if 'T' in end_date or end_date.endswith('Z'):
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                else:
+                    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                    end_dt = pytz.UTC.localize(end_dt)
+                    end_dt = end_dt.replace(hour=23, minute=59, second=59)
+            except Exception:
+                pass
+        
+        # Get workspace URL and team ID for permalinks
+        workspace_url = "https://concord-consortium.slack.com"
+        team_id = None
+        try:
+            auth_url = "https://slack.com/api/auth.test"
+            auth_req = urllib.request.Request(auth_url, headers={"Authorization": f"Bearer {TOKEN}"})
+            with urllib.request.urlopen(auth_req, timeout=10) as ar:
+                auth_data = json.loads(ar.read().decode('utf-8'))
+                if auth_data.get("ok"):
+                    url_value = auth_data.get("url", "")
+                    if url_value:
+                        # Normalize workspace URL - remove any existing https:// prefix and trailing slash
+                        url_value = url_value.rstrip('/').replace('https://', '').replace('http://', '')
+                        workspace_url = f"https://{url_value}"
+                    # Get team ID for desktop deep links
+                    team_id = auth_data.get("team_id") or (auth_data.get("team", {}).get("id") if isinstance(auth_data.get("team"), dict) else None)
+        except Exception:
+            pass
+        
+        # Normalize workspace_url to ensure it's clean (no double prefixes, no trailing slash)
+        workspace_url = workspace_url.rstrip('/')
+        if workspace_url.startswith('https://https://') or workspace_url.startswith('http://https://'):
+            workspace_url = 'https://' + workspace_url.split('://', 1)[-1].split('://', 1)[-1]
+        elif not workspace_url.startswith('https://'):
+            workspace_url = f"https://{workspace_url}"
+        
+        # Process search results (inline)
+        processed_messages = []
+        for match in matches:
+            ts = match.get("ts", "")
+            user_id = match.get("user", "")
+            text = match.get("text", "")
             
-            # Normalize workspace_url to ensure it's clean (no double prefixes, no trailing slash)
-            workspace_url = workspace_url.rstrip('/')
-            if workspace_url.startswith('https://https://') or workspace_url.startswith('http://https://'):
-                workspace_url = 'https://' + workspace_url.split('://', 1)[-1].split('://', 1)[-1]
-            elif not workspace_url.startswith('https://'):
-                workspace_url = f"https://{workspace_url}"
+            # Filter by date if provided
+            if start_dt or end_dt:
+                try:
+                    msg_dt = datetime.fromtimestamp(float(ts))
+                    msg_dt = pytz.UTC.localize(msg_dt)
+                    if start_dt and msg_dt < start_dt:
+                        continue
+                    if end_dt and msg_dt > end_dt:
+                        continue
+                except Exception:
+                    pass
             
-            # Process search results (inline)
-            processed_messages = []
-            for match in matches:
-                ts = match.get("ts", "")
-                user_id = match.get("user", "")
-                text = match.get("text", "")
-                
-                # Filter by date if provided
-                if start_dt or end_dt:
+            # Get user info (inline with cache)
+            user_info = {"id": "", "username": "", "real_name": ""}
+            if user_id:
+                if user_id in user_cache:
+                    user_info = user_cache[user_id]
+                else:
                     try:
-                        msg_dt = datetime.fromtimestamp(float(ts))
-                        msg_dt = pytz.UTC.localize(msg_dt)
-                        if start_dt and msg_dt < start_dt:
-                            continue
-                        if end_dt and msg_dt > end_dt:
-                            continue
+                        user_url = "https://slack.com/api/users.info"
+                        user_params = {"user": user_id}
+                        user_query = urllib.parse.urlencode(user_params)
+                        user_req = urllib.request.Request(
+                            f"{user_url}?{user_query}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(user_req, timeout=30) as ur:
+                            user_data = json.loads(ur.read().decode('utf-8'))
+                            if user_data.get("ok"):
+                                u_data = user_data.get("user", {})
+                                profile = u_data.get("profile", {})
+                                user_info = {
+                                    "id": user_id,
+                                    "username": u_data.get("name", ""),
+                                    "real_name": profile.get("real_name", "")
+                                }
+                                user_cache[user_id] = user_info
                     except Exception:
                         pass
-                
-                # Get user info (inline with cache)
-                user_info = {"id": "", "username": "", "real_name": ""}
-                if user_id:
-                    if user_id in user_cache:
-                        user_info = user_cache[user_id]
-                    else:
-                        try:
-                            user_url = "https://slack.com/api/users.info"
-                            user_params = {"user": user_id}
-                            user_query = urllib.parse.urlencode(user_params)
-                            user_req = urllib.request.Request(
-                                f"{user_url}?{user_query}",
-                                headers={"Authorization": f"Bearer {TOKEN}"}
-                            )
-                            with urllib.request.urlopen(user_req, timeout=30) as ur:
-                                user_data = json.loads(ur.read().decode('utf-8'))
-                                if user_data.get("ok"):
-                                    u_data = user_data.get("user", {})
-                                    profile = u_data.get("profile", {})
-                                    user_info = {
-                                        "id": user_id,
-                                        "username": u_data.get("name", ""),
-                                        "real_name": profile.get("real_name", "")
-                                    }
-                                    user_cache[user_id] = user_info
-                        except Exception:
-                            pass
-                
-                # Convert timestamp
-                dt = datetime.fromtimestamp(float(ts)) if ts else datetime.now()
-                dt_iso = dt.isoformat() + "Z"
-                
-                # Build permalink (HTTPS) and desktop deep link (slack://)
-                channel_id = match.get("channel", {}).get("id", "")
-                permalink_ts = ts.replace('.', '')
-                permalink = f"{workspace_url}/archives/{channel_id}/p{permalink_ts}"
-                # Build app_redirect deep link for better browser compatibility
-                desktop_link = None
-                if team_id and channel_id:
-                    # Use app_redirect with the permalink URL for consistent browser behavior
-                    encoded_permalink = urllib.parse.quote(permalink, safe='')
-                    desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_permalink}"
-                
-                # Extract files (inline)
-                files = []
-                for file_data in match.get("files", []):
-                    files.append({
-                        "id": file_data.get("id"),
-                        "name": file_data.get("name"),
-                        "title": file_data.get("title"),
-                        "mimetype": file_data.get("mimetype"),
-                        "filetype": file_data.get("filetype"),
-                        "size": file_data.get("size"),
-                        "url_private_download": file_data.get("url_private_download"),
-                        "created": file_data.get("created")
-                    })
-                
-                # Extract links (inline regex)
-                links = []
-                url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-                url_matches = re.finditer(url_pattern, text)
-                for url_match in url_matches:
-                    url = url_match.group(0).rstrip('.,;:)!?')
-                    links.append({
-                        "url": url,
-                        "display_text": url,
-                        "type": "link"
-                    })
-                
-                # Extract reactions (inline)
-                reactions = []
-                for reaction_data in match.get("reactions", []):
-                    reactions.append({
-                        "name": reaction_data.get("name"),
-                        "count": reaction_data.get("count"),
-                        "users": reaction_data.get("users", [])
-                    })
-                
-                # Check thread info
-                reply_count = match.get("reply_count", 0)
-                is_thread_parent = reply_count > 0
-                
-                # Apply filters (inline)
-                if only_thread_parents and not is_thread_parent:
-                    continue
-                
-                if min_reply_count is not None and reply_count < min_reply_count:
-                    continue
-                
-                reaction_count = sum(r.get("count", 0) for r in reactions)
-                if min_reactions is not None and reaction_count < min_reactions:
-                    continue
-                
-                if has_reactions and len(reactions) == 0:
-                    continue
-                
-                processed_msg = {
-                    "ts": ts,
-                    "text": text,
-                    "user": user_id,
-                    "username": user_info.get("username", ""),
-                    "real_name": user_info.get("real_name", ""),
-                    "datetime": dt_iso,
-                    "permalink": permalink,
-                    "desktop_link": desktop_link,
-                    "channel_id": channel_id,
-                    "channel_name": match.get("channel", {}).get("name", ""),
-                    "thread_ts": match.get("thread_ts"),
-                    "is_thread_parent": is_thread_parent,
-                    "reply_count": reply_count,
-                    "reply_users_count": match.get("reply_users_count", 0),
-                    "reactions": reactions,
-                    "files": files,
-                    "links": links
-                }
-                
-                # Add highlight if present
-                if "highlight" in match:
-                    processed_msg["highlight"] = match["highlight"]
-                
-                processed_messages.append(processed_msg)
             
-            # Apply post-search sort if requested (inline)
-            if sort_by:
-                if sort_by == "timestamp":
-                    processed_messages.sort(key=lambda m: float(m.get("ts", 0)), reverse=True)
-                elif sort_by == "reactions":
-                    processed_messages.sort(key=lambda m: sum(r.get("count", 0) for r in m.get("reactions", [])), reverse=True)
-                elif sort_by == "reply_count":
-                    processed_messages.sort(key=lambda m: m.get("reply_count", 0), reverse=True)
+            # Convert timestamp
+            dt = datetime.fromtimestamp(float(ts)) if ts else datetime.now()
+            dt_iso = dt.isoformat() + "Z"
             
-            return {
+            # Build permalink (HTTPS) and desktop deep link (slack://)
+            channel_id = match.get("channel", {}).get("id", "")
+            permalink_ts = ts.replace('.', '')
+            permalink = f"{workspace_url}/archives/{channel_id}/p{permalink_ts}"
+            # Build app_redirect deep link for better browser compatibility
+            desktop_link = None
+            if team_id and channel_id:
+                # Use app_redirect with the permalink URL for consistent browser behavior
+                encoded_permalink = urllib.parse.quote(permalink, safe='')
+                desktop_link = f"https://slack.com/app_redirect?team={team_id}&url={encoded_permalink}"
+            
+            # Extract files (inline)
+            files = []
+            for file_data in match.get("files", []):
+                files.append({
+                    "id": file_data.get("id"),
+                    "name": file_data.get("name"),
+                    "title": file_data.get("title"),
+                    "mimetype": file_data.get("mimetype"),
+                    "filetype": file_data.get("filetype"),
+                    "size": file_data.get("size"),
+                    "url_private_download": file_data.get("url_private_download"),
+                    "created": file_data.get("created")
+                })
+            
+            # Extract links (inline regex)
+            links = []
+            url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
+            url_matches = re.finditer(url_pattern, text)
+            for url_match in url_matches:
+                url = url_match.group(0).rstrip('.,;:)!?')
+                links.append({
+                    "url": url,
+                    "display_text": url,
+                    "type": "link"
+                })
+            
+            # Extract reactions (inline)
+            reactions = []
+            for reaction_data in match.get("reactions", []):
+                reactions.append({
+                    "name": reaction_data.get("name"),
+                    "count": reaction_data.get("count"),
+                    "users": reaction_data.get("users", [])
+                })
+            
+            # Check thread info
+            reply_count = match.get("reply_count", 0)
+            is_thread_parent = reply_count > 0
+            
+            # Apply filters (inline)
+            if only_thread_parents and not is_thread_parent:
+                continue
+            
+            if min_reply_count is not None and reply_count < min_reply_count:
+                continue
+            
+            reaction_count = sum(r.get("count", 0) for r in reactions)
+            if min_reactions is not None and reaction_count < min_reactions:
+                continue
+            
+            if has_reactions and len(reactions) == 0:
+                continue
+            
+            processed_msg = {
+                "ts": ts,
+                "text": text,
+                "user": user_id,
+                "username": user_info.get("username", ""),
+                "real_name": user_info.get("real_name", ""),
+                "datetime": dt_iso,
+                "permalink": permalink,
+                "desktop_link": desktop_link,
+                "channel_id": channel_id,
+                "channel_name": match.get("channel", {}).get("name", ""),
+                "thread_ts": match.get("thread_ts"),
+                "is_thread_parent": is_thread_parent,
+                "reply_count": reply_count,
+                "reply_users_count": match.get("reply_users_count", 0),
+                "reactions": reactions,
+                "files": files,
+                "links": links
+            }
+            
+            # Add highlight if present
+            if "highlight" in match:
+                processed_msg["highlight"] = match["highlight"]
+            
+            processed_messages.append(processed_msg)
+        
+        # Apply post-search sort if requested (inline)
+        if sort_by:
+            if sort_by == "timestamp":
+                processed_messages.sort(key=lambda m: float(m.get("ts", 0)), reverse=True)
+            elif sort_by == "reactions":
+                processed_messages.sort(key=lambda m: sum(r.get("count", 0) for r in m.get("reactions", [])), reverse=True)
+            elif sort_by == "reply_count":
+                processed_messages.sort(key=lambda m: m.get("reply_count", 0), reverse=True)
+        
+        return {
                 "status": "ok",
                 "data": {
                     "query": final_query,
