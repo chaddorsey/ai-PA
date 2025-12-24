@@ -107,13 +107,85 @@ If you absolutely must use nested `def` statements (e.g., for complex async oper
 
 **However, it's strongly recommended to avoid nested functions entirely** - see section 2.
 
+### 4. Type Hints Must Use Basic JSON Types Only
+
+**Problem**: Letta's schema generator only supports basic JSON schema types. Complex types like `Union[str, List[str]]`, `Any`, `Dict`, or custom classes cannot be mapped to JSON schema.
+
+**Solution**: Use only these types in function parameter annotations:
+- `str`
+- `int`
+- `bool`
+- `float`
+- `None` (with `Optional[...]`)
+
+**For multi-value parameters**: If you need to accept multiple values, use `str` as the type and accept comma-separated values, then parse them in the function body:
+
+```python
+def my_tool(
+    channel: Optional[str] = None,  # Accepts "#general" or "#general,#random"
+    user: Optional[str] = None      # Accepts "sue" or "sue,dan"
+) -> Dict[str, Any]:
+    """
+    Tool description.
+    
+    Args:
+        channel: Channel ID(s) or name(s). Can be a single channel or comma-separated list (e.g., "#general,#random").
+        user: User ID(s) or username(s). Can be a single user or comma-separated list (e.g., "sue,dan").
+    """
+    # Parse comma-separated values
+    if channel:
+        if ',' in channel:
+            channel_list = [ch.strip() for ch in channel.split(',')]
+        else:
+            channel_list = [channel]
+    # ... rest of logic
+```
+
+**Important**: While the function signature uses `str`, you can still handle both `str` and `List[str]` in the runtime logic for backward compatibility with programmatic callers. However, Letta's schema will only show `str` type, so document comma-separated usage clearly.
+
+**DO NOT use**:
+- `Union[str, List[str]]` - Will fail with: "Python type ForwardRef('Union[(str, List[str])]') has no corresponding JSON schema type"
+- `Any` - Will fail with: "Python type Any has no corresponding JSON schema type"
+- `List[...]`, `Dict[...]` as parameter types (though they're fine for return type annotations)
+
+### 5. Docstring Requirements - Parameter Descriptions are Mandatory
+
+**Problem**: Letta's schema generator requires that ALL parameters have descriptions in the docstring. Missing parameter descriptions cause registration to fail.
+
+**Solution**: Every function must have a docstring with an `Args:` section that documents every parameter:
+
+```python
+def my_tool(
+    param1: str,
+    param2: Optional[int] = None,
+    param3: Optional[bool] = False
+) -> Dict[str, Any]:
+    """
+    Tool description here.
+    
+    Args:
+        param1: Description of param1 (required, no default value)
+        param2: Description of param2 (optional, defaults to None)
+        param3: Description of param3 (optional, defaults to False)
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - data: Result data
+        - error_message: Error message if status is "error"
+    """
+```
+
+**Error message if missing**: `"Parameter 'param_name' in function 'function_name' lacks a description in the docstring"`
+
 ### 6. Main Function Requirements
 
-The main function itself has more flexible requirements:
+The main function itself has requirements for type annotations:
 
-- **Type Annotations**: Can use complex types like `Dict[str, Any]`, `Optional[...]`, etc.
-- **Docstring**: Should have comprehensive docstring with `Args:` and `Returns:` sections
-- **Return Type**: Should be `Dict[str, Any]` or similar structured return type
+- **Parameter Type Annotations**: Must use only basic JSON types (`str`, `int`, `bool`, `float`, `None` with `Optional`). See section 4 for details.
+- **Return Type Annotation**: Can use complex types like `Dict[str, Any]` - return types are not used for schema generation
+- **Docstring**: Must have comprehensive docstring with `Args:` and `Returns:` sections (see section 5)
+- **Return Value**: Should be a `Dict[str, Any]` with consistent structure
 
 ```python
 def my_custom_tool(
@@ -157,7 +229,8 @@ from typing import Dict, Any, Optional
 def generate_report(
     report_type: Optional[str] = None,
     start_date: Optional[str] = None,
-    end_date: Optional[str] = None
+    end_date: Optional[str] = None,
+    channels: Optional[str] = None  # Example: comma-separated for multi-value support
 ) -> Dict[str, Any]:
     """
     Generate a formatted report.
@@ -166,8 +239,10 @@ def generate_report(
     
     Args:
         report_type: Type of report to generate (e.g., "daily", "weekly"). Defaults to "daily".
-        start_date: Start date in ISO format (optional, defaults to today)
-        end_date: End date in ISO format (optional, defaults to today)
+        start_date: Start date in ISO format (optional, defaults to today).
+        end_date: End date in ISO format (optional, defaults to today).
+        channels: Channel names to include in report (e.g., "#general" or "#general,#random"). 
+                  Can be a single channel or comma-separated list. Default: None.
     
     Returns:
         Dictionary with keys:
@@ -185,6 +260,14 @@ def generate_report(
     
     # Wrap entire function in try-except
     try:
+        # Parse comma-separated channels if provided (example of multi-value handling)
+        channel_list = []
+        if channels:
+            if ',' in channels:
+                channel_list = [ch.strip() for ch in channels.split(',')]
+            else:
+                channel_list = [channels]
+        
         # Set defaults
         if report_type is None:
             report_type = "daily"
@@ -254,7 +337,9 @@ def generate_report(
 2. **Nested `def` statements**: Letta extracts these as separate tools - **AVOID**
 3. **Module-level helper functions**: Will cause `NameError` at runtime
 4. **Missing try-except wrapper**: Errors may not be handled gracefully
-5. **Using complex types (datetime, custom classes)**: Stick to basic JSON types in signatures
+5. **Using Union/Any types in parameters**: Letta schema generator doesn't support `Union[str, List[str]]` or `Any` - use `str` and parse comma-separated values
+6. **Missing parameter descriptions**: All parameters must be documented in the `Args:` section of the docstring
+7. **Using complex types (datetime, custom classes) in parameters**: Stick to basic JSON types (`str`, `int`, `bool`, `float`, `None`) - complex types are OK for return type annotations
 
 ## Registration
 
@@ -287,8 +372,23 @@ The order of code inside the main function is critical:
 from typing import Dict, Any, Optional
 
 
-def my_tool(param: Optional[str] = None) -> Dict[str, Any]:
-    """Tool description."""
+def my_tool(
+    param: Optional[str] = None,
+    items: Optional[str] = None  # Example: comma-separated list
+) -> Dict[str, Any]:
+    """
+    Tool description.
+    
+    Args:
+        param: Description of param (optional, defaults to None).
+        items: Comma-separated list of items (e.g., "item1,item2,item3"). Default: None.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - result: Result data
+        - error_message: Error message if status is "error"
+    """
     # 1. IMPORTS FIRST
     import traceback
     import os
@@ -298,26 +398,34 @@ def my_tool(param: Optional[str] = None) -> Dict[str, Any]:
     
     # 2. TRY-EXCEPT WRAPPER
     try:
-        # 3. DEFAULTS
+        # 3. PARSE MULTI-VALUE PARAMETERS (if any)
+        item_list = []
+        if items:
+            if ',' in items:
+                item_list = [item.strip() for item in items.split(',')]
+            else:
+                item_list = [items]
+        
+        # 4. DEFAULTS
         if param is None:
             param = "default"
         
-        # 4. PATH SETUP
+        # 5. PATH SETUP
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
-        # 5. MODULE IMPORTS
+        # 6. MODULE IMPORTS
         try:
             from some_module import SomeClass
         except ImportError:
             SomeClass = None
         
-        # 6. MAIN LOGIC (inline everything, NO nested def statements)
+        # 7. MAIN LOGIC (inline everything, NO nested def statements)
         result = param.upper()  # Inline helper logic
         
-        return {"status": "ok", "result": result}
+        return {"status": "ok", "result": result, "items": item_list}
     
     except Exception as e:
-        # 7. SAFE ERROR HANDLING
+        # 8. SAFE ERROR HANDLING
         try:
             error_timestamp = datetime.now(pytz.timezone("America/New_York")).isoformat()
         except:
@@ -335,6 +443,10 @@ When creating a custom Letta tool, ensure:
 - [ ] All imports are inside the main function **at the very beginning** (before any other code)
 - [ ] **NO nested `def` statements** - inline all helper logic
 - [ ] Module-level imports only for type hints (`from typing import Dict, Any, Optional`)
+- [ ] **Parameter type hints use only basic JSON types**: `str`, `int`, `bool`, `float`, `Optional[...]` with `None`
+- [ ] **Do NOT use**: `Union[...]`, `Any` (as parameter types), `List[...]` (as parameter types), or custom classes
+- [ ] **Multi-value parameters**: Use `str` type and accept comma-separated values, parse in function body
+- [ ] **All parameters documented**: Docstring has `Args:` section with description for EVERY parameter
 - [ ] Entire function body wrapped in try-except
 - [ ] Main function has comprehensive docstring with `Args:` and `Returns:` sections
 - [ ] Safe error handling with fallbacks if imports fail
@@ -343,7 +455,9 @@ When creating a custom Letta tool, ensure:
 
 Following these conventions will ensure your tool registers successfully on the first attempt.
 
-## Key Discovery
+## Key Discoveries
+
+### Discovery 1: Nested Functions are Extracted as Separate Tools
 
 **Letta extracts ALL `def` statements** from within your function and attempts to register them as separate tools. This means:
 - Nested helper functions become separate tools
@@ -351,4 +465,20 @@ Following these conventions will ensure your tool registers successfully on the 
 - This is usually NOT what you want
 
 **The solution is to avoid `def` statements entirely** and inline all logic directly in the main function body.
+
+### Discovery 2: Type System Limitations
+
+**Letta's schema generator only supports basic JSON types** for parameter annotations. This was discovered when attempting to use `Union[str, List[str]]` and `Any` types:
+- Error: `"Python type ForwardRef('Union[(str, List[str])]') has no corresponding JSON schema type"`
+- Error: `"Python type Any has no corresponding JSON schema type"`
+- Supported types: `int`, `str`, `bool`, `float`, `None` (with `Optional`)
+
+**Workaround for multi-value parameters**: Use `str` type and accept comma-separated values, then parse them in the function body.
+
+### Discovery 3: Mandatory Parameter Documentation
+
+**All parameters must have descriptions in the docstring's `Args:` section**. Missing parameter descriptions cause registration to fail with:
+- Error: `"Parameter 'param_name' in function 'function_name' lacks a description in the docstring"`
+
+This requirement applies to ALL parameters, even optional ones with default values.
 

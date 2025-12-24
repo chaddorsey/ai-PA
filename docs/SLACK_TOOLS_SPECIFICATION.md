@@ -1,8 +1,17 @@
-# Slack Custom Tools: Tool Specifications
+# Slack Custom Tools: Tool Specifications (Optimized 4-Tool Set)
 
 ## Overview
 
-This document specifies the tools we'll build for Slack monitoring and information extraction. All tools return well-structured raw data that enables the LLM to perform analysis, summarization, and intelligent operations.
+This document specifies the **4 optimized tools** for Slack monitoring and information extraction. All tools return well-structured raw data that enables the LLM to perform analysis, summarization, and intelligent operations.
+
+### Efficiency Recommendations
+
+For optimal performance, prefer using **names** over **IDs** when available:
+- **Channel names** (e.g., `"#channel-name"`) vs channel IDs (e.g., `"C1234567890"`): Names avoid resolution API calls
+- **Usernames** (e.g., `"username"`) vs user IDs (e.g., `"U1234567890"`): Usernames avoid resolution API calls
+- **Email addresses**: Supported in `get_slack_users` but require user list lookup (works fine but slightly slower)
+
+All tools accept both names and IDs for flexibility, but using names directly improves efficiency by reducing API calls.
 
 ## Letta Tool Compliance
 
@@ -15,935 +24,548 @@ This document specifies the tools we'll build for Slack monitoring and informati
 
 All return examples below show the `data` portion - the actual return includes `status` and wraps data in `data` key.
 
-## Tool Categories
+## Design Principles
 
-1. **Channel Discovery** - Find and get information about channels
-2. **Message Retrieval** - Get messages from channels with various filters
-3. **Search** - Search for messages across workspace
-4. **File & Link Extraction** - Extract files and links from messages
-5. **User Information** - Get user details and lists
-6. **Thread Discovery** - Find and get thread parent messages
-7. **Utilities** - Helper functions (permalinks, ID resolution)
+1. **Self-Evident Names**: Tool names clearly indicate purpose
+2. **Non-Overlapping**: Each tool handles a distinct domain
+3. **LLM-Friendly**: Clear decision tree for which tool to use
+4. **Minimal Tool Calls**: Most use cases require 1 tool call
+5. **Auto-Inclusion**: Files/links always included in message data
+6. **Multi-Value Support**: Tools accept both single values and arrays for efficient batch operations
+
+## Tool Summary
+
+1. **`get_slack_channels`** - Channel discovery and information
+2. **`get_slack_messages`** - Messages from channels with complete context
+3. **`search_slack_messages`** - Workspace-wide message search
+4. **`get_slack_users`** - User discovery and information
 
 ---
 
-## 1. Channel Discovery Tools
+## 1. `get_slack_channels`
 
-### 1.1 `list_slack_channels`
+### Purpose
 
-**Purpose**: List all channels in the workspace (public, private, DMs, MPDMs)
+Get Slack channel information - list all channels, get specific channel details, or resolve channel names.
 
-**Parameters**:
-- `types` (optional, string): Channel types to include. Comma-separated: "public_channel,private_channel,mpim,im". Default: all types
-- `exclude_archived` (optional, boolean): Exclude archived channels. Default: true
-- `limit` (optional, int): Maximum number to return. Default: 500
+**When `channel` parameter is provided**: Returns single channel (or multiple if list provided)  
+**When `channel` parameter is omitted**: Returns list of all channels
 
-**Returns**: Dict[str, Any] with structure:
+### Parameters
+
+- `channel` (optional, `str | List[str]`): Channel ID(s) or name(s) (e.g., `"C1234567890"`, `"#random"`, or `["#general", "#random"]`). If omitted, returns list of all channels. **Note**: Both IDs and names work, but names are slightly more efficient as they don't require resolution.
+- `types` (optional, `str`): Filter channel types when listing. Comma-separated: `"public_channel,private_channel,mpim,im"`. Default: all types.
+- `exclude_archived` (optional, `bool`): Exclude archived channels when listing. Default: `True`.
+- `include_members` (optional, `bool`): Include member list for single channel. Default: `False`.
+- `limit` (optional, `int`): Maximum number of channels to return when listing. Default: `500`.
+
+### Multi-Value Support
+
+The `channel` parameter accepts both:
+- Single value: `"#random"` or `"C1234567890"` → Returns single channel object
+- Array: `["#general", "#random"]` → Returns array of channel objects
+
+### Returns
+
+**Single channel** (when single `channel` provided):
 ```python
 {
-  "status": "ok",
-  "data": {
-    "channels": [
-    {
-      "id": "C1234567890",
-      "name": "random",
-      "is_channel": true,
-      "is_private": false,
-      "is_archived": false,
-      "is_member": true,
-      "topic": {"value": "Non-work banter", "creator": "U123", "last_set": 1234567890},
-      "purpose": {"value": "A place for non-work-related conversation", "creator": "U123", "last_set": 1234567890},
-      "members": ["U123", "U456"],
-      "num_members": 150,
-      "created": 1234567890
-    }
-    ],
-    "total_count": 150
-  }
-}
-```
-
-**Error Response**:
-```python
-{
-  "status": "error",
-  "error_message": "Error description here"
-}
-```
-
-**Use Cases**: 
-- Channel discovery for searching
-- Understanding workspace structure
-- Finding channels by name/purpose
-
----
-
-### 1.2 `get_slack_channel_info`
-
-**Purpose**: Get detailed information about a specific channel
-
-**Parameters**:
-- `channel` (required, string): Channel ID or channel name (e.g., "C1234567890" or "#random")
-- `include_members` (optional, boolean): Include full member list. Default: false (just count)
-
-**Returns**: JSON with channel details
-```json
-{
-  "id": "C1234567890",
-  "name": "random",
-  "is_channel": true,
-  "is_private": false,
-  "is_archived": false,
-  "is_member": true,
-  "topic": {"value": "Non-work banter", "creator": "U123", "last_set": 1234567890},
-  "purpose": {"value": "A place for non-work-related conversation", "creator": "U123", "last_set": 1234567890},
-  "members": ["U123", "U456", ...],  // if include_members=true
-  "num_members": 150,
-  "created": 1234567890,
-  "creator": "U123"
-}
-```
-
-**Use Cases**:
-- Get channel metadata before querying messages
-- Understand channel purpose/context
-- Get member list
-
----
-
-### 1.3 `resolve_slack_channel_name`
-
-**Purpose**: Convert channel name to channel ID (helper utility)
-
-**Parameters**:
-- `channel_name` (required, string): Channel name without # (e.g., "random")
-
-**Returns**: JSON with channel ID
-```json
-{
-  "channel_name": "random",
-  "channel_id": "C1234567890",
-  "is_private": false,
-  "is_member": true
-}
-```
-
-**Use Cases**:
-- Convert user-provided channel names to IDs for API calls
-- Validate channel existence
-
----
-
-## 2. Message Retrieval Tools
-
-### 2.1 `get_slack_messages`
-
-**Purpose**: Get messages from a specific channel with optional filters
-
-**Parameters**:
-- `channel` (required, string): Channel ID or name (e.g., "C1234567890" or "#random")
-- `start_date` (optional, string): Start date in YYYY-MM-DD format or ISO 8601 datetime
-- `end_date` (optional, string): End date in YYYY-MM-DD format or ISO 8601 datetime
-- `limit` (optional, int): Maximum messages to return. Default: 100, max: 1000
-- `include_thread_replies` (optional, boolean): Fetch all thread replies. Default: true
-- `oldest` (optional, string): Unix timestamp for oldest message (alternative to start_date)
-- `latest` (optional, string): Unix timestamp for latest message (alternative to end_date)
-- `sort_by` (optional, string): Sort order: "timestamp" (default), "reactions", "reply_count", "user"
-- `sort_order` (optional, string): "asc" or "desc" (default: "desc" for timestamp, "desc" for reactions/reply_count)
-- `min_reactions` (optional, int): Filter messages with at least N reactions
-- `min_reply_count` (optional, int): Filter messages with at least N replies (thread parents only)
-- `only_thread_parents` (optional, boolean): Return only messages that have replies. Default: false
-- `has_reactions` (optional, boolean): Return only messages with reactions. Default: false
-
-**Returns**: JSON with messages and complete context
-```json
-{
-  "channel_id": "C1234567890",
-  "channel_name": "random",
-  "messages": [
-    {
-      "ts": "1703001234.567890",
-      "text": "Full message text here...",
-      "user": "U1234567890",
-      "username": "sue",
-      "real_name": "Sue Smith",
-      "datetime": "2024-12-19T14:30:34Z",
-      "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890",
-      "thread_ts": null,
-      "is_thread_parent": false,
-      "reply_count": 0,
-      "reply_users_count": 0,
-      "reactions": [
-        {"name": "thumbsup", "count": 3, "users": ["U111", "U222", "U333"]}
-      ],
-      "files": [
-        {
-          "id": "F123456",
-          "name": "document.pdf",
-          "title": "Important Document",
-          "mimetype": "application/pdf",
-          "filetype": "pdf",
-          "size": 1048576,
-          "url_private_download": "https://files.slack.com/files-pri/...",
-          "created": 1703001000
+    "status": "ok",
+    "data": {
+        "channel": {
+            "id": "C1234567890",
+            "name": "random",
+            "is_channel": True,
+            "is_group": False,
+            "is_im": False,
+            "is_mpim": False,
+            "is_private": False,
+            "is_archived": False,
+            "created": 1234567890,
+            "creator": "U1234567890",
+            "topic": "Random chatter",
+            "purpose": "A place for non-work conversations",
+            "num_members": 150,
+            "members": ["U111", "U222", ...]  # Only if include_members=True
         }
-      ],
-      "links": [
-        {"url": "https://example.com/doc", "display_text": "shared document", "type": "link"}
-      ],
-      "thread_replies": []  // Empty if not a thread parent
     }
-  ],
-  "has_more": false,
-  "total_returned": 1,
-  "date_range": {
-    "start": "2024-12-19T00:00:00Z",
-    "end": "2024-12-19T23:59:59Z"
-  }
 }
 ```
 
-**Use Cases**:
+**Multiple channels** (when `channel` is a list):
+```python
+{
+    "status": "ok",
+    "data": {
+        "channels": [
+            {
+                "id": "C1234567890",
+                "name": "general",
+                ...
+            },
+            {
+                "id": "C0987654321",
+                "name": "random",
+                ...
+            }
+        ]
+    }
+}
+```
+
+**List all channels** (when `channel` omitted):
+```python
+{
+    "status": "ok",
+    "data": {
+        "channels": [
+            {
+                "id": "C1234567890",
+                "name": "general",
+                ...
+            },
+            ...
+        ],
+        "total": 25
+    }
+}
+```
+
+### Consolidates
+
+- `list_slack_channels`
+- `get_slack_channel_info`
+- `resolve_slack_channel_name`
+
+### Use Cases
+
+- List all public channels
+- Get details for a specific channel
+- Get details for multiple channels at once
+- Resolve channel name to ID
+
+---
+
+## 2. `get_slack_messages`
+
+### Purpose
+
+Get messages from Slack channel(s) with complete context including threads, files, links, and reactions.
+
+Supports both single channel and multiple channels. When multiple channels provided, returns messages grouped by channel.
+
+### Parameters
+
+- `channel` (required, `str | List[str]`): Channel ID(s) or name(s) (e.g., `"C1234567890"`, `"#random"`, or `["#general", "#random"]`). **Recommendation**: Use channel names when available (e.g., `"#channel-name"`) for slightly better efficiency, though IDs work fine.
+- `start_date` (optional, `str`): Start date in YYYY-MM-DD format or ISO 8601 datetime.
+- `end_date` (optional, `str`): End date in YYYY-MM-DD format or ISO 8601 datetime.
+- `message_ts` (optional, `str`): Specific message timestamp to retrieve (e.g., `"1703001234.567890"`). When provided, returns single message with optional context.
+- `limit` (optional, `int`): Maximum messages to return per channel. Default: `100`, max: `1000`.
+- `include_thread_replies` (optional, `bool`): Fetch all thread replies. Default: `True`.
+- `include_context` (optional, `bool`): Include surrounding messages when `message_ts` provided. Default: `False`.
+- `context_count` (optional, `int`): Number of messages before/after to include. Default: `5`.
+- `only_thread_parents` (optional, `bool`): Return only messages that have replies. Default: `False`.
+- `min_reply_count` (optional, `int`): Filter messages with at least N replies (thread parents only).
+- `sort_by` (optional, `str`): Sort order: `"timestamp"` (default), `"reactions"`, `"reply_count"`, `"user"`.
+- `sort_order` (optional, `str`): `"asc"` or `"desc"`. Default: `"desc"` for timestamp, `"desc"` for reactions/reply_count.
+- `min_reactions` (optional, `int`): Filter messages with at least N reactions.
+- `has_reactions` (optional, `bool`): Return only messages with reactions. Default: `False`.
+
+### Multi-Value Support
+
+The `channel` parameter accepts both:
+- Single value: `"#random"` → Returns messages for that channel
+- Array: `["#general", "#random"]` → Returns messages grouped by channel
+
+### Returns
+
+**Single channel** (when single `channel` provided):
+```python
+{
+    "status": "ok",
+    "data": {
+        "channel_id": "C1234567890",
+        "channel_name": "random",
+        "messages": [
+            {
+                "ts": "1703001234.567890",
+                "text": "Full message text here...",
+                "user": "U1234567890",
+                "username": "sue",
+                "real_name": "Sue Smith",
+                "datetime": "2024-12-19T14:30:34Z",
+                "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890",
+                "channel_id": "C1234567890",
+                "channel_name": "random",
+                "thread_ts": None,
+                "is_thread_parent": False,
+                "reply_count": 0,
+                "reply_users_count": 0,
+                "reactions": [
+                    {
+                        "name": "thumbsup",
+                        "count": 3,
+                        "users": ["U111", "U222", "U333"]
+                    }
+                ],
+                "files": [
+                    {
+                        "id": "F123456",
+                        "name": "document.pdf",
+                        "title": "Important Document",
+                        "mimetype": "application/pdf",
+                        "filetype": "pdf",
+                        "size": 1048576,
+                        "url_private_download": "https://files.slack.com/files-pri/...",
+                        "created": 1703001000
+                    }
+                ],
+                "links": [
+                    {
+                        "url": "https://example.com/doc",
+                        "display_text": "https://example.com/doc",
+                        "type": "link"
+                    }
+                ],
+                "thread_replies": []  # Empty if not a thread parent
+            }
+        ],
+        "has_more": False,
+        "total_returned": 1,
+        "date_range": {
+            "start": "2024-12-19T00:00:00Z",
+            "end": "2024-12-19T23:59:59Z"
+        }
+    }
+}
+```
+
+**Multiple channels** (when `channel` is a list):
+```python
+{
+    "status": "ok",
+    "data": {
+        "channels": [
+            {
+                "channel_id": "C1234567890",
+                "channel_name": "general",
+                "messages": [...],
+                "has_more": False
+            },
+            {
+                "channel_id": "C0987654321",
+                "channel_name": "random",
+                "messages": [...],
+                "has_more": False
+            }
+        ],
+        "total_channels": 2
+    }
+}
+```
+
+**Single message** (when `message_ts` provided):
+```python
+{
+    "status": "ok",
+    "data": {
+        "message": {
+            "ts": "1703001234.567890",
+            "text": "Full message text...",
+            ...
+        },
+        "context": {
+            "before": [...],  # if include_context=True
+            "after": [...]
+        }
+    }
+}
+```
+
+### Consolidates
+
+- `get_slack_messages` (channel messages)
+- `get_slack_message` (single message via `message_ts` parameter)
+- `get_slack_thread_replies` (via `include_thread_replies` parameter)
+- `get_slack_threads_in_channel` (via `only_thread_parents` filter)
+- File/link data (always included automatically)
+
+### Use Cases
+
 - Get all messages from #random on Dec 19
 - Get recent activity in a channel
 - Get messages with complete context (threads, files, links)
+- Get all threads in a channel (using `only_thread_parents=True`)
+- Get messages from multiple channels at once
+- Get specific message by timestamp
 
 ---
 
-### 2.2 `get_slack_message`
+## 3. `search_slack_messages`
 
-**Purpose**: Get a specific message by timestamp and channel
+### Purpose
 
-**Parameters**:
-- `channel` (required, string): Channel ID or name
-- `message_ts` (required, string): Message timestamp (e.g., "1703001234.567890")
-- `include_thread_replies` (optional, boolean): Include all thread replies. Default: true
-- `include_context` (optional, boolean): Include surrounding messages (before/after). Default: false
-- `context_count` (optional, int): Number of messages before/after to include. Default: 5
+Search for messages across the entire Slack workspace.
 
-**Returns**: JSON with single message and context
-```json
-{
-  "message": {
-    "ts": "1703001234.567890",
-    "text": "Full message text...",
-    "user": "U1234567890",
-    "username": "dan",
-    "real_name": "Dan Johnson",
-    "datetime": "2024-12-19T14:30:34Z",
-    "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890",
-    "channel_id": "C1234567890",
-    "channel_name": "random",
-    "thread_ts": null,
-    "reactions": [],
-    "files": [],
-    "links": [],
-    "thread_replies": []
-  },
-  "context": {
-    "before": [...],  // if include_context=true
-    "after": [...]
-  }
-}
-```
+When `query` is omitted or empty, returns recent messages across workspace (enables "what's happening now" use case).
 
-**Use Cases**:
-- Retrieve specific message mentioned by user
-- Get message with surrounding context
-- Get exact post with all details
+### Parameters
 
----
+- `query` (optional, `str`): Search query/keywords. If omitted or empty, returns recent messages across workspace.
+- `user` (optional, `str | List[str]`): Filter by user ID(s) or username(s). Can be single value or list. When list provided, uses Slack OR query syntax. **Recommendation**: Use usernames when available for better efficiency (avoids ID-to-username resolution).
+- `channel` (optional, `str | List[str]`): Limit to specific channel(s) (ID or name). Can be single value or list. When list provided, uses Slack OR query syntax. **Recommendation**: Use channel names (e.g., `"#channel-name"`) when available for better efficiency, as Slack's search API requires channel names and IDs must be resolved first (adds API calls).
+- `start_date` (optional, `str`): Start date (YYYY-MM-DD or ISO 8601).
+- `end_date` (optional, `str`): End date (YYYY-MM-DD or ISO 8601).
+- `count` (optional, `int`): Number of results. Default: `20`, max: `100`.
+- `sort` (optional, `str`): Slack's sort: `"score"` (relevance) or `"timestamp"`. Default: `"score"`.
+- `sort_by` (optional, `str`): Post-search sort: `"timestamp"`, `"reactions"`, `"reply_count"`.
+- `min_reactions` (optional, `int`): Filter by minimum reaction count.
+- `min_reply_count` (optional, `int`): Filter by minimum reply count.
+- `only_thread_parents` (optional, `bool`): Return only thread parents. Default: `False`.
+- `has_reactions` (optional, `bool`): Return only messages with reactions. Default: `False`.
 
-### 2.3 `get_slack_thread_replies`
+### Multi-Value Support
 
-**Purpose**: Get all replies in a thread
+**`user` parameter**:
+- Single value: `"sue"` → Query: `from:sue` (usernames recommended for efficiency)
+- Array: `["sue", "dan", "danielle"]` → Query: `(from:sue OR from:dan OR from:danielle)`
+- **Note**: User IDs are supported but will be resolved to usernames (adds API calls). Using usernames directly is more efficient.
 
-**Parameters**:
-- `channel` (required, string): Channel ID or name
-- `thread_ts` (required, string): Thread timestamp (parent message ts)
-- `limit` (optional, int): Maximum replies. Default: 1000
+**`channel` parameter**:
+- Single value: `"#general"` → Query: `in:general` (channel names recommended for efficiency)
+- Array: `["#engineering", "#bugs"]` → Query: `(in:engineering OR in:bugs)`
+- **Note**: Channel IDs are supported but will be resolved to names (adds API calls). Using channel names directly is more efficient.
 
-**Returns**: JSON with parent message and all replies
-```json
-{
-  "channel_id": "C1234567890",
-  "channel_name": "random",
-  "thread_ts": "1703001234.567890",
-  "parent_message": {
-    "ts": "1703001234.567890",
-    "text": "Parent message text...",
-    "user": "U123",
-    "datetime": "2024-12-19T14:30:34Z",
-    "permalink": "..."
-  },
-  "replies": [
-    {
-      "ts": "1703001250.123456",
-      "text": "Reply text...",
-      "user": "U456",
-      "datetime": "2024-12-19T14:31:10Z",
-      "permalink": "..."
-    }
-  ],
-  "reply_count": 1
-}
-```
+Uses Slack's OR query syntax for efficient single API call when multiple values provided.
 
-**Use Cases**:
-- Get complete thread discussion
-- Analyze thread conversations
-- Extract all responses to a message
+### Returns
 
----
-
-## 3. Search Tools
-
-### 3.1 `search_slack_messages`
-
-**Purpose**: Search for messages across workspace with flexible filters
-
-**Parameters**:
-- `query` (required, string): Search query/keywords
-- `channel` (optional, string): Limit search to specific channel (ID or name)
-- `user` (optional, string): Filter by user ID or username
-- `start_date` (optional, string): Start date (YYYY-MM-DD or ISO 8601)
-- `end_date` (optional, string): End date (YYYY-MM-DD or ISO 8601)
-- `sort` (optional, string): Sort order: "score" (relevance) or "timestamp" (newest first). Default: "score"
-- `count` (optional, int): Number of results. Default: 20, max: 100
-- `include_files` (optional, boolean): Include file results. Default: false
-- `highlight` (optional, boolean): Include highlight markers. Default: true
-- `sort_by` (optional, string): Additional sort after search: "timestamp", "reactions", "reply_count" (applied after search results)
-- `min_reactions` (optional, int): Filter search results by minimum reaction count
-- `min_reply_count` (optional, int): Filter search results by minimum reply count
-- `only_thread_parents` (optional, boolean): Return only messages that are thread parents
-- `has_reactions` (optional, boolean): Return only messages with reactions
-
-**Returns**: JSON with search results
-```json
-{
-  "query": "new candidate",
-  "total_results": 15,
-  "messages": [
-    {
-      "ts": "1703001234.567890",
-      "text": "I think the new candidate looks great...",
-      "user": "U1234567890",
-      "username": "sue",
-      "real_name": "Sue Smith",
-      "datetime": "2024-12-19T14:30:34Z",
-      "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890",
-      "channel_id": "C1234567890",
-      "channel_name": "hiring",
-      "highlight": {
-        "text": "...<b>new candidate</b> looks great...",
-        "matches": ["new candidate"]
-      },
-      "thread_ts": null,
-      "reactions": [],
-      "files": [],
-      "links": []
-    }
-  ],
-  "pagination": {
-    "total": 15,
-    "page": 1,
-    "pages": 1
-  }
-}
-```
-
-**Use Cases**:
-- "What did Sue say about the new candidate?"
-- "What are people posting about AI lately?"
-- Cross-channel topic searches
-
----
-
-### 3.2 `search_slack_messages_by_user`
-
-**Purpose**: Get messages from a specific user, optionally filtered by topic/keyword
-
-**Parameters**:
-- `user` (required, string): User ID or username (e.g., "U1234567890" or "sue")
-- `keyword` (optional, string): Keyword/topic to filter messages
-- `channel` (optional, string): Limit to specific channel
-- `start_date` (optional, string): Start date
-- `end_date` (optional, string): End date
-- `limit` (optional, int): Maximum results. Default: 100
-
-**Returns**: JSON with user's messages
-```json
-{
-  "user_id": "U1234567890",
-  "username": "sue",
-  "real_name": "Sue Smith",
-  "keyword": "new candidate",
-  "messages": [
-    {
-      "ts": "1703001234.567890",
-      "text": "I think the new candidate looks great...",
-      "datetime": "2024-12-19T14:30:34Z",
-      "permalink": "...",
-      "channel_id": "C1234567890",
-      "channel_name": "hiring",
-      "thread_ts": null,
-      "files": [],
-      "links": []
-    }
-  ],
-  "total_count": 5
-}
-```
-
-**Use Cases**:
-- "What did Sue say about X?"
-- User-specific message history
-- Track user's contributions on a topic
-
----
-
-## 4. File & Link Extraction Tools
-
-### 4.1 `extract_slack_files_from_messages`
-
-**Purpose**: Extract file attachments from messages (from search results or channel)
-
-**Parameters**:
-- `messages` (optional, array): Array of message objects (if extracting from existing results)
-- `channel` (optional, string): Channel to extract files from (alternative to messages)
-- `start_date` (optional, string): Start date for channel extraction
-- `end_date` (optional, string): End date for channel extraction
-- `file_types` (optional, string): Comma-separated file types (e.g., "pdf,doc,docx"). Default: all
-- `limit` (optional, int): Maximum files. Default: 100
-
-**Returns**: JSON with files extracted
-```json
-{
-  "files": [
-    {
-      "id": "F1234567890",
-      "name": "MoDa_Proposal.pdf",
-      "title": "MoDa Proposal Document",
-      "mimetype": "application/pdf",
-      "filetype": "pdf",
-      "size": 2097152,
-      "url_private_download": "https://files.slack.com/files-pri/.../download/Moda_Proposal.pdf",
-      "url_private": "https://files.slack.com/files-pri/...",
-      "created": 1703001000,
-      "created_datetime": "2024-12-19T14:23:20Z",
-      "user": "U1234567890",
-      "username": "danielle",
-      "real_name": "Danielle Chen",
-      "message_ts": "1703001234.567890",
-      "message_text": "Here's the doc for this meeting",
-      "channel_id": "C1234567890",
-      "channel_name": "proposals",
-      "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890",
-      "is_external": false,
-      "is_public": false,
-      "initial_comment": "Here's the doc for this meeting"
-    }
-  ],
-  "total_count": 1
-}
-```
-
-**Use Cases**:
-- "Give me the doc Danielle shared for this meeting"
-- Extract files from search results
-- List files shared in a channel/timeframe
-
----
-
-### 4.2 `extract_slack_links_from_messages`
-
-**Purpose**: Extract URLs/links from messages
-
-**Parameters**:
-- `messages` (optional, array): Array of message objects (if extracting from existing results)
-- `channel` (optional, string): Channel to extract links from
-- `start_date` (optional, string): Start date
-- `end_date` (optional, string): End date
-- `link_types` (optional, string): Filter by type: "google_docs", "google_drive", "external", "all". Default: "all"
-- `limit` (optional, int): Maximum links. Default: 100
-
-**Returns**: JSON with links extracted
-```json
-{
-  "links": [
-    {
-      "url": "https://docs.google.com/document/d/abc123/edit",
-      "display_text": "MoDa Proposal",
-      "type": "google_docs",
-      "domain": "docs.google.com",
-      "message_ts": "1703001234.567890",
-      "message_text": "Here's the doc: https://docs.google.com/document/d/abc123/edit",
-      "user": "U1234567890",
-      "username": "danielle",
-      "real_name": "Danielle Chen",
-      "datetime": "2024-12-19T14:30:34Z",
-      "channel_id": "C1234567890",
-      "channel_name": "proposals",
-      "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890"
-    }
-  ],
-  "total_count": 1
-}
-```
-
-**Use Cases**:
-- "What links did people share today?"
-- Extract Google Docs/Drive links
-- Track shared resources
-
----
-
-### 4.3 `list_slack_files`
-
-**Purpose**: List files in workspace (alternative to extracting from messages)
-
-**Parameters**:
-- `types` (optional, string): File types (e.g., "pdf,images"). Default: all
-- `user` (optional, string): Filter by user ID
-- `start_date` (optional, string): Files created after this date
-- `end_date` (optional, string): Files created before this date
-- `channel` (optional, string): Filter by channel (requires searching messages)
-- `count` (optional, int): Number of results. Default: 100, max: 1000
-
-**Returns**: JSON with file list
-```json
-{
-  "files": [
-    {
-      "id": "F1234567890",
-      "name": "document.pdf",
-      "title": "Document Title",
-      "mimetype": "application/pdf",
-      "filetype": "pdf",
-      "size": 1048576,
-      "url_private_download": "https://files.slack.com/...",
-      "created": 1703001000,
-      "created_datetime": "2024-12-19T14:23:20Z",
-      "user": "U1234567890",
-      "username": "danielle",
-      "real_name": "Danielle Chen"
-    }
-  ],
-  "total_count": 50
-}
-```
-
-**Use Cases**:
-- "What files did people share this week?"
-- List recent file uploads
-- Find files by type
-
----
-
-## 5. User Information Tools
-
-### 5.1 `list_slack_users`
-
-**Purpose**: List all users in workspace
-
-**Parameters**:
-- `include_deleted` (optional, boolean): Include deleted users. Default: false
-- `limit` (optional, int): Maximum users. Default: 1000
-
-**Returns**: JSON with user list
-```json
-{
-  "users": [
-    {
-      "id": "U1234567890",
-      "name": "sue",
-      "real_name": "Sue Smith",
-      "display_name": "Sue",
-      "email": "sue@example.com",
-      "image_24": "https://avatars.slack-edge.com/...",
-      "image_32": "https://avatars.slack-edge.com/...",
-      "image_72": "https://avatars.slack-edge.com/...",
-      "is_admin": false,
-      "is_owner": false,
-      "is_bot": false,
-      "is_deleted": false,
-      "tz": "America/New_York",
-      "tz_label": "Eastern Standard Time",
-      "presence": "active"
-    }
-  ],
-  "total_count": 150
-}
-```
-
-**Use Cases**:
-- User discovery
-- Get user IDs for filtering
-- User directory
-
----
-
-### 5.2 `get_slack_user_info`
-
-**Purpose**: Get detailed information about a specific user
-
-**Parameters**:
-- `user` (required, string): User ID or username
-
-**Returns**: JSON with user details
-```json
-{
-  "id": "U1234567890",
-  "name": "sue",
-  "real_name": "Sue Smith",
-  "display_name": "Sue",
-  "email": "sue@example.com",
-  "image_24": "https://avatars.slack-edge.com/...",
-  "image_32": "https://avatars.slack-edge.com/...",
-  "image_72": "https://avatars.slack-edge.com/...",
-  "image_192": "https://avatars.slack-edge.com/...",
-  "image_512": "https://avatars.slack-edge.com/...",
-  "is_admin": false,
-  "is_owner": false,
-  "is_bot": false,
-  "is_deleted": false,
-  "tz": "America/New_York",
-  "tz_label": "Eastern Standard Time",
-  "presence": "active",
-  "status_text": "",
-  "status_emoji": ""
-}
-```
-
-**Use Cases**:
-- Get user details for context
-- Resolve usernames to IDs
-- User profile information
-
----
-
-## 6. Thread Discovery Tools
-
-### 6.1 `get_slack_threads_in_channel`
-
-**Purpose**: Get all thread parent messages in a channel (messages that have replies)
-
-**Parameters**:
-- `channel` (required, string): Channel ID or name
-- `start_date` (optional, string): Start date (YYYY-MM-DD or ISO 8601)
-- `end_date` (optional, string): End date (YYYY-MM-DD or ISO 8601)
-- `min_reply_count` (optional, int): Minimum replies to include. Default: 1
-- `sort_by` (optional, string): Sort order: "timestamp" (default), "reply_count", "reactions"
-- `sort_order` (optional, string): "asc" or "desc". Default: "desc"
-- `limit` (optional, int): Maximum threads. Default: 100
-- `include_thread_replies` (optional, boolean): Include full thread replies. Default: true
-
-**Returns**: Dict[str, Any] with structure:
 ```python
 {
-  "status": "ok",
-  "data": {
-    "channel_id": "C1234567890",
-    "channel_name": "random",
-    "threads": [
-      {
-        "ts": "1703001234.567890",
-        "text": "Parent message text...",
-        "user": "U1234567890",
-        "username": "sue",
-        "datetime": "2024-12-19T14:30:34Z",
-        "permalink": "...",
-        "reply_count": 5,
-        "reply_users_count": 3,
-        "reactions": [...],
-        "thread_replies": [...]  // if include_thread_replies=true
-      }
-    ],
-    "total_count": 10,
-    "date_range": {...}
-  }
-}
-```
-
-**Use Cases**:
-- Find all threads started in a time period
-- Get popular discussions (sorted by reply_count)
-- Monitor thread activity
-
----
-
-## 7. Utility Tools
-
-### 7.1 `get_slack_message_permalink`
-
-**Purpose**: Generate permanent link to a message
-
-**Parameters**:
-- `channel` (required, string): Channel ID or name
-- `message_ts` (required, string): Message timestamp
-
-**Returns**: JSON with permalink
-```json
-{
-  "channel_id": "C1234567890",
-  "channel_name": "random",
-  "message_ts": "1703001234.567890",
-  "permalink": "https://concord-consortium.slack.com/archives/C1234567890/p1703001234567890",
-  "success": true
-}
-```
-
-**Use Cases**:
-- Generate shareable links
-- Reference messages in responses
-- Deep linking to Slack
-
----
-
-### 7.2 `resolve_slack_user_name`
-
-**Purpose**: Convert username to user ID (helper utility)
-
-**Parameters**:
-- `username` (required, string): Username (e.g., "sue")
-
-**Returns**: JSON with user ID
-```json
-{
-  "username": "sue",
-  "user_id": "U1234567890",
-  "real_name": "Sue Smith",
-  "found": true
-}
-```
-
-**Use Cases**:
-- Convert user-provided names to IDs
-- Validate user existence
-
----
-
-## Letta Tool Implementation Requirements
-
-### Critical Requirements (from coding_custom_letta_tools.md)
-
-1. **Return Type**: All tools must return `Dict[str, Any]` (NOT JSON strings)
-   - Use consistent structure: `{"status": "ok"|"error", "data": {...}, "error_message": "..."}`
-
-2. **Function Structure**:
-   ```python
-   from typing import Dict, Any, Optional
-   
-   def tool_name(param1: Optional[str] = None) -> Dict[str, Any]:
-       """Tool description."""
-       # 1. IMPORTS FIRST (inside function, at very beginning)
-       import os
-       import traceback
-       import json
-       import urllib.request
-       import urllib.parse
-       from datetime import datetime
-       
-       # 2. TRY-EXCEPT WRAPPER (wrap all logic)
-       try:
-           # 3. DEFAULTS
-           if param1 is None:
-               param1 = "default"
-           
-           # 4. MAIN LOGIC (inline everything, NO nested def statements)
-           # All helper logic must be inlined
-           
-           return {
-               "status": "ok",
-               "data": {...},
-               "metadata": {...}
-           }
-       
-       except Exception as e:
-           return {
-               "status": "error",
-               "error_message": str(e),
-               "traceback": traceback.format_exc()
-           }
-   ```
-
-3. **NO Nested Functions**: 
-   - ❌ DO NOT use `def` statements inside tools
-   - ✅ Inline all helper logic
-   - ✅ Use lambdas only for simple sorting/filtering
-
-4. **Imports**:
-   - Module-level: Only `from typing import Dict, Any, Optional`
-   - Function-level: All other imports at the very beginning of function
-
-5. **Docstrings**:
-   - Must include `Args:` section for all parameters
-   - Must include `Returns:` section describing return dictionary structure
-
-### Common Patterns
-
-1. **Channel Name Resolution**: All tools that accept `channel` parameter should handle both channel IDs and names (with # or without) - inline the resolution logic
-
-2. **User Name Resolution**: All tools that accept `user` parameter should handle both user IDs and usernames - inline the resolution logic
-
-3. **Date Handling**: 
-   - Accept YYYY-MM-DD format (interpreted as start/end of day in workspace timezone)
-   - Accept ISO 8601 datetime strings
-   - Accept Unix timestamps
-   - Convert to Slack API timestamp format internally - inline conversion logic
-
-4. **Pagination**: 
-   - Tools should handle pagination automatically when possible - inline pagination loop
-   - Return `has_more` indicator when more data available
-   - Support `limit` parameter to control result size
-
-5. **Thread Replies**:
-   - When `include_thread_replies=true`, fetch all replies automatically - inline the fetch loop
-   - Include replies in `thread_replies` array within parent message
-   - One API call per thread (efficient batching where possible)
-
-6. **Error Handling**:
-   - Always wrap in try-except
-   - Return structured error: `{"status": "error", "error_message": "...", "traceback": "..."}`
-   - Include helpful context (channel not found, user not found, etc.)
-
-7. **Rate Limiting**:
-   - Implement rate limit awareness
-   - Return appropriate errors when rate limited
-   - Consider batching multiple API calls where possible
-
-### Return Data Structure Principles
-
-**Standard Return Format**:
-```python
-{
-    "status": "ok" | "error",
+    "status": "ok",
     "data": {
-        # Actual result data here
-    },
-    "metadata": {
-        # Optional metadata (counts, date ranges, etc.)
-    },
-    "error_message": "..."  # Only present if status == "error"
-}
-```
-
-**Data Structure Principles**:
-- **Complete Context**: Always include channel, user, timestamp, IDs
-- **Human-Readable**: Include names (channel_name, username, real_name) alongside IDs
-- **Permalinks**: Include permalinks for all messages
-- **Grouped Data**: Thread replies within parent messages, files/links within messages
-- **Metadata**: Include query metadata (date ranges, filters applied, counts)
-- **Extensible**: Structure allows adding fields without breaking changes
-
-### Example Tool Template
-
-```python
-from typing import Dict, Any, Optional
-
-def get_slack_messages(
-    channel: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    limit: Optional[int] = None
-) -> Dict[str, Any]:
-    """
-    Get messages from a Slack channel with optional date filtering.
-    
-    Args:
-        channel: Channel ID or name (e.g., "C1234567890" or "#random")
-        start_date: Start date in YYYY-MM-DD format (optional)
-        end_date: End date in YYYY-MM-DD format (optional)
-        limit: Maximum messages to return (optional, default: 100)
-    
-    Returns:
-        Dictionary with keys:
-        - status: "ok" or "error"
-        - data: Dictionary with "messages" array and metadata
-        - error_message: Error message if status is "error"
-    """
-    # IMPORTS FIRST
-    import os
-    import traceback
-    import json
-    import urllib.request
-    import urllib.parse
-    from datetime import datetime
-    
-    # TRY-EXCEPT WRAPPER
-    try:
-        # DEFAULTS (inline)
-        if limit is None:
-            limit = 100
-        
-        # Channel resolution (inline, no helper function)
-        channel_id = channel
-        if channel.startswith("#"):
-            channel_name = channel[1:]
-            # Inline channel lookup logic here...
-            # (would need to call conversations.list and find matching channel)
-        
-        # Date conversion (inline)
-        oldest_ts = None
-        if start_date:
-            try:
-                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-                oldest_ts = str(int(start_dt.timestamp()))
-            except:
-                pass
-        
-        # API call (inline)
-        url = "https://slack.com/api/conversations.history"
-        params = {"channel": channel_id, "limit": limit}
-        if oldest_ts:
-            params["oldest"] = oldest_ts
-        
-        query_string = urllib.parse.urlencode(params)
-        req = urllib.request.Request(
-            f"{url}?{query_string}",
-            headers={"Authorization": f"Bearer {os.getenv('SLACK_MCP_XOXP_TOKEN', '')}"}
-        )
-        
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read().decode('utf-8'))
-        
-        if not data.get("ok"):
-            return {
-                "status": "error",
-                "error_message": data.get("error", "Unknown Slack API error")
-            }
-        
-        messages = data.get("messages", [])
-        
-        # Process messages (inline, no helper functions)
-        processed_messages = []
-        for msg in messages:
-            processed_messages.append({
-                "ts": msg.get("ts"),
-                "text": msg.get("text", ""),
-                "user": msg.get("user"),
-                # ... more fields inline
-            })
-        
-        return {
-            "status": "ok",
-            "data": {
-                "messages": processed_messages,
-                "channel_id": channel_id,
-                "total_count": len(processed_messages)
-            },
-            "metadata": {
-                "date_range": {
-                    "start": start_date,
-                    "end": end_date
+        "query": "new candidate from:sue",
+        "total_results": 15,
+        "messages": [
+            {
+                "ts": "1703001234.567890",
+                "text": "I think the new candidate looks great...",
+                "user": "U1234567890",
+                "username": "sue",
+                "real_name": "Sue Smith",
+                "datetime": "2024-12-19T14:30:34Z",
+                "permalink": "https://workspace.slack.com/archives/C1234567890/p1703001234567890",
+                "channel_id": "C1234567890",
+                "channel_name": "hiring",
+                "thread_ts": None,
+                "is_thread_parent": False,
+                "reply_count": 0,
+                "reply_users_count": 0,
+                "reactions": [],
+                "files": [],
+                "links": [],
+                "highlight": {  # If highlight enabled
+                    "text": "...<b>new candidate</b> looks great...",
+                    "matches": ["new candidate"]
                 }
             }
+        ],
+        "pagination": {
+            "total": 15,
+            "page": 1,
+            "pages": 1
         }
-    
-    except Exception as e:
-        return {
-            "status": "error",
-            "error_message": str(e),
-            "traceback": traceback.format_exc()
-        }
+    }
+}
 ```
+
+### Consolidates
+
+- `search_slack_messages` (workspace search)
+- `search_slack_messages_by_user` (via `user` parameter with multi-value support)
+- File/link data (always included automatically)
+
+### Use Cases
+
+- "What did Sue say about the new candidate?" → `search_slack_messages(user="sue", query="new candidate")`
+- "What's going on in Slack right now?" → `search_slack_messages(query="")`
+- "What did Sue, Dan, and Danielle say?" → `search_slack_messages(users=["sue", "dan", "danielle"])`
+- "Search for 'bug' in #engineering and #bugs" → `search_slack_messages(query="bug", channels=["#engineering", "#bugs"])`
+
+---
+
+## 4. `get_slack_users`
+
+### Purpose
+
+Get Slack user information - list all users, get specific user details, or resolve usernames.
+
+**When `user` parameter is provided**: Returns single user (or multiple if list provided)  
+**When `user` parameter is omitted**: Returns list of all users
+
+### Parameters
+
+- `user` (optional, `str | List[str]`): User ID(s) or username(s) (e.g., `"U1234567890"`, `"sue"`, or `["sue", "dan"]`). If omitted, returns list of all users.
+- `include_deleted` (optional, `bool`): Include deleted users when listing. Default: `False`.
+- `limit` (optional, `int`): Maximum number of users to return when listing. Default: `1000`.
+
+### Multi-Value Support
+
+The `user` parameter accepts both:
+- Single value: `"sue"` → Returns single user object
+- Array: `["sue", "dan", "danielle"]` → Returns array of user objects
+
+### Returns
+
+**Single user** (when single `user` provided):
+```python
+{
+    "status": "ok",
+    "data": {
+        "user": {
+            "id": "U1234567890",
+            "name": "sue",
+            "username": "sue",
+            "real_name": "Sue Smith",
+            "display_name": "Sue",
+            "email": "sue@example.com",
+            "image_24": "https://...",
+            "image_32": "https://...",
+            "image_48": "https://...",
+            "image_72": "https://...",
+            "image_192": "https://...",
+            "image_512": "https://...",
+            "status_text": "Out of office",
+            "status_emoji": ":palm_tree:",
+            "is_admin": False,
+            "is_owner": False,
+            "is_bot": False,
+            "deleted": False,
+            "tz": "America/New_York",
+            "tz_label": "Eastern Standard Time",
+            "tz_offset": -18000
+        }
+    }
+}
+```
+
+**Multiple users** (when `user` is a list):
+```python
+{
+    "status": "ok",
+    "data": {
+        "users": [
+            {
+                "id": "U1234567890",
+                "name": "sue",
+                ...
+            },
+            {
+                "id": "U0987654321",
+                "name": "dan",
+                ...
+            }
+        ]
+    }
+}
+```
+
+**List all users** (when `user` omitted):
+```python
+{
+    "status": "ok",
+    "data": {
+        "users": [
+            {
+                "id": "U1234567890",
+                "name": "sue",
+                ...
+            },
+            ...
+        ],
+        "total": 150
+    }
+}
+```
+
+### Consolidates
+
+- `list_slack_users`
+- `get_slack_user_info`
+- `resolve_slack_user_name`
+
+### Use Cases
+
+- List all users in workspace
+- Get details for a specific user
+- Get details for multiple users at once (batch lookup)
+- Resolve username to user ID
+
+---
+
+## Implementation Notes
+
+### Compliance Status
+
+- ✅ **Return Type**: All tools return `Dict[str, Any]`
+- ✅ **Standard Format**: All use `{"status": "ok"|"error", "data": {...}, "error_message": "..."}`
+- ✅ **Imports**: All imports inside functions at the beginning
+- ✅ **Try-Except**: All tools wrapped in try-except
+- ✅ **Nested Def Statements**: All logic is fully inlined - no nested def statements (fully compliant)
+
+### Multi-Value Parameter Implementation
+
+For parameters that support multi-value (channels, users):
+- Accept both `str` and `List[str]` types
+- When array provided, return grouped structure (channels) or array (users)
+- For search, use Slack's OR query syntax for efficiency (single API call)
+- For channel messages, make multiple API calls but group results internally
+
+### Name Resolution
+
+All tools automatically handle name resolution:
+- Channel names (e.g., `"#random"`) are resolved to IDs internally
+- Usernames (e.g., `"sue"`) are resolved to user IDs internally
+- Users can provide either names or IDs - both work
+
+### File and Link Extraction
+
+Files and links are **always included** in message responses:
+- No separate extraction tools needed
+- Reduces tool calls (one call gets everything)
+- Complete context for LLM analysis
+
+### Thread Handling
+
+- Thread replies included by default (`include_thread_replies=True`)
+- Can filter for thread parents only (`only_thread_parents=True`)
+- Thread replies included in `thread_replies` array within parent message
+- Complete thread context provided without separate API calls
+
+---
+
+## Use Case Coverage
+
+All identified use cases are supported with 1 tool call each:
+
+1. "What's going on in Slack right now?" → `search_slack_messages(query="")`
+2. "What did Sue say about the new candidate?" → `search_slack_messages(user="sue", query="new candidate")`
+3. "Get the doc Danielle shared for this meeting" → `search_slack_messages(user="Danielle", query="meeting")` (files auto-included)
+4. "What other pictures of lace work has Hee-Sun shared?" → `search_slack_messages(user="Hee-Sun", query="lace work", long date range)` (files auto-included)
+5. "Dan said he mentioned Sina's report on Slack last week" → `search_slack_messages(user="Dan", query="Sina's report", date="last week")`
+6. "What's happening in Slack with the MoDa proposal?" → `search_slack_messages(query="MoDa proposal")` (files/links auto-included)
+7. "What are people posting about AI lately?" → `search_slack_messages(query="AI", recent date range)`
+8. "What are people most concerned about?" → `search_slack_messages(query="", recent)` → LLM analyzes sentiment
+9. "What links did people share today?" → `search_slack_messages(query="", date="today")` → LLM extracts links
+10. "Get all messages from #random on Dec 19" → `get_slack_messages(channel="#random", start_date="2024-12-19", end_date="2024-12-19")`
+11. "Get all threads in #general from last week" → `get_slack_messages(channel="#general", start_date="...", only_thread_parents=True)`
+12. "Get messages from #general and #random on Dec 19" → `get_slack_messages(channels=["#general", "#random"], start_date="2024-12-19")` (multi-value support)
+
+---
+
+## See Also
+
+- `docs/SLACK_TOOLS_OPTIMIZED_SET.md` - Consolidation analysis and design decisions
+- `docs/SLACK_TOOLS_MULTI_VALUE_ANALYSIS.md` - Multi-value parameter analysis
+- `docs/SLACK_TOOLS_LETTA_COMPLIANCE.md` - Letta compliance requirements
+- `context/coding_custom_letta_tools.md` - General Letta tool development guide
