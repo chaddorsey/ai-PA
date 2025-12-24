@@ -92,7 +92,7 @@ Document discovery and listing with flexible filters.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `owner` | str | None | Owner filter. Email or comma-separated list. |
+| `owner` | str | None | Owner filter. **Full email required** (Drive API limitation). |
 | `name` | str | None | Name search (partial match) |
 | `file_type` | str | "all" | Type: "document", "spreadsheet", "presentation", "pdf", "folder", "image", "all" |
 | `folder` | str | None | Folder ID to scope search |

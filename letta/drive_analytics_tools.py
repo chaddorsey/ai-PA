@@ -1519,7 +1519,7 @@ def search_drive_activity(
         end_time = f"{end_date}T23:59:59Z"
         
         # Set defaults
-        if count is None:
+        if count is None or count < 1:
             count = 50
         if count > 200:
             count = 200
@@ -1529,10 +1529,17 @@ def search_drive_activity(
             sort_by = "recent"
         
         # Query Admin Reports API
-        # If single user specified, use userKey filter for efficiency
-        # If multiple users, query all and filter
+        # Use userKey filter only if single user with full email (contains @ and domain)
+        # Otherwise query all and post-filter
+        use_api_filter = False
         if len(user_list) == 1:
-            user_key = user_list[0]
+            single_user = user_list[0]
+            # Check if it's a full email (has @ and something after it)
+            if '@' in single_user and not single_user.endswith('@'):
+                user_key = single_user
+                use_api_filter = True
+            else:
+                user_key = "all"
         else:
             user_key = "all"
         
@@ -1553,8 +1560,8 @@ def search_drive_activity(
             actor_email = activity.get("actor", {}).get("email", "")
             activity_time = activity.get("id", {}).get("time", "")
             
-            # Filter by user list if multiple users specified
-            if len(user_list) > 1:
+            # Filter by user list if we didn't use API filter or have multiple users
+            if user_list and not use_api_filter:
                 if not any(actor_email.lower().startswith(u.lower().rstrip('@')) for u in user_list):
                     continue
             
@@ -1719,8 +1726,9 @@ def get_drive_documents(
     Returns document metadata with links.
     
     Args:
-        owner: Filter by document owner. Single email or comma-separated list.
-               Example: "leslie@company.com" or "leslie@,john@"
+        owner: Filter by document owner. REQUIRES full email address (Drive API limitation).
+               Single email or comma-separated list. Partial emails will not match.
+               Example: "leslie@company.com" or "leslie@company.com,john@company.com"
         name: Search by document name (partial match).
               Example: "budget" matches "Q4 Budget Report"
         file_type: Filter by type: "document", "spreadsheet", "presentation", 
@@ -1820,11 +1828,11 @@ def get_drive_documents(
         query = " and ".join(query_parts) if query_parts else None
         
         # Set defaults
-        if count is None:
+        if count is None or count < 1:
             count = 50
         if count > 200:
             count = 200
-        
+
         # Execute query
         documents = []
         page_token = None
