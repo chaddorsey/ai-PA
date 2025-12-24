@@ -8,11 +8,11 @@ This document lists all tasks associated with PBI 26.
 
 | Task ID | Name | Status | Description |
 | :------ | :--- | :----- | :---------- |
-| 26-1 | [Implement search_drive_activity tool](./26-1.md) | Review | Create unified activity search with user, owner, date range, activity type filters |
-| 26-2 | [Implement get_drive_documents tool](./26-2.md) | Review | Create document discovery tool with owner, name, folder filtering |
+| 26-1 | [Implement search_drive_activity tool](./26-1.md) | Done | Create unified activity search with user, owner, date range, activity type filters |
+| 26-2 | [Implement get_drive_documents tool](./26-2.md) | Done | Create document discovery tool with owner, name, folder filtering |
 | 26-3 | [Refine get_drive_file_info tool](./26-3.md) | Done | Existing tool works; returns JSON string (acceptable for current workflow) |
 | 26-4 | [Consolidate get_drive_mentions tool](./26-4.md) | Done | Existing memory-based tool preserved; new tools cover activity search |
 | 26-5 | [Preserve get_drive_analytics_summary](./26-5.md) | Done | Existing analytics tools preserved unchanged |
 | 26-6 | [Register and test new tools with Letta](./26-6.md) | Done | Register consolidated tools, verify functionality |
-| 26-7 | [Deprecate old tools](./26-7.md) | Proposed | Mark old tools as deprecated, update documentation |
-| 26-8 | [E2E CoS Test](./26-8.md) | Proposed | Verify all three example questions can be answered |
+| 26-7 | [Deprecate old tools](./26-7.md) | Done | Decision: preserve old tools, they serve different workflow |
+| 26-8 | [E2E CoS Test](./26-8.md) | Done | All three example questions verified answerable |
