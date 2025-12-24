@@ -9,47 +9,6 @@ Provides privacy-preserving email activity metrics for organizational analysis.
 """
 
 from typing import Dict, List, Any, Optional
-import hashlib
-import os
-
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Secret salt for hash generation - DO NOT SHARE
-# This ensures hashes cannot be reversed even if algorithm is known
-_HASH_SECRET_SALT = "cc-email-analytics-v1-2025-xK9mP2qR"
-
-# Current staff list - only these emails are included in analytics
-CURRENT_STAFF = frozenset([
-    "emcelroy@concord.org",
-    "kswenson@concord.org",
-    "scytacki@concord.org",
-    "phorwitz@concord.org",
-    "hlee@concord.org",
-    "tlord@concord.org",
-    "ddamelin@concord.org",
-    "jraiff@concord.org",
-    "cmcintyre@concord.org",
-    "wfinzer@concord.org",
-    "kbrown@concord.org",
-    "lbondaryk@concord.org",
-    "jchao@concord.org",
-    "apallant@concord.org",
-    "clore@concord.org",
-    "kmiller@concord.org",
-    "kjesseneller@concord.org",
-    "rellis@concord.org",
-    "tfristoe@concord.org",
-    "lbuoncuore@concord.org",
-    "dkehoe@concord.org",
-    "sbrau@concord.org",
-    "dmartin@concord.org",
-    "lstephens@concord.org",
-    "mtirenin@concord.org",
-    "awagh@concord.org",
-    "cdorsey@concord.org",
-])
 
 
 def get_email_analytics(
@@ -93,8 +52,10 @@ def get_email_analytics(
         # Individual anonymized stats
         get_email_analytics(..., mode="individual")
     """
-    # Imports inside function (Letta compliance)
+    # Imports inside function (Letta compliance - must be fully self-contained)
+    import os
     import json
+    import hashlib
     from datetime import datetime, timedelta, date
     from pathlib import Path
     from google.oauth2.credentials import Credentials
@@ -102,6 +63,20 @@ def get_email_analytics(
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     import pytz
+    
+    # Configuration (inlined for Letta compliance)
+    _HASH_SECRET_SALT = "cc-email-analytics-v1-2025-xK9mP2qR"
+    CURRENT_STAFF = frozenset([
+        "emcelroy@concord.org", "kswenson@concord.org", "scytacki@concord.org",
+        "phorwitz@concord.org", "hlee@concord.org", "tlord@concord.org",
+        "ddamelin@concord.org", "jraiff@concord.org", "cmcintyre@concord.org",
+        "wfinzer@concord.org", "kbrown@concord.org", "lbondaryk@concord.org",
+        "jchao@concord.org", "apallant@concord.org", "clore@concord.org",
+        "kmiller@concord.org", "kjesseneller@concord.org", "rellis@concord.org",
+        "tfristoe@concord.org", "lbuoncuore@concord.org", "dkehoe@concord.org",
+        "sbrau@concord.org", "dmartin@concord.org", "lstephens@concord.org",
+        "mtirenin@concord.org", "awagh@concord.org", "cdorsey@concord.org",
+    ])
     
     try:
         # Validate mode
