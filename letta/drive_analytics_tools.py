@@ -1572,7 +1572,168 @@ def search_drive_activity(
         if sort_by is None:
             sort_by = "recent"
         
-        # Query Admin Reports API
+        # OPTIMIZED PATH: When filtering by owner only (no user filter),
+        # use Drive API to get files, then Drive Activity API for activity.
+        # This is MUCH faster than scanning all workspace activity.
+        if owner_list and not user_list:
+            # Get files owned by the specified owner(s)
+            drive_service = build("drive", "v3", credentials=creds)
+            owner_queries = []
+            for o in owner_list:
+                if '@' in o and not o.endswith('@'):
+                    owner_queries.append(f"'{o}' in owners")
+            
+            if not owner_queries:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": "Owner filter requires full email addresses (e.g., 'leslie@company.com')"
+                }
+            
+            query = f"({' or '.join(owner_queries)}) and trashed = false"
+            
+            # Get files owned by this person
+            owned_files = []
+            page_token = None
+            while len(owned_files) < 100:  # Limit to 100 files for performance
+                params = {
+                    "q": query,
+                    "pageSize": 100,
+                    "fields": "nextPageToken, files(id, name, webViewLink, owners, modifiedTime)",
+                    "orderBy": "modifiedTime desc",
+                    "supportsAllDrives": True,
+                    "includeItemsFromAllDrives": True,
+                }
+                if page_token:
+                    params["pageToken"] = page_token
+                response = drive_service.files().list(**params).execute()
+                owned_files.extend(response.get("files", []))
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+            
+            # Query Drive Activity API for each file
+            activity_service = build("driveactivity", "v2", credentials=creds)
+            documents = {}
+            api_available = True
+            
+            for f in owned_files:
+                file_id = f.get("id")
+                item_name = f"items/{file_id}"
+                
+                try:
+                    # Query activity for this file with time filter
+                    request_body = {
+                        "itemName": item_name,
+                        "pageSize": 100,
+                        "filter": f"time >= \"{start_time}\" AND time <= \"{end_time}\""
+                    }
+                    try:
+                        response = activity_service.activity().query(body=request_body).execute()
+                    except HttpError as api_err:
+                        if "SERVICE_DISABLED" in str(api_err) or "403" in str(api_err):
+                            # Drive Activity API not enabled - fall back to standard path
+                            api_available = False
+                            break
+                        raise
+                    file_activities = response.get("activities", [])
+                    
+                    if not file_activities:
+                        continue
+                    
+                    # Count activity types
+                    edit_count = 0
+                    view_count = 0
+                    share_count = 0
+                    comment_count = 0
+                    actors = set()
+                    last_activity = ""
+                    
+                    for act in file_activities:
+                        act_time = act.get("timestamp", "")
+                        if act_time > last_activity:
+                            last_activity = act_time
+                        
+                        for actor_info in act.get("actors", []):
+                            if "user" in actor_info:
+                                user_info = actor_info["user"]
+                                if "knownUser" in user_info:
+                                    actors.add(user_info["knownUser"].get("personName", ""))
+                        
+                        for action in act.get("actions", []):
+                            if "edit" in action:
+                                edit_count += 1
+                            elif "view" in action or "preview" in action:
+                                view_count += 1
+                            elif "permissionChange" in action:
+                                share_count += 1
+                            elif "comment" in action:
+                                comment_count += 1
+                    
+                    # Apply activity type filter
+                    total = edit_count + view_count + share_count + comment_count
+                    if activity_type == "edit" and edit_count == 0:
+                        continue
+                    elif activity_type == "view" and view_count == 0:
+                        continue
+                    elif activity_type == "share" and share_count == 0:
+                        continue
+                    elif activity_type == "comment" and comment_count == 0:
+                        continue
+                    
+                    documents[file_id] = {
+                        "doc_id": file_id,
+                        "title": f.get("name", "(untitled)"),
+                        "owner": f.get("owners", [{}])[0].get("emailAddress", "") if f.get("owners") else "",
+                        "edit_count": edit_count,
+                        "view_count": view_count,
+                        "share_count": share_count,
+                        "comment_count": comment_count,
+                        "total_activity": total,
+                        "actors": list(actors),
+                        "actor_count": len(actors),
+                        "last_activity": last_activity,
+                        "link": f.get("webViewLink", ""),
+                        "is_accessible": True,
+                    }
+                except Exception:
+                    continue
+            
+            # If Drive Activity API was available and we got results, return them
+            if api_available and documents:
+                doc_list = list(documents.values())
+                if sort_by == "edit_count":
+                    doc_list.sort(key=lambda x: x["edit_count"], reverse=True)
+                elif sort_by == "view_count":
+                    doc_list.sort(key=lambda x: x["view_count"], reverse=True)
+                elif sort_by == "name":
+                    doc_list.sort(key=lambda x: x["title"].lower())
+                else:
+                    doc_list.sort(key=lambda x: x["last_activity"], reverse=True)
+                
+                doc_list = doc_list[:count]
+                
+                return {
+                    "status": "ok",
+                    "data": {
+                        "query": {
+                            "user": user,
+                            "owner": owner,
+                            "start_date": start_date,
+                            "end_date": end_date,
+                            "activity_type": activity_type,
+                            "sort_by": sort_by,
+                        },
+                        "total_documents": len(doc_list),
+                        "total_activities": sum(d["total_activity"] for d in doc_list),
+                        "documents": doc_list,
+                        "truncated": False,
+                        "optimized": True,
+                    }
+                }
+            # If API not available or no results, fall through to standard path
+        
+        # STANDARD PATH: Query Admin Reports API for all activity
         # Use userKey filter only if single user with full email (contains @ and domain)
         # Otherwise query all and post-filter
         use_api_filter = False
