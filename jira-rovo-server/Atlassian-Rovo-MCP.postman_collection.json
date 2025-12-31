@@ -1,0 +1,77 @@
+{
+	"info": {
+		"_postman_id": "atlassian-rovo-mcp",
+		"name": "Atlassian Rovo MCP",
+		"description": "Collection for testing Atlassian Rovo MCP Server OAuth flow",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "MCP Initialize",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2024-11-05\",\n    \"capabilities\": {},\n    \"clientInfo\": {\n      \"name\": \"postman-client\",\n      \"version\": \"1.0.0\"\n    }\n  }\n}"
+				},
+				"url": {
+					"raw": "https://mcp.atlassian.com/v1/mcp",
+					"protocol": "https",
+					"host": [
+						"mcp",
+						"atlassian",
+						"com"
+					],
+					"path": [
+						"v1",
+						"mcp"
+					]
+				},
+				"description": "MCP initialize request to trigger OAuth flow"
+			},
+			"response": []
+		},
+		{
+			"name": "SSE Endpoint",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "text/event-stream"
+					},
+					{
+						"key": "Cache-Control",
+						"value": "no-cache"
+					}
+				],
+				"url": {
+					"raw": "https://mcp.atlassian.com/v1/sse",
+					"protocol": "https",
+					"host": [
+						"mcp",
+						"atlassian",
+						"com"
+					],
+					"path": [
+						"v1",
+						"sse"
+					]
+				},
+				"description": "SSE endpoint - may trigger OAuth redirect"
+			},
+			"response": []
+		}
+	]
+}
+
