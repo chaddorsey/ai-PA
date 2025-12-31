@@ -59,6 +59,18 @@ MCP_SERVERS = {
         "custom_headers": {
             "Content-Type": "application/json"
         }
+    },
+    "jira-rovo-tools": {
+        "server_name": "jira-rovo-tools",
+        "type": "streamable_http",
+        "server_url": "https://mcp.atlassian.com/v1/mcp",
+        "auth_header": "Authorization",
+        "auth_token": os.getenv("ATLASSIAN_ROVO_TOKEN"),
+        "custom_headers": {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "Authorization": f"Bearer {os.getenv('ATLASSIAN_ROVO_TOKEN', '')}"
+        }
     }
 }
 
@@ -98,14 +110,17 @@ class LettaMCPConfigurator:
             async with self.session.get(f"{self.letta_base_url}/v1/tools/mcp/servers") as response:
                 if response.status == 200:
                     servers = await response.json()
+                    # Handle both dict and list responses
+                    if isinstance(servers, dict):
+                        servers = list(servers.values())
                     logger.info(f"Found {len(servers)} existing MCP servers")
                     return servers
                 else:
                     logger.warning(f"Failed to list existing servers: {response.status}")
-                    return {}
+                    return []
         except Exception as e:
             logger.warning(f"Failed to list existing servers: {e}")
-            return {}
+            return []
     
     async def add_mcp_server(self, server_config: Dict[str, Any]) -> bool:
         """Add a new MCP server to Letta."""
@@ -154,7 +169,7 @@ class LettaMCPConfigurator:
         
         # List existing servers
         existing_servers = await self.list_existing_servers()
-        existing_names = {server.get('server_name') for server in existing_servers}
+        existing_names = {server.get('server_name') for server in existing_servers if isinstance(server, dict)}
         
         success_count = 0
         total_count = len(MCP_SERVERS)
@@ -162,11 +177,30 @@ class LettaMCPConfigurator:
         for server_name, server_config in MCP_SERVERS.items():
             logger.info(f"Configuring MCP server: {server_name}")
             
-            # Skip if server already exists
+            # Check if server already exists and needs update
+            existing_server = None
             if server_name in existing_names:
-                logger.info(f"MCP server {server_name} already exists, skipping...")
-                success_count += 1
-                continue
+                existing_server = next((s for s in existing_servers if isinstance(s, dict) and s.get('server_name') == server_name), None)
+                # Check if custom_headers need to be updated
+                if existing_server and existing_server.get('custom_headers') != server_config.get('custom_headers'):
+                    logger.info(f"MCP server {server_name} exists but needs update, deleting and recreating...")
+                    # Delete existing server
+                    try:
+                        async with self.session.delete(f"{self.letta_base_url}/v1/tools/mcp/servers/{server_name}") as response:
+                            if response.status in [200, 204]:
+                                logger.info(f"Deleted existing server: {server_name}")
+                            else:
+                                logger.warning(f"Failed to delete server {server_name}: {response.status}")
+                    except Exception as e:
+                        logger.warning(f"Error deleting server {server_name}: {e}")
+                elif existing_server:
+                    logger.info(f"MCP server {server_name} already exists with correct config, skipping...")
+                    success_count += 1
+                    continue
+                else:
+                    logger.info(f"MCP server {server_name} already exists, skipping...")
+                    success_count += 1
+                    continue
             
             # Add the server
             if await self.add_mcp_server(server_config):

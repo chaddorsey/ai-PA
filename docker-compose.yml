@@ -569,6 +569,8 @@ services:
       GMAIL_OAUTH_PATH: "/root/.gmail-mcp/gcp-oauth.keys.json"
       GMAIL_CREDENTIALS_PATH: "/root/.gmail-mcp/admin-reports.credentials.json"
       MY_EMAIL: "${MY_EMAIL:-cdorsey@concord.org}"
+      # Atlassian Rovo MCP Server token
+      ATLASSIAN_ROVO_TOKEN: "${ATLASSIAN_ROVO_TOKEN:-70121-cecc6a6e-e07f-440f-bcef-0e1b8d0fe274:qe97rgirCzv2J2Zm:aVN_aZh27EoEo4TfjaoTTNs9HEcqQeZp}"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 
