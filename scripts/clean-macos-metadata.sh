@@ -1,6 +1,17 @@
 #!/bin/bash
 # Clean macOS metadata files from mounted directories
 # These files can cause issues with Docker containers, especially during cleanup operations
+#
+# Why these files appear:
+# - macOS creates ._* files (resource forks) to store extended attributes
+# - This happens especially on external drives (like /Volumes/main-drive)
+# - They're created when files are copied, moved, or accessed
+# - They can interfere with Docker, Python, and other tools
+#
+# Prevention:
+# - Run scripts/prevent-macos-metadata.sh to configure system-wide prevention
+# - Set COPYFILE_DISABLE=1 environment variable
+# - Use dot_clean on volumes to remove and prevent creation
 
 set -e
 
