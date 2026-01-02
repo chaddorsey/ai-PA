@@ -765,7 +765,8 @@ def launch_streaming_content(
         title: The title to search for or play (e.g., "Stranger Things", 
                "The Office", "Wednesday"). Required.
         app: Streaming app to use. Options: netflix, prime, hulu, disney,
-             max, peacock, paramount, youtube. Defaults to netflix if not specified.
+             max, peacock, paramount, youtube, youtube_tv, espn, fox_sports,
+             nbc_sports, history, apple. Defaults to netflix if not specified.
         season: Season number for specific episode playback (e.g., 1 for S1).
                 Leave empty to play from where you left off.
         episode: Episode number for specific episode playback (e.g., 3 for E3).
@@ -811,6 +812,10 @@ def launch_streaming_content(
             "youtube": {"id": 837, "param": "contentId"},
             "apple": {"id": 551012, "param": "contentId"},
             "espn": {"id": 34376, "param": "contentId"},
+            "youtube_tv": {"id": 195316, "param": "contentId"},
+            "fox_sports": {"id": 95307, "param": "contentId"},
+            "nbc_sports": {"id": 53725, "param": "contentId"},
+            "history": {"id": 35059, "param": "contentId"},
         }
         
         # Popular content database - expanded with multiple streaming services
@@ -959,6 +964,16 @@ def launch_streaming_content(
             "paramount plus": "paramount",
             "apple tv": "apple",
             "apple tv+": "apple",
+            "youtube tv": "youtube_tv",
+            "youtubetv": "youtube_tv",
+            "fox sports": "fox_sports",
+            "foxsports": "fox_sports",
+            "nbc sports": "nbc_sports",
+            "nbcsports": "nbc_sports",
+            "history channel": "history",
+            "the history channel": "history",
+            "espn+": "espn",
+            "espn plus": "espn",
         }
         app_lower = app_aliases.get(app_lower, app_lower)
         
@@ -1040,7 +1055,10 @@ def launch_streaming_content(
         time.sleep(0.5)
         
         # Apps with unreliable deep linking - always use Roku universal search
-        apps_needing_roku_search = ["apple"]
+        # Hulu: deep links go to home screen, not content
+        # ESPN/Fox Sports/NBC Sports/History: no known content ID format
+        # Apple TV+: deep links unreliable, search works better
+        apps_needing_roku_search = ["apple", "hulu", "espn", "fox_sports", "nbc_sports", "history"]
         if app_lower in apps_needing_roku_search:
             use_roku_search = True
             action_desc = f"Searching for '{title}' via Roku universal search"

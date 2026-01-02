@@ -1,0 +1,206 @@
+{
+  "timestamp": "2026-01-01T20:21:50.931136",
+  "test_count": 20,
+  "results": [
+    {
+      "title": "Slow Horses",
+      "service": "apple",
+      "content_id": "umc.cmc.2szz3fdt71tl1ulnbp8utgq5o",
+      "deep_link_url": "https://tv.apple.com/us/show/slow-horses/umc.cmc.2szz3fdt71tl1ulnbp8utgq5o",
+      "source": "justwatch",
+      "roku_test_success": true,
+      "roku_test_time_ms": 588,
+      "error": null
+    },
+    {
+      "title": "Stranger Things",
+      "service": "netflix",
+      "content_id": "80057281",
+      "deep_link_url": "https://www.netflix.com/title/80057281",
+      "source": "justwatch",
+      "roku_test_success": true,
+      "roku_test_time_ms": 1994,
+      "error": null
+    },
+    {
+      "title": "The Bear",
+      "service": "disney",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "House of the Dragon",
+      "service": "max",
+      "content_id": "urn:hbo:series:GYf7wnAr3wY7CZgEAAAAI",
+      "deep_link_url": "https://www.max.com/shows/house-of-the-dragon/urn:hbo:series:GYf7wnAr3wY7CZgEAAAAI",
+      "source": "justwatch",
+      "roku_test_success": false,
+      "roku_test_time_ms": 44,
+      "error": "HTTP 404"
+    },
+    {
+      "title": "Ted Lasso",
+      "service": "apple",
+      "content_id": "umc.cmc.vtoh0mn0xn7t3c643xqonfzy",
+      "deep_link_url": "https://tv.apple.com/us/show/ted-lasso/umc.cmc.vtoh0mn0xn7t3c643xqonfzy",
+      "source": "justwatch",
+      "roku_test_success": true,
+      "roku_test_time_ms": 1698,
+      "error": null
+    },
+    {
+      "title": "The Boys",
+      "service": "prime",
+      "content_id": "B0875L45GZ",
+      "deep_link_url": "https://www.amazon.com/dp/B0875L45GZ",
+      "source": "justwatch",
+      "roku_test_success": true,
+      "roku_test_time_ms": 2231,
+      "error": null
+    },
+    {
+      "title": "Wednesday",
+      "service": "netflix",
+      "content_id": "81231974",
+      "deep_link_url": "https://www.netflix.com/title/81231974",
+      "source": "justwatch",
+      "roku_test_success": true,
+      "roku_test_time_ms": 944,
+      "error": null
+    },
+    {
+      "title": "Severance",
+      "service": "apple",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "The Last of Us",
+      "service": "max",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Reacher",
+      "service": "prime",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Fallout",
+      "service": "prime",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Shogun",
+      "service": "disney",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "The Mandalorian",
+      "service": "disney",
+      "content_id": "3jLIGMDYINqD",
+      "deep_link_url": "https://www.disneyplus.com/series/the-mandalorian/3jLIGMDYINqD",
+      "source": "justwatch",
+      "roku_test_success": true,
+      "roku_test_time_ms": 2506,
+      "error": null
+    },
+    {
+      "title": "Squid Game",
+      "service": "netflix",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Succession",
+      "service": "max",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Yellowstone",
+      "service": "paramount",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Only Murders in the Building",
+      "service": "disney",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Poker Face",
+      "service": "peacock",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "Beef",
+      "service": "netflix",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    },
+    {
+      "title": "The White Lotus",
+      "service": "max",
+      "content_id": null,
+      "deep_link_url": null,
+      "source": "justwatch",
+      "roku_test_success": null,
+      "roku_test_time_ms": null,
+      "error": "No offers found"
+    }
+  ]
+}

@@ -9,6 +9,7 @@ This script registers the sports and media control tools with Letta:
 4. send_fios_ir_command - Send IR commands via Flipper Zero
 5. tune_fios_channel - Tune FIOS to a specific channel
 6. watch_game - Orchestrate watching a game end-to-end
+7. launch_streaming_content - Launch streaming content with deep linking or Roku search
 """
 
 import os
@@ -35,7 +36,8 @@ from sports_media_tools import (
     control_roku_tv,
     send_fios_ir_command,
     tune_fios_channel,
-    watch_game
+    watch_game,
+    launch_streaming_content
 )
 
 # Configuration
@@ -62,6 +64,7 @@ def main():
         ("send_fios_ir_command", send_fios_ir_command, "Send IR command to FIOS cable box"),
         ("tune_fios_channel", tune_fios_channel, "Tune FIOS to a specific channel"),
         ("watch_game", watch_game, "End-to-end: find game and tune TV to watch it"),
+        ("launch_streaming_content", launch_streaming_content, "Launch streaming content with deep linking or Roku search"),
     ]
     
     registered_tool_ids = []
@@ -136,6 +139,8 @@ def main():
         print('  control_roku_tv(action="launch_app", app_name="netflix")')
         print('  tune_fios_channel(channel=570)')
         print('  watch_game(team="red sox")')
+        print('  launch_streaming_content(title="Slow Horses", app="apple")')
+        print('  launch_streaming_content(title="The Bear", app="hulu")')
         
         return 0
         
