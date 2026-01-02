@@ -1,306 +1,88 @@
 {
-  "location": {
-    "city": "Acton",
-    "state": "Massachusetts",
-    "zip": "01720",
-    "provider": "Verizon FIOS"
-  },
   "networks": {
-    "CBS": {
-      "channel": 4,
-      "hd_channel": 504,
-      "call_sign": "WBZ",
-      "aliases": ["cbs", "channel 4", "wbz"]
-    },
-    "NBC": {
-      "channel": 7,
-      "hd_channel": 507,
-      "call_sign": "WHDH",
-      "aliases": ["nbc", "channel 7", "whdh"]
-    },
-    "FOX": {
-      "channel": 8,
-      "hd_channel": 508,
-      "call_sign": "WFXT",
-      "aliases": ["fox", "channel 8", "wfxt"]
-    },
-    "ABC": {
-      "channel": 5,
-      "hd_channel": 505,
-      "call_sign": "WCVB",
-      "aliases": ["abc", "channel 5", "wcvb"]
-    },
-    "CW": {
-      "channel": 12,
-      "hd_channel": 512,
-      "call_sign": "WLVI",
-      "aliases": ["cw", "the cw", "wlvi"]
-    },
-    "PBS": {
-      "channel": 2,
-      "hd_channel": 502,
-      "call_sign": "WGBH",
-      "aliases": ["pbs", "wgbh", "public television"]
-    },
-    "ESPN": {
-      "channel": 70,
-      "hd_channel": 570,
-      "aliases": ["espn", "e s p n"]
-    },
-    "ESPN2": {
-      "channel": 74,
-      "hd_channel": 574,
-      "aliases": ["espn 2", "espn2", "e s p n 2"]
-    },
-    "ESPNU": {
-      "channel": 73,
-      "hd_channel": 573,
-      "aliases": ["espn u", "espnu"]
-    },
-    "ESPNews": {
-      "channel": 72,
-      "hd_channel": 572,
-      "aliases": ["espn news", "espnews"]
-    },
-    "NFL Network": {
-      "channel": 88,
-      "hd_channel": 588,
-      "aliases": ["nfl network", "nfl", "nfl channel"]
-    },
-    "NFL RedZone": {
-      "channel": 89,
-      "hd_channel": 589,
-      "aliases": ["redzone", "red zone", "nfl redzone"]
-    },
-    "NESN": {
-      "channel": 80,
-      "hd_channel": 580,
-      "aliases": ["nesn", "new england sports network", "red sox channel", "bruins channel"]
-    },
-    "NESN+": {
-      "channel": 81,
-      "hd_channel": 581,
-      "aliases": ["nesn plus", "nesn+"]
-    },
-    "TNT": {
-      "channel": 51,
-      "hd_channel": 551,
-      "aliases": ["tnt", "t n t"]
-    },
-    "TBS": {
-      "channel": 52,
-      "hd_channel": 552,
-      "aliases": ["tbs", "t b s"]
-    },
-    "USA": {
-      "channel": 50,
-      "hd_channel": 550,
-      "aliases": ["usa", "usa network"]
-    },
-    "FS1": {
-      "channel": 150,
-      "hd_channel": 576,
-      "aliases": ["fs1", "fox sports 1", "fox sports"]
-    },
-    "FS2": {
-      "channel": 151,
-      "hd_channel": 577,
-      "aliases": ["fs2", "fox sports 2"]
-    },
-    "MLB Network": {
-      "channel": 86,
-      "hd_channel": 586,
-      "aliases": ["mlb network", "mlb", "baseball channel"]
-    },
-    "NBA TV": {
-      "channel": 85,
-      "hd_channel": 585,
-      "aliases": ["nba tv", "nba", "basketball channel"]
-    },
-    "NHL Network": {
-      "channel": 87,
-      "hd_channel": 587,
-      "aliases": ["nhl network", "hockey channel"]
-    },
-    "Golf Channel": {
-      "channel": 79,
-      "hd_channel": 579,
-      "aliases": ["golf channel", "golf"]
-    },
-    "NBC Sports Boston": {
-      "channel": 82,
-      "hd_channel": 582,
-      "aliases": ["nbc sports boston", "nbcsb", "celtics channel"]
-    },
-    "CNN": {
-      "channel": 100,
-      "hd_channel": 600,
-      "aliases": ["cnn", "c n n"]
-    },
-    "MSNBC": {
-      "channel": 102,
-      "hd_channel": 602,
-      "aliases": ["msnbc"]
-    },
-    "Fox News": {
-      "channel": 103,
-      "hd_channel": 603,
-      "aliases": ["fox news", "fnc"]
-    },
-    "CNBC": {
-      "channel": 101,
-      "hd_channel": 601,
-      "aliases": ["cnbc", "c n b c"]
-    },
-    "HBO": {
-      "channel": 300,
-      "hd_channel": 800,
-      "aliases": ["hbo", "h b o"]
-    },
-    "Showtime": {
-      "channel": 320,
-      "hd_channel": 820,
-      "aliases": ["showtime"]
-    },
-    "AMC": {
-      "channel": 54,
-      "hd_channel": 554,
-      "aliases": ["amc", "a m c"]
-    },
-    "FX": {
-      "channel": 53,
-      "hd_channel": 553,
-      "aliases": ["fx", "f x"]
-    },
-    "Comedy Central": {
-      "channel": 57,
-      "hd_channel": 557,
-      "aliases": ["comedy central", "comedy"]
-    },
-    "Discovery": {
-      "channel": 120,
-      "hd_channel": 620,
-      "aliases": ["discovery", "discovery channel"]
-    },
-    "History": {
-      "channel": 128,
-      "hd_channel": 628,
-      "aliases": ["history", "history channel"]
-    },
-    "Food Network": {
-      "channel": 164,
-      "hd_channel": 664,
-      "aliases": ["food network", "food"]
-    },
-    "HGTV": {
-      "channel": 165,
-      "hd_channel": 665,
-      "aliases": ["hgtv", "h g t v"]
-    }
+    "CBS": {"hd_channel": 504, "channel": 4, "name": "WBZ CBS"},
+    "NBC": {"hd_channel": 510, "channel": 10, "name": "WBTS NBC"},
+    "FOX": {"hd_channel": 508, "channel": 8, "name": "WFXT FOX"},
+    "ABC": {"hd_channel": 505, "channel": 5, "name": "WCVB ABC"},
+    "CW": {"hd_channel": 512, "channel": 12, "name": "WLVI CW", "aliases": ["The CW", "The CW Network"]},
+    "PBS": {"hd_channel": 502, "channel": 2, "name": "WGBH PBS"},
+    "ESPN": {"hd_channel": 570, "channel": 70, "aliases": ["ESPN HD"]},
+    "ESPN2": {"hd_channel": 574, "channel": 74, "aliases": ["ESPN 2", "ESPN2 HD"]},
+    "ESPNU": {"hd_channel": 573, "channel": 73, "aliases": ["ESPN U"]},
+    "ESPNews": {"hd_channel": 572, "channel": 72, "aliases": ["ESPN News"]},
+    "ACC Network": {"hd_channel": 571, "channel": 71, "aliases": ["ACCN", "ACC Net"]},
+    "SEC Network": {"hd_channel": 575, "channel": 75, "aliases": ["SEC Net", "SEC Network National"]},
+    "NFL Network": {"hd_channel": 588, "channel": 88, "aliases": ["NFL Net", "NFLN"]},
+    "NESN": {"hd_channel": 576, "channel": 76, "aliases": ["New England Sports Network"]},
+    "NESN+": {"hd_channel": 578, "channel": 78, "aliases": ["NESNplus", "NESN Plus"]},
+    "NBC Sports Boston": {"hd_channel": 577, "channel": 77, "aliases": ["NBCSB", "NBC Sports BO", "NBCSN Boston"]},
+    "TNT": {"hd_channel": 551, "channel": 51},
+    "TBS": {"hd_channel": 552, "channel": 52},
+    "USA": {"hd_channel": 550, "channel": 50, "aliases": ["USA Network"]},
+    "FS1": {"hd_channel": 583, "channel": 83, "aliases": ["Fox Sports 1", "FOX Sports 1"]},
+    "FS2": {"hd_channel": 584, "channel": 84, "aliases": ["Fox Sports 2", "FOX Sports 2"]},
+    "MLB Network": {"hd_channel": 586, "channel": 86, "aliases": ["MLBN", "MLB Net"]},
+    "NBA TV": {"hd_channel": 589, "channel": 89, "aliases": ["NBATV"]},
+    "NHL Network": {"hd_channel": 587, "channel": 87, "aliases": ["NHL Net", "NHLN"]},
+    "Big Ten Network": {"hd_channel": 585, "channel": 85, "aliases": ["BTN", "Big Ten", "Big Ten 1"]},
+    "Golf Channel": {"hd_channel": 593, "channel": 93},
+    "Tennis Channel": {"hd_channel": 592, "channel": 92},
+    "CBS Sports Network": {"hd_channel": 594, "channel": 94, "aliases": ["CBSSN"]},
+    "truTV": {"hd_channel": 683, "channel": 183, "aliases": ["tru TV", "TruTV"]},
+    "CNN": {"hd_channel": 600, "channel": 100},
+    "HLN": {"hd_channel": 601, "channel": 101},
+    "CNBC": {"hd_channel": 602, "channel": 102},
+    "MSNBC": {"hd_channel": 603, "channel": 103, "aliases": ["MS NOW"]},
+    "Fox News": {"hd_channel": 618, "channel": 118},
+    "Fox Business": {"hd_channel": 617, "channel": 117, "aliases": ["Fox Business Network"]},
+    "The Weather Channel": {"hd_channel": 611, "channel": 111},
+    "AMC": {"hd_channel": 731, "channel": 231},
+    "FX": {"hd_channel": 553, "channel": 53},
+    "FXX": {"hd_channel": 691, "channel": 191},
+    "Syfy": {"hd_channel": 680, "channel": 180, "aliases": ["SyFy", "SciFi"]},
+    "A&E": {"hd_channel": 681, "channel": 181},
+    "History": {"hd_channel": 628, "channel": 128, "aliases": ["History Channel"]},
+    "Discovery": {"hd_channel": 620, "channel": 120},
+    "TLC": {"hd_channel": 639, "channel": 139},
+    "HGTV": {"hd_channel": 665, "channel": 165},
+    "Food Network": {"hd_channel": 664, "channel": 164},
+    "Cartoon Network": {"hd_channel": 757, "channel": 257},
+    "Freeform": {"hd_channel": 699, "channel": 199},
+    "Lifetime": {"hd_channel": 640, "channel": 140},
+    "Turner Classic Movies": {"hd_channel": 730, "channel": 230, "aliases": ["TCM"]},
+    "Comedy Central": {"hd_channel": 695, "channel": 195, "aliases": ["Comedy.TV"]},
+    "Game Show Network": {"hd_channel": 684, "channel": 184, "aliases": ["GSN"]},
+    "ESPN Deportes": {"hd_channel": 1537, "channel": 1520},
+    "Peacock": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "peacock"},
+    "Apple TV": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "apple", "aliases": ["Apple TV+"]},
+    "ESPN+": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "espn", "aliases": ["ESPN Plus"]},
+    "Amazon Prime Video": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "prime"},
+    "Netflix": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "netflix"},
+    "HBO Max": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "max", "aliases": ["Max"]},
+    "Paramount+": {"hd_channel": null, "channel": null, "streaming": true, "roku_app": "paramount"}
   },
   "teams": {
-    "patriots": {
-      "name": "New England Patriots",
-      "sport": "football",
-      "league": "nfl",
-      "espn_id": "17",
-      "primary_channels": ["CBS", "FOX", "NBC", "ESPN", "NFL Network"]
-    },
-    "celtics": {
-      "name": "Boston Celtics",
-      "sport": "basketball",
-      "league": "nba",
-      "espn_id": "2",
-      "primary_channels": ["NBC Sports Boston", "TNT", "ESPN", "ABC"]
-    },
-    "bruins": {
-      "name": "Boston Bruins",
-      "sport": "hockey",
-      "league": "nhl",
-      "espn_id": "1",
-      "primary_channels": ["NESN", "TNT", "ESPN"]
-    },
-    "red sox": {
-      "name": "Boston Red Sox",
-      "sport": "baseball",
-      "league": "mlb",
-      "espn_id": "2",
-      "primary_channels": ["NESN", "FOX", "TBS", "ESPN"]
-    },
-    "revolution": {
-      "name": "New England Revolution",
-      "sport": "soccer",
-      "league": "mls",
-      "espn_id": "14",
-      "primary_channels": ["Apple TV", "ESPN", "FS1"]
-    },
-    "steelers": {
-      "name": "Pittsburgh Steelers",
-      "sport": "football",
-      "league": "nfl",
-      "espn_id": "23",
-      "primary_channels": ["CBS", "FOX", "NBC", "ESPN", "NFL Network"]
-    },
-    "chiefs": {
-      "name": "Kansas City Chiefs",
-      "sport": "football",
-      "league": "nfl",
-      "espn_id": "12",
-      "primary_channels": ["CBS", "FOX", "NBC", "ESPN", "NFL Network"]
-    },
-    "bills": {
-      "name": "Buffalo Bills",
-      "sport": "football",
-      "league": "nfl",
-      "espn_id": "2",
-      "primary_channels": ["CBS", "FOX", "NBC", "ESPN", "NFL Network"]
-    },
-    "dolphins": {
-      "name": "Miami Dolphins",
-      "sport": "football",
-      "league": "nfl",
-      "espn_id": "15",
-      "primary_channels": ["CBS", "FOX", "NBC", "ESPN", "NFL Network"]
-    },
-    "jets": {
-      "name": "New York Jets",
-      "sport": "football",
-      "league": "nfl",
-      "espn_id": "20",
-      "primary_channels": ["CBS", "FOX", "NBC", "ESPN", "NFL Network"]
-    },
-    "lakers": {
-      "name": "Los Angeles Lakers",
-      "sport": "basketball",
-      "league": "nba",
-      "espn_id": "13",
-      "primary_channels": ["TNT", "ESPN", "ABC", "NBA TV"]
-    },
-    "yankees": {
-      "name": "New York Yankees",
-      "sport": "baseball",
-      "league": "mlb",
-      "espn_id": "10",
-      "primary_channels": ["YES", "FOX", "TBS", "ESPN"]
-    }
+    "patriots": {"name": "New England Patriots", "league": "nfl"},
+    "pats": {"name": "New England Patriots", "league": "nfl"},
+    "celtics": {"name": "Boston Celtics", "league": "nba"},
+    "bruins": {"name": "Boston Bruins", "league": "nhl"},
+    "red sox": {"name": "Boston Red Sox", "league": "mlb"},
+    "sox": {"name": "Boston Red Sox", "league": "mlb"},
+    "revolution": {"name": "New England Revolution", "league": "mls"}
   },
   "roku_apps": {
-    "netflix": {"app_id": 12, "aliases": ["netflix"]},
-    "hulu": {"app_id": 2285, "aliases": ["hulu"]},
-    "youtube": {"app_id": 837, "aliases": ["youtube", "you tube"]},
-    "disney": {"app_id": 291097, "aliases": ["disney", "disney+", "disney plus"]},
-    "prime": {"app_id": 13, "aliases": ["prime", "amazon prime", "prime video", "amazon"]},
-    "max": {"app_id": 61322, "aliases": ["max", "hbo max"]},
-    "peacock": {"app_id": 593099, "aliases": ["peacock", "nbc peacock"]},
-    "paramount": {"app_id": 31440, "aliases": ["paramount", "paramount+", "paramount plus"]},
-    "espn": {"app_id": 34376, "aliases": ["espn app", "espn+", "espn plus"]},
-    "apple tv": {"app_id": 551012, "aliases": ["apple tv", "apple", "apple tv+"]},
-    "plex": {"app_id": 13535, "aliases": ["plex"]},
-    "tubi": {"app_id": 41468, "aliases": ["tubi"]}
-  },
-  "roku_tv": {
-    "ip": "192.168.7.187",
-    "port": 8060
+    "netflix": {"app_id": 12, "name": "Netflix"},
+    "hulu": {"app_id": 2285, "name": "Hulu"},
+    "youtube": {"app_id": 837, "name": "YouTube"},
+    "disney": {"app_id": 291097, "name": "Disney+"},
+    "prime": {"app_id": 13, "name": "Prime Video"},
+    "max": {"app_id": 61322, "name": "Max"},
+    "peacock": {"app_id": 593099, "name": "Peacock"},
+    "paramount": {"app_id": 31440, "name": "Paramount+"},
+    "espn": {"app_id": 34376, "name": "ESPN"},
+    "apple": {"app_id": 551012, "name": "Apple TV"},
+    "plex": {"app_id": 13535, "name": "Plex"},
+    "tubi": {"app_id": 41468, "name": "Tubi"},
+    "youtube_tv": {"app_id": 195316, "name": "YouTube TV"}
   }
 }
-

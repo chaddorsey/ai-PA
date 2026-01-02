@@ -118,15 +118,31 @@ def parse_broadcast_info(broadcasts: List[Dict]) -> Dict[str, Any]:
         'Apple TV+', 'Netflix', 'ESPN+'
     ]
     
-    # Cable networks that we can access via FIOS
+    # Cable networks that we can access via FIOS (from channel lineup)
     # These are exact matches or patterns for networks available on cable
     cable_networks = {
-        'cbs', 'fox', 'nbc', 'abc', 'tnt', 'tbs',
-        'nfl network', 'nfl net', 'nesn', 'nbc sports boston', 'fs1', 'mlb network',
-        'nba tv', 'nhl network', 'nhl net', 'fs2', 'btn', 'sec network', 'acc network',
-        'espnu', 'cbs sports network', 'cbssn', 'golf channel', 'tennis channel',
-        'usa network', 'usa', 'tru tv', 'trutv', 'the cw', 'cw',
-        'big ten network', 'pac-12', 'nbc sports'
+        # Broadcast networks
+        'cbs', 'fox', 'nbc', 'abc', 'the cw', 'cw', 'pbs',
+        # ESPN family (cable channels, not ESPN+ streaming)
+        'espnews', 'espnu',
+        # Sports networks
+        'tnt', 'tbs', 'usa', 'usa network',
+        'nfl network', 'nfl net', 'nfln',
+        'nba tv', 'nbatv',
+        'nhl network', 'nhl net', 'nhln',
+        'mlb network', 'mlbn', 'mlb net',
+        'nesn', 'nesnplus', 'nesn+',
+        'nbc sports boston', 'nbcsb', 'nbc sports bo',
+        'fs1', 'fox sports 1', 'fs2', 'fox sports 2',
+        'big ten network', 'btn', 'big ten',
+        'acc network', 'accn', 'acc net',
+        'sec network', 'sec net', 'sec network national',
+        'cbs sports network', 'cbssn',
+        'golf channel', 'tennis channel',
+        'trutv', 'tru tv', 'truTV',
+        # General entertainment with sports
+        'fx', 'fxx', 'syfy', 'a&e', 'history',
+        'freeform', 'cartoon network'
     }
     
     broadcast_names: List[str] = []
@@ -299,12 +315,31 @@ def parse_event(event: Dict, league: str) -> Optional[Dict]:
         else:
             short_name = event.get('shortName', event.get('name', 'Unknown'))
         
-        # Determine availability - ESPN+ only games are not accessible
+        # Determine availability
+        # ESPN+ is now available via streaming, so ESPN+ only games ARE accessible
         is_available = True
         unavailable_reason = None
+        watch_method = None
+        
         if broadcast_info['is_espn_plus_only']:
-            is_available = False
-            unavailable_reason = "ESPN+ subscription required (not available on cable)"
+            # ESPN+ only - available via ESPN app
+            watch_method = "streaming"
+        elif channel_info:
+            # Available on cable
+            watch_method = "cable"
+        elif broadcast_info['network'] and 'espn' in broadcast_info['network'].lower():
+            # ESPN family network
+            watch_method = "cable"
+        else:
+            # Check if it's a streaming-only service we have
+            streaming_services_available = ['espn+', 'peacock', 'apple tv', 'amazon prime', 'netflix', 'hbo max', 'max', 'paramount+']
+            network_lower = (broadcast_info['network'] or '').lower()
+            if any(svc in network_lower for svc in streaming_services_available):
+                watch_method = "streaming"
+            elif not channel_info and broadcast_info['network']:
+                # Unknown network without channel mapping - may not be available
+                is_available = False
+                unavailable_reason = f"No channel mapping for {broadcast_info['network']}"
         
         game = {
             'id': event.get('id'),
@@ -322,6 +357,7 @@ def parse_event(event: Dict, league: str) -> Optional[Dict]:
             'streaming_service': _get_streaming_service(broadcast_network),
             'is_available': is_available,
             'unavailable_reason': unavailable_reason,
+            'watch_method': watch_method,  # "cable", "streaming", or None
             'is_espn_plus_only': broadcast_info['is_espn_plus_only'],
             'all_broadcast_networks': broadcast_info['all_networks'],
         }

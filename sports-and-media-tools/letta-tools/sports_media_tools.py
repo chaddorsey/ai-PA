@@ -112,8 +112,9 @@ def query_sports_games(
                 'streaming_service': game.get('streaming_service'),
                 'home_team': game.get('home_team', {}).get('name'),
                 'away_team': game.get('away_team', {}).get('name'),
-                # Availability info - ESPN+ only games are not watchable
+                # Availability info
                 'is_available': game.get('is_available', True),
+                'watch_method': game.get('watch_method'),  # "cable" or "streaming"
                 'unavailable_reason': game.get('unavailable_reason'),
                 'is_espn_plus_only': game.get('is_espn_plus_only', False),
             }
