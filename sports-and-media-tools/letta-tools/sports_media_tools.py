@@ -1273,3 +1273,322 @@ def launch_streaming_content(
             'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
         }
 
+
+def get_tv_listings_now(
+    sports_only: Optional[bool] = None,
+    channel: Optional[str] = None,
+    limit: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Get what's currently on TV across all channels or a specific channel.
+    
+    This tool queries the Schedules Direct TV listings service to show
+    what programs are currently airing. Great for answering "what's on TV?"
+    or "what sports are on right now?"
+    
+    Args:
+        sports_only: If True, only return sports programs. Defaults to False.
+        channel: Specific channel number to check (e.g., "570" for ESPN HD).
+                 Leave empty to get all channels.
+        limit: Maximum number of programs to return. Defaults to 20.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - programs: List of currently airing programs with channel, title, etc.
+        - count: Total number of programs found
+        - sports_count: Number of sports programs (if sports_only=False)
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Set defaults
+        if sports_only is None:
+            sports_only = False
+        if limit is None:
+            limit = 20
+        
+        # Schedules Direct service URL (Docker internal network)
+        sd_service_url = "http://schedules-direct-service:5125"
+        
+        # Choose endpoint based on sports_only flag
+        if sports_only:
+            endpoint = f"{sd_service_url}/now/sports"
+        elif channel:
+            endpoint = f"{sd_service_url}/channel/{channel}"
+        else:
+            endpoint = f"{sd_service_url}/now"
+        
+        response = requests.get(endpoint, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Handle channel-specific response differently
+        if channel:
+            current = data.get('current')
+            upcoming = data.get('upcoming', [])
+            
+            programs = []
+            if current:
+                programs.append({
+                    'channel': channel,
+                    'station': current.get('station'),
+                    'title': current.get('title'),
+                    'episode_title': current.get('episode_title'),
+                    'description': current.get('description'),
+                    'start_time': current.get('start_time'),
+                    'end_time': current.get('end_time'),
+                    'duration_minutes': current.get('duration_minutes'),
+                    'is_live': current.get('is_live', False),
+                    'is_sports': current.get('is_sports', False),
+                    'status': 'NOW PLAYING'
+                })
+            
+            return {
+                'status': 'ok',
+                'channel': channel,
+                'current': current,
+                'upcoming': upcoming[:limit] if upcoming else [],
+                'count': 1 if current else 0
+            }
+        
+        # Format programs for general listings
+        programs = data.get('programs', [])[:limit]
+        
+        formatted_programs = []
+        for prog in programs:
+            formatted_programs.append({
+                'channel': prog.get('channel'),
+                'station': prog.get('station'),
+                'station_name': prog.get('station_name'),
+                'title': prog.get('title'),
+                'episode_title': prog.get('episode_title'),
+                'description': prog.get('description', '')[:200] if prog.get('description') else None,
+                'start_time': prog.get('start_time'),
+                'end_time': prog.get('end_time'),
+                'duration_minutes': prog.get('duration_minutes'),
+                'is_live': prog.get('is_live', False),
+                'is_sports': prog.get('is_sports', False),
+                'is_new': prog.get('is_new', False),
+            })
+        
+        # Count sports programs
+        sports_count = sum(1 for p in data.get('programs', []) if p.get('is_sports'))
+        
+        return {
+            'status': 'ok',
+            'programs': formatted_programs,
+            'count': len(formatted_programs),
+            'total_available': data.get('count', len(formatted_programs)),
+            'sports_count': sports_count,
+            'sports_only': sports_only
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Schedules Direct service request failed: {e}")
+        return {
+            'status': 'error',
+            'programs': [],
+            'count': 0,
+            'error_message': f"Failed to connect to TV listings service: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting TV listings: {e}")
+        return {
+            'status': 'error',
+            'programs': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def search_tv_guide(
+    query: str,
+    limit: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Search the TV guide for upcoming programs by title.
+    
+    This tool searches the next 2 days of TV listings for programs
+    matching the search query. Use this to find when specific shows,
+    movies, or sports events will be on.
+    
+    Args:
+        query: The search term to find in program titles (e.g., "Patriots",
+               "SportsCenter", "College Football", "Breaking Bad").
+        limit: Maximum number of results to return. Defaults to 20.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - query: The search term used
+        - results: List of matching programs with channel, title, start_time
+        - count: Number of results found
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if limit is None:
+            limit = 20
+        
+        # Schedules Direct service URL
+        sd_service_url = "http://schedules-direct-service:5125"
+        
+        response = requests.get(
+            f"{sd_service_url}/search",
+            params={'q': query},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        results = data.get('results', [])[:limit]
+        
+        formatted_results = []
+        for prog in results:
+            formatted_results.append({
+                'channel': prog.get('channel'),
+                'station': prog.get('station'),
+                'title': prog.get('title'),
+                'episode_title': prog.get('episode_title'),
+                'start_time': prog.get('start_time'),
+                'duration_minutes': prog.get('duration_minutes'),
+                'is_sports': prog.get('is_sports', False),
+            })
+        
+        return {
+            'status': 'ok',
+            'query': query,
+            'results': formatted_results,
+            'count': len(formatted_results),
+            'total_found': data.get('count', len(formatted_results))
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"TV guide search failed: {e}")
+        return {
+            'status': 'error',
+            'query': query,
+            'results': [],
+            'count': 0,
+            'error_message': f"Failed to search TV guide: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error searching TV guide: {e}")
+        return {
+            'status': 'error',
+            'query': query,
+            'results': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_channel_info(
+    channel: str
+) -> Dict[str, Any]:
+    """
+    Get detailed schedule information for a specific TV channel.
+    
+    This tool shows what's currently playing on a channel and what's
+    coming up next. Use this to answer questions like "What's on ESPN?"
+    or "What's playing on channel 570?"
+    
+    Args:
+        channel: The channel number to look up (e.g., "570" for ESPN HD,
+                 "504" for CBS, "588" for NFL Network).
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - channel: The channel number
+        - current: Currently playing program (title, description, times)
+        - upcoming: List of upcoming programs
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Schedules Direct service URL
+        sd_service_url = "http://schedules-direct-service:5125"
+        
+        response = requests.get(
+            f"{sd_service_url}/channel/{channel}",
+            params={'hours': 6},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        current = data.get('current')
+        upcoming = data.get('upcoming', [])
+        
+        # Format current program
+        current_formatted = None
+        if current:
+            current_formatted = {
+                'title': current.get('title'),
+                'episode_title': current.get('episode_title'),
+                'description': current.get('description'),
+                'station': current.get('station'),
+                'start_time': current.get('start_time'),
+                'end_time': current.get('end_time'),
+                'duration_minutes': current.get('duration_minutes'),
+                'is_live': current.get('is_live', False),
+                'is_sports': current.get('is_sports', False),
+            }
+        
+        # Format upcoming programs
+        upcoming_formatted = []
+        for prog in upcoming[:10]:
+            upcoming_formatted.append({
+                'title': prog.get('title'),
+                'episode_title': prog.get('episode_title'),
+                'start_time': prog.get('start_time'),
+                'duration_minutes': prog.get('duration_minutes'),
+                'is_sports': prog.get('is_sports', False),
+            })
+        
+        return {
+            'status': 'ok',
+            'channel': channel,
+            'current': current_formatted,
+            'upcoming': upcoming_formatted,
+            'upcoming_count': len(upcoming_formatted)
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Channel info request failed: {e}")
+        return {
+            'status': 'error',
+            'channel': channel,
+            'current': None,
+            'upcoming': [],
+            'error_message': f"Failed to get channel info: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting channel info: {e}")
+        return {
+            'status': 'error',
+            'channel': channel,
+            'current': None,
+            'upcoming': [],
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }

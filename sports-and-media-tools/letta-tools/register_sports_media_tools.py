@@ -10,6 +10,9 @@ This script registers the sports and media control tools with Letta:
 5. tune_fios_channel - Tune FIOS to a specific channel
 6. watch_game - Orchestrate watching a game end-to-end
 7. launch_streaming_content - Launch streaming content with deep linking or Roku search
+8. get_tv_listings_now - Get what's currently on TV (all channels or sports only)
+9. search_tv_guide - Search TV guide for upcoming programs
+10. get_channel_info - Get detailed schedule for a specific channel
 """
 
 import os
@@ -37,7 +40,10 @@ from sports_media_tools import (
     send_fios_ir_command,
     tune_fios_channel,
     watch_game,
-    launch_streaming_content
+    launch_streaming_content,
+    get_tv_listings_now,
+    search_tv_guide,
+    get_channel_info
 )
 
 # Configuration
@@ -65,6 +71,9 @@ def main():
         ("tune_fios_channel", tune_fios_channel, "Tune FIOS to a specific channel"),
         ("watch_game", watch_game, "End-to-end: find game and tune TV to watch it"),
         ("launch_streaming_content", launch_streaming_content, "Launch streaming content with deep linking or Roku search"),
+        ("get_tv_listings_now", get_tv_listings_now, "Get what's currently on TV (all channels or sports only)"),
+        ("search_tv_guide", search_tv_guide, "Search TV guide for upcoming programs by title"),
+        ("get_channel_info", get_channel_info, "Get detailed schedule for a specific channel"),
     ]
     
     registered_tool_ids = []
@@ -140,7 +149,9 @@ def main():
         print('  tune_fios_channel(channel=570)')
         print('  watch_game(team="red sox")')
         print('  launch_streaming_content(title="Slow Horses", app="apple")')
-        print('  launch_streaming_content(title="The Bear", app="hulu")')
+        print('  get_tv_listings_now(sports_only=True)')
+        print('  search_tv_guide(query="Patriots")')
+        print('  get_channel_info(channel="570")')
         
         return 0
         
