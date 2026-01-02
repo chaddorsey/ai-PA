@@ -916,6 +916,40 @@ services:
       - "component=ir-control"
       - "network=pa-internal"
 
+  # Schedules Direct TV Listings Service
+  schedules-direct-service:
+    build:
+      context: ./sports-and-media-tools/schedules-direct-service
+      dockerfile: Dockerfile
+    container_name: schedules-direct-service
+    restart: unless-stopped
+    networks: [pa-internal]
+    volumes:
+      - schedules-direct-data:/app/data
+    environment:
+      - SD_USERNAME=${SD_USERNAME}
+      - SD_PASSWORD=${SD_PASSWORD}
+      - SD_LINEUP=USA-MA65213-X
+      - CACHE_PATH=/app/data/schedules_cache.json
+      - POLL_INTERVAL=3600
+    ports:
+      - "5125:5125"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5125/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=schedules-direct-service"
+      - "component=tv-listings"
+      - "network=pa-internal"
+
 
 volumes:
   supabase_db:
@@ -935,6 +969,7 @@ volumes:
   rag-mcp-data:
   portainer_data:
   sports-service-data:
+  schedules-direct-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring
