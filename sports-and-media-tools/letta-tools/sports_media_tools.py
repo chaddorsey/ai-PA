@@ -759,7 +759,19 @@ def launch_streaming_content(
     
     This tool can play movies, TV series, or specific episodes on streaming
     apps like Netflix, Prime Video, Hulu, etc. For "play next episode",
-    just provide the series title - Netflix will resume where you left off.
+    just provide the series title - the app will resume where you left off.
+    
+    CONFIRMED WORKING:
+    - Netflix: Direct deep link with numeric content IDs
+    - Hulu: Direct deep link with JustWatch UUIDs (e.g., "60da223c-d2a0-411a-95c9-665a839371f9")
+    - Apple TV+: URL-encoded full URLs with mediaType=live for auto-play
+    - Max (HBO): Direct deep link with HBO URN IDs
+    - Prime Video: Direct deep link with Amazon GTI IDs
+    - Disney+: Direct deep link with content IDs
+    - YouTube: Direct deep link with video IDs
+    
+    USES ROKU SEARCH FALLBACK:
+    - ESPN+, Fox Sports, NBC Sports, History Channel
     
     Args:
         title: The title to search for or play (e.g., "Stranger Things", 
@@ -1023,23 +1035,40 @@ def launch_streaming_content(
         use_roku_search = False
         
         if resolved_content_id:
-            # Construct deep link with content ID
-            params = [f"contentId={resolved_content_id}"]
-            
-            # Add media type
-            if season is not None and episode is not None:
-                params.append("mediaType=episode")
-                # Some apps support season/episode parameters
-                params.append(f"season={season}")
-                params.append(f"episode={episode}")
-                action_desc = f"Playing {title} S{season}E{episode}"
-            elif season is not None:
-                params.append("mediaType=series")
-                params.append(f"season={season}")
-                action_desc = f"Playing {title} Season {season}"
+            # Special handling for Apple TV+ - use URL-encoded full URL and mediaType=live for auto-play
+            if app_lower == "apple":
+                import urllib.parse
+                # Apple TV+ works with full URL-encoded URLs
+                if resolved_content_id.startswith("umc.cmc."):
+                    # Build full Apple TV URL from content ID
+                    apple_url = f"https://tv.apple.com/us/show/{title.lower().replace(' ', '-')}/{resolved_content_id}"
+                    encoded_url = urllib.parse.quote(apple_url, safe='')
+                elif resolved_content_id.startswith("http"):
+                    encoded_url = urllib.parse.quote(resolved_content_id, safe='')
+                else:
+                    encoded_url = resolved_content_id
+                
+                # mediaType=live triggers auto-play on Apple TV+
+                params = [f"contentId={encoded_url}", "mediaType=live"]
+                action_desc = f"Playing {title} on Apple TV+"
             else:
-                params.append(f"mediaType={content_type}")
-                action_desc = f"Playing {title}"
+                # Standard deep link format for other apps
+                params = [f"contentId={resolved_content_id}"]
+                
+                # Add media type
+                if season is not None and episode is not None:
+                    params.append("mediaType=episode")
+                    # Some apps support season/episode parameters
+                    params.append(f"season={season}")
+                    params.append(f"episode={episode}")
+                    action_desc = f"Playing {title} S{season}E{episode}"
+                elif season is not None:
+                    params.append("mediaType=series")
+                    params.append(f"season={season}")
+                    action_desc = f"Playing {title} Season {season}"
+                else:
+                    params.append(f"mediaType={content_type}")
+                    action_desc = f"Playing {title}"
             
             launch_url = f"{roku_base_url}/launch/{app_id}?{'&'.join(params)}"
         else:
@@ -1055,10 +1084,9 @@ def launch_streaming_content(
         time.sleep(0.5)
         
         # Apps with unreliable deep linking - always use Roku universal search
-        # Hulu: deep links go to home screen, not content
         # ESPN/Fox Sports/NBC Sports/History: no known content ID format
-        # Apple TV+: deep links unreliable, search works better
-        apps_needing_roku_search = ["apple", "hulu", "espn", "fox_sports", "nbc_sports", "history"]
+        # NOTE: Hulu and Apple TV+ now work with direct deep linking (removed from this list)
+        apps_needing_roku_search = ["espn", "fox_sports", "nbc_sports", "history"]
         if app_lower in apps_needing_roku_search:
             use_roku_search = True
             action_desc = f"Searching for '{title}' via Roku universal search"
@@ -1123,8 +1151,8 @@ def launch_streaming_content(
         
         if response.status_code in [200, 204]:
             # Handle profile selection for apps that show "Who's watching?" screen
-            # Apps that typically have profile screens: Netflix, Disney+, Max, Prime, Hulu
-            apps_with_profiles = ["netflix", "disney", "max", "prime", "hulu", "paramount", "peacock"]
+            # Apps that typically have profile screens: Netflix, Disney+, Max, Prime, Hulu, Apple TV+
+            apps_with_profiles = ["netflix", "disney", "max", "prime", "hulu", "paramount", "peacock", "apple"]
             
             if app_lower in apps_with_profiles and profile != 0:
                 # Default to first profile if not specified
