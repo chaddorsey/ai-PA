@@ -853,6 +853,69 @@ services:
   # Web-based system monitoring and administration
   # cockpit: (temporarily disabled - image not available)
 
+  # --- Sports & Media Control Services ---
+  sports-service:
+    build:
+      context: ./sports-and-media-tools/sports-service
+      dockerfile: Dockerfile
+    container_name: sports-service
+    restart: unless-stopped
+    networks: [pa-internal]
+    volumes:
+      - ./sports-and-media-tools/config:/app/config:ro
+      - sports-service-data:/app/data
+    environment:
+      - CHANNEL_MAPPING_PATH=/app/config/channel_mapping.json
+      - CACHE_PATH=/app/data/sports_cache.json
+      - POLL_INTERVAL=900
+    ports:
+      - "5123:5123"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5123/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=sports-service"
+      - "component=sports-api"
+      - "network=pa-internal"
+
+  flipper-api:
+    build:
+      context: ./sports-and-media-tools/flipper-api
+      dockerfile: Dockerfile
+    container_name: flipper-api
+    restart: unless-stopped
+    networks: [pa-internal]
+    privileged: true
+    volumes:
+      - /dev:/dev
+    environment:
+      - FLIPPER_PORT=
+    ports:
+      - "5124:5124"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5124/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=flipper-api"
+      - "component=ir-control"
+      - "network=pa-internal"
+
 
 volumes:
   supabase_db:
@@ -871,6 +934,7 @@ volumes:
   gmail-mcp-data:
   rag-mcp-data:
   portainer_data:
+  sports-service-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring
