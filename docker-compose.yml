@@ -916,6 +916,34 @@ services:
       - "component=ir-control"
       - "network=pa-internal"
 
+  # Content Database Service (JustWatch scraper + API)
+  content-database:
+    build:
+      context: ./sports-and-media-tools/content-database
+      dockerfile: Dockerfile
+    container_name: content-database
+    restart: unless-stopped
+    networks: [pa-internal]
+    volumes:
+      - content-database-data:/app/data
+    ports:
+      - "5126:5126"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5126/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=content-database"
+      - "component=content-api"
+      - "network=pa-internal"
+
   # Schedules Direct TV Listings Service
   schedules-direct-service:
     build:
@@ -970,6 +998,7 @@ volumes:
   portainer_data:
   sports-service-data:
   schedules-direct-data:
+  content-database-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring

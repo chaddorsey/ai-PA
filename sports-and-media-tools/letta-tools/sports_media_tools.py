@@ -1496,6 +1496,228 @@ def search_tv_guide(
         }
 
 
+def lookup_streaming_content(
+    title: str,
+    preferred_service: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Look up streaming availability and deep link info for a title.
+    
+    This tool queries JustWatch data to find where content is available
+    across your subscribed streaming services (Netflix, Hulu, Disney+,
+    Max, Prime Video, Apple TV+, ESPN+, YouTube). It returns the content
+    ID needed for deep linking.
+    
+    Use this tool when you need to:
+    - Find where a movie or show is available to stream
+    - Get the content ID for deep linking before using launch_streaming_content
+    - Compare availability across services
+    
+    Args:
+        title: The title to search for (e.g., "Stranger Things", "The Bear").
+        preferred_service: Preferred streaming service if content is on multiple.
+                          Options: netflix, hulu, disney, max, prime, apple, espn.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"  
+        - title: The matched title
+        - available_on: List of services where content is available
+        - recommended: Best option (with content_id for deep linking)
+        - all_options: Full list of streaming options with content IDs
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Content database service URL (Docker internal network)
+        content_db_url = "http://content-database:5126"
+        
+        # Search for the title
+        params = {'title': title}
+        if preferred_service:
+            params['service'] = preferred_service
+        
+        response = requests.get(
+            f"{content_db_url}/deep-link",
+            params=params,
+            timeout=30
+        )
+        
+        if response.status_code == 404:
+            # Content not found - try a broader search
+            search_response = requests.get(
+                f"{content_db_url}/search",
+                params={'q': title},
+                timeout=30
+            )
+            search_response.raise_for_status()
+            search_data = search_response.json()
+            
+            results = search_data.get('results', [])
+            if not results:
+                return {
+                    'status': 'not_found',
+                    'title': title,
+                    'available_on': [],
+                    'recommended': None,
+                    'message': f"'{title}' not found in streaming database. Try using Roku universal search."
+                }
+            
+            # Use first result
+            first_result = results[0]
+            streaming = first_result.get('streaming_availability', {})
+            
+            available_on = list(streaming.keys())
+            
+            # Pick recommended service
+            recommended = None
+            if preferred_service and preferred_service in streaming:
+                options = streaming[preferred_service]
+                if options:
+                    recommended = {
+                        'service': preferred_service,
+                        'content_id': options[0].get('content_id') if options else None
+                    }
+            elif streaming:
+                first_service = available_on[0]
+                options = streaming[first_service]
+                recommended = {
+                    'service': first_service,
+                    'content_id': options[0].get('content_id') if options else None
+                }
+            
+            return {
+                'status': 'ok',
+                'title': first_result.get('title', title),
+                'content_type': first_result.get('content_type'),
+                'year': first_result.get('year'),
+                'available_on': available_on,
+                'recommended': recommended,
+                'all_options': streaming
+            }
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'title': data.get('title', title),
+            'content_type': data.get('content_type'),
+            'service': data.get('service'),
+            'content_id': data.get('content_id'),
+            'roku_launch': data.get('roku_launch'),
+            'message': f"Found on {data.get('service')}"
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Content database request failed: {e}")
+        return {
+            'status': 'error',
+            'title': title,
+            'available_on': [],
+            'error_message': f"Content lookup service unavailable: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error looking up streaming content: {e}")
+        return {
+            'status': 'error',
+            'title': title,
+            'available_on': [],
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def add_content_to_database(
+    title: str,
+    content_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Scrape and add a title to the local streaming content database.
+    
+    This tool is primarily for the sleeptime agent to proactively build
+    the content database. It scrapes JustWatch for the title and stores
+    streaming availability and deep link IDs for future lookups.
+    
+    Use this when:
+    - A user mentions a title that isn't in the database
+    - Building up the database with popular content
+    - Adding titles the user might be interested in
+    
+    Args:
+        title: The title to add (e.g., "Breaking Bad", "Oppenheimer").
+        content_type: Type of content - "movie" or "show". Optional.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok", "not_found", or "error"
+        - title: The matched title
+        - available_on: List of streaming services where content is available
+        - message: Status message
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Content database service URL (Docker internal network)
+        content_db_url = "http://content-database:5126"
+        
+        # Request the scrape
+        payload = {'title': title}
+        if content_type:
+            payload['content_type'] = content_type
+        
+        response = requests.post(
+            f"{content_db_url}/scrape-title",
+            json=payload,
+            timeout=60  # Longer timeout for scraping
+        )
+        
+        if response.status_code == 404:
+            return {
+                'status': 'not_found',
+                'title': title,
+                'message': f"'{title}' not found on JustWatch"
+            }
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': data.get('status', 'ok'),
+            'title': data.get('title', title),
+            'content_type': data.get('content_type'),
+            'year': data.get('year'),
+            'available_on': data.get('available_on', []),
+            'message': data.get('message', 'Content added to database')
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Content database request failed: {e}")
+        return {
+            'status': 'error',
+            'title': title,
+            'error_message': f"Content database service unavailable: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error adding content to database: {e}")
+        return {
+            'status': 'error',
+            'title': title,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
 def get_channel_info(
     channel: str
 ) -> Dict[str, Any]:

@@ -13,6 +13,8 @@ This script registers the sports and media control tools with Letta:
 8. get_tv_listings_now - Get what's currently on TV (all channels or sports only)
 9. search_tv_guide - Search TV guide for upcoming programs
 10. get_channel_info - Get detailed schedule for a specific channel
+11. lookup_streaming_content - Look up streaming availability and deep links from JustWatch
+12. add_content_to_database - Scrape and add content to local database (sleeptime agent)
 """
 
 import os
@@ -43,7 +45,9 @@ from sports_media_tools import (
     launch_streaming_content,
     get_tv_listings_now,
     search_tv_guide,
-    get_channel_info
+    get_channel_info,
+    lookup_streaming_content,
+    add_content_to_database
 )
 
 # Configuration
@@ -74,6 +78,8 @@ def main():
         ("get_tv_listings_now", get_tv_listings_now, "Get what's currently on TV (all channels or sports only)"),
         ("search_tv_guide", search_tv_guide, "Search TV guide for upcoming programs by title"),
         ("get_channel_info", get_channel_info, "Get detailed schedule for a specific channel"),
+        ("lookup_streaming_content", lookup_streaming_content, "Look up streaming availability and deep links from JustWatch"),
+        ("add_content_to_database", add_content_to_database, "Scrape and add content to local database (for sleeptime agent)"),
     ]
     
     registered_tool_ids = []
@@ -152,6 +158,7 @@ def main():
         print('  get_tv_listings_now(sports_only=True)')
         print('  search_tv_guide(query="Patriots")')
         print('  get_channel_info(channel="570")')
+        print('  lookup_streaming_content(title="The Bear")')
         
         return 0
         
