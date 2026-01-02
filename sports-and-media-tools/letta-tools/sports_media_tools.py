@@ -112,6 +112,10 @@ def query_sports_games(
                 'streaming_service': game.get('streaming_service'),
                 'home_team': game.get('home_team', {}).get('name'),
                 'away_team': game.get('away_team', {}).get('name'),
+                # Availability info - ESPN+ only games are not watchable
+                'is_available': game.get('is_available', True),
+                'unavailable_reason': game.get('unavailable_reason'),
+                'is_espn_plus_only': game.get('is_espn_plus_only', False),
             }
             formatted_games.append(formatted_game)
         
@@ -770,8 +774,11 @@ def launch_streaming_content(
     - Disney+: Direct deep link with content IDs
     - YouTube: Direct deep link with video IDs
     
-    USES ROKU SEARCH FALLBACK:
-    - ESPN+, Fox Sports, NBC Sports, History Channel
+    USES IN-APP SEARCH (app launches, then searches within app):
+    - ESPN: Uses in-app search (Left→Up→Select to open search, then types query)
+    
+    USES ROKU UNIVERSAL SEARCH FALLBACK:
+    - Fox Sports, NBC Sports, History Channel
     
     Args:
         title: The title to search for or play (e.g., "Stranger Things", 
@@ -1083,10 +1090,61 @@ def launch_streaming_content(
         import time
         time.sleep(0.5)
         
-        # Apps with unreliable deep linking - always use Roku universal search
-        # ESPN/Fox Sports/NBC Sports/History: no known content ID format
-        # NOTE: Hulu and Apple TV+ now work with direct deep linking (removed from this list)
-        apps_needing_roku_search = ["espn", "fox_sports", "nbc_sports", "history"]
+        # Apps with unreliable deep linking - use alternative search methods
+        # ESPN: Use in-app search (Roku universal search doesn't work for sports)
+        # Fox Sports/NBC Sports/History: Use Roku universal search
+        # NOTE: Hulu and Apple TV+ now work with direct deep linking
+        apps_needing_in_app_search = ["espn"]
+        apps_needing_roku_search = ["fox_sports", "nbc_sports", "history"]
+        
+        # Handle ESPN with in-app search (specific navigation sequence)
+        if app_lower == "espn":
+            # ESPN requires in-app search because:
+            # 1. Direct deep links only go to home screen
+            # 2. Roku universal search doesn't find ESPN+ content well
+            
+            # Launch ESPN app
+            requests.post(f"{roku_base_url}/launch/{app_id}", timeout=10)
+            
+            # Wait for ESPN to fully load (it's very slow!)
+            time.sleep(16)
+            
+            # Navigate to in-app search: Left (sidebar), Up (search icon), Select (open search)
+            requests.post(f"{roku_base_url}/keypress/Left", timeout=5)
+            time.sleep(0.5)
+            requests.post(f"{roku_base_url}/keypress/Up", timeout=5)
+            time.sleep(0.5)
+            requests.post(f"{roku_base_url}/keypress/Select", timeout=5)
+            time.sleep(2)  # Wait for search box to open
+            
+            # Type search term
+            import urllib.parse
+            for char in title:
+                if char == ' ':
+                    encoded = '%20'
+                else:
+                    encoded = urllib.parse.quote(char)
+                requests.post(f"{roku_base_url}/keypress/Lit_{encoded}", timeout=2)
+                time.sleep(0.12)
+            
+            time.sleep(2)  # Wait for search results
+            
+            # Navigate right to first result (8 steps to clear keyboard)
+            for _ in range(8):
+                requests.post(f"{roku_base_url}/keypress/Right", timeout=5)
+                time.sleep(0.25)
+            
+            # Select the result
+            requests.post(f"{roku_base_url}/keypress/Select", timeout=5)
+            
+            return {
+                'status': 'ok',
+                'title': title,
+                'app': app_lower,
+                'content_id': 'espn_in_app_search',
+                'message': f"Launched ESPN and searched for '{title}'"
+            }
+        
         if app_lower in apps_needing_roku_search:
             use_roku_search = True
             action_desc = f"Searching for '{title}' via Roku universal search"

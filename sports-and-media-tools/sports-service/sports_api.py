@@ -90,32 +90,96 @@ def load_cache() -> None:
         logger.error(f"Failed to load cache: {e}")
 
 
-def parse_broadcast_info(broadcasts: List[Dict]) -> Optional[str]:
-    """Extract primary broadcast network from ESPN broadcast data."""
-    if not broadcasts:
-        return None
+def parse_broadcast_info(broadcasts: List[Dict]) -> Dict[str, Any]:
+    """
+    Extract broadcast information from ESPN broadcast data.
     
-    # Priority order for broadcast networks
+    Returns dict with:
+    - network: Primary broadcast network name
+    - is_espn_plus_only: True if ONLY available on ESPN+ (streaming, no cable option)
+    - has_cable_option: True if available on a cable channel
+    - all_networks: List of all broadcast networks
+    """
+    result = {
+        'network': None,
+        'is_espn_plus_only': False,
+        'has_cable_option': False,
+        'all_networks': []
+    }
+    
+    if not broadcasts:
+        return result
+    
+    # Priority order for broadcast networks (cable channels first)
     priority_networks = [
         'CBS', 'FOX', 'NBC', 'ABC', 'ESPN', 'ESPN2', 'TNT', 'TBS',
         'NFL Network', 'NESN', 'NBC Sports Boston', 'FS1', 'MLB Network',
-        'NBA TV', 'NHL Network', 'ESPN+', 'Peacock', 'Amazon Prime Video',
-        'Apple TV+', 'Netflix'
+        'NBA TV', 'NHL Network', 'Peacock', 'Amazon Prime Video',
+        'Apple TV+', 'Netflix', 'ESPN+'
     ]
     
+    # Cable networks that we can access via FIOS
+    # These are exact matches or patterns for networks available on cable
+    cable_networks = {
+        'cbs', 'fox', 'nbc', 'abc', 'tnt', 'tbs',
+        'nfl network', 'nfl net', 'nesn', 'nbc sports boston', 'fs1', 'mlb network',
+        'nba tv', 'nhl network', 'nhl net', 'fs2', 'btn', 'sec network', 'acc network',
+        'espnu', 'cbs sports network', 'cbssn', 'golf channel', 'tennis channel',
+        'usa network', 'usa', 'tru tv', 'trutv', 'the cw', 'cw',
+        'big ten network', 'pac-12', 'nbc sports'
+    }
+    
     broadcast_names: List[str] = []
+    has_espn_plus = False
+    has_espn_cable = False  # ESPN or ESPN2 (not ESPN+)
+    has_other_cable = False
+    
     for broadcast in broadcasts:
         names = broadcast.get('names', [])
-        broadcast_names.extend(names)
+        for name in names:
+            broadcast_names.append(name)
+            name_lower = name.lower().strip()
+            
+            # Check for ESPN+ specifically (streaming only)
+            if 'espn+' in name_lower or 'espn plus' in name_lower:
+                has_espn_plus = True
+                continue  # Don't also count this as cable ESPN
+            
+            # Check for cable ESPN (exact match for ESPN or ESPN2, not ESPN+)
+            if name_lower == 'espn' or name_lower == 'espn2':
+                has_espn_cable = True
+                continue
+            
+            # Check for other cable options
+            for cable_net in cable_networks:
+                if cable_net == name_lower or (len(cable_net) > 3 and cable_net in name_lower):
+                    has_other_cable = True
+                    break
     
-    # Find highest priority network
+    result['all_networks'] = broadcast_names
+    has_any_cable = has_espn_cable or has_other_cable
+    result['has_cable_option'] = has_any_cable
+    
+    # Determine if ESPN+ only (streaming, no accessible cable option)
+    # Note: Regional sports networks like MNMT, FanDuel SN, etc. are NOT 
+    # universally available on FIOS, so we don't count them as "cable"
+    if has_espn_plus and not has_any_cable:
+        result['is_espn_plus_only'] = True
+    
+    # Find highest priority network for primary display
     for network in priority_networks:
         for name in broadcast_names:
             if network.lower() in name.lower():
-                return network
+                result['network'] = network
+                break
+        if result['network']:
+            break
     
-    # Return first available if no priority match
-    return broadcast_names[0] if broadcast_names else None
+    # Fallback to first available
+    if not result['network'] and broadcast_names:
+        result['network'] = broadcast_names[0]
+    
+    return result
 
 
 def get_channel_for_network(network: str) -> Optional[Dict]:
@@ -215,9 +279,10 @@ def parse_event(event: Dict, league: str) -> Optional[Dict]:
         state = status_type.get('state', 'pre')  # pre, in, post
         status_detail = status_type.get('shortDetail', '')
         
-        # Get broadcast info
+        # Get broadcast info (now returns dict with ESPN+ detection)
         broadcasts = competition.get('broadcasts', [])
-        broadcast_network = parse_broadcast_info(broadcasts)
+        broadcast_info = parse_broadcast_info(broadcasts)
+        broadcast_network = broadcast_info['network']
         channel_info = get_channel_for_network(broadcast_network)
         
         # Get game time
@@ -234,6 +299,13 @@ def parse_event(event: Dict, league: str) -> Optional[Dict]:
         else:
             short_name = event.get('shortName', event.get('name', 'Unknown'))
         
+        # Determine availability - ESPN+ only games are not accessible
+        is_available = True
+        unavailable_reason = None
+        if broadcast_info['is_espn_plus_only']:
+            is_available = False
+            unavailable_reason = "ESPN+ subscription required (not available on cable)"
+        
         game = {
             'id': event.get('id'),
             'league': league,
@@ -248,6 +320,10 @@ def parse_event(event: Dict, league: str) -> Optional[Dict]:
             'channel': channel_info.get('hd_channel') if channel_info else None,
             'channel_sd': channel_info.get('channel') if channel_info else None,
             'streaming_service': _get_streaming_service(broadcast_network),
+            'is_available': is_available,
+            'unavailable_reason': unavailable_reason,
+            'is_espn_plus_only': broadcast_info['is_espn_plus_only'],
+            'all_broadcast_networks': broadcast_info['all_networks'],
         }
         
         return game
