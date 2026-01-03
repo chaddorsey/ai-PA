@@ -1,0 +1,74 @@
+# Credentials and sensitive data
+credentials/*_credentials.json
+credentials/browser_states/
+credentials/*.png
+credentials/*.html
+
+# Keep the credentials directory structure
+!credentials/.gitkeep
+
+# Reference implementation (separate repo)
+reference-voice-tv-remote/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+ENV/
+
+# Playwright
+playwright-report/
+test-results/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+._*
+
+# Logs
+*.log
+logs/
+
+# Database files (keep schema, ignore data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node (if any frontend tools)
+node_modules/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
