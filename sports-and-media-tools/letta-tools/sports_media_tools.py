@@ -3037,3 +3037,775 @@ def list_tracked_series(
             'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
         }
 
+
+# =============================================================================
+# TRACKED SERIES MANAGEMENT TOOLS (PBI-28)
+# =============================================================================
+
+def add_tracked_series(
+    title: str,
+    preferred_service: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Add a TV series to the user's tracking list.
+    
+    This tool adds a series to be actively tracked for watch progress.
+    It performs a JustWatch lookup to find the series and determine
+    which streaming services have it available. Use this when a user
+    says things like "Add The Mandalorian to my tracked series" or
+    "Start tracking Severance".
+    
+    Args:
+        title: The series title to add (e.g., "The Mandalorian", "Severance")
+        preferred_service: Optional streaming service to use (netflix, hulu,
+                          disney, max, prime, apple). If not specified,
+                          auto-detected from availability.
+        username: The user to add for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - message: Confirmation message
+        - series: The created tracked series record
+        - available_on: List of services where series is available
+        - error_message: Error details if status is "error"
+    
+    Example:
+        add_tracked_series("The Mandalorian")
+        add_tracked_series("Severance", preferred_service="apple")
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_service_url = "http://content-database:5126"
+        
+        # Step 1: Search JustWatch for the series
+        search_response = requests.get(
+            f"{content_service_url}/search",
+            params={'q': title, 'type': 'show'},
+            timeout=15
+        )
+        search_response.raise_for_status()
+        search_data = search_response.json()
+        
+        results = search_data.get('results', [])
+        
+        if not results:
+            return {
+                'status': 'error',
+                'message': f"Could not find series: {title}",
+                'error_message': f"No results found on JustWatch for '{title}'"
+            }
+        
+        # Use first result
+        match = results[0]
+        matched_title = match.get('title', title)
+        streaming = match.get('streaming_availability', {})
+        
+        # Determine available services
+        available_services = []
+        for svc, details in streaming.items():
+            if details:  # Has content ID
+                available_services.append({
+                    'service': svc,
+                    'content_id': details[0].get('content_id') if isinstance(details, list) else details
+                })
+        
+        # Determine preferred service
+        if not preferred_service:
+            # Pick first available from user's subscriptions
+            priority = ['netflix', 'hulu', 'disney', 'max', 'prime', 'apple']
+            for svc in priority:
+                if svc in streaming and streaming[svc]:
+                    preferred_service = svc
+                    break
+        
+        # Step 2: Create tracked series entry
+        import json
+        create_response = requests.post(
+            f"{content_service_url}/user/{username}/tracked-series",
+            json={
+                'title': matched_title,
+                'preferred_service': preferred_service,
+                'available_services': available_services,
+                'justwatch_id': match.get('justwatch_id'),
+            },
+            timeout=10
+        )
+        
+        if create_response.status_code == 409:
+            # Already exists
+            return {
+                'status': 'already_tracked',
+                'message': f"'{matched_title}' is already being tracked",
+                'series': create_response.json().get('series', {})
+            }
+        
+        create_response.raise_for_status()
+        create_data = create_response.json()
+        
+        return {
+            'status': 'ok',
+            'message': f"Added '{matched_title}' to tracked series" +
+                      (f" (watching on {preferred_service})" if preferred_service else ""),
+            'series': create_data.get('series', {}),
+            'available_on': [s['service'] for s in available_services]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error adding tracked series: {e}")
+        return {
+            'status': 'error',
+            'message': f"Failed to add '{title}' to tracked series",
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def remove_tracked_series(
+    title: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Remove a TV series from the user's tracking list.
+    
+    This tool stops tracking a series. The user's watch history is preserved,
+    but the series will no longer be monitored for new episodes or seasons.
+    Use this when a user says things like "Stop tracking The Walking Dead"
+    or "Remove Stranger Things from my list".
+    
+    Args:
+        title: The series title to remove (fuzzy matching supported)
+        username: The user to remove for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - message: Confirmation message
+        - error_message: Error details if status is "error"
+    
+    Example:
+        remove_tracked_series("The Walking Dead")
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_service_url = "http://content-database:5126"
+        
+        # First find the series by title
+        from urllib.parse import quote
+        find_response = requests.get(
+            f"{content_service_url}/user/{username}/tracked-series/by-title/{quote(title)}",
+            timeout=10
+        )
+        
+        if find_response.status_code == 404:
+            return {
+                'status': 'not_found',
+                'message': f"'{title}' is not in your tracked series"
+            }
+        
+        find_response.raise_for_status()
+        series = find_response.json()
+        series_id = series.get('id')
+        actual_title = series.get('title', title)
+        
+        # Delete it
+        delete_response = requests.delete(
+            f"{content_service_url}/user/{username}/tracked-series/{series_id}",
+            timeout=10
+        )
+        delete_response.raise_for_status()
+        
+        return {
+            'status': 'ok',
+            'message': f"Removed '{actual_title}' from tracked series"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error removing tracked series: {e}")
+        return {
+            'status': 'error',
+            'message': f"Failed to remove '{title}' from tracked series",
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def update_tracking_status(
+    title: str,
+    status: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update the tracking status for a series.
+    
+    This tool changes how a series is tracked. Use this when a user
+    indicates they've finished, dropped, or paused a series.
+    
+    Status options:
+    - "watching": Actively watching, sync progress regularly
+    - "finished": Completed all available episodes, monitor for new seasons
+    - "dropped": Stopped watching intentionally, don't sync
+    - "on_hold": Paused watching, keep in list but lower priority
+    
+    Args:
+        title: The series title (fuzzy matching supported)
+        status: New status - one of: watching, finished, dropped, on_hold
+        username: The user to update for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - message: Confirmation message
+        - series: Updated series record
+        - error_message: Error details if status is "error"
+    
+    Example:
+        update_tracking_status("Severance", "finished")
+        update_tracking_status("Game of Thrones", "dropped")
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        valid_statuses = ['watching', 'finished', 'dropped', 'on_hold']
+        if status not in valid_statuses:
+            return {
+                'status': 'error',
+                'message': f"Invalid status: {status}. Must be one of: {', '.join(valid_statuses)}"
+            }
+        
+        content_service_url = "http://content-database:5126"
+        
+        from urllib.parse import quote
+        response = requests.put(
+            f"{content_service_url}/user/{username}/tracked-series/by-title/{quote(title)}/status",
+            json={'status': status},
+            timeout=10
+        )
+        
+        if response.status_code == 400:
+            error_data = response.json()
+            if 'not found' in error_data.get('error', '').lower():
+                return {
+                    'status': 'not_found',
+                    'message': f"'{title}' is not in your tracked series"
+                }
+            return {
+                'status': 'error',
+                'message': error_data.get('error', 'Unknown error')
+            }
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        actual_title = data.get('series', {}).get('title', title)
+        
+        # Friendly status messages
+        status_messages = {
+            'watching': 'now being actively tracked',
+            'finished': 'marked as finished (will monitor for new seasons)',
+            'dropped': 'marked as dropped (will no longer sync)',
+            'on_hold': 'put on hold'
+        }
+        
+        return {
+            'status': 'ok',
+            'message': f"'{actual_title}' is {status_messages.get(status, status)}",
+            'series': data.get('series', {})
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating tracking status: {e}")
+        return {
+            'status': 'error',
+            'message': f"Failed to update status for '{title}'",
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def set_preferred_service(
+    title: str,
+    service: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Set the preferred streaming service for a tracked series.
+    
+    This tells the system which streaming service to use when syncing
+    watch progress for this series. Use when a user wants to switch
+    where they're watching a show.
+    
+    Args:
+        title: The series title (fuzzy matching supported)
+        service: Streaming service - one of: netflix, hulu, disney, max, prime, apple
+        username: The user to update for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - message: Confirmation message
+        - series: Updated series record
+        - error_message: Error details if status is "error"
+    
+    Example:
+        set_preferred_service("The Office", "netflix")
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        valid_services = ['netflix', 'hulu', 'disney', 'max', 'prime', 'apple', 'espn', 'youtube']
+        if service not in valid_services:
+            return {
+                'status': 'error',
+                'message': f"Invalid service: {service}. Must be one of: {', '.join(valid_services)}"
+            }
+        
+        content_service_url = "http://content-database:5126"
+        
+        # Find the series
+        from urllib.parse import quote
+        find_response = requests.get(
+            f"{content_service_url}/user/{username}/tracked-series/by-title/{quote(title)}",
+            timeout=10
+        )
+        
+        if find_response.status_code == 404:
+            return {
+                'status': 'not_found',
+                'message': f"'{title}' is not in your tracked series"
+            }
+        
+        find_response.raise_for_status()
+        series = find_response.json()
+        series_id = series.get('id')
+        actual_title = series.get('title', title)
+        
+        # Update preferred service
+        update_response = requests.put(
+            f"{content_service_url}/user/{username}/tracked-series/{series_id}",
+            json={'preferred_service': service},
+            timeout=10
+        )
+        update_response.raise_for_status()
+        data = update_response.json()
+        
+        return {
+            'status': 'ok',
+            'message': f"Set '{actual_title}' to watch on {service}",
+            'series': data.get('series', {})
+        }
+        
+    except Exception as e:
+        logger.error(f"Error setting preferred service: {e}")
+        return {
+            'status': 'error',
+            'message': f"Failed to set service for '{title}'",
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def mark_episodes_watched(
+    title: str,
+    watched_spec: str,
+    note: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Manually mark episodes as watched for a tracked series.
+    
+    Use this when a user has watched episodes on a different service
+    or platform that doesn't reflect their progress. This creates a
+    manual override that persists across syncs.
+    
+    Supported watched_spec formats:
+    - "seasons 1-3" - Mark seasons 1, 2, and 3 as fully watched
+    - "through S2E5" or "up to S2E5" - Mark everything through S2E5
+    - "S1E3" - Mark a single episode
+    - "S3E1-5" - Mark a range of episodes in one season
+    - "last episode S1E8" - Same as "through S1E8"
+    
+    Args:
+        title: The series title (fuzzy matching supported)
+        watched_spec: Description of what was watched (see formats above)
+        note: Optional note explaining the situation (e.g., "Originally watched on Amazon")
+        username: The user to update for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - message: Confirmation message
+        - parsed_progress: The parsed progress specification
+        - series: Updated series record
+        - error_message: Error details if status is "error"
+    
+    Example:
+        mark_episodes_watched("The Americans", "seasons 1-4", "Watched on Amazon before it moved")
+        mark_episodes_watched("Breaking Bad", "through S3E8")
+    """
+    import traceback
+    import requests
+    import logging
+    import re
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_service_url = "http://content-database:5126"
+        
+        # Parse the watched_spec
+        progress = {}
+        spec_lower = watched_spec.lower().strip()
+        
+        # Pattern: "seasons 1-3" or "season 1-3" or "s1-3"
+        season_range_match = re.match(r'seasons?\s*(\d+)\s*-\s*(\d+)', spec_lower)
+        if season_range_match:
+            start_season = int(season_range_match.group(1))
+            end_season = int(season_range_match.group(2))
+            # Mark through the end of the last season (use high episode number)
+            progress['watched_through'] = {'season': end_season, 'episode': 99}
+        
+        # Pattern: "through S2E5" or "up to S2E5" or "thru s2e5"
+        elif re.match(r'(through|thru|up\s*to)\s*s(\d+)\s*e(\d+)', spec_lower):
+            match = re.match(r'(through|thru|up\s*to)\s*s(\d+)\s*e(\d+)', spec_lower)
+            season = int(match.group(2))
+            episode = int(match.group(3))
+            progress['watched_through'] = {'season': season, 'episode': episode}
+        
+        # Pattern: "last episode S1E8"
+        elif re.match(r'last\s*episode\s*s(\d+)\s*e(\d+)', spec_lower):
+            match = re.match(r'last\s*episode\s*s(\d+)\s*e(\d+)', spec_lower)
+            season = int(match.group(1))
+            episode = int(match.group(2))
+            progress['watched_through'] = {'season': season, 'episode': episode}
+        
+        # Pattern: "S3E1-5" - range within a season
+        elif re.match(r's(\d+)\s*e(\d+)\s*-\s*(\d+)', spec_lower):
+            match = re.match(r's(\d+)\s*e(\d+)\s*-\s*(\d+)', spec_lower)
+            season = int(match.group(1))
+            start_ep = int(match.group(2))
+            end_ep = int(match.group(3))
+            progress['additional_watched'] = [
+                {'season': season, 'episode': ep}
+                for ep in range(start_ep, end_ep + 1)
+            ]
+        
+        # Pattern: "S1E3" - single episode
+        elif re.match(r's(\d+)\s*e(\d+)', spec_lower):
+            match = re.match(r's(\d+)\s*e(\d+)', spec_lower)
+            season = int(match.group(1))
+            episode = int(match.group(2))
+            progress['additional_watched'] = [{'season': season, 'episode': episode}]
+        
+        # Pattern: "season 3" - entire single season
+        elif re.match(r'seasons?\s*(\d+)$', spec_lower):
+            match = re.match(r'seasons?\s*(\d+)$', spec_lower)
+            season = int(match.group(1))
+            progress['watched_through'] = {'season': season, 'episode': 99}
+        
+        else:
+            return {
+                'status': 'error',
+                'message': f"Could not parse: '{watched_spec}'. Try formats like 'seasons 1-3', 'through S2E5', or 'S1E3'."
+            }
+        
+        # Add note if provided
+        if note:
+            progress['source_note'] = note
+        
+        # Update the series
+        from urllib.parse import quote
+        response = requests.put(
+            f"{content_service_url}/user/{username}/tracked-series/by-title/{quote(title)}/progress",
+            json=progress,
+            timeout=10
+        )
+        
+        if response.status_code == 400:
+            error_data = response.json()
+            if 'not found' in error_data.get('error', '').lower():
+                return {
+                    'status': 'not_found',
+                    'message': f"'{title}' is not in your tracked series. Add it first with add_tracked_series."
+                }
+            return {
+                'status': 'error',
+                'message': error_data.get('error', 'Unknown error')
+            }
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        actual_title = data.get('series', {}).get('title', title)
+        
+        return {
+            'status': 'ok',
+            'message': f"Marked '{actual_title}' as watched: {watched_spec}" +
+                      (f" ({note})" if note else ""),
+            'parsed_progress': progress,
+            'series': data.get('series', {})
+        }
+        
+    except Exception as e:
+        logger.error(f"Error marking episodes watched: {e}")
+        return {
+            'status': 'error',
+            'message': f"Failed to mark episodes for '{title}'",
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def clear_manual_progress(
+    title: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Clear all manual progress overrides for a tracked series.
+    
+    This removes any manually marked episodes, reverting to only
+    what the streaming service reports as watched.
+    
+    Args:
+        title: The series title (fuzzy matching supported)
+        username: The user to update for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - message: Confirmation message
+        - error_message: Error details if status is "error"
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_service_url = "http://content-database:5126"
+        
+        # Find the series
+        from urllib.parse import quote
+        find_response = requests.get(
+            f"{content_service_url}/user/{username}/tracked-series/by-title/{quote(title)}",
+            timeout=10
+        )
+        
+        if find_response.status_code == 404:
+            return {
+                'status': 'not_found',
+                'message': f"'{title}' is not in your tracked series"
+            }
+        
+        find_response.raise_for_status()
+        series = find_response.json()
+        series_id = series.get('id')
+        actual_title = series.get('title', title)
+        
+        # Clear manual progress
+        update_response = requests.put(
+            f"{content_service_url}/user/{username}/tracked-series/{series_id}",
+            json={'manual_progress': None},
+            timeout=10
+        )
+        update_response.raise_for_status()
+        
+        return {
+            'status': 'ok',
+            'message': f"Cleared manual progress for '{actual_title}'"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing manual progress: {e}")
+        return {
+            'status': 'error',
+            'message': f"Failed to clear progress for '{title}'",
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_tracked_series_list(
+    status_filter: Optional[str] = None,
+    service_filter: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get the user's tracked series list with optional filters.
+    
+    This returns all series the user is tracking, with their current
+    watch status and progress. Use to answer questions like "What shows
+    am I tracking?" or "What series am I currently watching?"
+    
+    Args:
+        status_filter: Filter by tracking status - watching, finished, dropped, on_hold, or all
+        service_filter: Filter by streaming service - netflix, hulu, disney, max, prime, apple, or all
+        username: The user to query for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - series: List of tracked series with details
+        - count: Number of series returned
+        - filters_applied: The filters that were used
+        - error_message: Error details if status is "error"
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_service_url = "http://content-database:5126"
+        
+        params = {}
+        if status_filter:
+            params['status'] = status_filter
+        if service_filter:
+            params['service'] = service_filter
+        
+        response = requests.get(
+            f"{content_service_url}/user/{username}/tracked-series",
+            params=params,
+            timeout=15
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'series': data.get('series', []),
+            'count': data.get('count', 0),
+            'filters_applied': {
+                'status': status_filter or 'all',
+                'service': service_filter or 'all'
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting tracked series list: {e}")
+        return {
+            'status': 'error',
+            'series': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_series_tracking_status(
+    title: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get detailed tracking status for a specific series.
+    
+    Returns comprehensive information about a tracked series including
+    watch progress, available services, and manual overrides.
+    
+    Args:
+        title: The series title (fuzzy matching supported)
+        username: The user to query for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok", "not_found", or "error"
+        - series: Full series record with all details
+        - summary: Human-readable summary of status
+        - error_message: Error details if status is "error"
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_service_url = "http://content-database:5126"
+        
+        from urllib.parse import quote
+        response = requests.get(
+            f"{content_service_url}/user/{username}/tracked-series/by-title/{quote(title)}",
+            timeout=10
+        )
+        
+        if response.status_code == 404:
+            return {
+                'status': 'not_found',
+                'message': f"'{title}' is not in your tracked series",
+                'series': None
+            }
+        
+        response.raise_for_status()
+        series = response.json()
+        
+        # Build summary
+        tracking_status = series.get('tracking_status', 'unknown')
+        watch_status = series.get('watch_status', 'unknown')
+        preferred = series.get('preferred_service', 'unknown')
+        manual_progress = series.get('manual_progress')
+        
+        summary_parts = [f"'{series.get('title')}' on {preferred}"]
+        summary_parts.append(f"Status: {tracking_status}")
+        summary_parts.append(f"Progress: {watch_status}")
+        
+        if manual_progress:
+            summary_parts.append("Has manual progress overrides")
+        
+        available = series.get('available_services', [])
+        if available:
+            services = [s.get('service', s) if isinstance(s, dict) else s for s in available]
+            summary_parts.append(f"Also on: {', '.join(services)}")
+        
+        return {
+            'status': 'ok',
+            'series': series,
+            'summary': ' | '.join(summary_parts)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting series status: {e}")
+        return {
+            'status': 'error',
+            'series': None,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
