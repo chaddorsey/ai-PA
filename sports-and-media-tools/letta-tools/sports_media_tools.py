@@ -2761,10 +2761,10 @@ def sync_series_progress(
     the data to the content database. Use this to track which episodes
     a user has watched, which are in progress, and which are unwatched.
     
-    Supported services: max (HBO), disney (Disney+), apple (Apple TV+)
+    Supported services: max (HBO), disney (Disney+), apple (Apple TV+), hulu
     
     Args:
-        service: The streaming service ('max', 'disney', 'apple')
+        service: The streaming service ('max', 'disney', 'apple', 'hulu')
         series_url: The full URL to the series page on the streaming service
         username: The user to associate progress with. Defaults to 'chad'.
     
@@ -2847,7 +2847,7 @@ def get_series_progress(
     
     Args:
         series_title: Title of the series (partial match supported)
-        service: The streaming service ('max', 'disney', 'apple', etc.)
+        service: The streaming service ('max', 'disney', 'apple', 'hulu')
         username: The user to query for. Defaults to 'chad'.
     
     Returns:
