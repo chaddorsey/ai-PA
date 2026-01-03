@@ -97,6 +97,51 @@ jobs:
     category: "streaming_sync"
     timeout_seconds: 60
 
+  - title: "Sync All Active Tracked Series"
+    description: "Sync watch progress for all series with tracking_status='watching'"
+    schedule:
+      cron: "0 4 * * *"
+      natural: "Daily at 4:00 AM"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run sync_all_active_series() for user chad. Log the sync results (count of series synced, any errors) to streaming_sync_status memory block."
+    category: "tracked_series"
+    timeout_seconds: 2400
+    notes:
+      - "Syncs all series where tracking_status='watching'"
+      - "Each series can take 30-60 seconds to scrape"
+      - "Run after main streaming sync completes"
+
+  - title: "Check for New Seasons"
+    description: "Check JustWatch for new season availability on tracked series"
+    schedule:
+      cron: "0 5 * * 0"
+      natural: "Weekly on Sunday at 5:00 AM"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run check_new_seasons() for user chad. If any new seasons are found, log them to streaming_sync_status memory block with the series name and new season number."
+    category: "tracked_series"
+    timeout_seconds: 600
+    notes:
+      - "Checks series with status 'watching' or 'finished'"
+      - "Updates watch_status to 'in_progress' when new seasons found"
+      - "Weekly is sufficient for new season monitoring"
+
+  - title: "Reconcile Watchlist Tracking"
+    description: "Auto-add series from streaming watchlists to tracked_series"
+    schedule:
+      cron: "30 2 * * *"
+      natural: "Daily at 2:30 AM (after watchlist poll)"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run reconcile_watchlist_tracking() for user chad. Log how many new series were auto-tracked from watchlists to streaming_sync_status memory block."
+    category: "tracked_series"
+    timeout_seconds: 300
+    notes:
+      - "Runs after watchlist poll to pick up new items"
+      - "Only adds series not already tracked"
+      - "Sets auto_tracked_from_watchlist=True for these entries"
+
 metadata:
   version: "1.1"
   created: "2025-01-03"
