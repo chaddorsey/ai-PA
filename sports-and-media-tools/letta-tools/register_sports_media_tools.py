@@ -52,7 +52,7 @@ from sports_media_tools import (
     poll_recommendations,
     sync_all_streaming_data,
     query_user_watch_history,
-    get_user_watchlist,
+    query_user_watchlist,
     get_aggregated_recommendations,
     # Series progress tracking tools
     sync_series_progress,
@@ -164,7 +164,7 @@ def main():
         
         # Query tools (both agents)
         ("query_user_watch_history", query_user_watch_history, "Query user's watch history with filters"),
-        ("get_user_watchlist", get_user_watchlist, "Get user's watchlist entries"),
+        ("query_user_watchlist", query_user_watchlist, "Get user's watchlist entries"),
         ("get_aggregated_recommendations", get_aggregated_recommendations, "Get aggregated recommendations from all services"),
         
         # Tracked series management tools (PBI-28) - Main agent
