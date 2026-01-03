@@ -54,11 +54,24 @@ from sports_media_tools import (
     query_user_watch_history,
     get_user_watchlist,
     get_aggregated_recommendations,
-    # Series progress tracking tools (new)
+    # Series progress tracking tools
     sync_series_progress,
     get_series_progress,
     get_series_progress_summary,
     list_tracked_series,
+    # Tracked series management tools (PBI-28)
+    add_tracked_series,
+    remove_tracked_series,
+    update_tracking_status,
+    set_preferred_service,
+    mark_episodes_watched,
+    clear_manual_progress,
+    get_tracked_series_list,
+    get_series_tracking_status,
+    # Background sync tools for tracked series
+    sync_all_active_series,
+    check_new_seasons,
+    reconcile_watchlist_tracking,
 )
 
 # Configuration
@@ -78,7 +91,10 @@ MAIN_AGENT_EXCLUDE_TOOLS = [
     "sync_all_streaming_data",
     "sync_series_progress",  # Background sync tool
     "get_series_progress_summary",  # For agent memory, not user queries
-    "list_tracked_series",  # Maintenance tool
+    # Background tracked series tools
+    "sync_all_active_series",
+    "check_new_seasons",
+    "reconcile_watchlist_tracking",
 ]
 
 # Sleeptime agent: No hardware control or real-time user interaction tools
@@ -94,6 +110,15 @@ SLEEPTIME_AGENT_EXCLUDE_TOOLS = [
     "search_tv_guide",
     "get_channel_info",
     "lookup_streaming_content",
+    # User-facing tracked series tools (main agent only)
+    "add_tracked_series",
+    "remove_tracked_series",
+    "update_tracking_status",
+    "set_preferred_service",
+    "mark_episodes_watched",
+    "clear_manual_progress",
+    "get_tracked_series_list",
+    "get_series_tracking_status",
 ]
 
 
@@ -131,7 +156,7 @@ def main():
         ("poll_recommendations", poll_recommendations, "Poll streaming services for personalized recommendations"),
         ("sync_all_streaming_data", sync_all_streaming_data, "Full sync of watch history, watchlists, and recommendations"),
         
-        # Series progress tracking tools (new)
+        # Series progress tracking tools
         ("sync_series_progress", sync_series_progress, "Scrape episode-level watch progress for a series"),
         ("get_series_progress", get_series_progress, "Get unwatched episodes for a series"),
         ("get_series_progress_summary", get_series_progress_summary, "Get formatted summary for memory block"),
@@ -141,6 +166,21 @@ def main():
         ("query_user_watch_history", query_user_watch_history, "Query user's watch history with filters"),
         ("get_user_watchlist", get_user_watchlist, "Get user's watchlist entries"),
         ("get_aggregated_recommendations", get_aggregated_recommendations, "Get aggregated recommendations from all services"),
+        
+        # Tracked series management tools (PBI-28) - Main agent
+        ("add_tracked_series", add_tracked_series, "Add a series to tracking with JustWatch lookup"),
+        ("remove_tracked_series", remove_tracked_series, "Remove a series from tracking"),
+        ("update_tracking_status", update_tracking_status, "Update status: watching/finished/dropped/on_hold"),
+        ("set_preferred_service", set_preferred_service, "Set preferred streaming service for a series"),
+        ("mark_episodes_watched", mark_episodes_watched, "Mark episodes as watched with flexible spec"),
+        ("clear_manual_progress", clear_manual_progress, "Clear manual progress overrides for a series"),
+        ("get_tracked_series_list", get_tracked_series_list, "Get user's tracked series with filters"),
+        ("get_series_tracking_status", get_series_tracking_status, "Get detailed tracking status for a series"),
+        
+        # Background tracked series tools (PBI-28) - Sleeptime agent
+        ("sync_all_active_series", sync_all_active_series, "Sync progress for all actively tracked series"),
+        ("check_new_seasons", check_new_seasons, "Check for new season availability on tracked series"),
+        ("reconcile_watchlist_tracking", reconcile_watchlist_tracking, "Auto-track series from watchlists"),
     ]
     
     registered_tool_ids = []
@@ -253,6 +293,9 @@ def main():
         print('  launch_streaming_content(title="Slow Horses", app="apple")')
         print('  get_series_progress(series_title="Last Week Tonight", service="max")')
         print('  sync_series_progress(service="max", series_url="https://play.hbomax.com/show/...")')
+        print('  add_tracked_series(title="The Mandalorian")')
+        print('  update_tracking_status(title="Severance", status="finished")')
+        print('  mark_episodes_watched(title="The Americans", watched_spec="seasons 1-4")')
         
         return 0
         
