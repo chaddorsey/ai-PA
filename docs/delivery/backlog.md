@@ -34,6 +34,7 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 
 || 26 | Executive / EA | As a user, I want consolidated Drive analytics tools with user, owner, and date range filtering so that I can answer questions like "What did Cynthia edit last week?" without multiple tool calls. | Agreed | (1) Unified search_drive_activity tool with user/owner/date/activity filters; (2) get_drive_documents for document discovery; (3) Preserved analytics capabilities; (4) All example questions answerable; (5) Old tools deprecated but functional; (6) New tools registered with Letta - [View Details](./26/prd.md) |
 | 27 | Home User | As a home user, I want a Letta agent with sports and media control tools so that I can ask "Watch the Patriots game" and have the TV automatically tune to the correct channel or streaming service. | Done | (1) ESPN API polling service deployed; (2) Flipper Zero IR control API deployed; (3) Roku TV control via ECP; (4) Letta tools for sports queries, channel lookup, TV control, and game watching; (5) End-to-end orchestration works for cable and streaming games - [View Details](./27/prd.md) |
+| 28 | Home User | As a home user, I want intentional series tracking with manual progress, status management, and new season monitoring so that Letta can tell me what I haven't watched and notify me of new seasons. | InProgress | (1) tracked_series table with status/progress fields; (2) Add/remove series by title with JustWatch lookup; (3) Status management (watching/finished/dropped/on_hold); (4) Manual progress override with flexible spec parsing; (5) New season detection for finished series; (6) Watchlist auto-tracking integration; (7) Multi-user and multi-service support - [View Details](./28/prd.md) |
 
 ## PBI History Log
 
@@ -67,6 +68,8 @@ This backlog contains all Product Backlog Items (PBIs) for the AI Personal Assis
 | 2024-12-24 10:05:00 | 26 | propose_for_backlog | PBI 26 moved from Proposed to Agreed - ready for implementation | AI_Agent |
 | 2026-01-01 10:00:00 | 27 | create_pbi | Added PBI 27 for Sports & Media Control Agent with Letta tools for ESPN, Roku, and FIOS IR control | AI_Agent |
 | 2026-01-01 12:00:00 | 27 | approve | PBI 27 completed - all services and tools implemented | AI_Agent |
+| 2026-01-03 06:30:00 | 28 | create_pbi | Added PBI 28 for Series Tracking Management System with status, progress overrides, and new season monitoring | AI_Agent |
+| 2026-01-03 06:30:00 | 28 | start_implementation | PBI 28 moved to InProgress - beginning implementation | AI_Agent |
 
 ## Backlog Notes
 
