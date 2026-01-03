@@ -1,0 +1,96 @@
+{
+  "jobs": [
+    {
+      "title": "Full Streaming Data Sync",
+      "description": "Comprehensive sync of watch history, watchlists, and recommendations from all streaming services",
+      "schedule": {
+        "cron": "0 3 * * *",
+        "natural": "Daily at 3:00 AM"
+      },
+      "action_type": "agent_message",
+      "agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+      "prompt": "Run sync_all_streaming_data for user chad with include_recommendations=true. Report the total items synced from each service and any errors.",
+      "category": "streaming_sync",
+      "timeout_seconds": 1800
+    },
+    {
+      "title": "Watch History Poll",
+      "description": "Sync Continue Watching data from all streaming services every 6 hours",
+      "schedule": {
+        "cron": "0 0,6,12,18 * * *",
+        "natural": "Every 6 hours (midnight, 6 AM, noon, 6 PM)"
+      },
+      "action_type": "agent_message",
+      "agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+      "prompt": "Run poll_watch_history for user chad. Report how many items were found and saved for each service.",
+      "category": "streaming_sync",
+      "timeout_seconds": 600
+    },
+    {
+      "title": "Watchlists Poll",
+      "description": "Sync My List / Watchlist items from all streaming services",
+      "schedule": {
+        "cron": "0 2,14 * * *",
+        "natural": "Every 12 hours (2:00 AM and 2:00 PM)"
+      },
+      "action_type": "agent_message",
+      "agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+      "prompt": "Run poll_watchlists for user chad. Report how many watchlist items were found for each service.",
+      "category": "streaming_sync",
+      "timeout_seconds": 900
+    },
+    {
+      "title": "Recommendations Poll",
+      "description": "Sync personalized recommendations from all streaming services",
+      "schedule": {
+        "cron": "0 4 * * *",
+        "natural": "Daily at 4:00 AM"
+      },
+      "action_type": "agent_message",
+      "agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+      "prompt": "Run poll_recommendations for user chad. Report how many recommendations were found for each service.",
+      "category": "streaming_sync",
+      "timeout_seconds": 1200
+    },
+    {
+      "title": "Credential Health Check",
+      "description": "Verify that all streaming service credentials are still valid and report any that need re-authentication",
+      "schedule": {
+        "cron": "0 5 * * *",
+        "natural": "Daily at 5:00 AM"
+      },
+      "action_type": "agent_message",
+      "agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+      "prompt": "Run check_credential_status and report which streaming services have valid credentials and which need re-authentication.",
+      "category": "maintenance",
+      "timeout_seconds": 120
+    },
+    {
+      "title": "TV Listings Refresh",
+      "description": "Trigger refresh of TV guide listings data to ensure cache is current",
+      "schedule": {
+        "cron": "0 1,5,9,13,17,21 * * *",
+        "natural": "Every 4 hours"
+      },
+      "action_type": "agent_message",
+      "agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+      "prompt": "Call get_tv_listings_now with sports_only=false to refresh TV listings data.",
+      "category": "tv_guide",
+      "timeout_seconds": 60
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2025-01-03",
+    "description": "Scheduled jobs for streaming data synchronization and maintenance",
+    "sleeptime_agent_id": "agent-a9f2c740-663c-4414-a553-47115180e49b",
+    "notes": [
+      "All polling tools automatically save data to the database - no additional steps needed",
+      "Full sync can take 15-20 minutes as it scrapes all services with browser automation",
+      "Recommendations polling is slow due to browser scraping - run during off-peak hours",
+      "Watch history is most dynamic and should be polled frequently (every 6 hours)",
+      "TV listings refresh is lightweight and can run more frequently"
+    ]
+  }
+}
+

@@ -1814,3 +1814,1226 @@ def get_channel_info(
             'upcoming': [],
             'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
         }
+
+
+def get_user_watch_stats(
+    username: str
+) -> Dict[str, Any]:
+    """
+    Get statistics about a user's watch history.
+    
+    This tool provides an overview of what a user has watched, including
+    their most-watched shows, watch counts by service, and recent activity.
+    Use this to understand viewing habits and preferences.
+    
+    Args:
+        username: The username to get stats for (e.g., "chad").
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - user: The username
+        - total_watches: Total number of watch entries
+        - unique_titles: Number of unique titles watched
+        - by_service: Watch counts by streaming service
+        - most_watched: List of most-watched titles with counts
+        - recent_activity: Recent watch activity by date
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        content_db_url = "http://content-database:5126"
+        
+        response = requests.get(
+            f"{content_db_url}/user/{username}/stats",
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'user': username,
+            'display_name': data.get('display_name'),
+            'total_watches': data.get('total_watches', 0),
+            'unique_titles': data.get('unique_titles', 0),
+            'by_service': data.get('by_service', {}),
+            'most_watched': data.get('most_watched', []),
+            'recent_activity': data.get('recent_activity', [])[:10]
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"User stats request failed: {e}")
+        return {
+            'status': 'error',
+            'user': username,
+            'error_message': f"Failed to get user stats: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting user stats: {e}")
+        return {
+            'status': 'error',
+            'user': username,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_continue_watching(
+    username: str,
+    limit: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Get shows/series a user has started but may not have completed.
+    
+    This tool returns series the user has watched recently, with information
+    about the last episode watched and suggestions for the next episode.
+    Perfect for helping users pick up where they left off.
+    
+    Args:
+        username: The username to get continue watching for (e.g., "chad").
+        limit: Maximum number of series to return. Defaults to 10.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - user: The username
+        - continue_watching: List of series with last watched info and next episode suggestions
+        - count: Number of series returned
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if limit is None:
+            limit = 10
+        
+        content_db_url = "http://content-database:5126"
+        
+        response = requests.get(
+            f"{content_db_url}/user/{username}/continue-watching",
+            params={'limit': limit},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        # Format results
+        results = []
+        for item in data.get('continue_watching', []):
+            results.append({
+                'title': item.get('title'),
+                'service': item.get('service'),
+                'last_season': item.get('last_season'),
+                'last_episode': item.get('last_episode'),
+                'last_watched': item.get('last_watched'),
+                'suggested_next': item.get('suggested_next'),
+                'streaming_links': item.get('streaming_links', {})
+            })
+        
+        return {
+            'status': 'ok',
+            'user': username,
+            'continue_watching': results,
+            'count': len(results)
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Continue watching request failed: {e}")
+        return {
+            'status': 'error',
+            'user': username,
+            'continue_watching': [],
+            'count': 0,
+            'error_message': f"Failed to get continue watching: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting continue watching: {e}")
+        return {
+            'status': 'error',
+            'user': username,
+            'continue_watching': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def search_user_watch_history(
+    username: str,
+    query: str
+) -> Dict[str, Any]:
+    """
+    Search a user's watch history for specific titles.
+    
+    This tool searches through a user's watch history to find content
+    they've watched. Use this to answer questions like "Have I watched
+    Breaking Bad?" or "When did I watch The Office?"
+    
+    Args:
+        username: The username to search history for (e.g., "chad").
+        query: Search query to match against titles (e.g., "breaking", "office").
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - user: The username
+        - query: The search query
+        - results: List of matching titles with watch info
+        - count: Number of results
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        content_db_url = "http://content-database:5126"
+        
+        response = requests.get(
+            f"{content_db_url}/user/{username}/search",
+            params={'q': query},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'user': username,
+            'query': query,
+            'results': data.get('results', []),
+            'count': data.get('count', 0)
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Search history request failed: {e}")
+        return {
+            'status': 'error',
+            'user': username,
+            'query': query,
+            'results': [],
+            'count': 0,
+            'error_message': f"Failed to search history: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error searching history: {e}")
+        return {
+            'status': 'error',
+            'user': username,
+            'query': query,
+            'results': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def update_streaming_credentials(
+    service: str,
+    cookies_json: str,
+    additional_params: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update authentication credentials for a streaming service.
+    
+    This tool allows updating the stored credentials (cookies, tokens) for
+    streaming services so that watch history polling can continue to work
+    when credentials expire.
+    
+    Credentials should be exported from the browser as JSON.
+    
+    Args:
+        service: The streaming service name (max, hulu, disney, apple, netflix, prime).
+        cookies_json: JSON string containing the exported browser cookies.
+        additional_params: Optional JSON string with additional parameters like:
+                          - profile_guid (for Netflix)
+                          - bearer_token (for Disney+/Apple TV+)
+                          - profile_id (for Disney+)
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - service: The service that was updated
+        - message: Success or error message
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import json
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    valid_services = ['max', 'hulu', 'disney', 'apple', 'netflix', 'prime']
+    
+    if service not in valid_services:
+        return {
+            'status': 'error',
+            'service': service,
+            'message': f"Invalid service. Must be one of: {', '.join(valid_services)}"
+        }
+    
+    try:
+        # Parse the cookies JSON
+        try:
+            cookies = json.loads(cookies_json)
+        except json.JSONDecodeError as e:
+            return {
+                'status': 'error',
+                'service': service,
+                'message': f"Invalid cookies JSON: {str(e)}"
+            }
+        
+        # Build credentials object
+        credentials = {'cookies': cookies}
+        
+        # Add additional parameters if provided
+        if additional_params:
+            try:
+                extra = json.loads(additional_params)
+                credentials.update(extra)
+            except json.JSONDecodeError as e:
+                return {
+                    'status': 'error',
+                    'service': service,
+                    'message': f"Invalid additional_params JSON: {str(e)}"
+                }
+        
+        # Send to the watch history service
+        poller_url = "http://watch-history-service:5127"
+        
+        response = requests.post(
+            f"{poller_url}/credentials/{service}",
+            json=credentials,
+            timeout=30
+        )
+        response.raise_for_status()
+        
+        return {
+            'status': 'ok',
+            'service': service,
+            'message': f"Credentials updated successfully for {service}"
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Credential update failed: {e}")
+        return {
+            'status': 'error',
+            'service': service,
+            'message': f"Failed to update credentials: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error updating credentials: {e}")
+        return {
+            'status': 'error',
+            'service': service,
+            'message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def check_credential_status() -> Dict[str, Any]:
+    """
+    Check the authentication status of all streaming service credentials.
+    
+    This tool checks which services have credentials configured and whether
+    they appear to be valid. Useful for the sleeptime agent to know which
+    services can be polled.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - services: Dict mapping service names to their credential status
+        - configured_count: Number of services with credentials
+        - error_message: Error message if status is "error"
+    """
+    # IMPORTS FIRST
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    services = ['max', 'hulu', 'disney', 'apple', 'netflix', 'prime']
+    
+    try:
+        poller_url = "http://watch-history-service:5127"
+        service_status = {}
+        configured_count = 0
+        
+        for service in services:
+            try:
+                response = requests.get(
+                    f"{poller_url}/credentials/{service}",
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    service_status[service] = {
+                        'configured': data.get('configured', False),
+                        'keys': data.get('keys', [])
+                    }
+                    if data.get('configured'):
+                        configured_count += 1
+                else:
+                    service_status[service] = {
+                        'configured': False,
+                        'error': f"HTTP {response.status_code}"
+                    }
+            except Exception as e:
+                service_status[service] = {
+                    'configured': False,
+                    'error': str(e)
+                }
+        
+        return {
+            'status': 'ok',
+            'services': service_status,
+            'configured_count': configured_count,
+            'total_services': len(services)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking credentials: {e}")
+        return {
+            'status': 'error',
+            'services': {},
+            'configured_count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+# ==================== WATCH HISTORY POLLING TOOLS ====================
+
+
+def poll_watch_history(
+    service: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Poll streaming services for watch history and automatically save to database.
+    
+    This tool fetches "continue watching" data from streaming services and
+    AUTOMATICALLY saves new entries to the content database. No additional
+    action is required after calling this tool - just report the results.
+    
+    Args:
+        service: Specific service to poll. Options: 'max', 'hulu', 'netflix', 
+                 'prime', 'apple', 'disney'. Leave empty to poll ALL services.
+        username: The user to associate history with. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - services: Dict of service -> {items_found, items_saved}
+        - total_items: Total items found across all services
+        - total_saved: Total NEW items saved to database (0 if already existed)
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_url = "http://watch-history-service:5127"
+        
+        if service:
+            # Poll single service
+            response = requests.post(
+                f"{watch_history_url}/poll/{service}",
+                json={'username': username},
+                timeout=120
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            return {
+                'status': 'ok',
+                'services': {
+                    service: {
+                        'count': data.get('items_found', 0),
+                        'saved': data.get('items_saved', 0),
+                        'method': data.get('method', 'unknown')
+                    }
+                },
+                'total_items': data.get('items_found', 0),
+                'total_saved': data.get('items_saved', 0)
+            }
+        else:
+            # Poll all services
+            response = requests.post(
+                f"{watch_history_url}/poll",
+                json={'username': username},
+                timeout=300
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            total_items = sum(s.get('items_found', 0) for s in data.get('services', {}).values())
+            total_saved = sum(s.get('items_saved', 0) for s in data.get('services', {}).values())
+            
+            return {
+                'status': 'ok',
+                'services': data.get('services', {}),
+                'total_items': total_items,
+                'total_saved': total_saved
+            }
+        
+    except Exception as e:
+        logger.error(f"Error polling watch history: {e}")
+        return {
+            'status': 'error',
+            'services': {},
+            'total_items': 0,
+            'total_saved': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def poll_watchlists(
+    service: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Poll streaming services for watchlist/My List and automatically save to database.
+    
+    This tool fetches the user's saved watchlists from streaming services
+    and AUTOMATICALLY saves entries to the database. Just report the results.
+    (Netflix My List, Prime Watchlist, etc.) and saves them to the database.
+    Use this to keep track of what the user wants to watch.
+    
+    Args:
+        service: Specific service to poll. Options: 'netflix', 'prime', 
+                 'disney', 'apple'. Leave empty to poll all services.
+        username: The user to associate watchlists with. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - services: Dict of service -> {count, saved}
+        - total_items: Total items found across all services
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_url = "http://watch-history-service:5127"
+        
+        if service:
+            # Poll single service
+            response = requests.post(
+                f"{watch_history_url}/watchlist/{service}",
+                json={'username': username},
+                timeout=120
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            return {
+                'status': 'ok',
+                'services': {
+                    service: {
+                        'count': data.get('count', 0),
+                        'saved': data.get('saved', 0)
+                    }
+                },
+                'total_items': data.get('count', 0)
+            }
+        else:
+            # Poll all services
+            response = requests.post(
+                f"{watch_history_url}/watchlist/all",
+                json={'username': username},
+                timeout=300
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            services_summary = {}
+            for svc, info in data.get('services', {}).items():
+                services_summary[svc] = {
+                    'count': info.get('count', 0),
+                    'saved': info.get('saved', 0)
+                }
+            
+            return {
+                'status': 'ok',
+                'services': services_summary,
+                'total_items': data.get('total', 0)
+            }
+        
+    except Exception as e:
+        logger.error(f"Error polling watchlists: {e}")
+        return {
+            'status': 'error',
+            'services': {},
+            'total_items': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def poll_recommendations(
+    service: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Poll streaming services for personalized recommendations.
+    
+    This tool fetches the recommendation rows from streaming service home pages
+    (e.g., "Because you watched...", "Trending Now", "Top Picks") and saves
+    them to the database. Use this to understand what each service is suggesting.
+    
+    Note: This can be slow as it requires browser scraping of each service's
+    home page. Consider running during off-peak times.
+    
+    Args:
+        service: Specific service to poll. Options: 'netflix', 'prime', 
+                 'disney', 'apple'. Leave empty to poll all services.
+        username: The user to associate recommendations with. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - services: Dict of service -> {count, saved}
+        - total_items: Total recommendations found across all services
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_url = "http://watch-history-service:5127"
+        
+        if service:
+            # Poll single service
+            response = requests.post(
+                f"{watch_history_url}/recommendations/{service}",
+                json={'username': username},
+                timeout=180
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            return {
+                'status': 'ok',
+                'services': {
+                    service: {
+                        'count': data.get('count', 0),
+                        'saved': data.get('saved', 0)
+                    }
+                },
+                'total_items': data.get('count', 0)
+            }
+        else:
+            # Poll all services
+            response = requests.post(
+                f"{watch_history_url}/recommendations/all",
+                json={'username': username},
+                timeout=600
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            services_summary = {}
+            for svc, info in data.get('services', {}).items():
+                services_summary[svc] = {
+                    'count': info.get('count', 0),
+                    'saved': info.get('saved', 0)
+                }
+            
+            return {
+                'status': 'ok',
+                'services': services_summary,
+                'total_items': data.get('total', 0)
+            }
+        
+    except Exception as e:
+        logger.error(f"Error polling recommendations: {e}")
+        return {
+            'status': 'error',
+            'services': {},
+            'total_items': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def sync_all_streaming_data(
+    username: Optional[str] = None,
+    include_recommendations: Optional[bool] = None
+) -> Dict[str, Any]:
+    """
+    Perform a full sync of all streaming service data.
+    
+    This is a comprehensive sync that polls:
+    1. Watch history from all services (what the user has watched)
+    2. Watchlists from all services (what the user wants to watch)
+    3. Recommendations from all services (what services suggest) - optional
+    
+    This is the tool to use for scheduled daily syncs. It saves all data
+    to the content database for later querying.
+    
+    Args:
+        username: The user to sync data for. Defaults to 'chad'.
+        include_recommendations: Whether to also sync recommendations.
+                                  Defaults to True but can be slow.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - watch_history: Summary of watch history sync per service
+        - watchlists: Summary of watchlist sync per service
+        - recommendations: Summary of recommendations sync per service (if included)
+        - totals: Overall counts for each category
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        if include_recommendations is None:
+            include_recommendations = True
+        
+        watch_history_url = "http://watch-history-service:5127"
+        
+        response = requests.post(
+            f"{watch_history_url}/sync/all",
+            json={
+                'username': username,
+                'include_recommendations': include_recommendations
+            },
+            timeout=900  # 15 minutes for full sync
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'username': data.get('username'),
+            'timestamp': data.get('timestamp'),
+            'watch_history': data.get('watch_history', {}),
+            'watchlists': data.get('watchlists', {}),
+            'recommendations': data.get('recommendations', {}),
+            'totals': data.get('totals', {})
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in full sync: {e}")
+        return {
+            'status': 'error',
+            'watch_history': {},
+            'watchlists': {},
+            'recommendations': {},
+            'totals': {},
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def query_user_watch_history(
+    username: Optional[str] = None,
+    service: Optional[str] = None,
+    title_search: Optional[str] = None,
+    limit: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Query the user's watch history from the database.
+    
+    Use this to find out what the user has watched. You can search by
+    title, filter by service, or get recent viewing activity.
+    
+    Args:
+        username: The user to query. Defaults to 'chad'.
+        service: Filter by streaming service (e.g., 'netflix', 'prime').
+        title_search: Search for titles containing this text.
+        limit: Maximum number of results. Defaults to 50.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - entries: List of watch history entries
+        - count: Number of entries returned
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        if limit is None:
+            limit = 50
+        
+        content_api_url = "http://content-database-api:5126"
+        
+        params = {'username': username, 'limit': limit}
+        if service:
+            params['service'] = service
+        if title_search:
+            params['title'] = title_search
+        
+        response = requests.get(
+            f"{content_api_url}/user/history",
+            params=params,
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'entries': data.get('entries', []),
+            'count': len(data.get('entries', []))
+        }
+        
+    except Exception as e:
+        logger.error(f"Error querying watch history: {e}")
+        return {
+            'status': 'error',
+            'entries': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def query_user_watchlist(
+    username: Optional[str] = None,
+    service: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Query the user's watchlist/My List from the database.
+    
+    Use this to find out what the user has saved to watch later.
+    
+    Args:
+        username: The user to query. Defaults to 'chad'.
+        service: Filter by streaming service (e.g., 'netflix', 'prime').
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - entries: List of watchlist entries
+        - count: Number of entries returned
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        content_api_url = "http://content-database-api:5126"
+        
+        params = {'username': username}
+        if service:
+            params['service'] = service
+        
+        response = requests.get(
+            f"{content_api_url}/user/watchlist",
+            params=params,
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'entries': data.get('entries', []),
+            'count': len(data.get('entries', []))
+        }
+        
+    except Exception as e:
+        logger.error(f"Error querying watchlist: {e}")
+        return {
+            'status': 'error',
+            'entries': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_aggregated_recommendations(
+    username: Optional[str] = None,
+    limit_per_service: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Get aggregated recommendations from all streaming services.
+    
+    This queries the cached recommendations from the database and provides
+    a unified view of what all services are suggesting. Useful for helping
+    the user decide what to watch by showing top picks across services.
+    
+    Args:
+        username: The user to get recommendations for. Defaults to 'chad'.
+        limit_per_service: Max recommendations per service. Defaults to 10.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - recommendations: Dict of service -> list of recommended titles
+        - total_count: Total recommendations across all services
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        if limit_per_service is None:
+            limit_per_service = 10
+        
+        content_api_url = "http://content-database-api:5126"
+        
+        response = requests.get(
+            f"{content_api_url}/user/recommendations",
+            params={'username': username, 'limit': limit_per_service},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'recommendations': data.get('recommendations', {}),
+            'total_count': data.get('total_count', 0)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting recommendations: {e}")
+        return {
+            'status': 'error',
+            'recommendations': {},
+            'total_count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+# ============================================================================
+# SERIES PROGRESS TRACKING TOOLS
+# ============================================================================
+
+def sync_series_progress(
+    service: str,
+    series_url: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Scrape and sync episode-level watch progress for a specific series.
+    
+    This tool navigates to a series page on a streaming service, scrapes
+    the watch progress for every episode across all seasons, and saves
+    the data to the content database. Use this to track which episodes
+    a user has watched, which are in progress, and which are unwatched.
+    
+    Supported services: max (HBO), disney (Disney+), apple (Apple TV+)
+    
+    Args:
+        service: The streaming service ('max', 'disney', 'apple')
+        series_url: The full URL to the series page on the streaming service
+        username: The user to associate progress with. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - series_title: Title of the series
+        - total_episodes: Number of episodes found
+        - watched: Number of watched episodes
+        - in_progress: Number of in-progress episodes
+        - unwatched: Number of unwatched episodes
+        - next_episode: Dict with season, episode, title of next unwatched episode
+        - error_message: Error message if status is "error"
+    
+    Example:
+        sync_series_progress('max', 'https://play.hbomax.com/show/...')
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_service_url = "http://watch-history-service:5127"
+        
+        response = requests.post(
+            f"{watch_history_service_url}/series-progress/scrape",
+            json={
+                'service': service,
+                'series_url': series_url,
+                'username': username
+            },
+            timeout=120  # Long timeout for browser scraping
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status') == 'ok':
+            summary = data.get('summary', {})
+            return {
+                'status': 'ok',
+                'series_title': data.get('series_title', 'Unknown'),
+                'service': service,
+                'total_episodes': summary.get('total_episodes', 0),
+                'watched': summary.get('watched', 0),
+                'in_progress': summary.get('in_progress', 0),
+                'unwatched': summary.get('unwatched', 0),
+                'next_episode': summary.get('next_episode'),
+                'episodes_saved': data.get('episodes_saved', 0)
+            }
+        else:
+            return {
+                'status': 'error',
+                'error_message': data.get('error', 'Unknown error')
+            }
+        
+    except Exception as e:
+        logger.error(f"Error syncing series progress: {e}")
+        return {
+            'status': 'error',
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_series_progress(
+    series_title: str,
+    service: str,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get the current watch progress for a specific series.
+    
+    This tool queries the database for episode-level progress on a series,
+    returning which episodes are watched, in progress, or unwatched.
+    Use this to answer questions like "What episodes of X haven't I watched?"
+    
+    Args:
+        series_title: Title of the series (partial match supported)
+        service: The streaming service ('max', 'disney', 'apple', etc.)
+        username: The user to query for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - series_title: Full matched title
+        - total_episodes: Total episode count
+        - watched_episodes: Number watched
+        - unwatched_count: Number unwatched
+        - in_progress_count: Number in progress
+        - episodes: List of unwatched/in-progress episodes with season, episode, title, progress
+    
+    Example:
+        get_series_progress('Last Week Tonight', 'max')
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_service_url = "http://watch-history-service:5127"
+        
+        response = requests.get(
+            f"{watch_history_service_url}/series-progress/unwatched",
+            params={
+                'series': series_title,
+                'service': service,
+                'username': username
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        if 'error' in data:
+            return {
+                'status': 'error',
+                'error_message': data['error']
+            }
+        
+        return {
+            'status': 'ok',
+            'series_title': data.get('series_title'),
+            'service': data.get('service'),
+            'total_episodes': data.get('total_episodes', 0),
+            'watched_episodes': data.get('watched_episodes', 0),
+            'unwatched_count': data.get('unwatched_count', 0),
+            'in_progress_count': data.get('in_progress_count', 0),
+            'episodes': data.get('episodes', [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting series progress: {e}")
+        return {
+            'status': 'error',
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def get_series_progress_summary(
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get a formatted summary of all tracked series progress.
+    
+    This tool returns a human-readable summary of watch progress across
+    all tracked series on all streaming services. The output is suitable
+    for storing in a Letta memory block for quick agent reference.
+    
+    Use this periodically (e.g., daily) to update the agent's knowledge
+    of the user's viewing progress across all series.
+    
+    Args:
+        username: The user to query for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - summary: Formatted multi-line string summarizing all series progress
+        - suitable_for_memory: True if summary should be saved to memory block
+    
+    Example output in summary:
+        ## Series Progress (updated: 2025-01-03 15:00 UTC)
+        
+        **Max (HBO):**
+        - Last Week Tonight S12: 20/30 watched, next: S12E21 "Health Agency Cuts"
+        - The White Lotus S3: 4/8 watched, S3E5 in progress (42%)
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_service_url = "http://watch-history-service:5127"
+        
+        response = requests.get(
+            f"{watch_history_service_url}/series-progress/summary",
+            params={'username': username},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'summary': data.get('summary', 'No series progress data found.'),
+            'suitable_for_memory': True
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting series progress summary: {e}")
+        return {
+            'status': 'error',
+            'summary': '',
+            'suitable_for_memory': False,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
+def list_tracked_series(
+    service: Optional[str] = None,
+    username: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    List all series currently being tracked for episode progress.
+    
+    This tool returns a list of all series that have been synced for
+    episode-level progress tracking. Use this to see which series
+    the user is actively watching and might need progress updates.
+    
+    Args:
+        service: Optional, filter by streaming service ('max', 'disney', 'apple')
+        username: The user to query for. Defaults to 'chad'.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - series: List of series with title, service, episode counts
+        - count: Number of tracked series
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        if username is None:
+            username = 'chad'
+        
+        watch_history_service_url = "http://watch-history-service:5127"
+        
+        params = {'username': username}
+        if service:
+            params['service'] = service
+        
+        response = requests.get(
+            f"{watch_history_service_url}/series-progress/list",
+            params=params,
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        return {
+            'status': 'ok',
+            'series': data.get('series', []),
+            'count': data.get('count', 0)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing tracked series: {e}")
+        return {
+            'status': 'error',
+            'series': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+

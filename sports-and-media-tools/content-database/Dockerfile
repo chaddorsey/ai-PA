@@ -12,6 +12,8 @@ RUN mkdir -p /app/data
 # Copy application files
 COPY justwatch_scraper.py .
 COPY content_api.py .
+COPY user_schema.py .
+COPY import_watch_history.py .
 
 # Environment variables
 ENV CONTENT_DB_PATH=/app/data/content_database.db

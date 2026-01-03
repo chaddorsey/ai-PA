@@ -1,0 +1,121 @@
+jobs:
+  - title: "Full Streaming Data Sync"
+    description: "Comprehensive sync of watch history, watchlists, and recommendations from all streaming services"
+    schedule:
+      cron: "0 3 * * *"
+      natural: "Daily at 3:00 AM"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run sync_all_streaming_data for user chad with include_recommendations=true. Log the date and time and total items synced from each service to the streaming_sync_status memory block and log any errors or issues to the streaming_sync_errors_and_issues memory block."
+    category: "streaming_sync"
+    timeout_seconds: 1800
+
+  - title: "Watch History Poll"
+    description: "Sync Continue Watching data from all streaming services every 6 hours"
+    schedule:
+      cron: "0 0,6,12,18 * * *"
+      natural: "Every 6 hours (midnight, 6 AM, noon, 6 PM)"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run poll_watch_history for user chad. Update the date and time and total items found from each service in the streaming_sync_status memory block and log any errors or issues to the streaming_sync_errors_and_issues memory block."
+    category: "streaming_sync"
+    timeout_seconds: 600
+
+  - title: "Watchlists Poll"
+    description: "Sync My List / Watchlist items from all streaming services"
+    schedule:
+      cron: "0 2,14 * * *"
+      natural: "Every 12 hours (2:00 AM and 2:00 PM)"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run poll_watchlists for user chad. Update the streaming_sync_status memory block to note the date and time and how many watchlist items were found for each service."
+    category: "streaming_sync"
+    timeout_seconds: 900
+
+  - title: "Recommendations Poll"
+    description: "Sync personalized recommendations from all streaming services"
+    schedule:
+      cron: "0 4 * * *"
+      natural: "Daily at 4:00 AM"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run poll_recommendations for user chad. Update the streaming_sync_status memory block with information on how many recommendations were found for each service."
+    category: "streaming_sync"
+    timeout_seconds: 1200
+
+  - title: "Credential Health Check"
+    description: "Verify that all streaming service credentials are still valid and add notes about any that need re-authentication to the streaming_sync_errors_and_issues memory block."
+    schedule:
+      cron: "0 5 * * *"
+      natural: "Daily at 5:00 AM"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run check_credential_status and log which streaming services have valid credentials and which need re-authentication to the streaming_sync_errors_and_issues memory block."
+    category: "maintenance"
+    timeout_seconds: 120
+
+  - title: "TV Listings Refresh"
+    description: "Trigger refresh of TV guide listings data to ensure cache is current"
+    schedule:
+      cron: "0 1,5,9,13,17,21 * * *"
+      natural: "Every 4 hours"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Call get_tv_listings_now with sports_only=false to refresh TV listings data."
+    category: "tv_guide"
+    timeout_seconds: 60
+
+  - title: "Series Progress Sync"
+    description: "Sync episode-level watch progress for tracked series on Max, Disney+, and Apple TV+. Updates which episodes are watched, in progress, or unwatched."
+    schedule:
+      cron: "30 3 * * *"
+      natural: "Daily at 3:30 AM (after full streaming sync)"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: |
+      Sync series progress for user chad:
+      1. First, call list_tracked_series() to see what series are currently tracked
+      2. For each tracked series, call sync_series_progress with the service and series URL
+      3. After all syncs complete, call get_series_progress_summary() to get the updated summary
+      4. Save the summary to the series_watch_progress memory block for quick future reference
+      5. Log any sync failures to streaming_sync_errors_and_issues memory block
+    category: "streaming_sync"
+    timeout_seconds: 1800
+    notes:
+      - "This job is data-driven - it syncs whatever series have been tracked"
+      - "New series are added when the user asks about progress on a show they're watching"
+      - "Each series takes 30-60 seconds to scrape (all seasons/episodes)"
+
+  - title: "Series Progress Summary Update"
+    description: "Generate and store a formatted summary of all series progress for quick agent access"
+    schedule:
+      cron: "0 6 * * *"
+      natural: "Daily at 6:00 AM"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Call get_series_progress_summary() for user chad and save the result to the series_watch_progress memory block. This gives you a quick reference to answer 'what haven't I watched' questions."
+    category: "streaming_sync"
+    timeout_seconds: 60
+
+metadata:
+  version: "1.1"
+  created: "2025-01-03"
+  updated: "2025-01-03"
+  description: "Scheduled jobs for streaming data synchronization, series progress tracking, and maintenance"
+  sleeptime_agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+  memory_blocks:
+    - name: "streaming_sync_status"
+      purpose: "Log of last sync times and item counts per service"
+    - name: "streaming_sync_errors_and_issues"
+      purpose: "Log of sync errors and credentials needing refresh"
+    - name: "series_watch_progress"
+      purpose: "Formatted summary of episode progress across all tracked series"
+  notes:
+    - "All polling tools automatically save data to the database - no additional steps needed"
+    - "Full sync can take 15-20 minutes as it scrapes all services with browser automation"
+    - "Recommendations polling is slow due to browser scraping - run during off-peak hours"
+    - "Watch history is most dynamic and should be polled frequently (every 6 hours)"
+    - "TV listings refresh is lightweight and can run more frequently"
+    - "Series progress sync is data-driven - add series by syncing them once"
+    - "Memory blocks let the agent quickly answer user questions without tool calls"
+

@@ -545,8 +545,310 @@ def get_nfl_content():
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# USER WATCH HISTORY ENDPOINTS
+# =============================================================================
+
+@app.route('/user/<username>/history', methods=['GET'])
+def get_user_history(username: str):
+    """
+    Get a user's watch history.
+    
+    Query params:
+        service: Filter by service (netflix, prime, etc.)
+        limit: Maximum results (default 50)
+        offset: Pagination offset
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get user
+        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': f'User not found: {username}'}), 404
+        
+        user_id = user[0]
+        service = request.args.get('service')
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        sql = '''
+            SELECT wh.*, c.justwatch_id, c.year, c.content_type,
+                   GROUP_CONCAT(sa.service || ':' || COALESCE(sa.content_id_for_service, '')) as streaming
+            FROM user_watch_history wh
+            LEFT JOIN content c ON wh.content_id = c.id
+            LEFT JOIN streaming_availability sa ON c.id = sa.content_id
+            WHERE wh.user_id = ?
+        '''
+        params = [user_id]
+        
+        if service:
+            sql += ' AND wh.service = ?'
+            params.append(service)
+        
+        sql += ' GROUP BY wh.id ORDER BY wh.watched_at DESC LIMIT ? OFFSET ?'
+        params.extend([limit, offset])
+        
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        
+        results = []
+        for row in rows:
+            item = dict(row)
+            # Parse streaming info
+            streaming = {}
+            if item.get('streaming'):
+                for entry in item['streaming'].split(','):
+                    parts = entry.split(':')
+                    if len(parts) >= 2 and parts[1]:
+                        streaming[parts[0]] = parts[1]
+            item['streaming_links'] = streaming
+            del item['streaming']
+            results.append(item)
+        
+        # Get total count
+        cursor.execute(
+            'SELECT COUNT(*) FROM user_watch_history WHERE user_id = ?' + 
+            (' AND service = ?' if service else ''),
+            [user_id, service] if service else [user_id]
+        )
+        total = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return jsonify({
+            'user': username,
+            'history': results,
+            'count': len(results),
+            'total': total,
+            'offset': offset
+        })
+        
+    except Exception as e:
+        logger.error(f"User history error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/continue-watching', methods=['GET'])
+def get_continue_watching(username: str):
+    """
+    Get shows/series the user has started but not completed.
+    Returns the next episode to watch for each series.
+    
+    Query params:
+        limit: Maximum series to return (default 10)
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get user
+        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': f'User not found: {username}'}), 404
+        
+        user_id = user[0]
+        limit = int(request.args.get('limit', 10))
+        
+        # Find series with the most recent watch date and highest episode
+        cursor.execute('''
+            SELECT 
+                wh.title,
+                wh.service,
+                MAX(wh.season_number) as last_season,
+                MAX(wh.episode_number) as last_episode,
+                MAX(wh.watched_at) as last_watched,
+                c.id as content_id,
+                c.content_type,
+                c.justwatch_id
+            FROM user_watch_history wh
+            LEFT JOIN content c ON wh.content_id = c.id
+            WHERE wh.user_id = ?
+                AND wh.episode_title IS NOT NULL
+            GROUP BY wh.title
+            ORDER BY last_watched DESC
+            LIMIT ?
+        ''', (user_id, limit))
+        
+        series = cursor.fetchall()
+        
+        results = []
+        for s in series:
+            item = dict(s)
+            
+            # Get streaming links for this content
+            if item.get('content_id'):
+                cursor.execute('''
+                    SELECT service, content_id_for_service
+                    FROM streaming_availability
+                    WHERE content_id = ? AND content_id_for_service IS NOT NULL
+                ''', (item['content_id'],))
+                streaming = {row[0]: row[1] for row in cursor.fetchall()}
+                item['streaming_links'] = streaming
+            else:
+                item['streaming_links'] = {}
+            
+            # Suggest next episode
+            next_ep = (item.get('last_episode') or 0) + 1
+            item['suggested_next'] = {
+                'season': item.get('last_season') or 1,
+                'episode': next_ep
+            }
+            
+            results.append(item)
+        
+        conn.close()
+        
+        return jsonify({
+            'user': username,
+            'continue_watching': results,
+            'count': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"Continue watching error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/stats', methods=['GET'])
+def get_user_stats(username: str):
+    """Get statistics about a user's watch history."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get user
+        cursor.execute('SELECT id, display_name, created_at FROM users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': f'User not found: {username}'}), 404
+        
+        user_id = user[0]
+        
+        # Total entries
+        cursor.execute('SELECT COUNT(*) FROM user_watch_history WHERE user_id = ?', (user_id,))
+        total = cursor.fetchone()[0]
+        
+        # By service
+        cursor.execute('''
+            SELECT service, COUNT(*) 
+            FROM user_watch_history 
+            WHERE user_id = ? 
+            GROUP BY service
+        ''', (user_id,))
+        by_service = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Unique titles
+        cursor.execute('SELECT COUNT(DISTINCT title) FROM user_watch_history WHERE user_id = ?', (user_id,))
+        unique_titles = cursor.fetchone()[0]
+        
+        # Most watched
+        cursor.execute('''
+            SELECT title, COUNT(*) as watch_count
+            FROM user_watch_history
+            WHERE user_id = ?
+            GROUP BY title
+            ORDER BY watch_count DESC
+            LIMIT 10
+        ''', (user_id,))
+        most_watched = [{'title': row[0], 'count': row[1]} for row in cursor.fetchall()]
+        
+        # Recent activity
+        cursor.execute('''
+            SELECT DATE(watched_at) as watch_date, COUNT(*) as count
+            FROM user_watch_history
+            WHERE user_id = ? AND watched_at IS NOT NULL
+            GROUP BY DATE(watched_at)
+            ORDER BY watch_date DESC
+            LIMIT 30
+        ''', (user_id,))
+        recent_activity = [{'date': row[0], 'count': row[1]} for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'user': username,
+            'display_name': user[1],
+            'member_since': user[2],
+            'total_watches': total,
+            'unique_titles': unique_titles,
+            'by_service': by_service,
+            'most_watched': most_watched,
+            'recent_activity': recent_activity
+        })
+        
+    except Exception as e:
+        logger.error(f"User stats error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/search', methods=['GET'])
+def search_user_history(username: str):
+    """
+    Search a user's watch history.
+    
+    Query params:
+        q: Search query
+    """
+    try:
+        query = request.args.get('q', '')
+        if not query:
+            return jsonify({'error': 'Missing query parameter q'}), 400
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get user
+        cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({'error': f'User not found: {username}'}), 404
+        
+        user_id = user[0]
+        
+        cursor.execute('''
+            SELECT DISTINCT wh.title, wh.service, wh.episode_title,
+                   MAX(wh.watched_at) as last_watched,
+                   c.content_type, c.year
+            FROM user_watch_history wh
+            LEFT JOIN content c ON wh.content_id = c.id
+            WHERE wh.user_id = ?
+                AND (wh.title LIKE ? OR wh.episode_title LIKE ?)
+            GROUP BY wh.title
+            ORDER BY last_watched DESC
+            LIMIT 20
+        ''', (user_id, f'%{query}%', f'%{query}%'))
+        
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        return jsonify({
+            'user': username,
+            'query': query,
+            'results': results,
+            'count': len(results)
+        })
+        
+    except Exception as e:
+        logger.error(f"User search error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Initialize database on startup
 init_database()
+
+# Extend with user tables
+try:
+    from user_schema import extend_database_with_user_tables
+    extend_database_with_user_tables(DB_PATH)
+except ImportError:
+    logger.warning("Could not import user_schema module")
 
 
 if __name__ == '__main__':

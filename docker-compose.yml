@@ -944,6 +944,37 @@ services:
       - "component=content-api"
       - "network=pa-internal"
 
+  # Watch History Polling Service
+  watch-history-service:
+    build:
+      context: ./sports-and-media-tools/watch-history-service
+      dockerfile: Dockerfile
+    container_name: watch-history-service
+    restart: unless-stopped
+    networks: [pa-internal]
+    volumes:
+      - content-database-data:/app/data
+      - watch-history-credentials:/app/credentials
+    ports:
+      - "5127:5127"
+    depends_on:
+      - content-database
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5127/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=watch-history-service"
+      - "component=polling-service"
+      - "network=pa-internal"
+
   # Schedules Direct TV Listings Service
   schedules-direct-service:
     build:
@@ -999,6 +1030,7 @@ volumes:
   sports-service-data:
   schedules-direct-data:
   content-database-data:
+  watch-history-credentials:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring

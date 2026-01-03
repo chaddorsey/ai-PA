@@ -335,6 +335,85 @@ def get_content_details(justwatch_id: str, content_type: str) -> Optional[Dict]:
         return None
 
 
+def extract_deep_link_id_from_url(url: str, service: str) -> Optional[str]:
+    """
+    Extract the deep link content ID from a streaming service URL.
+    
+    Args:
+        url: The streaming service URL
+        service: Service name (netflix, hulu, etc.)
+    
+    Returns:
+        Content ID suitable for Roku deep linking
+    """
+    if not url:
+        return None
+    
+    try:
+        if service == 'netflix':
+            # Netflix: https://www.netflix.com/title/80057281
+            if '/title/' in url:
+                return url.split('/title/')[-1].split('?')[0].split('/')[0]
+        
+        elif service == 'hulu':
+            # Hulu: various formats
+            if '/series/' in url:
+                parts = url.split('/series/')[-1].split('/')
+                if parts:
+                    return parts[0]
+            elif '/movie/' in url:
+                parts = url.split('/movie/')[-1].split('/')
+                if parts:
+                    return parts[0]
+        
+        elif service == 'disney':
+            # Disney+: extract content ID
+            if '/series/' in url or '/movies/' in url:
+                parts = url.split('/')
+                for part in parts:
+                    if len(part) > 15 and '-' not in part[:10]:
+                        return part
+        
+        elif service == 'max':
+            # Max/HBO: URN style IDs
+            parts = url.split('/')
+            for part in parts:
+                if part.startswith('urn:') or (len(part) > 20 and ':' in part):
+                    return part
+        
+        elif service == 'prime':
+            # Prime Video: /detail/xxx or /gp/video/detail/xxx
+            if '/detail/' in url:
+                return url.split('/detail/')[-1].split('/')[0].split('?')[0]
+        
+        elif service == 'apple':
+            # Apple TV+: umc.cmc.xxxxx format
+            parts = url.split('/')
+            for part in parts:
+                if 'umc.cmc.' in part:
+                    # Extract the full umc.cmc.xxx portion
+                    idx = part.find('umc.cmc.')
+                    return part[idx:].split('?')[0]
+            # Also check query params
+            if 'umc.cmc.' in url:
+                import re
+                match = re.search(r'umc\.cmc\.[a-z0-9]+', url)
+                if match:
+                    return match.group(0)
+        
+        elif service == 'youtube':
+            # YouTube: v=xxx or /watch/xxx
+            if 'v=' in url:
+                return url.split('v=')[-1].split('&')[0]
+            elif '/watch/' in url:
+                return url.split('/watch/')[-1].split('?')[0]
+    
+    except Exception:
+        pass
+    
+    return None
+
+
 def extract_deep_link_id(offer: Dict, service: str) -> Optional[str]:
     """
     Extract the deep link content ID from a JustWatch offer.
@@ -447,7 +526,14 @@ def save_content_to_db(content: Dict, streaming_offers: List[Dict]):
         
         # Insert streaming availability
         for offer in streaming_offers:
+            # Handle both old API format (provider_id) and new GraphQL format (package.packageId)
             provider_id = offer.get('provider_id')
+            if not provider_id:
+                package = offer.get('package', {})
+                provider_id = package.get('packageId')
+                clear_name = package.get('clearName', '').lower()
+            else:
+                clear_name = ''
             
             # Map provider ID to service name
             service = None
@@ -456,10 +542,31 @@ def save_content_to_db(content: Dict, streaming_offers: List[Dict]):
                     service = svc
                     break
             
+            # Fallback: try to match by clear name
+            if not service and clear_name:
+                if 'netflix' in clear_name:
+                    service = 'netflix'
+                elif 'hulu' in clear_name:
+                    service = 'hulu'
+                elif 'disney' in clear_name:
+                    service = 'disney'
+                elif 'max' in clear_name or 'hbo' in clear_name:
+                    service = 'max'
+                elif 'prime' in clear_name or 'amazon' in clear_name:
+                    service = 'prime'
+                elif 'apple' in clear_name:
+                    service = 'apple'
+                elif 'espn' in clear_name:
+                    service = 'espn'
+                elif 'youtube' in clear_name:
+                    service = 'youtube'
+            
             if not service or service not in SUBSCRIBED_SERVICES:
                 continue
             
-            deep_link_id = extract_deep_link_id(offer, service)
+            # Extract deep link ID from URL (GraphQL format uses standardWebURL)
+            web_url = offer.get('standardWebURL') or offer.get('urls', {}).get('standard_web', '')
+            deep_link_id = extract_deep_link_id_from_url(web_url, service)
             
             cursor.execute('''
                 INSERT OR REPLACE INTO streaming_availability
@@ -470,9 +577,9 @@ def save_content_to_db(content: Dict, streaming_offers: List[Dict]):
                 content_id,
                 service,
                 deep_link_id,
-                offer.get('monetization_type'),
-                offer.get('presentation_type'),
-                offer.get('urls', {}).get('standard_web'),
+                offer.get('monetizationType') or offer.get('monetization_type'),
+                offer.get('presentationType') or offer.get('presentation_type'),
+                web_url,
                 datetime.now(timezone.utc).isoformat()
             ))
         

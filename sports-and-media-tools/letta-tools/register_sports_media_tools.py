@@ -2,19 +2,15 @@
 """
 Register Sports & Media Control Tools with Letta Agent
 
-This script registers the sports and media control tools with Letta:
-1. query_sports_games - Query ESPN for games
-2. get_channel_for_game - Look up channel for a game/network
-3. control_roku_tv - Control Roku TV via ECP
-4. send_fios_ir_command - Send IR commands via Flipper Zero
-5. tune_fios_channel - Tune FIOS to a specific channel
-6. watch_game - Orchestrate watching a game end-to-end
-7. launch_streaming_content - Launch streaming content with deep linking or Roku search
-8. get_tv_listings_now - Get what's currently on TV (all channels or sports only)
-9. search_tv_guide - Search TV guide for upcoming programs
-10. get_channel_info - Get detailed schedule for a specific channel
-11. lookup_streaming_content - Look up streaming availability and deep links from JustWatch
-12. add_content_to_database - Scrape and add content to local database (sleeptime agent)
+This script registers the sports and media control tools with Letta and
+allocates them appropriately between the main agent and sleeptime agent.
+
+Main Agent Tools (user-facing):
+- query_sports_games, get_channel_for_game, control_roku_tv, etc.
+- launch_streaming_content, get_series_progress
+
+Sleeptime Agent Tools (background sync):
+- poll_watch_history, sync_series_progress, sync_all_streaming_data, etc.
 """
 
 import os
@@ -47,13 +43,58 @@ from sports_media_tools import (
     search_tv_guide,
     get_channel_info,
     lookup_streaming_content,
-    add_content_to_database
+    add_content_to_database,
+    # Watch history and streaming sync tools
+    poll_watch_history,
+    update_streaming_credentials,
+    check_credential_status,
+    poll_watchlists,
+    poll_recommendations,
+    sync_all_streaming_data,
+    query_user_watch_history,
+    get_user_watchlist,
+    get_aggregated_recommendations,
+    # Series progress tracking tools (new)
+    sync_series_progress,
+    get_series_progress,
+    get_series_progress_summary,
+    list_tracked_series,
 )
 
 # Configuration
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 AGENT_ID = os.getenv("LETTA_SPORTS_AGENT_ID", "agent-2515f29d-b773-43c5-b9ce-b6237897391d")
 SLEEPTIME_AGENT_ID = os.getenv("LETTA_SLEEPTIME_AGENT_ID", "agent-a9f2c740-663c-4414-a553-47115180e49b")
+
+# Tool allocation: which tools should NOT be on each agent
+# Main agent: No background sync tools (user doesn't need to poll/sync)
+MAIN_AGENT_EXCLUDE_TOOLS = [
+    "add_content_to_database",
+    "poll_watch_history",
+    "update_streaming_credentials",
+    "check_credential_status",
+    "poll_watchlists",
+    "poll_recommendations",
+    "sync_all_streaming_data",
+    "sync_series_progress",  # Background sync tool
+    "get_series_progress_summary",  # For agent memory, not user queries
+    "list_tracked_series",  # Maintenance tool
+]
+
+# Sleeptime agent: No hardware control or real-time user interaction tools
+SLEEPTIME_AGENT_EXCLUDE_TOOLS = [
+    "query_sports_games",
+    "get_channel_for_game",
+    "control_roku_tv",
+    "send_fios_ir_command",
+    "tune_fios_channel",
+    "watch_game",
+    "launch_streaming_content",
+    "get_tv_listings_now",
+    "search_tv_guide",
+    "get_channel_info",
+    "lookup_streaming_content",
+]
 
 
 def main():
@@ -68,6 +109,7 @@ def main():
     print(f"Sleeptime Agent ID: {SLEEPTIME_AGENT_ID}\n")
     
     tools_to_register = [
+        # User-facing tools (main agent)
         ("query_sports_games", query_sports_games, "Query ESPN for current/upcoming sports games"),
         ("get_channel_for_game", get_channel_for_game, "Look up FIOS channel for a game or network"),
         ("control_roku_tv", control_roku_tv, "Control Roku TV - power, apps, keypresses"),
@@ -79,7 +121,26 @@ def main():
         ("search_tv_guide", search_tv_guide, "Search TV guide for upcoming programs by title"),
         ("get_channel_info", get_channel_info, "Get detailed schedule for a specific channel"),
         ("lookup_streaming_content", lookup_streaming_content, "Look up streaming availability and deep links from JustWatch"),
-        ("add_content_to_database", add_content_to_database, "Scrape and add content to local database (for sleeptime agent)"),
+        
+        # Background sync tools (sleeptime agent)
+        ("add_content_to_database", add_content_to_database, "Scrape and add content to local database"),
+        ("poll_watch_history", poll_watch_history, "Poll streaming services for watch history updates"),
+        ("update_streaming_credentials", update_streaming_credentials, "Update credentials for a streaming service"),
+        ("check_credential_status", check_credential_status, "Check the health of streaming service credentials"),
+        ("poll_watchlists", poll_watchlists, "Poll streaming services for watchlist/My List updates"),
+        ("poll_recommendations", poll_recommendations, "Poll streaming services for personalized recommendations"),
+        ("sync_all_streaming_data", sync_all_streaming_data, "Full sync of watch history, watchlists, and recommendations"),
+        
+        # Series progress tracking tools (new)
+        ("sync_series_progress", sync_series_progress, "Scrape episode-level watch progress for a series"),
+        ("get_series_progress", get_series_progress, "Get unwatched episodes for a series"),
+        ("get_series_progress_summary", get_series_progress_summary, "Get formatted summary for memory block"),
+        ("list_tracked_series", list_tracked_series, "List all series being tracked for progress"),
+        
+        # Query tools (both agents)
+        ("query_user_watch_history", query_user_watch_history, "Query user's watch history with filters"),
+        ("get_user_watchlist", get_user_watchlist, "Get user's watchlist entries"),
+        ("get_aggregated_recommendations", get_aggregated_recommendations, "Get aggregated recommendations from all services"),
     ]
     
     registered_tool_ids = []
@@ -129,36 +190,69 @@ def main():
             
             print()
         
-        # Attach tools to main agent
+        # Build tool name to ID mapping
+        tool_name_to_id = {}
+        for tool_name, tool_func, tool_description in tools_to_register:
+            # Find the tool ID we registered
+            for tool_id in registered_tool_ids:
+                # Tool IDs are sometimes returned in order, but safer to check
+                pass
+        
+        # Alternative: rebuild mapping from registered_tool_ids list position
+        for idx, (tool_name, _, _) in enumerate(tools_to_register):
+            if idx < len(registered_tool_ids):
+                tool_name_to_id[tool_name] = registered_tool_ids[idx]
+        
+        # Attach tools to main agent (excluding background sync tools)
         if registered_tool_ids:
-            print(f"→ Attaching {len(registered_tool_ids)} tools to main agent {AGENT_ID}...")
-            attach_tools_to_agent(client, AGENT_ID, registered_tool_ids)
+            main_agent_tools = [
+                tool_name_to_id[name] for name, _, _ in tools_to_register
+                if name not in MAIN_AGENT_EXCLUDE_TOOLS and name in tool_name_to_id
+            ]
+            excluded_main = [name for name in MAIN_AGENT_EXCLUDE_TOOLS if name in tool_name_to_id]
             
-            # Also attach to sleeptime agent if different
+            print(f"\n→ Attaching {len(main_agent_tools)} tools to main agent {AGENT_ID}...")
+            print(f"   (Excluding {len(excluded_main)} background/maintenance tools)")
+            if excluded_main:
+                print(f"   Excluded: {', '.join(excluded_main)}")
+            attach_tools_to_agent(client, AGENT_ID, main_agent_tools)
+            
+            # Attach to sleeptime agent (excluding hardware control tools)
             if SLEEPTIME_AGENT_ID and SLEEPTIME_AGENT_ID != AGENT_ID:
-                print(f"\n→ Attaching tools to sleeptime agent {SLEEPTIME_AGENT_ID}...")
-                attach_tools_to_agent(client, SLEEPTIME_AGENT_ID, registered_tool_ids)
+                sleeptime_agent_tools = [
+                    tool_name_to_id[name] for name, _, _ in tools_to_register
+                    if name not in SLEEPTIME_AGENT_EXCLUDE_TOOLS and name in tool_name_to_id
+                ]
+                excluded_sleep = [name for name in SLEEPTIME_AGENT_EXCLUDE_TOOLS if name in tool_name_to_id]
+                
+                print(f"\n→ Attaching {len(sleeptime_agent_tools)} tools to sleeptime agent {SLEEPTIME_AGENT_ID}...")
+                print(f"   (Excluding {len(excluded_sleep)} user-interaction/hardware tools)")
+                if excluded_sleep:
+                    print(f"   Excluded: {', '.join(excluded_sleep)}")
+                attach_tools_to_agent(client, SLEEPTIME_AGENT_ID, sleeptime_agent_tools)
         
         print(f"\n{'='*60}")
         print("Registration Complete")
         print(f"{'='*60}\n")
         
         print("✓ Tools registered successfully")
-        print("\nTool Details:")
+        
+        print("\n--- Main Agent Tools ---")
         for tool_name, _, tool_description in tools_to_register:
-            print(f"  - {tool_name}: {tool_description}")
+            if tool_name not in MAIN_AGENT_EXCLUDE_TOOLS:
+                print(f"  - {tool_name}: {tool_description}")
+        
+        print("\n--- Sleeptime Agent Tools ---")
+        for tool_name, _, tool_description in tools_to_register:
+            if tool_name not in SLEEPTIME_AGENT_EXCLUDE_TOOLS:
+                print(f"  - {tool_name}: {tool_description}")
         
         print("\nUsage Examples:")
         print('  query_sports_games(team="patriots")')
-        print('  get_channel_for_game(team="celtics")')
-        print('  control_roku_tv(action="launch_app", app_name="netflix")')
-        print('  tune_fios_channel(channel=570)')
         print('  watch_game(team="red sox")')
         print('  launch_streaming_content(title="Slow Horses", app="apple")')
-        print('  get_tv_listings_now(sports_only=True)')
-        print('  search_tv_guide(query="Patriots")')
-        print('  get_channel_info(channel="570")')
-        print('  lookup_streaming_content(title="The Bear")')
+        print('  get_series_progress(series_title="Last Week Tonight", service="max")')
+        print('  sync_series_progress(service="max", series_url="https://play.hbomax.com/show/...")')
         
         return 0
         
