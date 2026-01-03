@@ -840,6 +840,311 @@ def search_user_history(username: str):
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# TRACKED SERIES ENDPOINTS
+# =============================================================================
+
+@app.route('/user/<username>/tracked-series', methods=['GET'])
+def list_user_tracked_series(username: str):
+    """
+    List tracked series for a user.
+    
+    Query params:
+        status: Filter by tracking_status (watching, finished, dropped, on_hold, all)
+        service: Filter by preferred_service
+    """
+    try:
+        from user_schema import (
+            get_or_create_user, list_tracked_series as list_ts
+        )
+        
+        user_id = get_or_create_user(DB_PATH, username)
+        status = request.args.get('status', 'all')
+        service = request.args.get('service', 'all')
+        
+        series_list = list_ts(DB_PATH, user_id, status, service)
+        
+        # Parse JSON fields
+        for s in series_list:
+            if s.get('available_services'):
+                try:
+                    s['available_services'] = json.loads(s['available_services'])
+                except json.JSONDecodeError:
+                    pass
+            if s.get('manual_progress'):
+                try:
+                    s['manual_progress'] = json.loads(s['manual_progress'])
+                except json.JSONDecodeError:
+                    pass
+        
+        return jsonify({
+            'user': username,
+            'series': series_list,
+            'count': len(series_list),
+            'filters': {'status': status, 'service': service}
+        })
+        
+    except Exception as e:
+        logger.error(f"List tracked series error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series', methods=['POST'])
+def create_user_tracked_series(username: str):
+    """
+    Add a series to tracking.
+    
+    Body params:
+        title: Series title (required)
+        preferred_service: Streaming service (optional)
+        justwatch_id: JustWatch ID (optional)
+        imdb_id: IMDB ID (optional)
+        series_url: URL to series page (optional)
+        auto_tracked: Whether auto-added from watchlist (optional)
+    """
+    try:
+        from user_schema import get_or_create_user, create_tracked_series, get_tracked_series_by_id
+        
+        data = request.get_json() or {}
+        title = data.get('title')
+        
+        if not title:
+            return jsonify({'error': 'Missing required field: title'}), 400
+        
+        user_id = get_or_create_user(DB_PATH, username)
+        
+        # Check for duplicate
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id FROM tracked_series WHERE user_id = ? AND LOWER(title) = LOWER(?)',
+            (user_id, title)
+        )
+        existing = cursor.fetchone()
+        conn.close()
+        
+        if existing:
+            return jsonify({'error': f'Series already tracked: {title}', 'id': existing[0]}), 409
+        
+        series_id = create_tracked_series(
+            DB_PATH,
+            user_id,
+            title=title,
+            preferred_service=data.get('preferred_service'),
+            justwatch_id=data.get('justwatch_id'),
+            imdb_id=data.get('imdb_id'),
+            series_url=data.get('series_url'),
+            available_services=json.dumps(data.get('available_services')) if data.get('available_services') else None,
+            total_seasons_known=data.get('total_seasons_known'),
+            auto_tracked=data.get('auto_tracked', False)
+        )
+        
+        series = get_tracked_series_by_id(DB_PATH, series_id)
+        
+        return jsonify({
+            'status': 'ok',
+            'message': f"Added '{title}' to tracked series",
+            'series': series
+        }), 201
+        
+    except Exception as e:
+        logger.error(f"Create tracked series error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/<int:series_id>', methods=['GET'])
+def get_user_tracked_series(username: str, series_id: int):
+    """Get a specific tracked series by ID."""
+    try:
+        from user_schema import get_tracked_series_by_id
+        
+        series = get_tracked_series_by_id(DB_PATH, series_id)
+        if not series:
+            return jsonify({'error': 'Series not found'}), 404
+        
+        # Parse JSON fields
+        if series.get('available_services'):
+            try:
+                series['available_services'] = json.loads(series['available_services'])
+            except json.JSONDecodeError:
+                pass
+        if series.get('manual_progress'):
+            try:
+                series['manual_progress'] = json.loads(series['manual_progress'])
+            except json.JSONDecodeError:
+                pass
+        
+        return jsonify(series)
+        
+    except Exception as e:
+        logger.error(f"Get tracked series error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/<int:series_id>', methods=['PUT'])
+def update_user_tracked_series(username: str, series_id: int):
+    """
+    Update a tracked series.
+    
+    Body params (all optional):
+        tracking_status: watching, finished, dropped, on_hold
+        watch_status: not_started, in_progress, fully_watched
+        preferred_service: Streaming service
+        notes: User notes
+        manual_progress: Dict with progress overrides
+    """
+    try:
+        from user_schema import update_tracked_series, get_tracked_series_by_id
+        
+        data = request.get_json() or {}
+        
+        # Handle JSON fields
+        if 'manual_progress' in data and isinstance(data['manual_progress'], dict):
+            data['manual_progress'] = json.dumps(data['manual_progress'])
+        if 'available_services' in data and isinstance(data['available_services'], list):
+            data['available_services'] = json.dumps(data['available_services'])
+        
+        success = update_tracked_series(DB_PATH, series_id, **data)
+        
+        if not success:
+            return jsonify({'error': 'Series not found or no changes made'}), 404
+        
+        series = get_tracked_series_by_id(DB_PATH, series_id)
+        
+        return jsonify({
+            'status': 'ok',
+            'message': 'Series updated',
+            'series': series
+        })
+        
+    except Exception as e:
+        logger.error(f"Update tracked series error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/<int:series_id>', methods=['DELETE'])
+def delete_user_tracked_series(username: str, series_id: int):
+    """Remove a series from tracking."""
+    try:
+        from user_schema import delete_tracked_series, get_tracked_series_by_id
+        
+        series = get_tracked_series_by_id(DB_PATH, series_id)
+        if not series:
+            return jsonify({'error': 'Series not found'}), 404
+        
+        title = series.get('title', 'Unknown')
+        success = delete_tracked_series(DB_PATH, series_id)
+        
+        return jsonify({
+            'status': 'ok',
+            'message': f"Removed '{title}' from tracked series"
+        })
+        
+    except Exception as e:
+        logger.error(f"Delete tracked series error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/by-title/<title>', methods=['GET'])
+def get_tracked_series_by_title_endpoint(username: str, title: str):
+    """Get a tracked series by title (fuzzy match)."""
+    try:
+        from user_schema import get_or_create_user, get_tracked_series_by_title
+        
+        user_id = get_or_create_user(DB_PATH, username)
+        series = get_tracked_series_by_title(DB_PATH, user_id, title)
+        
+        if not series:
+            return jsonify({'error': f'Series not found: {title}'}), 404
+        
+        # Parse JSON fields
+        if series.get('available_services'):
+            try:
+                series['available_services'] = json.loads(series['available_services'])
+            except json.JSONDecodeError:
+                pass
+        if series.get('manual_progress'):
+            try:
+                series['manual_progress'] = json.loads(series['manual_progress'])
+            except json.JSONDecodeError:
+                pass
+        
+        return jsonify(series)
+        
+    except Exception as e:
+        logger.error(f"Get tracked series by title error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/by-title/<title>/status', methods=['PUT'])
+def update_tracking_status_endpoint(username: str, title: str):
+    """
+    Update tracking status for a series by title.
+    
+    Body params:
+        status: New tracking status (watching, finished, dropped, on_hold)
+    """
+    try:
+        from user_schema import get_or_create_user, update_tracking_status as update_ts
+        
+        data = request.get_json() or {}
+        new_status = data.get('status')
+        
+        if not new_status:
+            return jsonify({'error': 'Missing required field: status'}), 400
+        
+        user_id = get_or_create_user(DB_PATH, username)
+        result = update_ts(DB_PATH, user_id, title, new_status)
+        
+        if 'error' in result:
+            return jsonify(result), 400
+        
+        return jsonify({
+            'status': 'ok',
+            'message': f"Updated '{title}' to {new_status}",
+            'series': result
+        })
+        
+    except Exception as e:
+        logger.error(f"Update tracking status error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/by-title/<title>/progress', methods=['PUT'])
+def update_manual_progress_endpoint(username: str, title: str):
+    """
+    Update manual progress for a series.
+    
+    Body params:
+        watched_through: {season, episode} - Everything up to this is watched
+        additional_watched: [{season, episode}, ...] - Additional individual episodes
+        source_note: Explanation (e.g., "Originally watched on Amazon Prime")
+    """
+    try:
+        from user_schema import get_or_create_user, update_manual_progress as update_mp
+        
+        data = request.get_json() or {}
+        
+        if not data:
+            return jsonify({'error': 'Missing progress data'}), 400
+        
+        user_id = get_or_create_user(DB_PATH, username)
+        result = update_mp(DB_PATH, user_id, title, data)
+        
+        if 'error' in result:
+            return jsonify(result), 400
+        
+        return jsonify({
+            'status': 'ok',
+            'message': f"Updated manual progress for '{title}'",
+            'series': result
+        })
+        
+    except Exception as e:
+        logger.error(f"Update manual progress error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Initialize database on startup
 init_database()
 

@@ -8,7 +8,7 @@ This document lists all tasks associated with PBI 28.
 
 | Task ID | Name | Status | Description |
 | :------ | :--- | :----- | :---------- |
-| 28-1 | [Database schema for tracked_series](./28-1.md) | Proposed | Create tracked_series table and extend series_progress |
+| 28-1 | [Database schema for tracked_series](./28-1.md) | Done | Create tracked_series table and extend series_progress |
 | 28-2 | [Add/remove tracked series tools](./28-2.md) | Proposed | Implement add_tracked_series and remove_tracked_series |
 | 28-3 | [Status management tools](./28-3.md) | Proposed | Implement update_tracking_status and set_preferred_service |
 | 28-4 | [Manual progress override tools](./28-4.md) | Proposed | Implement mark_episodes_watched with flexible parsing |
