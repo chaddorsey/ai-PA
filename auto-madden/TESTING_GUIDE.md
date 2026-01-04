@@ -1,4 +1,61 @@
-# Auto-Madden Testing Guide: GB @ MIN
+# Auto-Madden Testing Guide
+
+## Quick Start for Live Game Testing (Week 18)
+
+### Prerequisites
+- Week 18 insights are pre-processed and ready
+- Background scraper is collecting insights for earlier weeks
+
+### Start the Services
+
+1. **Start the simulator/game state service** (handles ESPN feeds):
+```bash
+cd auto-madden/simulator
+python3 game_simulator.py serve --port 5132
+```
+
+2. **Start the insight engine** (generates insights, handles WebSocket):
+```bash
+cd auto-madden/insight-engine
+python3 insight_engine.py
+```
+
+3. **Start the companion UI** (Flask web app):
+```bash
+cd auto-madden/companion-ui
+python3 app.py
+```
+
+4. **Open the companion UI**:
+   Navigate to `http://localhost:5130/simple` in your browser
+
+### Using the Companion
+
+1. **Select a game** from the dropdown in the top-right corner
+   - Live games appear first with 🔴 indicator
+   - Scheduled games appear below
+
+2. **Click "Start Live"** to begin receiving updates
+
+3. **Adjust delay** via the settings gear (⚙️) to sync with your TV
+
+4. **Watch for**:
+   - Score updates in the top box
+   - Pre-play metadata (orange box) appearing before snaps
+   - Insights (teal cards) appearing throughout the game
+   - Extended insights during commercial breaks
+
+### Insight Sources
+
+The companion draws from:
+- **NFL Pro pre-processed insights** (337 for Week 18)
+- **ESPN live game data** (real-time plays and scores)
+- **Template-based insights** (formations, personnel analysis)
+- **Break detection** (commercial breaks, timeouts, halftime)
+
+---
+
+# Original Testing Guide: GB @ MIN
 
 This guide walks you through testing the companion with the Packers @ Vikings game (Dec 29, 2024).
 
