@@ -3,8 +3,21 @@
 ## Quick Start for Live Game Testing (Week 18)
 
 ### Prerequisites
-- Week 18 insights are pre-processed and ready
+- Week 18 insights are pre-processed and ready (337 insights)
 - Background scraper is collecting insights for earlier weeks
+
+### NFL Pro Session (for live play metadata)
+
+If you want rich play metadata (personnel, formation, defenders in box), you need an active NFL Pro session:
+
+```bash
+cd auto-madden/nfl-pro-scraper
+python3 session/nfl_pro_login.py
+```
+
+This opens a browser - log into pro.nfl.com, then the session is saved automatically.
+
+**Without NFL Pro session:** The companion still works but falls back to ESPN-only mode (basic play descriptions, no personnel/formation data).
 
 ### Start the Services
 

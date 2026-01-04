@@ -1,0 +1,30 @@
+{
+  "description": "Maps ESPN game IDs to NFL Pro UUIDs for Week 18 (2025 season)",
+  "season": 2025,
+  "week": 18,
+  "last_updated": "2026-01-04",
+  "note": "This mapping enables loading NFL Pro insights when an ESPN game is selected",
+  "games": {
+    "comment": "ESPN IDs will be populated when games start - currently using placeholder",
+    "mapping_method": "Match by team abbreviations and game date"
+  },
+  "nfl_pro_uuids": [
+    {"uuid": "f979e087-311e-11f0-b670-ae1250fadad1", "insights": 32},
+    {"uuid": "f979d7ee-311e-11f0-b670-ae1250fadad1", "insights": 48, "matchup": "SEA @ SF"},
+    {"uuid": "f93ad055-311e-11f0-b670-ae1250fadad1", "insights": 4},
+    {"uuid": "f93add90-311e-11f0-b670-ae1250fadad1", "insights": 3},
+    {"uuid": "f95abe8b-311e-11f0-b670-ae1250fadad1", "insights": 26},
+    {"uuid": "f95ac339-311e-11f0-b670-ae1250fadad1", "insights": 5},
+    {"uuid": "f95ad002-311e-11f0-b670-ae1250fadad1", "insights": 16},
+    {"uuid": "f95ad820-311e-11f0-b670-ae1250fadad1", "insights": 4},
+    {"uuid": "f93ad484-311e-11f0-b670-ae1250fadad1", "insights": 4},
+    {"uuid": "f93ad89b-311e-11f0-b670-ae1250fadad1", "insights": 47},
+    {"uuid": "f95ab520-311e-11f0-b670-ae1250fadad1", "insights": 15},
+    {"uuid": "f95ac7aa-311e-11f0-b670-ae1250fadad1", "insights": 4},
+    {"uuid": "f95acbe7-311e-11f0-b670-ae1250fadad1", "insights": 4},
+    {"uuid": "f95ad407-311e-11f0-b670-ae1250fadad1", "insights": 30},
+    {"uuid": "f95adc22-311e-11f0-b670-ae1250fadad1", "insights": 4},
+    {"uuid": "f95ae036-311e-11f0-b670-ae1250fadad1", "insights": 43}
+  ]
+}
+
