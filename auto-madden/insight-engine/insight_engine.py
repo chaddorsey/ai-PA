@@ -45,6 +45,7 @@ try:
         get_break_narrative_insights,
         get_pregame_narrative_insights,
         get_narrative_llm_context,
+        get_contextual_narrative_insight,
     )
     NFL_PRO_NARRATIVES_AVAILABLE = True
 except ImportError:
@@ -54,6 +55,7 @@ except ImportError:
     get_break_narrative_insights = None
     get_pregame_narrative_insights = None
     get_narrative_llm_context = None
+    get_contextual_narrative_insight = None
     NFL_PRO_NARRATIVES_AVAILABLE = False
 
 # Import pre-play metadata service

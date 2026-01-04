@@ -1,7 +1,7 @@
 {
   "week": 18,
   "season": 2025,
-  "processed_at": "2026-01-04T11:05:03.828602",
+  "processed_at": "2026-01-04T11:19:06.965173",
   "total_insights": 337,
   "games": 16,
   "index": {
@@ -18,6 +18,74 @@
       "f979d7ee_19",
       "f979d7ee_21",
       "f979d7ee_45"
+    ],
+    "team:sea": [
+      "1",
+      "2",
+      "4",
+      "9",
+      "11",
+      "17",
+      "23",
+      "26",
+      "29",
+      "31",
+      "34",
+      "35",
+      "37",
+      "42",
+      "43",
+      "45",
+      "46",
+      "48",
+      "f979d7ee_1",
+      "f979d7ee_2",
+      "f979d7ee_4",
+      "f979d7ee_9",
+      "f979d7ee_11",
+      "f979d7ee_17",
+      "f979d7ee_23",
+      "f979d7ee_29",
+      "f979d7ee_31",
+      "f979d7ee_34",
+      "f979d7ee_35",
+      "f979d7ee_37",
+      "f979d7ee_42",
+      "f979d7ee_43",
+      "f979d7ee_45",
+      "f979d7ee_46",
+      "f979d7ee_48",
+      "f95ad407_3"
+    ],
+    "team:sf": [
+      "1",
+      "2",
+      "5",
+      "6",
+      "7",
+      "10",
+      "12",
+      "18",
+      "20",
+      "22",
+      "34",
+      "36",
+      "42",
+      "44",
+      "45",
+      "47",
+      "f979d7ee_1",
+      "f979d7ee_2",
+      "f979d7ee_6",
+      "f979d7ee_10",
+      "f979d7ee_18",
+      "f979d7ee_20",
+      "f979d7ee_34",
+      "f979d7ee_42",
+      "f979d7ee_44",
+      "f979d7ee_45",
+      "f979d7ee_47",
+      "f93ad89b_14"
     ],
     "topic:matchup": [
       "1",
@@ -85,22 +153,6 @@
       "f95ae036_42",
       "f95ae036_43"
     ],
-    "player:49ers": [
-      "2",
-      "6",
-      "16",
-      "18",
-      "20",
-      "34",
-      "42",
-      "f979d7ee_2",
-      "f979d7ee_6",
-      "f979d7ee_16",
-      "f979d7ee_18",
-      "f979d7ee_20",
-      "f979d7ee_34",
-      "f979d7ee_42"
-    ],
     "team:was": [
       "2",
       "45",
@@ -111,8 +163,11 @@
       "f979d7ee_48",
       "f979e087_29",
       "f979e087_31",
+      "f95ac339_4",
       "f93ad89b_4",
       "f95ad407_5",
+      "f95adc22_1",
+      "f95adc22_2",
       "f95ae036_25",
       "f95ae036_35",
       "f95ae036_37",
@@ -870,8 +925,15 @@
       "f95abe8b_7",
       "f95abe8b_18",
       "f95abe8b_24",
+      "f95ad002_2",
+      "f95ad002_4",
       "f95ad002_6",
+      "f95ad002_8",
+      "f95ad002_10",
+      "f95ad002_12",
       "f95ad820_3",
+      "f93ad89b_9",
+      "f93ad89b_31",
       "f95ab520_4",
       "f95ab520_7",
       "f95ab520_11",
@@ -922,6 +984,11 @@
       "8",
       "f979d7ee_8"
     ],
+    "team:ten": [
+      "8",
+      "f95ac339_1",
+      "f93ad89b_8"
+    ],
     "player:bryce huff": [
       "10",
       "f979d7ee_10"
@@ -944,22 +1011,6 @@
       "f95ad407_23",
       "f95ae036_5",
       "f95ae036_18"
-    ],
-    "player:seahawks": [
-      "11",
-      "23",
-      "29",
-      "31",
-      "35",
-      "37",
-      "43",
-      "f979d7ee_11",
-      "f979d7ee_23",
-      "f979d7ee_29",
-      "f979d7ee_31",
-      "f979d7ee_35",
-      "f979d7ee_37",
-      "f979d7ee_43"
     ],
     "topic:turnovers": [
       "12",
@@ -1108,6 +1159,10 @@
       "f95ad407_15",
       "f95ae036_43"
     ],
+    "team:den": [
+      "29",
+      "f95ab520_12"
+    ],
     "term:completion percentage": [
       "30",
       "33",
@@ -1215,6 +1270,31 @@
       "f979e087_17",
       "f979e087_19"
     ],
+    "team:car": [
+      "f979e087_1",
+      "f979e087_2",
+      "f979e087_3",
+      "f979e087_6",
+      "f979e087_7",
+      "f979e087_8",
+      "f979e087_9",
+      "f979e087_17",
+      "f979e087_19",
+      "f979e087_30",
+      "f979e087_32"
+    ],
+    "team:tb": [
+      "f979e087_1",
+      "f979e087_2",
+      "f979e087_4",
+      "f979e087_5",
+      "f979e087_7",
+      "f979e087_8",
+      "f979e087_26",
+      "f979e087_27",
+      "f979e087_28",
+      "f979e087_29"
+    ],
     "player:buccaneers": [
       "f979e087_2",
       "f979e087_4",
@@ -1316,6 +1396,16 @@
       "f95abe8b_1",
       "f95abe8b_15"
     ],
+    "team:ind": [
+      "f95abe8b_1",
+      "f95abe8b_2",
+      "f95abe8b_3",
+      "f95abe8b_6",
+      "f95abe8b_7",
+      "f95abe8b_8",
+      "f95abe8b_13",
+      "f95abe8b_15"
+    ],
     "player:c.j. stroud": [
       "f95abe8b_2",
       "f95abe8b_4",
@@ -1324,6 +1414,10 @@
     ],
     "player:riley leonard": [
       "f95abe8b_3"
+    ],
+    "team:jax": [
+      "f95abe8b_3",
+      "f95abe8b_13"
     ],
     "player:philip rivers": [
       "f95abe8b_5"
@@ -1365,6 +1459,10 @@
     ],
     "player:sauce gardner": [
       "f95abe8b_13"
+    ],
+    "team:hou": [
+      "f95abe8b_13",
+      "f95abe8b_14"
     ],
     "term:pass rush": [
       "f95abe8b_16"
@@ -1412,12 +1510,49 @@
       "f95ad002_13",
       "f95ad002_14"
     ],
+    "team:bal": [
+      "f95ad002_1",
+      "f93ad89b_29",
+      "f95ae036_1",
+      "f95ae036_2",
+      "f95ae036_11",
+      "f95ae036_17",
+      "f95ae036_19",
+      "f95ae036_21",
+      "f95ae036_38",
+      "f95ae036_40",
+      "f95ae036_41",
+      "f95ae036_42",
+      "f95ae036_43"
+    ],
+    "team:gb": [
+      "f95ad002_1",
+      "f95ad002_5",
+      "f95ad002_7",
+      "f95ad002_9",
+      "f95ad002_11",
+      "f95ad002_13",
+      "f95ad002_14",
+      "f95ad002_15",
+      "f95ad407_22",
+      "f95ae036_9",
+      "f95ae036_13",
+      "f95ae036_17"
+    ],
     "player:vikings": [
       "f95ad002_2",
       "f95ad002_4",
       "f95ad002_8",
       "f95ad002_10",
       "f95ad002_12"
+    ],
+    "team:lac": [
+      "f95ad002_2",
+      "f95ab520_1",
+      "f95ab520_5",
+      "f95ab520_7",
+      "f95ab520_9",
+      "f95ab520_13"
     ],
     "player:trevon diggs": [
       "f95ad002_3"
@@ -1428,6 +1563,9 @@
     "player:micah parsons": [
       "f95ad002_7",
       "f95ad002_9"
+    ],
+    "team:atl": [
+      "f95ad002_12"
     ],
     "player:jordan love": [
       "f95ad002_15"
@@ -1454,10 +1592,17 @@
     "player:adonai mitchell": [
       "f93ad484_1"
     ],
+    "team:nyj": [
+      "f93ad484_1",
+      "f93ad484_3"
+    ],
     "player:james cook": [
       "f93ad484_2"
     ],
     "player:jets": [
+      "f93ad484_3"
+    ],
+    "team:buf": [
       "f93ad484_3"
     ],
     "term:11 personnel": [
@@ -1473,6 +1618,45 @@
       "f93ad89b_33",
       "f93ad89b_35",
       "f93ad89b_39"
+    ],
+    "team:det": [
+      "f93ad89b_1",
+      "f93ad89b_4",
+      "f93ad89b_7",
+      "f93ad89b_9",
+      "f93ad89b_11",
+      "f93ad89b_15",
+      "f93ad89b_17",
+      "f93ad89b_21",
+      "f93ad89b_23",
+      "f93ad89b_25",
+      "f93ad89b_29",
+      "f93ad89b_31",
+      "f93ad89b_33",
+      "f93ad89b_37",
+      "f93ad89b_41",
+      "f93ad89b_45",
+      "f93ad89b_46",
+      "f93ad89b_47",
+      "f95ad407_22"
+    ],
+    "team:chi": [
+      "f93ad89b_1",
+      "f93ad89b_4",
+      "f93ad89b_5",
+      "f93ad89b_8",
+      "f93ad89b_10",
+      "f93ad89b_11",
+      "f93ad89b_14",
+      "f93ad89b_18",
+      "f93ad89b_20",
+      "f93ad89b_26",
+      "f93ad89b_32",
+      "f93ad89b_37",
+      "f93ad89b_38",
+      "f93ad89b_41",
+      "f93ad89b_45",
+      "f93ad89b_47"
     ],
     "player:caleb williams": [
       "f93ad89b_2",
@@ -1511,7 +1695,32 @@
       "f93ad89b_29",
       "f93ad89b_41"
     ],
+    "team:pit": [
+      "f93ad89b_9",
+      "f93ad89b_21",
+      "f95ae036_3",
+      "f95ae036_4",
+      "f95ae036_6",
+      "f95ae036_10",
+      "f95ae036_14",
+      "f95ae036_15",
+      "f95ae036_17",
+      "f95ae036_20",
+      "f95ae036_29",
+      "f95ae036_30",
+      "f95ae036_32",
+      "f95ae036_35",
+      "f95ae036_37",
+      "f95ae036_38",
+      "f95ae036_39",
+      "f95ae036_40",
+      "f95ae036_41"
+    ],
     "player:jaylon johnson": [
+      "f93ad89b_12",
+      "f93ad89b_14"
+    ],
+    "team:phi": [
       "f93ad89b_12",
       "f93ad89b_14"
     ],
@@ -1571,6 +1780,11 @@
       "f95ab520_9",
       "f95ab520_13"
     ],
+    "team:lar": [
+      "f95ab520_5",
+      "f95ac7aa_3",
+      "f95ac7aa_4"
+    ],
     "term:dime": [
       "f95ab520_5",
       "f95ac7aa_3"
@@ -1611,7 +1825,10 @@
     "player:michael mayer": [
       "f95acbe7_2"
     ],
-    "player:chiefs": [
+    "team:nyg": [
+      "f95acbe7_2"
+    ],
+    "team:kc": [
       "f95acbe7_3"
     ],
     "player:ashton jeanty": [
@@ -1637,6 +1854,25 @@
       "f95ad407_12",
       "f95ad407_26",
       "f95ad407_27"
+    ],
+    "team:ne": [
+      "f95ad407_4",
+      "f95ad407_5",
+      "f95ad407_6",
+      "f95ad407_16",
+      "f95ad407_18",
+      "f95ad407_22",
+      "f95ad407_24",
+      "f95ad407_25"
+    ],
+    "team:mia": [
+      "f95ad407_4",
+      "f95ad407_5",
+      "f95ad407_6",
+      "f95ad407_7",
+      "f95ad407_8",
+      "f95ad407_21",
+      "f95ad407_23"
     ],
     "player:tua tagovailoa": [
       "f95ad407_5"
@@ -1678,6 +1914,9 @@
     ],
     "player:jack jones": [
       "f95ad407_23"
+    ],
+    "team:dal": [
+      "f95ad407_25"
     ],
     "player:stefon diggs": [
       "f95ad407_29"
@@ -1741,6 +1980,9 @@
       "f95ae036_13",
       "f95ae036_25"
     ],
+    "team:cle": [
+      "f95ae036_10"
+    ],
     "player:kenneth gainwell": [
       "f95ae036_12",
       "f95ae036_26"
@@ -1803,9 +2045,14 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
+        "team:sea",
+        "team:sf",
         "topic:matchup"
       ],
       "llm_summary": "About Jaxon Smith-Njigba | Topics: matchup",
@@ -1835,11 +2082,14 @@
         "stats"
       ],
       "teams_mentioned": [
+        "SEA",
+        "SF",
         "WAS"
       ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sea",
         "team:was",
+        "team:sf",
         "topic:defense",
         "topic:rushing",
         "topic:stats",
@@ -1901,9 +2151,12 @@
         "matchup",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
         "player:brock purdy",
+        "team:sea",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -1936,11 +2189,13 @@
         "stats"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SF"
       ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
         "team:min",
+        "team:sf",
         "topic:matchup",
         "topic:stats",
         "term:cover 4"
@@ -1970,11 +2225,12 @@
         "stats"
       ],
       "teams_mentioned": [
-        "NO"
+        "NO",
+        "SF"
       ],
       "retrieval_keys": [
-        "player:49ers",
         "team:no",
+        "team:sf",
         "topic:stats",
         "term:21 personnel"
       ],
@@ -2004,11 +2260,13 @@
         "stats"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SF"
       ],
       "retrieval_keys": [
         "player:sam darnold",
         "team:min",
+        "team:sf",
         "topic:passing",
         "topic:stats",
         "term:passer rating"
@@ -2035,9 +2293,12 @@
       "topics": [
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TEN"
+      ],
       "retrieval_keys": [
         "player:ricky pearsall",
+        "team:ten",
         "topic:passing"
       ],
       "llm_summary": "About Ricky Pearsall | Topics: passing",
@@ -2063,10 +2324,12 @@
         "stats"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SEA"
       ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
+        "team:sea",
         "team:min",
         "topic:stats"
       ],
@@ -2096,9 +2359,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:bryce huff",
+        "team:sf",
         "topic:defense",
         "topic:stats",
         "term:cornerback",
@@ -2128,9 +2394,11 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "topic:rushing",
         "topic:stats"
@@ -2162,9 +2430,12 @@
         "stats",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:brock purdy",
+        "team:sf",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -2318,7 +2589,6 @@
       ],
       "teams_mentioned": [],
       "retrieval_keys": [
-        "player:49ers",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -2352,10 +2622,12 @@
         "rushing"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SEA"
       ],
       "retrieval_keys": [
         "player:zach charbonnet",
+        "team:sea",
         "team:min",
         "topic:defense",
         "topic:rushing",
@@ -2388,11 +2660,12 @@
         "rushing"
       ],
       "teams_mentioned": [
-        "NO"
+        "NO",
+        "SF"
       ],
       "retrieval_keys": [
-        "player:49ers",
         "team:no",
+        "team:sf",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -2454,12 +2727,13 @@
       ],
       "teams_mentioned": [
         "MIN",
-        "NO"
+        "NO",
+        "SF"
       ],
       "retrieval_keys": [
-        "player:49ers",
         "team:min",
         "team:no",
+        "team:sf",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -2525,9 +2799,12 @@
         "stats",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:dee winters",
+        "team:sf",
         "topic:defense",
         "topic:stats",
         "topic:turnovers",
@@ -2559,10 +2836,11 @@
         "passing"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SEA"
       ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "team:min",
         "topic:defense",
         "topic:passing",
@@ -2662,9 +2940,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
         "player:brock purdy",
+        "team:sea",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -2763,9 +3044,13 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DEN",
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
+        "team:den",
         "topic:defense",
         "topic:rushing",
         "topic:stats",
@@ -2834,10 +3119,11 @@
         "stats"
       ],
       "teams_mentioned": [
-        "NO"
+        "NO",
+        "SEA"
       ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "team:no",
         "topic:defense",
         "topic:passing",
@@ -2940,9 +3226,13 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sea",
+        "team:sf",
         "topic:stats",
         "term:epa"
       ],
@@ -2971,9 +3261,11 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -3005,9 +3297,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:george kittle",
+        "team:sf",
         "topic:passing",
         "topic:stats",
         "term:air yards",
@@ -3041,9 +3336,11 @@
         "stats",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -3215,9 +3512,13 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sea",
+        "team:sf",
         "topic:matchup",
         "topic:stats",
         "term:12 personnel",
@@ -3250,9 +3551,11 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:rushing",
         "topic:stats",
         "term:12 personnel",
@@ -3284,9 +3587,12 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:upton stout",
+        "team:sf",
         "topic:defense",
         "term:big nickel",
         "term:nickel"
@@ -3317,11 +3623,15 @@
         "stats"
       ],
       "teams_mentioned": [
+        "SEA",
+        "SF",
         "WAS"
       ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
+        "team:sea",
         "team:was",
+        "team:sf",
         "topic:matchup",
         "topic:stats",
         "term:air yards"
@@ -3350,10 +3660,12 @@
         "stats"
       ],
       "teams_mentioned": [
+        "SEA",
         "WAS"
       ],
       "retrieval_keys": [
         "player:christian mccaffrey",
+        "team:sea",
         "team:was",
         "topic:matchup",
         "topic:stats"
@@ -3384,9 +3696,12 @@
         "matchup",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:sam darnold",
+        "team:sf",
         "topic:matchup",
         "topic:passing",
         "term:air yards",
@@ -3422,10 +3737,12 @@
         "turnovers"
       ],
       "teams_mentioned": [
+        "SEA",
         "WAS"
       ],
       "retrieval_keys": [
         "player:brock purdy",
+        "team:sea",
         "team:was",
         "topic:defense",
         "topic:matchup",
@@ -3457,9 +3774,14 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
+        "team:sea",
+        "team:sf",
         "topic:matchup"
       ],
       "llm_summary": "About Jaxon Smith-Njigba | Topics: matchup",
@@ -3486,9 +3808,13 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sea",
+        "team:sf",
         "topic:stats",
         "term:epa"
       ],
@@ -3548,9 +3874,12 @@
         "matchup",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
         "player:brock purdy",
+        "team:sea",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -3614,11 +3943,12 @@
         "stats"
       ],
       "teams_mentioned": [
-        "NO"
+        "NO",
+        "SF"
       ],
       "retrieval_keys": [
-        "player:49ers",
         "team:no",
+        "team:sf",
         "topic:stats",
         "term:21 personnel"
       ],
@@ -3706,9 +4036,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
+        "team:sea",
         "topic:stats"
       ],
       "llm_summary": "About Jaxon Smith-Njigba | Topics: stats",
@@ -3736,9 +4069,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:bryce huff",
+        "team:sf",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -3766,9 +4102,11 @@
         "defense",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "topic:rushing"
       ],
@@ -3927,7 +4265,6 @@
       ],
       "teams_mentioned": [],
       "retrieval_keys": [
-        "player:49ers",
         "topic:defense",
         "topic:stats",
         "term:cover 4"
@@ -3957,10 +4294,12 @@
         "rushing"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SEA"
       ],
       "retrieval_keys": [
         "player:zach charbonnet",
+        "team:sea",
         "team:min",
         "topic:rushing",
         "term:running back"
@@ -3990,9 +4329,11 @@
         "defense",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sf",
         "topic:defense",
         "topic:passing",
         "term:dropback"
@@ -4052,11 +4393,12 @@
         "stats"
       ],
       "teams_mentioned": [
-        "MIN"
+        "MIN",
+        "SF"
       ],
       "retrieval_keys": [
-        "player:49ers",
         "team:min",
+        "team:sf",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -4147,9 +4489,11 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "term:pressure"
       ],
@@ -4337,9 +4681,11 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -4400,10 +4746,11 @@
         "stats"
       ],
       "teams_mentioned": [
-        "NO"
+        "NO",
+        "SEA"
       ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "team:no",
         "topic:defense",
         "topic:stats",
@@ -4499,9 +4846,13 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sea",
+        "team:sf",
         "topic:stats"
       ],
       "llm_summary": "About 49ers | Topics: stats",
@@ -4529,9 +4880,11 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -4590,9 +4943,11 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:defense",
         "term:cloud coverage"
       ],
@@ -4743,9 +5098,13 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA",
+        "SF"
+      ],
       "retrieval_keys": [
-        "player:49ers",
+        "team:sea",
+        "team:sf",
         "topic:stats",
         "term:nickel"
       ],
@@ -4773,9 +5132,11 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
-        "player:seahawks",
+        "team:sea",
         "topic:stats",
         "term:12 personnel"
       ],
@@ -4802,9 +5163,12 @@
         "nickel"
       ],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:upton stout",
+        "team:sf",
         "term:big nickel",
         "term:nickel"
       ],
@@ -4834,11 +5198,15 @@
         "stats"
       ],
       "teams_mentioned": [
+        "SEA",
+        "SF",
         "WAS"
       ],
       "retrieval_keys": [
         "player:jaxon smith-njigba",
+        "team:sea",
         "team:was",
+        "team:sf",
         "topic:matchup",
         "topic:stats",
         "term:air yards"
@@ -4867,10 +5235,12 @@
         "stats"
       ],
       "teams_mentioned": [
+        "SEA",
         "WAS"
       ],
       "retrieval_keys": [
         "player:christian mccaffrey",
+        "team:sea",
         "team:was",
         "topic:matchup",
         "topic:stats"
@@ -4901,9 +5271,12 @@
         "matchup",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SF"
+      ],
       "retrieval_keys": [
         "player:sam darnold",
+        "team:sf",
         "topic:matchup",
         "topic:passing",
         "term:air yards",
@@ -4938,10 +5311,12 @@
         "stats"
       ],
       "teams_mentioned": [
+        "SEA",
         "WAS"
       ],
       "retrieval_keys": [
         "player:brock purdy",
+        "team:sea",
         "team:was",
         "topic:defense",
         "topic:matchup",
@@ -4970,9 +5345,14 @@
       "local_image": null,
       "terms_of_art": [],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR",
+        "TB"
+      ],
       "retrieval_keys": [
-        "player:panthers"
+        "player:panthers",
+        "team:car",
+        "team:tb"
       ],
       "llm_summary": "About Panthers",
       "times_served": 0,
@@ -4996,9 +5376,14 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR",
+        "TB"
+      ],
       "retrieval_keys": [
         "player:buccaneers",
+        "team:car",
+        "team:tb",
         "topic:matchup"
       ],
       "llm_summary": "About Buccaneers | Topics: matchup",
@@ -5024,9 +5409,12 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:tetairoa mcmillan",
+        "team:car",
         "topic:matchup",
         "topic:stats"
       ],
@@ -5050,9 +5438,12 @@
       "local_image": null,
       "terms_of_art": [],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TB"
+      ],
       "retrieval_keys": [
-        "player:buccaneers"
+        "player:buccaneers",
+        "team:tb"
       ],
       "llm_summary": "About Buccaneers",
       "times_served": 0,
@@ -5079,9 +5470,12 @@
         "passing",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TB"
+      ],
       "retrieval_keys": [
         "player:bryce young",
+        "team:tb",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -5112,9 +5506,12 @@
         "defense",
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:cade otton",
+        "team:car",
         "topic:defense",
         "topic:matchup",
         "term:zone coverage"
@@ -5141,9 +5538,14 @@
       "topics": [
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR",
+        "TB"
+      ],
       "retrieval_keys": [
         "player:baker mayfield",
+        "team:car",
+        "team:tb",
         "topic:passing"
       ],
       "llm_summary": "About Baker Mayfield | Topics: passing",
@@ -5168,9 +5570,14 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR",
+        "TB"
+      ],
       "retrieval_keys": [
         "player:ikem ekwonu",
+        "team:car",
+        "team:tb",
         "topic:stats"
       ],
       "llm_summary": "About Ikem Ekwonu | Topics: stats",
@@ -5200,9 +5607,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:panthers",
+        "team:car",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -5463,9 +5873,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:panthers",
+        "team:car",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -5521,9 +5934,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:panthers",
+        "team:car",
         "topic:stats",
         "term:spread"
       ],
@@ -5739,9 +6155,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TB"
+      ],
       "retrieval_keys": [
         "player:buccaneers",
+        "team:tb",
         "topic:defense",
         "topic:stats"
       ],
@@ -5768,9 +6187,12 @@
         "defense",
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TB"
+      ],
       "retrieval_keys": [
         "player:tetairoa mcmillan",
+        "team:tb",
         "topic:defense",
         "topic:matchup"
       ],
@@ -5799,9 +6221,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TB"
+      ],
       "retrieval_keys": [
         "player:buccaneers",
+        "team:tb",
         "topic:passing",
         "topic:stats",
         "term:dropback"
@@ -5832,10 +6257,12 @@
         "passing"
       ],
       "teams_mentioned": [
+        "TB",
         "WAS"
       ],
       "retrieval_keys": [
         "player:bryce young",
+        "team:tb",
         "team:was",
         "topic:matchup",
         "topic:passing",
@@ -5869,9 +6296,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:yaya diaby",
+        "team:car",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -5935,9 +6365,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CAR"
+      ],
       "retrieval_keys": [
         "player:baker mayfield",
+        "team:car",
         "topic:matchup",
         "topic:passing",
         "topic:stats"
@@ -6196,9 +6629,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "IND"
+      ],
       "retrieval_keys": [
         "player:deforest buckner",
+        "team:ind",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -6231,9 +6667,12 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "IND"
+      ],
       "retrieval_keys": [
         "player:c.j. stroud",
+        "team:ind",
         "topic:matchup",
         "topic:stats",
         "term:air yards",
@@ -6264,9 +6703,14 @@
         "passing",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "IND",
+        "JAX"
+      ],
       "retrieval_keys": [
         "player:riley leonard",
+        "team:ind",
+        "team:jax",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -6361,9 +6805,12 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "IND"
+      ],
       "retrieval_keys": [
         "player:nico collins",
+        "team:ind",
         "topic:matchup"
       ],
       "llm_summary": "About Nico Collins | Topics: matchup",
@@ -6390,11 +6837,13 @@
         "stats"
       ],
       "teams_mentioned": [
+        "IND",
         "MIN"
       ],
       "retrieval_keys": [
         "player:jonathan taylor",
         "team:min",
+        "team:ind",
         "topic:rushing",
         "topic:stats"
       ],
@@ -6421,9 +6870,12 @@
         "defense",
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "IND"
+      ],
       "retrieval_keys": [
         "player:derek stingley jr.",
+        "team:ind",
         "topic:defense",
         "topic:matchup"
       ],
@@ -6582,9 +7034,16 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "HOU",
+        "IND",
+        "JAX"
+      ],
       "retrieval_keys": [
         "player:sauce gardner",
+        "team:ind",
+        "team:jax",
+        "team:hou",
         "topic:matchup"
       ],
       "llm_summary": "About Sauce Gardner | Topics: matchup",
@@ -6609,9 +7068,12 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "HOU"
+      ],
       "retrieval_keys": [
         "player:derek stingley jr.",
+        "team:hou",
         "topic:defense"
       ],
       "llm_summary": "About Derek Stingley Jr. | Topics: defense",
@@ -6639,9 +7101,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "IND"
+      ],
       "retrieval_keys": [
         "player:deforest buckner",
+        "team:ind",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -7036,9 +7501,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "TEN"
+      ],
       "retrieval_keys": [
         "player:titans",
+        "team:ten",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -7131,9 +7599,12 @@
       "local_image": null,
       "terms_of_art": [],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "WAS"
+      ],
       "retrieval_keys": [
-        "player:parker washington"
+        "player:parker washington",
+        "team:was"
       ],
       "llm_summary": "About Parker Washington",
       "times_served": 0,
@@ -7188,9 +7659,14 @@
         "matchup",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL",
+        "GB"
+      ],
       "retrieval_keys": [
         "player:packers",
+        "team:bal",
+        "team:gb",
         "topic:defense",
         "topic:matchup",
         "topic:rushing"
@@ -7217,9 +7693,14 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAC",
+        "MIN"
+      ],
       "retrieval_keys": [
         "player:vikings",
+        "team:lac",
+        "team:min",
         "topic:stats"
       ],
       "llm_summary": "About Vikings | Topics: stats",
@@ -7274,9 +7755,12 @@
         "stats",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIN"
+      ],
       "retrieval_keys": [
         "player:vikings",
+        "team:min",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -7304,9 +7788,12 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:packers",
+        "team:gb",
         "topic:defense"
       ],
       "llm_summary": "About Packers | Topics: defense",
@@ -7374,9 +7861,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:micah parsons",
+        "team:gb",
         "topic:defense",
         "topic:passing",
         "topic:stats"
@@ -7405,9 +7895,12 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIN"
+      ],
       "retrieval_keys": [
         "player:vikings",
+        "team:min",
         "topic:defense",
         "term:zone coverage"
       ],
@@ -7437,9 +7930,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:micah parsons",
+        "team:gb",
         "topic:defense",
         "topic:stats",
         "term:pressure",
@@ -7471,9 +7967,12 @@
         "defense",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIN"
+      ],
       "retrieval_keys": [
         "player:vikings",
+        "team:min",
         "topic:defense",
         "topic:passing",
         "term:man coverage",
@@ -7502,9 +8001,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:packers",
+        "team:gb",
         "topic:passing",
         "topic:stats"
       ],
@@ -7536,9 +8038,14 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "ATL",
+        "MIN"
+      ],
       "retrieval_keys": [
         "player:vikings",
+        "team:min",
+        "team:atl",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -7569,9 +8076,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:packers",
+        "team:gb",
         "topic:rushing",
         "topic:stats"
       ],
@@ -7599,9 +8109,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:packers",
+        "team:gb",
         "topic:stats",
         "term:12 personnel"
       ],
@@ -7629,9 +8142,12 @@
       "topics": [
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:jordan love",
+        "team:gb",
         "topic:passing",
         "term:under center"
       ],
@@ -7803,9 +8319,12 @@
       "local_image": null,
       "terms_of_art": [],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "NYJ"
+      ],
       "retrieval_keys": [
-        "player:adonai mitchell"
+        "player:adonai mitchell",
+        "team:nyj"
       ],
       "llm_summary": "About Adonai Mitchell",
       "times_served": 0,
@@ -7864,9 +8383,14 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BUF",
+        "NYJ"
+      ],
       "retrieval_keys": [
         "player:jets",
+        "team:buf",
+        "team:nyj",
         "topic:matchup",
         "topic:stats",
         "term:11 personnel"
@@ -7933,9 +8457,14 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "DET"
+      ],
       "retrieval_keys": [
         "player:jared goff",
+        "team:det",
+        "team:chi",
         "topic:matchup",
         "topic:passing",
         "topic:stats"
@@ -8024,11 +8553,15 @@
         "matchup"
       ],
       "teams_mentioned": [
+        "CHI",
+        "DET",
         "WAS"
       ],
       "retrieval_keys": [
         "player:bears",
+        "team:det",
         "team:was",
+        "team:chi",
         "topic:matchup",
         "term:epa"
       ],
@@ -8054,9 +8587,12 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:amik robertson",
+        "team:chi",
         "topic:matchup"
       ],
       "llm_summary": "About Amik Robertson | Topics: matchup",
@@ -8113,9 +8649,12 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
         "player:lions",
+        "team:det",
         "topic:defense"
       ],
       "llm_summary": "About Lions | Topics: defense",
@@ -8146,9 +8685,14 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "TEN"
+      ],
       "retrieval_keys": [
         "player:bears",
+        "team:chi",
+        "team:ten",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -8182,9 +8726,16 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET",
+        "MIN",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:lions",
+        "team:det",
+        "team:min",
+        "team:pit",
         "topic:defense",
         "topic:matchup",
         "topic:stats",
@@ -8217,9 +8768,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:bears",
+        "team:chi",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -8249,9 +8803,14 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "DET"
+      ],
       "retrieval_keys": [
         "player:lions",
+        "team:det",
+        "team:chi",
         "topic:defense",
         "topic:stats"
       ],
@@ -8279,9 +8838,12 @@
       "topics": [
         "matchup"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PHI"
+      ],
       "retrieval_keys": [
         "player:jaylon johnson",
+        "team:phi",
         "topic:matchup",
         "term:cornerback"
       ],
@@ -8342,9 +8904,16 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "PHI",
+        "SF"
+      ],
       "retrieval_keys": [
         "player:jaylon johnson",
+        "team:chi",
+        "team:phi",
+        "team:sf",
         "topic:matchup",
         "topic:stats"
       ],
@@ -8368,9 +8937,12 @@
       "local_image": null,
       "terms_of_art": [],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
-        "player:lions"
+        "player:lions",
+        "team:det"
       ],
       "llm_summary": "About Lions",
       "times_served": 0,
@@ -8428,9 +9000,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
         "player:jameson williams",
+        "team:det",
         "topic:stats",
         "term:air yards"
       ],
@@ -8461,9 +9036,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:bears",
+        "team:chi",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -8527,9 +9105,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:bears",
+        "team:chi",
         "topic:defense",
         "topic:stats"
       ],
@@ -8555,9 +9136,14 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:lions",
+        "team:det",
+        "team:pit",
         "topic:stats"
       ],
       "llm_summary": "About Lions | Topics: stats",
@@ -8611,9 +9197,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
         "player:sam laporta",
+        "team:det",
         "topic:stats",
         "term:12 personnel"
       ],
@@ -8666,9 +9255,12 @@
       "topics": [
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
         "player:jahmyr gibbs",
+        "team:det",
         "topic:rushing"
       ],
       "llm_summary": "About Jahmyr Gibbs | Topics: rushing",
@@ -8693,9 +9285,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:caleb williams",
+        "team:chi",
         "topic:stats"
       ],
       "llm_summary": "About Caleb Williams | Topics: stats",
@@ -8783,9 +9378,14 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL",
+        "DET"
+      ],
       "retrieval_keys": [
         "player:lions",
+        "team:det",
+        "team:bal",
         "topic:rushing",
         "topic:stats"
       ],
@@ -8846,9 +9446,14 @@
         "stats",
         "turnovers"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET",
+        "MIN"
+      ],
       "retrieval_keys": [
         "player:jared goff",
+        "team:det",
+        "team:min",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -8880,9 +9485,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:bears",
+        "team:chi",
         "topic:stats",
         "term:13 personnel"
       ],
@@ -8909,9 +9517,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
         "player:jared goff",
+        "team:det",
         "topic:passing",
         "topic:stats"
       ],
@@ -9033,9 +9644,14 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "DET"
+      ],
       "retrieval_keys": [
         "player:amon-ra st. brown",
+        "team:det",
+        "team:chi",
         "topic:stats"
       ],
       "llm_summary": "About Amon-Ra St. Brown | Topics: stats",
@@ -9061,9 +9677,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI"
+      ],
       "retrieval_keys": [
         "player:bears",
+        "team:chi",
         "topic:rushing",
         "topic:stats"
       ],
@@ -9150,9 +9769,14 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "DET"
+      ],
       "retrieval_keys": [
         "player:lions",
+        "team:det",
+        "team:chi",
         "topic:stats",
         "term:12 personnel"
       ],
@@ -9284,10 +9908,14 @@
         "passing"
       ],
       "teams_mentioned": [
+        "CHI",
+        "DET",
         "NO"
       ],
       "retrieval_keys": [
         "player:bears",
+        "team:det",
+        "team:chi",
         "team:no",
         "topic:defense",
         "topic:matchup",
@@ -9318,9 +9946,12 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET"
+      ],
       "retrieval_keys": [
         "player:rome odunze",
+        "team:det",
         "topic:matchup",
         "topic:stats"
       ],
@@ -9350,9 +9981,14 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CHI",
+        "DET"
+      ],
       "retrieval_keys": [
         "player:caleb williams",
+        "team:det",
+        "team:chi",
         "topic:defense",
         "topic:stats",
         "term:pressure",
@@ -9383,9 +10019,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAC"
+      ],
       "retrieval_keys": [
         "player:tuli tuipulotu",
+        "team:lac",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -9510,9 +10149,14 @@
         "dime"
       ],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAC",
+        "LAR"
+      ],
       "retrieval_keys": [
         "player:chargers",
+        "team:lac",
+        "team:lar",
         "term:dime"
       ],
       "llm_summary": "About Chargers | Terms: dime",
@@ -9572,10 +10216,12 @@
         "stats"
       ],
       "teams_mentioned": [
+        "LAC",
         "MIN"
       ],
       "retrieval_keys": [
         "player:chargers",
+        "team:lac",
         "team:min",
         "topic:stats"
       ],
@@ -9637,9 +10283,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAC"
+      ],
       "retrieval_keys": [
         "player:chargers",
+        "team:lac",
         "topic:stats"
       ],
       "llm_summary": "About Chargers | Topics: stats",
@@ -9735,9 +10384,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DEN"
+      ],
       "retrieval_keys": [
         "player:broncos",
+        "team:den",
         "topic:defense",
         "topic:rushing",
         "topic:stats",
@@ -9768,9 +10420,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAC"
+      ],
       "retrieval_keys": [
         "player:chargers",
+        "team:lac",
         "topic:passing",
         "topic:stats",
         "term:dropback"
@@ -9919,9 +10574,12 @@
       "topics": [
         "defense"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAR"
+      ],
       "retrieval_keys": [
         "player:jacoby brissett",
+        "team:lar",
         "topic:defense",
         "term:dime"
       ],
@@ -9949,9 +10607,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "LAR"
+      ],
       "retrieval_keys": [
         "player:rams",
+        "team:lar",
         "topic:stats",
         "term:13 personnel"
       ],
@@ -10008,9 +10669,12 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "NYG"
+      ],
       "retrieval_keys": [
         "player:michael mayer",
+        "team:nyg",
         "topic:matchup",
         "topic:stats"
       ],
@@ -10040,9 +10704,11 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "KC"
+      ],
       "retrieval_keys": [
-        "player:chiefs",
+        "team:kc",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -10176,9 +10842,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "SEA"
+      ],
       "retrieval_keys": [
         "player:jordyn brooks",
+        "team:sea",
         "topic:passing",
         "topic:rushing",
         "topic:stats"
@@ -10206,9 +10875,14 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIA",
+        "NE"
+      ],
       "retrieval_keys": [
         "player:drake maye",
+        "team:ne",
+        "team:mia",
         "topic:passing",
         "topic:stats"
       ],
@@ -10239,11 +10913,15 @@
         "stats"
       ],
       "teams_mentioned": [
+        "MIA",
+        "NE",
         "WAS"
       ],
       "retrieval_keys": [
         "player:tua tagovailoa",
+        "team:ne",
         "team:was",
+        "team:mia",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -10272,9 +10950,14 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIA",
+        "NE"
+      ],
       "retrieval_keys": [
         "player:drake maye",
+        "team:ne",
+        "team:mia",
         "topic:passing",
         "topic:stats"
       ],
@@ -10300,9 +10983,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIA"
+      ],
       "retrieval_keys": [
         "player:dolphins",
+        "team:mia",
         "topic:stats"
       ],
       "llm_summary": "About Dolphins | Topics: stats",
@@ -10329,9 +11015,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIA"
+      ],
       "retrieval_keys": [
         "player:rhamondre stevenson",
+        "team:mia",
         "topic:matchup",
         "topic:rushing",
         "topic:stats"
@@ -10601,9 +11290,12 @@
         "defense",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "NE"
+      ],
       "retrieval_keys": [
         "player:patriots",
+        "team:ne",
         "topic:defense",
         "topic:rushing"
       ],
@@ -10663,9 +11355,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "NE"
+      ],
       "retrieval_keys": [
         "player:carlton davis iii",
+        "team:ne",
         "topic:stats",
         "term:cornerback"
       ],
@@ -10766,9 +11461,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIA"
+      ],
       "retrieval_keys": [
         "player:dolphins",
+        "team:mia",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -10798,9 +11496,16 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DET",
+        "GB",
+        "NE"
+      ],
       "retrieval_keys": [
         "player:patriots",
+        "team:ne",
+        "team:det",
+        "team:gb",
         "topic:defense",
         "topic:stats"
       ],
@@ -10828,9 +11533,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "MIA"
+      ],
       "retrieval_keys": [
         "player:jack jones",
+        "team:mia",
         "topic:stats",
         "term:cornerback"
       ],
@@ -10856,9 +11564,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "NE"
+      ],
       "retrieval_keys": [
         "player:patriots",
+        "team:ne",
         "topic:stats"
       ],
       "llm_summary": "About Patriots | Topics: stats",
@@ -10885,9 +11596,14 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "DAL",
+        "NE"
+      ],
       "retrieval_keys": [
         "player:patriots",
+        "team:ne",
+        "team:dal",
         "topic:stats",
         "term:11 personnel"
       ],
@@ -11062,9 +11778,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "WAS"
+      ],
       "retrieval_keys": [
         "player:josh conerly jr.",
+        "team:was",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -11094,9 +11813,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "WAS"
+      ],
       "retrieval_keys": [
         "player:saquon barkley",
+        "team:was",
         "topic:defense",
         "topic:rushing",
         "topic:stats"
@@ -11195,9 +11917,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:ravens",
+        "team:bal",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -11229,9 +11954,12 @@
         "matchup",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:aaron rodgers",
+        "team:bal",
         "topic:matchup",
         "topic:passing",
         "term:completion percentage"
@@ -11259,9 +11987,12 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:zay flowers",
+        "team:pit",
         "topic:matchup",
         "topic:stats"
       ],
@@ -11292,9 +12023,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:pit",
         "topic:defense",
         "topic:passing",
         "topic:stats",
@@ -11352,9 +12086,12 @@
       "local_image": null,
       "terms_of_art": [],
       "topics": [],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
-        "player:spencer anderson"
+        "player:spencer anderson",
+        "team:pit"
       ],
       "llm_summary": "About Spencer Anderson",
       "times_served": 0,
@@ -11438,9 +12175,12 @@
         "matchup",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:derrick henry",
+        "team:gb",
         "topic:defense",
         "topic:matchup",
         "topic:rushing"
@@ -11468,9 +12208,14 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "CLE",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:pit",
+        "team:cle",
         "topic:matchup",
         "topic:stats"
       ],
@@ -11499,9 +12244,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:kyle hamilton",
+        "team:bal",
         "topic:rushing",
         "topic:stats",
         "term:linebacker"
@@ -11563,9 +12311,12 @@
         "matchup",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "GB"
+      ],
       "retrieval_keys": [
         "player:derrick henry",
+        "team:gb",
         "topic:matchup",
         "topic:rushing",
         "term:i-formation"
@@ -11593,9 +12344,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:pit",
         "topic:defense",
         "topic:stats"
       ],
@@ -11623,9 +12377,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:lamar jackson",
+        "team:pit",
         "topic:matchup",
         "topic:passing",
         "topic:stats"
@@ -11683,9 +12440,16 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL",
+        "GB",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:ravens",
+        "team:bal",
+        "team:gb",
+        "team:pit",
         "topic:passing",
         "topic:stats"
       ],
@@ -11746,9 +12510,12 @@
         "rushing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:ravens",
+        "team:bal",
         "topic:defense",
         "topic:passing",
         "topic:rushing",
@@ -11780,9 +12547,12 @@
         "defense",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:alex highsmith",
+        "team:pit",
         "topic:defense",
         "topic:stats",
         "term:pressure"
@@ -11811,9 +12581,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:kyle hamilton",
+        "team:bal",
         "topic:stats",
         "term:safety"
       ],
@@ -11945,8 +12718,8 @@
       ],
       "retrieval_keys": [
         "player:derrick henry",
-        "team:min",
         "team:was",
+        "team:min",
         "topic:defense",
         "topic:rushing",
         "term:running back"
@@ -12071,9 +12844,12 @@
         "passing",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:lamar jackson",
+        "team:pit",
         "topic:matchup",
         "topic:passing",
         "topic:stats",
@@ -12104,9 +12880,12 @@
       "topics": [
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:pit",
         "topic:rushing",
         "term:jumbo"
       ],
@@ -12161,9 +12940,12 @@
       "topics": [
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:pit",
         "topic:stats"
       ],
       "llm_summary": "About Steelers | Topics: stats",
@@ -12255,11 +13037,13 @@
         "stats"
       ],
       "teams_mentioned": [
+        "PIT",
         "WAS"
       ],
       "retrieval_keys": [
         "player:zay flowers",
         "team:was",
+        "team:pit",
         "topic:matchup",
         "topic:stats"
       ],
@@ -12318,11 +13102,13 @@
         "matchup"
       ],
       "teams_mentioned": [
+        "PIT",
         "WAS"
       ],
       "retrieval_keys": [
         "player:zay flowers",
         "team:was",
+        "team:pit",
         "topic:matchup"
       ],
       "llm_summary": "About Zay Flowers | Topics: matchup",
@@ -12349,9 +13135,14 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:bal",
+        "team:pit",
         "topic:defense",
         "topic:matchup",
         "topic:stats"
@@ -12384,11 +13175,13 @@
         "stats"
       ],
       "teams_mentioned": [
+        "PIT",
         "WAS"
       ],
       "retrieval_keys": [
         "player:lamar jackson",
         "team:was",
+        "team:pit",
         "topic:defense",
         "topic:matchup",
         "topic:passing",
@@ -12418,9 +13211,14 @@
         "matchup",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:t.j. watt",
+        "team:bal",
+        "team:pit",
         "topic:matchup",
         "topic:rushing"
       ],
@@ -12447,9 +13245,14 @@
         "matchup",
         "rushing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL",
+        "PIT"
+      ],
       "retrieval_keys": [
         "player:steelers",
+        "team:bal",
+        "team:pit",
         "topic:matchup",
         "topic:rushing"
       ],
@@ -12476,9 +13279,12 @@
         "matchup",
         "stats"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:dk metcalf",
+        "team:bal",
         "topic:matchup",
         "topic:stats"
       ],
@@ -12507,9 +13313,12 @@
         "matchup",
         "passing"
       ],
-      "teams_mentioned": [],
+      "teams_mentioned": [
+        "BAL"
+      ],
       "retrieval_keys": [
         "player:aaron rodgers",
+        "team:bal",
         "topic:matchup",
         "topic:passing",
         "term:air yards"

@@ -150,13 +150,33 @@ class InsightPreprocessor:
                 found_terms.add(term)
         return sorted(found_terms)
     
+    # Team name to abbreviation mapping
+    TEAM_NAMES = {
+        'Cardinals': 'ARI', 'Falcons': 'ATL', 'Ravens': 'BAL', 'Bills': 'BUF',
+        'Panthers': 'CAR', 'Bears': 'CHI', 'Bengals': 'CIN', 'Browns': 'CLE',
+        'Cowboys': 'DAL', 'Broncos': 'DEN', 'Lions': 'DET', 'Packers': 'GB',
+        'Texans': 'HOU', 'Colts': 'IND', 'Jaguars': 'JAX', 'Chiefs': 'KC',
+        'Chargers': 'LAC', 'Rams': 'LAR', 'Raiders': 'LV', 'Dolphins': 'MIA',
+        'Vikings': 'MIN', 'Patriots': 'NE', 'Saints': 'NO', 'Giants': 'NYG',
+        'Jets': 'NYJ', 'Eagles': 'PHI', 'Steelers': 'PIT', 'Seahawks': 'SEA',
+        '49ers': 'SF', 'Niners': 'SF', 'Buccaneers': 'TB', 'Bucs': 'TB',
+        'Titans': 'TEN', 'Commanders': 'WAS', 'Washington': 'WAS'
+    }
+    
     def extract_teams(self, text: str) -> List[str]:
         """Extract team abbreviations from text."""
         found_teams = set()
+        
+        # Check abbreviations
         for team in NFL_TEAMS:
-            # Match team abbreviation with word boundaries
             if re.search(r'\b' + team + r'\b', text, re.IGNORECASE):
                 found_teams.add(team)
+        
+        # Check team names
+        for name, abbr in self.TEAM_NAMES.items():
+            if re.search(r'\b' + re.escape(name) + r'\b', text, re.IGNORECASE):
+                found_teams.add(abbr)
+        
         return sorted(found_teams)
     
     def extract_topics(self, text: str, terms: List[str]) -> List[str]:
@@ -204,14 +224,21 @@ class InsightPreprocessor:
         
         # Player-based keys
         if insight.player_name:
-            keys.append(f"player:{insight.player_name.lower()}")
-            if insight.player_team:
-                keys.append(f"player:{insight.player_name.lower()}:{insight.player_team.lower()}")
+            # Clean player name (remove team names that might be mistaken for players)
+            player_lower = insight.player_name.lower()
+            if player_lower not in ['49ers', 'chiefs', 'bills', 'eagles', 'seahawks', 'cowboys']:
+                keys.append(f"player:{player_lower}")
+                if insight.player_team:
+                    keys.append(f"player:{player_lower}:{insight.player_team.lower()}")
         
-        # Team-based keys
+        # Team-based keys (from explicit field and from text extraction)
+        all_teams = set()
         if insight.player_team:
-            keys.append(f"team:{insight.player_team.lower()}")
+            all_teams.add(insight.player_team.upper())
         for team in insight.teams_mentioned:
+            all_teams.add(team.upper())
+        
+        for team in all_teams:
             keys.append(f"team:{team.lower()}")
         
         # Topic-based keys

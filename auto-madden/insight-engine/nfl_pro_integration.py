@@ -602,6 +602,57 @@ class NFLProNarrativeInsights:
         
         return None
     
+    def get_contextual_insight(
+        self,
+        play_type: str = None,
+        is_redzone: bool = False,
+        is_third_down: bool = False,
+        team: str = None,
+        player: str = None
+    ) -> Optional[Dict]:
+        """
+        Get an insight that matches the current game context.
+        
+        Prioritizes:
+        1. Player-specific if player made a notable play
+        2. Situation-specific (redzone, third down)
+        3. Play-type related (passing, rushing)
+        4. Team-related
+        5. Random unserved
+        """
+        # Try player first
+        if player:
+            insight = self.get_insight_by_player(player)
+            if insight:
+                return insight
+        
+        # Try situation
+        if is_redzone:
+            insight = self.get_insight_by_topic('redzone')
+            if insight:
+                return insight
+        
+        if is_third_down:
+            insight = self.get_insight_by_topic('third_down')
+            if insight:
+                return insight
+        
+        # Try play type
+        if play_type:
+            topic = 'passing' if 'pass' in play_type.lower() else 'rushing'
+            insight = self.get_insight_by_topic(topic)
+            if insight:
+                return insight
+        
+        # Try team
+        if team:
+            insight = self.get_insight_by_team(team)
+            if insight:
+                return insight
+        
+        # Fallback to random
+        return self.get_random_unserved_insight(prefer_team=team)
+    
     def get_random_unserved_insight(self, prefer_team: str = None) -> Optional[Dict]:
         """Get a random unserved insight, preferring given team if specified."""
         if not hasattr(self, '_processed_insights'):
@@ -1053,6 +1104,23 @@ def get_break_narrative_insights(
 def get_pregame_narrative_insights(count: int = 5) -> List[Dict[str, Any]]:
     """Get a sequence of pregame insights."""
     return nfl_pro_narratives.get_pregame_insights(count)
+
+
+def get_contextual_narrative_insight(
+    play_type: str = None,
+    is_redzone: bool = False,
+    is_third_down: bool = False,
+    team: str = None,
+    player: str = None
+) -> Optional[Dict[str, Any]]:
+    """Get an insight matching the current game context."""
+    return nfl_pro_narratives.get_contextual_insight(
+        play_type=play_type,
+        is_redzone=is_redzone,
+        is_third_down=is_third_down,
+        team=team,
+        player=player
+    )
 
 
 def get_narrative_llm_context(
