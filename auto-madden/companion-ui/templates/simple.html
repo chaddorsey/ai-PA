@@ -109,6 +109,78 @@
             color: var(--text-primary);
         }
         
+        /* Game Selector */
+        .game-selector {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .game-selector select {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            min-width: 180px;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 30px;
+        }
+        
+        .game-selector select:hover {
+            border-color: rgba(255,255,255,0.2);
+        }
+        
+        .game-selector select:focus {
+            outline: none;
+            border-color: var(--insight-border);
+        }
+        
+        .game-selector select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 8px;
+        }
+        
+        .game-selector select option.live-game {
+            color: var(--success);
+        }
+        
+        .refresh-games-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+        
+        .refresh-games-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .refresh-games-btn.spinning {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
         /* Game Box (Score Bug) */
         .game-box {
             background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
@@ -629,6 +701,13 @@
     <div class="header">
         <h1 class="title"><span class="title-emoji">🏈</span>Auto-Madden Live</h1>
         <div class="header-controls">
+            <!-- Game Selector -->
+            <div class="game-selector">
+                <select id="game-select" onchange="switchGame(this.value)" title="Select game">
+                    <option value="">Select Game...</option>
+                </select>
+                <button class="refresh-games-btn" onclick="refreshGames()" title="Refresh games">🔄</button>
+            </div>
             <div class="status-indicator">
                 <span id="ws-status" class="status-dot disconnected" title="Connection status"></span>
             </div>
@@ -1019,16 +1098,132 @@
         }
         
         // === Live Mode Controls ===
-        const CURRENT_GAME_ID = '401772961';
+        let currentGameId = null;
+        let availableGames = [];
+        
+        async function refreshGames() {
+            const btn = document.querySelector('.refresh-games-btn');
+            btn?.classList.add('spinning');
+            
+            try {
+                const resp = await fetch('http://localhost:5132/live/espn/games');
+                const data = await resp.json();
+                
+                if (data.status === 'ok') {
+                    availableGames = data.games || [];
+                    updateGameSelector();
+                }
+            } catch (e) {
+                console.error('Error fetching games:', e);
+            } finally {
+                btn?.classList.remove('spinning');
+            }
+        }
+        
+        function updateGameSelector() {
+            const select = document.getElementById('game-select');
+            if (!select) return;
+            
+            // Clear existing options (except placeholder)
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            
+            // Group games by status
+            const liveGames = availableGames.filter(g => g.is_live);
+            const scheduledGames = availableGames.filter(g => !g.is_live);
+            
+            // Add live games first
+            if (liveGames.length > 0) {
+                const liveGroup = document.createElement('optgroup');
+                liveGroup.label = '🔴 Live Now';
+                liveGames.forEach(game => {
+                    const opt = document.createElement('option');
+                    opt.value = game.id;
+                    opt.textContent = `${game.away} ${game.away_score} @ ${game.home} ${game.home_score} (${game.status})`;
+                    opt.className = 'live-game';
+                    liveGroup.appendChild(opt);
+                });
+                select.appendChild(liveGroup);
+            }
+            
+            // Add scheduled games
+            if (scheduledGames.length > 0) {
+                const schedGroup = document.createElement('optgroup');
+                schedGroup.label = '📅 Upcoming/Other';
+                scheduledGames.forEach(game => {
+                    const opt = document.createElement('option');
+                    opt.value = game.id;
+                    opt.textContent = `${game.away} @ ${game.home} (${game.status})`;
+                    schedGroup.appendChild(opt);
+                });
+                select.appendChild(schedGroup);
+            }
+            
+            // Re-select current game if it's in the list
+            if (currentGameId) {
+                select.value = currentGameId;
+            }
+        }
+        
+        async function switchGame(gameId) {
+            if (!gameId) return;
+            
+            console.log('Switching to game:', gameId);
+            currentGameId = gameId;
+            
+            // Clear buffers for clean transition
+            stateBuffer = [];
+            insightBuffer = [];
+            preplayBuffer = [];
+            
+            // Clear UI
+            document.getElementById('score').textContent = 'Loading...';
+            document.getElementById('situation').textContent = 'Switching games...';
+            document.getElementById('play').textContent = 'Waiting for play...';
+            document.getElementById('insights').innerHTML = '';
+            
+            // Notify insight engine about game switch
+            try {
+                await fetch('http://localhost:5131/game/switch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ game_id: gameId })
+                });
+            } catch (e) {
+                console.warn('Could not notify insight engine:', e);
+            }
+            
+            // Restart with new game
+            await startLive();
+        }
         
         async function startLive() {
-            const resp = await fetch('http://localhost:5132/live/espn/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ game_id: CURRENT_GAME_ID, interval: 10 })
-            });
-            const data = await resp.json();
-            console.log('Started:', data.message);
+            if (!currentGameId) {
+                // Try to auto-select first available
+                await refreshGames();
+                if (availableGames.length > 0) {
+                    currentGameId = availableGames.find(g => g.is_live)?.id || availableGames[0].id;
+                    document.getElementById('game-select').value = currentGameId;
+                }
+            }
+            
+            if (!currentGameId) {
+                console.error('No game selected');
+                return;
+            }
+            
+            try {
+                const resp = await fetch('http://localhost:5132/live/espn/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ game_id: currentGameId, interval: 10 })
+                });
+                const data = await resp.json();
+                console.log('Started:', data.message);
+            } catch (e) {
+                console.error('Error starting live feed:', e);
+            }
             
             if (pollInterval) clearInterval(pollInterval);
             pollInterval = setInterval(pollState, 2000);
@@ -1044,17 +1239,23 @@
         }
         
         function refresh() {
+            refreshGames();
             pollState();
         }
         
         // === Initialization ===
-        function init() {
+        async function init() {
             loadPreferences();
             updateDelayDisplay();
-            pollState();
+            
+            // Fetch available games
+            await refreshGames();
             
             // Start polling
             setInterval(pollState, 3000);
+            
+            // Refresh game list every 60 seconds
+            setInterval(refreshGames, 60000);
             
             // Process delayed items frequently
             setInterval(displayDelayedInsights, 500);
@@ -1062,6 +1263,9 @@
             
             // Connect WebSocket
             connectWS();
+            
+            // Initial state poll
+            pollState();
         }
         
         // Initialize on load

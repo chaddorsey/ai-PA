@@ -3151,6 +3151,57 @@ def _count_by_type(insights: List[Dict]) -> Dict[str, int]:
     return counts
 
 
+@app.route('/game/switch', methods=['POST'])
+def switch_game():
+    """Switch to a different game, resetting session state."""
+    global session_data
+    
+    data = request.get_json() or {}
+    new_game_id = data.get('game_id')
+    nfl_pro_uuid = data.get('nfl_pro_uuid', '')
+    
+    if not new_game_id:
+        return jsonify({'status': 'error', 'message': 'game_id required'}), 400
+    
+    logger.info(f"Switching game from {session_data.get('game_id')} to {new_game_id}")
+    
+    # Reset session data for new game
+    session_data = {
+        'game_id': new_game_id,
+        'nfl_pro_uuid': nfl_pro_uuid,
+        'session_start': datetime.now().isoformat(),
+        'insights_delivered': [],
+        'breaks_detected': [],
+        'player_spotlights': [],
+        'user_questions': [],
+        'nfl_pro_insights_loaded': False
+    }
+    
+    # Load NFL Pro insights for new game if available
+    if nfl_pro_uuid and NFL_PRO_INSIGHTS_AVAILABLE:
+        try:
+            loaded = load_narrative_insights(nfl_pro_uuid)
+            session_data['nfl_pro_insights_loaded'] = loaded > 0
+            logger.info(f"Loaded {loaded} NFL Pro insights for new game")
+        except Exception as e:
+            logger.warning(f"Could not load NFL Pro insights: {e}")
+    
+    # Notify connected clients about game switch
+    delivery_manager.broadcast_insight(Insight(
+        type='system',
+        headline='Game Switched',
+        body=f'Now following game {new_game_id}',
+        priority=5,
+        tags=['system']
+    ))
+    
+    return jsonify({
+        'status': 'ok',
+        'message': f'Switched to game {new_game_id}',
+        'nfl_pro_insights_loaded': session_data.get('nfl_pro_insights_loaded', False)
+    })
+
+
 @sock.route('/ws')
 def websocket(ws):
     """WebSocket endpoint for companion UI."""

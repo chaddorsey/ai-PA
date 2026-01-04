@@ -456,10 +456,14 @@ class NFLProNarrativeInsights:
     - Situation-triggered insights for game situations (red zone, 3rd down)
     - Break-time insights for commercial breaks, halftime
     - Cross-game usage tracking to avoid repetition
+    
+    Now supports loading from pre-processed insights (faster, with indices).
     """
     
     INSIGHT_CACHE_DIR = DATA_PATH / "nfl_pro_insights"
+    PROCESSED_INSIGHT_DIR = DATA_PATH / "processed_insights"
     USAGE_HISTORY_FILE = DATA_PATH / "insight_usage_history.json"
+    INSIGHTS_DB = DATA_PATH / "nfl_insights_2025.db"
     
     def __init__(self):
         self._index = None  # InsightIndex
@@ -489,6 +493,161 @@ class NFLProNarrativeInsights:
                 json.dump(self._usage_history, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving usage history: {e}")
+    
+    def load_from_processed(self, week: int) -> bool:
+        """
+        Load pre-processed insights for a week.
+        
+        This is the preferred method - uses pre-built index for fast retrieval.
+        """
+        processed_file = self.PROCESSED_INSIGHT_DIR / f"week_{week}_processed.json"
+        
+        if not processed_file.exists():
+            logger.warning(f"No pre-processed insights for Week {week}")
+            return False
+        
+        try:
+            with open(processed_file, 'r') as f:
+                data = json.load(f)
+            
+            self._processed_insights = data.get('insights', [])
+            self._processed_index = data.get('index', {})
+            
+            # Track which insights have been served in current game
+            self._served_in_game: set = set()
+            
+            logger.info(f"Loaded {len(self._processed_insights)} processed insights for Week {week}")
+            return True
+        except Exception as e:
+            logger.error(f"Error loading processed insights: {e}")
+            return False
+    
+    def load_from_db(self, game_uuid: str) -> bool:
+        """
+        Load insights directly from the insights database for a specific game.
+        
+        Falls back to this when processed file is not available.
+        """
+        if not self.INSIGHTS_DB.exists():
+            logger.warning(f"Insights database not found: {self.INSIGHTS_DB}")
+            return False
+        
+        try:
+            import sqlite3
+            conn = sqlite3.connect(self.INSIGHTS_DB)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT * FROM insights WHERE game_id = ?
+            ''', (game_uuid,))
+            
+            rows = cursor.fetchall()
+            conn.close()
+            
+            self._processed_insights = [dict(row) for row in rows]
+            self._processed_index = {}
+            self._served_in_game = set()
+            
+            logger.info(f"Loaded {len(self._processed_insights)} insights from DB for game {game_uuid[:8]}")
+            return len(self._processed_insights) > 0
+        except Exception as e:
+            logger.error(f"Error loading from DB: {e}")
+            return False
+    
+    def get_insight_by_player(self, player_name: str) -> Optional[Dict]:
+        """Get an unserved insight for a player from processed insights."""
+        key = f"player:{player_name.lower()}"
+        
+        if hasattr(self, '_processed_index') and key in self._processed_index:
+            insight_ids = self._processed_index[key]
+            for insight in self._processed_insights:
+                if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
+                    self._served_in_game.add(insight['id'])
+                    return self._format_insight(insight)
+        
+        # Fallback: search by name
+        if hasattr(self, '_processed_insights'):
+            for insight in self._processed_insights:
+                if player_name.lower() in insight.get('player_name', '').lower():
+                    if insight.get('id') not in self._served_in_game:
+                        self._served_in_game.add(insight['id'])
+                        return self._format_insight(insight)
+        
+        return None
+    
+    def get_insight_by_team(self, team_abbr: str) -> Optional[Dict]:
+        """Get an unserved insight for a team."""
+        key = f"team:{team_abbr.lower()}"
+        
+        if hasattr(self, '_processed_index') and key in self._processed_index:
+            insight_ids = self._processed_index[key]
+            for insight in self._processed_insights:
+                if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
+                    self._served_in_game.add(insight['id'])
+                    return self._format_insight(insight)
+        
+        return None
+    
+    def get_insight_by_topic(self, topic: str) -> Optional[Dict]:
+        """Get an unserved insight for a topic (passing, rushing, defense, etc.)."""
+        key = f"topic:{topic.lower()}"
+        
+        if hasattr(self, '_processed_index') and key in self._processed_index:
+            insight_ids = self._processed_index[key]
+            for insight in self._processed_insights:
+                if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
+                    self._served_in_game.add(insight['id'])
+                    return self._format_insight(insight)
+        
+        return None
+    
+    def get_random_unserved_insight(self, prefer_team: str = None) -> Optional[Dict]:
+        """Get a random unserved insight, preferring given team if specified."""
+        if not hasattr(self, '_processed_insights'):
+            return None
+        
+        import random
+        
+        # Filter to unserved
+        unserved = [i for i in self._processed_insights if i.get('id') not in self._served_in_game]
+        
+        if not unserved:
+            return None
+        
+        # Prefer team if specified
+        if prefer_team:
+            team_insights = [i for i in unserved if prefer_team.upper() in (
+                i.get('player_team', '').upper(),
+                ' '.join(i.get('teams_mentioned', []))
+            )]
+            if team_insights:
+                unserved = team_insights
+        
+        insight = random.choice(unserved)
+        self._served_in_game.add(insight['id'])
+        return self._format_insight(insight)
+    
+    def _format_insight(self, insight: Dict) -> Dict:
+        """Format a processed insight for delivery."""
+        return {
+            'id': insight.get('id', ''),
+            'headline': insight.get('player_name') or 'Game Insight',
+            'body': insight.get('title', ''),
+            'extended': insight.get('sub_note', ''),
+            'source': 'nfl_pro',
+            'priority': 7,
+            'image_url': insight.get('image_url', ''),
+            'local_image': insight.get('local_image', ''),
+            'terms_of_art': insight.get('terms_of_art', []),
+            'topics': insight.get('topics', [])
+        }
+    
+    def get_unserved_count(self) -> int:
+        """Get count of remaining unserved insights."""
+        if not hasattr(self, '_processed_insights'):
+            return 0
+        return len([i for i in self._processed_insights if i.get('id') not in self._served_in_game])
     
     def load_game_insights(
         self,
@@ -820,12 +979,38 @@ nfl_pro_narratives = NFLProNarrativeInsights()
 # Convenience functions for insight engine integration
 def load_narrative_insights(
     game_uuid: str,
-    home_team: str,
-    away_team: str,
-    insights_data: List[Dict] = None
-) -> bool:
-    """Load NFL Pro narrative insights for a game."""
-    return nfl_pro_narratives.load_game_insights(game_uuid, home_team, away_team, insights_data)
+    home_team: str = '',
+    away_team: str = '',
+    insights_data: List[Dict] = None,
+    week: int = 18  # Default to current week
+) -> int:
+    """
+    Load NFL Pro narrative insights for a game.
+    
+    Tries methods in order:
+    1. Pre-processed insights file (fastest, with index)
+    2. Direct database lookup by game UUID
+    3. Original cache/parser method (fallback)
+    
+    Returns:
+        Number of insights loaded
+    """
+    # Try loading from processed insights first (Week 18 for current games)
+    if nfl_pro_narratives.load_from_processed(week):
+        logger.info(f"Loaded Week {week} processed insights successfully")
+        return nfl_pro_narratives.get_unserved_count()
+    
+    # Try loading from database by game ID
+    if nfl_pro_narratives.load_from_db(game_uuid):
+        logger.info(f"Loaded insights from DB for game {game_uuid[:8]}")
+        return len(nfl_pro_narratives._processed_insights)
+    
+    # Fallback to original method
+    if nfl_pro_narratives.load_game_insights(game_uuid, home_team, away_team, insights_data):
+        if hasattr(nfl_pro_narratives, '_index') and nfl_pro_narratives._index:
+            return len(nfl_pro_narratives._index.all_insights)
+    
+    return 0
 
 
 def get_player_triggered_insight(
@@ -834,15 +1019,34 @@ def get_player_triggered_insight(
     situation: str = None
 ) -> Optional[Dict[str, Any]]:
     """Get an insight triggered by a player's play."""
+    # Try new processed insights method first
+    insight = nfl_pro_narratives.get_insight_by_player(player_name)
+    if insight:
+        return insight
+    
+    # Fallback to original method
     return nfl_pro_narratives.get_player_insight(player_name, quarter, situation)
 
 
 def get_break_narrative_insights(
     break_type: str,
     quarter: int,
-    count: int = 2
+    count: int = 2,
+    prefer_team: str = None
 ) -> List[Dict[str, Any]]:
     """Get narrative insights for a break period."""
+    insights = []
+    
+    # Try processed insights first
+    for _ in range(count):
+        insight = nfl_pro_narratives.get_random_unserved_insight(prefer_team)
+        if insight:
+            insights.append(insight)
+    
+    if insights:
+        return insights
+    
+    # Fallback to original method
     return nfl_pro_narratives.get_break_insights(break_type, quarter, count)
 
 
