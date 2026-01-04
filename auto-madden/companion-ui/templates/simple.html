@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto-Madden Live</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #252542;
+            --text-primary: #f0f0f0;
+            --text-secondary: #a0a0b0;
+            --text-muted: #6a6a80;
+            
+            /* Pre-play: Orange/Amber */
+            --preplay-bg: #2d1f0f;
+            --preplay-border: #f59e0b;
+            --preplay-accent: #fbbf24;
+            --preplay-text: #fcd34d;
+            
+            /* Insights: Teal/Cyan */
+            --insight-bg: #0f2027;
+            --insight-border: #14b8a6;
+            --insight-accent: #2dd4bf;
+            --insight-text: #5eead4;
+            
+            /* Status */
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        /* Header with settings */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .title {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .title-emoji {
+            margin-right: 10px;
+        }
+        
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        /* Status indicator */
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+        .status-dot.connected { background: var(--success); box-shadow: 0 0 8px var(--success); }
+        .status-dot.disconnected { background: var(--error); }
+        .status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Settings gear button */
+        .settings-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s ease;
+        }
+        .settings-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        /* Game Box (Score Bug) */
+        .game-box {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .score {
+            font-size: 36px;
+            font-weight: 800;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+        
+        .situation {
+            font-size: 18px;
+            text-align: center;
+            color: var(--text-secondary);
+            margin-top: 12px;
+        }
+        
+        /* Pre-Play Metadata Box */
+        .preplay-box {
+            background: var(--preplay-bg);
+            border: 2px solid var(--preplay-border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.4s ease, transform 0.4s ease;
+            display: none;
+        }
+        
+        .preplay-box.visible {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .preplay-box.fading {
+            opacity: 0.2;
+            transition: opacity 4s ease;
+        }
+        
+        .preplay-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .preplay-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--preplay-accent);
+            font-weight: 600;
+        }
+        
+        .preplay-icon {
+            color: var(--preplay-accent);
+        }
+        
+        .preplay-content {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+        }
+        
+        .preplay-offense, .preplay-defense {
+            flex: 1;
+        }
+        
+        .preplay-offense {
+            text-align: left;
+        }
+        
+        .preplay-defense {
+            text-align: right;
+        }
+        
+        .preplay-section-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        
+        .preplay-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--preplay-text);
+        }
+        
+        .preplay-detail {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+        
+        .preplay-chip {
+            display: inline-block;
+            background: rgba(245, 158, 11, 0.25);
+            border: 2px solid var(--preplay-border);
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--preplay-text);
+            margin-right: 12px;
+            vertical-align: middle;
+        }
+        
+        .preplay-formation {
+            display: inline-block;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--preplay-accent);
+            vertical-align: middle;
+        }
+        
+        .preplay-package-desc {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+        
+        .preplay-divider {
+            width: 1px;
+            background: rgba(245, 158, 11, 0.3);
+            margin: 0 10px;
+        }
+        
+        /* Play Summary */
+        .play-summary {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            color: var(--text-secondary);
+            min-height: 40px;
+        }
+        
+        /* Control buttons */
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+        
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .btn-secondary:hover {
+            background: var(--bg-secondary);
+            box-shadow: none;
+        }
+        
+        /* Insights Section */
+        .insights-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        
+        .insights-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--insight-accent);
+        }
+        
+        #insights {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .insight {
+            background: var(--insight-bg);
+            border: 1px solid var(--insight-border);
+            border-left: 4px solid var(--insight-border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 12px;
+            line-height: 1.6;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+        
+        .insight-headline {
+            font-weight: 600;
+            color: var(--insight-text);
+            margin-bottom: 8px;
+        }
+        
+        .insight-body {
+            color: var(--text-secondary);
+        }
+        
+        .insight a {
+            color: var(--insight-accent);
+            text-decoration: underline;
+            word-break: break-all;
+        }
+        .insight a:hover {
+            color: var(--insight-text);
+        }
+        
+        /* Settings Panel */
+        .settings-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 380px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-left: 1px solid rgba(255,255,255,0.1);
+            padding: 24px;
+            transition: right 0.3s ease;
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        
+        .settings-panel.open {
+            right: 0;
+        }
+        
+        .settings-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 999;
+        }
+        
+        .settings-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .settings-title {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .settings-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 24px;
+            cursor: pointer;
+        }
+        
+        .settings-section {
+            margin-bottom: 28px;
+        }
+        
+        .settings-section-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+        
+        /* Delay Control in Settings */
+        .delay-control-group {
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .delay-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .delay-value-display {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        
+        .delay-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .delay-btn {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1);
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .delay-btn:hover {
+            background: var(--bg-primary);
+        }
+        
+        .delay-btn:disabled {
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+        
+        /* Preference Radio Groups */
+        .pref-group {
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+        
+        .pref-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+        }
+        
+        .pref-options {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        
+        .pref-option {
+            flex: 1;
+            min-width: 60px;
+        }
+        
+        .pref-option input {
+            display: none;
+        }
+        
+        .pref-option label {
+            display: block;
+            text-align: center;
+            padding: 8px 4px;
+            font-size: 11px;
+            border-radius: 6px;
+            cursor: pointer;
+            background: var(--bg-secondary);
+            color: var(--text-muted);
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .pref-option input:checked + label {
+            background: var(--preplay-bg);
+            color: var(--preplay-text);
+            border-color: var(--preplay-border);
+        }
+        
+        .pref-option label:hover {
+            color: var(--text-secondary);
+        }
+        
+        /* Info text */
+        .settings-info {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Settings Overlay -->
+    <div class="settings-overlay" id="settingsOverlay" onclick="closeSettings()"></div>
+    
+    <!-- Settings Panel -->
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+            <span class="settings-title">⚙️ Settings</span>
+            <button class="settings-close" onclick="closeSettings()">×</button>
+        </div>
+        
+        <!-- Delay Control -->
+        <div class="settings-section">
+            <div class="settings-section-title">📺 Broadcast Delay</div>
+            <div class="delay-control-group">
+                <div class="delay-label">
+                    <span>Sync with TV</span>
+                    <span class="delay-value-display" id="delay-display">0s</span>
+                </div>
+                <div class="delay-buttons">
+                    <button class="delay-btn" id="btn-minus-5" onclick="adjustDelay(-5)">−5</button>
+                    <button class="delay-btn" id="btn-minus" onclick="adjustDelay(-1)">−1</button>
+                    <button class="delay-btn" id="btn-plus" onclick="adjustDelay(1)">+1</button>
+                    <button class="delay-btn" id="btn-plus-5" onclick="adjustDelay(5)">+5</button>
+                </div>
+                <div class="settings-info">
+                    Adjust to sync play updates with your TV broadcast.
+                </div>
+            </div>
+        </div>
+        
+        <!-- Pre-Play Preferences -->
+        <div class="settings-section">
+            <div class="settings-section-title">🏈 Pre-Play Info</div>
+            
+            <div class="pref-group">
+                <div class="pref-label">Personnel</div>
+                <div class="pref-options">
+                    <div class="pref-option">
+                        <input type="radio" name="pref-personnel" id="personnel-always" value="always" checked>
+                        <label for="personnel-always">Always</label>
+                    </div>
+                    <div class="pref-option">
+                        <input type="radio" name="pref-personnel" id="personnel-often" value="often">
+                        <label for="personnel-often">Often</label>
+                    </div>
+                    <div class="pref-option">
+                        <input type="radio" name="pref-personnel" id="personnel-never" value="never">
+                        <label for="personnel-never">Never</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pref-group">
+                <div class="pref-label">Formation</div>
+                <div class="pref-options">
+                    <div class="pref-option">
+                        <input type="radio" name="pref-formation" id="formation-always" value="always" checked>
+                        <label for="formation-always">Always</label>
+                    </div>
+                    <div class="pref-option">
+                        <input type="radio" name="pref-formation" id="formation-often" value="often">
+                        <label for="formation-often">Often</label>
+                    </div>
+                    <div class="pref-option">
+                        <input type="radio" name="pref-formation" id="formation-never" value="never">
+                        <label for="formation-never">Never</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pref-group">
+                <div class="pref-label">Defenders in Box</div>
+                <div class="pref-options">
+                    <div class="pref-option">
+                        <input type="radio" name="pref-defense" id="defense-always" value="always">
+                        <label for="defense-always">Always</label>
+                    </div>
+                    <div class="pref-option">
+                        <input type="radio" name="pref-defense" id="defense-sometimes" value="sometimes" checked>
+                        <label for="defense-sometimes">Sometimes</label>
+                    </div>
+                    <div class="pref-option">
+                        <input type="radio" name="pref-defense" id="defense-never" value="never">
+                        <label for="defense-never">Never</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="settings-info">
+                Pre-play info appears before each snap to help you learn formations and packages.
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <h1 class="title"><span class="title-emoji">🏈</span>Auto-Madden Live</h1>
+        <div class="header-controls">
+            <div class="status-indicator">
+                <span id="ws-status" class="status-dot disconnected" title="Connection status"></span>
+            </div>
+            <button class="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
+        </div>
+    </div>
+    
+    <!-- Game Box (Score Bug) -->
+    <div class="game-box">
+        <div class="score" id="score">Loading...</div>
+        <div class="situation" id="situation">--</div>
+    </div>
+    
+    <!-- Pre-Play Metadata Box -->
+    <div class="preplay-box" id="preplay-box">
+        <div class="preplay-header">
+            <span class="preplay-label">📐 Pre-Snap Look</span>
+            <span class="preplay-icon">🏈</span>
+        </div>
+        <div class="preplay-content">
+            <div class="preplay-offense">
+                <div class="preplay-section-label">Offense</div>
+                <div id="preplay-personnel">
+                    <span class="preplay-chip" id="personnel-chip">11</span>
+                    <span class="preplay-formation" id="personnel-detail">Shotgun</span>
+                </div>
+                <div class="preplay-package-desc" id="personnel-desc">3-wide spread</div>
+            </div>
+            <div class="preplay-divider"></div>
+            <div class="preplay-defense">
+                <div class="preplay-section-label">Defense</div>
+                <div class="preplay-value" id="defense-box">6 in box</div>
+                <div class="preplay-detail" id="defense-detail">Standard</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Play Summary -->
+    <div class="play-summary" id="play">Waiting for play...</div>
+    
+    <!-- Controls -->
+    <div class="controls">
+        <button class="btn" onclick="startLive()">▶️ Start Live</button>
+        <button class="btn btn-secondary" onclick="stopLive()">⏹️ Stop</button>
+        <button class="btn btn-secondary" onclick="refresh()">🔄 Refresh</button>
+    </div>
+    
+    <!-- Insights -->
+    <div class="insights-header">
+        <span class="insights-title">💡 Insights</span>
+    </div>
+    <div id="insights"></div>
+    
+    <script>
+        let ws = null;
+        let pollInterval = null;
+        let preplayTimeout = null;
+        let preplayFadeTimeout = null;
+        
+        // Buffers for delay
+        let stateBuffer = [];
+        let insightBuffer = [];
+        let preplayBuffer = [];
+        
+        // User preferences
+        let userPrefs = {
+            personnel: 'always',
+            formation: 'always',
+            defense: 'sometimes'
+        };
+        
+        // Current delay (seconds)
+        let currentDelay = 0;
+        
+        // Pre-play timing constants (ms)
+        const PREPLAY_SHOW_BEFORE_SNAP = 8000;  // Show 8s before fade starts
+        const PREPLAY_FADE_DURATION = 4000;     // Fade over 4s
+        
+        // === Settings Panel ===
+        function openSettings() {
+            document.getElementById('settingsPanel').classList.add('open');
+            document.getElementById('settingsOverlay').classList.add('visible');
+        }
+        
+        function closeSettings() {
+            document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('settingsOverlay').classList.remove('visible');
+            savePreferences();
+        }
+        
+        function savePreferences() {
+            userPrefs.personnel = document.querySelector('input[name="pref-personnel"]:checked')?.value || 'always';
+            userPrefs.formation = document.querySelector('input[name="pref-formation"]:checked')?.value || 'always';
+            userPrefs.defense = document.querySelector('input[name="pref-defense"]:checked')?.value || 'sometimes';
+            
+            // Save to localStorage
+            localStorage.setItem('autoMaddenPrefs', JSON.stringify(userPrefs));
+            
+            // Send to backend
+            fetch('http://localhost:5131/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userPrefs)
+            }).catch(e => console.warn('Could not save preferences to backend:', e));
+        }
+        
+        function loadPreferences() {
+            const saved = localStorage.getItem('autoMaddenPrefs');
+            if (saved) {
+                try {
+                    userPrefs = JSON.parse(saved);
+                    // Update UI
+                    document.getElementById(`personnel-${userPrefs.personnel}`)?.click();
+                    document.getElementById(`formation-${userPrefs.formation}`)?.click();
+                    document.getElementById(`defense-${userPrefs.defense}`)?.click();
+                } catch (e) {
+                    console.warn('Could not load preferences:', e);
+                }
+            }
+        }
+        
+        // === Delay Controls ===
+        function adjustDelay(delta) {
+            currentDelay = Math.max(0, currentDelay + delta);
+            updateDelayDisplay();
+            displayDelayedState();
+            console.log(`Delay now ${currentDelay}s`);
+        }
+        
+        function updateDelayDisplay() {
+            document.getElementById('delay-display').textContent = `${currentDelay}s`;
+            
+            // Disable minus buttons at zero
+            const minusBtn = document.getElementById('btn-minus');
+            const minus5Btn = document.getElementById('btn-minus-5');
+            if (minusBtn) minusBtn.disabled = (currentDelay <= 0);
+            if (minus5Btn) minus5Btn.disabled = (currentDelay < 5);
+        }
+        
+        // === Game State Polling ===
+        async function pollState() {
+            try {
+                const resp = await fetch('http://localhost:5132/live/espn/state');
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    stateBuffer.push({
+                        state: data.state,
+                        timestamp: Date.now()
+                    });
+                    
+                    if (stateBuffer.length > 60) {
+                        stateBuffer.shift();
+                    }
+                    
+                    displayDelayedState();
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+        
+        function displayDelayedState() {
+            if (stateBuffer.length === 0) return;
+            
+            const delayMs = currentDelay * 1000;
+            const cutoffTime = Date.now() - delayMs;
+            
+            let stateToShow = null;
+            for (let i = stateBuffer.length - 1; i >= 0; i--) {
+                if (stateBuffer[i].timestamp <= cutoffTime) {
+                    stateToShow = stateBuffer[i].state;
+                    break;
+                }
+            }
+            
+            if (!stateToShow && stateBuffer.length > 0) {
+                if (currentDelay > 0) {
+                    document.getElementById('situation').textContent = `Buffering... (${currentDelay}s delay)`;
+                    return;
+                }
+                stateToShow = stateBuffer[0].state;
+            }
+            
+            if (stateToShow) {
+                const s = stateToShow;
+                document.getElementById('score').textContent = 
+                    `${s.away_team.abbreviation} ${s.away_team.score} - ${s.home_team.abbreviation} ${s.home_team.score}`;
+                document.getElementById('situation').textContent = 
+                    `Q${s.quarter} · ${s.clock} | ${s.down_distance_text || ''}`;
+                document.getElementById('play').textContent = s.last_play || 'Waiting for play...';
+            }
+        }
+        
+        // === Pre-Play Metadata ===
+        function showPreplay(preplayData) {
+            const box = document.getElementById('preplay-box');
+            
+            // Clear any existing timeouts
+            if (preplayTimeout) clearTimeout(preplayTimeout);
+            if (preplayFadeTimeout) clearTimeout(preplayFadeTimeout);
+            
+            console.log('showPreplay called with:', preplayData);
+            
+            // Parse items array from the data
+            const items = preplayData.items || [];
+            const personnelItem = items.find(i => i.type === 'personnel');
+            const formationItem = items.find(i => i.type === 'formation');
+            const defenseItem = items.find(i => i.type === 'defense');
+            const situationItem = items.find(i => i.type === 'situation');
+            
+            // Check user preferences
+            const showPersonnel = userPrefs.personnel !== 'never' && personnelItem;
+            const showFormation = userPrefs.formation !== 'never' && formationItem;
+            const showDefense = userPrefs.defense !== 'never' && defenseItem;
+            
+            if (!personnelItem && !formationItem && !defenseItem) {
+                console.log('No items to show');
+                return;
+            }
+            
+            // Update content from items
+            if (personnelItem) {
+                // Extract code from value like "22 (Jumbo package)" -> "22"
+                const match = personnelItem.value.match(/^(\d+)/);
+                document.getElementById('personnel-chip').textContent = match ? match[1] : '';
+                // Extract description from value like "22 (Jumbo package)" -> "Jumbo package"
+                const descMatch = personnelItem.value.match(/\(([^)]+)\)/);
+                document.getElementById('personnel-desc').textContent = descMatch ? descMatch[1] : '';
+            }
+            
+            if (formationItem) {
+                // Formation goes to the right of the personnel chip
+                document.getElementById('personnel-detail').textContent = formationItem.value || '';
+            }
+            
+            if (defenseItem) {
+                document.getElementById('defense-box').textContent = defenseItem.value || '';
+                document.getElementById('defense-detail').textContent = defenseItem.detail || '';
+            } else {
+                document.getElementById('defense-box').textContent = '';
+                document.getElementById('defense-detail').textContent = '';
+            }
+            
+            // Show the box with animation
+            box.classList.remove('fading');
+            box.classList.add('visible');
+            
+            // Start fade out after display time
+            preplayFadeTimeout = setTimeout(() => {
+                box.classList.add('fading');
+            }, PREPLAY_SHOW_BEFORE_SNAP);
+            
+            // Hide completely after fade
+            preplayTimeout = setTimeout(() => {
+                box.classList.remove('visible', 'fading');
+            }, PREPLAY_SHOW_BEFORE_SNAP + PREPLAY_FADE_DURATION);
+        }
+        
+        function displayDelayedPreplay() {
+            if (preplayBuffer.length === 0) return;
+            
+            const delayMs = currentDelay * 1000;
+            const cutoffTime = Date.now() - delayMs;
+            
+            const readyItems = [];
+            const remaining = [];
+            
+            for (const item of preplayBuffer) {
+                if (item.timestamp <= cutoffTime) {
+                    readyItems.push(item.preplay);
+                } else {
+                    remaining.push(item);
+                }
+            }
+            
+            // Show the most recent ready preplay immediately
+            if (readyItems.length > 0) {
+                console.log('Showing preplay:', readyItems[readyItems.length - 1]);
+                showPreplay(readyItems[readyItems.length - 1]);
+            }
+            
+            preplayBuffer.length = 0;
+            preplayBuffer.push(...remaining);
+        }
+        
+        // === Insights ===
+        function addInsight(insight) {
+            const div = document.createElement('div');
+            div.className = 'insight';
+            
+            let formattedBody = insight.body || '';
+            
+            // Convert URLs to clickable links
+            const urlRegex = /(https?:\/\/[^\s<]+)/g;
+            formattedBody = formattedBody.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+            
+            // Convert newlines to <br>
+            formattedBody = formattedBody.replace(/\n/g, '<br>');
+            
+            div.innerHTML = `
+                <div class="insight-headline">${insight.headline || 'Insight'}</div>
+                <div class="insight-body">${formattedBody}</div>
+            `;
+            
+            document.getElementById('insights').prepend(div);
+        }
+        
+        function displayDelayedInsights() {
+            if (insightBuffer.length === 0) return;
+            
+            const delayMs = currentDelay * 1000;
+            const cutoffTime = Date.now() - delayMs;
+            
+            const readyInsights = [];
+            const remaining = [];
+            
+            for (const item of insightBuffer) {
+                if (item.timestamp <= cutoffTime) {
+                    readyInsights.push(item.insight);
+                } else {
+                    remaining.push(item);
+                }
+            }
+            
+            for (const insight of readyInsights) {
+                addInsight(insight);
+            }
+            
+            insightBuffer.length = 0;
+            insightBuffer.push(...remaining);
+        }
+        
+        // === WebSocket ===
+        function connectWS() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+            
+            updateStatusDot('connecting');
+            ws = new WebSocket('ws://localhost:5131/ws');
+            
+            ws.onopen = () => {
+                console.log('WS connected!');
+                updateStatusDot('connected');
+            };
+            
+            ws.onmessage = (e) => {
+                console.log('WS message:', e.data);
+                const data = JSON.parse(e.data);
+                
+                if (data.type === 'insight') {
+                    insightBuffer.push({
+                        insight: data.data,
+                        timestamp: Date.now()
+                    });
+                    if (insightBuffer.length > 30) {
+                        insightBuffer.shift();
+                    }
+                } else if (data.type === 'preplay') {
+                    preplayBuffer.push({
+                        preplay: data.data,
+                        timestamp: Date.now()
+                    });
+                    if (preplayBuffer.length > 10) {
+                        preplayBuffer.shift();
+                    }
+                }
+            };
+            
+            ws.onerror = (e) => {
+                console.error('WS error:', e);
+                updateStatusDot('disconnected');
+            };
+            
+            ws.onclose = () => {
+                console.log('WS disconnected, reconnecting in 3s...');
+                updateStatusDot('disconnected');
+                ws = null;
+                setTimeout(connectWS, 3000);
+            };
+        }
+        
+        function updateStatusDot(status) {
+            const dot = document.getElementById('ws-status');
+            if (dot) {
+                dot.className = 'status-dot ' + status;
+            }
+        }
+        
+        // === Live Mode Controls ===
+        const CURRENT_GAME_ID = '401772961';
+        
+        async function startLive() {
+            const resp = await fetch('http://localhost:5132/live/espn/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ game_id: CURRENT_GAME_ID, interval: 10 })
+            });
+            const data = await resp.json();
+            console.log('Started:', data.message);
+            
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollState, 2000);
+            pollState();
+            
+            connectWS();
+        }
+        
+        function stopLive() {
+            fetch('http://localhost:5132/live/espn/stop', { method: 'POST' });
+            if (pollInterval) clearInterval(pollInterval);
+            if (ws) ws.close();
+        }
+        
+        function refresh() {
+            pollState();
+        }
+        
+        // === Initialization ===
+        function init() {
+            loadPreferences();
+            updateDelayDisplay();
+            pollState();
+            
+            // Start polling
+            setInterval(pollState, 3000);
+            
+            // Process delayed items frequently
+            setInterval(displayDelayedInsights, 500);
+            setInterval(displayDelayedPreplay, 500);
+            
+            // Connect WebSocket
+            connectWS();
+        }
+        
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

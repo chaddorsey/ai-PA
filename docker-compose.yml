@@ -1009,6 +1009,112 @@ services:
       - "component=tv-listings"
       - "network=pa-internal"
 
+  # --- Auto-Madden Real-Time Game Companion ---
+  
+  auto-madden-game-state:
+    build:
+      context: ./auto-madden/game-state-service
+      dockerfile: Dockerfile
+    container_name: auto-madden-game-state
+    restart: unless-stopped
+    networks: [pa-internal]
+    environment:
+      - INSIGHT_ENGINE_URL=http://auto-madden-insight-engine:5131
+      - ESPN_POLL_INTERVAL=3
+      - LOG_LEVEL=INFO
+    ports:
+      - "5132:5132"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5132/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=auto-madden-game-state"
+      - "component=game-companion"
+      - "network=pa-internal"
+
+  auto-madden-insight-engine:
+    build:
+      context: ./auto-madden/insight-engine
+      dockerfile: Dockerfile
+    container_name: auto-madden-insight-engine
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      auto-madden-game-state:
+        condition: service_started
+    environment:
+      - GAME_STATE_URL=http://auto-madden-game-state:5132
+      - LETTA_BASE_URL=http://letta:8283
+      - LETTA_MAIN_AGENT_ID=agent-30ff1be2-3922-42fb-b7ee-458cb5a3bb07
+      - LETTA_SLEEPTIME_AGENT_ID=agent-89d31c34-de69-4f34-b388-9bd8d9b647fa
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_PROVIDER=anthropic
+      - LLM_MODEL=claude-sonnet-4-20250514
+      - MAX_INSIGHTS_PER_MINUTE=4
+      - MIN_INSIGHT_GAP_SECONDS=8
+      - LOG_LEVEL=INFO
+    ports:
+      - "5131:5131"
+    volumes:
+      - ./auto-madden/config:/app/config:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5131/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=auto-madden-insight-engine"
+      - "component=game-companion"
+      - "network=pa-internal"
+
+  auto-madden-companion-ui:
+    build:
+      context: ./auto-madden/companion-ui
+      dockerfile: Dockerfile
+    container_name: auto-madden-companion-ui
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      auto-madden-insight-engine:
+        condition: service_started
+    environment:
+      - INSIGHT_ENGINE_URL=http://auto-madden-insight-engine:5131
+      - INSIGHT_ENGINE_WS_URL=ws://localhost:5131/ws
+      - LOG_LEVEL=INFO
+    ports:
+      - "5130:5130"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5130/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=auto-madden-companion-ui"
+      - "component=game-companion"
+      - "network=pa-internal"
+      - "external-access=true"
+
 
 volumes:
   supabase_db:

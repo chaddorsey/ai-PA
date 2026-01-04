@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Madden | Game Companion</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🏈</span>
+                <span class="logo-text">AUTO-MADDEN</span>
+            </div>
+            <div class="game-status" id="game-status">
+                <span class="status-indicator disconnected"></span>
+                <span class="status-text">Not connected</span>
+            </div>
+            <button class="btn-end" id="btn-end" style="display: none;">End Session</button>
+        </header>
+
+        <!-- Game Info Bar -->
+        <div class="game-info" id="game-info" style="display: none;">
+            <div class="teams">
+                <span class="team away" id="away-team">AWAY</span>
+                <span class="score" id="score">0 - 0</span>
+                <span class="team home" id="home-team">HOME</span>
+            </div>
+            <div class="situation">
+                <span class="clock" id="clock">Q1 · 15:00</span>
+                <span class="down-distance" id="down-distance">1st & 10</span>
+                <span class="possession" id="possession"></span>
+            </div>
+        </div>
+        
+        <!-- Broadcast Sync Controls -->
+        <div class="sync-controls" id="sync-controls" style="display: none;">
+            <div class="sync-row">
+                <span class="sync-label">📺 TV Sync:</span>
+                <button class="sync-btn delay-btn" id="btn-delay-minus" title="Reduce delay">-5s</button>
+                <span class="delay-display" id="delay-display">0s delay</span>
+                <button class="sync-btn delay-btn" id="btn-delay-plus" title="Increase delay">+5s</button>
+                <button class="sync-btn sync-now-btn" id="btn-sync-now" title="Click when you see a score on TV">
+                    🎯 That Just Happened!
+                </button>
+            </div>
+        </div>
+
+        <!-- Start Session Panel -->
+        <div class="start-panel" id="start-panel">
+            <h2>Start a Game Session</h2>
+            
+            <!-- Simulation Mode -->
+            <div id="sim-mode" style="margin-bottom: 20px;">
+                <p style="color: var(--accent-orange);">🎮 Simulation Mode</p>
+                <p>Select a cached game to simulate:</p>
+                <div id="cached-games" style="margin: 16px 0;"></div>
+                <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                    <label style="color: var(--text-secondary);">Speed:</label>
+                    <select id="sim-speed" style="padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                        <option value="1">1x (Real-time)</option>
+                        <option value="2">2x</option>
+                        <option value="5">5x</option>
+                        <option value="10" selected>10x</option>
+                        <option value="30">30x</option>
+                    </select>
+                    <button class="btn-start" id="btn-start-sim">Start Simulation</button>
+                </div>
+            </div>
+            
+            <hr style="border-color: var(--border-color); margin: 20px 0;">
+            
+            <!-- Live Mode -->
+            <div id="live-mode">
+                <p style="color: var(--accent-green, #4CAF50);">📡 Live Mode (ESPN)</p>
+                <p>Select a live or upcoming game:</p>
+                <div id="live-games" style="margin: 16px 0;"></div>
+                <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                    <label style="color: var(--text-secondary);">Poll every:</label>
+                    <select id="poll-interval" style="padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                        <option value="10" selected>10 seconds</option>
+                        <option value="15">15 seconds</option>
+                        <option value="30">30 seconds</option>
+                    </select>
+                    <button class="btn-start" id="btn-start-live" style="background: linear-gradient(135deg, #4CAF50, #45a049);">Go Live</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <main class="chat-container" id="chat-container" style="display: none;">
+            <div class="messages" id="messages">
+                <!-- Messages will be inserted here -->
+            </div>
+        </main>
+
+        <!-- Input Area -->
+        <footer class="input-area" id="input-area" style="display: none;">
+            <input type="text" id="message-input" placeholder="Ask about the game...">
+            <button class="btn-send" id="btn-send">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </footer>
+    </div>
+
+    <script>
+        // WebSocket URL from server config
+        const WS_URL = '{{ ws_url }}';
+    </script>
+    <script src="{{ url_for('static', filename='js/companion.js') }}"></script>
+</body>
+</html>
+

@@ -1,0 +1,421 @@
+# Auto-Madden Insight Templates
+# 
+# Templates for generating quick insights based on game situations.
+# Variables are substituted using {variable_name} syntax.
+#
+# Each template has:
+#   - priority: 1-10, higher = more important/urgent
+#   - timing: immediate, pre_snap, post_play, stoppage
+#   - ttl: seconds before insight becomes stale
+#   - headline: brief summary (5-10 words)
+#   - body: explanation (2-3 sentences max)
+
+situation_templates:
+  third_down:
+    short:
+      priority: 7
+      timing: pre_snap
+      ttl: 15
+      headline: "3rd and {distance}—short yardage"
+      body: |
+        Only need {distance} yards for a first down.
+        Run is likely here, but watch for play-action—
+        the defense will crowd the line expecting run.
+    
+    medium:
+      priority: 6
+      timing: pre_snap
+      ttl: 15
+      headline: "3rd and {distance}—manageable"
+      body: |
+        Need {distance} yards. This is typically a passing down.
+        Watch for a quick route designed to hit right at the marker.
+    
+    long:
+      priority: 6
+      timing: pre_snap
+      ttl: 15
+      headline: "3rd and {distance}—tough conversion"
+      body: |
+        {distance} yards is a lot to ask. Teams convert only about
+        25% of these. Watch for a defensive blitz—they smell a punt.
+
+  fourth_down:
+    go_for_it:
+      priority: 8
+      timing: pre_snap
+      ttl: 20
+      headline: "Going for it on 4th!"
+      body: |
+        Bold call. Analytics says the expected points from trying
+        exceed punting here. Watch for their best short-yardage play.
+    
+    punt:
+      priority: 5
+      timing: pre_snap
+      ttl: 15
+      headline: "Punt coming"
+      body: |
+        Field position game. They'll try to pin the opponent deep.
+
+  red_zone:
+    entry:
+      priority: 7
+      timing: post_play
+      ttl: 30
+      headline: "Red zone—scoring territory"
+      body: |
+        Inside the 20. Teams score touchdowns about 60% of the time
+        they reach the red zone. The compressed field helps the defense.
+
+  two_minute_warning:
+    first_half:
+      priority: 6
+      timing: stoppage
+      ttl: 60
+      headline: "Two-minute warning"
+      body: |
+        Automatic timeout at 2:00. The offense has a chance to score
+        before halftime. Watch for tempo changes.
+    
+    second_half:
+      priority: 8
+      timing: stoppage
+      ttl: 60
+      headline: "Two-minute warning—crunch time"
+      body: |
+        This is where games are won and lost. Every play matters now.
+        Watch for clock management and timeout strategy.
+
+play_templates:
+  big_play:
+    priority: 8
+    timing: post_play
+    ttl: 20
+    headline: "Big gain: {yards} yards!"
+    body: "{description}"
+
+  turnover:
+    interception:
+      priority: 9
+      timing: immediate
+      ttl: 30
+      headline: "INTERCEPTION!"
+      body: |
+        The defense picks it off! That's a huge momentum swing.
+        The offense just gave away possession.
+    
+    fumble:
+      priority: 9
+      timing: immediate
+      ttl: 30
+      headline: "FUMBLE!"
+      body: |
+        The ball is loose! Turnovers are often the difference
+        between winning and losing.
+
+  touchdown:
+    priority: 9
+    timing: immediate
+    ttl: 45
+    headline: "TOUCHDOWN!"
+    body: "{description}"
+
+  field_goal:
+    priority: 6
+    timing: immediate
+    ttl: 30
+    headline: "Field goal attempt"
+    body: |
+      Settling for 3 points. The kicker lines up for a {distance} yarder.
+
+  penalty:
+    common:
+      priority: 5
+      timing: post_play
+      ttl: 25
+      headline: "Flag: {penalty_name}"
+      body: "{penalty_description}"
+    
+    explanations:
+      false_start: "Offensive lineman moved before the snap. Free 5 yards for the defense."
+      holding: "Lineman grabbed a defender illegally. Often called on big gains—erases the play."
+      pass_interference: "Defender interfered with receiver's ability to catch. Spot foul in NFL."
+      offsides: "Defender crossed the line before snap. Free 5 yards, possibly a free play."
+      roughing_passer: "Hit the quarterback illegally. Automatic first down."
+
+game_state_templates:
+  momentum_shift:
+    priority: 7
+    timing: post_play
+    ttl: 45
+    headline: "Momentum swinging"
+    body: |
+      Win probability shifted significantly. Watch how the team
+      responds to this swing in momentum.
+
+  close_game:
+    priority: 6
+    timing: stoppage
+    ttl: 120
+    headline: "Game coming down to the wire"
+    body: |
+      Close game with time running out. Every possession is critical.
+      Watch for aggressive play-calling.
+
+  blowout:
+    priority: 4
+    timing: stoppage
+    ttl: 120
+    headline: "Game getting away"
+    body: |
+      Large lead developing. The trailing team needs to score quickly
+      to have any chance.
+
+# Pre-play templates (shown before the snap)
+pre_play_templates:
+  1st_down:
+    headlines:
+      - "Fresh set of downs"
+      - "1st & 10—new opportunity"
+      - "Reset: 1st down"
+    bodies:
+      - "Four plays to move the chains. Watch for an early play-action attempt to catch the defense off guard."
+      - "The offense has options here. Running to establish tempo is common on first down."
+      - "First down gives the offense flexibility. They can be aggressive without worrying about the sticks."
+  
+  2nd_short:
+    headlines:
+      - "2nd and short—manageable"
+      - "Just {distance} yards to go"
+    bodies:
+      - "Good position after the first down play. A run up the middle could easily convert."
+      - "Short yardage—the offense is in a good spot. Likely a run or quick pass."
+  
+  2nd_long:
+    headlines:
+      - "2nd and {distance}—work to do"
+      - "Long way to go on 2nd"
+    bodies:
+      - "Didn't get much on first down. They need chunk yardage to avoid a tough third down."
+      - "Second and long is a passing down. The defense knows it—watch for pressure."
+  
+  4th_down:
+    headlines:
+      - "4th down decision time"
+      - "Punt or go for it?"
+    bodies:
+      - "Coach has to make a choice. Field position vs. keeping the drive alive."
+      - "Analytics increasingly favor going for it, but most coaches play it safe."
+
+# Post-play templates (shown after each play)
+post_play_templates:
+  pass_complete:
+    headlines:
+      - "Pass complete for {yards}"
+      - "Reception: {yards} yards"
+      - "Good catch for {yards}"
+    bodies:
+      - "Nice throw and catch. Moving the chains."
+      - "Solid completion. The offense keeps things rolling."
+      - "Finding the open man. Good execution."
+  
+  run_gain:
+    headlines:
+      - "Run for {yards} yards"
+      - "Ground game: {yards}"
+      - "Rushing gain of {yards}"
+    bodies:
+      - "The run game is working. Keeps the defense honest."
+      - "Good push by the offensive line."
+      - "Positive yardage on the ground."
+  
+  incomplete:
+    headlines:
+      - "Pass incomplete"
+      - "Throw falls incomplete"
+      - "No connection"
+    bodies:
+      - "Clock stops. The defense held up in coverage."
+      - "Couldn't connect. At least the clock stopped."
+      - "Good coverage by the defense."
+  
+  sack:
+    headlines:
+      - "SACK! Loss of {yards}"
+      - "Quarterback taken down!"
+      - "Sack for a {yards} yard loss"
+    bodies:
+      - "The rush got home! That hurts—loss of yards and a second off the clock."
+      - "Protection broke down. The quarterback had nowhere to go."
+      - "Big play by the defense. Putting the offense behind the chains."
+  
+  penalty:
+    headlines:
+      - "Flag on the play"
+      - "Penalty called"
+    bodies:
+      - "The officials saw something. Penalty will be assessed."
+      - "Undisciplined play. Free yards for the other team."
+
+# Concepts for user knowledge tracking
+knowledge_concepts:
+  offense:
+    - play-action
+    - RPO (run-pass option)
+    - zone blocking
+    - gap blocking
+    - route tree
+    - hot route
+    - audible
+    - hard count
+    - draw play
+    - screen pass
+    - slant route
+    - post route
+    - fade route
+    - out route
+  
+  defense:
+    - zone coverage
+    - man coverage
+    - Cover 2
+    - Cover 3
+    - blitz
+    - zone blitz
+    - spy
+    - edge rusher
+    - contain
+    - gap assignment
+    - stunts
+    - pick up the blitz
+  
+  rules:
+    - downs system
+    - clock management
+    - two-minute warning
+    - intentional grounding
+    - catch rules
+    - roughing penalties
+    - neutral zone
+    - eligible receivers
+    - forward progress
+    - replay rules
+  
+  strategy:
+    - field position
+    - situational football
+    - analytics-driven decisions
+    - fourth down decisions
+    - game script
+    - ball control
+    - tempo
+    - personnel groupings
+
+# ============================================================================
+# BREAK/STOPPAGE TEMPLATES
+# Used during TV timeouts, team timeouts, halftime, and other stoppages
+# These are opportunities for deeper analysis while the viewer has downtime
+# ============================================================================
+
+break_templates:
+  halftime:
+    priority: 10
+    timing: stoppage
+    ttl: 600
+    headlines:
+      - "⏸️ Halftime Report"
+      - "📊 First Half Wrap-Up"
+      - "🏈 Halftime Analysis"
+    bodies:
+      - "Time to break down everything we've seen in the first 30 minutes."
+      - "Let's review the key storylines from the first half."
+      - "A chance to analyze the game script heading into the second half."
+  
+  tv_timeout:
+    priority: 7
+    timing: stoppage
+    ttl: 120
+    headlines:
+      - "📺 Commercial Break"
+      - "🎬 Quick Break Analysis"
+      - "⏱️ TV Timeout"
+    bodies:
+      - "A good moment to check the key stats and momentum so far."
+      - "While the networks take a break, let's catch up on the game story."
+      - "Quick timeout—here's where things stand."
+  
+  team_timeout:
+    priority: 6
+    timing: stoppage
+    ttl: 60
+    headlines:
+      - "⏱️ {team} Takes a Timeout"
+      - "🤔 Strategic Pause"
+      - "⏸️ Timeout Called"
+    bodies:
+      - "The coach wants to talk to the players—likely adjusting the play call."
+      - "A moment to regroup. Watch what personnel they bring out next."
+      - "Sometimes you need to stop the clock and reset."
+  
+  two_minute_warning:
+    priority: 9
+    timing: stoppage
+    ttl: 120
+    headlines:
+      - "⚠️ Two-Minute Warning"
+      - "🚨 Inside Two Minutes"
+      - "⏰ Crunch Time"
+    bodies:
+      - "The automatic timeout. Everything gets more intense from here."
+      - "Two minutes left—clock management becomes critical."
+      - "The final stretch. Every decision matters now."
+  
+  quarter_break:
+    priority: 7
+    timing: stoppage
+    ttl: 180
+    headlines:
+      - "📋 End of Quarter {quarter}"
+      - "🔄 Switching Sides"
+      - "Quarter {quarter} Complete"
+    bodies:
+      - "Teams switch ends. A brief pause to reset."
+      - "One quarter down, quick summary before we continue."
+      - "Time to adjust strategies heading into the next period."
+  
+  challenge:
+    priority: 8
+    timing: stoppage
+    ttl: 180
+    headlines:
+      - "🔍 Under Review"
+      - "📹 Challenge Flag"
+      - "⚖️ Official Review"
+    bodies:
+      - "The officials are taking a closer look. This could change things."
+      - "A pivotal call is being reviewed. The next few moments could shift momentum."
+      - "Close call on the field—let's see what the replay shows."
+
+# Analysis patterns for different break scenarios
+break_analysis_prompts:
+  close_game:
+    headline: "Tight Contest"
+    body: "Just {diff} points separate these teams. Every possession is critical."
+  
+  blowout:
+    headline: "One-Sided Affair"  
+    body: "{leader} has built a commanding {diff}-point lead. {trailer} needs a spark."
+  
+  comeback_brewing:
+    headline: "Momentum Shifting?"
+    body: "{trailing_team} has scored {recent_points} unanswered. The deficit is shrinking."
+  
+  defensive_battle:
+    headline: "Defense Rules"
+    body: "Low-scoring affair so far. Both defenses are playing tough."
+  
+  shootout:
+    headline: "Offensive Showcase"
+    body: "Points are flying! Combined {total_points} points already."
+

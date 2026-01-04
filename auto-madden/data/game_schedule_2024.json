@@ -1,0 +1,30 @@
+{
+  "season": 2024,
+  "discovered_at": "2026-01-04T00:15:53.104354",
+  "games": [
+    {
+      "game_id": "f979e087-311e-11f0-b670-ae1250fadad1",
+      "game_uuid": "f979e087-311e-11f0-b670-ae1250fadad1",
+      "week": 1,
+      "season": 2024,
+      "season_type": "REG",
+      "home_team": "",
+      "away_team": "",
+      "home_score": 0,
+      "away_score": 0,
+      "game_date": "2026-01-03T21:30:59Z"
+    },
+    {
+      "game_id": "f979d7ee-311e-11f0-b670-ae1250fadad1",
+      "game_uuid": "f979d7ee-311e-11f0-b670-ae1250fadad1",
+      "week": 1,
+      "season": 2024,
+      "season_type": "REG",
+      "home_team": "",
+      "away_team": "",
+      "home_score": 0,
+      "away_score": 0,
+      "game_date": "2026-01-04T01:08:18Z"
+    }
+  ]
+}

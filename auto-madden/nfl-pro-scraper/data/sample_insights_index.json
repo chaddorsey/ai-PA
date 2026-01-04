@@ -1,0 +1,259 @@
+{
+  "insights": [
+    {
+      "id": "ins_001",
+      "title": "Darnold Precision",
+      "primary_text": "Sam Darnold has completed 68.4% of his passes this season, ranking 5th among qualified quarterbacks.",
+      "secondary_text": "Darnold has thrown for 2,456 yards and 18 touchdowns in 2024, with only 4 interceptions. His passer rating of 105.2 is a career high.",
+      "entities": [
+        {
+          "name": "Sam Darnold",
+          "type": "player",
+          "team": "MIN",
+          "position": "QB"
+        }
+      ],
+      "categories": [
+        "statistical",
+        "milestone"
+      ],
+      "is_dual_entity": false,
+      "is_dual_team": false,
+      "timing": "break",
+      "situation_triggers": [
+        "turnover"
+      ],
+      "facts": [
+        {
+          "type": "percentage",
+          "subject": "Sam Darnold",
+          "value": 68.4,
+          "context": "Sam Darnold has completed"
+        },
+        {
+          "type": "yardage",
+          "subject": "Sam Darnold",
+          "value": 456,
+          "context": ""
+        }
+      ],
+      "teams": [
+        "MIN"
+      ],
+      "significance": 8,
+      "freshness": 7,
+      "usage_history": [
+        {
+          "game_id": "game_2024_MIN_SF_001",
+          "game_date": "2024-12-15",
+          "quarter": 2,
+          "timestamp": "2026-01-04T01:05:08.015935"
+        }
+      ],
+      "llm_context": "[Insight about Sam Darnold]\nKey Point: Sam Darnold has completed 68.4% of his passes this season, ranking 5th among qualified quarterbacks.\nDetails: Darnold has thrown for 2,456 yards and 18 touchdowns in 2024, with only 4 interceptions. His passer rating of 105.2 is a career high."
+    },
+    {
+      "id": "ins_002",
+      "title": "QB Showdown",
+      "primary_text": "This matchup features two of the top 5 passers in the NFC. Sam Darnold vs. Brock Purdy have a combined 34 TDs this season.",
+      "secondary_text": "The last time these quarterbacks faced off, the game went to overtime with a combined 856 passing yards.",
+      "entities": [
+        {
+          "name": "Sam Darnold",
+          "type": "player",
+          "team": "MIN",
+          "position": ""
+        },
+        {
+          "name": "Brock Purdy",
+          "type": "player",
+          "team": "SF",
+          "position": ""
+        }
+      ],
+      "categories": [
+        "head_to_head"
+      ],
+      "is_dual_entity": true,
+      "is_dual_team": true,
+      "timing": "pregame",
+      "situation_triggers": [
+        "passing"
+      ],
+      "facts": [],
+      "teams": [
+        "SF",
+        "MIN"
+      ],
+      "significance": 7,
+      "freshness": 7,
+      "usage_history": [],
+      "llm_context": "[Insight about Sam Darnold, Brock Purdy]\nKey Point: This matchup features two of the top 5 passers in the NFC. Sam Darnold vs. Brock Purdy have a combined 34 TDs this season.\nDetails: The last time these quarterbacks faced off, the game went to overtime with a combined 856 passing yards."
+    },
+    {
+      "id": "ins_003",
+      "title": "Red Zone Specialist",
+      "primary_text": "Justin Jefferson leads the league in red zone targets with 24 this season, converting 14 of them into touchdowns.",
+      "secondary_text": "Jefferson's 58.3% red zone TD rate is the highest in the NFL among receivers with at least 20 targets.",
+      "entities": [
+        {
+          "name": "Justin Jefferson",
+          "type": "player",
+          "team": "MIN",
+          "position": "WR"
+        }
+      ],
+      "categories": [
+        "statistical"
+      ],
+      "is_dual_entity": false,
+      "is_dual_team": false,
+      "timing": "any",
+      "situation_triggers": [
+        "red zone"
+      ],
+      "facts": [
+        {
+          "type": "percentage",
+          "subject": "Justin Jefferson",
+          "value": 58.3,
+          "context": "s"
+        }
+      ],
+      "teams": [
+        "MIN"
+      ],
+      "significance": 6,
+      "freshness": 7,
+      "usage_history": [],
+      "llm_context": "[Insight about Justin Jefferson]\nKey Point: Justin Jefferson leads the league in red zone targets with 24 this season, converting 14 of them into touchdowns.\nDetails: Jefferson's 58.3% red zone TD rate is the highest in the NFL among receivers with at least 20 targets."
+    },
+    {
+      "id": "ins_004",
+      "title": "Defensive Dominance",
+      "primary_text": "The 49ers defense has allowed just 17.2 points per game, ranking 3rd in the NFL.",
+      "secondary_text": "San Francisco's pass rush has generated 38 sacks this season, with Nick Bosa leading the way with 11.5.",
+      "entities": [
+        {
+          "name": "49ers defense",
+          "type": "team_unit",
+          "team": "49E",
+          "position": null
+        },
+        {
+          "name": "s pass rush",
+          "type": "team_unit",
+          "team": "S",
+          "position": null
+        }
+      ],
+      "categories": [
+        "player_spotlight"
+      ],
+      "is_dual_entity": true,
+      "is_dual_team": true,
+      "timing": "pregame",
+      "situation_triggers": [
+        "defense"
+      ],
+      "facts": [],
+      "teams": [
+        "S",
+        "49E"
+      ],
+      "significance": 7,
+      "freshness": 7,
+      "usage_history": [],
+      "llm_context": "[Insight about 49ers defense, s pass rush]\nKey Point: The 49ers defense has allowed just 17.2 points per game, ranking 3rd in the NFL.\nDetails: San Francisco's pass rush has generated 38 sacks this season, with Nick Bosa leading the way with 11.5."
+    },
+    {
+      "id": "ins_005",
+      "title": "Third Down Excellence",
+      "primary_text": "Minnesota converts 47.8% of third downs, the second-best rate in the league. They are particularly dangerous on 3rd and medium.",
+      "secondary_text": "Darnold has a 112.4 passer rating on third down, completing 72.3% of his passes when the chains are on the line.",
+      "entities": [
+        {
+          "name": "Sam Darnold",
+          "type": "player",
+          "team": "MIN",
+          "position": ""
+        }
+      ],
+      "categories": [
+        "statistical"
+      ],
+      "is_dual_entity": false,
+      "is_dual_team": false,
+      "timing": "any",
+      "situation_triggers": [
+        "3rd down"
+      ],
+      "facts": [
+        {
+          "type": "percentage",
+          "subject": "Sam Darnold",
+          "value": 47.8,
+          "context": "Minnesota converts"
+        },
+        {
+          "type": "percentage",
+          "subject": "Sam Darnold",
+          "value": 72.3,
+          "context": "completing"
+        }
+      ],
+      "teams": [
+        "MIN"
+      ],
+      "significance": 8,
+      "freshness": 7,
+      "usage_history": [],
+      "llm_context": "[Insight about Sam Darnold]\nKey Point: Minnesota converts 47.8% of third downs, the second-best rate in the league. They are particularly dangerous on 3rd and medium.\nDetails: Darnold has a 112.4 passer rating on third down, completing 72.3% of his passes when the chains are on the line."
+    },
+    {
+      "id": "ins_006",
+      "title": "Bosa vs. The Pocket",
+      "primary_text": "Nick Bosa has registered pressure on 22.4% of his pass rush snaps, the highest rate among edge rushers with 200+ snaps.",
+      "secondary_text": "When Bosa generates pressure, opposing QBs have a passer rating of just 52.3.",
+      "entities": [
+        {
+          "name": "Nick Bosa",
+          "type": "player",
+          "team": "SF",
+          "position": "DE"
+        },
+        {
+          "name": "his pass rush",
+          "type": "team_unit",
+          "team": "HIS",
+          "position": null
+        }
+      ],
+      "categories": [
+        "statistical"
+      ],
+      "is_dual_entity": true,
+      "is_dual_team": true,
+      "timing": "pregame",
+      "situation_triggers": [
+        "defense"
+      ],
+      "facts": [
+        {
+          "type": "percentage",
+          "subject": "Nick Bosa",
+          "value": 22.4,
+          "context": "has registered pressure on"
+        }
+      ],
+      "teams": [
+        "HIS",
+        "SF"
+      ],
+      "significance": 8,
+      "freshness": 7,
+      "usage_history": [],
+      "llm_context": "[Insight about Nick Bosa, his pass rush]\nKey Point: Nick Bosa has registered pressure on 22.4% of his pass rush snaps, the highest rate among edge rushers with 200+ snaps.\nDetails: When Bosa generates pressure, opposing QBs have a passer rating of just 52.3."
+    }
+  ]
+}
