@@ -47,16 +47,29 @@ logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 
 @app.route('/')
 def index():
-    """Serve the main companion UI."""
-    return render_template('index.html', ws_url=INSIGHT_ENGINE_WS_URL)
+    """Serve the landing page with Live and Replay options."""
+    return render_template('landing.html')
 
 
 @app.route('/simple')
 def simple():
-    """Serve a simple test UI for debugging."""
+    """Serve a simple test UI for debugging (also used for live mode)."""
     # Pass version timestamp to bust template caching
     import time
     return render_template('simple.html', version=int(time.time()))
+
+
+@app.route('/replay')
+def replay():
+    """Serve the game replay interface."""
+    import time
+    return render_template('replay.html', version=int(time.time()))
+
+
+@app.route('/old')
+def old_index():
+    """Serve the original index page."""
+    return render_template('index.html', ws_url=INSIGHT_ENGINE_WS_URL)
 
 
 @app.route('/health', methods=['GET'])

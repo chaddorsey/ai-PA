@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto-Madden Companion</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #252542;
+            --text-primary: #f0f0f0;
+            --text-secondary: #a0a0b0;
+            --text-muted: #6a6a80;
+            --accent-live: #22c55e;
+            --accent-replay: #3b82f6;
+            --accent-gold: #f59e0b;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #0f0f1a 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 800px;
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .title {
+            font-size: 36px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #f59e0b 0%, #ef4444 50%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+        
+        .subtitle {
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+        
+        /* Section Cards */
+        .section-card {
+            background: var(--bg-secondary);
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.3s ease;
+        }
+        
+        .section-card:hover {
+            border-color: rgba(255,255,255,0.1);
+        }
+        
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        
+        .section-icon {
+            font-size: 28px;
+        }
+        
+        .section-title {
+            font-size: 22px;
+            font-weight: 700;
+        }
+        
+        .section-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .badge-live {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--accent-live);
+        }
+        
+        .badge-replay {
+            background: rgba(59, 130, 246, 0.2);
+            color: var(--accent-replay);
+        }
+        
+        /* Dropdowns */
+        .dropdown-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .dropdown-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .dropdown-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        select {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            min-width: 140px;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+            transition: all 0.2s ease;
+        }
+        
+        select:hover {
+            border-color: rgba(255,255,255,0.2);
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: var(--accent-replay);
+        }
+        
+        select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        select option {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 10px;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 14px 28px;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .btn-live {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+        }
+        
+        .btn-live:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(34, 197, 94, 0.3);
+        }
+        
+        .btn-replay {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+        }
+        
+        .btn-replay:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+        }
+        
+        .btn-refresh {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            padding: 12px;
+            min-width: auto;
+        }
+        
+        .btn-refresh:hover:not(:disabled) {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        
+        .btn-refresh.spinning {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Status Messages */
+        .status-message {
+            margin-top: 16px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .status-message.visible {
+            display: block;
+        }
+        
+        .status-message.info {
+            background: rgba(59, 130, 246, 0.15);
+            color: #93c5fd;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .status-message.loading {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fcd34d;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .status-message.error {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        
+        .status-message.success {
+            background: rgba(34, 197, 94, 0.15);
+            color: #86efac;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+        
+        /* Progress Bar */
+        .progress-container {
+            margin-top: 16px;
+            display: none;
+        }
+        
+        .progress-container.visible {
+            display: block;
+        }
+        
+        .progress-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        
+        /* Live games list */
+        .no-games {
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">🏈</div>
+            <h1 class="title">Auto-Madden Companion</h1>
+            <p class="subtitle">Real-time NFL analysis &amp; insights</p>
+        </div>
+        
+        <!-- Watch Live Section -->
+        <div class="section-card">
+            <div class="section-header">
+                <span class="section-icon">📺</span>
+                <h2 class="section-title">Watch Live</h2>
+                <span class="section-badge badge-live">Live</span>
+            </div>
+            
+            <div class="dropdown-row">
+                <div class="dropdown-group" style="flex: 1;">
+                    <label class="dropdown-label">Select Game</label>
+                    <select id="live-game-select">
+                        <option value="">Loading games...</option>
+                    </select>
+                </div>
+                
+                <button class="btn btn-refresh" id="refresh-live-btn" title="Refresh games">
+                    🔄
+                </button>
+                
+                <button class="btn btn-live" id="go-live-btn" disabled>
+                    <span>Watch Live</span>
+                    <span>→</span>
+                </button>
+            </div>
+            
+            <div class="status-message" id="live-status"></div>
+        </div>
+        
+        <!-- Game Replay Section -->
+        <div class="section-card">
+            <div class="section-header">
+                <span class="section-icon">🎬</span>
+                <h2 class="section-title">Watch Game Replay</h2>
+                <span class="section-badge badge-replay">Replay</span>
+            </div>
+            
+            <div class="dropdown-row">
+                <div class="dropdown-group">
+                    <label class="dropdown-label">Season</label>
+                    <select id="replay-season">
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2023">2023</option>
+                        <option value="2022">2022</option>
+                    </select>
+                </div>
+                
+                <div class="dropdown-group">
+                    <label class="dropdown-label">Week</label>
+                    <select id="replay-week" disabled>
+                        <option value="">Select season first</option>
+                    </select>
+                </div>
+                
+                <div class="dropdown-group" style="flex: 1;">
+                    <label class="dropdown-label">Game</label>
+                    <select id="replay-game" disabled>
+                        <option value="">Select week first</option>
+                    </select>
+                </div>
+                
+                <button class="btn btn-replay" id="go-replay-btn" disabled>
+                    <span>Go to Replay</span>
+                    <span>→</span>
+                </button>
+            </div>
+            
+            <div class="status-message" id="replay-status"></div>
+            
+            <div class="progress-container" id="download-progress">
+                <div class="progress-label">Downloading game data... <span id="progress-percent">0%</span></div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p>Seasons 2022-2025 • NFL Pro Data • Real-time Analysis</p>
+        </div>
+    </div>
+
+    <script>
+        const SIMULATOR_URL = 'http://localhost:5132';
+        const INSIGHT_ENGINE_URL = 'http://localhost:5131';
+        
+        // ============================================
+        // LIVE GAMES
+        // ============================================
+        
+        async function loadLiveGames() {
+            const select = document.getElementById('live-game-select');
+            const refreshBtn = document.getElementById('refresh-live-btn');
+            
+            refreshBtn.classList.add('spinning');
+            select.innerHTML = '<option value="">Loading...</option>';
+            
+            try {
+                const resp = await fetch(`${SIMULATOR_URL}/live/games`);
+                const data = await resp.json();
+                
+                select.innerHTML = '';
+                
+                if (data.games && data.games.length > 0) {
+                    data.games.forEach(game => {
+                        const opt = document.createElement('option');
+                        opt.value = game.id;
+                        const status = game.status === 'in' ? '🔴 LIVE' : 
+                                       game.status === 'pre' ? '⏳ Pre' : '✓ Final';
+                        opt.textContent = `${status} ${game.away} @ ${game.home} ${game.score || ''}`;
+                        opt.dataset.status = game.status;
+                        select.appendChild(opt);
+                    });
+                    document.getElementById('go-live-btn').disabled = false;
+                } else {
+                    select.innerHTML = '<option value="">No live games available</option>';
+                    document.getElementById('go-live-btn').disabled = true;
+                }
+            } catch (e) {
+                select.innerHTML = '<option value="">Error loading games</option>';
+                showStatus('live-status', 'error', 'Could not connect to simulator service');
+            }
+            
+            refreshBtn.classList.remove('spinning');
+        }
+        
+        function goLive() {
+            const gameId = document.getElementById('live-game-select').value;
+            if (gameId) {
+                window.location.href = `/simple?mode=live&game=${gameId}`;
+            }
+        }
+        
+        // ============================================
+        // REPLAY GAMES
+        // ============================================
+        
+        async function loadWeeks(season) {
+            const weekSelect = document.getElementById('replay-week');
+            const gameSelect = document.getElementById('replay-game');
+            
+            weekSelect.innerHTML = '<option value="">Loading...</option>';
+            weekSelect.disabled = true;
+            gameSelect.innerHTML = '<option value="">Select week first</option>';
+            gameSelect.disabled = true;
+            document.getElementById('go-replay-btn').disabled = true;
+            
+            try {
+                const resp = await fetch(`${SIMULATOR_URL}/replay/weeks?season=${season}`);
+                const data = await resp.json();
+                
+                weekSelect.innerHTML = '<option value="">Select week</option>';
+                
+                if (data.weeks && data.weeks.length > 0) {
+                    data.weeks.forEach(w => {
+                        const opt = document.createElement('option');
+                        opt.value = w.week;
+                        opt.textContent = `Week ${w.week} (${w.games} games)`;
+                        weekSelect.appendChild(opt);
+                    });
+                    weekSelect.disabled = false;
+                } else {
+                    weekSelect.innerHTML = '<option value="">No data for this season</option>';
+                }
+            } catch (e) {
+                weekSelect.innerHTML = '<option value="">Error loading weeks</option>';
+                showStatus('replay-status', 'error', 'Could not load season data. Start simulator service.');
+            }
+        }
+        
+        async function loadGames(season, week) {
+            const gameSelect = document.getElementById('replay-game');
+            
+            gameSelect.innerHTML = '<option value="">Loading...</option>';
+            gameSelect.disabled = true;
+            document.getElementById('go-replay-btn').disabled = true;
+            
+            try {
+                const resp = await fetch(`${SIMULATOR_URL}/replay/games?season=${season}&week=${week}`);
+                const data = await resp.json();
+                
+                gameSelect.innerHTML = '<option value="">Select game</option>';
+                
+                if (data.games && data.games.length > 0) {
+                    data.games.forEach(g => {
+                        const opt = document.createElement('option');
+                        opt.value = g.game_id;
+                        const downloaded = g.has_plays ? '✓' : '⬇';
+                        opt.textContent = `${downloaded} ${g.away_team} @ ${g.home_team}`;
+                        opt.dataset.hasPlays = g.has_plays;
+                        opt.dataset.home = g.home_team;
+                        opt.dataset.away = g.away_team;
+                        gameSelect.appendChild(opt);
+                    });
+                    gameSelect.disabled = false;
+                } else {
+                    gameSelect.innerHTML = '<option value="">No games found</option>';
+                }
+            } catch (e) {
+                gameSelect.innerHTML = '<option value="">Error loading games</option>';
+            }
+        }
+        
+        async function goReplay() {
+            const gameSelect = document.getElementById('replay-game');
+            const gameId = gameSelect.value;
+            const selectedOption = gameSelect.options[gameSelect.selectedIndex];
+            
+            if (!gameId) return;
+            
+            const hasPlays = selectedOption.dataset.hasPlays === 'true';
+            const home = selectedOption.dataset.home;
+            const away = selectedOption.dataset.away;
+            const season = document.getElementById('replay-season').value;
+            const week = document.getElementById('replay-week').value;
+            
+            if (!hasPlays) {
+                // Need to download game data first
+                showStatus('replay-status', 'loading', 'Downloading game data...');
+                showProgress(true);
+                
+                try {
+                    const resp = await fetch(`${SIMULATOR_URL}/replay/download`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ game_id: gameId, season, week })
+                    });
+                    
+                    if (!resp.ok) {
+                        throw new Error('Download failed');
+                    }
+                    
+                    // Poll for download progress
+                    let complete = false;
+                    while (!complete) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        const statusResp = await fetch(`${SIMULATOR_URL}/replay/download-status?game_id=${gameId}`);
+                        const status = await statusResp.json();
+                        
+                        updateProgress(status.progress || 0);
+                        
+                        if (status.status === 'complete') {
+                            complete = true;
+                        } else if (status.status === 'error') {
+                            throw new Error(status.message || 'Download failed');
+                        }
+                    }
+                    
+                    showStatus('replay-status', 'success', 'Game data ready!');
+                    await new Promise(r => setTimeout(r, 500));
+                    
+                } catch (e) {
+                    showStatus('replay-status', 'error', `Download failed: ${e.message}`);
+                    showProgress(false);
+                    return;
+                }
+            }
+            
+            // Navigate to replay interface
+            window.location.href = `/replay?game=${gameId}&season=${season}&week=${week}&home=${home}&away=${away}`;
+        }
+        
+        // ============================================
+        // UI HELPERS
+        // ============================================
+        
+        function showStatus(elementId, type, message) {
+            const el = document.getElementById(elementId);
+            el.className = `status-message visible ${type}`;
+            el.textContent = message;
+        }
+        
+        function hideStatus(elementId) {
+            document.getElementById(elementId).className = 'status-message';
+        }
+        
+        function showProgress(visible) {
+            const el = document.getElementById('download-progress');
+            el.className = visible ? 'progress-container visible' : 'progress-container';
+            if (!visible) {
+                document.getElementById('progress-fill').style.width = '0%';
+            }
+        }
+        
+        function updateProgress(percent) {
+            document.getElementById('progress-percent').textContent = `${Math.round(percent)}%`;
+            document.getElementById('progress-fill').style.width = `${percent}%`;
+        }
+        
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+        
+        document.getElementById('refresh-live-btn').addEventListener('click', loadLiveGames);
+        document.getElementById('go-live-btn').addEventListener('click', goLive);
+        
+        document.getElementById('replay-season').addEventListener('change', (e) => {
+            loadWeeks(e.target.value);
+        });
+        
+        document.getElementById('replay-week').addEventListener('change', (e) => {
+            const season = document.getElementById('replay-season').value;
+            if (e.target.value) {
+                loadGames(season, e.target.value);
+            }
+        });
+        
+        document.getElementById('replay-game').addEventListener('change', (e) => {
+            document.getElementById('go-replay-btn').disabled = !e.target.value;
+            hideStatus('replay-status');
+        });
+        
+        document.getElementById('go-replay-btn').addEventListener('click', goReplay);
+        
+        // ============================================
+        // INIT
+        // ============================================
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadLiveGames();
+            loadWeeks(document.getElementById('replay-season').value);
+        });
+    </script>
+</body>
+</html>
+

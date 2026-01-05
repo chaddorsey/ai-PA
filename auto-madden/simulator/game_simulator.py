@@ -1660,6 +1660,298 @@ def stop_live_sportradar():
     return jsonify({'status': 'ok', 'message': 'Live polling stopped'})
 
 
+# ============== REPLAY MODE (Historical Games) ==============
+
+# Database paths for replay data
+REPLAY_DB_PATH_2024 = Path(__file__).parent.parent / 'data' / 'nfl_plays_2024.db'
+REPLAY_DB_PATH_2025 = Path(__file__).parent.parent / 'data' / 'nfl_plays_2025.db'
+
+# Download status tracking
+download_status = {}
+
+
+def get_replay_db(season: int):
+    """Get database path for given season."""
+    if season == 2024:
+        return REPLAY_DB_PATH_2024
+    elif season == 2025:
+        return REPLAY_DB_PATH_2025
+    else:
+        # For other seasons, we'll need to download
+        return Path(__file__).parent.parent / 'data' / f'nfl_plays_{season}.db'
+
+
+@flask_app.route('/replay/weeks', methods=['GET'])
+def get_replay_weeks():
+    """Get available weeks for a season."""
+    season = request.args.get('season', '2025', type=int)
+    db_path = get_replay_db(season)
+    
+    if not db_path.exists():
+        response = jsonify({
+            'status': 'ok',
+            'season': season,
+            'weeks': [],
+            'message': f'No data available for {season} season'
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT week, COUNT(*) as game_count 
+            FROM games 
+            WHERE season = ? OR season IS NULL
+            GROUP BY week 
+            ORDER BY week
+        ''', (season,))
+        
+        weeks = [{'week': row[0], 'games': row[1]} for row in cursor.fetchall()]
+        conn.close()
+        
+        response = jsonify({
+            'status': 'ok',
+            'season': season,
+            'weeks': weeks
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting weeks: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@flask_app.route('/replay/games', methods=['GET'])
+def get_replay_games():
+    """Get games for a specific week."""
+    season = request.args.get('season', '2025', type=int)
+    week = request.args.get('week', '1', type=int)
+    db_path = get_replay_db(season)
+    
+    if not db_path.exists():
+        response = jsonify({
+            'status': 'ok',
+            'season': season,
+            'week': week,
+            'games': []
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+    
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+        
+        # Get games
+        cursor.execute('''
+            SELECT game_id, home_team, away_team, home_score, away_score, game_date
+            FROM games
+            WHERE week = ?
+            ORDER BY game_date, home_team
+        ''', (week,))
+        
+        games_raw = cursor.fetchall()
+        
+        # Check which games have plays
+        games = []
+        for row in games_raw:
+            game_id = row[0]
+            cursor.execute('SELECT COUNT(*) FROM plays WHERE game_id = ?', (game_id,))
+            play_count = cursor.fetchone()[0]
+            
+            games.append({
+                'game_id': game_id,
+                'home_team': row[1],
+                'away_team': row[2],
+                'home_score': row[3],
+                'away_score': row[4],
+                'game_date': row[5],
+                'has_plays': play_count > 0,
+                'play_count': play_count
+            })
+        
+        conn.close()
+        
+        response = jsonify({
+            'status': 'ok',
+            'season': season,
+            'week': week,
+            'games': games
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting games: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@flask_app.route('/replay/plays', methods=['GET'])
+def get_replay_plays():
+    """Get plays for a specific game."""
+    game_id = request.args.get('game_id')
+    season = request.args.get('season', '2025', type=int)
+    
+    if not game_id:
+        return jsonify({'status': 'error', 'message': 'game_id required'}), 400
+    
+    db_path = get_replay_db(season)
+    
+    if not db_path.exists():
+        return jsonify({'status': 'error', 'message': f'No database for {season}'}), 404
+    
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM plays
+            WHERE game_id = ?
+            ORDER BY sequence, play_id
+        ''', (game_id,))
+        
+        plays = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        
+        response = jsonify({
+            'status': 'ok',
+            'game_id': game_id,
+            'plays': plays,
+            'count': len(plays)
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error getting plays: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@flask_app.route('/replay/download', methods=['POST', 'OPTIONS'])
+def start_replay_download():
+    """Start downloading play-by-play data for a game."""
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+    
+    data = request.get_json() or {}
+    game_id = data.get('game_id')
+    season = data.get('season', 2025)
+    week = data.get('week', 1)
+    
+    if not game_id:
+        return jsonify({'status': 'error', 'message': 'game_id required'}), 400
+    
+    # Start download in background thread
+    download_status[game_id] = {'status': 'downloading', 'progress': 0, 'message': 'Starting...'}
+    
+    def do_download():
+        try:
+            download_status[game_id]['progress'] = 10
+            download_status[game_id]['message'] = 'Connecting to NFL Pro...'
+            
+            # Import the scraper
+            import sys
+            scraper_path = Path(__file__).parent.parent / 'nfl-pro-scraper'
+            if str(scraper_path) not in sys.path:
+                sys.path.insert(0, str(scraper_path))
+            
+            from scrapers.browser_season_scraper import BrowserSeasonScraper
+            
+            download_status[game_id]['progress'] = 30
+            download_status[game_id]['message'] = 'Fetching play-by-play data...'
+            
+            # Use event loop for async scraper
+            import asyncio
+            
+            async def scrape():
+                scraper = BrowserSeasonScraper(season=season)
+                await scraper.initialize()
+                plays = await scraper.scrape_game(game_id)
+                await scraper.close()
+                return plays
+            
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            plays = loop.run_until_complete(scrape())
+            loop.close()
+            
+            download_status[game_id]['progress'] = 80
+            download_status[game_id]['message'] = 'Saving to database...'
+            
+            # Save plays to database
+            db_path = get_replay_db(season)
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            
+            for play in plays:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO plays 
+                    (game_id, play_id, sequence, quarter, down, yards_to_go, 
+                     possession_team, play_description, play_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    game_id, play.get('playId'), play.get('sequence'),
+                    play.get('quarter'), play.get('down'), play.get('yardsToGo'),
+                    play.get('possessionTeam'), play.get('playDescription'),
+                    play.get('playType')
+                ))
+            
+            conn.commit()
+            conn.close()
+            
+            download_status[game_id]['progress'] = 100
+            download_status[game_id]['status'] = 'complete'
+            download_status[game_id]['message'] = f'Downloaded {len(plays)} plays'
+            
+        except Exception as e:
+            logger.error(f"Download error: {e}")
+            download_status[game_id]['status'] = 'error'
+            download_status[game_id]['message'] = str(e)
+    
+    thread = threading.Thread(target=do_download, daemon=True)
+    thread.start()
+    
+    response = jsonify({
+        'status': 'ok',
+        'message': 'Download started',
+        'game_id': game_id
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
+@flask_app.route('/replay/download-status', methods=['GET'])
+def get_download_status():
+    """Get download status for a game."""
+    game_id = request.args.get('game_id')
+    
+    if not game_id:
+        return jsonify({'status': 'error', 'message': 'game_id required'}), 400
+    
+    status = download_status.get(game_id, {
+        'status': 'unknown',
+        'progress': 0,
+        'message': 'No download found'
+    })
+    
+    response = jsonify(status)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
 def run_server(port: int = 5132):
     """Run as a Flask server."""
     logger.info(f"Starting simulator server on port {port}")
@@ -1675,6 +1967,13 @@ def run_server(port: int = 5132):
     logger.info("  POST /live/espn/start {game_id?, interval?} - Start live polling")
     logger.info("  GET  /live/espn/state - Get current live state")
     logger.info("  POST /live/espn/stop - Stop live polling")
+    logger.info("")
+    logger.info("=== REPLAY MODE (Historical Games) ===")
+    logger.info("  GET  /replay/weeks?season=2025 - List weeks with games")
+    logger.info("  GET  /replay/games?season=2025&week=1 - List games for week")
+    logger.info("  GET  /replay/plays?game_id=X - Get plays for game")
+    logger.info("  POST /replay/download {game_id, season, week} - Download game data")
+    logger.info("  GET  /replay/download-status?game_id=X - Check download status")
     logger.info("")
     flask_app.run(host='0.0.0.0', port=port, debug=False)
 

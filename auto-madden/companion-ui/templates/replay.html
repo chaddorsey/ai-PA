@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auto-Madden Replay</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #252542;
+            --text-primary: #f0f0f0;
+            --text-secondary: #a0a0b0;
+            --text-muted: #6a6a80;
+            
+            /* Pre-snap: Orange/Amber */
+            --presnap-bg: #2d1f0f;
+            --presnap-border: #f59e0b;
+            --presnap-accent: #fbbf24;
+            --presnap-text: #fcd34d;
+            
+            /* Post-snap: Blue */
+            --postsnap-bg: #0f1a2d;
+            --postsnap-border: #3b82f6;
+            --postsnap-accent: #60a5fa;
+            --postsnap-text: #93c5fd;
+            
+            /* Big Play: Gold */
+            --bigplay-bg: #2d2a0f;
+            --bigplay-border: #eab308;
+            --bigplay-accent: #facc15;
+            --bigplay-text: #fef08a;
+            
+            /* Insights: Teal/Cyan */
+            --insight-bg: #0f2027;
+            --insight-border: #14b8a6;
+            --insight-accent: #2dd4bf;
+            --insight-text: #5eead4;
+            
+            /* Status */
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+        
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .back-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+        .back-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        .title {
+            font-size: 22px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .mode-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        /* Game Video Link */
+        .video-link-container {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 6px 12px;
+        }
+        
+        .video-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color 0.2s;
+        }
+        .video-link:hover {
+            color: var(--insight-accent);
+        }
+        
+        .copy-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        .copy-btn:hover {
+            color: var(--text-primary);
+        }
+        .copy-btn.copied {
+            color: var(--success);
+        }
+        
+        /* Play/Pause Toggle */
+        .play-pause-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s ease;
+        }
+        .play-pause-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .play-pause-btn.playing {
+            background: rgba(34, 197, 94, 0.2);
+            border-color: var(--success);
+            color: var(--success);
+        }
+        
+        .settings-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            transition: all 0.2s ease;
+        }
+        .settings-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        /* Game Box */
+        .game-box {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.05);
+            position: relative;
+        }
+        
+        .score {
+            font-size: 36px;
+            font-weight: 800;
+            text-align: center;
+            letter-spacing: 2px;
+        }
+        
+        .situation {
+            font-size: 18px;
+            text-align: center;
+            color: var(--text-secondary);
+            margin-top: 12px;
+        }
+        
+        .play-number {
+            position: absolute;
+            bottom: 12px;
+            right: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        
+        /* Kickoff Overlay */
+        .kickoff-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(15, 15, 26, 0.95);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 10;
+        }
+        
+        .kickoff-overlay.hidden {
+            display: none;
+        }
+        
+        .kickoff-btn {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            font-size: 18px;
+            font-weight: 700;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .kickoff-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(34, 197, 94, 0.4);
+        }
+        
+        .kickoff-hint {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        
+        /* Play Summary */
+        .play-summary {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            font-size: 15px;
+            color: var(--text-secondary);
+            min-height: 40px;
+        }
+        
+        /* Analysis Panel */
+        .analysis-panel {
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            opacity: 0;
+            transform: translateY(-8px);
+            transition: all 0.35s ease;
+            display: none;
+        }
+        
+        .analysis-panel.visible {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .analysis-panel.fading {
+            opacity: 0.15;
+            transition: opacity 4s ease;
+        }
+        
+        .analysis-panel.presnap {
+            background: var(--presnap-bg);
+            border: 2px solid var(--presnap-border);
+        }
+        
+        .analysis-panel.presnap .analysis-label { color: var(--presnap-accent); }
+        .analysis-panel.presnap .analysis-value { color: var(--presnap-text); }
+        
+        .analysis-panel.postsnap {
+            background: var(--postsnap-bg);
+            border: 2px solid var(--postsnap-border);
+        }
+        
+        .analysis-panel.postsnap .analysis-label { color: var(--postsnap-accent); }
+        .analysis-panel.postsnap .analysis-value { color: var(--postsnap-text); }
+        
+        .analysis-panel.bigplay {
+            background: var(--bigplay-bg);
+            border: 3px solid var(--bigplay-border);
+            box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+        }
+        
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .analysis-content {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        
+        .analysis-side { flex: 1; }
+        .analysis-side.offense { text-align: left; }
+        .analysis-side.defense { text-align: right; }
+        
+        .analysis-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        
+        .analysis-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 2px;
+        }
+        
+        .analysis-side.defense .analysis-row { justify-content: flex-end; }
+        
+        .analysis-value {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        
+        .analysis-value.primary {
+            font-size: 22px;
+            font-weight: 800;
+        }
+        
+        .analysis-detail {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        /* Replay Controls */
+        .replay-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            align-items: stretch;
+        }
+        
+        .next-play-btn {
+            flex: 1;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+        .next-play-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+        }
+        .next-play-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .sync-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .sync-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .sync-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--presnap-border);
+        }
+        
+        .sync-btn kbd {
+            background: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            margin-left: 6px;
+            font-size: 10px;
+        }
+        
+        /* Insights Section */
+        .insights-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+        
+        .insights-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--insight-accent);
+        }
+        
+        .insights {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .insight {
+            background: var(--insight-bg);
+            border: 1px solid var(--insight-border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        
+        .insight-headline {
+            font-weight: 600;
+            color: var(--insight-accent);
+            margin-bottom: 8px;
+        }
+        
+        .insight-body {
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+        
+        .insight-body a {
+            color: var(--insight-accent);
+            text-decoration: underline;
+        }
+        
+        /* Settings Panel (slide-in) */
+        .settings-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+        .settings-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .settings-panel {
+            position: fixed;
+            top: 0;
+            right: -350px;
+            width: 320px;
+            height: 100%;
+            background: var(--bg-secondary);
+            padding: 24px;
+            transition: right 0.3s ease;
+            z-index: 101;
+            overflow-y: auto;
+        }
+        .settings-panel.open {
+            right: 0;
+        }
+        
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .settings-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .settings-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 24px;
+        }
+        
+        .settings-section {
+            margin-bottom: 24px;
+        }
+        
+        .settings-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+        
+        .delay-control {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .delay-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-primary);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .delay-btn:hover:not(:disabled) {
+            background: var(--bg-primary);
+        }
+        .delay-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        .delay-display {
+            font-size: 20px;
+            font-weight: 600;
+            min-width: 50px;
+            text-align: center;
+        }
+        
+        /* Keyboard shortcut hint */
+        .keyboard-hints {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        .keyboard-hints kbd {
+            background: rgba(255,255,255,0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-right: 6px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <a href="/" class="back-btn" title="Back to home">←</a>
+            <div class="title">
+                <span>🏈</span>
+                <span id="game-title">Loading...</span>
+                <span class="mode-badge">Replay</span>
+            </div>
+        </div>
+        
+        <div class="header-right">
+            <div class="video-link-container">
+                <a href="#" id="video-link" class="video-link" target="_blank">📺 Game Video</a>
+                <button class="copy-btn" id="copy-video-btn" title="Copy video URL">📋</button>
+            </div>
+            
+            <button class="play-pause-btn playing" id="play-pause-btn" title="Pause (Space)">
+                ⏸
+            </button>
+            
+            <button class="settings-btn" id="settings-btn" title="Settings">⚙️</button>
+        </div>
+    </div>
+    
+    <!-- Game Box -->
+    <div class="game-box">
+        <div class="score" id="score">--- 0 - 0 ---</div>
+        <div class="situation" id="situation">Pre-Game</div>
+        <div class="play-number" id="play-number">Play #0</div>
+        
+        <!-- Kickoff Overlay (shown before game starts) -->
+        <div class="kickoff-overlay" id="kickoff-overlay">
+            <button class="kickoff-btn" id="kickoff-btn">🏈 Kickoff!</button>
+            <div class="kickoff-hint">Press when the ball is kicked</div>
+        </div>
+    </div>
+    
+    <!-- Play Summary -->
+    <div class="play-summary" id="play">Waiting for kickoff...</div>
+    
+    <!-- Analysis Panel -->
+    <div class="analysis-panel" id="analysis-panel">
+        <div class="analysis-header">
+            <span class="analysis-mode-label" id="analysis-mode">PRE-SNAP</span>
+            <span class="bigplay-badge" id="bigplay-badge" style="display: none;">BIG PLAY</span>
+        </div>
+        <div class="analysis-content">
+            <div class="analysis-side offense">
+                <div class="analysis-label">OFFENSE</div>
+                <div class="analysis-row">
+                    <span class="analysis-value primary" id="off-personnel">--</span>
+                    <span class="analysis-value" id="off-formation">--</span>
+                </div>
+                <div class="analysis-detail" id="off-detail"></div>
+            </div>
+            <div class="analysis-side defense">
+                <div class="analysis-label">DEFENSE</div>
+                <div class="analysis-row">
+                    <span class="analysis-value" id="def-package">--</span>
+                    <span class="analysis-value primary" id="def-personnel">--</span>
+                </div>
+                <div class="analysis-detail" id="def-box">--</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Replay Controls -->
+    <div class="replay-controls">
+        <button class="next-play-btn" id="next-play-btn" disabled>
+            Next Play →
+        </button>
+        <div class="sync-controls">
+            <button class="sync-btn" id="sync-snap-btn" title="Sync to snap">
+                Sync Snap <kbd>S</kbd>
+            </button>
+            <button class="sync-btn" id="sync-whistle-btn" title="Sync to whistle">
+                Sync Whistle <kbd>W</kbd>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Insights -->
+    <div class="insights-header">
+        <span class="insights-title">💡 Insights</span>
+    </div>
+    <div class="insights" id="insights"></div>
+    
+    <!-- Settings Panel -->
+    <div class="settings-overlay" id="settings-overlay"></div>
+    <div class="settings-panel" id="settings-panel">
+        <div class="settings-header">
+            <span class="settings-title">Settings</span>
+            <button class="settings-close" id="settings-close">×</button>
+        </div>
+        
+        <div class="settings-section">
+            <div class="settings-label">Broadcast Delay</div>
+            <div class="delay-control">
+                <button class="delay-btn" id="delay-minus-5">-5</button>
+                <button class="delay-btn" id="delay-minus">-</button>
+                <span class="delay-display" id="delay-display">0s</span>
+                <button class="delay-btn" id="delay-plus">+</button>
+                <button class="delay-btn" id="delay-plus-5">+5</button>
+            </div>
+        </div>
+        
+        <div class="settings-section">
+            <div class="settings-label">Pre-snap Offset</div>
+            <div class="delay-control">
+                <button class="delay-btn" id="presnap-minus">-</button>
+                <span class="delay-display" id="presnap-offset-display">5s</span>
+                <button class="delay-btn" id="presnap-plus">+</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Keyboard hints -->
+    <div class="keyboard-hints">
+        <span><kbd>S</kbd> Sync Snap</span>
+        <span><kbd>W</kbd> Sync Whistle</span>
+        <span><kbd>Space</kbd> Play/Pause</span>
+        <span><kbd>→</kbd> Next Play</span>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURATION
+        // ============================================
+        const SIMULATOR_URL = 'http://localhost:5132';
+        const INSIGHT_ENGINE_URL = 'http://localhost:5131';
+        
+        // Get game info from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        const gameId = urlParams.get('game');
+        const season = urlParams.get('season') || '2025';
+        const week = urlParams.get('week') || '1';
+        const homeTeam = urlParams.get('home') || 'HOME';
+        const awayTeam = urlParams.get('away') || 'AWAY';
+        
+        // ============================================
+        // STATE
+        // ============================================
+        let isPlaying = false;
+        let isKickedOff = false;
+        let currentPlay = 0;
+        let plays = [];
+        let insights = [];
+        let gameStartTime = null;
+        let simClock = 0; // Simulation clock in seconds since kickoff
+        
+        let currentDelay = 0;
+        let presnapOffset = 5;
+        
+        let ws = null;
+        let pollInterval = null;
+        
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        
+        async function init() {
+            // Set game title
+            document.getElementById('game-title').textContent = `${awayTeam} @ ${homeTeam}`;
+            document.getElementById('score').textContent = `${awayTeam} 0 - ${homeTeam} 0`;
+            
+            // Set video link
+            const videoUrl = buildVideoUrl(awayTeam, homeTeam, season, week);
+            document.getElementById('video-link').href = videoUrl;
+            document.getElementById('video-link').dataset.url = videoUrl;
+            
+            // Load game data
+            await loadGameData();
+            
+            // Load pre-game insights
+            loadPregameInsights();
+            
+            // Connect to insight engine
+            connectWS();
+        }
+        
+        function buildVideoUrl(away, home, season, week) {
+            // Convert team abbreviations to URL-friendly names
+            const teamNames = {
+                'ARI': 'cardinals', 'ATL': 'falcons', 'BAL': 'ravens', 'BUF': 'bills',
+                'CAR': 'panthers', 'CHI': 'bears', 'CIN': 'bengals', 'CLE': 'browns',
+                'DAL': 'cowboys', 'DEN': 'broncos', 'DET': 'lions', 'GB': 'packers',
+                'HOU': 'texans', 'IND': 'colts', 'JAX': 'jaguars', 'KC': 'chiefs',
+                'LAC': 'chargers', 'LAR': 'rams', 'LV': 'raiders', 'MIA': 'dolphins',
+                'MIN': 'vikings', 'NE': 'patriots', 'NO': 'saints', 'NYG': 'giants',
+                'NYJ': 'jets', 'PHI': 'eagles', 'PIT': 'steelers', 'SEA': 'seahawks',
+                'SF': '49ers', 'TB': 'buccaneers', 'TEN': 'titans', 'WAS': 'commanders'
+            };
+            const awayName = teamNames[away] || away.toLowerCase();
+            const homeName = teamNames[home] || home.toLowerCase();
+            return `https://www.nfl.com/plus/games/${awayName}-at-${homeName}-${season}-reg-${week}`;
+        }
+        
+        async function loadGameData() {
+            try {
+                const resp = await fetch(`${SIMULATOR_URL}/replay/plays?game_id=${gameId}`);
+                const data = await resp.json();
+                
+                if (data.plays && data.plays.length > 0) {
+                    plays = data.plays;
+                    console.log(`Loaded ${plays.length} plays`);
+                    document.getElementById('next-play-btn').disabled = false;
+                } else {
+                    console.error('No plays found');
+                }
+            } catch (e) {
+                console.error('Error loading game data:', e);
+            }
+        }
+        
+        async function loadPregameInsights() {
+            try {
+                const resp = await fetch(`${INSIGHT_ENGINE_URL}/pregame?game_id=${gameId}&home=${homeTeam}&away=${awayTeam}`);
+                const data = await resp.json();
+                
+                if (data.insights) {
+                    data.insights.forEach(insight => addInsight(insight));
+                }
+            } catch (e) {
+                console.error('Error loading pregame insights:', e);
+            }
+        }
+        
+        // ============================================
+        // KICKOFF
+        // ============================================
+        
+        function kickoff() {
+            isKickedOff = true;
+            isPlaying = true;
+            gameStartTime = Date.now();
+            simClock = 0;
+            
+            document.getElementById('kickoff-overlay').classList.add('hidden');
+            document.getElementById('play-pause-btn').classList.add('playing');
+            document.getElementById('situation').textContent = 'Q1 · 15:00';
+            
+            // Start simulation
+            startSimulation();
+            
+            // Notify insight engine
+            notifyGameStart();
+        }
+        
+        // ============================================
+        // SIMULATION
+        // ============================================
+        
+        function startSimulation() {
+            if (pollInterval) clearInterval(pollInterval);
+            
+            // Update simulation clock every second
+            pollInterval = setInterval(() => {
+                if (isPlaying && isKickedOff) {
+                    simClock = (Date.now() - gameStartTime) / 1000;
+                }
+            }, 1000);
+        }
+        
+        function togglePlayPause() {
+            isPlaying = !isPlaying;
+            
+            const btn = document.getElementById('play-pause-btn');
+            if (isPlaying) {
+                btn.classList.add('playing');
+                btn.innerHTML = '⏸';
+                // Resume from where we paused
+                gameStartTime = Date.now() - (simClock * 1000);
+            } else {
+                btn.classList.remove('playing');
+                btn.innerHTML = '▶';
+            }
+        }
+        
+        // ============================================
+        // PLAY NAVIGATION
+        // ============================================
+        
+        function nextPlay() {
+            if (currentPlay >= plays.length) return;
+            
+            const play = plays[currentPlay];
+            currentPlay++;
+            
+            displayPlay(play);
+            updatePlayNumber(currentPlay);
+            
+            // Send to insight engine
+            sendPlayToEngine(play);
+        }
+        
+        function displayPlay(play) {
+            // Update score
+            document.getElementById('score').textContent = 
+                `${awayTeam} ${play.visitor_score || 0} - ${homeTeam} ${play.home_score || 0}`;
+            
+            // Update situation
+            const down = play.down || 0;
+            const distance = play.yards_to_go || 0;
+            const quarter = play.quarter || 1;
+            const clock = play.start_clock || '15:00';
+            
+            if (down > 0) {
+                const downText = ['', '1st', '2nd', '3rd', '4th'][down] || `${down}th`;
+                document.getElementById('situation').textContent = 
+                    `Q${quarter} · ${clock} | ${downText} & ${distance}`;
+            } else {
+                document.getElementById('situation').textContent = `Q${quarter} · ${clock}`;
+            }
+            
+            // Update play summary
+            document.getElementById('play').textContent = play.play_description || '';
+            
+            // Show pre-snap analysis
+            showPresnap({
+                offense: {
+                    personnel: play.offense_personnel || '',
+                    formation: play.offense_formation || ''
+                },
+                defense: {
+                    personnel: play.defense_personnel || '',
+                    box: play.defenders_in_box || ''
+                }
+            });
+        }
+        
+        function updatePlayNumber(num) {
+            document.getElementById('play-number').textContent = `Play #${num}`;
+        }
+        
+        // ============================================
+        // SYNC FUNCTIONS
+        // ============================================
+        
+        function syncToSnap() {
+            // Sync clock to the start of current play
+            if (currentPlay > 0 && plays[currentPlay - 1]) {
+                const play = plays[currentPlay - 1];
+                console.log(`Synced to snap of play ${currentPlay}`);
+                // In a full implementation, this would adjust the simulation clock
+            }
+        }
+        
+        function syncToWhistle() {
+            // Sync clock to the end of current play
+            if (currentPlay > 0 && plays[currentPlay - 1]) {
+                const play = plays[currentPlay - 1];
+                console.log(`Synced to whistle of play ${currentPlay}`);
+                // In a full implementation, this would adjust the simulation clock
+            }
+        }
+        
+        // ============================================
+        // ANALYSIS PANEL
+        // ============================================
+        
+        function showPresnap(data) {
+            const panel = document.getElementById('analysis-panel');
+            
+            panel.className = 'analysis-panel presnap visible';
+            document.getElementById('analysis-mode').textContent = 'PRE-SNAP';
+            document.getElementById('bigplay-badge').style.display = 'none';
+            
+            // Offense
+            const offPersonnel = data.offense?.personnel || '';
+            const personnelCode = getPersonnelCode(offPersonnel);
+            document.getElementById('off-personnel').textContent = personnelCode || '--';
+            document.getElementById('off-formation').textContent = data.offense?.formation || '--';
+            document.getElementById('off-detail').textContent = offPersonnel;
+            
+            // Defense
+            const defPersonnel = data.defense?.personnel || '';
+            document.getElementById('def-personnel').textContent = defPersonnel || '--';
+            document.getElementById('def-package').textContent = getDefPackage(defPersonnel);
+            document.getElementById('def-box').textContent = data.defense?.box ? `${data.defense.box} in box` : '--';
+        }
+        
+        function getPersonnelCode(personnel) {
+            if (!personnel) return '??';
+            const rbMatch = personnel.match(/(\d+)\s*RB/i);
+            const teMatch = personnel.match(/(\d+)\s*TE/i);
+            const rb = rbMatch ? rbMatch[1] : '1';
+            const te = teMatch ? teMatch[1] : '1';
+            return rb + te;
+        }
+        
+        const DEF_PACKAGES = {
+            '4 DL, 2 LB, 5 DB': 'Nickel',
+            '4 DL, 1 LB, 6 DB': 'Dime',
+            '3 DL, 1 LB, 7 DB': 'Quarter',
+            '4 DL, 3 LB, 4 DB': 'Base 4-3',
+            '3 DL, 4 LB, 4 DB': 'Base 3-4'
+        };
+        
+        function getDefPackage(personnel) {
+            return DEF_PACKAGES[personnel] || '';
+        }
+        
+        // ============================================
+        // INSIGHTS
+        // ============================================
+        
+        function addInsight(insight) {
+            const div = document.createElement('div');
+            div.className = 'insight';
+            
+            let body = insight.body || '';
+            // Convert URLs to links
+            body = body.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank">$1</a>');
+            body = body.replace(/\n/g, '<br>');
+            
+            div.innerHTML = `
+                <div class="insight-headline">${insight.headline || 'Insight'}</div>
+                <div class="insight-body">${body}</div>
+            `;
+            
+            document.getElementById('insights').prepend(div);
+        }
+        
+        // ============================================
+        // WEBSOCKET
+        // ============================================
+        
+        function connectWS() {
+            ws = new WebSocket(`${INSIGHT_ENGINE_URL.replace('http', 'ws')}/ws`);
+            
+            ws.onopen = () => console.log('WS connected');
+            
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                
+                if (data.type === 'insight') {
+                    addInsight(data.data);
+                }
+            };
+            
+            ws.onclose = () => {
+                setTimeout(connectWS, 3000);
+            };
+        }
+        
+        function notifyGameStart() {
+            fetch(`${INSIGHT_ENGINE_URL}/game/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    game_id: gameId,
+                    home_team: homeTeam,
+                    away_team: awayTeam,
+                    mode: 'replay'
+                })
+            }).catch(e => console.error('Error notifying game start:', e));
+        }
+        
+        function sendPlayToEngine(play) {
+            fetch(`${INSIGHT_ENGINE_URL}/event`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    game_id: gameId,
+                    event_type: 'play_complete',
+                    play: play,
+                    mode: 'replay'
+                })
+            }).catch(e => console.error('Error sending play:', e));
+        }
+        
+        // ============================================
+        // SETTINGS
+        // ============================================
+        
+        function openSettings() {
+            document.getElementById('settings-panel').classList.add('open');
+            document.getElementById('settings-overlay').classList.add('visible');
+        }
+        
+        function closeSettings() {
+            document.getElementById('settings-panel').classList.remove('open');
+            document.getElementById('settings-overlay').classList.remove('visible');
+        }
+        
+        function adjustDelay(delta) {
+            currentDelay = Math.max(0, currentDelay + delta);
+            updateDelayDisplay();
+        }
+        
+        function adjustPresnapOffset(delta) {
+            presnapOffset = Math.max(1, Math.min(15, presnapOffset + delta));
+            document.getElementById('presnap-offset-display').textContent = `${presnapOffset}s`;
+        }
+        
+        function updateDelayDisplay() {
+            document.getElementById('delay-display').textContent = `${currentDelay}s`;
+            document.getElementById('delay-minus').disabled = currentDelay <= 0;
+            document.getElementById('delay-minus-5').disabled = currentDelay < 5;
+        }
+        
+        // ============================================
+        // COPY VIDEO URL
+        // ============================================
+        
+        function copyVideoUrl() {
+            const url = document.getElementById('video-link').dataset.url;
+            navigator.clipboard.writeText(url).then(() => {
+                const btn = document.getElementById('copy-video-btn');
+                btn.classList.add('copied');
+                btn.textContent = '✓';
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.textContent = '📋';
+                }, 2000);
+            });
+        }
+        
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+        
+        document.getElementById('kickoff-btn').addEventListener('click', kickoff);
+        document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
+        document.getElementById('next-play-btn').addEventListener('click', nextPlay);
+        document.getElementById('sync-snap-btn').addEventListener('click', syncToSnap);
+        document.getElementById('sync-whistle-btn').addEventListener('click', syncToWhistle);
+        
+        document.getElementById('copy-video-btn').addEventListener('click', copyVideoUrl);
+        
+        document.getElementById('settings-btn').addEventListener('click', openSettings);
+        document.getElementById('settings-close').addEventListener('click', closeSettings);
+        document.getElementById('settings-overlay').addEventListener('click', closeSettings);
+        
+        document.getElementById('delay-minus-5').addEventListener('click', () => adjustDelay(-5));
+        document.getElementById('delay-minus').addEventListener('click', () => adjustDelay(-1));
+        document.getElementById('delay-plus').addEventListener('click', () => adjustDelay(1));
+        document.getElementById('delay-plus-5').addEventListener('click', () => adjustDelay(5));
+        
+        document.getElementById('presnap-minus').addEventListener('click', () => adjustPresnapOffset(-1));
+        document.getElementById('presnap-plus').addEventListener('click', () => adjustPresnapOffset(1));
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            
+            switch (e.key.toLowerCase()) {
+                case 's':
+                    e.preventDefault();
+                    syncToSnap();
+                    break;
+                case 'w':
+                    e.preventDefault();
+                    syncToWhistle();
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    if (isKickedOff) {
+                        togglePlayPause();
+                    } else {
+                        kickoff();
+                    }
+                    break;
+                case 'arrowright':
+                    e.preventDefault();
+                    nextPlay();
+                    break;
+            }
+        });
+        
+        // ============================================
+        // INIT
+        // ============================================
+        
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
+

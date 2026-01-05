@@ -2724,6 +2724,104 @@ def start_pregame():
     })
 
 
+@app.route('/pregame', methods=['GET'])
+def get_pregame_insights():
+    """
+    GET endpoint for fetching pregame insights (used by replay interface).
+    
+    Query params:
+        game_id: Game identifier
+        home: Home team abbreviation
+        away: Away team abbreviation
+    
+    Returns list of pregame insights.
+    """
+    game_id = request.args.get('game_id')
+    home_abbr = request.args.get('home', '').upper()
+    away_abbr = request.args.get('away', '').upper()
+    
+    insights = []
+    
+    # Try to get NFL Pro narrative insights for these teams
+    if nfl_pro_narratives and (home_abbr or away_abbr):
+        try:
+            # Set current game teams for filtering
+            if hasattr(nfl_pro_narratives, 'set_current_game_teams'):
+                nfl_pro_narratives.set_current_game_teams({home_abbr, away_abbr})
+            
+            pregame_insights = nfl_pro_narratives.get_pregame_insights(count=5)
+            
+            for pg in pregame_insights:
+                insights.append({
+                    'headline': pg.get('title', pg.get('headline', 'Matchup Preview')),
+                    'body': pg.get('text', pg.get('body', '')),
+                    'type': 'pregame'
+                })
+        except Exception as e:
+            logger.debug(f"Could not load NFL Pro pregame insights: {e}")
+    
+    # Add basic matchup info if we don't have enough
+    if len(insights) < 2 and home_abbr and away_abbr:
+        insights.append({
+            'headline': f'🏈 {away_abbr} @ {home_abbr}',
+            'body': f'Welcome to the matchup between the {away_abbr} and {home_abbr}. Press Kickoff when the ball is kicked to start tracking the game.',
+            'type': 'pregame'
+        })
+    
+    response = jsonify({
+        'status': 'ok',
+        'insights': insights,
+        'count': len(insights)
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
+@app.route('/game/start', methods=['POST', 'OPTIONS'])
+def start_game():
+    """
+    Notify insight engine that a game has started (replay mode).
+    """
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+    
+    data = request.get_json() or {}
+    game_id = data.get('game_id')
+    home_team = data.get('home_team', '').upper()
+    away_team = data.get('away_team', '').upper()
+    mode = data.get('mode', 'replay')
+    
+    logger.info(f"🎮 Game start notification: {away_team} @ {home_team} (mode={mode})")
+    
+    # Set up session data
+    global session_data
+    session_data['game_id'] = game_id
+    session_data['home_abbr'] = home_team
+    session_data['away_abbr'] = away_team
+    session_data['mode'] = mode
+    
+    # Set current game teams for insight filtering
+    if nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_teams'):
+        nfl_pro_narratives.set_current_game_teams({home_team, away_team})
+    
+    # Reset insight generator
+    if insight_generator:
+        insight_generator.reset_for_new_game()
+    
+    response = jsonify({
+        'status': 'ok',
+        'message': f'Game started: {away_team} @ {home_team}',
+        'game_id': game_id,
+        'mode': mode
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
 @app.route('/event', methods=['POST'])
 def receive_event():
     """Receive game state change events from game-state-service or simulator."""
