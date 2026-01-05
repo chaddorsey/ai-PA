@@ -563,18 +563,52 @@ class NFLProNarrativeInsights:
             insight_ids = self._processed_index[key]
             for insight in self._processed_insights:
                 if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
-                    self._served_in_game.add(insight['id'])
-                    return self._format_insight(insight)
+                    # Verify insight is for current game's teams
+                    if self._insight_matches_game_teams(insight):
+                        self._served_in_game.add(insight['id'])
+                        return self._format_insight(insight)
         
         # Fallback: search by name
         if hasattr(self, '_processed_insights'):
             for insight in self._processed_insights:
-                if player_name.lower() in insight.get('player_name', '').lower():
+                if player_name.lower() in (insight.get('player_name') or '').lower():
                     if insight.get('id') not in self._served_in_game:
-                        self._served_in_game.add(insight['id'])
-                        return self._format_insight(insight)
+                        # Verify insight is for current game's teams
+                        if self._insight_matches_game_teams(insight):
+                            self._served_in_game.add(insight['id'])
+                            return self._format_insight(insight)
         
         return None
+    
+    def _insight_matches_game_teams(self, insight: Dict) -> bool:
+        """Check if an insight is about the current game's teams."""
+        if not hasattr(self, '_current_game_teams') or not self._current_game_teams:
+            return True  # No filter set, allow all
+        
+        # Get all searchable text from insight
+        player_name = (insight.get('player_name') or '').upper()
+        player_team = (insight.get('player_team') or '').upper()
+        title = (insight.get('title') or '').upper()
+        
+        all_text = f"{player_name} {player_team} {title}"
+        
+        # Check if any game team (or their name variants) is in the text
+        for team in self._current_game_teams:
+            team_upper = team.upper()
+            if team_upper in all_text:
+                return True
+            # Also check team names
+            if team_upper in self.TEAM_NAMES:
+                for name in self.TEAM_NAMES[team_upper]:
+                    if name in all_text:
+                        return True
+        
+        return False
+    
+    def set_current_game_teams(self, teams: list):
+        """Set the teams for the current game to filter insights."""
+        self._current_game_teams = [t.upper() for t in teams if t]
+        logger.info(f"Set current game teams filter: {self._current_game_teams}")
     
     def get_insight_by_team(self, team_abbr: str) -> Optional[Dict]:
         """Get an unserved insight for a team."""
@@ -584,8 +618,9 @@ class NFLProNarrativeInsights:
             insight_ids = self._processed_index[key]
             for insight in self._processed_insights:
                 if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
-                    self._served_in_game.add(insight['id'])
-                    return self._format_insight(insight)
+                    if self._insight_matches_game_teams(insight):
+                        self._served_in_game.add(insight['id'])
+                        return self._format_insight(insight)
         
         return None
     
@@ -597,8 +632,9 @@ class NFLProNarrativeInsights:
             insight_ids = self._processed_index[key]
             for insight in self._processed_insights:
                 if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
-                    self._served_in_game.add(insight['id'])
-                    return self._format_insight(insight)
+                    if self._insight_matches_game_teams(insight):
+                        self._served_in_game.add(insight['id'])
+                        return self._format_insight(insight)
         
         return None
     
@@ -653,8 +689,54 @@ class NFLProNarrativeInsights:
         # Fallback to random
         return self.get_random_unserved_insight(prefer_team=team)
     
-    def get_random_unserved_insight(self, prefer_team: str = None) -> Optional[Dict]:
-        """Get a random unserved insight, preferring given team if specified."""
+    # Team abbreviation to name mapping
+    TEAM_NAMES = {
+        'ARI': ['CARDINALS', 'ARIZONA'],
+        'ATL': ['FALCONS', 'ATLANTA'],
+        'BAL': ['RAVENS', 'BALTIMORE'],
+        'BUF': ['BILLS', 'BUFFALO'],
+        'CAR': ['PANTHERS', 'CAROLINA'],
+        'CHI': ['BEARS', 'CHICAGO'],
+        'CIN': ['BENGALS', 'CINCINNATI'],
+        'CLE': ['BROWNS', 'CLEVELAND'],
+        'DAL': ['COWBOYS', 'DALLAS'],
+        'DEN': ['BRONCOS', 'DENVER'],
+        'DET': ['LIONS', 'DETROIT'],
+        'GB': ['PACKERS', 'GREEN BAY'],
+        'HOU': ['TEXANS', 'HOUSTON'],
+        'IND': ['COLTS', 'INDIANAPOLIS'],
+        'JAX': ['JAGUARS', 'JACKSONVILLE'],
+        'KC': ['CHIEFS', 'KANSAS CITY'],
+        'LAC': ['CHARGERS', 'LOS ANGELES CHARGERS'],
+        'LAR': ['RAMS', 'LOS ANGELES RAMS'],
+        'LV': ['RAIDERS', 'LAS VEGAS'],
+        'MIA': ['DOLPHINS', 'MIAMI'],
+        'MIN': ['VIKINGS', 'MINNESOTA'],
+        'NE': ['PATRIOTS', 'NEW ENGLAND'],
+        'NO': ['SAINTS', 'NEW ORLEANS'],
+        'NYG': ['GIANTS', 'NEW YORK GIANTS'],
+        'NYJ': ['JETS', 'NEW YORK JETS'],
+        'PHI': ['EAGLES', 'PHILADELPHIA'],
+        'PIT': ['STEELERS', 'PITTSBURGH'],
+        'SEA': ['SEAHAWKS', 'SEATTLE'],
+        'SF': ['49ERS', 'SAN FRANCISCO', 'NINERS'],
+        'TB': ['BUCCANEERS', 'TAMPA BAY', 'BUCS'],
+        'TEN': ['TITANS', 'TENNESSEE'],
+        'WSH': ['COMMANDERS', 'WASHINGTON'],
+    }
+    
+    def get_random_unserved_insight(
+        self, 
+        prefer_team: str = None,
+        valid_teams: set = None
+    ) -> Optional[Dict]:
+        """
+        Get a random unserved insight.
+        
+        Args:
+            prefer_team: Preferred team abbreviation
+            valid_teams: Set of valid team abbreviations - ONLY return insights for these teams
+        """
         if not hasattr(self, '_processed_insights'):
             return None
         
@@ -666,14 +748,56 @@ class NFLProNarrativeInsights:
         if not unserved:
             return None
         
-        # Prefer team if specified
-        if prefer_team:
+        # Build expanded search terms including team names
+        def get_search_terms(abbr):
+            """Get all searchable terms for a team abbreviation."""
+            terms = {abbr.upper()}
+            if abbr.upper() in self.TEAM_NAMES:
+                terms.update(self.TEAM_NAMES[abbr.upper()])
+            return terms
+        
+        # STRICT team filtering - only return insights that mention game teams
+        if valid_teams:
+            # Expand abbreviations to include team names
+            expanded_terms = set()
+            for team in valid_teams:
+                expanded_terms.update(get_search_terms(team))
+            
+            def insight_matches_teams(insight):
+                # Check all text fields for team mentions (handle None values)
+                player_name = (insight.get('player_name') or '').upper()
+                player_team = (insight.get('player_team') or '').upper()
+                teams_mentioned = [t.upper() for t in (insight.get('teams_mentioned') or []) if t]
+                title = (insight.get('title') or '').upper()
+                
+                # Combine all searchable text
+                all_text = f"{player_name} {player_team} {title} {' '.join(teams_mentioned)}"
+                
+                # Check if any expanded term is in the text
+                for term in expanded_terms:
+                    if term in all_text:
+                        return True
+                return False
+            
+            team_filtered = [i for i in unserved if insight_matches_teams(i)]
+            
+            if team_filtered:
+                unserved = team_filtered
+                logger.info(f"Filtered to {len(unserved)} insights for teams {valid_teams} (expanded: {len(expanded_terms)} terms)")
+            else:
+                logger.warning(f"No insights found for teams {valid_teams}, returning None")
+                return None  # Don't return insights from other games
+        elif prefer_team:
+            # Soft preference - try to get team insights but fall back to any
             team_insights = [i for i in unserved if prefer_team.upper() in (
-                i.get('player_team', '').upper(),
-                ' '.join(i.get('teams_mentioned', []))
+                (i.get('player_team') or '').upper(),
+                ' '.join(i.get('teams_mentioned') or [])
             )]
             if team_insights:
                 unserved = team_insights
+        
+        if not unserved:
+            return None
         
         insight = random.choice(unserved)
         self._served_in_game.add(insight['id'])
@@ -1046,6 +1170,11 @@ def load_narrative_insights(
     Returns:
         Number of insights loaded
     """
+    # Set current game teams for filtering
+    game_teams = [t for t in [home_team, away_team] if t]
+    if game_teams:
+        nfl_pro_narratives.set_current_game_teams(game_teams)
+    
     # Try loading from processed insights first (Week 18 for current games)
     if nfl_pro_narratives.load_from_processed(week):
         logger.info(f"Loaded Week {week} processed insights successfully")
@@ -1067,10 +1196,20 @@ def load_narrative_insights(
 def get_player_triggered_insight(
     player_name: str,
     quarter: int,
-    situation: str = None
+    situation: str = None,
+    game_teams: List[str] = None
 ) -> Optional[Dict[str, Any]]:
-    """Get an insight triggered by a player's play."""
-    # Try new processed insights method first
+    """
+    Get an insight triggered by a player's play.
+    
+    Args:
+        game_teams: List of team abbreviations in the current game - ONLY return insights for these teams
+    """
+    # If game_teams provided, update the filter
+    if game_teams:
+        nfl_pro_narratives.set_current_game_teams(game_teams)
+    
+    # Try new processed insights method first (uses _insight_matches_game_teams filter)
     insight = nfl_pro_narratives.get_insight_by_player(player_name)
     if insight:
         return insight
@@ -1083,14 +1222,34 @@ def get_break_narrative_insights(
     break_type: str,
     quarter: int,
     count: int = 2,
-    prefer_team: str = None
+    prefer_team: str = None,
+    game_teams: List[str] = None
 ) -> List[Dict[str, Any]]:
-    """Get narrative insights for a break period."""
+    """
+    Get narrative insights for a break period.
+    
+    Args:
+        break_type: Type of break (halftime, timeout, etc.)
+        quarter: Current quarter
+        count: Number of insights to return
+        prefer_team: Preferred team abbreviation
+        game_teams: List of both teams in the current game - ONLY return insights for these teams
+    """
     insights = []
     
-    # Try processed insights first
+    # Build list of valid teams for filtering
+    valid_teams = set()
+    if game_teams:
+        valid_teams = {t.upper() for t in game_teams if t}
+    elif prefer_team:
+        valid_teams = {prefer_team.upper()}
+    
+    # Try processed insights first, STRICTLY filtering to game teams
     for _ in range(count):
-        insight = nfl_pro_narratives.get_random_unserved_insight(prefer_team)
+        insight = nfl_pro_narratives.get_random_unserved_insight(
+            prefer_team=prefer_team,
+            valid_teams=valid_teams if valid_teams else None
+        )
         if insight:
             insights.append(insight)
     
@@ -1111,9 +1270,19 @@ def get_contextual_narrative_insight(
     is_redzone: bool = False,
     is_third_down: bool = False,
     team: str = None,
-    player: str = None
+    player: str = None,
+    game_teams: List[str] = None
 ) -> Optional[Dict[str, Any]]:
-    """Get an insight matching the current game context."""
+    """
+    Get an insight matching the current game context.
+    
+    Args:
+        game_teams: List of team abbreviations in the current game - ONLY return insights for these teams
+    """
+    # If game_teams provided, update the filter
+    if game_teams:
+        nfl_pro_narratives.set_current_game_teams(game_teams)
+    
     return nfl_pro_narratives.get_contextual_insight(
         play_type=play_type,
         is_redzone=is_redzone,

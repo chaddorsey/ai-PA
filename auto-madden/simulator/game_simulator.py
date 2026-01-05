@@ -1400,10 +1400,19 @@ def start_live_espn():
     """Start live ESPN polling mode."""
     global live_game_id, live_polling, live_last_state, live_poll_thread, live_pregame_triggered
     
-    # Stop any existing polling
+    # Stop any existing polling - wait longer and verify it stops
     live_polling = False
     if live_poll_thread and live_poll_thread.is_alive():
-        live_poll_thread.join(timeout=2)
+        logger.info("Stopping existing poll thread...")
+        live_poll_thread.join(timeout=5)
+        # Double check it stopped
+        if live_poll_thread.is_alive():
+            logger.warning("Poll thread didn't stop cleanly, proceeding anyway")
+        else:
+            logger.info("Previous poll thread stopped")
+    
+    # Small delay to ensure clean state
+    time.sleep(0.5)
     
     data = request.get_json() or {}
     game_id = data.get('game_id')

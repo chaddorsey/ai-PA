@@ -421,6 +421,9 @@ class LiveGamePoller:
 
 async def find_live_game() -> tuple:
     """Find a live game and return (nfl_pro_uuid, espn_id)."""
+    from game_mapper import GameMapper
+    mapper = GameMapper()
+    
     try:
         response = requests.get(ESPN_SCOREBOARD_URL, timeout=10, verify=False)
         response.raise_for_status()
@@ -431,8 +434,26 @@ async def find_live_game() -> tuple:
             if status in ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME']:
                 espn_id = event.get('id')
                 name = event.get('shortName', '')
+                
+                # Extract teams from event for mapping
+                competitions = event.get('competitions', [{}])
+                if competitions:
+                    comp = competitions[0]
+                    teams = comp.get('competitors', [])
+                    home_team = next((t.get('team', {}).get('abbreviation') for t in teams if t.get('homeAway') == 'home'), None)
+                    away_team = next((t.get('team', {}).get('abbreviation') for t in teams if t.get('homeAway') == 'away'), None)
+                    
+                    # Try to map to NFL Pro UUID
+                    nfl_pro_uuid = mapper.get_nfl_pro_uuid(espn_id, home_team, away_team)
+                    if nfl_pro_uuid:
+                        logger.info(f"Found live game: {name} (ESPN: {espn_id}, NFL Pro: {nfl_pro_uuid[:8]})")
+                    else:
+                        logger.info(f"Found live game: {name} (ESPN: {espn_id}, NFL Pro: not mapped)")
+                    
+                    return (nfl_pro_uuid, espn_id)
+                
                 logger.info(f"Found live game: {name} (ESPN: {espn_id})")
-                return (None, espn_id)  # Would need mapping for NFL Pro UUID
+                return (None, espn_id)
         
         # Check for upcoming
         for event in data.get('events', []):

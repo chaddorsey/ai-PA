@@ -23,6 +23,18 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Force template reloading (don't cache templates)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.jinja_env.auto_reload = True
+
+# Disable caching for development
+@app.after_request
+def add_header(response):
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 # Configuration
 # For local dev, default to localhost. Docker uses env vars to override.
 INSIGHT_ENGINE_URL = os.environ.get('INSIGHT_ENGINE_URL', 'http://localhost:5131')
@@ -42,7 +54,9 @@ def index():
 @app.route('/simple')
 def simple():
     """Serve a simple test UI for debugging."""
-    return render_template('simple.html')
+    # Pass version timestamp to bust template caching
+    import time
+    return render_template('simple.html', version=int(time.time()))
 
 
 @app.route('/health', methods=['GET'])

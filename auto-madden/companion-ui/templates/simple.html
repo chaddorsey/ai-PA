@@ -11,11 +11,23 @@
             --text-secondary: #a0a0b0;
             --text-muted: #6a6a80;
             
-            /* Pre-play: Orange/Amber */
-            --preplay-bg: #2d1f0f;
-            --preplay-border: #f59e0b;
-            --preplay-accent: #fbbf24;
-            --preplay-text: #fcd34d;
+            /* Pre-snap: Orange/Amber */
+            --presnap-bg: #2d1f0f;
+            --presnap-border: #f59e0b;
+            --presnap-accent: #fbbf24;
+            --presnap-text: #fcd34d;
+            
+            /* Post-snap: Blue */
+            --postsnap-bg: #0f1a2d;
+            --postsnap-border: #3b82f6;
+            --postsnap-accent: #60a5fa;
+            --postsnap-text: #93c5fd;
+            
+            /* Big Play: Gold emphasis */
+            --bigplay-bg: #2d2a0f;
+            --bigplay-border: #eab308;
+            --bigplay-accent: #facc15;
+            --bigplay-text: #fef08a;
             
             /* Insights: Teal/Cyan */
             --insight-bg: #0f2027;
@@ -204,129 +216,188 @@
             margin-top: 12px;
         }
         
-        /* Pre-Play Metadata Box */
-        .preplay-box {
-            background: var(--preplay-bg);
-            border: 2px solid var(--preplay-border);
-            border-radius: 12px;
-            padding: 16px 20px;
-            margin-bottom: 16px;
-            opacity: 0;
-            transform: translateY(-10px);
-            transition: opacity 0.4s ease, transform 0.4s ease;
-            display: none;
-        }
-        
-        .preplay-box.visible {
-            display: block;
-            opacity: 1;
-            transform: translateY(0);
-        }
-        
-        .preplay-box.fading {
-            opacity: 0.2;
-            transition: opacity 4s ease;
-        }
-        
-        .preplay-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-        
-        .preplay-label {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--preplay-accent);
-            font-weight: 600;
-        }
-        
-        .preplay-icon {
-            color: var(--preplay-accent);
-        }
-        
-        .preplay-content {
-            display: flex;
-            justify-content: space-between;
-            gap: 20px;
-        }
-        
-        .preplay-offense, .preplay-defense {
-            flex: 1;
-        }
-        
-        .preplay-offense {
-            text-align: left;
-        }
-        
-        .preplay-defense {
-            text-align: right;
-        }
-        
-        .preplay-section-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-        }
-        
-        .preplay-value {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--preplay-text);
-        }
-        
-        .preplay-detail {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-        
-        .preplay-chip {
-            display: inline-block;
-            background: rgba(245, 158, 11, 0.25);
-            border: 2px solid var(--preplay-border);
-            border-radius: 6px;
-            padding: 8px 14px;
-            font-size: 28px;
-            font-weight: 800;
-            color: var(--preplay-text);
-            margin-right: 12px;
-            vertical-align: middle;
-        }
-        
-        .preplay-formation {
-            display: inline-block;
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--preplay-accent);
-            vertical-align: middle;
-        }
-        
-        .preplay-package-desc {
-            display: block;
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 6px;
-        }
-        
-        .preplay-divider {
-            width: 1px;
-            background: rgba(245, 158, 11, 0.3);
-            margin: 0 10px;
-        }
-        
         /* Play Summary */
         .play-summary {
             background: var(--bg-secondary);
             border-radius: 8px;
             padding: 12px 16px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
             font-size: 15px;
             color: var(--text-secondary);
             min-height: 40px;
+        }
+        
+        /* ============================================
+           ANALYSIS PANEL - Pre-snap (orange) / Post-snap (blue)
+           ============================================ */
+        .analysis-panel {
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            opacity: 0;
+            transform: translateY(-8px);
+            transition: all 0.35s ease;
+            display: none;
+        }
+        
+        .analysis-panel.visible {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .analysis-panel.fading {
+            opacity: 0.15;
+            transition: opacity 4s ease;
+        }
+        
+        /* Pre-snap mode (orange) */
+        .analysis-panel.presnap {
+            background: var(--presnap-bg);
+            border: 2px solid var(--presnap-border);
+        }
+        
+        .analysis-panel.presnap .analysis-label {
+            color: var(--presnap-accent);
+        }
+        
+        .analysis-panel.presnap .analysis-value {
+            color: var(--presnap-text);
+        }
+        
+        /* Post-snap mode (blue) */
+        .analysis-panel.postsnap {
+            background: var(--postsnap-bg);
+            border: 2px solid var(--postsnap-border);
+        }
+        
+        .analysis-panel.postsnap .analysis-label {
+            color: var(--postsnap-accent);
+        }
+        
+        .analysis-panel.postsnap .analysis-value {
+            color: var(--postsnap-text);
+        }
+        
+        /* Big Play emphasis */
+        .analysis-panel.bigplay {
+            background: var(--bigplay-bg);
+            border: 3px solid var(--bigplay-border);
+            box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+        }
+        
+        .analysis-panel.bigplay .analysis-label {
+            color: var(--bigplay-accent);
+        }
+        
+        .analysis-panel.bigplay .analysis-value {
+            color: var(--bigplay-text);
+        }
+        
+        .analysis-panel.bigplay .bigplay-badge {
+            display: inline-block;
+            background: var(--bigplay-accent);
+            color: #000;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Analysis panel header */
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .analysis-mode-label {
+            font-weight: 600;
+        }
+        
+        /* Analysis content - two columns */
+        .analysis-content {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        
+        .analysis-side {
+            flex: 1;
+        }
+        
+        .analysis-side.offense {
+            text-align: left;
+        }
+        
+        .analysis-side.defense {
+            text-align: right;
+        }
+        
+        .analysis-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        
+        .analysis-row {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 2px;
+        }
+        
+        .analysis-side.defense .analysis-row {
+            justify-content: flex-end;
+        }
+        
+        .analysis-value {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        
+        .analysis-value.primary {
+            font-size: 22px;
+            font-weight: 800;
+        }
+        
+        .analysis-detail {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        
+        /* Stats row for post-snap */
+        .analysis-stats {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+        
+        .stat-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            color: var(--text-muted);
         }
         
         /* Control buttons */
@@ -584,9 +655,9 @@
         }
         
         .pref-option input:checked + label {
-            background: var(--preplay-bg);
-            color: var(--preplay-text);
-            border-color: var(--preplay-border);
+            background: var(--presnap-bg);
+            color: var(--presnap-text);
+            border-color: var(--presnap-border);
         }
         
         .pref-option label:hover {
@@ -609,13 +680,13 @@
     <!-- Settings Panel -->
     <div class="settings-panel" id="settingsPanel">
         <div class="settings-header">
-            <span class="settings-title">⚙️ Settings</span>
+            <span class="settings-title">Settings</span>
             <button class="settings-close" onclick="closeSettings()">×</button>
         </div>
         
-        <!-- Delay Control -->
+        <!-- Broadcast Delay -->
         <div class="settings-section">
-            <div class="settings-section-title">📺 Broadcast Delay</div>
+            <div class="settings-section-title">Broadcast Delay</div>
             <div class="delay-control-group">
                 <div class="delay-label">
                     <span>Sync with TV</span>
@@ -633,66 +704,66 @@
             </div>
         </div>
         
-        <!-- Pre-Play Preferences -->
+        <!-- Pre-Snap Offset -->
         <div class="settings-section">
-            <div class="settings-section-title">🏈 Pre-Play Info</div>
+            <div class="settings-section-title">Pre-Snap Timing</div>
+            <div class="delay-control-group">
+                <div class="delay-label">
+                    <span>Show before snap</span>
+                    <span class="delay-value-display" id="presnap-offset-display">5s</span>
+                </div>
+                <div class="delay-buttons">
+                    <button class="delay-btn" onclick="adjustPresnapOffset(-1)">−1</button>
+                    <button class="delay-btn" onclick="adjustPresnapOffset(1)">+1</button>
+                </div>
+                <div class="settings-info">
+                    How many seconds before the snap to show pre-play info.
+                </div>
+            </div>
+        </div>
+        
+        <!-- Analysis Panel Preferences -->
+        <div class="settings-section">
+            <div class="settings-section-title">Analysis Display</div>
             
             <div class="pref-group">
-                <div class="pref-label">Personnel</div>
+                <div class="pref-label">Pre-Snap Info</div>
                 <div class="pref-options">
                     <div class="pref-option">
-                        <input type="radio" name="pref-personnel" id="personnel-always" value="always" checked>
-                        <label for="personnel-always">Always</label>
+                        <input type="radio" name="pref-presnap" id="presnap-always" value="always" checked>
+                        <label for="presnap-always">Always</label>
                     </div>
                     <div class="pref-option">
-                        <input type="radio" name="pref-personnel" id="personnel-often" value="often">
-                        <label for="personnel-often">Often</label>
+                        <input type="radio" name="pref-presnap" id="presnap-key" value="key">
+                        <label for="presnap-key">Key Plays</label>
                     </div>
                     <div class="pref-option">
-                        <input type="radio" name="pref-personnel" id="personnel-never" value="never">
-                        <label for="personnel-never">Never</label>
+                        <input type="radio" name="pref-presnap" id="presnap-never" value="never">
+                        <label for="presnap-never">Never</label>
                     </div>
                 </div>
             </div>
             
             <div class="pref-group">
-                <div class="pref-label">Formation</div>
+                <div class="pref-label">Post-Snap Analysis</div>
                 <div class="pref-options">
                     <div class="pref-option">
-                        <input type="radio" name="pref-formation" id="formation-always" value="always" checked>
-                        <label for="formation-always">Always</label>
+                        <input type="radio" name="pref-postsnap" id="postsnap-always" value="always">
+                        <label for="postsnap-always">Always</label>
                     </div>
                     <div class="pref-option">
-                        <input type="radio" name="pref-formation" id="formation-often" value="often">
-                        <label for="formation-often">Often</label>
+                        <input type="radio" name="pref-postsnap" id="postsnap-key" value="key" checked>
+                        <label for="postsnap-key">Key Plays</label>
                     </div>
                     <div class="pref-option">
-                        <input type="radio" name="pref-formation" id="formation-never" value="never">
-                        <label for="formation-never">Never</label>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="pref-group">
-                <div class="pref-label">Defenders in Box</div>
-                <div class="pref-options">
-                    <div class="pref-option">
-                        <input type="radio" name="pref-defense" id="defense-always" value="always">
-                        <label for="defense-always">Always</label>
-                    </div>
-                    <div class="pref-option">
-                        <input type="radio" name="pref-defense" id="defense-sometimes" value="sometimes" checked>
-                        <label for="defense-sometimes">Sometimes</label>
-                    </div>
-                    <div class="pref-option">
-                        <input type="radio" name="pref-defense" id="defense-never" value="never">
-                        <label for="defense-never">Never</label>
+                        <input type="radio" name="pref-postsnap" id="postsnap-never" value="never">
+                        <label for="postsnap-never">Never</label>
                     </div>
                 </div>
             </div>
             
             <div class="settings-info">
-                Pre-play info appears before each snap to help you learn formations and packages.
+                Pre-snap shows formation and personnel before the play. Post-snap shows coverage, routes, and timing after.
             </div>
         </div>
     </div>
@@ -721,32 +792,66 @@
         <div class="situation" id="situation">--</div>
     </div>
     
-    <!-- Pre-Play Metadata Box -->
-    <div class="preplay-box" id="preplay-box">
-        <div class="preplay-header">
-            <span class="preplay-label">📐 Pre-Snap Look</span>
-            <span class="preplay-icon">🏈</span>
+    <!-- Play Summary -->
+    <div class="play-summary" id="play">Waiting for play...</div>
+    
+    <!-- Analysis Panel (Pre-snap / Post-snap) -->
+    <div class="analysis-panel" id="analysis-panel">
+        <div class="analysis-header">
+            <span class="analysis-mode-label analysis-label" id="analysis-mode">PRE-SNAP</span>
+            <span class="bigplay-badge" id="bigplay-badge" style="display:none;">BIG PLAY</span>
         </div>
-        <div class="preplay-content">
-            <div class="preplay-offense">
-                <div class="preplay-section-label">Offense</div>
-                <div id="preplay-personnel">
-                    <span class="preplay-chip" id="personnel-chip">11</span>
-                    <span class="preplay-formation" id="personnel-detail">Shotgun</span>
+        <div class="analysis-content">
+            <div class="analysis-side offense">
+                <div class="analysis-label">OFFENSE</div>
+                <div class="analysis-row">
+                    <span class="analysis-value primary" id="off-personnel">11</span>
+                    <span class="analysis-value" id="off-formation">Shotgun</span>
                 </div>
-                <div class="preplay-package-desc" id="personnel-desc">3-wide spread</div>
+                <div class="analysis-detail" id="off-detail">1 RB, 1 TE, 3 WR</div>
             </div>
-            <div class="preplay-divider"></div>
-            <div class="preplay-defense">
-                <div class="preplay-section-label">Defense</div>
-                <div class="preplay-value" id="defense-box">6 in box</div>
-                <div class="preplay-detail" id="defense-detail">Standard</div>
+            <div class="analysis-side defense">
+                <div class="analysis-label">DEFENSE</div>
+                <div class="analysis-row">
+                    <span class="analysis-value" id="def-personnel">4 DL, 2 LB, 5 DB</span>
+                </div>
+                <div class="analysis-row">
+                    <span class="analysis-detail" id="def-package">Nickel</span>
+                    <span class="analysis-value" id="def-box">6 in box</span>
+                </div>
+            </div>
+        </div>
+        <!-- Post-snap stats (hidden by default) -->
+        <div class="analysis-stats" id="analysis-stats" style="display:none;">
+            <div class="stat-item">
+                <div class="stat-value analysis-value" id="stat-route">--</div>
+                <div class="stat-label">Route</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value analysis-value" id="stat-ttt">--</div>
+                <div class="stat-label">Time to Throw</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value analysis-value" id="stat-coverage">--</div>
+                <div class="stat-label">Coverage</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value analysis-value" id="stat-rushers">--</div>
+                <div class="stat-label">Rushers</div>
+            </div>
+        </div>
+        <!-- Big play extra stats -->
+        <div class="analysis-stats" id="bigplay-stats" style="display:none;">
+            <div class="stat-item">
+                <div class="stat-value analysis-value" id="stat-yards">--</div>
+                <div class="stat-label">Yards</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value analysis-value" id="stat-airyards">--</div>
+                <div class="stat-label">Air Yards</div>
             </div>
         </div>
     </div>
-    
-    <!-- Play Summary -->
-    <div class="play-summary" id="play">Waiting for play...</div>
     
     <!-- Controls -->
     <div class="controls">
@@ -764,27 +869,57 @@
     <script>
         let ws = null;
         let pollInterval = null;
-        let preplayTimeout = null;
-        let preplayFadeTimeout = null;
+        let analysisTimeout = null;
+        let analysisFadeTimeout = null;
         
         // Buffers for delay
         let stateBuffer = [];
         let insightBuffer = [];
-        let preplayBuffer = [];
+        let analysisBuffer = [];  // Combined pre/post snap data
         
         // User preferences
         let userPrefs = {
-            personnel: 'always',
-            formation: 'always',
-            defense: 'sometimes'
+            presnap: 'always',
+            postsnap: 'key'
         };
         
         // Current delay (seconds)
         let currentDelay = 0;
         
-        // Pre-play timing constants (ms)
-        const PREPLAY_SHOW_BEFORE_SNAP = 8000;  // Show 8s before fade starts
-        const PREPLAY_FADE_DURATION = 4000;     // Fade over 4s
+        // Pre-snap timing offset (seconds before play summary)
+        let presnapOffset = 5;
+        
+        // Analysis panel timing (ms)
+        const PRESNAP_DISPLAY_DURATION = 10000;   // Show pre-snap for 10s
+        const POSTSNAP_DISPLAY_DURATION = 8000;   // Show post-snap for 8s
+        const FADE_DURATION = 3000;
+        
+        // Defense package abbreviations
+        const DEF_PACKAGES = {
+            '4 DL, 2 LB, 5 DB': 'Nickel',
+            '4 DL, 1 LB, 6 DB': 'Dime',
+            '3 DL, 1 LB, 7 DB': 'Quarter',
+            '4 DL, 3 LB, 4 DB': 'Base 4-3',
+            '3 DL, 4 LB, 4 DB': 'Base 3-4',
+            '5 DL, 2 LB, 4 DB': '5-2',
+            '5 DL, 3 LB, 3 DB': 'Goal Line',
+            '4 DL, 4 LB, 3 DB': '4-4'
+        };
+        
+        // Personnel code from string like "1 RB, 1 TE, 3 WR" -> "11"
+        function getPersonnelCode(personnel) {
+            if (!personnel) return '??';
+            const rbMatch = personnel.match(/(\d+)\s*RB/i);
+            const teMatch = personnel.match(/(\d+)\s*TE/i);
+            const rb = rbMatch ? rbMatch[1] : '1';
+            const te = teMatch ? teMatch[1] : '1';
+            return rb + te;
+        }
+        
+        // Get defense package abbreviation
+        function getDefPackage(personnel) {
+            return DEF_PACKAGES[personnel] || 'Custom';
+        }
         
         // === Settings Panel ===
         function openSettings() {
@@ -799,30 +934,25 @@
         }
         
         function savePreferences() {
-            userPrefs.personnel = document.querySelector('input[name="pref-personnel"]:checked')?.value || 'always';
-            userPrefs.formation = document.querySelector('input[name="pref-formation"]:checked')?.value || 'always';
-            userPrefs.defense = document.querySelector('input[name="pref-defense"]:checked')?.value || 'sometimes';
+            userPrefs.presnap = document.querySelector('input[name="pref-presnap"]:checked')?.value || 'always';
+            userPrefs.postsnap = document.querySelector('input[name="pref-postsnap"]:checked')?.value || 'key';
             
-            // Save to localStorage
-            localStorage.setItem('autoMaddenPrefs', JSON.stringify(userPrefs));
-            
-            // Send to backend
-            fetch('http://localhost:5131/preferences', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(userPrefs)
-            }).catch(e => console.warn('Could not save preferences to backend:', e));
+            localStorage.setItem('autoMaddenPrefs', JSON.stringify({...userPrefs, presnapOffset, currentDelay}));
         }
         
         function loadPreferences() {
             const saved = localStorage.getItem('autoMaddenPrefs');
             if (saved) {
                 try {
-                    userPrefs = JSON.parse(saved);
+                    const data = JSON.parse(saved);
+                    userPrefs.presnap = data.presnap || 'always';
+                    userPrefs.postsnap = data.postsnap || 'key';
+                    presnapOffset = data.presnapOffset || 5;
+                    currentDelay = data.currentDelay || 0;
+                    
                     // Update UI
-                    document.getElementById(`personnel-${userPrefs.personnel}`)?.click();
-                    document.getElementById(`formation-${userPrefs.formation}`)?.click();
-                    document.getElementById(`defense-${userPrefs.defense}`)?.click();
+                    document.getElementById(`presnap-${userPrefs.presnap}`)?.click();
+                    document.getElementById(`postsnap-${userPrefs.postsnap}`)?.click();
                 } catch (e) {
                     console.warn('Could not load preferences:', e);
                 }
@@ -837,10 +967,16 @@
             console.log(`Delay now ${currentDelay}s`);
         }
         
+        function adjustPresnapOffset(delta) {
+            presnapOffset = Math.max(1, Math.min(15, presnapOffset + delta));
+            document.getElementById('presnap-offset-display').textContent = `${presnapOffset}s`;
+            savePreferences();
+        }
+        
         function updateDelayDisplay() {
             document.getElementById('delay-display').textContent = `${currentDelay}s`;
+            document.getElementById('presnap-offset-display').textContent = `${presnapOffset}s`;
             
-            // Disable minus buttons at zero
             const minusBtn = document.getElementById('btn-minus');
             const minus5Btn = document.getElementById('btn-minus-5');
             if (minusBtn) minusBtn.disabled = (currentDelay <= 0);
@@ -901,96 +1037,114 @@
             }
         }
         
-        // === Pre-Play Metadata ===
-        function showPreplay(preplayData) {
-            const box = document.getElementById('preplay-box');
+        // === Analysis Panel ===
+        function showPresnap(data) {
+            if (userPrefs.presnap === 'never') return;
             
-            // Clear any existing timeouts
-            if (preplayTimeout) clearTimeout(preplayTimeout);
-            if (preplayFadeTimeout) clearTimeout(preplayFadeTimeout);
+            const panel = document.getElementById('analysis-panel');
             
-            console.log('showPreplay called with:', preplayData);
+            // Clear timeouts
+            if (analysisTimeout) clearTimeout(analysisTimeout);
+            if (analysisFadeTimeout) clearTimeout(analysisFadeTimeout);
             
-            // Parse items array from the data
-            const items = preplayData.items || [];
-            const personnelItem = items.find(i => i.type === 'personnel');
-            const formationItem = items.find(i => i.type === 'formation');
-            const defenseItem = items.find(i => i.type === 'defense');
-            const situationItem = items.find(i => i.type === 'situation');
+            // Set to pre-snap mode
+            panel.className = 'analysis-panel presnap visible';
+            document.getElementById('analysis-mode').textContent = 'PRE-SNAP';
+            document.getElementById('bigplay-badge').style.display = 'none';
+            document.getElementById('analysis-stats').style.display = 'none';
+            document.getElementById('bigplay-stats').style.display = 'none';
             
-            // Check user preferences
-            const showPersonnel = userPrefs.personnel !== 'never' && personnelItem;
-            const showFormation = userPrefs.formation !== 'never' && formationItem;
-            const showDefense = userPrefs.defense !== 'never' && defenseItem;
+            // Update offense
+            const offPersonnel = data.offense?.personnel || '';
+            // Personnel could be "1 RB, 1 TE, 3 WR" (full) or "11" (code only)
+            const personnelCode = offPersonnel.match(/^\d+$/) ? offPersonnel : getPersonnelCode(offPersonnel);
+            document.getElementById('off-personnel').textContent = personnelCode || '--';
+            document.getElementById('off-formation').textContent = data.offense?.formation || '--';
+            // Use description if available, otherwise use full personnel string
+            document.getElementById('off-detail').textContent = data.offense?.description || offPersonnel || '';
             
-            if (!personnelItem && !formationItem && !defenseItem) {
-                console.log('No items to show');
-                return;
-            }
+            // Update defense
+            const defPersonnel = data.defense?.personnel || '';
+            document.getElementById('def-personnel').textContent = defPersonnel || '--';
+            document.getElementById('def-package').textContent = defPersonnel ? getDefPackage(defPersonnel) : '';
             
-            // Update content from items
-            if (personnelItem) {
-                // Extract code from value like "22 (Jumbo package)" -> "22"
-                const match = personnelItem.value.match(/^(\d+)/);
-                document.getElementById('personnel-chip').textContent = match ? match[1] : '';
-                // Extract description from value like "22 (Jumbo package)" -> "Jumbo package"
-                const descMatch = personnelItem.value.match(/\(([^)]+)\)/);
-                document.getElementById('personnel-desc').textContent = descMatch ? descMatch[1] : '';
-            }
+            const boxValue = data.defense?.box;
+            document.getElementById('def-box').textContent = boxValue ? `${boxValue} in box` : '--';
             
-            if (formationItem) {
-                // Formation goes to the right of the personnel chip
-                document.getElementById('personnel-detail').textContent = formationItem.value || '';
-            }
+            // Set fade timeout for pre-snap
+            analysisFadeTimeout = setTimeout(() => {
+                panel.classList.add('fading');
+            }, PRESNAP_DISPLAY_DURATION);
             
-            if (defenseItem) {
-                document.getElementById('defense-box').textContent = defenseItem.value || '';
-                document.getElementById('defense-detail').textContent = defenseItem.detail || '';
-            } else {
-                document.getElementById('defense-box').textContent = '';
-                document.getElementById('defense-detail').textContent = '';
-            }
+            analysisTimeout = setTimeout(() => {
+                panel.classList.remove('visible', 'fading', 'presnap', 'postsnap', 'bigplay');
+            }, PRESNAP_DISPLAY_DURATION + FADE_DURATION);
             
-            // Show the box with animation
-            box.classList.remove('fading');
-            box.classList.add('visible');
-            
-            // Start fade out after display time
-            preplayFadeTimeout = setTimeout(() => {
-                box.classList.add('fading');
-            }, PREPLAY_SHOW_BEFORE_SNAP);
-            
-            // Hide completely after fade
-            preplayTimeout = setTimeout(() => {
-                box.classList.remove('visible', 'fading');
-            }, PREPLAY_SHOW_BEFORE_SNAP + PREPLAY_FADE_DURATION);
+            console.log('Showing pre-snap:', data);
         }
         
-        function displayDelayedPreplay() {
-            if (preplayBuffer.length === 0) return;
+        function showPostsnap(data) {
+            const isBigPlay = data.isBigPlay || data.yards >= 15 || data.isScoring;
             
-            const delayMs = currentDelay * 1000;
-            const cutoffTime = Date.now() - delayMs;
+            if (userPrefs.postsnap === 'never') return;
+            if (userPrefs.postsnap === 'key' && !isBigPlay && !data.isKeyPlay) return;
             
-            const readyItems = [];
-            const remaining = [];
+            const panel = document.getElementById('analysis-panel');
             
-            for (const item of preplayBuffer) {
-                if (item.timestamp <= cutoffTime) {
-                    readyItems.push(item.preplay);
-                } else {
-                    remaining.push(item);
-                }
+            // Clear timeouts
+            if (analysisTimeout) clearTimeout(analysisTimeout);
+            if (analysisFadeTimeout) clearTimeout(analysisFadeTimeout);
+            
+            // Set to post-snap mode
+            panel.className = `analysis-panel postsnap visible ${isBigPlay ? 'bigplay' : ''}`;
+            document.getElementById('analysis-mode').textContent = 'POST-SNAP';
+            document.getElementById('bigplay-badge').style.display = isBigPlay ? 'inline-block' : 'none';
+            
+            // Update offense side for post-snap
+            document.getElementById('off-personnel').textContent = getPersonnelCode(data.offense?.personnel);
+            document.getElementById('off-formation').textContent = data.offense?.formation || '--';
+            document.getElementById('off-detail').textContent = data.offense?.personnel || '';
+            
+            // Update defense side for post-snap
+            const defPersonnel = data.defense?.personnel || '';
+            document.getElementById('def-personnel').textContent = defPersonnel;
+            document.getElementById('def-package').textContent = data.defense?.coverage || getDefPackage(defPersonnel);
+            document.getElementById('def-box').textContent = data.defense?.rushers ? `${data.defense.rushers} rushers` : '--';
+            
+            // Show post-snap stats
+            const statsDiv = document.getElementById('analysis-stats');
+            statsDiv.style.display = 'flex';
+            
+            document.getElementById('stat-route').textContent = data.route || '--';
+            document.getElementById('stat-ttt').textContent = data.timeToThrow ? `${data.timeToThrow.toFixed(2)}s` : '--';
+            document.getElementById('stat-coverage').textContent = data.defense?.coverage || '--';
+            document.getElementById('stat-rushers').textContent = data.defense?.rushers || '--';
+            
+            // Show big play stats if applicable
+            const bigplayStats = document.getElementById('bigplay-stats');
+            if (isBigPlay) {
+                bigplayStats.style.display = 'flex';
+                document.getElementById('stat-yards').textContent = data.yards || '--';
+                document.getElementById('stat-airyards').textContent = data.airYards ? data.airYards.toFixed(1) : '--';
+            } else {
+                bigplayStats.style.display = 'none';
             }
             
-            // Show the most recent ready preplay immediately
-            if (readyItems.length > 0) {
-                console.log('Showing preplay:', readyItems[readyItems.length - 1]);
-                showPreplay(readyItems[readyItems.length - 1]);
-            }
+            // Set fade timeout
+            analysisFadeTimeout = setTimeout(() => {
+                panel.classList.add('fading');
+            }, POSTSNAP_DISPLAY_DURATION);
             
-            preplayBuffer.length = 0;
-            preplayBuffer.push(...remaining);
+            analysisTimeout = setTimeout(() => {
+                panel.classList.remove('visible', 'fading', 'presnap', 'postsnap', 'bigplay');
+            }, POSTSNAP_DISPLAY_DURATION + FADE_DURATION);
+            
+            console.log('Showing post-snap:', data);
+        }
+        
+        function hideAnalysis() {
+            const panel = document.getElementById('analysis-panel');
+            panel.classList.remove('visible', 'fading', 'presnap', 'postsnap', 'bigplay');
         }
         
         // === Insights ===
@@ -1040,6 +1194,36 @@
             insightBuffer.push(...remaining);
         }
         
+        function displayDelayedAnalysis() {
+            if (analysisBuffer.length === 0) return;
+            
+            const delayMs = currentDelay * 1000;
+            const cutoffTime = Date.now() - delayMs;
+            
+            const ready = [];
+            const remaining = [];
+            
+            for (const item of analysisBuffer) {
+                if (item.timestamp <= cutoffTime) {
+                    ready.push(item);
+                } else {
+                    remaining.push(item);
+                }
+            }
+            
+            // Process ready items
+            for (const item of ready) {
+                if (item.type === 'presnap') {
+                    showPresnap(item.data);
+                } else if (item.type === 'postsnap') {
+                    showPostsnap(item.data);
+                }
+            }
+            
+            analysisBuffer.length = 0;
+            analysisBuffer.push(...remaining);
+        }
+        
         // === WebSocket ===
         function connectWS() {
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -1066,14 +1250,63 @@
                     if (insightBuffer.length > 30) {
                         insightBuffer.shift();
                     }
-                } else if (data.type === 'preplay') {
-                    preplayBuffer.push({
-                        preplay: data.data,
+                } else if (data.type === 'presnap') {
+                    // Pre-snap data with timing info
+                    const playDuration = data.data.playDuration || 5;  // seconds
+                    const presnapTime = Date.now() - (playDuration * 1000) - (presnapOffset * 1000);
+                    
+                    analysisBuffer.push({
+                        type: 'presnap',
+                        data: data.data,
+                        timestamp: presnapTime  // Scheduled to show before play summary
+                    });
+                } else if (data.type === 'postsnap') {
+                    // Post-snap data comes with play summary
+                    analysisBuffer.push({
+                        type: 'postsnap',
+                        data: data.data,
                         timestamp: Date.now()
                     });
-                    if (preplayBuffer.length > 10) {
-                        preplayBuffer.shift();
+                } else if (data.type === 'preplay') {
+                    // Legacy preplay format - convert to presnap
+                    const items = data.data.items || [];
+                    const personnel = items.find(i => i.type === 'personnel');
+                    const formation = items.find(i => i.type === 'formation');
+                    const defense = items.find(i => i.type === 'defense');
+                    
+                    // Parse personnel value like "11 (3-wide spread)" into code and description
+                    let personnelCode = '';
+                    let personnelDesc = '';
+                    if (personnel?.value) {
+                        const match = personnel.value.match(/^(\d+)\s*\(([^)]+)\)/);
+                        if (match) {
+                            personnelCode = match[1];
+                            personnelDesc = match[2];
+                        } else {
+                            personnelCode = personnel.value;
+                        }
                     }
+                    
+                    // Parse defense value like "6 in box (Standard)"
+                    let defBox = '';
+                    if (defense?.value) {
+                        const boxMatch = defense.value.match(/^(\d+)/);
+                        defBox = boxMatch ? boxMatch[1] : defense.value;
+                    }
+                    
+                    // Show immediately for legacy format
+                    showPresnap({
+                        offense: {
+                            personnel: personnelCode,
+                            formation: formation?.value || 'Unknown',
+                            description: personnelDesc
+                        },
+                        defense: {
+                            personnel: '',  // Not available in legacy format
+                            box: defBox
+                        }
+                    });
+                    console.log('Showing legacy preplay as presnap:', personnelCode, formation?.value, defBox);
                 }
             };
             
@@ -1124,16 +1357,13 @@
             const select = document.getElementById('game-select');
             if (!select) return;
             
-            // Clear existing options (except placeholder)
             while (select.options.length > 1) {
                 select.remove(1);
             }
             
-            // Group games by status
             const liveGames = availableGames.filter(g => g.is_live);
             const scheduledGames = availableGames.filter(g => !g.is_live);
             
-            // Add live games first
             if (liveGames.length > 0) {
                 const liveGroup = document.createElement('optgroup');
                 liveGroup.label = '🔴 Live Now';
@@ -1147,7 +1377,6 @@
                 select.appendChild(liveGroup);
             }
             
-            // Add scheduled games
             if (scheduledGames.length > 0) {
                 const schedGroup = document.createElement('optgroup');
                 schedGroup.label = '📅 Upcoming/Other';
@@ -1160,7 +1389,6 @@
                 select.appendChild(schedGroup);
             }
             
-            // Re-select current game if it's in the list
             if (currentGameId) {
                 select.value = currentGameId;
             }
@@ -1172,18 +1400,16 @@
             console.log('Switching to game:', gameId);
             currentGameId = gameId;
             
-            // Clear buffers for clean transition
             stateBuffer = [];
             insightBuffer = [];
-            preplayBuffer = [];
+            analysisBuffer = [];
             
-            // Clear UI
             document.getElementById('score').textContent = 'Loading...';
             document.getElementById('situation').textContent = 'Switching games...';
             document.getElementById('play').textContent = 'Waiting for play...';
             document.getElementById('insights').innerHTML = '';
+            hideAnalysis();
             
-            // Notify insight engine about game switch
             try {
                 await fetch('http://localhost:5131/game/switch', {
                     method: 'POST',
@@ -1194,13 +1420,11 @@
                 console.warn('Could not notify insight engine:', e);
             }
             
-            // Restart with new game
             await startLive();
         }
         
         async function startLive() {
             if (!currentGameId) {
-                // Try to auto-select first available
                 await refreshGames();
                 if (availableGames.length > 0) {
                     currentGameId = availableGames.find(g => g.is_live)?.id || availableGames[0].id;
@@ -1248,27 +1472,17 @@
             loadPreferences();
             updateDelayDisplay();
             
-            // Fetch available games
             await refreshGames();
             
-            // Start polling
             setInterval(pollState, 3000);
-            
-            // Refresh game list every 60 seconds
             setInterval(refreshGames, 60000);
-            
-            // Process delayed items frequently
             setInterval(displayDelayedInsights, 500);
-            setInterval(displayDelayedPreplay, 500);
+            setInterval(displayDelayedAnalysis, 500);
             
-            // Connect WebSocket
             connectWS();
-            
-            // Initial state poll
             pollState();
         }
         
-        // Initialize on load
         init();
     </script>
 </body>

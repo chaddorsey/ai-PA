@@ -81,70 +81,76 @@ async def capture_nfl_pro_session() -> bool:
         # Use existing page or create new one
         page = context.pages[0] if context.pages else await context.new_page()
         
-        # Navigate to NFL Pro sign-in
-        print(f"📍 Navigating to: {NFL_PRO_CONFIG['login_url']}")
-        await page.goto(NFL_PRO_CONFIG['login_url'], wait_until='domcontentloaded')
-        
-        # Wait for page to settle
-        print("   Waiting for page to load...")
+        # First, try navigating directly to NFL Pro to check if already logged in
+        print(f"📍 Checking if already logged in to pro.nfl.com...")
+        await page.goto('https://pro.nfl.com/', wait_until='domcontentloaded')
         await asyncio.sleep(3)
         
-        print("\n" + "="*60)
-        print("👆 PLEASE LOG IN WITH YOUR NFL+ CREDENTIALS")
-        print("="*60)
-        print(f"\n📝 Note: {NFL_PRO_CONFIG['instructions']}")
-        print("\nWaiting for you to complete login...")
-        print("(The browser will stay open until you're logged in)")
-        print("(Press Ctrl+C to cancel)\n")
-        
-        # Wait for login to complete - give plenty of time for 2FA, etc.
+        current_url = page.url
         login_successful = False
-        max_wait_minutes = 15  # 15 minutes max
-        check_interval_seconds = 5  # Check every 5 seconds (less aggressive)
-        max_checks = (max_wait_minutes * 60) // check_interval_seconds
         
-        print("   You have up to 15 minutes to complete login.")
-        print("   Take your time with 2FA or any verification steps.\n")
+        # Check if already authenticated (not redirected to login)
+        on_login_page = any(
+            ind in current_url.lower() 
+            for ind in NFL_PRO_CONFIG['login_page_indicators']
+        )
         
-        seen_login_page = False
-        
-        for i in range(max_checks):
-            try:
-                current_url = page.url
-                
-                # Check if still on login page
-                still_on_login = any(
-                    ind in current_url.lower() 
-                    for ind in NFL_PRO_CONFIG['login_page_indicators']
-                )
-                
-                if still_on_login:
-                    seen_login_page = True
-                    if i % 4 == 0:
-                        print(f"   ⏳ On login page - please log in... ({i * check_interval_seconds}s)")
-                    await asyncio.sleep(check_interval_seconds)
-                    continue
-                
-                # Check for success - on pro.nfl.com and not on login page
-                if 'pro.nfl.com' in current_url and not still_on_login:
-                    # Only count as success if we saw the login page first
-                    if seen_login_page:
+        if 'pro.nfl.com' in current_url and not on_login_page:
+            # Already logged in! Just capture the session
+            print(f"\n✅ Already logged in! (URL: {current_url[:50]}...)")
+            login_successful = True
+        else:
+            # Need to log in - navigate to login page
+            print(f"   Not logged in. Redirecting to login page...")
+            await page.goto(NFL_PRO_CONFIG['login_url'], wait_until='domcontentloaded')
+            await asyncio.sleep(3)
+            
+            print("\n" + "="*60)
+            print("👆 PLEASE LOG IN WITH YOUR NFL+ CREDENTIALS")
+            print("="*60)
+            print(f"\n📝 Note: {NFL_PRO_CONFIG['instructions']}")
+            print("\nWaiting for you to complete login...")
+            print("(The browser will stay open until you're logged in)")
+            print("(Press Ctrl+C to cancel)\n")
+            
+            # Wait for login to complete
+            max_wait_minutes = 15
+            check_interval_seconds = 5
+            max_checks = (max_wait_minutes * 60) // check_interval_seconds
+            
+            print("   You have up to 15 minutes to complete login.")
+            print("   Take your time with 2FA or any verification steps.\n")
+            
+            for i in range(max_checks):
+                try:
+                    current_url = page.url
+                    
+                    # Check if still on login page
+                    still_on_login = any(
+                        ind in current_url.lower() 
+                        for ind in NFL_PRO_CONFIG['login_page_indicators']
+                    )
+                    
+                    if still_on_login:
+                        if i % 4 == 0:
+                            print(f"   ⏳ On login page - please log in... ({i * check_interval_seconds}s)")
+                        await asyncio.sleep(check_interval_seconds)
+                        continue
+                    
+                    # Check for success - on pro.nfl.com and not on login page
+                    if 'pro.nfl.com' in current_url and not still_on_login:
                         login_successful = True
                         print(f"\n✅ Login detected! (URL: {current_url[:50]}...)")
                         break
-                    else:
-                        # Give it a moment - might still be redirecting
-                        await asyncio.sleep(check_interval_seconds)
-                        continue
-                
-                if i % 5 == 0:
-                    print(f"   ⏳ Still waiting... ({i * check_interval_seconds}s)")
-                
-                await asyncio.sleep(check_interval_seconds)
-                
-            except Exception as e:
-                print(f"   ⚠️ Check error: {e}")
-                await asyncio.sleep(check_interval_seconds)
+                    
+                    if i % 5 == 0:
+                        print(f"   ⏳ Still waiting... ({i * check_interval_seconds}s)")
+                    
+                    await asyncio.sleep(check_interval_seconds)
+                    
+                except Exception as e:
+                    print(f"   ⚠️ Check error: {e}")
+                    await asyncio.sleep(check_interval_seconds)
         
         if login_successful:
             # Wait a moment to ensure all cookies are set

@@ -863,7 +863,7 @@ class DeliveryManager:
                 self.connected_clients.remove(client)
     
     def broadcast_preplay(self, preplay_data: dict):
-        """Broadcast pre-play metadata to all connected clients."""
+        """Broadcast pre-play metadata to all connected clients (legacy format)."""
         message = json.dumps({
             'type': 'preplay',
             'data': preplay_data
@@ -876,6 +876,39 @@ class DeliveryManager:
                 client.send(message)
             except Exception as e:
                 logger.error(f"Error sending preplay to client: {e}")
+                self.connected_clients.remove(client)
+    
+    def broadcast_presnap(self, presnap_data: dict):
+        """Broadcast pre-snap analysis to all connected clients."""
+        message = json.dumps({
+            'type': 'presnap',
+            'data': presnap_data
+        })
+        
+        off = presnap_data.get('offense', {})
+        logger.info(f"Broadcasting pre-snap: {off.get('personnel', '')} {off.get('formation', '')}")
+        
+        for client in self.connected_clients[:]:
+            try:
+                client.send(message)
+            except Exception as e:
+                logger.error(f"Error sending presnap to client: {e}")
+                self.connected_clients.remove(client)
+    
+    def broadcast_postsnap(self, postsnap_data: dict):
+        """Broadcast post-snap analysis to all connected clients."""
+        message = json.dumps({
+            'type': 'postsnap',
+            'data': postsnap_data
+        })
+        
+        logger.info(f"Broadcasting post-snap: yards={postsnap_data.get('yards', '?')}, coverage={postsnap_data.get('defense', {}).get('coverage', '?')}")
+        
+        for client in self.connected_clients[:]:
+            try:
+                client.send(message)
+            except Exception as e:
+                logger.error(f"Error sending postsnap to client: {e}")
                 self.connected_clients.remove(client)
 
 
@@ -1353,45 +1386,92 @@ class InsightGenerator:
 
         # Generate post-play analysis for every new_play event
         if change_type == 'new_play':
-            post_insight = self._generate_post_play_insight(change, state)
-            if post_insight:
-                insights.append(post_insight)
+            description = change.get('description', '')
+            data = change.get('data', {})
             
-            # Check for player-triggered NFL Pro insights on significant plays
+            # === NFL PRO INSIGHTS - PRIORITIZE OVER GENERIC TEMPLATES ===
+            # Trigger on: big plays, situational moments, or every ~4 plays
+            nfl_insight_delivered = False
+            
             if NFL_PRO_NARRATIVES_AVAILABLE and get_player_triggered_insight:
-                description = change.get('description', '')
-                data = change.get('data', {})
                 yards = data.get('yards', 0)
                 is_scoring = data.get('is_scoring', False) or 'touchdown' in description.lower()
-                is_big_play = yards >= 20 or is_scoring or data.get('is_turnover', False)
+                is_turnover = data.get('is_turnover', False) or any(x in description.lower() for x in ['intercept', 'fumble', 'turnover'])
+                is_big_play = yards >= 15 or is_scoring or is_turnover
                 
-                if is_big_play:
+                # Situational triggers - these deserve context
+                down = state.get('down', 1)
+                is_red_zone = state.get('is_red_zone', False)
+                is_third_down = down == 3
+                is_fourth_down = down == 4
+                is_key_moment = is_red_zone or is_third_down or is_fourth_down
+                
+                # Play counter for periodic insights
+                play_count = len(self.play_history)
+                periodic_trigger = (play_count % 4 == 0)  # Every 4th play
+                
+                should_trigger_nfl = is_big_play or is_key_moment or periodic_trigger
+                
+                if should_trigger_nfl:
                     # Extract player name from description
                     import re
                     player_match = re.search(r'([A-Z]\.[A-Za-z\-\']+)', description)
-                    if player_match:
-                        player_name = player_match.group(1)
-                        quarter = state.get('quarter', 1)
-                        
-                        # Determine situation for context
-                        situation = None
-                        if state.get('is_red_zone'):
-                            situation = 'red zone'
-                        elif state.get('down') == 3:
-                            situation = '3rd down'
-                        
-                        nfl_insight = get_player_triggered_insight(player_name, quarter, situation)
-                        if nfl_insight:
-                            insights.append(Insight(
-                                id=nfl_insight.get('id', str(uuid.uuid4())[:8]),
-                                insight_type='nfl_pro_player',
-                                priority=nfl_insight.get('priority', 7),
-                                timing='post_play',
-                                headline=f"📊 {nfl_insight.get('headline', '')[:50]}",
-                                body=nfl_insight.get('body', ''),
-                                ttl=30
-                            ))
-                            logger.debug(f"Added NFL Pro player insight for {player_name}")
+                    player_name = player_match.group(1) if player_match else None
+                    quarter = state.get('quarter', 1)
+                    
+                    # Determine situation for context
+                    situation = None
+                    if is_red_zone:
+                        situation = 'red zone'
+                    elif is_fourth_down:
+                        situation = '4th down'
+                    elif is_third_down:
+                        situation = '3rd down'
+                    elif is_scoring:
+                        situation = 'scoring'
+                    
+                    # Get both teams for strict filtering
+                    home_team = state.get('home_team', {}).get('abbreviation', '')
+                    away_team = state.get('away_team', {}).get('abbreviation', '')
+                    game_teams = [t for t in [home_team, away_team] if t]
+                    
+                    # Try player-specific insight first (STRICT team filtering)
+                    nfl_insight = None
+                    if player_name:
+                        nfl_insight = get_player_triggered_insight(
+                            player_name, quarter, situation, 
+                            game_teams=game_teams
+                        )
+                    
+                    # Fall back to team/situation insight if no player insight (STRICT team filtering)
+                    if not nfl_insight and get_contextual_narrative_insight:
+                        possession = state.get('possession', home_team)
+                        nfl_insight = get_contextual_narrative_insight(
+                            team=possession,
+                            is_redzone=is_red_zone,
+                            is_third_down=is_third_down,
+                            player=player_name,
+                            game_teams=game_teams
+                        )
+                    
+                    if nfl_insight:
+                        insights.append(Insight(
+                            id=nfl_insight.get('id', str(uuid.uuid4())[:8]),
+                            insight_type='nfl_pro_narrative',
+                            priority=nfl_insight.get('priority', 7),
+                            timing='post_play',
+                            headline=f"📊 {nfl_insight.get('headline', '')}",
+                            body=nfl_insight.get('body', ''),
+                            ttl=45
+                        ))
+                        nfl_insight_delivered = True
+                        logger.info(f"📊 NFL Pro insight: {nfl_insight.get('headline', '')[:40]}...")
+            
+            # Only use generic template if no NFL Pro insight was delivered
+            if not nfl_insight_delivered:
+                post_insight = self._generate_post_play_insight(change, state)
+                if post_insight:
+                    insights.append(post_insight)
             
             # Generate pre-play preview for the NEXT play situation
             pre_insight = self._generate_pre_play_insight(state)
@@ -1436,10 +1516,20 @@ class InsightGenerator:
             quarter = state.get('quarter', 1)
             # Get more insights for longer breaks
             count = 4 if break_type == 'halftime' else (2 if break_duration > 90 else 1)
+            
+            # Get BOTH teams from current game to STRICTLY filter insights
+            home_team_abbr = state.get('home_team', {}).get('abbreviation', '')
+            away_team_abbr = state.get('away_team', {}).get('abbreviation', '')
+            game_teams = [t for t in [home_team_abbr, away_team_abbr] if t]
+            
             try:
-                nfl_pro_insights = get_break_narrative_insights(break_type, quarter, count)
+                nfl_pro_insights = get_break_narrative_insights(
+                    break_type, quarter, count, 
+                    prefer_team=home_team_abbr,
+                    game_teams=game_teams
+                )
                 if nfl_pro_insights:
-                    logger.info(f"📊 Loaded {len(nfl_pro_insights)} NFL Pro narrative insights for break")
+                    logger.info(f"📊 Loaded {len(nfl_pro_insights)} NFL Pro narrative insights for {game_teams}")
             except Exception as e:
                 logger.debug(f"Could not load NFL Pro insights: {e}")
         
@@ -2765,46 +2855,255 @@ def receive_event():
     for insight in insights:
         delivery_manager.queue_insight(insight)
     
-    # === PRE-PLAY METADATA ===
-    # Generate and broadcast pre-play info for the upcoming play
-    # This happens after a play completes (before next snap)
-    preplay_sent = False
-    if change_type in ['play_complete', 'score_change', 'turnover', 'big_play', 'first_down']:
-        try:
-            # First check if pre-play data was provided directly (from NFL Pro polling)
-            preplay_result = data.get('preplay')
-            
-            if preplay_result and preplay_result.get('items'):
-                # Use the provided pre-play data
-                delivery_manager.broadcast_preplay(preplay_result)
-                preplay_sent = True
-                logger.debug("Using pre-play data from polling service")
-            elif PRE_PLAY_SERVICE_AVAILABLE and pre_play_service_instance:
-                # Generate from state (ESPN/simulator fallback)
-                play_data = _build_preplay_data_from_state(state, change)
+    # === PRE-PLAY / POST-SNAP ANALYSIS ===
+    # Generate and broadcast analysis data
+    presnap_sent = False
+    postsnap_sent = False
+    
+    if change_type in ['play_complete', 'new_play', 'score_change', 'turnover', 'big_play', 'first_down']:
+        current_down = state.get('down', 0)
+        
+        # Check if NFL Pro play data was provided (has rich pre/post data)
+        nfl_pro_play = data.get('nfl_pro_play') or data.get('play_data')
+        
+        if nfl_pro_play and isinstance(nfl_pro_play, dict) and nfl_pro_play.get('offense'):
+            # === NFL PRO DATA AVAILABLE - Rich analysis ===
+            try:
+                parsed = _parse_nfl_pro_play_data(nfl_pro_play)
                 
-                if play_data:
-                    preplay_result = process_pre_play(play_data)
+                # Send post-snap analysis (for the COMPLETED play)
+                if parsed.get('postsnap'):
+                    postsnap_data = parsed['postsnap']
+                    delivery_manager.broadcast_postsnap(postsnap_data)
+                    postsnap_sent = True
+                    logger.info(f"📊 Post-snap: {postsnap_data.get('defense', {}).get('coverage', 'N/A')}, {postsnap_data.get('yards', 0)} yards")
+                
+                # Send pre-snap analysis for UPCOMING play (with timing offset)
+                if current_down >= 1 and parsed.get('presnap'):
+                    presnap_data = parsed['presnap']
+                    delivery_manager.broadcast_presnap(presnap_data)
+                    presnap_sent = True
                     
-                    if preplay_result.get('items'):
+            except Exception as e:
+                logger.warning(f"Error parsing NFL Pro play data: {e}")
+        
+        else:
+            # === FALLBACK: ESPN/Simulator data ===
+            try:
+                # Generate ESPN-based post-snap analysis
+                description = change.get('description', '')
+                if description and change_type in ['play_complete', 'new_play']:
+                    espn_postsnap = _build_espn_postsnap(description, state, change)
+                    if espn_postsnap:
+                        delivery_manager.broadcast_postsnap(espn_postsnap)
+                        postsnap_sent = True
+                
+                # Check for legacy preplay format for NEXT play
+                if current_down >= 1:
+                    preplay_result = data.get('preplay')
+                    
+                    if preplay_result and preplay_result.get('items'):
                         delivery_manager.broadcast_preplay(preplay_result)
-                        preplay_sent = True
-        except Exception as e:
-            logger.warning(f"Error generating pre-play metadata: {e}")
+                        presnap_sent = True
+                    elif PRE_PLAY_SERVICE_AVAILABLE and pre_play_service_instance:
+                        play_data = _build_preplay_data_from_state(state, change)
+                        
+                        if play_data and play_data.get('down', 0) >= 1:
+                            preplay_result = process_pre_play(play_data)
+                            
+                            if preplay_result.get('items'):
+                                delivery_manager.broadcast_preplay(preplay_result)
+                                presnap_sent = True
+            except Exception as e:
+                logger.warning(f"Error generating analysis metadata: {e}")
 
     return jsonify({
         'status': 'ok',
         'insights_generated': len(insights),
-        'preplay_sent': preplay_sent
+        'presnap_sent': presnap_sent,
+        'postsnap_sent': postsnap_sent
     })
+
+
+def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parse NFL Pro play data into presnap and postsnap structures.
+    
+    NFL Pro provides rich data including:
+    - offense.personnel, offense.offenseFormation
+    - defense.personnel, defense.defendersInTheBox, defense.numberOfPassRushers
+    - defense.coverageType, defense.manZoneType
+    - passInfo.timeToThrow, passInfo.airYards, passInfo.wasPressure
+    - recInfo.route
+    - startGameClock, endGameClock (for play duration)
+    """
+    offense = play_data.get('offense', {}) or {}
+    defense = play_data.get('defense', {}) or {}
+    pass_info = play_data.get('passInfo', {}) or {}
+    rec_info = play_data.get('recInfo', {}) or {}
+    
+    # Calculate play duration from game clocks
+    start_clock = play_data.get('startGameClock', '')
+    end_clock = play_data.get('endGameClock', '')
+    play_duration = 5  # Default
+    
+    if start_clock and end_clock:
+        try:
+            def clock_to_seconds(clock_str):
+                parts = clock_str.split(':')
+                return int(parts[0]) * 60 + int(parts[1]) if len(parts) == 2 else 0
+            
+            start_secs = clock_to_seconds(start_clock)
+            end_secs = clock_to_seconds(end_clock)
+            play_duration = max(1, start_secs - end_secs)
+        except (ValueError, IndexError):
+            pass
+    
+    # Check for big play
+    play_desc = play_data.get('playDescription', '')
+    import re
+    yards_match = re.search(r'for (\d+) yard', play_desc)
+    yards = int(yards_match.group(1)) if yards_match else 0
+    
+    is_big_play = (
+        play_data.get('isBigPlay', False) or
+        play_data.get('isScoring', False) or
+        yards >= 15
+    )
+    
+    # Format coverage type nicely
+    coverage = defense.get('coverageType', '')
+    if coverage:
+        coverage = coverage.replace('COVER_', 'Cover ').replace('_', ' ')
+    
+    man_zone = defense.get('manZoneType', '')
+    if man_zone:
+        man_zone = 'Man' if 'MAN' in man_zone else 'Zone' if 'ZONE' in man_zone else ''
+    
+    return {
+        'presnap': {
+            'offense': {
+                'personnel': offense.get('personnel', ''),
+                'formation': offense.get('offenseFormation', ''),
+            },
+            'defense': {
+                'personnel': defense.get('personnel', ''),
+                'box': defense.get('defendersInTheBox', 0),
+            },
+            'playDuration': play_duration,
+        },
+        'postsnap': {
+            'offense': {
+                'personnel': offense.get('personnel', ''),
+                'formation': offense.get('offenseFormation', ''),
+            },
+            'defense': {
+                'personnel': defense.get('personnel', ''),
+                'coverage': f"{coverage} ({man_zone})" if man_zone else coverage,
+                'rushers': defense.get('numberOfPassRushers', 0),
+            },
+            'route': rec_info.get('route', ''),
+            'timeToThrow': pass_info.get('timeToThrow', 0),
+            'airYards': pass_info.get('airYards', 0),
+            'wasPressure': pass_info.get('wasPressure', False),
+            'yards': yards,
+            'isBigPlay': is_big_play,
+            'isScoring': play_data.get('isScoring', False),
+            'playType': play_data.get('playType', ''),
+            'playDuration': play_duration,
+        }
+    }
+
+
+def _build_espn_postsnap(description: str, state: Dict[str, Any], change: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Build a simplified post-snap analysis from ESPN play description.
+    
+    ESPN doesn't have detailed coverage/route info, but we can extract:
+    - Play type (run/pass)
+    - Yards gained
+    - Result (incomplete, sack, first down, touchdown)
+    - Key player involved
+    """
+    import re
+    
+    if not description:
+        return None
+    
+    desc_upper = description.upper()
+    
+    # Determine play type
+    if 'PASS' in desc_upper or 'INCOMPLETE' in desc_upper or 'SACKED' in desc_upper:
+        play_type = 'pass'
+    elif 'PUNT' in desc_upper or 'KICKS' in desc_upper or 'FIELD GOAL' in desc_upper:
+        play_type = 'special'
+        return None  # Skip special teams for post-snap analysis
+    else:
+        play_type = 'run'
+    
+    # Extract yards
+    yards = 0
+    yards_match = re.search(r'FOR (\d+) YARD', desc_upper)
+    if yards_match:
+        yards = int(yards_match.group(1))
+    elif 'NO GAIN' in desc_upper:
+        yards = 0
+    elif 'LOSS OF' in desc_upper:
+        loss_match = re.search(r'LOSS OF (\d+)', desc_upper)
+        if loss_match:
+            yards = -int(loss_match.group(1))
+    
+    # Determine result
+    result = 'gain'
+    if 'INCOMPLETE' in desc_upper:
+        result = 'incomplete'
+        yards = 0
+    elif 'SACKED' in desc_upper:
+        result = 'sack'
+    elif 'TOUCHDOWN' in desc_upper:
+        result = 'touchdown'
+    elif 'INTERCEPTION' in desc_upper or 'INTERCEPTED' in desc_upper:
+        result = 'interception'
+    elif 'FUMBLE' in desc_upper:
+        result = 'fumble'
+    elif 'FIRST DOWN' in desc_upper or yards >= state.get('distance', 10):
+        result = 'first_down'
+    
+    # Check for big play
+    is_big = yards >= 15 or result in ['touchdown', 'interception', 'fumble']
+    
+    # Get home/away for display
+    home_abbr = state.get('home_team', {}).get('abbreviation', 'HOME')
+    away_abbr = state.get('away_team', {}).get('abbreviation', 'AWAY')
+    possession = state.get('possession', home_abbr)
+    defending = away_abbr if possession == home_abbr else home_abbr
+    
+    return {
+        'playType': play_type,
+        'result': result,
+        'yards': yards,
+        'isBigPlay': is_big,
+        'isScoring': result == 'touchdown',
+        'possession': possession,
+        'defending': defending,
+        'offense': {
+            'route': '',  # Not available from ESPN
+            'timeToThrow': 0,  # Not available from ESPN
+        },
+        'defense': {
+            'coverage': '',  # Not available from ESPN
+            'rushers': 0,  # Not available from ESPN
+        },
+        'description': description[:100],  # Truncated description
+    }
 
 
 def _build_preplay_data_from_state(state: Dict[str, Any], change: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Build pre-play data from ESPN/simulator state for the upcoming play.
     
-    In production with NFL Pro data, this would use the detailed play API.
-    For now, we generate estimated data from the game state.
+    Parses formation from ESPN play descriptions like "(Shotgun)" or "(No Huddle, Shotgun)".
+    Personnel is estimated based on situation since ESPN doesn't provide it.
     """
     if not state:
         return None
@@ -2826,40 +3125,81 @@ def _build_preplay_data_from_state(state: Dict[str, Any], change: Dict[str, Any]
     is_redzone = state.get('in_redzone', False)
     if not is_redzone and yard_line:
         try:
-            # Check if yard number suggests red zone
             parts = yard_line.split()
             if len(parts) >= 2:
                 yard_num = int(parts[-1])
-                # If we're on opponent's side and within 20
                 if yard_num <= 20 and not 'own' in yard_line.lower():
                     is_redzone = True
         except (ValueError, IndexError):
             pass
     
-    # Estimate personnel and formation based on situation
-    # These are educated guesses - real data would come from NFL Pro
+    # === PARSE FORMATION FROM PLAY DESCRIPTION ===
+    # ESPN provides formation in parentheses, e.g., "(Shotgun)", "(No Huddle, Shotgun)"
+    play_desc = change.get('description', '') or state.get('last_play', '')
+    
+    # Formation mapping from ESPN terms to our terms
+    formation_map = {
+        'shotgun': 'SHOTGUN',
+        'under center': 'UNDER_CENTER',
+        'pistol': 'PISTOL',
+        'wildcat': 'WILDCAT',
+        'empty': 'EMPTY',
+        'i-form': 'I_FORM',
+        'singleback': 'SINGLEBACK',
+        'jumbo': 'JUMBO',
+        'goal line': 'GOAL_LINE',
+    }
+    
+    # Extract formation from parentheses at start of play
+    off_formation = None
+    no_huddle = False
+    
+    import re
+    paren_match = re.match(r'\(([^)]+)\)', play_desc)
+    if paren_match:
+        paren_content = paren_match.group(1).lower()
+        
+        # Check for no huddle
+        if 'no huddle' in paren_content:
+            no_huddle = True
+        
+        # Find formation
+        for espn_term, our_term in formation_map.items():
+            if espn_term in paren_content:
+                off_formation = our_term
+                break
+    
+    # Default formation if not found
+    if not off_formation:
+        off_formation = 'SHOTGUN'  # Most common modern formation
+    
+    # === ESTIMATE PERSONNEL BASED ON SITUATION ===
+    # ESPN doesn't provide personnel, so we estimate based on context
     if is_redzone and yards_to_go <= 3:
-        # Goal line / short yardage - likely heavy package
-        off_personnel = '2 RB, 2 TE, 1 WR'
-        off_formation = 'I_FORM'
+        off_personnel = '2 RB, 2 TE, 1 WR'  # 22 personnel - goal line
         defenders_in_box = 8
+    elif off_formation == 'JUMBO' or off_formation == 'GOAL_LINE':
+        off_personnel = '2 RB, 2 TE, 1 WR'  # Heavy package
+        defenders_in_box = 8
+    elif off_formation == 'EMPTY':
+        off_personnel = '1 RB, 0 TE, 4 WR'  # 10 personnel
+        defenders_in_box = 4
     elif down == 3 and yards_to_go >= 7:
-        # 3rd and long - spread formation
-        off_personnel = '1 RB, 1 TE, 3 WR'
-        off_formation = 'SHOTGUN'
+        off_personnel = '1 RB, 1 TE, 3 WR'  # 11 personnel - passing
         defenders_in_box = 5
-    elif down == 1:
-        # First down - balanced
-        off_personnel = '1 RB, 1 TE, 3 WR'
-        off_formation = 'SHOTGUN'
-        defenders_in_box = 6
+    elif down == 1 or yards_to_go <= 2:
+        off_personnel = '1 RB, 2 TE, 2 WR'  # 12 personnel - balanced
+        defenders_in_box = 7
     else:
-        # Default
-        off_personnel = '1 RB, 1 TE, 3 WR'
-        off_formation = 'SHOTGUN'
+        off_personnel = '1 RB, 1 TE, 3 WR'  # 11 personnel - default
         defenders_in_box = 6
     
     possession_team = state.get('possession', state.get('home_team', {}).get('abbreviation', 'OFF'))
+    
+    # Add no huddle indicator to formation if applicable
+    formation_display = off_formation
+    if no_huddle:
+        formation_display = f"NO_HUDDLE_{off_formation}"
     
     return {
         'play_id': f"pre-{time.time():.0f}",
@@ -2868,10 +3208,11 @@ def _build_preplay_data_from_state(state: Dict[str, Any], change: Dict[str, Any]
         'yards_to_go': yards_to_go,
         'yard_line': yard_line or f'{possession_team} 35',
         'off_personnel': off_personnel,
-        'off_formation': off_formation,
+        'off_formation': formation_display,
         'defenders_in_box': defenders_in_box,
         'is_redzone': is_redzone,
         'possession_team': possession_team,
+        'no_huddle': no_huddle,
     }
 
 
