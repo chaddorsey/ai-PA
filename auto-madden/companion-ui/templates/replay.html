@@ -171,6 +171,21 @@
             color: var(--success);
         }
         
+        .mode-select {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            outline: none;
+        }
+        
+        .mode-select:hover {
+            border-color: rgba(255,255,255,0.4);
+        }
+        
         .settings-btn {
             background: var(--bg-tertiary);
             border: 1px solid rgba(255,255,255,0.1);
@@ -214,13 +229,90 @@
             margin-top: 12px;
         }
         
-        .play-number {
+        /* Play navigation */
+        .play-nav {
             position: absolute;
-            bottom: 12px;
+            bottom: 10px;
             right: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .nav-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-secondary);
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .nav-btn:hover {
+            background: rgba(255,255,255,0.2);
+            color: var(--text-primary);
+        }
+        
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        .play-number {
             font-size: 12px;
             color: var(--text-muted);
             font-weight: 500;
+        }
+        
+        .sim-clock {
+            position: absolute;
+            bottom: 12px;
+            left: 16px;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: monospace;
+            opacity: 0.7;
+        }
+        
+        /* Play summary container */
+        .play-summary-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
+        .sync-links {
+            position: absolute;
+            bottom: 8px;
+            right: 12px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        
+        .sync-link {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-decoration: none;
+            opacity: 0.7;
+            transition: all 0.15s ease;
+        }
+        
+        .sync-link:hover {
+            color: var(--accent);
+            opacity: 1;
+        }
+        
+        .sync-divider {
+            font-size: 10px;
+            color: var(--text-muted);
+            opacity: 0.4;
         }
         
         /* Kickoff Overlay */
@@ -303,6 +395,11 @@
         .analysis-panel.presnap {
             background: var(--presnap-bg);
             border: 2px solid var(--presnap-border);
+            transition: opacity 2s ease-out;
+        }
+        
+        .analysis-panel.presnap.fading {
+            opacity: 0;
         }
         
         .analysis-panel.presnap .analysis-label { color: var(--presnap-accent); }
@@ -311,6 +408,12 @@
         .analysis-panel.postsnap {
             background: var(--postsnap-bg);
             border: 2px solid var(--postsnap-border);
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
         
         .analysis-panel.postsnap .analysis-label { color: var(--postsnap-accent); }
@@ -620,6 +723,11 @@
         </div>
         
         <div class="header-right">
+            <select class="mode-select" id="replay-mode-select" title="Replay Mode">
+                <option value="full">Full Replay</option>
+                <option value="jump">Play Jump</option>
+            </select>
+            
             <div class="video-link-container">
                 <a href="#" id="video-link" class="video-link" target="_blank">📺 Game Video</a>
                 <button class="copy-btn" id="copy-video-btn" title="Copy video URL">📋</button>
@@ -637,7 +745,15 @@
     <div class="game-box">
         <div class="score" id="score">--- 0 - 0 ---</div>
         <div class="situation" id="situation">Pre-Game</div>
-        <div class="play-number" id="play-number">Play #0</div>
+        
+        <!-- Play navigation and number -->
+        <div class="play-nav">
+            <button class="nav-btn" id="prev-play-btn" title="Previous play (←)">&lt;</button>
+            <span class="play-number" id="play-number">Play #0</span>
+            <button class="nav-btn" id="next-play-btn" title="Next play (→)">&gt;</button>
+        </div>
+        
+        <div class="sim-clock" id="sim-clock" title="Simulation time since kickoff">⏱️ 0:00</div>
         
         <!-- Kickoff Overlay (shown before game starts) -->
         <div class="kickoff-overlay" id="kickoff-overlay">
@@ -647,7 +763,14 @@
     </div>
     
     <!-- Play Summary -->
-    <div class="play-summary" id="play">Waiting for kickoff...</div>
+    <div class="play-summary-container">
+        <div class="play-summary" id="play">Waiting for kickoff...</div>
+        <div class="sync-links">
+            <a href="#" class="sync-link" id="sync-snap-link" title="Sync to snap (S)">Snap</a>
+            <span class="sync-divider">|</span>
+            <a href="#" class="sync-link" id="sync-whistle-link" title="Sync to whistle (W)">Whistle</a>
+        </div>
+    </div>
     
     <!-- Analysis Panel -->
     <div class="analysis-panel" id="analysis-panel">
@@ -675,20 +798,7 @@
         </div>
     </div>
     
-    <!-- Replay Controls -->
-    <div class="replay-controls">
-        <button class="next-play-btn" id="next-play-btn" disabled>
-            Next Play →
-        </button>
-        <div class="sync-controls">
-            <button class="sync-btn" id="sync-snap-btn" title="Sync to snap">
-                Sync Snap <kbd>S</kbd>
-            </button>
-            <button class="sync-btn" id="sync-whistle-btn" title="Sync to whistle">
-                Sync Whistle <kbd>W</kbd>
-            </button>
-        </div>
-    </div>
+    <!-- Old replay controls removed - now using inline nav and sync links -->
     
     <!-- Insights -->
     <div class="insights-header">
@@ -765,11 +875,39 @@
         let ws = null;
         let pollInterval = null;
         
+        // Replay mode: 'full' = time-synced, 'jump' = manual navigation
+        let replayMode = 'full';
+        
+        // Pre-calculated play timings (seconds from game start)
+        let playTimings = [];
+        let pendingPlayIndex = 0;
+        
+        // Display state machine
+        let displayState = 'idle'; // 'idle', 'presnap', 'during_play', 'postsnap', 'jumped'
+        let currentDisplayedPlay = null;
+        let prensapFadeTimeout = null;
+        let postsnapClearTimeout = null;
+        
+        // Timing constants (in seconds)
+        const PRESNAP_FADE_DELAY = 2;  // Fade presnap 2s after snap
+        const POSTSNAP_DURATION = 10;  // Show postsnap for 10s
+        const DEFAULT_PLAY_DURATION = 6; // Estimate for play length
+        const MAX_PLAY_GAP = 50;  // Cap gaps at 50s (skip TV timeouts)
+        const MIN_PLAY_GAP = 20;  // Minimum 20s between plays
+        
         // ============================================
         // INITIALIZATION
         // ============================================
         
         async function init() {
+            console.log('🏈 Replay Init:', { gameId, season, week, homeTeam, awayTeam });
+            
+            // Validate we have required params
+            if (!gameId) {
+                document.getElementById('play').textContent = 'Error: No game selected. Go back and select a game.';
+                return;
+            }
+            
             // Set game title
             document.getElementById('game-title').textContent = `${awayTeam} @ ${homeTeam}`;
             document.getElementById('score').textContent = `${awayTeam} 0 - ${homeTeam} 0`;
@@ -808,18 +946,22 @@
         
         async function loadGameData() {
             try {
-                const resp = await fetch(`${SIMULATOR_URL}/replay/plays?game_id=${gameId}`);
+                console.log(`Loading plays for game ${gameId} (season ${season})...`);
+                const resp = await fetch(`${SIMULATOR_URL}/replay/plays?game_id=${gameId}&season=${season}`);
                 const data = await resp.json();
                 
                 if (data.plays && data.plays.length > 0) {
                     plays = data.plays;
-                    console.log(`Loaded ${plays.length} plays`);
+                    console.log(`✅ Loaded ${plays.length} plays`);
                     document.getElementById('next-play-btn').disabled = false;
+                    document.getElementById('play').textContent = `${plays.length} plays loaded. Press Kickoff when the ball is kicked!`;
                 } else {
-                    console.error('No plays found');
+                    console.error('No plays found in response:', data);
+                    document.getElementById('play').textContent = 'No plays found for this game. Try downloading first.';
                 }
             } catch (e) {
                 console.error('Error loading game data:', e);
+                document.getElementById('play').textContent = `Error loading game: ${e.message}`;
             }
         }
         
@@ -841,6 +983,8 @@
         // ============================================
         
         function kickoff() {
+            console.log('🏈 KICKOFF clicked!');
+            
             isKickedOff = true;
             isPlaying = true;
             gameStartTime = Date.now();
@@ -849,27 +993,315 @@
             document.getElementById('kickoff-overlay').classList.add('hidden');
             document.getElementById('play-pause-btn').classList.add('playing');
             document.getElementById('situation').textContent = 'Q1 · 15:00';
+            document.getElementById('play').textContent = 'Game started!';
             
-            // Start simulation
+            // Update clock display immediately
+            updateSimClockDisplay();
+            
+            // Start simulation timer
             startSimulation();
+            console.log('⏱️ Simulation started, isPlaying:', isPlaying, 'isKickedOff:', isKickedOff);
             
             // Notify insight engine
             notifyGameStart();
+            
+            // Automatically show the first play (kickoff)
+            if (plays.length > 0) {
+                console.log('📺 Showing first play...');
+                goToNextPlay();
+            }
         }
         
         // ============================================
         // SIMULATION
         // ============================================
         
-        function startSimulation() {
-            if (pollInterval) clearInterval(pollInterval);
+        function calculatePlayTimings() {
+            // Calculate when each play should be shown
+            // Key insight: NFL+ replays have commercials CUT OUT
+            // So we need to compress the timeline by removing commercial gaps
+            playTimings = [];
             
-            // Update simulation clock every second
+            // Thresholds for detecting breaks
+            const COMMERCIAL_THRESHOLD = 55;  // Gaps > 55s are commercials
+            const HALFTIME_THRESHOLD = 600;   // Gaps > 10min are halftime
+            const NORMAL_PLAY_GAP = 40;       // Normal time between plays
+            const POST_SCORE_GAP = 45;        // Slightly longer after scores
+            const HALFTIME_COMPRESSED = 120;  // Compressed halftime (2 min)
+            
+            // First pass: collect raw timestamps and detect quarters
+            let rawTimings = [];
+            let hasRealTime = false;
+            let lastRealTime = 0;
+            
+            for (let i = 0; i < plays.length; i++) {
+                const play = plays[i];
+                const quarter = play.quarter || 1;
+                const clockStr = play.start_clock || '15:00';
+                const playType = play.play_type || '';
+                
+                let realSeconds = play.real_seconds_elapsed;
+                
+                if (realSeconds !== null && realSeconds !== undefined && !isNaN(realSeconds)) {
+                    hasRealTime = true;
+                    lastRealTime = realSeconds;
+                } else if (hasRealTime) {
+                    realSeconds = lastRealTime + NORMAL_PLAY_GAP;
+                    lastRealTime = realSeconds;
+                } else {
+                    const [mins, secs] = clockStr.split(':').map(Number);
+                    const secondsRemainingInQuarter = (mins || 0) * 60 + (secs || 0);
+                    const quarterOffset = (quarter - 1) * 900;
+                    const secondsIntoQuarter = 900 - secondsRemainingInQuarter;
+                    realSeconds = (quarterOffset + secondsIntoQuarter) * 2.5;
+                }
+                
+                rawTimings.push({
+                    index: i,
+                    rawSeconds: realSeconds,
+                    quarter: quarter,
+                    clock: clockStr,
+                    playType: playType,
+                    hasRealTime: play.real_seconds_elapsed != null
+                });
+            }
+            
+            // Second pass: compress timeline by removing commercial breaks
+            let compressedTime = 0;
+            let totalCommercialTime = 0;
+            let commercialCount = 0;
+            let halftimeDetected = false;
+            
+            console.log('%c📺 Commercial Break Detection', 'color: #ff9800; font-weight: bold; font-size: 14px');
+            console.log('━'.repeat(60));
+            
+            for (let i = 0; i < rawTimings.length; i++) {
+                const current = rawTimings[i];
+                
+                if (i === 0) {
+                    // First play - start with minimal offset
+                    compressedTime = Math.min(current.rawSeconds, 20);
+                } else {
+                    const prev = rawTimings[i - 1];
+                    let gap = current.rawSeconds - prev.rawSeconds;
+                    let breakType = null;
+                    let compressedGap = gap;
+                    
+                    if (gap >= HALFTIME_THRESHOLD) {
+                        // Halftime break
+                        breakType = '🏈 HALFTIME';
+                        compressedGap = HALFTIME_COMPRESSED;
+                        halftimeDetected = true;
+                    } else if (gap > COMMERCIAL_THRESHOLD) {
+                        // Commercial break
+                        breakType = '📺 Commercial';
+                        commercialCount++;
+                        
+                        // Use slightly longer gap after kickoffs (post-score)
+                        if (prev.playType === 'kickoff' || prev.playType === 'extra_point') {
+                            compressedGap = POST_SCORE_GAP;
+                        } else {
+                            compressedGap = NORMAL_PLAY_GAP;
+                        }
+                    } else if (gap < 0) {
+                        // Same timestamp (TD + PAT, etc)
+                        compressedGap = 5;
+                    }
+                    
+                    if (breakType) {
+                        const removed = gap - compressedGap;
+                        totalCommercialTime += removed;
+                        const mins = Math.floor(gap / 60);
+                        const secs = Math.round(gap % 60);
+                        console.log(
+                            `${breakType} #${commercialCount}: ` +
+                            `Play ${i} (Q${current.quarter} ${current.clock}) - ` +
+                            `${mins}:${secs.toString().padStart(2,'0')} gap → ${compressedGap}s`
+                        );
+                    }
+                    
+                    compressedTime += compressedGap;
+                }
+                
+                playTimings.push({
+                    index: current.index,
+                    realSeconds: compressedTime,  // Compressed timeline (for simulation)
+                    gameSeconds: compressedTime,  // Alias
+                    rawSeconds: current.rawSeconds, // Original broadcast time
+                    quarter: current.quarter,
+                    clock: current.clock,
+                    hasRealTime: current.hasRealTime
+                });
+            }
+            
+            // Summary
+            console.log('━'.repeat(60));
+            const realTimeCount = rawTimings.filter(p => p.hasRealTime).length;
+            const lastPlay = playTimings[playTimings.length - 1];
+            const originalMins = (lastPlay.rawSeconds / 60).toFixed(1);
+            const compressedMins = (lastPlay.realSeconds / 60).toFixed(1);
+            const removedMins = (totalCommercialTime / 60).toFixed(1);
+            
+            console.log(`%c📊 Summary:`, 'font-weight: bold');
+            console.log(`   ${playTimings.length} plays (${realTimeCount} with real timestamps)`);
+            console.log(`   ${commercialCount} commercials detected${halftimeDetected ? ' + halftime' : ''}`);
+            console.log(`   ${removedMins} min of breaks removed`);
+            console.log(`   Original: ${originalMins} min → Compressed: ${compressedMins} min`);
+            console.log('%c✅ Timeline ready for commercial-free replay!', 'color: #4caf50; font-weight: bold');
+        }
+        
+        function startSimulation() {
+            console.log('⏱️ startSimulation() called');
+            
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                console.log('  Cleared existing interval');
+            }
+            
+            // Calculate when each play should appear
+            calculatePlayTimings();
+            pendingPlayIndex = currentPlay; // Start from current position
+            
+            console.log(`  Play timings calculated: ${playTimings.length} plays`);
+            console.log(`  pendingPlayIndex: ${pendingPlayIndex}, replayMode: ${replayMode}`);
+            
+            // Update simulation clock and check for plays to display
             pollInterval = setInterval(() => {
                 if (isPlaying && isKickedOff) {
                     simClock = (Date.now() - gameStartTime) / 1000;
+                    
+                    // Update sim clock display
+                    updateSimClockDisplay();
+                    
+                    // In Full Replay mode, auto-advance plays at correct times
+                    if (replayMode === 'full') {
+                        checkAndAdvancePlays();
+                    }
                 }
-            }, 1000);
+            }, 250); // Check 4x per second for smooth timing
+            
+            console.log('  Interval started:', pollInterval);
+        }
+        
+        function updateSimClockDisplay() {
+            const totalSeconds = Math.floor(simClock);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            document.getElementById('sim-clock').textContent = 
+                `⏱️ ${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        function checkAndAdvancePlays() {
+            if (pendingPlayIndex >= playTimings.length) return;
+            
+            const timing = playTimings[pendingPlayIndex];
+            const play = plays[timing.index];
+            
+            // Calculate key moments for this play
+            const presnapTime = timing.gameSeconds - presnapOffset;
+            const snapTime = timing.gameSeconds;
+            const whistleTime = getWhistleTime(timing.index);
+            
+            // Handle 'jumped' state - user navigated manually
+            // Resume normal flow when next play's pre-snap time arrives
+            if (displayState === 'jumped') {
+                // Check if we've reached the next play's pre-snap time
+                if (pendingPlayIndex < playTimings.length) {
+                    const nextTiming = playTimings[pendingPlayIndex];
+                    const nextPresnapTime = nextTiming.gameSeconds - presnapOffset;
+                    
+                    if (simClock >= nextPresnapTime) {
+                        // Time to show next play's pre-snap - clear jumped state
+                        clearPlaySummary();
+                        showPresnapForPlay(plays[nextTiming.index]);
+                        currentDisplayedPlay = plays[nextTiming.index];
+                        displayState = 'presnap';
+                        console.log(`🟠 Resuming normal flow: PRE-SNAP Play #${nextTiming.index + 1}`);
+                    }
+                }
+                return; // Don't process further while in jumped state
+            }
+            
+            // State transitions based on simulation clock
+            if (displayState === 'idle' || displayState === 'postsnap') {
+                // Check if time to show pre-snap
+                if (simClock >= presnapTime && simClock < snapTime) {
+                    clearPlaySummary(); // Clear previous play summary
+                    showPresnapForPlay(play);
+                    currentDisplayedPlay = play;
+                    displayState = 'presnap';
+                    
+                    // Update situation display (quarter, clock, down/distance)
+                    updateSituation(play);
+                    updatePlayNumber(timing.index + 1);
+                    
+                    console.log(`🟠 PRE-SNAP: Play #${timing.index + 1} at ${timing.clock}`);
+                }
+            }
+            
+            if (displayState === 'presnap') {
+                // Check if snap occurred
+                if (simClock >= snapTime) {
+                    // Start fading pre-snap, transition to during_play
+                    fadeOutPresnap();
+                    displayState = 'during_play';
+                    console.log(`⚪ SNAP: Play in progress...`);
+                }
+            }
+            
+            if (displayState === 'during_play') {
+                // Check if whistle (play complete)
+                if (simClock >= whistleTime) {
+                    // Show play summary and post-snap analysis
+                    showPlaySummary(play);
+                    showPostsnapForPlay(play);
+                    displayState = 'postsnap';
+                    currentPlay = timing.index + 1;
+                    pendingPlayIndex++;
+                    updatePlayNumber(currentPlay);
+                    updateNavButtons();
+                    sendPlayToEngine(play);
+                    console.log(`🔵 WHISTLE: ${play.play_description?.slice(0, 50)}...`);
+                    
+                    // Schedule post-snap to clear after 10s (unless next pre-snap comes first)
+                    schedulePostsnapClear();
+                }
+            }
+        }
+        
+        function getWhistleTime(playIndex) {
+            // Calculate when the play ends based on start_clock and end_clock
+            const play = plays[playIndex];
+            const startClock = play.start_clock || '15:00';
+            const endClock = play.end_clock || startClock;
+            
+            // Parse clocks to get play duration
+            const startSecs = parseClockToSeconds(startClock);
+            const endSecs = parseClockToSeconds(endClock);
+            let playDuration = startSecs - endSecs;
+            
+            if (playDuration <= 0 || playDuration > 60) {
+                playDuration = DEFAULT_PLAY_DURATION;
+            }
+            
+            const timing = playTimings[playIndex];
+            return timing.gameSeconds + playDuration;
+        }
+        
+        function parseClockToSeconds(clock) {
+            const [mins, secs] = (clock || '15:00').split(':').map(Number);
+            return (mins || 0) * 60 + (secs || 0);
+        }
+        
+        function schedulePostsnapClear() {
+            if (postsnapClearTimeout) clearTimeout(postsnapClearTimeout);
+            
+            postsnapClearTimeout = setTimeout(() => {
+                if (displayState === 'postsnap') {
+                    clearAnalysisPanel();
+                    displayState = 'idle';
+                }
+            }, POSTSNAP_DURATION * 1000);
         }
         
         function togglePlayPause() {
@@ -891,25 +1323,89 @@
         // PLAY NAVIGATION
         // ============================================
         
-        function nextPlay() {
-            if (currentPlay >= plays.length) return;
+        function goToNextPlay() {
+            if (currentPlay >= plays.length) {
+                console.log('▶️ Already at last play');
+                return;
+            }
             
             const play = plays[currentPlay];
+            const playIndex = currentPlay;
             currentPlay++;
             
-            displayPlay(play);
+            console.log(`▶️ JUMP to play #${currentPlay} of ${plays.length}`);
+            
+            // Clear any pending timeouts
+            if (prensapFadeTimeout) clearTimeout(prensapFadeTimeout);
+            if (postsnapClearTimeout) clearTimeout(postsnapClearTimeout);
+            
+            // Update situation display
+            updateSituation(play);
             updatePlayNumber(currentPlay);
+            updateNavButtons();
+            
+            // When jumping: show play summary AND pre-snap immediately
+            showPlaySummary(play);
+            showPresnapForPlay(play);
+            displayState = 'jumped';
+            currentDisplayedPlay = play;
+            
+            // Sync clock to this play's SNAP time
+            if (playIndex < playTimings.length) {
+                const timing = playTimings[playIndex];
+                simClock = timing.gameSeconds;
+                gameStartTime = Date.now() - (simClock * 1000);
+                pendingPlayIndex = currentPlay; // Next play in sequence
+                console.log(`  Synced to SNAP: ${timing.clock} (${simClock.toFixed(1)}s)`);
+            }
+            updateSimClockDisplay();
             
             // Send to insight engine
             sendPlayToEngine(play);
         }
         
-        function displayPlay(play) {
-            // Update score
-            document.getElementById('score').textContent = 
-                `${awayTeam} ${play.visitor_score || 0} - ${homeTeam} ${play.home_score || 0}`;
+        function goToPrevPlay() {
+            if (currentPlay <= 1) {
+                console.log('◀️ Already at first play');
+                return;
+            }
             
-            // Update situation
+            currentPlay--;
+            const play = plays[currentPlay - 1];
+            const playIndex = currentPlay - 1;
+            
+            console.log(`◀️ JUMP to play #${currentPlay} of ${plays.length}`);
+            
+            // Clear any pending timeouts
+            if (prensapFadeTimeout) clearTimeout(prensapFadeTimeout);
+            if (postsnapClearTimeout) clearTimeout(postsnapClearTimeout);
+            
+            // Update situation display
+            updateSituation(play);
+            updatePlayNumber(currentPlay);
+            updateNavButtons();
+            
+            // When jumping: show play summary AND pre-snap immediately
+            showPlaySummary(play);
+            showPresnapForPlay(play);
+            displayState = 'jumped';
+            currentDisplayedPlay = play;
+            
+            // Sync clock to this play's SNAP time
+            if (playIndex < playTimings.length) {
+                const timing = playTimings[playIndex];
+                simClock = timing.gameSeconds;
+                gameStartTime = Date.now() - (simClock * 1000);
+                pendingPlayIndex = currentPlay; // Resume from here
+                console.log(`  Synced to SNAP: ${timing.clock} (${simClock.toFixed(1)}s)`);
+            }
+            updateSimClockDisplay();
+            
+            // Send to insight engine
+            sendPlayToEngine(play);
+        }
+        
+        function updateSituation(play) {
             const down = play.down || 0;
             const distance = play.yards_to_go || 0;
             const quarter = play.quarter || 1;
@@ -922,20 +1418,27 @@
             } else {
                 document.getElementById('situation').textContent = `Q${quarter} · ${clock}`;
             }
-            
-            // Update play summary
-            document.getElementById('play').textContent = play.play_description || '';
-            
-            // Show pre-snap analysis
-            showPresnap({
-                offense: {
-                    personnel: play.offense_personnel || '',
-                    formation: play.offense_formation || ''
-                },
-                defense: {
-                    personnel: play.defense_personnel || '',
-                    box: play.defenders_in_box || ''
-                }
+        }
+        
+        // For auto-advance in Full Replay mode
+        function nextPlay() {
+            goToNextPlay();
+        }
+        
+        function updateNavButtons() {
+            document.getElementById('prev-play-btn').disabled = currentPlay <= 1;
+            document.getElementById('next-play-btn').disabled = currentPlay >= plays.length;
+        }
+        
+        // Legacy displayPlay - now just updates situation
+        function displayPlay(play) {
+            updateSituation(play);
+            console.log('🏈 Play context:', {
+                play_id: play.play_id,
+                off_personnel: play.off_personnel,
+                off_formation: play.off_formation,
+                def_personnel: play.def_personnel,
+                defenders_in_box: play.defenders_in_box
             });
         }
         
@@ -944,51 +1447,143 @@
         }
         
         // ============================================
-        // SYNC FUNCTIONS
+        // DISPLAY STATE HELPERS
         // ============================================
         
-        function syncToSnap() {
-            // Sync clock to the start of current play
-            if (currentPlay > 0 && plays[currentPlay - 1]) {
-                const play = plays[currentPlay - 1];
-                console.log(`Synced to snap of play ${currentPlay}`);
-                // In a full implementation, this would adjust the simulation clock
-            }
-        }
-        
-        function syncToWhistle() {
-            // Sync clock to the end of current play
-            if (currentPlay > 0 && plays[currentPlay - 1]) {
-                const play = plays[currentPlay - 1];
-                console.log(`Synced to whistle of play ${currentPlay}`);
-                // In a full implementation, this would adjust the simulation clock
-            }
-        }
-        
-        // ============================================
-        // ANALYSIS PANEL
-        // ============================================
-        
-        function showPresnap(data) {
+        function showPresnapForPlay(play) {
             const panel = document.getElementById('analysis-panel');
-            
             panel.className = 'analysis-panel presnap visible';
             document.getElementById('analysis-mode').textContent = 'PRE-SNAP';
             document.getElementById('bigplay-badge').style.display = 'none';
             
             // Offense
-            const offPersonnel = data.offense?.personnel || '';
+            const offPersonnel = play.off_personnel || '';
             const personnelCode = getPersonnelCode(offPersonnel);
             document.getElementById('off-personnel').textContent = personnelCode || '--';
-            document.getElementById('off-formation').textContent = data.offense?.formation || '--';
+            document.getElementById('off-formation').textContent = play.off_formation || '--';
             document.getElementById('off-detail').textContent = offPersonnel;
             
             // Defense
-            const defPersonnel = data.defense?.personnel || '';
+            const defPersonnel = play.def_personnel || '';
             document.getElementById('def-personnel').textContent = defPersonnel || '--';
             document.getElementById('def-package').textContent = getDefPackage(defPersonnel);
-            document.getElementById('def-box').textContent = data.defense?.box ? `${data.defense.box} in box` : '--';
+            document.getElementById('def-box').textContent = play.defenders_in_box ? 
+                `${play.defenders_in_box} in box` : '--';
+            
+            // Clear any pending fade
+            if (prensapFadeTimeout) clearTimeout(prensapFadeTimeout);
         }
+        
+        function fadeOutPresnap() {
+            const panel = document.getElementById('analysis-panel');
+            panel.classList.add('fading');
+            
+            prensapFadeTimeout = setTimeout(() => {
+                clearAnalysisPanel();
+            }, PRESNAP_FADE_DELAY * 1000);
+        }
+        
+        function showPlaySummary(play) {
+            document.getElementById('play').textContent = play.play_description || '';
+            
+            // Update score at whistle
+            document.getElementById('score').textContent = 
+                `${awayTeam} ${play.visitor_score || 0} - ${homeTeam} ${play.home_score || 0}`;
+        }
+        
+        function showPostsnapForPlay(play) {
+            const panel = document.getElementById('analysis-panel');
+            panel.className = 'analysis-panel postsnap visible';
+            document.getElementById('analysis-mode').textContent = 'POST-SNAP';
+            
+            // Big play indicator
+            if (play.is_big_play) {
+                document.getElementById('bigplay-badge').style.display = 'inline';
+            } else {
+                document.getElementById('bigplay-badge').style.display = 'none';
+            }
+            
+            // Offense stats
+            document.getElementById('off-personnel').textContent = play.route || '--';
+            document.getElementById('off-formation').textContent = 
+                play.time_to_throw ? `${play.time_to_throw.toFixed(1)}s throw` : '--';
+            document.getElementById('off-detail').textContent = 
+                play.air_yards ? `${play.air_yards} air yards` : '';
+            
+            // Defense stats
+            document.getElementById('def-package').textContent = play.coverage_type || '--';
+            document.getElementById('def-personnel').textContent = 
+                play.pass_rushers ? `${play.pass_rushers} rushers` : '--';
+            document.getElementById('def-box').textContent = play.was_pressure ? 'Pressure' : '';
+        }
+        
+        function clearAnalysisPanel() {
+            const panel = document.getElementById('analysis-panel');
+            panel.className = 'analysis-panel';
+            panel.classList.remove('visible', 'fading', 'presnap', 'postsnap');
+        }
+        
+        function clearPlaySummary() {
+            document.getElementById('play').textContent = '';
+        }
+        
+        // ============================================
+        // SYNC FUNCTIONS
+        // ============================================
+        
+        function syncToSnap() {
+            // Sync simulation clock to the start of currently displayed play
+            const displayedPlayIndex = currentPlay - 1;
+            if (displayedPlayIndex >= 0 && displayedPlayIndex < playTimings.length) {
+                const timing = playTimings[displayedPlayIndex];
+                simClock = timing.gameSeconds;
+                gameStartTime = Date.now() - (simClock * 1000);
+                pendingPlayIndex = currentPlay; // Next play to show
+                updateSimClockDisplay();
+                console.log(`⏱️ Synced to SNAP of play ${currentPlay} (${timing.clock})`);
+                showSyncFeedback('snap');
+            }
+        }
+        
+        function syncToWhistle() {
+            // Sync simulation clock to end of currently displayed play
+            const displayedPlayIndex = currentPlay - 1;
+            if (displayedPlayIndex >= 0 && displayedPlayIndex < playTimings.length - 1) {
+                // Set clock to just before next play
+                const nextTiming = playTimings[displayedPlayIndex + 1];
+                simClock = nextTiming.gameSeconds - 1;
+                gameStartTime = Date.now() - (simClock * 1000);
+                pendingPlayIndex = currentPlay; // Next play to show
+                updateSimClockDisplay();
+                console.log(`⏱️ Synced to WHISTLE of play ${currentPlay}`);
+                showSyncFeedback('whistle');
+            } else if (displayedPlayIndex >= 0) {
+                // Last play - estimate end as start + 5 seconds
+                const timing = playTimings[displayedPlayIndex];
+                simClock = timing.gameSeconds + 5;
+                gameStartTime = Date.now() - (simClock * 1000);
+                updateSimClockDisplay();
+                console.log(`⏱️ Synced to WHISTLE of final play ${currentPlay}`);
+                showSyncFeedback('whistle');
+            }
+        }
+        
+        function showSyncFeedback(type) {
+            const link = type === 'snap' ? 
+                document.getElementById('sync-snap-link') : 
+                document.getElementById('sync-whistle-link');
+            
+            link.style.color = type === 'snap' ? '#22c55e' : '#3b82f6';
+            link.style.opacity = '1';
+            setTimeout(() => {
+                link.style.color = '';
+                link.style.opacity = '';
+            }, 500);
+        }
+        
+        // ============================================
+        // ANALYSIS PANEL HELPERS
+        // ============================================
         
         function getPersonnelCode(personnel) {
             if (!personnel) return '??';
@@ -1055,6 +1650,9 @@
         }
         
         function notifyGameStart() {
+            console.log('🏈 Notifying game start:', gameId, homeTeam, awayTeam, 'Week:', week);
+            
+            // First switch to this game context AND notify with week
             fetch(`${INSIGHT_ENGINE_URL}/game/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1062,22 +1660,108 @@
                     game_id: gameId,
                     home_team: homeTeam,
                     away_team: awayTeam,
+                    week: parseInt(week),
                     mode: 'replay'
                 })
-            }).catch(e => console.error('Error notifying game start:', e));
+            })
+            .then(r => r.json())
+            .then(data => {
+                console.log('✅ Game context switched:', data);
+                
+                // Then notify game start
+                return fetch(`${INSIGHT_ENGINE_URL}/event`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        game_id: gameId,
+                        event_type: 'game_start',
+                        state: {
+                            game_id: gameId,
+                            home_team: { abbreviation: homeTeam, score: 0 },
+                            away_team: { abbreviation: awayTeam, score: 0 },
+                            quarter: 1,
+                            clock: '15:00'
+                        },
+                        mode: 'replay'
+                    })
+                });
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.insights && data.insights.length > 0) {
+                    console.log(`📥 Received ${data.insights.length} game start insights`);
+                    data.insights.forEach(insight => addInsight(insight));
+                }
+            })
+            .catch(e => console.error('Error notifying game start:', e));
         }
         
         function sendPlayToEngine(play) {
+            // Format play data as the insight engine expects
+            const event = {
+                game_id: gameId,
+                event_type: 'play_complete',
+                play_description: play.play_description || '',
+                state: {
+                    game_id: gameId,
+                    home_team: { 
+                        abbreviation: homeTeam,
+                        score: play.home_score || 0 
+                    },
+                    away_team: { 
+                        abbreviation: awayTeam,
+                        score: play.visitor_score || 0 
+                    },
+                    quarter: play.quarter || 1,
+                    clock: play.start_clock || '15:00',
+                    down: play.down || 0,
+                    distance: play.yards_to_go || 0,
+                    yard_line: play.yard_line || '',
+                    possession: play.possession_team || '',
+                    is_redzone: play.is_redzone || false,
+                    is_scoring: play.is_scoring || false,
+                    is_big_play: play.is_big_play || false,
+                    play_type: play.play_type || ''
+                },
+                // Include NFL Pro style play data for analysis panel
+                nfl_pro_play_data: {
+                    offense: {
+                        personnel: play.off_personnel || '',
+                        offenseFormation: play.off_formation || ''
+                    },
+                    defense: {
+                        personnel: play.def_personnel || '',
+                        defendersInTheBox: play.defenders_in_box,
+                        numberOfPassRushers: play.pass_rushers,
+                        coverageType: play.coverage_type || '',
+                        manZoneType: play.man_zone || ''
+                    },
+                    passInfo: {
+                        timeToThrow: play.time_to_throw
+                    },
+                    recInfo: {
+                        route: play.route || '',
+                        airYards: play.air_yards
+                    }
+                },
+                mode: 'replay'
+            };
+            
+            console.log('📤 Sending play to insight engine:', event.event_type, play.play_description?.slice(0, 50));
+            
             fetch(`${INSIGHT_ENGINE_URL}/event`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    game_id: gameId,
-                    event_type: 'play_complete',
-                    play: play,
-                    mode: 'replay'
-                })
-            }).catch(e => console.error('Error sending play:', e));
+                body: JSON.stringify(event)
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.insights && data.insights.length > 0) {
+                    console.log(`📥 Received ${data.insights.length} insights`);
+                    data.insights.forEach(insight => addInsight(insight));
+                }
+            })
+            .catch(e => console.error('Error sending play:', e));
         }
         
         // ============================================
@@ -1133,11 +1817,47 @@
         
         document.getElementById('kickoff-btn').addEventListener('click', kickoff);
         document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
-        document.getElementById('next-play-btn').addEventListener('click', nextPlay);
-        document.getElementById('sync-snap-btn').addEventListener('click', syncToSnap);
-        document.getElementById('sync-whistle-btn').addEventListener('click', syncToWhistle);
+        document.getElementById('next-play-btn').addEventListener('click', goToNextPlay);
+        document.getElementById('prev-play-btn').addEventListener('click', goToPrevPlay);
+        
+        // Sync links
+        document.getElementById('sync-snap-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            syncToSnap();
+        });
+        document.getElementById('sync-whistle-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            syncToWhistle();
+        });
         
         document.getElementById('copy-video-btn').addEventListener('click', copyVideoUrl);
+        
+        // Mode toggle
+        document.getElementById('replay-mode-select').addEventListener('change', (e) => {
+            replayMode = e.target.value;
+            const controls = document.querySelector('.replay-controls');
+            
+            if (replayMode === 'jump') {
+                // Play Jump mode: show controls prominently
+                controls.style.opacity = '1';
+                console.log('🎮 Switched to Play Jump mode');
+            } else {
+                // Full Replay mode: auto-advance
+                controls.style.opacity = '0.6';
+                console.log('▶️ Switched to Full Replay mode');
+                
+                // If already kicked off, recalculate position
+                if (isKickedOff) {
+                    // Find the correct play for current simClock
+                    for (let i = 0; i < playTimings.length; i++) {
+                        if (playTimings[i].gameSeconds > simClock) {
+                            pendingPlayIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
         
         document.getElementById('settings-btn').addEventListener('click', openSettings);
         document.getElementById('settings-close').addEventListener('click', closeSettings);
@@ -1174,7 +1894,11 @@
                     break;
                 case 'arrowright':
                     e.preventDefault();
-                    nextPlay();
+                    goToNextPlay();
+                    break;
+                case 'arrowleft':
+                    e.preventDefault();
+                    goToPrevPlay();
                     break;
             }
         });

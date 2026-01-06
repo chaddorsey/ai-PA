@@ -494,32 +494,170 @@ class NFLProNarrativeInsights:
         except Exception as e:
             logger.error(f"Error saving usage history: {e}")
     
-    def load_from_processed(self, week: int) -> bool:
+    def load_from_processed(self, week: int, append: bool = False) -> bool:
         """
         Load pre-processed insights for a week.
         
         This is the preferred method - uses pre-built index for fast retrieval.
+        
+        Args:
+            week: Week number to load
+            append: If True, add to existing insights instead of replacing
         """
         processed_file = self.PROCESSED_INSIGHT_DIR / f"week_{week}_processed.json"
         
         if not processed_file.exists():
-            logger.warning(f"No pre-processed insights for Week {week}")
+            # Don't warn for every missing week
             return False
         
         try:
             with open(processed_file, 'r') as f:
                 data = json.load(f)
             
-            self._processed_insights = data.get('insights', [])
-            self._processed_index = data.get('index', {})
+            new_insights = data.get('insights', [])
+            new_index = data.get('index', {})
             
-            # Track which insights have been served in current game
-            self._served_in_game: set = set()
+            if append and hasattr(self, '_processed_insights'):
+                # Append to existing
+                self._processed_insights.extend(new_insights)
+                # Merge indices
+                for key, ids in new_index.items():
+                    if key in self._processed_index:
+                        self._processed_index[key].extend(ids)
+                    else:
+                        self._processed_index[key] = ids
+            else:
+                self._processed_insights = new_insights
+                self._processed_index = new_index
+                # Track which insights have been served in current game
+                self._served_in_game: set = set()
             
-            logger.info(f"Loaded {len(self._processed_insights)} processed insights for Week {week}")
+            logger.info(f"Loaded {len(new_insights)} processed insights for Week {week}")
             return True
         except Exception as e:
             logger.error(f"Error loading processed insights: {e}")
+            return False
+    
+    def load_from_db_by_week(self, week: int, teams: List[str] = None) -> bool:
+        """
+        Load insights from raw database for a specific week.
+        
+        Args:
+            week: Week number
+            teams: Optional list of team abbreviations to filter by (STRICT - primary focus only)
+        """
+        db_path = self.INSIGHTS_DB
+        if not db_path.exists():
+            logger.warning(f"Insights database not found: {db_path}")
+            return False
+        
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            
+            query = "SELECT * FROM insights WHERE week = ?"
+            params = [week]
+            
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+            
+            # All team abbreviations for parsing
+            ALL_TEAMS = ['CHI', 'CIN', 'GB', 'DET', 'MIN', 'SF', 'SEA', 'BAL', 'PIT', 'KC', 
+                        'BUF', 'MIA', 'NYJ', 'NE', 'LAC', 'DEN', 'LV', 'HOU', 'IND', 'JAX', 
+                        'TEN', 'CLE', 'PHI', 'DAL', 'NYG', 'WAS', 'TB', 'NO', 'ATL', 'CAR', 'LAR', 'ARI']
+            
+            # Team name to abbreviation mapping
+            TEAM_NAME_MAP = {
+                'BEARS': 'CHI', 'BENGALS': 'CIN', 'PACKERS': 'GB', 'LIONS': 'DET',
+                'VIKINGS': 'MIN', '49ERS': 'SF', 'SEAHAWKS': 'SEA', 'RAVENS': 'BAL',
+                'STEELERS': 'PIT', 'CHIEFS': 'KC', 'BILLS': 'BUF', 'DOLPHINS': 'MIA',
+                'JETS': 'NYJ', 'PATRIOTS': 'NE', 'CHARGERS': 'LAC', 'BRONCOS': 'DEN',
+                'RAIDERS': 'LV', 'TEXANS': 'HOU', 'COLTS': 'IND', 'JAGUARS': 'JAX',
+                'TITANS': 'TEN', 'BROWNS': 'CLE', 'EAGLES': 'PHI', 'COWBOYS': 'DAL',
+                'GIANTS': 'NYG', 'COMMANDERS': 'WAS', 'BUCCANEERS': 'TB', 'SAINTS': 'NO',
+                'FALCONS': 'ATL', 'PANTHERS': 'CAR', 'RAMS': 'LAR', 'CARDINALS': 'ARI',
+                'CHICAGO': 'CHI', 'CINCINNATI': 'CIN', 'GREEN BAY': 'GB', 'DETROIT': 'DET'
+            }
+            
+            # Convert to insight format with better team parsing
+            insights = []
+            for row in rows:
+                insight = dict(row)
+                title = (insight.get('title', '') or '').upper()
+                player_name = (insight.get('player_name', '') or '').upper()
+                
+                # Parse teams from title
+                teams_mentioned = []
+                for abbr in ALL_TEAMS:
+                    if abbr in title:
+                        teams_mentioned.append(abbr)
+                
+                # Also check team names
+                for name, abbr in TEAM_NAME_MAP.items():
+                    if name in title and abbr not in teams_mentioned:
+                        teams_mentioned.append(abbr)
+                
+                insight['teams_mentioned'] = teams_mentioned
+                insight['id'] = f"db_{insight.get('id', '')}"
+                insights.append(insight)
+            
+            conn.close()
+            
+            # STRICT filter by teams - insight must be PRIMARILY about one of these teams
+            if teams:
+                teams_upper = set(t.upper() for t in teams)
+                
+                def is_primary_about_teams(insight):
+                    """Check if insight is primarily about the specified teams."""
+                    mentioned = set(insight.get('teams_mentioned', []))
+                    title = (insight.get('title', '') or '').upper()
+                    player = (insight.get('player_name', '') or '').upper()
+                    
+                    # Expand teams to include full names
+                    team_names = set()
+                    for t in teams_upper:
+                        team_names.add(t)
+                        # Add full team names
+                        for name, abbr in TEAM_NAME_MAP.items():
+                            if abbr == t:
+                                team_names.add(name)
+                    
+                    # Check if player name IS a team name (e.g., "Bears", "Bengals")
+                    if player in team_names:
+                        return True
+                    
+                    # If only game teams are mentioned, it's a match
+                    if mentioned and mentioned.issubset(teams_upper):
+                        return True
+                    
+                    # If at least one game team is mentioned with no more than 1 other team
+                    game_teams_mentioned = mentioned & teams_upper
+                    other_teams = mentioned - teams_upper
+                    if game_teams_mentioned and len(other_teams) <= 1:
+                        return True
+                    
+                    # Check title for team names (not just abbreviations)
+                    for name in team_names:
+                        if name in title:
+                            # Make sure it's not primarily about another team
+                            # by checking other team names don't appear first
+                            return True
+                    
+                    return False
+                
+                filtered = [i for i in insights if is_primary_about_teams(i)]
+                logger.info(f"Filtered {len(insights)} → {len(filtered)} insights (primary focus on {teams_upper})")
+                insights = filtered
+            
+            self._processed_insights = insights
+            self._processed_index = {}  # No pre-built index for DB queries
+            self._served_in_game = set()
+            
+            logger.info(f"Loaded {len(insights)} insights from DB for Week {week}")
+            return len(insights) > 0
+        except Exception as e:
+            logger.error(f"Error loading from DB: {e}")
             return False
     
     def load_from_db(self, game_uuid: str) -> bool:
@@ -583,26 +721,43 @@ class NFLProNarrativeInsights:
     def _insight_matches_game_teams(self, insight: Dict) -> bool:
         """Check if an insight is about the current game's teams."""
         if not hasattr(self, '_current_game_teams') or not self._current_game_teams:
+            logger.warning(f"⚠️ No team filter set! Allowing insight: {insight.get('player_name')}")
             return True  # No filter set, allow all
         
-        # Get all searchable text from insight
-        player_name = (insight.get('player_name') or '').upper()
+        # FIRST: Check teams_mentioned field (most reliable)
+        teams_mentioned = insight.get('teams_mentioned', [])
+        if teams_mentioned:
+            teams_mentioned_upper = [t.upper() for t in teams_mentioned if t]
+            for team in self._current_game_teams:
+                if team.upper() in teams_mentioned_upper:
+                    return True
+        
+        # SECOND: Check player_team field
         player_team = (insight.get('player_team') or '').upper()
+        if player_team:
+            for team in self._current_game_teams:
+                if team.upper() == player_team:
+                    return True
+                # Also check team name variants
+                if team.upper() in self.TEAM_NAMES:
+                    for name in self.TEAM_NAMES[team.upper()]:
+                        if name == player_team:
+                            return True
+        
+        # THIRD: Search in title text
         title = (insight.get('title') or '').upper()
-        
-        all_text = f"{player_name} {player_team} {title}"
-        
-        # Check if any game team (or their name variants) is in the text
         for team in self._current_game_teams:
             team_upper = team.upper()
-            if team_upper in all_text:
+            if team_upper in title:
                 return True
             # Also check team names
             if team_upper in self.TEAM_NAMES:
                 for name in self.TEAM_NAMES[team_upper]:
-                    if name in all_text:
+                    if name in title:
                         return True
         
+        # Log rejection for debugging
+        logger.debug(f"❌ Rejected insight: {insight.get('player_name')} - teams_mentioned={teams_mentioned}, filter={self._current_game_teams}")
         return False
     
     def set_current_game_teams(self, teams: list):
@@ -1157,10 +1312,12 @@ def load_narrative_insights(
     home_team: str = '',
     away_team: str = '',
     insights_data: List[Dict] = None,
-    week: int = 18  # Default to current week
+    week: int = None  # If None, load from ALL available weeks
 ) -> int:
     """
     Load NFL Pro narrative insights for a game.
+    
+    If week is None, loads insights from ALL available weeks to maximize coverage.
     
     Tries methods in order:
     1. Pre-processed insights file (fastest, with index)
@@ -1175,10 +1332,25 @@ def load_narrative_insights(
     if game_teams:
         nfl_pro_narratives.set_current_game_teams(game_teams)
     
-    # Try loading from processed insights first (Week 18 for current games)
-    if nfl_pro_narratives.load_from_processed(week):
-        logger.info(f"Loaded Week {week} processed insights successfully")
-        return nfl_pro_narratives.get_unserved_count()
+    # Try loading from processed insights first
+    if week is not None:
+        if nfl_pro_narratives.load_from_processed(week):
+            logger.info(f"Loaded Week {week} processed insights successfully")
+            return nfl_pro_narratives.get_unserved_count()
+        
+        # Fall back to raw database for this week
+        if nfl_pro_narratives.load_from_db_by_week(week, game_teams):
+            logger.info(f"Loaded Week {week} insights from raw database")
+            return nfl_pro_narratives.get_unserved_count()
+    else:
+        # Load from all available processed weeks
+        total_loaded = 0
+        for w in range(1, 19):  # Weeks 1-18
+            if nfl_pro_narratives.load_from_processed(w, append=True):
+                total_loaded += 1
+        if total_loaded > 0:
+            logger.info(f"Loaded processed insights from {total_loaded} weeks")
+            return nfl_pro_narratives.get_unserved_count()
     
     # Try loading from database by game ID
     if nfl_pro_narratives.load_from_db(game_uuid):

@@ -414,15 +414,26 @@ class DOMInsightScraper:
         return insights
     
     async def _extract_insights_playwright(self, page: Page) -> List[Dict]:
-        """Extract insights using Playwright queries (more reliable than JS eval)."""
+        """Extract insights using Playwright queries (more reliable than JS eval).
+        
+        Extracts insights grouped by category (postgame vs preview) by finding
+        section headers and their associated insight cards.
+        """
         insights = []
         
+        # First, try to extract insights by category sections
+        categorized_insights = await self._extract_insights_by_category(page)
+        if categorized_insights:
+            return categorized_insights
+        
+        # Fallback: extract without category (legacy behavior)
+        logger.info("  Falling back to uncategorized extraction")
         containers = await page.query_selector_all('[class*="insight-card-container"]')
         logger.info(f"  Found {len(containers)} insight-card-container elements")
         
         for i, container in enumerate(containers):
             try:
-                insight = {'id': i + 1}
+                insight = {'id': i + 1, 'insight_category': None}
                 
                 # Get full text
                 text = await container.inner_text()
@@ -452,6 +463,126 @@ class DOMInsightScraper:
                 logger.debug(f"Error extracting insight {i}: {e}")
         
         return insights
+    
+    async def _extract_insights_by_category(self, page: Page) -> List[Dict]:
+        """Extract insights grouped by category (postgame/preview).
+        
+        Uses JavaScript to correctly associate each insight card with its
+        parent section header (Postgame Insights vs Game Preview Insights).
+        """
+        # Use JavaScript to extract insights with correct category association
+        extraction_result = await page.evaluate('''
+            () => {
+                const insights = [];
+                let insightId = 0;
+                
+                // Find all insight card containers
+                const cards = document.querySelectorAll('.insight-card-container');
+                
+                for (const card of cards) {
+                    insightId++;
+                    const insight = { id: insightId };
+                    
+                    // Get the title
+                    const titleEl = card.querySelector('.insight-card__title');
+                    if (titleEl) {
+                        insight.title = titleEl.innerText.trim();
+                    }
+                    
+                    // Get the note
+                    const noteEl = card.querySelector('.insight-card__note');
+                    if (noteEl) {
+                        insight.sub_note = noteEl.innerText.trim();
+                    }
+                    
+                    // Get player name
+                    const nameEl = card.querySelector('.name a');
+                    if (nameEl) {
+                        insight.player_name = nameEl.innerText.trim();
+                    }
+                    
+                    // Get position and team from meta
+                    const metaEl = card.querySelector('.meta');
+                    if (metaEl) {
+                        const metaText = metaEl.innerText.trim();
+                        const parts = metaText.split(' - ');
+                        if (parts.length >= 2) {
+                            insight.team = parts[parts.length - 1].trim();
+                            const posParts = parts[0].trim().split(' ');
+                            if (posParts.length > 0) {
+                                insight.position = posParts[0];
+                            }
+                        }
+                    }
+                    
+                    // Get image URL
+                    const imgs = card.querySelectorAll('img');
+                    for (const img of imgs) {
+                        const src = img.src;
+                        if (src && (src.includes('nfl.com') || src.includes('nflngs.com'))) {
+                            insight.image_url = src;
+                            break;
+                        }
+                    }
+                    
+                    // Determine category by traversing up to find section header
+                    let parent = card.parentElement;
+                    let category = null;
+                    
+                    while (parent && !category) {
+                        const headerEl = parent.querySelector('.page-title-season');
+                        if (headerEl) {
+                            const headerText = headerEl.innerText.trim();
+                            if (headerText.includes('Postgame')) {
+                                category = 'postgame';
+                            } else if (headerText.includes('Preview')) {
+                                category = 'preview';
+                            }
+                        }
+                        parent = parent.parentElement;
+                    }
+                    
+                    // Fallback: check all sections
+                    if (!category) {
+                        const sections = document.querySelectorAll('[data-v-a943ccb2]');
+                        for (const section of sections) {
+                            const header = section.querySelector('.page-title-season');
+                            if (!header) continue;
+                            
+                            if (section.contains(card)) {
+                                const headerText = header.innerText.trim();
+                                if (headerText.includes('Postgame')) {
+                                    category = 'postgame';
+                                } else if (headerText.includes('Preview')) {
+                                    category = 'preview';
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    
+                    insight.insight_category = category;
+                    
+                    if (insight.title) {
+                        insights.push(insight);
+                    }
+                }
+                
+                return insights;
+            }
+        ''')
+        
+        if not extraction_result:
+            logger.debug("  No insights extracted via JS")
+            return []
+        
+        # Count by category for logging
+        postgame_count = sum(1 for i in extraction_result if i.get('insight_category') == 'postgame')
+        preview_count = sum(1 for i in extraction_result if i.get('insight_category') == 'preview')
+        
+        logger.info(f"  Extracted {len(extraction_result)} insights (postgame: {postgame_count}, preview: {preview_count})")
+        
+        return extraction_result
     
     async def download_image(self, url: str, insight_id: str) -> Optional[str]:
         """Download an image and return the local filename."""
@@ -496,6 +627,13 @@ class DOMInsightScraper:
         except:
             pass
         
+        # Add insight_category column if not exists
+        try:
+            cursor.execute('ALTER TABLE insights ADD COLUMN insight_category TEXT')
+            conn.commit()
+        except:
+            pass
+        
         saved = 0
         
         for insight in insights:
@@ -512,8 +650,9 @@ class DOMInsightScraper:
                         insight_id, game_id, season, week, title, sub_note,
                         player_name, position, team_abbr,
                         second_player_name, second_team_type,
-                        image_url, local_image, image_cached, scraped_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        image_url, local_image, image_cached, scraped_at,
+                        insight_category
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     insight_id,
                     insight.get('game_id', ''),
@@ -529,7 +668,8 @@ class DOMInsightScraper:
                     insight.get('image_url', ''),
                     local_image,
                     1 if local_image else 0,
-                    insight.get('scraped_at', datetime.now().isoformat())
+                    insight.get('scraped_at', datetime.now().isoformat()),
+                    insight.get('insight_category')
                 ))
                 saved += 1
             except Exception as e:

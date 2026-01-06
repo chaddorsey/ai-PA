@@ -106,7 +106,10 @@ class BatchInsightScraper:
                 
                 -- Usage tracking
                 times_served INTEGER DEFAULT 0,
-                last_served_game TEXT
+                last_served_game TEXT,
+                
+                -- Classification
+                insight_category TEXT
             )
         ''')
         
@@ -287,12 +290,23 @@ class BatchInsightScraper:
         return result
     
     def save_insights(self, insights: List[Dict], game_id: str):
-        """Save insights to database."""
+        """Save insights to database.
+        
+        Note: API-scraped insights do not include insight_category.
+        Run backfill_insight_category.py after scraping to add categories.
+        """
         if not insights:
             return
         
         conn = sqlite3.connect(self.insights_db_path)
         cursor = conn.cursor()
+        
+        # Ensure insight_category column exists
+        try:
+            cursor.execute('ALTER TABLE insights ADD COLUMN insight_category TEXT')
+            conn.commit()
+        except:
+            pass
         
         for insight in insights:
             try:
@@ -301,8 +315,9 @@ class BatchInsightScraper:
                         insight_id, game_id, season, week, title, sub_note, sub_note2,
                         player_name, position, team_abbr, jersey_number,
                         second_player_name, second_position, second_team_abbr, second_team_type,
-                        image_url, headshot_url, tags, date_created, scraped_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        image_url, headshot_url, tags, date_created, scraped_at,
+                        insight_category
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     insight['insight_id'], insight['game_id'], insight['season'], insight['week'],
                     insight['title'], insight['sub_note'], insight['sub_note2'],
@@ -311,7 +326,8 @@ class BatchInsightScraper:
                     insight['second_player_name'], insight['second_position'],
                     insight['second_team_abbr'], insight['second_team_type'],
                     insight['image_url'], insight['headshot_url'],
-                    insight['tags'], insight['date_created'], insight['scraped_at']
+                    insight['tags'], insight['date_created'], insight['scraped_at'],
+                    insight.get('insight_category')  # Will be None for API-scraped insights
                 ))
             except Exception as e:
                 logger.warning(f"Error saving insight: {e}")

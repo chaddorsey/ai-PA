@@ -1384,8 +1384,8 @@ class InsightGenerator:
                 })
                 insights.append(insight)
 
-        # Generate post-play analysis for every new_play event
-        if change_type == 'new_play':
+        # Generate post-play analysis for every new_play or play_complete event
+        if change_type in ['new_play', 'play_complete']:
             description = change.get('description', '')
             data = change.get('data', {})
             
@@ -2794,8 +2794,9 @@ def start_game():
     home_team = data.get('home_team', '').upper()
     away_team = data.get('away_team', '').upper()
     mode = data.get('mode', 'replay')
+    week = data.get('week')  # Week number for insight loading
     
-    logger.info(f"🎮 Game start notification: {away_team} @ {home_team} (mode={mode})")
+    logger.info(f"🎮 Game start notification: {away_team} @ {home_team} (mode={mode}, week={week})")
     
     # Set up session data
     global session_data
@@ -2803,10 +2804,25 @@ def start_game():
     session_data['home_abbr'] = home_team
     session_data['away_abbr'] = away_team
     session_data['mode'] = mode
+    session_data['week'] = week
     
     # Set current game teams for insight filtering
     if nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_teams'):
         nfl_pro_narratives.set_current_game_teams({home_team, away_team})
+    
+    # Load week-specific insights if available
+    if week and NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
+        try:
+            loaded = load_narrative_insights(
+                game_uuid=game_id,
+                home_team=home_team,
+                away_team=away_team,
+                week=int(week)
+            )
+            session_data['nfl_pro_insights_loaded'] = loaded > 0
+            logger.info(f"✅ Loaded {loaded} NFL Pro insights for Week {week}")
+        except Exception as e:
+            logger.warning(f"Could not load Week {week} insights: {e}")
     
     # Reset insight generator
     if insight_generator:
@@ -2822,9 +2838,16 @@ def start_game():
     return response
 
 
-@app.route('/event', methods=['POST'])
+@app.route('/event', methods=['POST', 'OPTIONS'])
 def receive_event():
     """Receive game state change events from game-state-service or simulator."""
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+    
     data = request.get_json() or {}
     
     # Support both formats:
@@ -2868,11 +2891,14 @@ def receive_event():
                 nfl_pro_uuid = state.get('nfl_pro_uuid', state.get('game_id', ''))
                 
                 if home_team and away_team:
-                    logger.info(f"🏈 Loading NFL Pro insights for {away_team} @ {home_team}")
+                    # Get week from session (set by /game/start) or state
+                    week = session_data.get('week') or state.get('week')
+                    logger.info(f"🏈 Loading NFL Pro insights for {away_team} @ {home_team} (Week {week})")
                     success = load_narrative_insights(
                         game_uuid=nfl_pro_uuid,
                         home_team=home_team,
-                        away_team=away_team
+                        away_team=away_team,
+                        week=int(week) if week else None
                     )
                     if success:
                         logger.info("✅ NFL Pro narrative insights loaded successfully")
@@ -2949,9 +2975,13 @@ def receive_event():
                 ttl=60
             ))
 
-    # Queue for delivery
-    for insight in insights:
-        delivery_manager.queue_insight(insight)
+    # For replay mode or direct HTTP requests, DON'T queue insights
+    # (they'll be returned in the response instead to avoid doubling)
+    # For live mode with WebSocket, queue them for broadcast
+    mode = data.get('mode', session_data.get('mode', 'live'))
+    if mode != 'replay':
+        for insight in insights:
+            delivery_manager.queue_insight(insight)
     
     # === PRE-PLAY / POST-SNAP ANALYSIS ===
     # Generate and broadcast analysis data
@@ -3015,12 +3045,29 @@ def receive_event():
             except Exception as e:
                 logger.warning(f"Error generating analysis metadata: {e}")
 
-    return jsonify({
+    # Serialize insights for response (useful for replay mode or debugging)
+    insight_data = []
+    for insight in insights:
+        if hasattr(insight, 'to_dict'):
+            insight_data.append(insight.to_dict())
+        elif isinstance(insight, dict):
+            insight_data.append(insight)
+        else:
+            insight_data.append({
+                'headline': getattr(insight, 'headline', str(insight)),
+                'body': getattr(insight, 'body', ''),
+                'type': getattr(insight, 'insight_type', 'info')
+            })
+    
+    response = jsonify({
         'status': 'ok',
         'insights_generated': len(insights),
+        'insights': insight_data,
         'presnap_sent': presnap_sent,
         'postsnap_sent': postsnap_sent
     })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 
 def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -3889,6 +3936,136 @@ def sync_delay():
         'status': 'ok',
         'message': f'Sync recorded. Delay calibrated to {delay_buffer.delay_seconds:.1f} seconds',
         **delay_buffer.get_status()
+    })
+
+
+@app.route('/insights/process', methods=['POST', 'OPTIONS'])
+def process_insights():
+    """
+    Process insights for a specific week if not already processed.
+    Called before starting a replay to ensure insights are ready.
+    """
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST')
+        return response
+    
+    data = request.get_json() or {}
+    week = data.get('week')
+    season = data.get('season', 2025)
+    home_team = data.get('home_team', '').upper()
+    away_team = data.get('away_team', '').upper()
+    
+    if not week:
+        response = jsonify({'status': 'error', 'message': 'week required'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response, 400
+    
+    logger.info(f"📊 Processing insights for Week {week}, {away_team} @ {home_team}")
+    
+    # Check if processed insights exist
+    import os
+    processed_file = f"../data/processed_insights/week_{week}_processed.json"
+    if os.path.exists(processed_file):
+        # Already processed
+        try:
+            import json
+            with open(processed_file) as f:
+                data = json.load(f)
+            count = len(data.get('insights', []))
+            
+            # Filter to game teams
+            game_teams = [t for t in [home_team, away_team] if t]
+            if game_teams:
+                insights = data.get('insights', [])
+                team_insights = [i for i in insights if any(
+                    t in (i.get('teams_mentioned') or []) for t in game_teams
+                )]
+                count = len(team_insights)
+            
+            logger.info(f"✅ Week {week} already processed: {count} insights for {game_teams}")
+            response = jsonify({
+                'status': 'ok',
+                'message': f'Week {week} insights ready',
+                'count': count,
+                'already_processed': True
+            })
+            response.headers.add('Access-Control-Allow-Origin', '*')
+            return response
+        except Exception as e:
+            logger.warning(f"Error reading processed file: {e}")
+    
+    # Need to process from raw database
+    try:
+        if NFL_PRO_NARRATIVES_AVAILABLE and nfl_pro_narratives:
+            game_teams = [t for t in [home_team, away_team] if t]
+            success = nfl_pro_narratives.load_from_db_by_week(int(week), game_teams)
+            
+            if success:
+                count = nfl_pro_narratives.get_unserved_count()
+                logger.info(f"✅ Loaded {count} insights from raw DB for Week {week}")
+                response = jsonify({
+                    'status': 'ok',
+                    'message': f'Loaded {count} insights for Week {week}',
+                    'count': count,
+                    'already_processed': False
+                })
+            else:
+                response = jsonify({
+                    'status': 'ok',
+                    'message': f'No insights found for Week {week}',
+                    'count': 0,
+                    'already_processed': False
+                })
+        else:
+            response = jsonify({
+                'status': 'error',
+                'message': 'NFL Pro integration not available'
+            })
+        
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error processing insights: {e}")
+        response = jsonify({
+            'status': 'error',
+            'message': str(e)
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response, 500
+
+
+@app.route('/insights/status', methods=['GET'])
+def insights_status():
+    """Check status of processed insights for a week."""
+    week = request.args.get('week')
+    
+    if not week:
+        return jsonify({'status': 'error', 'message': 'week required'}), 400
+    
+    import os
+    processed_file = f"../data/processed_insights/week_{week}_processed.json"
+    
+    if os.path.exists(processed_file):
+        try:
+            import json
+            with open(processed_file) as f:
+                data = json.load(f)
+            return jsonify({
+                'status': 'ok',
+                'processed': True,
+                'count': len(data.get('insights', []))
+            })
+        except:
+            pass
+    
+    return jsonify({
+        'status': 'ok',
+        'processed': False,
+        'count': 0
     })
 
 

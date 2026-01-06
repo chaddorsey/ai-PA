@@ -588,6 +588,38 @@
                 }
             }
             
+            // Process insights for this week/game
+            showStatus('replay-status', 'loading', 'Preparing game insights...');
+            
+            try {
+                const insightResp = await fetch(`${INSIGHT_ENGINE_URL}/insights/process`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        week: parseInt(week),
+                        season: parseInt(season),
+                        home_team: home,
+                        away_team: away
+                    })
+                });
+                
+                const insightData = await insightResp.json();
+                
+                if (insightData.status === 'ok') {
+                    const msg = insightData.count > 0 
+                        ? `${insightData.count} insights ready!`
+                        : 'No pre-game insights found (will use templates)';
+                    showStatus('replay-status', 'success', msg);
+                    await new Promise(r => setTimeout(r, 500));
+                } else {
+                    console.warn('Insight processing warning:', insightData.message);
+                    // Continue anyway - will fall back to templates
+                }
+            } catch (e) {
+                console.warn('Could not pre-process insights:', e);
+                // Continue anyway - will fall back to templates
+            }
+            
             // Navigate to replay interface
             window.location.href = `/replay?game=${gameId}&season=${season}&week=${week}&home=${home}&away=${away}`;
         }
