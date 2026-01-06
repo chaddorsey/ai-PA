@@ -1813,7 +1813,7 @@ def scrape_series_progress():
     Scrape episode progress for a specific series.
     
     Request body:
-        service: 'max', 'disney', 'apple'
+        service: 'max', 'disney', 'apple', 'hulu'
         series_url: URL to the series page
         username: Optional, defaults to 'chad'
     """
@@ -1822,6 +1822,7 @@ def scrape_series_progress():
         MaxSeriesProgressScraper,
         DisneySeriesProgressScraper,
         AppleSeriesProgressScraper,
+        HuluSeriesProgressScraper,
         series_progress_to_dict
     )
     from playwright.async_api import async_playwright
@@ -1834,7 +1835,7 @@ def scrape_series_progress():
     if not service or not series_url:
         return jsonify({'error': 'service and series_url required'}), 400
     
-    if service not in ('max', 'disney', 'apple'):
+    if service not in ('max', 'disney', 'apple', 'hulu'):
         return jsonify({'error': f'Unsupported service: {service}'}), 400
     
     async def scrape():
@@ -1842,6 +1843,7 @@ def scrape_series_progress():
             'max': MaxSeriesProgressScraper,
             'disney': DisneySeriesProgressScraper,
             'apple': AppleSeriesProgressScraper,
+            'hulu': HuluSeriesProgressScraper,
         }
         
         browser_state_file = os.path.join(
