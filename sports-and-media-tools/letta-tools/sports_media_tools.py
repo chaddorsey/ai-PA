@@ -1422,6 +1422,7 @@ def search_tv_guide(
     Args:
         query: The search term to find in program titles (e.g., "Patriots",
                "SportsCenter", "College Football", "Breaking Bad").
+               REQUIRED: Must be a non-empty string.
         limit: Maximum number of results to return. Defaults to 20.
     
     Returns:
@@ -1440,6 +1441,23 @@ def search_tv_guide(
     logger = logging.getLogger(__name__)
     
     try:
+        # Validate query parameter - must be a non-empty string
+        if not query or not isinstance(query, str) or not query.strip():
+            logger.warning(f"search_tv_guide called with empty or invalid query: {repr(query)}")
+            return {
+                'status': 'error',
+                'query': query if query else '',
+                'results': [],
+                'count': 0,
+                'error_message': (
+                    "Query parameter is required. Please provide a search term like "
+                    "'Patriots', 'SportsCenter', 'Breaking Bad', or 'College Football'."
+                )
+            }
+        
+        # Clean the query
+        query = query.strip()
+        
         if limit is None:
             limit = 20
         
