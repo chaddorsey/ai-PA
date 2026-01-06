@@ -7,8 +7,11 @@ Tracks which episodes are watched, in-progress, or unwatched for each series.
 
 Supports:
 - Max (HBO)
-- Disney+ (planned)
-- Apple TV+ (planned)
+- Disney+
+- Apple TV+
+- Hulu
+- Netflix
+- Prime Video
 """
 
 import asyncio
@@ -1905,6 +1908,904 @@ class HuluSeriesProgressScraper:
                 logger.debug(f"Hulu: Error parsing episode {idx}: {e}")
         
         return episodes
+
+
+class NetflixSeriesProgressScraper:
+    """Scraper for Netflix series episode progress."""
+    
+    def __init__(self, browser_context):
+        """
+        Initialize with a Playwright browser context.
+        
+        Args:
+            browser_context: Playwright browser context with Netflix cookies loaded
+        """
+        self.context = browser_context
+    
+    async def get_series_progress(self, series_url: str) -> Optional[SeriesProgress]:
+        """
+        Scrape episode progress for a Netflix series.
+        
+        Args:
+            series_url: URL to the series page on Netflix (e.g., https://www.netflix.com/title/81057282)
+            
+        Returns:
+            SeriesProgress object with all episode data
+        """
+        page = await self.context.new_page()
+        
+        try:
+            logger.info(f"Netflix: Navigating to series page: {series_url}")
+            await page.goto(series_url, wait_until='networkidle', timeout=60000)
+            await asyncio.sleep(6)
+            
+            # Check for profile selection ("Who's watching")
+            content = await page.content()
+            needs_profile = 'Who' in content and 'watching' in content
+            
+            if needs_profile:
+                logger.info("Netflix: Profile selection screen detected, selecting first profile")
+                # Try various profile selectors
+                profile_selectors = [
+                    '.profile-link',
+                    '[class*="profile-icon"]',
+                    '.list-profiles a',
+                    'a[href*="browse"]',
+                    '.profile-name',
+                    'li.profile',
+                    '[data-uia="profile-link"]',
+                ]
+                
+                for sel in profile_selectors:
+                    profile = await page.query_selector(sel)
+                    if profile:
+                        logger.info(f"Netflix: Found profile with selector: {sel}")
+                        await profile.click()
+                        await asyncio.sleep(4)
+                        break
+                
+                # Re-navigate to series page
+                await page.goto(series_url, wait_until='networkidle', timeout=60000)
+                await asyncio.sleep(6)
+            
+            # Also check for older profile gate
+            profile_gate = await page.query_selector('[data-uia="profile-gate-container"], .profile-gate')
+            if profile_gate:
+                logger.info("Netflix: Profile gate detected, selecting first profile")
+                first_profile = await page.query_selector('.profile-icon, [data-uia*="profile"]')
+                if first_profile:
+                    await first_profile.click()
+                    await asyncio.sleep(3)
+                    await page.goto(series_url, wait_until='networkidle', timeout=60000)
+                    await asyncio.sleep(6)
+            
+            # Get series title from the season dropdown button (e.g., "Stranger Things 2")
+            series_title = await self._get_series_title(page)
+            if not series_title:
+                logger.warning("Netflix: Could not find series title")
+                # Try screenshot for debugging
+                try:
+                    await page.screenshot(path='/tmp/netflix_debug.png')
+                    logger.info("Netflix: Debug screenshot saved to /tmp/netflix_debug.png")
+                except Exception:
+                    pass
+                return None
+            
+            logger.info(f"Netflix: Scraping progress for '{series_title}'")
+            
+            # Extract series ID from URL
+            series_id = self._extract_series_id(series_url)
+            
+            # Click "See All Episodes" to show all seasons at once
+            await self._click_see_all_episodes(page)
+            
+            # Get all episodes (organized by season)
+            all_episodes = await self._get_all_episodes(page, series_title, series_id)
+            
+            # Count seasons
+            season_nums = set(ep.season_number for ep in all_episodes)
+            num_seasons = len(season_nums) if season_nums else 1
+            logger.info(f"Netflix: Found {len(all_episodes)} episodes across {num_seasons} seasons")
+            
+            # Calculate summary stats
+            watched = sum(1 for ep in all_episodes if ep.status == 'watched')
+            in_progress = sum(1 for ep in all_episodes if ep.status == 'in_progress')
+            unwatched = sum(1 for ep in all_episodes if ep.status == 'unwatched')
+            
+            # Find next episode to watch
+            next_episode = None
+            for ep in sorted(all_episodes, key=lambda e: (e.season_number, e.episode_number)):
+                if ep.status in ('unwatched', 'in_progress'):
+                    next_episode = {
+                        'season': ep.season_number,
+                        'episode': ep.episode_number,
+                        'title': ep.episode_title,
+                        'progress': ep.progress_percent
+                    }
+                    break
+            
+            await page.close()
+            
+            return SeriesProgress(
+                service='netflix',
+                series_title=series_title,
+                series_id=series_id,
+                total_seasons=num_seasons,
+                total_episodes=len(all_episodes),
+                watched_episodes=watched,
+                in_progress_episodes=in_progress,
+                unwatched_episodes=unwatched,
+                next_episode=next_episode,
+                episodes=all_episodes,
+                scraped_at=datetime.now(timezone.utc).isoformat()
+            )
+            
+        except Exception as e:
+            logger.error(f"Netflix: Error scraping series: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await page.close()
+            return None
+    
+    async def _get_series_title(self, page) -> Optional[str]:
+        """Extract series title from the page."""
+        # First try the dropdown toggle button which shows current season
+        # Format: "Stranger Things 2" -> extract base title "Stranger Things"
+        dropdown = await page.query_selector('button.dropdown-toggle[aria-label="dropdown-menu-trigger-button"]')
+        if dropdown:
+            text = await dropdown.inner_text()
+            text = text.strip()
+            # Remove season number suffix (e.g., "Stranger Things 2" -> "Stranger Things")
+            match = re.match(r'^(.+?)\s*\d*$', text)
+            if match:
+                base_title = match.group(1).strip()
+                if base_title:
+                    return base_title
+            if text:
+                return text
+        
+        # Try other selectors
+        selectors = [
+            '[data-uia="title-title"]',
+            '.title-title',
+            'h1.title',
+            '.jawbone-title-link',
+            'h1[class*="title"]',
+            '.previewModal--player-titleTreatment-logo',
+        ]
+        
+        for sel in selectors:
+            elem = await page.query_selector(sel)
+            if elem:
+                alt = await elem.get_attribute('alt')
+                if alt:
+                    return alt.strip()
+                text = await elem.inner_text()
+                if text and len(text) > 1:
+                    return text.strip()
+        
+        # Fallback: try to get from page title
+        title = await page.title()
+        if title and 'Netflix' in title:
+            parts = title.split('|')
+            if len(parts) >= 1:
+                return parts[0].strip()
+        
+        return None
+    
+    def _extract_series_id(self, url: str) -> str:
+        """Extract series ID from Netflix URL."""
+        match = re.search(r'/title/(\d+)', url)
+        if match:
+            return match.group(1)
+        return url.split('/')[-1].split('?')[0]
+    
+    async def _click_see_all_episodes(self, page):
+        """Click 'See All Episodes' in the dropdown to show all seasons at once."""
+        try:
+            dropdown = await page.query_selector('button.dropdown-toggle[aria-label="dropdown-menu-trigger-button"]')
+            if dropdown:
+                await dropdown.click()
+                await asyncio.sleep(1)
+                
+                menu_items = await page.query_selector_all('[role="menuitem"], [role="option"]')
+                for item in menu_items:
+                    text = await item.inner_text()
+                    if 'See All' in text or 'All Episodes' in text:
+                        logger.debug(f"Netflix: Clicking 'See All Episodes'")
+                        await item.click()
+                        await asyncio.sleep(2)
+                        return
+                
+                # If no "See All" option, just close the dropdown
+                await page.keyboard.press('Escape')
+        except Exception as e:
+            logger.debug(f"Netflix: Error clicking See All Episodes: {e}")
+    
+    async def _get_all_episodes(self, page, series_title: str, series_id: str) -> List[EpisodeProgress]:
+        """Get all episodes from the page (after 'See All Episodes' is clicked)."""
+        episodes = []
+        
+        # Wait briefly for episodes to load
+        await asyncio.sleep(1)
+        
+        # Find all episode elements
+        episode_elements = await page.query_selector_all('.episode-item')
+        logger.info(f"Netflix: Found {len(episode_elements)} episode elements")
+        
+        current_season = 1
+        last_ep_num = 0
+        
+        for idx, ep_elem in enumerate(episode_elements):
+            try:
+                # Get episode number from .titleCard-title_index
+                ep_num_text = ""
+                num_elem = await ep_elem.query_selector('.titleCard-title_index')
+                if num_elem:
+                    ep_num_text = await num_elem.inner_text()
+                    ep_num_text = ep_num_text.strip()
+                
+                ep_num = idx + 1
+                if ep_num_text:
+                    match = re.search(r'(\d+)', ep_num_text)
+                    if match:
+                        ep_num = int(match.group(1))
+                
+                # Detect season change: if episode number resets (goes down), we're in a new season
+                if ep_num <= last_ep_num and idx > 0:
+                    current_season += 1
+                last_ep_num = ep_num
+                
+                # Get episode title from .titleCard-title_text or aria-label
+                ep_title = f"Episode {ep_num}"
+                title_elem = await ep_elem.query_selector('.titleCard-title_text')
+                if title_elem:
+                    ep_title = (await title_elem.inner_text()).strip()
+                else:
+                    aria_label = await ep_elem.get_attribute('aria-label')
+                    if aria_label:
+                        ep_title = aria_label.strip()
+                
+                # Get duration from .titleCard-duration .duration
+                duration = None
+                dur_elem = await ep_elem.query_selector('.titleCard-duration .duration, .duration')
+                if dur_elem:
+                    dur_text = await dur_elem.inner_text()
+                    match = re.search(r'(\d+)\s*m', dur_text)
+                    if match:
+                        duration = int(match.group(1))
+                
+                # Get progress from progress.titleCard-progress element (value 0-1)
+                progress_percent = 0
+                status = 'unwatched'
+                
+                progress_bar = await ep_elem.query_selector('progress.titleCard-progress')
+                if progress_bar:
+                    value = await progress_bar.get_attribute('value')
+                    if value:
+                        try:
+                            progress_percent = int(float(value) * 100)
+                        except ValueError:
+                            pass
+                
+                # Determine status
+                if progress_percent >= 90:
+                    status = 'watched'
+                elif progress_percent > 0:
+                    status = 'in_progress'
+                
+                # Extract video ID for deep link
+                video_id = None
+                tracking_elem = await ep_elem.query_selector('.ptrack-content[data-ui-tracking-context]')
+                if tracking_elem:
+                    tracking_data = await tracking_elem.get_attribute('data-ui-tracking-context')
+                    if tracking_data:
+                        vid_match = re.search(r'"video_id":(\d+)', tracking_data)
+                        if vid_match:
+                            video_id = vid_match.group(1)
+                
+                deep_link = f"https://www.netflix.com/watch/{video_id}" if video_id else f"https://www.netflix.com/title/{series_id}"
+                
+                episodes.append(EpisodeProgress(
+                    service='netflix',
+                    series_title=series_title,
+                    series_id=series_id,
+                    season_number=current_season,
+                    episode_number=ep_num,
+                    episode_title=ep_title,
+                    duration_minutes=duration,
+                    status=status,
+                    progress_percent=progress_percent,
+                    deep_link=deep_link,
+                    scraped_at=datetime.now(timezone.utc).isoformat()
+                ))
+                logger.debug(f"Netflix: S{current_season}E{ep_num}: {ep_title} ({status}, {progress_percent}%)")
+                
+            except Exception as e:
+                logger.debug(f"Netflix: Error parsing episode {idx}: {e}")
+        
+        return episodes
+    
+    # Legacy methods kept for reference but not used
+    async def _get_seasons(self, page) -> List[tuple]:
+        """Get list of (season_number, season_label) tuples from dropdown."""
+        seasons = []
+        
+        # Click the dropdown toggle to open season list
+        dropdown_toggle = await page.query_selector('button.dropdown-toggle[aria-label="dropdown-menu-trigger-button"]')
+        if dropdown_toggle:
+            # Get current season from button text
+            current_text = await dropdown_toggle.inner_text()
+            logger.debug(f"Netflix: Current dropdown text: {current_text}")
+            
+            # Click to open dropdown
+            await dropdown_toggle.click()
+            await asyncio.sleep(1)
+            
+            # Find dropdown menu items
+            menu_items = await page.query_selector_all('[role="menuitem"], .dropdown-menu-item, [role="option"]')
+            if menu_items:
+                for item in menu_items:
+                    text = await item.inner_text()
+                    text = text.strip()
+                    
+                    # Skip "See All Episodes" option
+                    if 'See All' in text or 'All Episodes' in text:
+                        continue
+                    
+                    # Handle multi-line format: "Stranger Things 2\n(9 Episodes)"
+                    # Take only the first line for season detection
+                    first_line = text.split('\n')[0].strip()
+                    
+                    # Look for explicit "Season X" pattern
+                    season_match = re.search(r'Season\s*(\d+)', first_line, re.IGNORECASE)
+                    if season_match:
+                        seasons.append((int(season_match.group(1)), first_line))
+                    else:
+                        # Check for number at end (e.g., "Stranger Things 2")
+                        num_match = re.search(r'\s(\d+)$', first_line)
+                        if num_match:
+                            seasons.append((int(num_match.group(1)), first_line))
+                        elif len(seasons) == 0:
+                            # First item without number is Season 1
+                            seasons.append((1, first_line))
+                
+                logger.debug(f"Netflix: Detected seasons: {seasons}")
+            
+            # Close dropdown by clicking elsewhere or pressing Escape
+            await page.keyboard.press('Escape')
+            await asyncio.sleep(0.5)
+        
+        # Default to season 1 if none found
+        if not seasons:
+            seasons.append((1, "Season 1"))
+        
+        return sorted(seasons, key=lambda x: x[0])
+    
+    async def _select_season(self, page, season_num: int, season_label: str):
+        """Select a season from the dropdown."""
+        try:
+            dropdown_toggle = await page.query_selector('button.dropdown-toggle[aria-label="dropdown-menu-trigger-button"]')
+            if not dropdown_toggle:
+                logger.debug("Netflix: No dropdown toggle found")
+                return
+            
+            await dropdown_toggle.click()
+            await asyncio.sleep(1)
+            
+            # Find menu items and identify the index to click
+            menu_items = await page.query_selector_all('[role="menuitem"], .dropdown-menu-item, [role="option"]')
+            target_index = None
+            
+            for idx, item in enumerate(menu_items):
+                try:
+                    text = await item.inner_text()
+                    first_line = text.split('\n')[0].strip()
+                    
+                    # Skip "See All Episodes"
+                    if 'See All' in first_line or 'All Episodes' in first_line:
+                        continue
+                    
+                    # Match by exact label
+                    if season_label == first_line:
+                        target_index = idx
+                        break
+                    
+                    # Match "Season X" pattern
+                    if f"Season {season_num}" in first_line:
+                        target_index = idx
+                        break
+                    
+                    # Match by number at end (e.g., "Stranger Things 2" for season 2)
+                    num_match = re.search(r'\s(\d+)$', first_line)
+                    if num_match and int(num_match.group(1)) == season_num:
+                        target_index = idx
+                        break
+                    
+                    # Season 1 has no number
+                    if season_num == 1 and not num_match:
+                        target_index = idx
+                        break
+                except Exception:
+                    continue
+            
+            if target_index is not None:
+                # Re-query to get fresh reference
+                menu_items = await page.query_selector_all('[role="menuitem"], .dropdown-menu-item, [role="option"]')
+                if target_index < len(menu_items):
+                    logger.debug(f"Netflix: Clicking season at index {target_index}")
+                    await menu_items[target_index].click()
+                    await asyncio.sleep(3)
+                    return
+            
+            # Close if no match found
+            await page.keyboard.press('Escape')
+            
+        except Exception as e:
+            logger.debug(f"Netflix: Error selecting season: {e}")
+            try:
+                await page.keyboard.press('Escape')
+            except Exception:
+                pass
+    
+    async def _get_season_episodes(self, page, series_title: str, series_id: str, season_num: int) -> List[EpisodeProgress]:
+        """Get all episodes for the current season."""
+        episodes = []
+        
+        # Brief wait for episode list (Netflix re-renders quickly, long waits cause elements to disappear)
+        await asyncio.sleep(1)
+        
+        # Netflix episode containers - try .episode-item first (more specific)
+        episode_elements = await page.query_selector_all('.episode-item')
+        if not episode_elements:
+            # Wait a bit more and retry
+            await asyncio.sleep(2)
+            episode_elements = await page.query_selector_all('.episode-item')
+        if not episode_elements:
+            # Fallback to compound selector
+            episode_elements = await page.query_selector_all('.titleCardList--container.episode-item')
+        logger.info(f"Netflix: Found {len(episode_elements)} episode elements for season {season_num}")
+        
+        for idx, ep_elem in enumerate(episode_elements):
+            try:
+                # Get episode number from .titleCard-title_index
+                ep_num = idx + 1
+                num_elem = await ep_elem.query_selector('.titleCard-title_index')
+                if num_elem:
+                    num_text = await num_elem.inner_text()
+                    match = re.search(r'(\d+)', num_text)
+                    if match:
+                        ep_num = int(match.group(1))
+                
+                # Get episode title from .titleCard-title_text
+                ep_title = f"Episode {ep_num}"
+                title_elem = await ep_elem.query_selector('.titleCard-title_text')
+                if title_elem:
+                    ep_title = (await title_elem.inner_text()).strip()
+                else:
+                    # Fallback: try aria-label on container
+                    aria_label = await ep_elem.get_attribute('aria-label')
+                    if aria_label:
+                        ep_title = aria_label.strip()
+                
+                # Get duration from .titleCard-duration .duration
+                duration = None
+                dur_elem = await ep_elem.query_selector('.titleCard-duration .duration, .duration')
+                if dur_elem:
+                    dur_text = await dur_elem.inner_text()
+                    match = re.search(r'(\d+)\s*m', dur_text)
+                    if match:
+                        duration = int(match.group(1))
+                
+                # Get progress from progress.titleCard-progress element
+                # The value is 0-1 scale (e.g., value="0.9358198924731183")
+                progress_percent = 0
+                status = 'unwatched'
+                
+                progress_bar = await ep_elem.query_selector('progress.titleCard-progress')
+                if progress_bar:
+                    value = await progress_bar.get_attribute('value')
+                    if value:
+                        try:
+                            progress_percent = int(float(value) * 100)
+                        except ValueError:
+                            pass
+                
+                # Determine status
+                if progress_percent >= 90:
+                    status = 'watched'
+                elif progress_percent > 0:
+                    status = 'in_progress'
+                
+                # Extract video ID for deep link from data-ui-tracking-context
+                video_id = None
+                tracking_elem = await ep_elem.query_selector('.ptrack-content[data-ui-tracking-context]')
+                if tracking_elem:
+                    tracking_data = await tracking_elem.get_attribute('data-ui-tracking-context')
+                    if tracking_data:
+                        vid_match = re.search(r'"video_id":(\d+)', tracking_data)
+                        if vid_match:
+                            video_id = vid_match.group(1)
+                
+                deep_link = f"https://www.netflix.com/watch/{video_id}" if video_id else f"https://www.netflix.com/title/{series_id}"
+                
+                episodes.append(EpisodeProgress(
+                    service='netflix',
+                    series_title=series_title,
+                    series_id=series_id,
+                    season_number=season_num,
+                    episode_number=ep_num,
+                    episode_title=ep_title,
+                    duration_minutes=duration,
+                    status=status,
+                    progress_percent=progress_percent,
+                    deep_link=deep_link,
+                    scraped_at=datetime.now(timezone.utc).isoformat()
+                ))
+                logger.debug(f"Netflix: Parsed S{season_num}E{ep_num}: {ep_title} ({status}, {progress_percent}%)")
+                
+            except Exception as e:
+                logger.debug(f"Netflix: Error parsing episode {idx}: {e}")
+        
+        return episodes
+
+
+class PrimeSeriesProgressScraper:
+    """Scraper for Prime Video series episode progress."""
+    
+    def __init__(self, browser_context):
+        """
+        Initialize with a Playwright browser context.
+        
+        Args:
+            browser_context: Playwright browser context with Prime Video cookies loaded
+        """
+        self.context = browser_context
+    
+    async def get_series_progress(self, series_url: str) -> Optional[SeriesProgress]:
+        """
+        Scrape episode progress for a Prime Video series.
+        
+        Args:
+            series_url: URL to the series page on Prime Video
+            
+        Returns:
+            SeriesProgress object with all episode data
+        """
+        page = await self.context.new_page()
+        
+        try:
+            logger.info(f"Prime: Navigating to series page: {series_url}")
+            await page.goto(series_url, wait_until='domcontentloaded', timeout=60000)
+            await asyncio.sleep(6)
+            
+            # Check if we need to sign in
+            if '/ap/signin' in page.url:
+                logger.warning("Prime: Session expired, need to re-authenticate")
+                await page.close()
+                return None
+            
+            # First, ensure we're on the Episodes tab
+            await self._click_episodes_tab(page)
+            
+            # Get series title
+            series_title = await self._get_series_title(page)
+            if not series_title:
+                logger.warning("Prime: Could not find series title")
+                try:
+                    await page.screenshot(path='/tmp/prime_debug.png')
+                    logger.info("Prime: Debug screenshot saved to /tmp/prime_debug.png")
+                except Exception:
+                    pass
+                return None
+            
+            logger.info(f"Prime: Scraping progress for '{series_title}'")
+            
+            # Extract series ID from URL
+            series_id = self._extract_series_id(series_url)
+            
+            # Get all seasons (returns tuples of season_num, url, label)
+            seasons = await self._get_seasons(page)
+            logger.info(f"Prime: Found {len(seasons)} seasons")
+            
+            all_episodes = []
+            
+            for season_data in seasons:
+                season_num, season_url, season_label = season_data
+                logger.info(f"Prime: Processing {season_label}")
+                
+                # Navigate to season page if different from current
+                if len(seasons) > 1 and season_url != page.url:
+                    logger.debug(f"Prime: Navigating to {season_url}")
+                    await page.goto(season_url, wait_until='domcontentloaded', timeout=60000)
+                    await asyncio.sleep(4)
+                    # Click episodes tab again after navigation
+                    await self._click_episodes_tab(page)
+                
+                # Get episodes for this season
+                episodes = await self._get_season_episodes(page, series_title, series_id, season_num)
+                all_episodes.extend(episodes)
+                logger.info(f"Prime: Found {len(episodes)} episodes in {season_label}")
+            
+            # Calculate summary stats
+            watched = sum(1 for ep in all_episodes if ep.status == 'watched')
+            in_progress = sum(1 for ep in all_episodes if ep.status == 'in_progress')
+            unwatched = sum(1 for ep in all_episodes if ep.status == 'unwatched')
+            
+            # Find next episode to watch
+            next_episode = None
+            for ep in all_episodes:
+                if ep.status in ('unwatched', 'in_progress'):
+                    next_episode = {
+                        'season': ep.season_number,
+                        'episode': ep.episode_number,
+                        'title': ep.episode_title,
+                        'progress': ep.progress_percent
+                    }
+                    break
+            
+            await page.close()
+            
+            return SeriesProgress(
+                service='prime',
+                series_title=series_title,
+                series_id=series_id,
+                total_seasons=len(seasons),
+                total_episodes=len(all_episodes),
+                watched_episodes=watched,
+                in_progress_episodes=in_progress,
+                unwatched_episodes=unwatched,
+                next_episode=next_episode,
+                episodes=all_episodes,
+                scraped_at=datetime.now(timezone.utc).isoformat()
+            )
+            
+        except Exception as e:
+            logger.error(f"Prime: Error scraping series: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await page.close()
+            return None
+    
+    async def _click_episodes_tab(self, page):
+        """Click the Episodes tab to ensure episode list is visible."""
+        try:
+            episodes_tab = await page.query_selector('button#tab-selector-episodes, [data-testid="btf-episodes-tab"]')
+            if episodes_tab:
+                await episodes_tab.click()
+                await asyncio.sleep(2)
+                logger.debug("Prime: Clicked Episodes tab")
+        except Exception as e:
+            logger.debug(f"Prime: Could not click Episodes tab: {e}")
+    
+    async def _get_series_title(self, page) -> Optional[str]:
+        """Extract series title from the page."""
+        selectors = [
+            '[data-automation-id="title"]',
+            'h1[data-automation-id="title"]',
+            '.av-detail-section h1',
+            'h1',
+        ]
+        
+        for sel in selectors:
+            elem = await page.query_selector(sel)
+            if elem:
+                text = await elem.inner_text()
+                if text and len(text) > 1 and len(text) < 200:
+                    return text.strip()
+        
+        # Fallback: try page title
+        title = await page.title()
+        if title and 'Prime Video' in title:
+            # Format: "Show Name - Season 1 | Prime Video"
+            parts = title.split('|')[0].split('-')
+            if parts:
+                return parts[0].strip()
+        
+        return None
+    
+    def _extract_series_id(self, url: str) -> str:
+        """Extract series ID from Prime Video URL."""
+        match = re.search(r'/detail/([A-Z0-9]+)', url)
+        if match:
+            return match.group(1)
+        # Also try pageTypeId param
+        match = re.search(r'pageTypeId=([A-Z0-9]+)', url)
+        if match:
+            return match.group(1)
+        return url.split('/')[-1].split('?')[0]
+    
+    async def _get_seasons(self, page) -> List[tuple]:
+        """Get list of (season_number, season_url, season_label) tuples.
+        
+        Prime Video uses different URLs for each season, so we return URLs too.
+        """
+        seasons = []
+        
+        # Look for season selector: label[for="av-droplist-av-atf-season-selector"]
+        season_label_elem = await page.query_selector('label[for*="season-selector"]')
+        if season_label_elem:
+            # Click to open dropdown
+            await season_label_elem.click()
+            await asyncio.sleep(1)
+            
+            # Prime dropdown contains links to different season pages in a ul/li structure
+            # Structure: <ul><li><a href="/gp/video/detail/ASIN">Season X</a></li></ul>
+            season_links = await page.query_selector_all('label[for*="season-selector"] + ul li a, #av-droplist-av-atf-season-selector ~ ul li a')
+            
+            for link in season_links:
+                try:
+                    href = await link.get_attribute('href')
+                    text = await link.inner_text()
+                    text = text.strip()
+                    match = re.search(r'Season\s*(\d+)', text, re.IGNORECASE)
+                    if match and href:
+                        season_num = int(match.group(1))
+                        # Make full URL if relative
+                        if href.startswith('/'):
+                            href = f"https://www.amazon.com{href}"
+                        seasons.append((season_num, href, text))
+                        logger.debug(f"Prime: Found season {season_num}: {href}")
+                except Exception as e:
+                    logger.debug(f"Prime: Error parsing season link: {e}")
+            
+            # Close dropdown
+            await page.keyboard.press('Escape')
+            await asyncio.sleep(0.5)
+        
+        # If no seasons from dropdown, use current page as single season
+        if not seasons:
+            current_label = await page.query_selector('label[for*="season-selector"] span')
+            if current_label:
+                text = await current_label.inner_text()
+                match = re.search(r'Season\s*(\d+)', text, re.IGNORECASE)
+                if match:
+                    seasons.append((int(match.group(1)), page.url, text.strip()))
+            else:
+                seasons.append((1, page.url, "Season 1"))
+        
+        return sorted(seasons, key=lambda x: x[0])
+    
+    async def _select_season(self, page, season_num: int, season_label: str):
+        """Select a season from the dropdown."""
+        # Click season selector to open dropdown
+        season_selector = await page.query_selector('label[for*="season-selector"]')
+        if season_selector:
+            await season_selector.click()
+            await asyncio.sleep(1)
+            
+            # Find and click matching option
+            options = await page.query_selector_all('[role="option"], [role="menuitem"]')
+            for opt in options:
+                text = await opt.inner_text()
+                if f"Season {season_num}" in text:
+                    await opt.click()
+                    await asyncio.sleep(2)
+                    return
+            
+            # Close dropdown if no match
+            await page.keyboard.press('Escape')
+    
+    async def _get_season_episodes(self, page, series_title: str, series_id: str, season_num: int) -> List[EpisodeProgress]:
+        """Get all episodes for the current season."""
+        episodes = []
+        
+        # Wait for episode list to load
+        await asyncio.sleep(2)
+        
+        # Scroll to load all episodes
+        await self._scroll_to_load_episodes(page)
+        
+        # Prime episode containers: li[data-testid="episode-list-item"]
+        episode_elements = await page.query_selector_all('li[data-testid="episode-list-item"]')
+        logger.debug(f"Prime: Found {len(episode_elements)} episode elements")
+        
+        for idx, ep_elem in enumerate(episode_elements):
+            try:
+                # Get episode title from h3 span - format: "5. The Schizoid Man"
+                ep_num = idx + 1
+                ep_title = f"Episode {ep_num}"
+                
+                title_elem = await ep_elem.query_selector('h3.AdOmdI span._36qUej, h3 span')
+                if title_elem:
+                    title_text = (await title_elem.inner_text()).strip()
+                    # Parse "5. The Schizoid Man" format
+                    match = re.match(r'^(\d+)\.\s*(.+)$', title_text)
+                    if match:
+                        ep_num = int(match.group(1))
+                        ep_title = match.group(2).strip()
+                    else:
+                        ep_title = title_text
+                
+                # Get duration from [data-testid="episode-runtime"]
+                duration = None
+                dur_elem = await ep_elem.query_selector('[data-testid="episode-runtime"]')
+                if dur_elem:
+                    dur_text = await dur_elem.inner_text()
+                    match = re.search(r'(\d+)\s*min', dur_text, re.IGNORECASE)
+                    if match:
+                        duration = int(match.group(1))
+                    else:
+                        # Try "1h 30m" format
+                        h_match = re.search(r'(\d+)\s*h', dur_text)
+                        m_match = re.search(r'(\d+)\s*m', dur_text)
+                        if h_match or m_match:
+                            hours = int(h_match.group(1)) if h_match else 0
+                            mins = int(m_match.group(1)) if m_match else 0
+                            duration = hours * 60 + mins
+                
+                # Check for watched status from data-is-watched attribute
+                progress_percent = 0
+                status = 'unwatched'
+                
+                watched_elem = await ep_elem.query_selector('[data-is-watched]')
+                if watched_elem:
+                    is_watched = await watched_elem.get_attribute('data-is-watched')
+                    if is_watched == 'true':
+                        progress_percent = 100
+                        status = 'watched'
+                
+                # Also look for progress bar with gradient overlay
+                if progress_percent == 0:
+                    progress_bar = await ep_elem.query_selector('[class*="progress"], .dDns1P')
+                    if progress_bar:
+                        # Check for width style
+                        inner = await progress_bar.query_selector('[class*="progress-fill"], ._1Arf3p')
+                        if inner:
+                            style = await inner.get_attribute('style') or ''
+                            width_match = re.search(r'width:\s*([\d.]+)%', style)
+                            if width_match:
+                                progress_percent = int(float(width_match.group(1)))
+                
+                # Determine status based on progress
+                if progress_percent >= 90:
+                    status = 'watched'
+                elif progress_percent > 0:
+                    status = 'in_progress'
+                
+                # Get deep link from play button href
+                deep_link = f"https://www.amazon.com/gp/video/detail/{series_id}"
+                play_link = await ep_elem.query_selector('a[data-testid="episodes-playbutton"]')
+                if play_link:
+                    href = await play_link.get_attribute('href')
+                    if href:
+                        if href.startswith('/'):
+                            deep_link = f"https://www.amazon.com{href}"
+                        else:
+                            deep_link = href
+                
+                episodes.append(EpisodeProgress(
+                    service='prime',
+                    series_title=series_title,
+                    series_id=series_id,
+                    season_number=season_num,
+                    episode_number=ep_num,
+                    episode_title=ep_title,
+                    duration_minutes=duration,
+                    status=status,
+                    progress_percent=progress_percent,
+                    deep_link=deep_link,
+                    scraped_at=datetime.now(timezone.utc).isoformat()
+                ))
+                logger.debug(f"Prime: Parsed S{season_num}E{ep_num}: {ep_title} ({status}, {progress_percent}%, {duration}min)")
+                
+            except Exception as e:
+                logger.debug(f"Prime: Error parsing episode {idx}: {e}")
+        
+        return episodes
+    
+    async def _scroll_to_load_episodes(self, page):
+        """Scroll down to load all episodes (for lazy-loaded content)."""
+        try:
+            # Scroll page to load episodes
+            for _ in range(3):
+                await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                await asyncio.sleep(0.5)
+            # Scroll back up
+            await page.evaluate('window.scrollTo(0, 0)')
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.debug(f"Prime: Error scrolling: {e}")
 
 
 def series_progress_to_dict(progress: SeriesProgress) -> Dict[str, Any]:
