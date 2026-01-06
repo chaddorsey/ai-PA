@@ -1,0 +1,122 @@
+# Series Monitoring Scheduled Jobs
+# These jobs extend the existing streaming sync jobs to add series tracking capabilities
+# Submit to scheduler for sleeptime agent: agent-a9f2c740-663c-4414-a553-47115180e49b
+
+jobs:
+  - title: "Sync All Active Tracked Series"
+    description: "Sync episode-level watch progress for all series with tracking_status='watching'. Updates which episodes are watched, in progress, or unwatched for each tracked series."
+    schedule:
+      cron: "30 4 * * *"
+      natural: "Daily at 4:30 AM Eastern"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run sync_all_active_series() for user chad. Log the sync results including count of series synced and any errors to streaming_sync_status memory block. If any errors occur, log details to streaming_sync_errors_and_issues memory block."
+    category: "series_monitoring"
+    timeout_seconds: 2400
+    notes:
+      - "Runs after recommendations poll completes"
+      - "Each series can take 30-60 seconds to scrape (all seasons/episodes)"
+      - "Only syncs series where tracking_status='watching'"
+      - "Results are automatically saved to the content database"
+
+  - title: "Reconcile Watchlist Tracking"
+    description: "Auto-add series from streaming service watchlists to tracked_series. Ensures new shows added to My List/Watchlist are automatically monitored."
+    schedule:
+      cron: "30 2 * * *"
+      natural: "Daily at 2:30 AM Eastern"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run reconcile_watchlist_tracking() for user chad. Log how many new series were auto-tracked from watchlists to streaming_sync_status memory block."
+    category: "series_monitoring"
+    timeout_seconds: 300
+    notes:
+      - "Runs after watchlist poll (2:00 AM) to pick up new items"
+      - "Only adds series not already tracked"
+      - "Sets auto_tracked_from_watchlist=True for these entries"
+      - "New series start with tracking_status='watching'"
+
+  - title: "Check for New Seasons"
+    description: "Check JustWatch for new season availability on tracked series. Alerts when shows chad watches have new episodes available."
+    schedule:
+      cron: "0 5 * * 0"
+      natural: "Weekly on Sunday at 5:00 AM Eastern"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run check_new_seasons() for user chad. If any new seasons are found, log them to streaming_sync_status memory block with the series name and new season number. This helps chad know when shows he watches have new episodes."
+    category: "series_monitoring"
+    timeout_seconds: 600
+    notes:
+      - "Checks series with tracking_status 'watching' or 'finished'"
+      - "Updates watch_status to 'in_progress' when new seasons found"
+      - "Weekly is sufficient since new seasons don't drop frequently"
+      - "Uses JustWatch API for availability data"
+
+  - title: "Credential Health Check"
+    description: "Verify that all streaming service credentials are still valid. Proactive detection of expired sessions before they cause sync failures."
+    schedule:
+      cron: "0 5 * * *"
+      natural: "Daily at 5:00 AM Eastern"
+    action_type: "agent_message"
+    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+    prompt: "Run check_credential_status and log which streaming services have valid credentials to streaming_sync_status memory block. If any services need re-authentication, log them prominently to streaming_sync_errors_and_issues memory block so chad can be notified."
+    category: "maintenance"
+    timeout_seconds: 120
+    notes:
+      - "Runs after series sync completes"
+      - "Checks Netflix, Prime, Max, Hulu, Disney+, Apple TV+"
+      - "Expired credentials should trigger notification to chad"
+      - "Tool may need re-registration: check_credential_status"
+
+metadata:
+  version: "1.0"
+  created: "2026-01-06"
+  description: "Series monitoring scheduled jobs to extend streaming sync capabilities"
+  sleeptime_agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
+  
+  prerequisite_jobs:
+    - "Watchlists Poll (2:00 AM) - required before Reconcile Watchlist Tracking"
+    - "Recommendations Poll (4:00 AM) - required before Sync All Active Series"
+  
+  memory_blocks_used:
+    - name: "streaming_sync_status"
+      purpose: "Log of sync times, item counts, and new season alerts"
+    - name: "streaming_sync_errors_and_issues"
+      purpose: "Log of sync errors and credentials needing refresh"
+  
+  tool_requirements:
+    - tool: "sync_all_active_series"
+      status: "registered"
+    - tool: "reconcile_watchlist_tracking"
+      status: "registered"
+    - tool: "check_new_seasons"
+      status: "registered"
+    - tool: "check_credential_status"
+      status: "needs re-registration"
+      action: "Run register_sports_media_tools.py to attach to sleeptime agent"
+
+  complete_daily_schedule:
+    - time: "2:00 AM"
+      job: "Watchlists Poll"
+      status: "existing"
+    - time: "2:30 AM"
+      job: "Reconcile Watchlist Tracking"
+      status: "NEW"
+    - time: "3:00 AM"
+      job: "Full Streaming Data Sync"
+      status: "existing"
+    - time: "4:00 AM"
+      job: "Recommendations Poll"
+      status: "existing"
+    - time: "4:30 AM"
+      job: "Sync All Active Tracked Series"
+      status: "NEW"
+    - time: "5:00 AM"
+      job: "Credential Health Check"
+      status: "NEW"
+    - time: "Every 6h"
+      job: "Watch History Poll"
+      status: "existing"
+    - time: "Sunday 5:00 AM"
+      job: "Check for New Seasons"
+      status: "NEW (weekly)"
+
