@@ -33,7 +33,9 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 # Configuration
-CREDENTIALS_PATH = Path(os.environ.get('CREDENTIALS_PATH', './credentials'))
+# Default to the sports-and-media-tools/credentials directory (parent of this script's dir)
+_default_creds_path = Path(__file__).resolve().parent.parent / 'credentials'
+CREDENTIALS_PATH = Path(os.environ.get('CREDENTIALS_PATH', str(_default_creds_path)))
 BROWSER_STATES_PATH = CREDENTIALS_PATH / 'browser_states'
 
 SERVICE_URLS = {

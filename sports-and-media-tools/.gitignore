@@ -4,6 +4,9 @@ credentials/browser_states/
 credentials/*.png
 credentials/*.html
 
+# Ignore duplicate credentials created in subdirectories
+watch-history-service/credentials/
+
 # Keep the credentials directory structure
 !credentials/.gitkeep
 
