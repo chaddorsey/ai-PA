@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Create scheduled jobs for streaming data synchronization.
+Create scheduled jobs for streaming data synchronization, series monitoring,
+and session maintenance.
+
+Jobs include:
+- Streaming sync (watch history, watchlists, recommendations)
+- Series monitoring (tracked series sync, new seasons check)
+- Session maintenance (refresh sessions, clean browser states)
 """
 
 import json
@@ -105,6 +111,94 @@ JOBS = [
             "config": {
                 "agent_id": AGENT_ID,
                 "message": "Call get_tv_listings_now with sports_only=false to refresh TV listings data."
+            }
+        }]
+    },
+    # Series monitoring jobs
+    {
+        "title": "Sync All Active Tracked Series",
+        "description": "Sync episode-level watch progress for all series with tracking_status='watching'",
+        "schedule": {
+            "type": "cron",
+            "expression": {"cron": "30 4 * * *"}
+        },
+        "category": "series_monitoring",
+        "actions": [{
+            "action_type": "agent_message",
+            "config": {
+                "agent_id": AGENT_ID,
+                "message": "Run sync_all_active_series() for user chad. Log any changes or completions to the tracked_series memory block and the sync results including count of series synced and any errors to streaming_sync_status memory block. If any errors occur, log details to streaming_sync_errors_and_issues memory block."
+            }
+        }]
+    },
+    {
+        "title": "Reconcile Watchlist Tracking",
+        "description": "Auto-add series from streaming service watchlists to tracked_series",
+        "schedule": {
+            "type": "cron",
+            "expression": {"cron": "30 2 * * *"}
+        },
+        "category": "series_monitoring",
+        "actions": [{
+            "action_type": "agent_message",
+            "config": {
+                "agent_id": AGENT_ID,
+                "message": "Run reconcile_watchlist_tracking() for user chad. Update the tracked_series memory block with any additions or changes and log how many new series were auto-tracked from watchlists to streaming_sync_status memory block."
+            }
+        }]
+    },
+    {
+        "title": "Check for New Seasons",
+        "description": "Check JustWatch for new season availability on tracked series",
+        "schedule": {
+            "type": "cron",
+            "expression": {"cron": "0 5 * * 0"}
+        },
+        "category": "series_monitoring",
+        "actions": [{
+            "action_type": "agent_message",
+            "config": {
+                "agent_id": AGENT_ID,
+                "message": "Run check_new_seasons() for user chad. If any new seasons are found, log them to streaming_sync_status memory block with the series name and new season number."
+            }
+        }]
+    },
+    # Session maintenance jobs
+    {
+        "title": "Refresh Streaming Sessions",
+        "description": "Proactively refresh streaming service sessions before they expire",
+        "schedule": {
+            "type": "cron",
+            "expression": {"cron": "0 1 * * 0,3"}
+        },
+        "category": "session_maintenance",
+        "actions": [{
+            "action_type": "http",
+            "config": {
+                "url": "http://watch-history-service:5127/sessions/refresh-due",
+                "method": "POST",
+                "headers": {},
+                "body": {},
+                "timeout_seconds": 300
+            }
+        }]
+    },
+    {
+        "title": "Clean Browser State Files",
+        "description": "Weekly cleanup of browser state files to remove bloated localStorage data",
+        "schedule": {
+            "type": "cron",
+            "expression": {"cron": "30 0 * * 0"}
+        },
+        "category": "session_maintenance",
+        "actions": [{
+            "action_type": "http",
+            "config": {
+                "url": "http://watch-history-service:5127/sessions/cleanup-states",
+                "method": "POST",
+                "headers": {},
+                "body": {},
+                "timeout_seconds": 60
             }
         }]
     }
