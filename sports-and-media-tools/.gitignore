@@ -75,3 +75,10 @@ tmp/
 temp/
 *.tmp
 
+
+# One-time series review files
+content-database/series_review_*.yaml
+content-database/series_review_*.txt
+content-database/series_review_*.html
+content-database/generate_review_tools.py
+

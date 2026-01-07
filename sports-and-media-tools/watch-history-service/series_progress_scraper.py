@@ -1380,12 +1380,30 @@ class AppleSeriesProgressScraper:
                                 status = 'watched'
                                 progress_percent = 100
                 
-                # Get duration if visible
+                # Get duration from the .duration element within the card
                 duration = None
-                duration_text = text  # From link.inner_text() above
-                m_match = re.search(r'(\d+)\s*min', duration_text, re.IGNORECASE)
-                if m_match:
-                    duration = int(m_match.group(1))
+                # Look for duration in the metadata card structure
+                # Format: <div class="duration svelte-gsgqar">22m</div>
+                duration_elem = await link.query_selector('.duration, [class*="duration"][class*="svelte"]')
+                if duration_elem:
+                    duration_text = await duration_elem.inner_text()
+                    # Parse "22m" or "1h 22m" format
+                    hours = 0
+                    minutes = 0
+                    h_match = re.search(r'(\d+)\s*h', duration_text, re.IGNORECASE)
+                    m_match = re.search(r'(\d+)\s*m', duration_text, re.IGNORECASE)
+                    if h_match:
+                        hours = int(h_match.group(1))
+                    if m_match:
+                        minutes = int(m_match.group(1))
+                    duration = hours * 60 + minutes if (hours or minutes) else None
+                    if duration:
+                        logger.debug(f"Apple TV+: Found duration {duration}min from '{duration_text}'")
+                else:
+                    # Fallback: try to find duration in link text
+                    m_match = re.search(r'(\d+)\s*min', text, re.IGNORECASE)
+                    if m_match:
+                        duration = int(m_match.group(1))
                 
                 # Build deep link
                 deep_link = href if href.startswith('http') else f"https://tv.apple.com{href}" if href else None
