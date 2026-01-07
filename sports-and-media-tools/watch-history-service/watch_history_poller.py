@@ -1559,13 +1559,14 @@ def init_series_progress_table():
     logger.info("Series progress tables initialized")
 
 
-def save_series_progress_to_db(series_progress, username: str = 'chad') -> int:
+def save_series_progress_to_db(series_progress, username: str = 'chad', series_url: str = None) -> int:
     """
     Save series progress data to the database.
     
     Args:
         series_progress: SeriesProgress object from scraper
         username: Username to associate with the data
+        series_url: URL of the series page (for reliable tracked_series matching)
         
     Returns:
         Number of episodes saved
@@ -1642,26 +1643,66 @@ def save_series_progress_to_db(series_progress, username: str = 'chad') -> int:
                     next_duration = ep.duration_minutes
                     break
         
-        # Update tracked_series with duration info
-        cursor.execute('''
-            UPDATE tracked_series 
-            SET avg_episode_duration = ?,
-                next_episode_duration = ?,
-                total_episodes_known = ?,
-                watched_episode_count = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ? AND LOWER(title) LIKE LOWER(?)
-        ''', (
-            avg_duration,
-            next_duration,
-            series_progress.total_episodes,
-            series_progress.watched_episodes,
-            user_id,
-            f'%{series_progress.series_title}%'
-        ))
+        # Try to update tracked_series - prefer series_url match (most reliable)
+        updated = False
         
-        if cursor.rowcount > 0:
-            logger.info(f"Updated tracked_series with avg={avg_duration}min, next={next_duration}min")
+        if series_url:
+            # First try: exact series_url match (most reliable)
+            cursor.execute('''
+                UPDATE tracked_series 
+                SET avg_episode_duration = ?,
+                    next_episode_duration = ?,
+                    total_episodes_known = ?,
+                    watched_episode_count = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND series_url = ?
+            ''', (
+                avg_duration,
+                next_duration,
+                series_progress.total_episodes,
+                series_progress.watched_episodes,
+                user_id,
+                series_url
+            ))
+            if cursor.rowcount > 0:
+                logger.info(f"Updated tracked_series (via URL) with avg={avg_duration}min, next={next_duration}min")
+                updated = True
+        
+        if not updated:
+            # Fallback: try title matching
+            base_title = series_progress.series_title
+            for suffix in [' - Netflix', ' - Prime', ' - Max', ' - Hulu', ' - Disney+', ' - Apple TV+']:
+                if base_title.endswith(suffix):
+                    base_title = base_title[:-len(suffix)]
+                    break
+            
+            cursor.execute('''
+                UPDATE tracked_series 
+                SET avg_episode_duration = ?,
+                    next_episode_duration = ?,
+                    total_episodes_known = ?,
+                    watched_episode_count = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND (
+                    LOWER(title) = LOWER(?) OR
+                    LOWER(title) LIKE LOWER(?) OR
+                    LOWER(?) LIKE LOWER('%' || title || '%')
+                )
+            ''', (
+                avg_duration,
+                next_duration,
+                series_progress.total_episodes,
+                series_progress.watched_episodes,
+                user_id,
+                base_title,
+                f'{base_title}%',
+                series_progress.series_title
+            ))
+            
+            if cursor.rowcount > 0:
+                logger.info(f"Updated tracked_series '{base_title}' with avg={avg_duration}min, next={next_duration}min")
+            else:
+                logger.warning(f"No tracked_series match for '{base_title}' (original: '{series_progress.series_title}', url: {series_url})")
     except Exception as e:
         logger.error(f"Error updating tracked_series duration: {e}")
     
@@ -1908,7 +1949,7 @@ def scrape_series_progress():
                 progress = await scraper.get_series_progress(series_url)
                 
                 if progress:
-                    saved = save_series_progress_to_db(progress, username)
+                    saved = save_series_progress_to_db(progress, username, series_url=series_url)
                     return {
                         'status': 'ok',
                         'service': service,
