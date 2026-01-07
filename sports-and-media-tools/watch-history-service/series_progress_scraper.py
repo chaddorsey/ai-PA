@@ -81,9 +81,68 @@ class MaxSeriesProgressScraper:
         page = await self.context.new_page()
         
         try:
-            logger.info(f"Max: Navigating to series page: {series_url}")
+            # If URL is a video playback URL, navigate and try to find series link
+            actual_url = series_url
+            is_video_url = '/video/watch/' in series_url
+            
+            logger.info(f"Max: Navigating to {'video' if is_video_url else 'series'} page: {series_url}")
             await page.goto(series_url, wait_until='domcontentloaded', timeout=60000)
             await asyncio.sleep(5)
+            
+            if is_video_url:
+                # On video page, look for series link in the metadata/info area
+                logger.info("Max: Video URL detected - looking for series link")
+                
+                # Max video pages often have a series link or we can extract from embedded data
+                series_link_selectors = [
+                    'a[href*="/show/"]',
+                    'a[href*="/series/"]', 
+                    '[data-testid="series-link"]',
+                    '.series-title a',
+                ]
+                
+                for selector in series_link_selectors:
+                    series_link = await page.query_selector(selector)
+                    if series_link:
+                        href = await series_link.get_attribute('href')
+                        if href:
+                            if not href.startswith('http'):
+                                href = f"https://play.max.com{href}"
+                            logger.info(f"Max: Found series link: {href}")
+                            actual_url = href
+                            await page.goto(href, wait_until='domcontentloaded', timeout=60000)
+                            await asyncio.sleep(5)
+                            break
+                else:
+                    # Try to extract series info from page scripts/data
+                    logger.info("Max: Trying to extract series info from page data")
+                    try:
+                        series_data = await page.evaluate('''() => {
+                            // Look for __NEXT_DATA__ or similar
+                            const scripts = document.querySelectorAll('script[type="application/json"], script#__NEXT_DATA__');
+                            for (const script of scripts) {
+                                try {
+                                    const data = JSON.parse(script.textContent);
+                                    // Navigate to find series/show info
+                                    const show = data?.props?.pageProps?.show || 
+                                                 data?.props?.pageProps?.series ||
+                                                 data?.pageProps?.show;
+                                    if (show?.slug || show?.id) {
+                                        return { slug: show.slug, id: show.id, title: show.title || show.name };
+                                    }
+                                } catch (e) {}
+                            }
+                            return null;
+                        }''')
+                        
+                        if series_data and (series_data.get('slug') or series_data.get('id')):
+                            slug = series_data.get('slug') or series_data.get('id')
+                            actual_url = f"https://play.max.com/show/{slug}"
+                            logger.info(f"Max: Extracted series slug, navigating to: {actual_url}")
+                            await page.goto(actual_url, wait_until='domcontentloaded', timeout=60000)
+                            await asyncio.sleep(5)
+                    except Exception as e:
+                        logger.warning(f"Max: Error extracting series data: {e}")
             
             # Check if we're on a login page or error page
             current_url = page.url
