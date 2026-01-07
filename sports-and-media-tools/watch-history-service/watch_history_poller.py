@@ -1627,6 +1627,44 @@ def save_series_progress_to_db(series_progress, username: str = 'chad') -> int:
     except Exception as e:
         logger.error(f"Error saving series summary: {e}")
     
+    # Compute and update duration info in tracked_series
+    try:
+        # Calculate average episode duration
+        durations = [ep.duration_minutes for ep in series_progress.episodes if ep.duration_minutes]
+        avg_duration = int(sum(durations) / len(durations)) if durations else None
+        
+        # Find next episode duration
+        next_duration = None
+        if next_ep:
+            for ep in series_progress.episodes:
+                if (ep.season_number == next_ep.get('season') and 
+                    ep.episode_number == next_ep.get('episode')):
+                    next_duration = ep.duration_minutes
+                    break
+        
+        # Update tracked_series with duration info
+        cursor.execute('''
+            UPDATE tracked_series 
+            SET avg_episode_duration = ?,
+                next_episode_duration = ?,
+                total_episodes_known = ?,
+                watched_episode_count = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ? AND LOWER(title) LIKE LOWER(?)
+        ''', (
+            avg_duration,
+            next_duration,
+            series_progress.total_episodes,
+            series_progress.watched_episodes,
+            user_id,
+            f'%{series_progress.series_title}%'
+        ))
+        
+        if cursor.rowcount > 0:
+            logger.info(f"Updated tracked_series with avg={avg_duration}min, next={next_duration}min")
+    except Exception as e:
+        logger.error(f"Error updating tracked_series duration: {e}")
+    
     conn.commit()
     conn.close()
     

@@ -166,10 +166,24 @@ def extend_database_with_user_tables(db_path: str):
             auto_tracked_from_watchlist INTEGER DEFAULT 0,  -- 1 if auto-added from watchlist
             series_url TEXT,  -- URL to series page on preferred service
             
+            -- Duration info (for quick decision making)
+            avg_episode_duration INTEGER,  -- Average episode length in minutes
+            next_episode_duration INTEGER,  -- Duration of next unwatched episode
+            
             FOREIGN KEY (user_id) REFERENCES users(id),
             UNIQUE(user_id, justwatch_id)
         )
     ''')
+    
+    # Add duration columns if they don't exist (migration for existing DBs)
+    try:
+        cursor.execute('ALTER TABLE tracked_series ADD COLUMN avg_episode_duration INTEGER')
+    except Exception:
+        pass
+    try:
+        cursor.execute('ALTER TABLE tracked_series ADD COLUMN next_episode_duration INTEGER')
+    except Exception:
+        pass
     
     # Indexes for performance
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_watch_history_user ON user_watch_history(user_id)')

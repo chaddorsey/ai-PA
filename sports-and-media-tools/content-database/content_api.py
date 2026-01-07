@@ -114,12 +114,16 @@ def search():
     Query params:
         q: Search query
         type: 'movie' or 'show' (optional)
+        min_duration: Minimum runtime in minutes (optional)
+        max_duration: Maximum runtime in minutes (optional)
     
     Returns:
         List of matching content with streaming availability
     """
     query = request.args.get('q', '')
     content_type = request.args.get('type')
+    min_duration = request.args.get('min_duration', type=int)
+    max_duration = request.args.get('max_duration', type=int)
     
     if not query:
         return jsonify({'error': 'Missing query parameter q'}), 400
@@ -143,6 +147,14 @@ def search():
         if content_type:
             sql += ' AND c.content_type = ?'
             params.append(content_type)
+        
+        if min_duration:
+            sql += ' AND c.runtime_minutes >= ?'
+            params.append(min_duration)
+        
+        if max_duration:
+            sql += ' AND c.runtime_minutes <= ?'
+            params.append(max_duration)
         
         sql += ' GROUP BY c.id LIMIT 10'
         
@@ -181,6 +193,12 @@ def search():
             jw_results = search_justwatch(query, content_type)
             
             for jw_item in jw_results[:5]:
+                # Filter by duration if specified
+                runtime = jw_item.get('runtime_minutes')
+                if min_duration and (runtime is None or runtime < min_duration):
+                    continue
+                if max_duration and (runtime is None or runtime > max_duration):
+                    continue
                 # The GraphQL search already includes offers, use them directly
                 offers = jw_item.get('offers', [])
                 
@@ -233,6 +251,7 @@ def search():
                     'content_type': jw_item.get('object_type'),
                     'year': jw_item.get('original_release_year'),
                     'description': jw_item.get('short_description'),
+                    'runtime_minutes': jw_item.get('runtime_minutes'),
                     'streaming_availability': streaming
                 })
         
@@ -856,6 +875,8 @@ def list_user_tracked_series(username: str):
     Query params:
         status: Filter by tracking_status (watching, finished, dropped, on_hold, all)
         service: Filter by preferred_service
+        max_episode_duration: Max average episode duration in minutes
+        min_episode_duration: Min average episode duration in minutes
     """
     try:
         from user_schema import (
@@ -865,8 +886,24 @@ def list_user_tracked_series(username: str):
         user_id = get_or_create_user(DB_PATH, username)
         status = request.args.get('status', 'all')
         service = request.args.get('service', 'all')
+        max_duration = request.args.get('max_episode_duration', type=int)
+        min_duration = request.args.get('min_episode_duration', type=int)
         
         series_list = list_ts(DB_PATH, user_id, status, service)
+        
+        # Filter by duration if specified
+        if max_duration or min_duration:
+            filtered = []
+            for s in series_list:
+                avg_dur = s.get('avg_episode_duration')
+                if avg_dur is None:
+                    continue  # Skip series without duration info
+                if max_duration and avg_dur > max_duration:
+                    continue
+                if min_duration and avg_dur < min_duration:
+                    continue
+                filtered.append(s)
+            series_list = filtered
         
         # Parse JSON fields
         for s in series_list:

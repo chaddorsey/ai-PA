@@ -75,10 +75,17 @@ def init_database():
             genres TEXT,  -- JSON array
             rating_imdb REAL,
             rating_tmdb REAL,
+            runtime_minutes INTEGER,  -- Duration in minutes (for movies, avg episode for shows)
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    
+    # Add runtime_minutes column if it doesn't exist (migration for existing DBs)
+    try:
+        cursor.execute('ALTER TABLE content ADD COLUMN runtime_minutes INTEGER')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     
     # Streaming availability table
     cursor.execute('''
@@ -165,6 +172,7 @@ def search_justwatch(query: str, content_type: str = None) -> List[Dict]:
                   title
                   originalReleaseYear
                   shortDescription
+                  runtime
                   posterUrl(profile: $profile, format: $format)
                   backdrops(profile: $backdropProfile, format: $format) {
                     backdropUrl
@@ -244,6 +252,7 @@ def search_justwatch(query: str, content_type: str = None) -> List[Dict]:
                     'title': content.get('title'),
                     'original_release_year': content.get('originalReleaseYear'),
                     'short_description': content.get('shortDescription'),
+                    'runtime_minutes': content.get('runtime'),  # Duration in minutes
                     'poster': content.get('posterUrl'),
                     'offers': node.get('offers', [])
                 })
@@ -502,8 +511,9 @@ def save_content_to_db(content: Dict, streaming_offers: List[Dict]):
         cursor.execute('''
             INSERT OR REPLACE INTO content 
             (justwatch_id, title, content_type, year, imdb_id, tmdb_id, 
-             poster_url, description, genres, rating_imdb, rating_tmdb, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             poster_url, description, genres, rating_imdb, rating_tmdb, 
+             runtime_minutes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             str(content.get('id')),
             content.get('title'),
@@ -516,6 +526,7 @@ def save_content_to_db(content: Dict, streaming_offers: List[Dict]):
             json.dumps(content.get('genres', [])),
             content.get('imdb_score'),
             content.get('tmdb_score'),
+            content.get('runtime_minutes'),  # Duration in minutes
             datetime.now(timezone.utc).isoformat()
         ))
         
