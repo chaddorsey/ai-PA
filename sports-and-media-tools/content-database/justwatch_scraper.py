@@ -173,6 +173,7 @@ def search_justwatch(query: str, content_type: str = None) -> List[Dict]:
                   originalReleaseYear
                   shortDescription
                   runtime
+                  fullPath
                   posterUrl(profile: $profile, format: $format)
                   backdrops(profile: $backdropProfile, format: $format) {
                     backdropUrl
@@ -254,7 +255,8 @@ def search_justwatch(query: str, content_type: str = None) -> List[Dict]:
                     'short_description': content.get('shortDescription'),
                     'runtime_minutes': content.get('runtime'),  # Duration in minutes
                     'poster': content.get('posterUrl'),
-                    'offers': node.get('offers', [])
+                    'offers': node.get('offers', []),
+                    'full_path': content.get('fullPath'),  # JustWatch URL path like /us/tv-show/scrubs
                 })
             
             return results
@@ -421,6 +423,89 @@ def extract_deep_link_id_from_url(url: str, service: str) -> Optional[str]:
         pass
     
     return None
+
+
+def get_series_page_url(service: str, deep_link_url: str, full_path: str = None, title: str = None) -> Optional[str]:
+    """
+    Construct the proper series page URL for a streaming service.
+    
+    JustWatch often provides episode playback URLs in offers, but for series tracking
+    we need the series page URL. This function attempts to construct or extract
+    the correct series page URL.
+    
+    Args:
+        service: Service name (netflix, hulu, max, etc.)
+        deep_link_url: The URL from JustWatch offers (may be episode URL)
+        full_path: JustWatch full_path like /us/tv-show/scrubs (optional)
+        title: Title of the series for slug construction (optional)
+    
+    Returns:
+        Series page URL suitable for scraping, or original URL if conversion not possible
+    """
+    if not deep_link_url:
+        return None
+    
+    try:
+        if service == 'netflix':
+            # Netflix /title/ URLs work for both series and episodes
+            # Keep as-is, scraper handles it
+            return deep_link_url
+        
+        elif service == 'hulu':
+            # Hulu episode URLs: /watch/UUID
+            # Hulu series URLs: /series/{slug}
+            if '/series/' in deep_link_url:
+                return deep_link_url  # Already a series URL
+            
+            # Try to construct series URL from JustWatch full_path
+            # full_path format: /us/tv-show/scrubs
+            if full_path:
+                # Extract slug from JustWatch path
+                parts = full_path.strip('/').split('/')
+                if len(parts) >= 3 and parts[1] == 'tv-show':
+                    slug = parts[2]  # e.g., "scrubs"
+                    # Construct Hulu series URL
+                    # Note: Hulu series URLs are typically /series/{slug}-{uuid}
+                    # We don't have the UUID, but the slug alone might redirect
+                    return f"https://www.hulu.com/series/{slug}"
+            
+            # Fallback: return original, scraper will attempt to handle
+            return deep_link_url
+        
+        elif service == 'max':
+            # Max episode URLs: /video/watch/UUID
+            # Max series URLs: /show/{slug} or /series/{slug}
+            if '/show/' in deep_link_url or '/series/' in deep_link_url:
+                return deep_link_url  # Already a series URL
+            
+            # Try to construct from JustWatch full_path
+            if full_path:
+                parts = full_path.strip('/').split('/')
+                if len(parts) >= 3 and parts[1] == 'tv-show':
+                    slug = parts[2]
+                    return f"https://play.max.com/show/{slug}"
+            
+            return deep_link_url
+        
+        elif service == 'apple':
+            # Apple TV+ episode URLs contain showId parameter
+            # Already handled in scraper via showId extraction
+            return deep_link_url
+        
+        elif service == 'prime':
+            # Prime Video /detail/ URLs work for series
+            # watch.amazon.com/detail?gti= format works
+            return deep_link_url
+        
+        elif service == 'disney':
+            # Disney+ /series/ URLs work directly
+            return deep_link_url
+        
+        else:
+            return deep_link_url
+            
+    except Exception:
+        return deep_link_url
 
 
 def extract_deep_link_id(offer: Dict, service: str) -> Optional[str]:

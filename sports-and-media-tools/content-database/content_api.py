@@ -239,9 +239,20 @@ def search():
                         web_url = offer.get('standardWebURL', '')
                         content_id = extract_content_id_from_url(web_url, service)
                         
+                        # For shows, convert episode URLs to series page URLs
+                        series_url = web_url
+                        if jw_item.get('object_type') == 'show':
+                            from justwatch_scraper import get_series_page_url
+                            series_url = get_series_page_url(
+                                service, 
+                                web_url, 
+                                full_path=jw_item.get('full_path'),
+                                title=jw_item.get('title')
+                            ) or web_url
+                        
                         streaming[service].append({
                             'content_id': content_id,
-                            'deep_link_url': web_url,  # Keep full URL for series tracking
+                            'deep_link_url': series_url,  # Series page URL for shows
                             'offer_type': offer.get('monetizationType', 'flatrate')
                         })
                 
