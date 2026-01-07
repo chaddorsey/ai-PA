@@ -81,8 +81,29 @@ The MCP server is already configured in Letta as `atlassian-via-supergateway`:
 
 OAuth tokens expire after ~55 minutes. The service handles this automatically:
 
-- **Daemon mode** (`./supergateway-service.sh daemon`): Refreshes every 50 minutes
+### Automatic Token Refresh
+
+The service now uses **stored refresh tokens** to automatically refresh access tokens:
+
+1. **On Startup**: Service checks token validity
+   - If valid → starts normally
+   - If expired → automatically refreshes using stored refresh token
+   - If refresh fails → requires manual OAuth (refresh token expired)
+
+2. **During Operation** (daemon mode):
+   - Proactively refreshes tokens every 50 minutes (before 55 min expiry)
+   - Uses stored refresh tokens automatically (no browser needed)
+   - Only requires manual OAuth if refresh token expires (~90 days)
+
+3. **Token Storage**:
+   - Access tokens: `~/.atlassian-rovo-token.txt`
+   - Refresh tokens: `~/.mcp-auth/mcp-remote-*/.../client_info.json`
+   - Managed automatically by `mcp-remote`
+
+### Manual Operations
+
 - **Manual refresh**: `./supergateway-service.sh refresh`
+- **Complete OAuth** (if refresh token expired): `./refresh-atlassian-token.sh`
 
 ## Troubleshooting
 
