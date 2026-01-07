@@ -7,10 +7,10 @@ jobs:
     description: "Sync episode-level watch progress for all series with tracking_status='watching'. Updates which episodes are watched, in progress, or unwatched for each tracked series."
     schedule:
       cron: "30 4 * * *"
-      natural: "Daily at 4:30 AM Eastern"
+      natural: "Daily at 4:30 AM Eaastern"
     action_type: "agent_message"
     agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
-    prompt: "Run sync_all_active_series() for user chad. Log the sync results including count of series synced and any errors to streaming_sync_status memory block. If any errors occur, log details to streaming_sync_errors_and_issues memory block."
+    prompt: "Run sync_all_active_series() for user chad. Log any changes or completions to the tracked_series memory block andthe sync results including count of series synced and any errors to streaming_sync_status memory block. If any errors occur, log details to streaming_sync_errors_and_issues memory block."
     category: "series_monitoring"
     timeout_seconds: 2400
     notes:
@@ -26,7 +26,7 @@ jobs:
       natural: "Daily at 2:30 AM Eastern"
     action_type: "agent_message"
     agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
-    prompt: "Run reconcile_watchlist_tracking() for user chad. Log how many new series were auto-tracked from watchlists to streaming_sync_status memory block."
+    prompt: "Run reconcile_watchlist_tracking() for user chad. Update the tracked_series memory block with any additions or changes and log how many new series were auto-tracked from watchlists to streaming_sync_status memory block."
     category: "series_monitoring"
     timeout_seconds: 300
     notes:
@@ -51,21 +51,38 @@ jobs:
       - "Weekly is sufficient since new seasons don't drop frequently"
       - "Uses JustWatch API for availability data"
 
-  - title: "Credential Health Check"
-    description: "Verify that all streaming service credentials are still valid. Proactive detection of expired sessions before they cause sync failures."
+  - title: "Refresh Streaming Sessions"
+    description: "Proactively refresh streaming service sessions before they expire to prevent scraping failures."
     schedule:
-      cron: "0 5 * * *"
-      natural: "Daily at 5:00 AM Eastern"
-    action_type: "agent_message"
-    agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
-    prompt: "Run check_credential_status and log which streaming services have valid credentials to streaming_sync_status memory block. If any services need re-authentication, log them prominently to streaming_sync_errors_and_issues memory block so chad can be notified."
-    category: "maintenance"
-    timeout_seconds: 120
+      cron: "0 1 * * 0,3"
+      natural: "Twice weekly on Sunday and Wednesday at 1:00 AM Eastern"
+    action_type: "http_request"
+    endpoint: "http://watch-history-service:5127/sessions/refresh-due"
+    method: "POST"
+    category: "session_maintenance"
+    timeout_seconds: 300
     notes:
-      - "Runs after series sync completes"
-      - "Checks Netflix, Prime, Max, Hulu, Disney+, Apple TV+"
-      - "Expired credentials should trigger notification to chad"
-      - "Tool may need re-registration: check_credential_status"
+      - "Runs before any scraping jobs to ensure sessions are fresh"
+      - "Uses /sessions/refresh-due endpoint which checks all services"
+      - "Only refreshes sessions approaching expiry (based on service-specific thresholds)"
+      - "If refresh fails, session will show as 'needs_login' requiring manual capture"
+      - "Session durations: Netflix ~7d, Hulu ~30d, Max ~30d, Prime ~30d, Apple ~14d"
+
+  - title: "Clean Browser State Files"
+    description: "Weekly cleanup of browser state files to remove bloated localStorage data that can cause JSON parsing errors."
+    schedule:
+      cron: "30 0 * * 0"
+      natural: "Weekly on Sunday at 12:30 AM Eastern"
+    action_type: "http_request"
+    endpoint: "http://watch-history-service:5127/sessions/cleanup-states"
+    method: "POST"
+    category: "session_maintenance"
+    timeout_seconds: 60
+    notes:
+      - "Removes localStorage from browser state files (keeps cookies)"
+      - "Prevents JSON parsing errors from corrupted control characters"
+      - "Runs before session refresh to ensure clean state"
+      - "Endpoint needs to be implemented in watch-history-service"
 
 metadata:
   version: "1.0"
@@ -82,6 +99,8 @@ metadata:
       purpose: "Log of sync times, item counts, and new season alerts"
     - name: "streaming_sync_errors_and_issues"
       purpose: "Log of sync errors and credentials needing refresh"
+    - name: "tracked_series"
+      purpose: "List of tracked series marked 'watching' or 'in_progress'with their current progress, including number of seasons and episodes remaining in the series."
   
   tool_requirements:
     - tool: "sync_all_active_series"
@@ -95,6 +114,12 @@ metadata:
       action: "Run register_sports_media_tools.py to attach to sleeptime agent"
 
   complete_daily_schedule:
+    - time: "12:30 AM Sun"
+      job: "Clean Browser State Files"
+      status: "NEW (weekly)"
+    - time: "1:00 AM Sun/Wed"
+      job: "Refresh Streaming Sessions"
+      status: "NEW (twice weekly)"
     - time: "2:00 AM"
       job: "Watchlists Poll"
       status: "existing"
@@ -110,13 +135,17 @@ metadata:
     - time: "4:30 AM"
       job: "Sync All Active Tracked Series"
       status: "NEW"
-    - time: "5:00 AM"
-      job: "Credential Health Check"
-      status: "NEW"
     - time: "Every 6h"
       job: "Watch History Poll"
       status: "existing"
     - time: "Sunday 5:00 AM"
       job: "Check for New Seasons"
       status: "NEW (weekly)"
+  
+  session_maintenance_notes:
+    - "Sessions are stored in /app/credentials/browser_states/{service}_state.json"
+    - "Cookies are preserved across container restarts via Docker volume"
+    - "If a session shows 'needs_login', manual capture is required"
+    - "Manual capture command: curl -X POST http://localhost:5127/sessions/capture/{service}"
+    - "This opens a browser window for manual login - must be run on a machine with display"
 

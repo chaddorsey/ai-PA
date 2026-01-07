@@ -1246,6 +1246,81 @@ def stop_scheduler():
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
 
+@app.route('/sessions/cleanup-states', methods=['POST'])
+def cleanup_browser_states():
+    """
+    Clean browser state files by removing localStorage data.
+    
+    localStorage can accumulate metrics and tracking data with control characters
+    that cause JSON parsing errors. This endpoint strips localStorage while
+    preserving cookies (which are all we need for authentication).
+    """
+    import re
+    from pathlib import Path
+    
+    states_dir = Path(CREDENTIALS_PATH) / 'browser_states'
+    results = {}
+    
+    def clean_json_string(s):
+        """Remove control characters that break JSON parsing."""
+        return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', s)
+    
+    for state_file in states_dir.glob('*_state.json'):
+        service = state_file.stem.replace('_state', '')
+        try:
+            # Read and clean content
+            with open(state_file, 'r', errors='replace') as f:
+                content = f.read()
+            
+            cleaned = clean_json_string(content)
+            state = json.loads(cleaned)
+            
+            cookies_count = len(state.get('cookies', []))
+            original_size = state_file.stat().st_size
+            
+            # Clear localStorage from origins
+            if 'origins' in state:
+                for origin in state['origins']:
+                    if 'localStorage' in origin:
+                        origin['localStorage'] = []
+            
+            # Write cleaned state
+            with open(state_file, 'w') as f:
+                json.dump(state, f)
+            
+            new_size = state_file.stat().st_size
+            
+            results[service] = {
+                'status': 'cleaned',
+                'cookies': cookies_count,
+                'original_size': original_size,
+                'new_size': new_size,
+                'saved_bytes': original_size - new_size
+            }
+            logger.info(f"Cleaned browser state for {service}: {cookies_count} cookies, {original_size} -> {new_size} bytes")
+            
+        except json.JSONDecodeError as e:
+            results[service] = {
+                'status': 'error',
+                'error': f'JSON parse error at position {e.pos}'
+            }
+            logger.error(f"Failed to clean {service} state: JSON error at pos {e.pos}")
+        except Exception as e:
+            results[service] = {
+                'status': 'error',
+                'error': str(e)
+            }
+            logger.error(f"Failed to clean {service} state: {e}")
+    
+    total_saved = sum(r.get('saved_bytes', 0) for r in results.values() if r.get('status') == 'cleaned')
+    
+    return jsonify({
+        'status': 'ok',
+        'services': results,
+        'total_bytes_saved': total_saved
+    })
+
+
 # ==================== WATCHLIST ENDPOINTS ====================
 
 @app.route('/watchlist/<service>', methods=['POST'])
