@@ -3128,14 +3128,25 @@ def add_tracked_series(
         matched_title = match.get('title', title)
         streaming = match.get('streaming_availability', {})
         
-        # Determine available services
+        # Determine available services and extract deep link URLs
         available_services = []
+        service_urls = {}  # Map service -> deep_link_url
         for svc, details in streaming.items():
             if details:  # Has content ID
-                available_services.append({
-                    'service': svc,
-                    'content_id': details[0].get('content_id') if isinstance(details, list) else details
-                })
+                if isinstance(details, list) and details:
+                    first_offer = details[0]
+                    available_services.append({
+                        'service': svc,
+                        'content_id': first_offer.get('content_id'),
+                        'url': first_offer.get('deep_link_url')
+                    })
+                    if first_offer.get('deep_link_url'):
+                        service_urls[svc] = first_offer.get('deep_link_url')
+                else:
+                    available_services.append({
+                        'service': svc,
+                        'content_id': details
+                    })
         
         # Determine preferred service
         if not preferred_service:
@@ -3146,6 +3157,12 @@ def add_tracked_series(
                     preferred_service = svc
                     break
         
+        # Get series_url for the preferred service
+        series_url = service_urls.get(preferred_service) if preferred_service else None
+        if not series_url and service_urls:
+            # Fall back to any available URL
+            series_url = next(iter(service_urls.values()))
+        
         # Step 2: Create tracked series entry
         import json
         create_response = requests.post(
@@ -3155,6 +3172,7 @@ def add_tracked_series(
                 'preferred_service': preferred_service,
                 'available_services': available_services,
                 'justwatch_id': match.get('justwatch_id'),
+                'series_url': series_url,  # Include the deep link for scraping
             },
             timeout=10
         )

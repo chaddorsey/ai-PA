@@ -132,7 +132,7 @@ def search():
         
         sql = '''
             SELECT c.*, GROUP_CONCAT(
-                sa.service || ':' || COALESCE(sa.content_id_for_service, '') || ':' || sa.offer_type
+                sa.service || ':' || COALESCE(sa.content_id_for_service, '') || ':' || sa.offer_type || ':' || COALESCE(sa.deep_link_url, '')
             ) as streaming
             FROM content c
             LEFT JOIN streaming_availability sa ON c.id = sa.content_id
@@ -162,10 +162,13 @@ def search():
                         svc = parts[0]
                         content_id = parts[1] if len(parts) > 1 else None
                         offer_type = parts[2] if len(parts) > 2 else 'flatrate'
+                        # Reconstruct deep_link_url from remaining parts (may contain colons)
+                        deep_link_url = ':'.join(parts[3:]) if len(parts) > 3 else None
                         if svc not in streaming:
                             streaming[svc] = []
                         streaming[svc].append({
                             'content_id': content_id,
+                            'deep_link_url': deep_link_url,
                             'offer_type': offer_type
                         })
             item['streaming_availability'] = streaming
@@ -214,12 +217,13 @@ def search():
                         if service not in streaming:
                             streaming[service] = []
                         
-                        # Extract content ID from URL
+                        # Get the full deep link URL and extract content ID
                         web_url = offer.get('standardWebURL', '')
                         content_id = extract_content_id_from_url(web_url, service)
                         
                         streaming[service].append({
                             'content_id': content_id,
+                            'deep_link_url': web_url,  # Keep full URL for series tracking
                             'offer_type': offer.get('monetizationType', 'flatrate')
                         })
                 
@@ -1143,6 +1147,191 @@ def update_manual_progress_endpoint(username: str, title: str):
     except Exception as e:
         logger.error(f"Update manual progress error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/user/<username>/tracked-series/enrich', methods=['POST'])
+def enrich_tracked_series(username: str):
+    """
+    Enrich tracked series with JustWatch data including series_url.
+    
+    This endpoint looks up each tracked series on JustWatch and populates
+    missing data like justwatch_id, available_services, and series_url.
+    
+    Body params (optional):
+        series_ids: List of specific series IDs to enrich (if not provided, enriches all)
+        status: Only enrich series with this tracking_status (e.g., 'watching')
+    
+    Returns:
+        Summary of enriched series
+    """
+    try:
+        from user_schema import get_or_create_user
+        import time
+        
+        data = request.get_json() or {}
+        series_ids = data.get('series_ids', [])
+        status_filter = data.get('status')
+        
+        user_id = get_or_create_user(DB_PATH, username)
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get tracked series to enrich
+        if series_ids:
+            placeholders = ','.join('?' * len(series_ids))
+            cursor.execute(f'''
+                SELECT id, title, preferred_service, series_url, justwatch_id
+                FROM tracked_series
+                WHERE user_id = ? AND id IN ({placeholders})
+            ''', [user_id] + series_ids)
+        elif status_filter:
+            cursor.execute('''
+                SELECT id, title, preferred_service, series_url, justwatch_id
+                FROM tracked_series
+                WHERE user_id = ? AND tracking_status = ?
+            ''', (user_id, status_filter))
+        else:
+            cursor.execute('''
+                SELECT id, title, preferred_service, series_url, justwatch_id
+                FROM tracked_series
+                WHERE user_id = ? AND (series_url IS NULL OR series_url = '')
+            ''', (user_id,))
+        
+        series_to_enrich = cursor.fetchall()
+        
+        enriched = []
+        errors = []
+        skipped = []
+        
+        for series in series_to_enrich:
+            series_id = series['id']
+            title = series['title']
+            preferred_service = series['preferred_service']
+            
+            # Skip if already has series_url
+            if series['series_url'] and not data.get('force'):
+                skipped.append({'id': series_id, 'title': title, 'reason': 'Already has series_url'})
+                continue
+            
+            try:
+                # Search JustWatch
+                jw_results = search_justwatch(title, 'show')
+                
+                if not jw_results:
+                    errors.append({'id': series_id, 'title': title, 'error': 'Not found on JustWatch'})
+                    continue
+                
+                # Find best match
+                match = None
+                for result in jw_results[:3]:
+                    if result.get('title', '').lower() == title.lower():
+                        match = result
+                        break
+                if not match:
+                    match = jw_results[0]
+                
+                # Extract service URLs from offers
+                service_urls = {}
+                available_services = []
+                
+                for offer in match.get('offers', []):
+                    package = offer.get('package', {})
+                    package_id = package.get('packageId')
+                    clear_name = package.get('clearName', '').lower()
+                    web_url = offer.get('standardWebURL', '')
+                    
+                    # Map to our service names
+                    service = None
+                    if package_id == 8 or 'netflix' in clear_name:
+                        service = 'netflix'
+                    elif package_id == 15 or 'hulu' in clear_name:
+                        service = 'hulu'
+                    elif package_id == 337 or 'disney' in clear_name:
+                        service = 'disney'
+                    elif package_id == 1899 or 'max' in clear_name or 'hbo' in clear_name:
+                        service = 'max'
+                    elif package_id == 9 or 'prime' in clear_name or 'amazon' in clear_name:
+                        service = 'prime'
+                    elif package_id == 350 or 'apple' in clear_name:
+                        service = 'apple'
+                    
+                    if service and service in SUBSCRIBED_SERVICES:
+                        if service not in service_urls and web_url:
+                            service_urls[service] = web_url
+                            available_services.append({
+                                'service': service,
+                                'url': web_url
+                            })
+                
+                # Determine series_url for preferred service
+                series_url = None
+                if preferred_service and preferred_service in service_urls:
+                    series_url = service_urls[preferred_service]
+                elif service_urls:
+                    # Use first available
+                    for svc in ['netflix', 'hulu', 'disney', 'max', 'prime', 'apple']:
+                        if svc in service_urls:
+                            series_url = service_urls[svc]
+                            if not preferred_service:
+                                preferred_service = svc
+                            break
+                
+                if not series_url:
+                    errors.append({'id': series_id, 'title': title, 'error': 'No streaming URL found'})
+                    continue
+                
+                # Update the tracked series
+                import json
+                cursor.execute('''
+                    UPDATE tracked_series
+                    SET series_url = ?,
+                        justwatch_id = ?,
+                        available_services = ?,
+                        preferred_service = COALESCE(preferred_service, ?),
+                        updated_at = ?
+                    WHERE id = ?
+                ''', (
+                    series_url,
+                    match.get('jw_entity_id') or match.get('id'),
+                    json.dumps(available_services),
+                    preferred_service,
+                    datetime.now(timezone.utc).isoformat(),
+                    series_id
+                ))
+                
+                enriched.append({
+                    'id': series_id,
+                    'title': title,
+                    'series_url': series_url,
+                    'preferred_service': preferred_service,
+                    'available_on': list(service_urls.keys())
+                })
+                
+                # Rate limit to avoid hitting JustWatch too hard
+                time.sleep(0.5)
+                
+            except Exception as e:
+                errors.append({'id': series_id, 'title': title, 'error': str(e)})
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'status': 'ok',
+            'enriched_count': len(enriched),
+            'skipped_count': len(skipped),
+            'error_count': len(errors),
+            'enriched': enriched,
+            'skipped': skipped,
+            'errors': errors
+        })
+        
+    except Exception as e:
+        logger.error(f"Enrich tracked series error: {e}")
+        import traceback
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
 # Initialize database on startup
