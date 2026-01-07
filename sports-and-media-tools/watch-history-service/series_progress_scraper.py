@@ -1163,8 +1163,19 @@ class AppleSeriesProgressScraper:
         page = await self.context.new_page()
         
         try:
-            logger.info(f"Apple TV+: Navigating to series page: {series_url}")
-            await page.goto(series_url, wait_until='domcontentloaded', timeout=60000)
+            # If URL points to an episode, extract showId and navigate to series page
+            actual_url = series_url
+            if '/episode/' in series_url:
+                # Extract showId from URL parameters
+                # Example: ...?showId=umc.cmc.apzybj6eqf6pzccd97kev7bs
+                show_id_match = re.search(r'showId=([^&]+)', series_url)
+                if show_id_match:
+                    show_id = show_id_match.group(1)
+                    actual_url = f"https://tv.apple.com/us/show/-/{show_id}"
+                    logger.info(f"Apple TV+: Converted episode URL to series URL: {actual_url}")
+            
+            logger.info(f"Apple TV+: Navigating to series page: {actual_url}")
+            await page.goto(actual_url, wait_until='domcontentloaded', timeout=60000)
             await asyncio.sleep(5)
             
             # Get series title
@@ -1429,9 +1440,80 @@ class HuluSeriesProgressScraper:
         page.on('response', capture_api_response)
         
         try:
-            logger.info(f"Hulu: Navigating to series page: {series_url}")
+            # If URL points to an episode (/watch/), we need to navigate there first
+            # then find and click on the series title to open the series modal
+            actual_url = series_url
+            is_episode_url = '/watch/' in series_url
+            
+            logger.info(f"Hulu: Navigating to {'episode' if is_episode_url else 'series'} page: {series_url}")
             await page.goto(series_url, wait_until='domcontentloaded', timeout=60000)
-            await asyncio.sleep(8)  # Hulu needs more time to load dynamic content
+            await asyncio.sleep(5)
+            
+            if is_episode_url:
+                # On episode page, try to navigate to series page
+                logger.info("Hulu: Episode URL detected - looking for series link")
+                
+                # Method 1: Look for series link in the player/metadata area
+                series_link_selectors = [
+                    'a[href*="/series/"]',
+                    '[data-testid="metadata-series-link"]',
+                    '.metadata a[href*="/series/"]',
+                    'a[class*="series"]',
+                    # Also try the breadcrumb or title area
+                    '[class*="Metadata"] a[href*="/series/"]',
+                    '[class*="Player"] a[href*="/series/"]',
+                ]
+                
+                series_link = None
+                for selector in series_link_selectors:
+                    series_link = await page.query_selector(selector)
+                    if series_link:
+                        break
+                
+                if series_link:
+                    href = await series_link.get_attribute('href')
+                    logger.info(f"Hulu: Found series link: {href}")
+                    await series_link.click()
+                    await asyncio.sleep(5)
+                else:
+                    # Method 2: Extract series ID from page's script data
+                    logger.info("Hulu: Trying to extract series info from page data")
+                    try:
+                        series_data = await page.evaluate('''() => {
+                            // Look for __NEXT_DATA__ or similar embedded JSON
+                            const scripts = document.querySelectorAll('script[type="application/json"], script#__NEXT_DATA__');
+                            for (const script of scripts) {
+                                try {
+                                    const data = JSON.parse(script.textContent);
+                                    // Navigate to find series info
+                                    const props = data?.props?.pageProps || data?.pageProps || data;
+                                    const series = props?.series || props?.contentMeta?.series;
+                                    if (series?.id) {
+                                        return { id: series.id, name: series.name || series.title };
+                                    }
+                                } catch (e) {}
+                            }
+                            // Also check og:url or canonical for series reference
+                            const canonical = document.querySelector('link[rel="canonical"]');
+                            if (canonical) {
+                                const href = canonical.getAttribute('href');
+                                const match = href?.match(/\\/series\\/([^/]+)/);
+                                if (match) return { id: match[1] };
+                            }
+                            return null;
+                        }''')
+                        
+                        if series_data and series_data.get('id'):
+                            series_page_url = f"https://www.hulu.com/series/{series_data['id']}"
+                            logger.info(f"Hulu: Extracted series ID, navigating to: {series_page_url}")
+                            await page.goto(series_page_url, wait_until='domcontentloaded', timeout=60000)
+                            await asyncio.sleep(5)
+                        else:
+                            logger.warning("Hulu: Could not extract series info from page data")
+                    except Exception as e:
+                        logger.warning(f"Hulu: Error extracting series data: {e}")
+            
+            await asyncio.sleep(3)  # Additional wait for content to load
             
             logger.debug(f"Hulu: Captured {len(self._api_duration_map)} episode durations from API")
             
