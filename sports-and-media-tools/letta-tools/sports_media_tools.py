@@ -2265,8 +2265,11 @@ def poll_watch_history(
     logger = logging.getLogger(__name__)
     
     try:
-        if username is None:
+        # Normalize empty strings to None
+        if username is None or username == '':
             username = 'chad'
+        if service == '':
+            service = None
         
         watch_history_url = "http://watch-history-service:5127"
         
@@ -2353,8 +2356,11 @@ def poll_watchlists(
     logger = logging.getLogger(__name__)
     
     try:
-        if username is None:
+        # Normalize empty strings to None
+        if username is None or username == '':
             username = 'chad'
+        if service == '':
+            service = None
         
         watch_history_url = "http://watch-history-service:5127"
         
@@ -2443,8 +2449,11 @@ def poll_recommendations(
     logger = logging.getLogger(__name__)
     
     try:
-        if username is None:
+        # Normalize empty strings to None
+        if username is None or username == '':
             username = 'chad'
+        if service == '':
+            service = None
         
         watch_history_url = "http://watch-history-service:5127"
         
