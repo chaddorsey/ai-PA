@@ -51,8 +51,10 @@ class ChatUI {
         // Configure marked for safe rendering
         if (typeof marked !== 'undefined') {
             marked.setOptions({
-                breaks: true,  // Convert \n to <br>
-                gfm: true,     // GitHub Flavored Markdown
+                breaks: true,      // Convert \n to <br>
+                gfm: true,         // GitHub Flavored Markdown
+                pedantic: false,   // Don't be strict about markdown spec
+                smartLists: true,  // Better list handling
             });
         }
 
@@ -273,10 +275,31 @@ class ChatUI {
 
         // Use marked.js if available
         if (typeof marked !== 'undefined') {
-            let html = marked.parse(text);
-            // Make all links open in new tab
-            html = html.replace(/<a href="/g, '<a target="_blank" rel="noopener noreferrer" href="');
-            return html;
+            try {
+                console.log('marked object:', marked);
+                console.log('marked.parse:', typeof marked.parse);
+                console.log('Input text sample:', text.substring(0, 200));
+
+                let html;
+                if (typeof marked.parse === 'function') {
+                    html = marked.parse(text);
+                } else if (typeof marked === 'function') {
+                    html = marked(text);
+                } else {
+                    console.error('marked.js loaded but no parse function found');
+                    throw new Error('No parse function');
+                }
+
+                console.log('Output HTML sample:', html.substring(0, 200));
+
+                // Make all links open in new tab
+                html = html.replace(/<a href="/g, '<a target="_blank" rel="noopener noreferrer" href="');
+                return html;
+            } catch (e) {
+                console.error('Marked.js error:', e);
+            }
+        } else {
+            console.warn('marked.js not loaded, using fallback');
         }
 
         // Fallback: basic formatting

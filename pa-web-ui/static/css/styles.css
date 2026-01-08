@@ -156,12 +156,19 @@ header h1 {
     text-decoration: underline;
 }
 
-.message.assistant .content strong {
-    font-weight: 600;
+.message.assistant .content strong,
+.message.assistant strong,
+.message strong {
+    font-weight: 700 !important;
+    color: #fff !important;
+    background-color: rgba(233, 69, 96, 0.2);
+    padding: 0 0.2em;
+    border-radius: 2px;
 }
 
 .message.assistant .content em {
     font-style: italic;
+    color: var(--text-primary);
 }
 
 /* Status indicator - flowing glow animation */
