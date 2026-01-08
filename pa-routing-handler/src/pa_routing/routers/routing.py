@@ -106,25 +106,41 @@ async def list_agents() -> AgentListResponse:
     Phase 1: Returns from AGENT_MAP.
     Phase 2: Fetches from Letta API.
     """
+    from pa_routing.services.agent_selector import DEFAULT_AGENT_ID
+
+    # Start with auto-route option (empty ID lets routing decide)
     agents = [
         AgentInfo(
-            id=agent_id,
-            name=AGENT_NAMES.get(domain, domain),
-            description=f"{AGENT_NAMES.get(domain, domain)} for {domain} tasks",
-            keywords=[domain],
+            id="",
+            name="Auto (Recommended)",
+            description="Automatically route to the best agent based on your message",
+            keywords=["auto", "smart"],
         )
-        for domain, agent_id in AGENT_MAP.items()
     ]
 
-    # Add default agent
+    # Add Main Agent with correct ID
     agents.append(
         AgentInfo(
-            id=settings.default_agent_id or "default",
+            id=settings.default_agent_id or DEFAULT_AGENT_ID,
             name="Main Agent",
             description="General-purpose assistant",
             keywords=["help", "general"],
         )
     )
+
+    # Add unique agents from AGENT_MAP (avoid duplicates like Pulse)
+    seen_ids = {agents[1].id}  # Main agent ID already added
+    for domain, agent_id in AGENT_MAP.items():
+        if agent_id not in seen_ids:
+            agents.append(
+                AgentInfo(
+                    id=agent_id,
+                    name=AGENT_NAMES.get(domain, domain),
+                    description=f"{AGENT_NAMES.get(domain, domain)} for {domain} tasks",
+                    keywords=[domain],
+                )
+            )
+            seen_ids.add(agent_id)
 
     return AgentListResponse(agents=agents, count=len(agents))
 
