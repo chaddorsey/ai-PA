@@ -79,7 +79,7 @@ def stream():
     Receives a message, routes it to the appropriate agent,
     and streams the response back via Server-Sent Events.
     """
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True) or {}
     message = data.get("message", "")
     agent_id = data.get("agent_id")
     session_id = data.get("session_id")
@@ -125,45 +125,32 @@ def stream():
             # Send routing event to frontend
             yield f"data: {json.dumps({'type': 'routing', 'agent_id': selected_agent_id, 'agent_name': agent_name})}\n\n"
 
-            # Step 2: Send message to Letta agent and stream response
-            with http_client.stream(
-                "POST",
+            # Step 2: Send message to Letta agent
+            letta_response = http_client.post(
                 f"{LETTA_BASE_URL}/v1/agents/{selected_agent_id}/messages",
-                json={
-                    "messages": [{"role": "user", "content": message}],
-                    "stream_steps": True,
-                    "stream_tokens": True,
-                },
+                json={"messages": [{"role": "user", "content": message}]},
                 timeout=120.0,
-            ) as letta_response:
-                if letta_response.status_code != 200:
-                    error_msg = f"Letta returned {letta_response.status_code}"
-                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
-                    return
+            )
 
-                for line in letta_response.iter_lines():
-                    if not line:
-                        continue
+            if letta_response.status_code != 200:
+                error_msg = f"Letta returned {letta_response.status_code}"
+                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                return
 
-                    # Parse Letta SSE format
-                    if line.startswith("data: "):
-                        try:
-                            event_data = json.loads(line[6:])
+            # Parse Letta JSON response
+            letta_data = letta_response.json()
 
-                            # Extract text content from Letta events
-                            if event_data.get("message_type") == "assistant_message":
-                                content = event_data.get("assistant_message", "")
-                                if content:
-                                    yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+            # Extract assistant messages from response
+            for msg in letta_data.get("messages", []):
+                if msg.get("message_type") == "assistant_message":
+                    content = msg.get("content", "")
+                    if content:
+                        yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
 
-                            elif event_data.get("message_type") == "tool_call_message":
-                                tool_name = event_data.get("tool_call", {}).get(
-                                    "name", "tool"
-                                )
-                                yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
-
-                        except json.JSONDecodeError:
-                            pass
+                elif msg.get("message_type") == "tool_call_message":
+                    tool_call = msg.get("tool_call", {})
+                    tool_name = tool_call.get("name", "tool")
+                    yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
 
             # Send done event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
