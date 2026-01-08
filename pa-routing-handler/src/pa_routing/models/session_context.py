@@ -2,12 +2,18 @@
 
 In-memory session context for tracking actions across agent interactions.
 Zero extra SDK calls - all state managed locally.
+
+Enhanced with conversation thread tracking for contextual routing.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Optional
+
+from pa_routing.models.conversation_thread import ConversationThread, ThreadStatus
 
 MAX_CONTEXT_ENTRIES = 5
+MAX_THREADS = 20  # Keep last N threads for context
 
 
 @dataclass
@@ -18,11 +24,21 @@ class SessionContext:
     Pattern 2: After each sub-agent call, append action summary.
     Before any agent call, format context and prepend to message.
     Zero extra SDK calls - all in-memory.
+
+    Enhanced with thread tracking for:
+    - Contextual routing (route follow-ups to last responding agent)
+    - Threaded UI (group responses under their requests)
     """
 
     entries: list[dict] = field(default_factory=list)
+    threads: list[ConversationThread] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     last_activity: datetime = field(default_factory=datetime.utcnow)
+
+    # Track the most recent completed response for contextual routing
+    last_responding_agent_id: Optional[str] = None
+    last_responding_agent_name: Optional[str] = None
+    last_response_time: Optional[datetime] = None
 
     def append(self, agent: str, action: str) -> None:
         """Add agent action to context after sub-agent completes."""
@@ -50,9 +66,94 @@ class SessionContext:
     def clear(self) -> None:
         """Clear session context (e.g., on explicit user request)."""
         self.entries.clear()
+        self.threads.clear()
+        self.last_responding_agent_id = None
+        self.last_responding_agent_name = None
+        self.last_response_time = None
         self.last_activity = datetime.utcnow()
 
     @property
     def entry_count(self) -> int:
         """Number of entries in context."""
         return len(self.entries)
+
+    # ========== Thread Management ==========
+
+    def create_thread(self, user_message: str, request_id: Optional[str] = None) -> ConversationThread:
+        """
+        Create a new conversation thread for a user request.
+
+        Returns the thread so caller can update it as response streams.
+        """
+        thread = ConversationThread(user_message=user_message)
+        if request_id:
+            thread.request_id = request_id
+
+        self.threads.append(thread)
+        self.last_activity = datetime.utcnow()
+
+        # Trim old threads if we have too many
+        if len(self.threads) > MAX_THREADS:
+            self.threads = self.threads[-MAX_THREADS:]
+
+        return thread
+
+    def get_thread(self, request_id: str) -> Optional[ConversationThread]:
+        """Get a thread by its request ID."""
+        for thread in self.threads:
+            if thread.request_id == request_id:
+                return thread
+        return None
+
+    def get_active_threads(self) -> list[ConversationThread]:
+        """Get all threads that are still pending or streaming."""
+        return [t for t in self.threads if t.is_active]
+
+    def get_last_completed_thread(self) -> Optional[ConversationThread]:
+        """Get the most recently completed thread."""
+        completed = [t for t in self.threads if t.status == ThreadStatus.COMPLETE]
+        if not completed:
+            return None
+        return max(completed, key=lambda t: t.completed_at or t.updated_at)
+
+    def complete_thread(
+        self,
+        request_id: str,
+        agent_id: str,
+        agent_name: str,
+        response_content: str = ""
+    ) -> Optional[ConversationThread]:
+        """
+        Mark a thread as complete and update last-responding agent.
+
+        Called when an agent finishes responding to a request.
+        """
+        thread = self.get_thread(request_id)
+        if thread:
+            thread.agent_id = agent_id
+            thread.agent_name = agent_name
+            thread.complete(response_content)
+
+            # Update last-responding agent for contextual routing
+            self.last_responding_agent_id = agent_id
+            self.last_responding_agent_name = agent_name
+            self.last_response_time = datetime.utcnow()
+            self.last_activity = datetime.utcnow()
+
+        return thread
+
+    def get_contextual_agent(self) -> Optional[tuple[str, str]]:
+        """
+        Get the agent that should handle contextual follow-ups.
+
+        Returns (agent_id, agent_name) if there's a recent response,
+        None otherwise.
+        """
+        if self.last_responding_agent_id and self.last_response_time:
+            return (self.last_responding_agent_id, self.last_responding_agent_name or "Unknown")
+        return None
+
+    def get_recent_threads(self, limit: int = 10) -> list[dict]:
+        """Get recent threads as dictionaries for API response."""
+        recent = self.threads[-limit:]
+        return [t.to_dict() for t in recent]

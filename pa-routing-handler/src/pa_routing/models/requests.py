@@ -14,6 +14,7 @@ class RouteRequest(BaseModel):
     agent_id: Optional[str] = Field(default=None, description="Explicit agent ID override")
     user_id: Optional[str] = Field(default=None, description="User identifier for context")
     context: Optional[dict] = Field(default=None, description="Additional context")
+    request_id: Optional[str] = Field(default=None, description="Request ID for thread tracking")
 
 
 class AgentSelectRequest(BaseModel):

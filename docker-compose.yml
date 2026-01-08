@@ -1164,10 +1164,13 @@ services:
         condition: service_healthy
       letta:
         condition: service_healthy
+      supabase-db:
+        condition: service_healthy
     environment:
       - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
       - LETTA_BASE_URL=http://letta:8283
       - PORT=5200
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
     ports:
       - "5200:5200"
     healthcheck:

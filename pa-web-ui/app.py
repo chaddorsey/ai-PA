@@ -16,10 +16,18 @@ RETRY_DELAY_SECONDS = 1.0
 RETRYABLE_STATUS_CODES = {502, 503, 504}
 
 # Configure structured logging
+import logging
+import sys
+
+# Set up basic logging to stdout
+logging.basicConfig(
+    format="%(message)s",
+    stream=sys.stdout,
+    level=logging.INFO,
+)
+
 structlog.configure(
     processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
@@ -40,7 +48,202 @@ ROUTING_HANDLER_URL = os.getenv(
 )
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283")
 
-# HTTP client for backend calls
+# Database configuration
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from datetime import datetime
+from contextlib import contextmanager
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:postgres@supabase-db:5432/postgres"
+)
+
+
+@contextmanager
+def get_db_connection():
+    """Get a database connection from the pool."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def save_conversation_message(
+    session_id: str,
+    role: str,
+    message: str,
+    agent_id: str = None,
+    agent_name: str = None,
+    request_id: str = None,
+) -> None:
+    """Save a conversation message to the database."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pa_web.conversations
+                    (session_id, role, message, agent_id, agent_name, metadata, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        session_id,
+                        role,
+                        message,
+                        agent_id or "",
+                        agent_name or "",
+                        json.dumps({"request_id": request_id}) if request_id else None,
+                        datetime.utcnow(),
+                    ),
+                )
+        logger.info("conversation_saved", session_id=session_id, role=role)
+    except Exception as e:
+        logger.error("conversation_save_failed", error=str(e))
+
+
+def get_conversation_history(session_id: str, limit: int = 100) -> list:
+    """Get conversation history for a session."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id, session_id, role, message, agent_id, agent_name,
+                           metadata, created_at
+                    FROM pa_web.conversations
+                    WHERE session_id = %s
+                    ORDER BY created_at ASC
+                    LIMIT %s
+                    """,
+                    (session_id, limit),
+                )
+                rows = cur.fetchall()
+                # Convert to list of dicts with proper serialization
+                result = []
+                for row in rows:
+                    item = dict(row)
+                    item["created_at"] = item["created_at"].isoformat() if item["created_at"] else None
+                    result.append(item)
+                return result
+    except Exception as e:
+        logger.error("conversation_load_failed", error=str(e))
+        return []
+
+
+def save_routing_signal(
+    session_id: str,
+    slash_command: str,
+    utterance: str,
+    target_agent_id: str,
+    target_agent_name: str = None,
+) -> None:
+    """Save an explicit routing signal (slash command) for learning."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pa_web.routing_signals
+                    (session_id, slash_command, utterance, target_agent_id, target_agent_name, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        session_id,
+                        slash_command,
+                        utterance,
+                        target_agent_id,
+                        target_agent_name or "",
+                        datetime.utcnow(),
+                    ),
+                )
+        logger.info("routing_signal_saved", session_id=session_id, command=slash_command)
+    except Exception as e:
+        logger.error("routing_signal_save_failed", error=str(e))
+
+
+def save_thread_exchange(
+    session_id: str,
+    request_id: str,
+    thread_position: int,
+    role: str,
+    message: str,
+    agent_id: str = None,
+    agent_name: str = None,
+    parent_request_id: str = None,
+) -> None:
+    """Save a thread exchange for learning."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pa_web.thread_exchanges
+                    (session_id, request_id, thread_position, role, message, agent_id, agent_name, parent_request_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        session_id,
+                        request_id,
+                        thread_position,
+                        role,
+                        message,
+                        agent_id or "",
+                        agent_name or "",
+                        parent_request_id,
+                        datetime.utcnow(),
+                    ),
+                )
+        logger.info("thread_exchange_saved", session_id=session_id, request_id=request_id, position=thread_position)
+    except Exception as e:
+        logger.error("thread_exchange_save_failed", error=str(e))
+
+
+def save_response_feedback(
+    session_id: str,
+    request_id: str,
+    feedback_type: str,
+    actual_agent_id: str = None,
+    actual_agent_name: str = None,
+    intended_agent_id: str = None,
+    intended_agent_name: str = None,
+    conversation_id: int = None,
+) -> None:
+    """Save user feedback on a response (thumbs up/down or agent correction)."""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pa_web.response_feedback
+                    (session_id, request_id, feedback_type, actual_agent_id, actual_agent_name,
+                     intended_agent_id, intended_agent_name, conversation_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        session_id,
+                        request_id,
+                        feedback_type,
+                        actual_agent_id or "",
+                        actual_agent_name or "",
+                        intended_agent_id,
+                        intended_agent_name,
+                        conversation_id,
+                        datetime.utcnow(),
+                    ),
+                )
+        logger.info("response_feedback_saved", session_id=session_id, request_id=request_id, feedback_type=feedback_type)
+    except Exception as e:
+        logger.error("response_feedback_save_failed", error=str(e))
+
+
+# HTTP client for short requests (agent list, config, etc.)
+# Note: Streaming requests create their own clients to avoid concurrency issues
 http_client = httpx.Client(timeout=30.0)
 
 
@@ -77,6 +280,47 @@ def get_config():
     })
 
 
+@app.route("/api/conversations/<session_id>")
+def get_conversations(session_id):
+    """Get conversation history for a session."""
+    try:
+        limit = request.args.get("limit", 100, type=int)
+        history = get_conversation_history(session_id, limit=limit)
+        return jsonify({"conversations": history, "session_id": session_id})
+    except Exception as e:
+        logger.error("get_conversations_failed", error=str(e), session_id=session_id)
+        return jsonify({"conversations": [], "error": str(e)}), 500
+
+
+@app.route("/api/feedback", methods=["POST"])
+def record_feedback():
+    """Record user feedback on a response (thumbs up/down or agent correction)."""
+    data = request.get_json(force=True, silent=True) or {}
+
+    session_id = data.get("session_id")
+    request_id = data.get("request_id")
+    feedback_type = data.get("feedback_type")  # "thumbs_up", "thumbs_down", "agent_correction"
+
+    if not session_id or not request_id or not feedback_type:
+        return jsonify({"error": "session_id, request_id, and feedback_type are required"}), 400
+
+    if feedback_type not in ("thumbs_up", "thumbs_down", "agent_correction"):
+        return jsonify({"error": "Invalid feedback_type"}), 400
+
+    save_response_feedback(
+        session_id=session_id,
+        request_id=request_id,
+        feedback_type=feedback_type,
+        actual_agent_id=data.get("actual_agent_id"),
+        actual_agent_name=data.get("actual_agent_name"),
+        intended_agent_id=data.get("intended_agent_id"),
+        intended_agent_name=data.get("intended_agent_name"),
+        conversation_id=data.get("conversation_id"),
+    )
+
+    return jsonify({"status": "ok", "feedback_type": feedback_type})
+
+
 @app.route("/stream", methods=["POST"])
 def stream():
     """
@@ -89,6 +333,11 @@ def stream():
     message = data.get("message", "")
     agent_id = data.get("agent_id")
     session_id = data.get("session_id")
+    # Learning signals from frontend
+    slash_command = data.get("slash_command")  # e.g., "calendar", "main"
+    original_message = data.get("original_message")  # Full message before slash removal
+    thread_position = data.get("thread_position", 0)  # Position in thread (0 = head)
+    parent_request_id = data.get("parent_request_id")  # For threaded replies
 
     if not message:
         return jsonify({"error": "Message is required"}), 400
@@ -101,43 +350,89 @@ def stream():
         session_id=session_id,
         agent_id=agent_id,
         message_length=len(message),
+        slash_command=slash_command,
+        thread_position=thread_position,
     )
 
     def generate() -> Generator[str, None, None]:
         """Generate SSE events from Letta response."""
         try:
             # Step 1: Route the message to get the appropriate agent
-            route_response = http_client.post(
-                f"{ROUTING_HANDLER_URL}/v1/route",
-                json={
-                    "session_id": session_id,
-                    "message": message,
-                    "agent_id": agent_id,
-                },
-            )
-            route_response.raise_for_status()
-            route_data = route_response.json()
+            # Use a fresh client per request for concurrent safety
+            with httpx.Client(timeout=30.0) as route_client:
+                route_response = route_client.post(
+                    f"{ROUTING_HANDLER_URL}/v1/route",
+                    json={
+                        "session_id": session_id,
+                        "message": message,
+                        "agent_id": agent_id,
+                    },
+                )
+                route_response.raise_for_status()
+                route_data = route_response.json()
 
             selected_agent_id = route_data.get("agent_id")
             agent_name = route_data.get("agent_name", "Assistant")
+            request_id = route_data.get("request_id")
 
             logger.info(
                 "routed_message",
                 session_id=session_id,
                 selected_agent_id=selected_agent_id,
                 routing_method=route_data.get("routing_method"),
+                request_id=request_id,
             )
 
             # Send routing event to frontend
-            yield f"data: {json.dumps({'type': 'routing', 'agent_id': selected_agent_id, 'agent_name': agent_name})}\n\n"
+            yield f"data: {json.dumps({'type': 'routing', 'agent_id': selected_agent_id, 'agent_name': agent_name, 'request_id': request_id})}\n\n"
+
+            # Save user message to database
+            save_conversation_message(
+                session_id=session_id,
+                role="user",
+                message=message,
+                agent_id=selected_agent_id,
+                agent_name=agent_name,
+                request_id=request_id,
+            )
+
+            # Save routing signal if user used slash command
+            if slash_command:
+                save_routing_signal(
+                    session_id=session_id,
+                    slash_command=slash_command,
+                    utterance=original_message or message,
+                    target_agent_id=selected_agent_id,
+                    target_agent_name=agent_name,
+                )
+
+            # Save thread exchange for user message
+            save_thread_exchange(
+                session_id=session_id,
+                request_id=request_id,
+                thread_position=thread_position,
+                role="user",
+                message=message,
+                agent_id=selected_agent_id,
+                agent_name=agent_name,
+                parent_request_id=parent_request_id,
+            )
 
             # Step 2: Stream message to Letta agent with step notifications
             letta_url = f"{LETTA_BASE_URL}/v1/agents/{selected_agent_id}/messages/stream"
             letta_payload = {"messages": [{"role": "user", "content": message}]}
 
+            logger.info(
+                "letta_stream_starting",
+                agent_id=selected_agent_id,
+                agent_name=agent_name,
+                request_id=request_id,
+            )
+
             # Use streaming client for SSE
             last_error = None
             stream_success = False
+            assistant_response_parts = []  # Accumulate response for saving
 
             for attempt in range(MAX_RETRIES):
                 try:
@@ -148,6 +443,12 @@ def stream():
                             json=letta_payload,
                             params={"stream_steps": "true"},
                         ) as letta_stream:
+
+                            logger.info(
+                                "letta_stream_opened",
+                                status_code=letta_stream.status_code,
+                                agent_id=selected_agent_id,
+                            )
 
                             if letta_stream.status_code != 200:
                                 if letta_stream.status_code in RETRYABLE_STATUS_CODES:
@@ -186,6 +487,14 @@ def stream():
                                             event_data = json.loads(data_str)
                                             msg_type = event_data.get("message_type", "")
 
+                                            # Log all events for debugging
+                                            logger.info(
+                                                "letta_event",
+                                                message_type=msg_type,
+                                                agent_id=selected_agent_id,
+                                                has_content="content" in event_data,
+                                            )
+
                                             if msg_type == "tool_call_message":
                                                 tool_call = event_data.get("tool_call", {})
                                                 tool_name = tool_call.get("name", "tool")
@@ -194,15 +503,31 @@ def stream():
                                             elif msg_type == "assistant_message":
                                                 content = event_data.get("content", "")
                                                 if content:
+                                                    assistant_response_parts.append(content)
                                                     yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
 
                                             elif msg_type == "reasoning_message":
                                                 # Agent is thinking - could show this too
                                                 pass
 
+                                            elif msg_type == "internal_error":
+                                                # Letta internal error (e.g., LLM auth failure)
+                                                error_msg = event_data.get("internal_error", "Internal error")
+                                                logger.error(
+                                                    "letta_internal_error",
+                                                    error=error_msg,
+                                                )
+                                                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                                                return
+
                                         except json.JSONDecodeError:
                                             pass
 
+                            logger.info(
+                                "letta_stream_completed",
+                                agent_id=selected_agent_id,
+                                request_id=request_id,
+                            )
                             break  # Success, exit retry loop
 
                 except httpx.TimeoutException as e:
@@ -225,6 +550,50 @@ def stream():
                 error_msg = last_error or "Failed to stream from Letta"
                 yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
                 return
+
+            # Save assistant response to database
+            if assistant_response_parts:
+                full_response = "\n\n".join(assistant_response_parts)
+                save_conversation_message(
+                    session_id=session_id,
+                    role="assistant",
+                    message=full_response,
+                    agent_id=selected_agent_id,
+                    agent_name=agent_name,
+                    request_id=request_id,
+                )
+                # Save thread exchange for assistant response
+                save_thread_exchange(
+                    session_id=session_id,
+                    request_id=request_id,
+                    thread_position=thread_position,
+                    role="assistant",
+                    message=full_response,
+                    agent_id=selected_agent_id,
+                    agent_name=agent_name,
+                    parent_request_id=parent_request_id,
+                )
+
+            # Mark thread as complete for contextual routing
+            if request_id:
+                try:
+                    complete_url = f"{ROUTING_HANDLER_URL}/v1/sessions/{session_id}/threads/{request_id}/complete"
+                    with httpx.Client(timeout=10.0) as complete_client:
+                        complete_client.post(
+                            complete_url,
+                            params={
+                                "agent_id": selected_agent_id,
+                                "agent_name": agent_name,
+                            },
+                        )
+                    logger.info(
+                        "thread_completed",
+                        session_id=session_id,
+                        request_id=request_id,
+                        agent_id=selected_agent_id,
+                    )
+                except Exception as e:
+                    logger.warning("thread_complete_failed", error=str(e))
 
             # Send done event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -251,4 +620,5 @@ def stream():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5200"))
     logger.info("pa_web_ui_starting", port=port)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # threaded=True enables concurrent request handling for SSE streams
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

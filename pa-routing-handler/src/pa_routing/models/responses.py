@@ -15,6 +15,7 @@ class RouteResponse(BaseModel):
     confidence: Optional[float] = None
     processing_time_ms: int
     session_context_entries: int = 0
+    request_id: Optional[str] = None
 
 
 class AgentInfo(BaseModel):

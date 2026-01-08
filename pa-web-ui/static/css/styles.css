@@ -76,6 +76,297 @@ header h1 {
     margin-top: auto; /* Push messages to bottom when few */
 }
 
+/* Thread cards - group request/response pairs */
+.thread-card {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    max-width: 90%;
+}
+
+.thread-card .thread-user-message {
+    padding: 1rem;
+    background-color: var(--user-msg-bg);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.thread-card .thread-user-message::before {
+    content: '👤';
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.thread-card .thread-user-message .user-text {
+    flex: 1;
+    line-height: 1.5;
+}
+
+.thread-card .thread-response {
+    padding: 1rem;
+}
+
+.thread-card .thread-response .agent-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.thread-card .thread-response .agent-icon {
+    font-size: 1rem;
+}
+
+.thread-card .thread-response .agent-name {
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.thread-card .thread-response .response-content,
+.thread-card .thread-followup-response .response-content {
+    line-height: 1.6;
+}
+
+/* Follow-up exchanges within a card - indented thread level */
+.thread-card .thread-exchange-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 1rem 0;
+}
+
+.thread-card .thread-followup-container {
+    margin-left: 1.5rem;
+    padding-left: 1rem;
+    border-left: 2px solid var(--border);
+}
+
+.thread-card .thread-user-followup {
+    padding: 0.75rem 1rem;
+    background-color: var(--user-msg-bg);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.thread-card .thread-user-followup::before {
+    content: '👤';
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.thread-card .thread-user-followup .user-text {
+    flex: 1;
+    line-height: 1.5;
+}
+
+.thread-card .thread-followup-response {
+    padding: 0.5rem 0;
+}
+
+/* Status indicator inside follow-up container */
+.thread-card .thread-followup-container .thread-status {
+    padding: 0.75rem 0;
+}
+
+.thread-card .thread-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border-top: 1px solid var(--border);
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.thread-card .reply-btn {
+    padding: 0.4rem 0.8rem;
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.thread-card .reply-btn:hover {
+    background-color: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+/* Response header with agent info and feedback */
+.thread-card .response-header,
+.thread-card .followup-response-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.thread-card .response-feedback {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+/* Feedback buttons */
+.thread-card .feedback-buttons {
+    display: flex;
+    gap: 0.1rem;
+}
+
+.thread-card .feedback-btn {
+    padding: 0.1rem 0.25rem;
+    background-color: transparent;
+    border: none;
+    font-size: 0.75rem;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.thread-card .feedback-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.thread-card .feedback-btn.selected {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+/* Agent correction */
+.thread-card .agent-correction {
+    position: relative;
+}
+
+.thread-card .agent-correction-link {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.thread-card .agent-correction-link:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+
+.thread-card .agent-correction-link.corrected {
+    color: var(--accent);
+    opacity: 1;
+}
+
+.thread-card .agent-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.25rem;
+    z-index: 10;
+}
+
+.thread-card .intended-agent-select {
+    padding: 0.4rem 0.6rem;
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    min-width: 150px;
+}
+
+/* Followup response header - right-align feedback only (no agent name) */
+.thread-card .followup-response-header {
+    justify-content: flex-end;
+}
+
+.thread-card.streaming .thread-footer {
+    display: none;
+}
+
+/* Thread status indicator inside card */
+.thread-card .thread-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    color: var(--text-secondary);
+}
+
+.thread-card .thread-status .dots {
+    display: flex;
+    gap: 4px;
+}
+
+.thread-card .thread-status .dot {
+    width: 6px;
+    height: 6px;
+    background-color: var(--accent);
+    border-radius: 50%;
+    animation: pulse 1.4s ease-in-out infinite;
+}
+
+.thread-card .thread-status .dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.thread-card .thread-status .dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+/* Reply mode indicator */
+.input-area.reply-mode {
+    border-top: 2px solid var(--accent);
+}
+
+.reply-indicator {
+    display: none;
+    padding: 0.5rem 1rem;
+    background-color: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.reply-indicator.active {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.reply-indicator .reply-to-text {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.reply-indicator .reply-to-text .agent-name {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.reply-indicator .clear-reply-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0.25rem;
+}
+
+.reply-indicator .clear-reply-btn:hover {
+    color: var(--accent);
+}
+
 .message {
     max-width: 80%;
     padding: 1rem;
@@ -147,13 +438,15 @@ header h1 {
     padding: 0;
 }
 
-.message.assistant .content a {
-    color: var(--accent);
-    text-decoration: none;
+.message.assistant .content a,
+.thread-card .response-content a {
+    color: var(--text-primary);
+    text-decoration: underline;
 }
 
-.message.assistant .content a:hover {
-    text-decoration: underline;
+.message.assistant .content a:hover,
+.thread-card .response-content a:hover {
+    color: var(--accent);
 }
 
 .message.assistant .content strong,

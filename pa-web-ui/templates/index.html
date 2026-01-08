@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PA Chat</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=9">
     <!-- Marked.js for markdown rendering (pinned to v9 for stable API) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 </head>
@@ -21,12 +21,19 @@
             <div id="messages" class="messages"></div>
         </main>
 
+        <div id="reply-indicator" class="reply-indicator">
+            <span class="reply-to-text">
+                Replying to <span class="agent-name"></span>
+            </span>
+            <button class="clear-reply-btn" title="Clear reply">×</button>
+        </div>
+
         <footer class="input-area">
             <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
             <button id="send-btn">Send</button>
         </footer>
     </div>
 
-    <script src="{{ url_for('static', filename='js/chat.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=11"></script>
 </body>
 </html>
