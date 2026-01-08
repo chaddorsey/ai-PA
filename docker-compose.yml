@@ -1115,6 +1115,78 @@ services:
       - "network=pa-internal"
       - "external-access=true"
 
+  # --- PA Web Interface and Routing Handler ---
+
+  pa-routing-handler:
+    build:
+      context: ./pa-routing-handler
+      dockerfile: Dockerfile
+    container_name: pa-routing-handler
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      letta:
+        condition: service_healthy
+      supabase-db:
+        condition: service_healthy
+    environment:
+      - PA_ROUTING_LETTA_BASE_URL=http://letta:8283
+      - PA_ROUTING_DEFAULT_AGENT_ID=${PA_ROUTING_DEFAULT_AGENT_ID:-}
+      - PA_ROUTING_POSTGRES_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      - PA_ROUTING_LOG_LEVEL=INFO
+    ports:
+      - "5201:5201"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5201/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=pa-routing-handler"
+      - "component=routing"
+      - "network=pa-internal"
+
+  pa-web-ui:
+    build:
+      context: ./pa-web-ui
+      dockerfile: Dockerfile
+    container_name: pa-web-ui
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      pa-routing-handler:
+        condition: service_healthy
+      letta:
+        condition: service_healthy
+    environment:
+      - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
+      - LETTA_BASE_URL=http://letta:8283
+      - PORT=5200
+    ports:
+      - "5200:5200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5200/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=pa-web-ui"
+      - "component=web-interface"
+      - "network=pa-internal"
+      - "external-access=true"
+
 
 volumes:
   supabase_db:
