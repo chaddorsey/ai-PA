@@ -26,21 +26,28 @@ class RoutingResult:
     tier: int
 
 
-# Agent mapping - will be loaded from config/Letta API in future
+# Agent mapping - verified against Letta instance
 AGENT_MAP = {
     "task": "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
     "calendar": "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218",
-    "slack": "agent-slack-placeholder",
-    "documents": "agent-docs-placeholder",
+    "slack": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",  # Pulse handles Slack
+    "documents": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",  # Pulse handles Docs
+    "jira": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",  # Pulse handles Jira
     "pulse": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",
+    "email": "agent-b4928949-8012-4436-a3c7-a9e510785147",  # WIP
 }
+
+# Default/main agent ID
+DEFAULT_AGENT_ID = "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a"
 
 AGENT_NAMES = {
     "task": "Task Agent",
     "calendar": "Calendar Agent",
-    "slack": "Slack Agent",
-    "documents": "Documents Agent",
+    "slack": "Pulse Agent",  # Pulse handles Slack
+    "documents": "Pulse Agent",  # Pulse handles Docs
+    "jira": "Pulse Agent",  # Pulse handles Jira
     "pulse": "Pulse Agent",
+    "email": "Email Agent",
 }
 
 # Tier 2: Domain keywords - HIGH confidence (0.9)
@@ -61,9 +68,13 @@ DOMAIN_KEYWORDS = {
         r"\bomnifocus\b",
         r"\btodo\b",
         r"\bto-do\b",
+    ],
+    "jira": [
         r"\bjira\b",
         r"\bticket\b",
         r"\btickets\b",
+        r"\bsprint\b",
+        r"\bepic\b",
     ],
     "slack": [
         r"\bslack\b",
@@ -86,6 +97,12 @@ DOMAIN_KEYWORDS = {
         r"\bmemory\b",
         r"\bremember\b",
         r"\brecall\b",
+    ],
+    "email": [
+        r"\bemail\b",
+        r"\be-mail\b",
+        r"\bgmail\b",
+        r"\binbox\b",
     ],
 }
 
@@ -134,7 +151,7 @@ class TieredAgentSelector:
     """
 
     def __init__(self, default_agent_id: str = "", semantic_router=None):
-        self.default_agent_id = default_agent_id or settings.default_agent_id or "default"
+        self.default_agent_id = default_agent_id or settings.default_agent_id or DEFAULT_AGENT_ID
         self.semantic_router = semantic_router  # Phase 1.5: optional
 
         # Pre-compile all patterns for performance
