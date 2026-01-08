@@ -538,6 +538,86 @@ def search_programs():
     })
 
 
+@app.route('/upcoming', methods=['GET'])
+def get_upcoming():
+    """Get upcoming programs for the next N hours.
+    
+    Query params:
+        hours: Number of hours to look ahead (default: 6, max: 48)
+        sports_only: If 'true', only return sports programs
+        primetime_only: If 'true', only return primetime (7-11 PM) programs
+        limit: Max results (default: 100)
+    """
+    hours = min(int(request.args.get('hours', 6)), 48)
+    sports_only = request.args.get('sports_only', '').lower() == 'true'
+    primetime_only = request.args.get('primetime_only', '').lower() == 'true'
+    limit = int(request.args.get('limit', 100))
+    
+    now = datetime.now(timezone.utc)
+    end_window = now + timedelta(hours=hours)
+    results = []
+    
+    for station_id, schedule in schedules_cache.get('schedules', {}).items():
+        station = schedules_cache.get('stations', {}).get(station_id, {})
+        channel = None
+        
+        # Find channel number for this station
+        for ch, sid in schedules_cache.get('channel_map', {}).items():
+            if sid == station_id:
+                channel = ch
+                break
+        
+        for prog in schedule:
+            air_time = datetime.fromisoformat(prog['air_datetime'].replace('Z', '+00:00'))
+            
+            # Skip programs already started
+            if air_time < now:
+                continue
+            
+            # Skip programs outside window
+            if air_time >= end_window:
+                continue
+            
+            program = schedules_cache.get('programs', {}).get(prog['program_id'], {})
+            is_sports = program.get('is_sports', False)
+            
+            # Apply filters
+            if sports_only and not is_sports:
+                continue
+            
+            # Primetime filter: 7 PM - 11 PM local (approximate via UTC offset)
+            if primetime_only:
+                local_hour = (air_time.hour - 5) % 24  # EST approximation
+                if local_hour < 19 or local_hour >= 23:
+                    continue
+            
+            results.append({
+                'channel': channel,
+                'station': station.get('name'),
+                'callsign': station.get('callsign'),
+                'title': program.get('title'),
+                'episode_title': program.get('episode_title'),
+                'start_time': air_time.isoformat(),
+                'duration_minutes': prog['duration'] // 60,
+                'is_sports': is_sports,
+                'description': program.get('description', ''),
+            })
+    
+    # Sort by start time
+    results.sort(key=lambda x: x['start_time'])
+    
+    return jsonify({
+        'status': 'ok',
+        'hours_ahead': hours,
+        'sports_only': sports_only,
+        'primetime_only': primetime_only,
+        'results': results[:limit],
+        'count': len(results[:limit]),
+        'total_found': len(results),
+        'cache_updated': schedules_cache.get('last_updated')
+    })
+
+
 @app.route('/refresh', methods=['POST'])
 def refresh_cache():
     """Force refresh the cache."""

@@ -1514,6 +1514,120 @@ def search_tv_guide(
         }
 
 
+def get_upcoming_listings(
+    hours: Optional[int] = None,
+    sports_only: Optional[bool] = None,
+    primetime_only: Optional[bool] = None,
+    limit: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Get upcoming TV programs for the next several hours.
+    
+    This tool fetches upcoming programs from the TV guide without requiring
+    a search term. Use this to see what's coming up on TV, answer "what's on
+    tonight?", or populate a summary of upcoming programs for quick reference.
+    
+    Args:
+        hours: Number of hours to look ahead. Defaults to 6, max 48.
+        sports_only: If True, only return sports programs. Defaults to False.
+        primetime_only: If True, only return primetime programs (7-11 PM).
+                        Defaults to False.
+        limit: Maximum number of results to return. Defaults to 50.
+    
+    Returns:
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - results: List of upcoming programs with channel, title, start_time
+        - count: Number of results returned
+        - total_found: Total matching programs (before limit)
+        - hours_ahead: Hours window used
+        - cache_updated: When the TV listings cache was last updated
+        - error_message: Error message if status is "error"
+    
+    Examples:
+        get_upcoming_listings()  # Next 6 hours of all programs
+        get_upcoming_listings(sports_only=True)  # Upcoming sports
+        get_upcoming_listings(primetime_only=True, hours=12)  # Tonight's primetime
+    """
+    import traceback
+    import requests
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Set defaults
+        if hours is None:
+            hours = 6
+        if sports_only is None:
+            sports_only = False
+        if primetime_only is None:
+            primetime_only = False
+        if limit is None:
+            limit = 50
+        
+        # Schedules Direct service URL
+        sd_service_url = "http://schedules-direct-service:5125"
+        
+        params = {
+            'hours': hours,
+            'sports_only': 'true' if sports_only else 'false',
+            'primetime_only': 'true' if primetime_only else 'false',
+            'limit': limit
+        }
+        
+        response = requests.get(
+            f"{sd_service_url}/upcoming",
+            params=params,
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        results = data.get('results', [])
+        
+        # Format results for readability
+        formatted_results = []
+        for prog in results:
+            formatted_results.append({
+                'channel': prog.get('channel'),
+                'station': prog.get('station'),
+                'title': prog.get('title'),
+                'episode_title': prog.get('episode_title'),
+                'start_time': prog.get('start_time'),
+                'duration_minutes': prog.get('duration_minutes'),
+                'is_sports': prog.get('is_sports', False),
+            })
+        
+        return {
+            'status': 'ok',
+            'results': formatted_results,
+            'count': len(formatted_results),
+            'total_found': data.get('total_found', len(formatted_results)),
+            'hours_ahead': data.get('hours_ahead', hours),
+            'sports_only': sports_only,
+            'primetime_only': primetime_only,
+            'cache_updated': data.get('cache_updated')
+        }
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Upcoming listings fetch failed: {e}")
+        return {
+            'status': 'error',
+            'results': [],
+            'count': 0,
+            'error_message': f"Failed to fetch upcoming listings: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"Error fetching upcoming listings: {e}")
+        return {
+            'status': 'error',
+            'results': [],
+            'count': 0,
+            'error_message': f"Error: {str(e)}\n{traceback.format_exc()}"
+        }
+
+
 def lookup_streaming_content(
     title: str,
     preferred_service: Optional[str] = None

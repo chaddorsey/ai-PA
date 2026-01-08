@@ -54,16 +54,28 @@ jobs:
     category: "maintenance"
     timeout_seconds: 120
 
-  - title: "TV Listings Refresh"
-    description: "Trigger refresh of TV guide listings data to ensure cache is current"
+  - title: "TV Listings Summary Update"
+    description: "Fetch upcoming TV programs and store summary in agent memory for quick reference"
     schedule:
-      cron: "0 1,5,9,13,17,21 * * *"
-      natural: "Every 4 hours"
+      cron: "0 6,12,18 * * *"
+      natural: "Three times daily (6 AM, 12 PM, 6 PM)"
     action_type: "agent_message"
     agent_id: "agent-a9f2c740-663c-4414-a553-47115180e49b"
-    prompt: "Call get_tv_listings_now with sports_only=false to refresh TV listings data."
+    prompt: |
+      Update the TV listings memory block with upcoming programs:
+      1. Call get_upcoming_listings(hours=12, sports_only=True) to get upcoming sports
+      2. Call get_upcoming_listings(hours=8, primetime_only=True) to get tonight's primetime
+      3. Save a formatted summary to the tv_listings_summary memory block with:
+         - Upcoming sports events (teams, channels, times)
+         - Notable primetime shows tonight
+         - Last updated timestamp
+      This helps you quickly answer "what's on TV tonight?" without tool calls.
     category: "tv_guide"
-    timeout_seconds: 60
+    timeout_seconds: 120
+    notes:
+      - "The schedules-direct-service auto-refreshes its cache hourly"
+      - "This job populates the agent's memory block for quick reference"
+      - "Runs 3 times daily to keep primetime and sports info current"
 
   - title: "Series Progress Sync"
     description: "Sync episode-level watch progress for tracked series on Max, Disney+, and Apple TV+. Updates which episodes are watched, in progress, or unwatched."

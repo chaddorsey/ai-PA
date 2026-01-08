@@ -41,6 +41,7 @@ from sports_media_tools import (
     launch_streaming_content,
     get_tv_listings_now,
     search_tv_guide,
+    get_upcoming_listings,
     get_channel_info,
     lookup_streaming_content,
     add_content_to_database,
@@ -144,6 +145,7 @@ def main():
         ("launch_streaming_content", launch_streaming_content, "Launch streaming content with deep linking or Roku search"),
         ("get_tv_listings_now", get_tv_listings_now, "Get what's currently on TV (all channels or sports only)"),
         ("search_tv_guide", search_tv_guide, "Search TV guide for upcoming programs by title"),
+        ("get_upcoming_listings", get_upcoming_listings, "Get upcoming TV programs (sports, primetime, etc.)"),
         ("get_channel_info", get_channel_info, "Get detailed schedule for a specific channel"),
         ("lookup_streaming_content", lookup_streaming_content, "Look up streaming availability and deep links from JustWatch"),
         
