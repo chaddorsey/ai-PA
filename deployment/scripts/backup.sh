@@ -240,8 +240,19 @@ backup_all_volumes() {
     fi
     
     # Get all named volumes from running containers
+    # Updated filter to catch both prefixed and non-prefixed project volumes
     local volumes=$(docker ps --format '{{.Names}}' | while read container; do
-        docker inspect "$container" 2>/dev/null | jq -r '.[0].Mounts[] | select(.Type=="volume" and .Name != null and (.Name | startswith("ai-pa_") or startswith("pa-ecosystem_"))) | .Name'
+        docker inspect "$container" 2>/dev/null | jq -r '
+            .[0].Mounts[] | 
+            select(.Type=="volume" and .Name != null and (
+                (.Name | startswith("ai-pa_")) or 
+                (.Name | startswith("pa-ecosystem_")) or
+                .Name == "content-database-data" or
+                .Name == "watch-history-credentials" or
+                .Name == "sports-media-data" or
+                .Name == "n8n_data" or
+                .Name == "n8n_data_test"
+            )) | .Name'
     done | sort -u)
     
     if [[ -z "$volumes" ]]; then
@@ -276,6 +287,152 @@ backup_config() {
         fi
         log_success "Configuration $config_dir backed up to $backup_file"
     fi
+}
+
+# Function to backup host filesystem data (not in Docker volumes)
+# This captures local databases, credentials, and data files that are stored
+# directly on the host filesystem rather than in Docker volumes
+backup_host_data() {
+    local backup_dir="$1"
+    
+    log "Backing up host filesystem data..."
+    
+    mkdir -p "$backup_dir"
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would backup host filesystem data"
+        return
+    fi
+    
+    local host_backup_count=0
+    
+    # 1. Auto-Madden SQLite Databases and Data Files (~72 MB)
+    if [[ -d "$PROJECT_ROOT/auto-madden/data" ]]; then
+        log "Backing up Auto-Madden databases and data..."
+        # Create a file list of what exists to include
+        local auto_madden_files=""
+        [[ -f "$PROJECT_ROOT/auto-madden/data/nfl_plays_2024.db" ]] && auto_madden_files="$auto_madden_files auto-madden/data/nfl_plays_2024.db"
+        [[ -f "$PROJECT_ROOT/auto-madden/data/nfl_plays_2025.db" ]] && auto_madden_files="$auto_madden_files auto-madden/data/nfl_plays_2025.db"
+        [[ -f "$PROJECT_ROOT/auto-madden/data/nfl_insights_2025.db" ]] && auto_madden_files="$auto_madden_files auto-madden/data/nfl_insights_2025.db"
+        [[ -f "$PROJECT_ROOT/auto-madden/data/game_schedule_2024.json" ]] && auto_madden_files="$auto_madden_files auto-madden/data/game_schedule_2024.json"
+        [[ -f "$PROJECT_ROOT/auto-madden/data/espn_nfl_pro_mapping.json" ]] && auto_madden_files="$auto_madden_files auto-madden/data/espn_nfl_pro_mapping.json"
+        [[ -f "$PROJECT_ROOT/auto-madden/data/game_id_mapping.json" ]] && auto_madden_files="$auto_madden_files auto-madden/data/game_id_mapping.json"
+        [[ -d "$PROJECT_ROOT/auto-madden/data/processed_insights" ]] && auto_madden_files="$auto_madden_files auto-madden/data/processed_insights"
+        
+        if [[ -n "$auto_madden_files" ]]; then
+            tar czf "$backup_dir/auto-madden-data_$TIMESTAMP.tar.gz" \
+                -C "$PROJECT_ROOT" \
+                $auto_madden_files \
+                2>/dev/null || log_warning "Some Auto-Madden data files could not be backed up"
+            local size=$(du -h "$backup_dir/auto-madden-data_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+            log_success "Auto-Madden data backed up ($size)"
+            ((host_backup_count++)) || true
+        else
+            log_warning "No Auto-Madden data files found"
+        fi
+    fi
+    
+    # 2. Auto-Madden Credentials - Browser states with NFL+ Pro login (~210 MB)
+    if [[ -d "$PROJECT_ROOT/auto-madden/credentials" ]]; then
+        log "Backing up Auto-Madden credentials (browser states)..."
+        tar czf "$backup_dir/auto-madden-credentials_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            auto-madden/credentials \
+            2>/dev/null || log_warning "Auto-Madden credentials backup had issues"
+        local size=$(du -h "$backup_dir/auto-madden-credentials_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "Auto-Madden credentials backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 3. NFL Pro Scraper Credentials and Data (~58 MB)
+    if [[ -d "$PROJECT_ROOT/auto-madden/nfl-pro-scraper/credentials" ]]; then
+        log "Backing up NFL Pro Scraper credentials..."
+        tar czf "$backup_dir/nfl-pro-scraper-credentials_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            auto-madden/nfl-pro-scraper/credentials \
+            2>/dev/null || log_warning "NFL Pro Scraper credentials backup had issues"
+        local size=$(du -h "$backup_dir/nfl-pro-scraper-credentials_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "NFL Pro Scraper credentials backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    # Also backup NFL Pro Scraper data if it exists
+    if [[ -d "$PROJECT_ROOT/auto-madden/nfl-pro-scraper/data" ]]; then
+        log "Backing up NFL Pro Scraper data..."
+        tar czf "$backup_dir/nfl-pro-scraper-data_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            auto-madden/nfl-pro-scraper/data \
+            2>/dev/null || log_warning "NFL Pro Scraper data backup had issues"
+        local size=$(du -h "$backup_dir/nfl-pro-scraper-data_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "NFL Pro Scraper data backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 4. Sports & Media Credentials - OAuth tokens for streaming services (~2.6 MB)
+    if [[ -d "$PROJECT_ROOT/sports-and-media-tools/credentials" ]]; then
+        log "Backing up Sports & Media credentials (streaming service OAuth)..."
+        tar czf "$backup_dir/sports-media-credentials_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            sports-and-media-tools/credentials \
+            2>/dev/null || log_warning "Sports & Media credentials backup had issues"
+        local size=$(du -h "$backup_dir/sports-media-credentials_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "Sports & Media credentials backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 5. Sports & Media Data
+    if [[ -d "$PROJECT_ROOT/sports-and-media-tools/data" ]]; then
+        log "Backing up Sports & Media data..."
+        tar czf "$backup_dir/sports-media-data_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            sports-and-media-tools/data \
+            2>/dev/null || log_warning "Sports & Media data backup had issues"
+        local size=$(du -h "$backup_dir/sports-media-data_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "Sports & Media data backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 6. Letta Filesystem Repository (~31 MB)
+    if [[ -d "$PROJECT_ROOT/letta_filesystem_repo" ]]; then
+        log "Backing up Letta filesystem repository..."
+        tar czf "$backup_dir/letta-filesystem-repo_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            letta_filesystem_repo \
+            2>/dev/null || log_warning "Letta filesystem repo backup had issues"
+        local size=$(du -h "$backup_dir/letta-filesystem-repo_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "Letta filesystem repo backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 7. Slack auth state file
+    if [[ -f "$PROJECT_ROOT/slack_auth_state.json" ]]; then
+        log "Backing up Slack auth state..."
+        cp "$PROJECT_ROOT/slack_auth_state.json" "$backup_dir/slack_auth_state_$TIMESTAMP.json"
+        log_success "Slack auth state backed up"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 8. Gmail MCP OAuth keys (if stored on host, not just in volume)
+    if [[ -f "$PROJECT_ROOT/gmail-mcp/gcp-oauth.keys.json" ]]; then
+        log "Backing up Gmail MCP OAuth keys..."
+        cp "$PROJECT_ROOT/gmail-mcp/gcp-oauth.keys.json" "$backup_dir/gmail-mcp-oauth-keys_$TIMESTAMP.json"
+        log_success "Gmail MCP OAuth keys backed up"
+        ((host_backup_count++)) || true
+    fi
+    
+    # 9. Watch History Service credentials (if stored on host)
+    if [[ -d "$PROJECT_ROOT/sports-and-media-tools/watch-history-service/credentials" ]]; then
+        log "Backing up Watch History Service credentials..."
+        tar czf "$backup_dir/watch-history-credentials_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            sports-and-media-tools/watch-history-service/credentials \
+            2>/dev/null || log_warning "Watch History credentials backup had issues"
+        local size=$(du -h "$backup_dir/watch-history-credentials_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "Watch History credentials backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+    
+    log_success "Host data backup complete: $host_backup_count items backed up"
 }
 
 # Function to backup all databases dynamically
@@ -327,17 +484,28 @@ backup_letta_exports() {
         return
     fi
     
-    # Check if Letta is accessible
-    if ! curl -sSf "$LETTA_BASE_URL/v1/health/" >/dev/null 2>&1; then
-        log_warning "Letta service not accessible at $LETTA_BASE_URL. Trying localhost..."
+    # Check if Letta is accessible with detailed logging
+    log "Checking Letta health at $LETTA_BASE_URL..."
+    local health_response=""
+    health_response=$(curl -sS --connect-timeout 5 "$LETTA_BASE_URL/v1/health/" 2>&1) || true
+    
+    if [[ -z "$health_response" ]] || ! echo "$health_response" | grep -q "ok\|healthy\|true" 2>/dev/null; then
+        log_warning "Letta service not accessible at $LETTA_BASE_URL (response: $health_response). Trying localhost..."
         LETTA_BASE_URL="http://127.0.0.1:8283"
-        if ! curl -sSf "$LETTA_BASE_URL/v1/health/" >/dev/null 2>&1; then
-            log_warning "Letta service not accessible. Skipping Letta exports."
+        health_response=$(curl -sS --connect-timeout 5 "$LETTA_BASE_URL/v1/health/" 2>&1) || true
+        if [[ -z "$health_response" ]] || ! echo "$health_response" | grep -q "ok\|healthy\|true" 2>/dev/null; then
+            log_warning "Letta service not accessible at localhost either. Skipping Letta exports."
+            log_warning "Health response: $health_response"
+            # Save diagnostic info
+            echo "Letta Export Diagnostic - $(date)" > "$export_dir/LETTA_EXPORT_FAILED.txt"
+            echo "Tried URLs: http://letta:8283, http://127.0.0.1:8283" >> "$export_dir/LETTA_EXPORT_FAILED.txt"
+            echo "Last response: $health_response" >> "$export_dir/LETTA_EXPORT_FAILED.txt"
             return
         fi
     fi
     
     log_success "Letta service accessible at $LETTA_BASE_URL"
+    log "Health response: $health_response"
     
     # Build auth header if token is provided
     local AUTH_HEADER=""
@@ -544,7 +712,7 @@ main() {
     fi
     
     # Create backup directory structure
-    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports}
+    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports,host_data}
     
     # Backup all databases (dynamic discovery + cluster backup)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
@@ -554,6 +722,11 @@ main() {
     # Backup volumes (dynamic discovery)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
         backup_all_volumes "$BACKUP_PATH/volumes"
+    fi
+    
+    # Backup host filesystem data (local databases, credentials, data files)
+    if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
+        backup_host_data "$BACKUP_PATH/host_data"
     fi
     
     # Backup configuration files
