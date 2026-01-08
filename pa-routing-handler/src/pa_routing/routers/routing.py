@@ -1,12 +1,20 @@
 """Routing API endpoints."""
 
 import time
+from datetime import datetime
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
+from pa_routing.database import get_db_session
 from pa_routing.models.requests import AgentSelectRequest, RouteRequest
 from pa_routing.models.responses import AgentInfo, AgentListResponse, RouteResponse
+from pa_routing.models.routing_decision import RoutingDecision
+from pa_routing.services.agent_selector import (
+    AGENT_MAP,
+    AGENT_NAMES,
+    TieredAgentSelector,
+)
 from pa_routing.services.session_store import session_store
 from pa_routing.settings import settings
 
@@ -14,16 +22,21 @@ logger = structlog.get_logger()
 
 router = APIRouter(tags=["routing"])
 
+# Initialize tiered agent selector
+_selector = TieredAgentSelector()
+
 
 @router.post("/route", response_model=RouteResponse)
 async def route_message(request: RouteRequest) -> RouteResponse:
     """
     Route a message to the appropriate agent.
 
-    Routing priority:
-    1. Explicit agent_id in request
-    2. Domain keyword matching (Phase 1)
-    3. Default agent fallback
+    Routing priority (tiered):
+    1. Explicit agent_id in request (confidence: 1.0)
+    2. Domain keyword matching (confidence: 0.9)
+    3. Action keyword matching (confidence: 0.7)
+    4. [Phase 1.5] Semantic embedding (confidence: 0.6-0.8)
+    5. Default fallback (confidence: 0.5)
     """
     start_time = time.perf_counter()
 
@@ -31,37 +44,55 @@ async def route_message(request: RouteRequest) -> RouteResponse:
     user_id = request.user_id or str(request.session_id)
     session_ctx = session_store.get_or_create(user_id)
 
-    # Routing decision
-    if request.agent_id:
-        # Explicit agent override
-        agent_id = request.agent_id
-        routing_method = "explicit"
-        routing_reason = "Agent explicitly specified in request"
-        confidence = 1.0
-    else:
-        # Default routing (Task 30-6 will add tiered routing)
-        agent_id = settings.default_agent_id or "default"
-        routing_method = "default"
-        routing_reason = "No routing rules matched, using default agent"
-        confidence = 0.5
+    # Use tiered agent selector
+    result = _selector.select_detailed(request.message, request.agent_id)
 
     # Calculate processing time
     processing_time_ms = int((time.perf_counter() - start_time) * 1000)
 
+    # Determine routing method from tier
+    tier_methods = {
+        1: "explicit",
+        2: "domain_keyword",
+        3: "action_keyword",
+        4: "semantic",
+        5: "default",
+    }
+    routing_method = tier_methods.get(result.tier, "unknown")
+
+    # Log routing decision to database (async, non-blocking)
+    try:
+        async with get_db_session() as session:
+            decision = RoutingDecision(
+                session_id=request.session_id,
+                message_preview=request.message[:255] if request.message else None,
+                selected_agent_id=result.agent_id,
+                routing_method=routing_method,
+                routing_confidence=result.confidence,
+                processing_time_ms=processing_time_ms,
+                created_at=datetime.utcnow(),
+            )
+            session.add(decision)
+    except Exception as e:
+        logger.warning("routing_decision_log_failed", error=str(e))
+
     logger.info(
         "route_decision",
         session_id=str(request.session_id),
-        agent_id=agent_id,
+        agent_id=result.agent_id,
+        agent_name=result.agent_name,
         routing_method=routing_method,
+        tier=result.tier,
+        confidence=result.confidence,
         processing_time_ms=processing_time_ms,
     )
 
     return RouteResponse(
-        agent_id=agent_id,
-        agent_name=agent_id,  # Will be resolved from Letta in Task 30-7
+        agent_id=result.agent_id,
+        agent_name=result.agent_name,
         routing_method=routing_method,
-        routing_reason=routing_reason,
-        confidence=confidence,
+        routing_reason=result.reason,
+        confidence=result.confidence,
         processing_time_ms=processing_time_ms,
         session_context_entries=session_ctx.entry_count,
     )
@@ -72,18 +103,28 @@ async def list_agents() -> AgentListResponse:
     """
     List available agents for routing.
 
-    Phase 1: Returns static list.
+    Phase 1: Returns from AGENT_MAP.
     Phase 2: Fetches from Letta API.
     """
-    # Placeholder - Task 30-7 will fetch from Letta
     agents = [
         AgentInfo(
-            id="default",
-            name="Default Assistant",
+            id=agent_id,
+            name=AGENT_NAMES.get(domain, domain),
+            description=f"{AGENT_NAMES.get(domain, domain)} for {domain} tasks",
+            keywords=[domain],
+        )
+        for domain, agent_id in AGENT_MAP.items()
+    ]
+
+    # Add default agent
+    agents.append(
+        AgentInfo(
+            id=settings.default_agent_id or "default",
+            name="Main Agent",
             description="General-purpose assistant",
             keywords=["help", "general"],
-        ),
-    ]
+        )
+    )
 
     return AgentListResponse(agents=agents, count=len(agents))
 
