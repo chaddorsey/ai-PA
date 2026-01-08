@@ -15,8 +15,10 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --only main
 
-# Copy source code
+# Copy source code and migrations
 COPY src/ ./src/
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
 # Set Python path
 ENV PYTHONPATH=/app/src
