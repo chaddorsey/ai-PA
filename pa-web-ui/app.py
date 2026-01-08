@@ -1,9 +1,13 @@
 """PA Web UI - Flask application for chat interface."""
 
+import json
 import os
+from typing import Generator
 
+import httpx
 import structlog
-from flask import Flask, render_template, jsonify
+from flask import Flask, Response, jsonify, render_template, request
+from flask_cors import CORS
 
 # Configure structured logging
 structlog.configure(
@@ -22,12 +26,16 @@ structlog.configure(
 logger = structlog.get_logger()
 
 app = Flask(__name__)
+CORS(app)
 
 # Configuration from environment
-app.config["ROUTING_HANDLER_URL"] = os.getenv(
+ROUTING_HANDLER_URL = os.getenv(
     "PA_ROUTING_HANDLER_URL", "http://pa-routing-handler:5201"
 )
-app.config["LETTA_BASE_URL"] = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+
+# HTTP client for backend calls
+http_client = httpx.Client(timeout=30.0)
 
 
 @app.route("/")
@@ -40,6 +48,143 @@ def index():
 def health():
     """Health check endpoint."""
     return jsonify({"status": "healthy", "service": "pa-web-ui"})
+
+
+@app.route("/api/agents")
+def get_agents():
+    """Proxy to routing handler to get available agents."""
+    try:
+        response = http_client.get(f"{ROUTING_HANDLER_URL}/v1/agents")
+        response.raise_for_status()
+        return jsonify(response.json())
+    except Exception as e:
+        logger.error("get_agents_failed", error=str(e))
+        return jsonify({"agents": [], "error": str(e)}), 500
+
+
+@app.route("/api/config")
+def get_config():
+    """Get frontend configuration."""
+    return jsonify({
+        "routing_handler_url": ROUTING_HANDLER_URL,
+        "letta_base_url": LETTA_BASE_URL,
+    })
+
+
+@app.route("/stream", methods=["POST"])
+def stream():
+    """
+    SSE endpoint for chat messages.
+
+    Receives a message, routes it to the appropriate agent,
+    and streams the response back via Server-Sent Events.
+    """
+    data = request.get_json()
+    message = data.get("message", "")
+    agent_id = data.get("agent_id")
+    session_id = data.get("session_id")
+
+    if not message:
+        return jsonify({"error": "Message is required"}), 400
+
+    if not session_id:
+        return jsonify({"error": "Session ID is required"}), 400
+
+    logger.info(
+        "stream_request",
+        session_id=session_id,
+        agent_id=agent_id,
+        message_length=len(message),
+    )
+
+    def generate() -> Generator[str, None, None]:
+        """Generate SSE events from Letta response."""
+        try:
+            # Step 1: Route the message to get the appropriate agent
+            route_response = http_client.post(
+                f"{ROUTING_HANDLER_URL}/v1/route",
+                json={
+                    "session_id": session_id,
+                    "message": message,
+                    "agent_id": agent_id,
+                },
+            )
+            route_response.raise_for_status()
+            route_data = route_response.json()
+
+            selected_agent_id = route_data.get("agent_id")
+            agent_name = route_data.get("agent_name", "Assistant")
+
+            logger.info(
+                "routed_message",
+                session_id=session_id,
+                selected_agent_id=selected_agent_id,
+                routing_method=route_data.get("routing_method"),
+            )
+
+            # Send routing event to frontend
+            yield f"data: {json.dumps({'type': 'routing', 'agent_id': selected_agent_id, 'agent_name': agent_name})}\n\n"
+
+            # Step 2: Send message to Letta agent and stream response
+            with http_client.stream(
+                "POST",
+                f"{LETTA_BASE_URL}/v1/agents/{selected_agent_id}/messages",
+                json={
+                    "messages": [{"role": "user", "content": message}],
+                    "stream_steps": True,
+                    "stream_tokens": True,
+                },
+                timeout=120.0,
+            ) as letta_response:
+                if letta_response.status_code != 200:
+                    error_msg = f"Letta returned {letta_response.status_code}"
+                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                    return
+
+                for line in letta_response.iter_lines():
+                    if not line:
+                        continue
+
+                    # Parse Letta SSE format
+                    if line.startswith("data: "):
+                        try:
+                            event_data = json.loads(line[6:])
+
+                            # Extract text content from Letta events
+                            if event_data.get("message_type") == "assistant_message":
+                                content = event_data.get("assistant_message", "")
+                                if content:
+                                    yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+
+                            elif event_data.get("message_type") == "tool_call_message":
+                                tool_name = event_data.get("tool_call", {}).get(
+                                    "name", "tool"
+                                )
+                                yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
+
+                        except json.JSONDecodeError:
+                            pass
+
+            # Send done event
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except httpx.HTTPStatusError as e:
+            logger.error("stream_http_error", error=str(e))
+            yield f"data: {json.dumps({'type': 'error', 'message': f'HTTP error: {e.response.status_code}'})}\n\n"
+
+        except Exception as e:
+            logger.error("stream_error", error=str(e))
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 if __name__ == "__main__":
