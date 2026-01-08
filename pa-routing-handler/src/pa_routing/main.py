@@ -6,6 +6,8 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from pa_routing.database import close_db, init_db
+from pa_routing.routers import routing
 from pa_routing.settings import settings
 
 # Configure structured logging
@@ -29,7 +31,13 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("pa_routing_starting", letta_url=settings.letta_base_url)
+    try:
+        await init_db()
+        logger.info("database_connected")
+    except Exception as e:
+        logger.warning("database_connection_failed", error=str(e))
     yield
+    await close_db()
     logger.info("pa_routing_shutdown")
 
 
@@ -48,6 +56,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Include API routers
+app.include_router(routing.router, prefix="/v1")
 
 
 @app.get("/health")
