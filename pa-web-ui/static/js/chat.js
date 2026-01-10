@@ -132,6 +132,16 @@ class ChatUI {
         });
     }
 
+    formatTimestamp(date = new Date()) {
+        const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const dayName = days[date.getDay()];
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${month}/${day} ${dayName} - ${hours}:${minutes}`;
+    }
+
     setupEventListeners() {
         this.sendBtn.addEventListener('click', () => this.sendMessage());
 
@@ -239,7 +249,9 @@ class ChatUI {
                         assistantMsg?.message || '',
                         assistantMsg?.agent_name || userMsg.agent_name || 'Assistant',
                         assistantMsg?.agent_id || userMsg.agent_id || '',
-                        requestId
+                        requestId,
+                        userMsg.created_at,
+                        assistantMsg?.created_at
                     );
                 }
             }
@@ -247,7 +259,7 @@ class ChatUI {
             // Render any orphan messages (shouldn't happen often)
             for (const msg of orphanMessages) {
                 if (msg.role === 'user') {
-                    this.renderHistoryThread(msg.message, '', 'Assistant', '', null);
+                    this.renderHistoryThread(msg.message, '', 'Assistant', '', null, msg.created_at, null);
                 }
             }
 
@@ -257,7 +269,7 @@ class ChatUI {
         }
     }
 
-    renderHistoryThread(userMessage, assistantResponse, agentName, agentId, requestId) {
+    renderHistoryThread(userMessage, assistantResponse, agentName, agentId, requestId, userTimestamp = null, assistantTimestamp = null) {
         const card = document.createElement('div');
         card.className = 'thread-card';
         if (requestId) card.dataset.requestId = requestId;
@@ -265,10 +277,13 @@ class ChatUI {
         if (agentName) card.dataset.agentName = agentName;
 
         const hasResponse = assistantResponse && assistantResponse.trim().length > 0;
+        const userTime = userTimestamp ? this.formatTimestamp(new Date(userTimestamp)) : '';
+        const assistantTime = assistantTimestamp ? this.formatTimestamp(new Date(assistantTimestamp)) : '';
 
         card.innerHTML = `
             <div class="thread-user-message">
                 <span class="user-text">${this.escapeHtml(userMessage)}</span>
+                ${userTime ? `<span class="message-timestamp">${userTime}</span>` : ''}
             </div>
             ${hasResponse ? `
                 <div class="thread-response" style="display: block;">
@@ -293,6 +308,7 @@ class ChatUI {
                         </div>
                     </div>
                     <div class="response-content">${this.renderMarkdown(assistantResponse)}</div>
+                    ${assistantTime ? `<span class="message-timestamp response-timestamp">${assistantTime}</span>` : ''}
                 </div>
             ` : `
                 <div class="thread-status">
@@ -412,11 +428,13 @@ class ChatUI {
         card.querySelectorAll('.active-exchange').forEach(el => el.classList.remove('active-exchange'));
 
         // Add a divider and new user message (indented as thread content)
+        const timestamp = this.formatTimestamp();
         const exchangeHtml = `
             <div class="thread-exchange-divider"></div>
             <div class="thread-followup-container">
                 <div class="thread-user-followup">
                     <span class="user-text">${this.escapeHtml(userMessage)}</span>
+                    <span class="message-timestamp">${timestamp}</span>
                 </div>
                 <div class="thread-status active-exchange">
                     <div class="dots">
@@ -444,6 +462,7 @@ class ChatUI {
                         </div>
                     </div>
                     <div class="response-content"></div>
+                    <span class="message-timestamp response-timestamp"></span>
                 </div>
             </div>
         `;
@@ -478,9 +497,11 @@ class ChatUI {
     createThreadCard(userMessage) {
         const card = document.createElement('div');
         card.className = 'thread-card streaming';
+        const timestamp = this.formatTimestamp();
         card.innerHTML = `
             <div class="thread-user-message">
                 <span class="user-text">${this.escapeHtml(userMessage)}</span>
+                <span class="message-timestamp">${timestamp}</span>
             </div>
             <div class="thread-status">
                 <div class="dots">
@@ -512,6 +533,7 @@ class ChatUI {
                     </div>
                 </div>
                 <div class="response-content"></div>
+                <span class="message-timestamp response-timestamp"></span>
             </div>
             <div class="thread-footer">
                 <button class="reply-btn">Reply</button>
@@ -540,12 +562,15 @@ class ChatUI {
         // Check for active follow-up exchange first
         const activeStatus = card.querySelector('.thread-status.active-exchange');
         const activeResponse = card.querySelector('.thread-followup-response.active-exchange');
+        const timestamp = this.formatTimestamp();
 
         if (activeStatus && activeResponse) {
             // This is a follow-up response - no agent name needed
             activeStatus.style.display = 'none';
             activeResponse.style.display = 'block';
             activeResponse.querySelector('.response-content').innerHTML = this.renderMarkdown(content);
+            const timestampEl = activeResponse.querySelector('.response-timestamp');
+            if (timestampEl) timestampEl.textContent = timestamp;
         } else {
             // Initial response - use direct child selectors to avoid matching follow-up elements
             const initialStatus = card.querySelector(':scope > .thread-status');
@@ -557,6 +582,8 @@ class ChatUI {
                 const agentNameEl = initialResponse.querySelector('.agent-name');
                 if (agentNameEl) agentNameEl.textContent = agentName;
                 initialResponse.querySelector('.response-content').innerHTML = this.renderMarkdown(content);
+                const timestampEl = initialResponse.querySelector('.response-timestamp');
+                if (timestampEl) timestampEl.textContent = timestamp;
             }
         }
     }

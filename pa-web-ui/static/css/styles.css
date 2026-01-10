@@ -105,6 +105,31 @@ header h1 {
     line-height: 1.5;
 }
 
+/* Timestamps for messages */
+.message-timestamp {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    white-space: nowrap;
+}
+
+.thread-card .thread-user-message .message-timestamp {
+    align-self: flex-end;
+    margin-left: 0.5rem;
+}
+
+.thread-card .thread-response .response-timestamp,
+.thread-card .thread-followup-response .response-timestamp {
+    display: block;
+    text-align: right;
+    margin-top: 0.5rem;
+}
+
+.thread-card .thread-user-followup .message-timestamp {
+    align-self: flex-end;
+    margin-left: 0.5rem;
+}
+
 .thread-card .thread-response {
     padding: 1rem;
 }
