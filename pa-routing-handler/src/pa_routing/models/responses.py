@@ -17,6 +17,7 @@ class RouteResponse(BaseModel):
     session_context_entries: int = 0
     request_id: Optional[str] = None
     context_injection: Optional[str] = None  # Formatted session context to prepend to message
+    briefing_injection: Optional[str] = None  # Pattern 4: Session briefing for main agent only
 
 
 class AgentInfo(BaseModel):

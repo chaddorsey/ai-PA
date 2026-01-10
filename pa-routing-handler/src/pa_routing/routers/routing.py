@@ -1,5 +1,7 @@
 """Routing API endpoints."""
 
+import asyncio
+import os
 import time
 from datetime import datetime
 
@@ -14,10 +16,16 @@ from pa_routing.services.agent_selector import (
     AGENT_MAP,
     AGENT_NAMES,
     ContextInfo,
+    DEFAULT_AGENT_ID,
     TieredAgentSelector,
 )
+from pa_routing.services.letta_client import LettaClient
 from pa_routing.services.session_store import session_store
-from pa_routing.services.summary_parser import clean_response_for_user, extract_summary
+from pa_routing.services.summary_parser import (
+    clean_response_for_user,
+    extract_summary,
+    extract_summary_with_topics,
+)
 from pa_routing.settings import settings
 
 logger = structlog.get_logger()
@@ -26,6 +34,13 @@ router = APIRouter(tags=["routing"])
 
 # Initialize tiered agent selector
 _selector = TieredAgentSelector()
+
+# Initialize Letta client for archival operations (Patterns 3 & 4)
+LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+_letta_client = LettaClient(LETTA_BASE_URL)
+
+# Main agent ID for archival writes
+MAIN_AGENT_ID = settings.default_agent_id or DEFAULT_AGENT_ID
 
 
 @router.post("/route", response_model=RouteResponse)
@@ -98,6 +113,22 @@ async def route_message(request: RouteRequest) -> RouteResponse:
     # Format session context for injection (Pattern 2)
     context_injection = session_ctx.format_for_injection()
 
+    # Pattern 4: Briefing injection for main agent only
+    briefing_injection = None
+    is_main_agent = result.agent_id == MAIN_AGENT_ID
+    if is_main_agent:
+        try:
+            # Query today's session passages
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            passages = await _letta_client.list_passages(
+                agent_id=MAIN_AGENT_ID,
+                tags=[f"session:{today}"],
+                limit=5,
+            )
+            briefing_injection = _letta_client.format_briefing(passages)
+        except Exception as e:
+            logger.warning("briefing_injection_failed", error=str(e))
+
     logger.info(
         "route_decision",
         session_id=str(request.session_id),
@@ -108,6 +139,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         confidence=result.confidence,
         processing_time_ms=processing_time_ms,
         context_entries=session_ctx.entry_count,
+        has_briefing=bool(briefing_injection),
     )
 
     return RouteResponse(
@@ -120,6 +152,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         session_context_entries=session_ctx.entry_count,
         request_id=thread.request_id if thread else None,
         context_injection=context_injection if context_injection else None,
+        briefing_injection=briefing_injection if briefing_injection else None,
     )
 
 
@@ -280,24 +313,58 @@ async def complete_thread(
     agent_name: str,
     response_content: str = "",
     tool_calls: list[str] = Query(default=None),
+    user_message: str = "",
 ) -> dict:
     """
     Mark a thread as complete.
 
     Called when an agent finishes responding. Updates the last-responding
-    agent for contextual routing and extracts SUMMARY for cross-agent awareness.
+    agent for contextual routing, extracts SUMMARY for cross-agent awareness,
+    and writes to Main Agent's archival for sub-agents (Pattern 3).
     """
     session_ctx = session_store.get(session_id)
     if not session_ctx:
         return {"error": "Session not found", "thread": None}
 
-    # Extract summary from response for cross-agent context (Pattern 2)
+    # Extract summary with topics from response (Pattern 2)
     # Priority: SUMMARY line > tool name > truncated first line
-    summary = extract_summary(response_content, agent_name, tool_calls)
+    parsed = extract_summary_with_topics(response_content, agent_name, tool_calls)
+    summary = parsed.text
+    topics = parsed.topics
     cleaned_response = clean_response_for_user(response_content)
 
-    # Append to session context for cross-agent awareness
+    # Append to session context for cross-agent awareness (clean summary without hashtags)
     session_ctx.append(agent=agent_name, action=summary)
+
+    # Pattern 3: Write to Main Agent's archival for sub-agents (fire-and-forget)
+    is_sub_agent = agent_id != MAIN_AGENT_ID
+    if is_sub_agent and response_content:
+        # Build passage text
+        user_preview = user_message[:80] if user_message else "request"
+        passage_text = f"User asked {agent_name}: {user_preview}. Action: {summary}"
+
+        # Build tags
+        tags = _letta_client.build_session_tags(
+            agent_name=agent_name,
+            topics=topics,
+            user_id=session_id,  # Using session_id as user identifier
+        )
+
+        # Fire-and-forget archival write
+        asyncio.create_task(
+            _letta_client.create_passage(
+                agent_id=MAIN_AGENT_ID,
+                text=passage_text,
+                tags=tags,
+            )
+        )
+
+        logger.info(
+            "archival_write_scheduled",
+            session_id=session_id,
+            agent_name=agent_name,
+            topics=topics,
+        )
 
     # Complete the thread with the original response (caller may use cleaned version)
     thread = session_ctx.complete_thread(request_id, agent_id, agent_name, response_content)
@@ -311,6 +378,7 @@ async def complete_thread(
         agent_id=agent_id,
         agent_name=agent_name,
         summary=summary,
+        topics=topics,
     )
 
     return {
@@ -319,6 +387,7 @@ async def complete_thread(
         "last_responding_agent_id": session_ctx.last_responding_agent_id,
         "last_responding_agent_name": session_ctx.last_responding_agent_name,
         "summary": summary,
+        "topics": topics,
         "cleaned_response": cleaned_response,
     }
 

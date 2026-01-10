@@ -1,16 +1,28 @@
 """Parse SUMMARY lines from agent responses for session context tracking.
 
-Sub-agents are instructed to end responses with SUMMARY: <action taken>.
-This module extracts those summaries with fallback chain for non-compliant agents.
+Sub-agents are instructed to end responses with SUMMARY: <action taken> #topic #tags.
+This module extracts summaries and topic hashtags for archival tagging.
 """
 
 import re
+from dataclasses import dataclass
 
 # Pattern to match SUMMARY line (case-insensitive, multiline)
 SUMMARY_PATTERN = re.compile(r"^SUMMARY:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
 
+# Pattern to extract hashtags from summary
+HASHTAG_PATTERN = re.compile(r"#(\w+)")
+
 # Maximum length for truncated summaries
 MAX_SUMMARY_LENGTH = 80
+
+
+@dataclass
+class ParsedSummary:
+    """Parsed summary with extracted topic tags."""
+
+    text: str  # Summary text without hashtags
+    topics: list[str]  # Extracted topic tags (without # prefix)
 
 
 def extract_summary(
@@ -32,7 +44,7 @@ def extract_summary(
         tool_calls: List of tool names called (optional)
 
     Returns:
-        Summary string for session context
+        Summary string for session context (includes hashtags if present)
     """
     if not response_text:
         return f"{agent_name} responded"
@@ -57,6 +69,35 @@ def extract_summary(
         return first_line[: MAX_SUMMARY_LENGTH - 3] + "..."
 
     return first_line
+
+
+def extract_summary_with_topics(
+    response_text: str,
+    agent_name: str,
+    tool_calls: list[str] | None = None,
+) -> ParsedSummary:
+    """
+    Extract SUMMARY line and parse hashtags as topic tags.
+
+    Args:
+        response_text: Full response from agent
+        agent_name: Name of the responding agent (for fallback)
+        tool_calls: List of tool names called (optional)
+
+    Returns:
+        ParsedSummary with text (hashtags stripped) and topics list
+    """
+    raw_summary = extract_summary(response_text, agent_name, tool_calls)
+
+    # Extract hashtags
+    topics = HASHTAG_PATTERN.findall(raw_summary)
+
+    # Remove hashtags from summary text for clean display
+    clean_text = HASHTAG_PATTERN.sub("", raw_summary).strip()
+    # Clean up any double spaces left after hashtag removal
+    clean_text = re.sub(r"\s+", " ", clean_text).strip()
+
+    return ParsedSummary(text=clean_text, topics=topics)
 
 
 def clean_response_for_user(response_text: str) -> str:

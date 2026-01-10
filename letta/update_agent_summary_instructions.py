@@ -25,26 +25,20 @@ AGENTS = {
     "Main Agent": "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a",
 }
 
-# SUMMARY instruction block to append to personas
+# SUMMARY instruction block to append to personas (kept concise to fit block limits)
 SUMMARY_INSTRUCTION = """
 
 ## Response Format - SUMMARY Line
 
-IMPORTANT: Always end your response with exactly one line starting with "SUMMARY:"
-that captures the key action taken in 10 words or fewer. This helps maintain
-context when the user switches between different assistants.
+End every response with: SUMMARY: <action in ≤10 words> #topic1 #topic2
 
 Examples:
-- "I've scheduled your meeting for 3pm tomorrow. SUMMARY: Scheduled meeting for Jan 8 at 3pm"
-- "Here are your top 5 tasks from OmniFocus. SUMMARY: Listed 5 priority tasks"
-- "I've sent the Slack message to the team. SUMMARY: Sent Slack message to #general"
-- "Your calendar shows 3 meetings today. SUMMARY: Showed 3 meetings for today"
-- "I found the document you were looking for. SUMMARY: Found quarterly report document"
+- SUMMARY: Scheduled meeting for Jan 8 at 3pm #calendar #meeting
+- SUMMARY: Listed 5 priority tasks #tasks #omnifocus
+- SUMMARY: Sent Slack message to #general #slack
+- SUMMARY: Found quarterly report document #docs #search
 
-The SUMMARY line should be:
-- Concise (10 words or fewer)
-- Action-focused (what you did, not what you said)
-- Specific enough to remind the user what happened
+Rules: Action-focused, 1-3 lowercase hashtags for categorization.
 """
 
 
@@ -94,7 +88,7 @@ def update_persona_block(agent_id, block_id, new_value):
     )
 
 
-def update_agent_persona(agent_name, agent_id):
+def update_agent_persona(agent_name, agent_id, force_update=False):
     """Update agent's persona with SUMMARY instructions."""
     print(f"\nProcessing {agent_name} ({agent_id})...")
 
@@ -118,19 +112,36 @@ def update_agent_persona(agent_name, agent_id):
     current_persona = persona_block.get("value", "")
     block_id = persona_block.get("id")
 
-    # Check if already has SUMMARY instruction
-    if "SUMMARY:" in current_persona and "Response Format" in current_persona:
-        print(f"  Already has SUMMARY instructions")
-        return True
+    # Check if already has SUMMARY instruction with hashtags
+    has_summary = "SUMMARY:" in current_persona and "Response Format" in current_persona
+    has_hashtags = "#topic1 #topic2" in current_persona or "hashtags" in current_persona.lower()
 
-    # Append SUMMARY instruction
-    new_persona = current_persona + SUMMARY_INSTRUCTION
+    if has_summary and has_hashtags and not force_update:
+        print(f"  Already has SUMMARY instructions with hashtags")
+        return "skipped"
+
+    # If has old SUMMARY block without hashtags, replace it
+    if has_summary and not has_hashtags:
+        print(f"  Replacing old SUMMARY block with hashtag version...")
+        # Find and remove the old SUMMARY block
+        marker = "## Response Format - SUMMARY Line"
+        if marker in current_persona:
+            idx = current_persona.find(marker)
+            # Find the section before the marker
+            base_persona = current_persona[:idx].rstrip()
+            new_persona = base_persona + SUMMARY_INSTRUCTION
+        else:
+            # Marker not found, just append
+            new_persona = current_persona + SUMMARY_INSTRUCTION
+    else:
+        # Append SUMMARY instruction (no existing block)
+        new_persona = current_persona + SUMMARY_INSTRUCTION
 
     # Update the block
     result = update_persona_block(agent_id, block_id, new_persona)
     if result:
         print(f"  Updated persona with SUMMARY instructions")
-        return True
+        return "updated"
     else:
         print(f"  Failed to update persona")
         return False
@@ -138,7 +149,7 @@ def update_agent_persona(agent_name, agent_id):
 
 def main():
     print("=" * 60)
-    print("Update Agent Personas with SUMMARY Instructions")
+    print("Update Agent Personas with SUMMARY Instructions (with hashtags)")
     print("=" * 60)
     print()
     print(f"Letta Base: {LETTA_BASE}")
@@ -150,11 +161,10 @@ def main():
 
     for agent_name, agent_id in AGENTS.items():
         result = update_agent_persona(agent_name, agent_id)
-        if result:
-            if "Already has" in str(result):
-                skipped += 1
-            else:
-                updated += 1
+        if result == "updated":
+            updated += 1
+        elif result == "skipped":
+            skipped += 1
         else:
             failed += 1
 
@@ -163,12 +173,12 @@ def main():
     print("Summary")
     print("=" * 60)
     print(f"  Updated: {updated}")
-    print(f"  Skipped (already has): {skipped}")
+    print(f"  Skipped (already has hashtags): {skipped}")
     print(f"  Failed: {failed}")
     print()
 
     if failed == 0:
-        print("All agents now have SUMMARY instructions!")
+        print("All agents now have SUMMARY instructions with hashtag support!")
     else:
         print(f"Warning: {failed} agents failed to update")
 
