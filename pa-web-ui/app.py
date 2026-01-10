@@ -2,6 +2,8 @@
 
 import json
 import os
+import queue
+import threading
 import time
 from typing import Generator
 
@@ -14,6 +16,11 @@ from flask_cors import CORS
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 1.0
 RETRYABLE_STATUS_CODES = {502, 503, 504}
+
+# Keepalive ping interval in seconds (keeps frontend connection alive during long operations)
+KEEPALIVE_PING_INTERVAL = 15.0
+# Letta stream timeout in seconds
+LETTA_STREAM_TIMEOUT = 300.0
 
 # Configure structured logging
 import logging
@@ -429,126 +436,169 @@ def stream():
                 request_id=request_id,
             )
 
-            # Use streaming client for SSE
-            last_error = None
-            stream_success = False
-            assistant_response_parts = []  # Accumulate response for saving
+            # Use a queue-based approach with keepalive pings
+            # This keeps the frontend connection alive during long Letta operations
+            event_queue = queue.Queue()
+            assistant_response_parts = []
 
-            for attempt in range(MAX_RETRIES):
-                try:
-                    with httpx.Client(timeout=180.0) as stream_client:
-                        with stream_client.stream(
-                            "POST",
-                            letta_url,
-                            json=letta_payload,
-                            params={"stream_steps": "true"},
-                        ) as letta_stream:
+            def run_letta_stream():
+                """Background thread to run Letta stream and put events in queue."""
+                last_error = None
+                stream_success = False
 
-                            logger.info(
-                                "letta_stream_opened",
-                                status_code=letta_stream.status_code,
-                                agent_id=selected_agent_id,
-                            )
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        with httpx.Client(timeout=LETTA_STREAM_TIMEOUT) as stream_client:
+                            with stream_client.stream(
+                                "POST",
+                                letta_url,
+                                json=letta_payload,
+                                params={"stream_steps": "true"},
+                            ) as letta_stream:
 
-                            if letta_stream.status_code != 200:
-                                if letta_stream.status_code in RETRYABLE_STATUS_CODES:
-                                    last_error = f"Letta returned {letta_stream.status_code}"
-                                    logger.warning(
-                                        "letta_stream_transient_error",
-                                        status_code=letta_stream.status_code,
-                                        attempt=attempt + 1,
-                                    )
-                                    if attempt < MAX_RETRIES - 1:
-                                        time.sleep(RETRY_DELAY_SECONDS * (attempt + 1))
-                                        continue
-                                else:
-                                    last_error = f"Letta returned {letta_stream.status_code}"
-                                    break
+                                logger.info(
+                                    "letta_stream_opened",
+                                    status_code=letta_stream.status_code,
+                                    agent_id=selected_agent_id,
+                                )
 
-                            stream_success = True
+                                if letta_stream.status_code != 200:
+                                    if letta_stream.status_code in RETRYABLE_STATUS_CODES:
+                                        last_error = f"Letta returned {letta_stream.status_code}"
+                                        logger.warning(
+                                            "letta_stream_transient_error",
+                                            status_code=letta_stream.status_code,
+                                            attempt=attempt + 1,
+                                        )
+                                        if attempt < MAX_RETRIES - 1:
+                                            time.sleep(RETRY_DELAY_SECONDS * (attempt + 1))
+                                            continue
+                                    else:
+                                        last_error = f"Letta returned {letta_stream.status_code}"
+                                        break
 
-                            # Process SSE stream from Letta
-                            buffer = ""
-                            for chunk in letta_stream.iter_text():
-                                buffer += chunk
-                                while "\n" in buffer:
-                                    line, buffer = buffer.split("\n", 1)
-                                    line = line.strip()
+                                stream_success = True
 
-                                    if not line or line.startswith(":"):
-                                        continue
+                                # Process SSE stream from Letta
+                                buffer = ""
+                                for chunk in letta_stream.iter_text():
+                                    buffer += chunk
+                                    while "\n" in buffer:
+                                        line, buffer = buffer.split("\n", 1)
+                                        line = line.strip()
 
-                                    if line.startswith("data: "):
-                                        data_str = line[6:]
-                                        if data_str == "[DONE]":
+                                        if not line or line.startswith(":"):
                                             continue
 
-                                        try:
-                                            event_data = json.loads(data_str)
-                                            msg_type = event_data.get("message_type", "")
+                                        if line.startswith("data: "):
+                                            data_str = line[6:]
+                                            if data_str == "[DONE]":
+                                                continue
 
-                                            # Log all events for debugging
-                                            logger.info(
-                                                "letta_event",
-                                                message_type=msg_type,
-                                                agent_id=selected_agent_id,
-                                                has_content="content" in event_data,
-                                            )
+                                            try:
+                                                event_data = json.loads(data_str)
+                                                msg_type = event_data.get("message_type", "")
 
-                                            if msg_type == "tool_call_message":
-                                                tool_call = event_data.get("tool_call", {})
-                                                tool_name = tool_call.get("name", "tool")
-                                                yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
+                                                # Log all events for debugging
+                                                logger.info(
+                                                    "letta_event",
+                                                    message_type=msg_type,
+                                                    agent_id=selected_agent_id,
+                                                    has_content="content" in event_data,
+                                                )
 
-                                            elif msg_type == "assistant_message":
-                                                content = event_data.get("content", "")
-                                                if content:
-                                                    assistant_response_parts.append(content)
-                                                    yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+                                                # Put event in queue for main thread
+                                                event_queue.put(("event", msg_type, event_data))
 
-                                            elif msg_type == "reasoning_message":
-                                                # Agent is thinking - could show this too
+                                            except json.JSONDecodeError:
                                                 pass
 
-                                            elif msg_type == "internal_error":
-                                                # Letta internal error (e.g., LLM auth failure)
-                                                error_msg = event_data.get("internal_error", "Internal error")
-                                                logger.error(
-                                                    "letta_internal_error",
-                                                    error=error_msg,
-                                                )
-                                                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
-                                                return
+                                logger.info(
+                                    "letta_stream_completed",
+                                    agent_id=selected_agent_id,
+                                    request_id=request_id,
+                                )
+                                break  # Success, exit retry loop
 
-                                        except json.JSONDecodeError:
-                                            pass
+                    except httpx.TimeoutException as e:
+                        last_error = f"Letta timeout: {str(e)}"
+                        logger.warning(
+                            "letta_stream_timeout",
+                            attempt=attempt + 1,
+                            max_retries=MAX_RETRIES,
+                        )
+                        if attempt < MAX_RETRIES - 1:
+                            time.sleep(RETRY_DELAY_SECONDS * (attempt + 1))
+                            continue
 
-                            logger.info(
-                                "letta_stream_completed",
-                                agent_id=selected_agent_id,
-                                request_id=request_id,
-                            )
-                            break  # Success, exit retry loop
+                    except Exception as e:
+                        last_error = f"Stream error: {str(e)}"
+                        logger.error("letta_stream_error", error=str(e))
+                        break
 
-                except httpx.TimeoutException as e:
-                    last_error = f"Letta timeout: {str(e)}"
-                    logger.warning(
-                        "letta_stream_timeout",
-                        attempt=attempt + 1,
-                        max_retries=MAX_RETRIES,
+                # Signal completion or error
+                if stream_success:
+                    event_queue.put(("done", None, None))
+                else:
+                    error_msg = last_error or "Failed to stream from Letta"
+                    event_queue.put(("error", None, {"message": error_msg}))
+
+            # Start Letta stream in background thread
+            letta_thread = threading.Thread(target=run_letta_stream, daemon=True)
+            letta_thread.start()
+
+            # Process events from queue with keepalive pings
+            stream_done = False
+            stream_error = None
+
+            while not stream_done:
+                try:
+                    # Wait for event with timeout for keepalive
+                    event_type, msg_type, event_data = event_queue.get(
+                        timeout=KEEPALIVE_PING_INTERVAL
                     )
-                    if attempt < MAX_RETRIES - 1:
-                        time.sleep(RETRY_DELAY_SECONDS * (attempt + 1))
-                        continue
 
-                except Exception as e:
-                    last_error = f"Stream error: {str(e)}"
-                    logger.error("letta_stream_error", error=str(e))
-                    break
+                    if event_type == "done":
+                        stream_done = True
+                    elif event_type == "error":
+                        stream_error = event_data.get("message", "Unknown error")
+                        stream_done = True
+                    elif event_type == "event":
+                        # Process Letta event
+                        if msg_type == "tool_call_message":
+                            tool_call = event_data.get("tool_call", {})
+                            tool_name = tool_call.get("name", "tool")
+                            yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
 
-            if not stream_success:
-                error_msg = last_error or "Failed to stream from Letta"
-                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                        elif msg_type == "assistant_message":
+                            content = event_data.get("content", "")
+                            if content:
+                                assistant_response_parts.append(content)
+                                yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+
+                        elif msg_type == "reasoning_message":
+                            # Agent is thinking - send a ping to keep connection alive
+                            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+                        elif msg_type == "internal_error":
+                            error_msg = event_data.get("internal_error", "Internal error")
+                            logger.error(
+                                "letta_internal_error",
+                                error=error_msg,
+                            )
+                            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                            stream_done = True
+
+                except queue.Empty:
+                    # No event received within timeout - send keepalive ping
+                    logger.info("keepalive_ping", agent_id=selected_agent_id)
+                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+            # Wait for thread to finish (with timeout)
+            letta_thread.join(timeout=5.0)
+
+            if stream_error:
+                yield f"data: {json.dumps({'type': 'error', 'message': stream_error})}\n\n"
                 return
 
             # Save assistant response to database

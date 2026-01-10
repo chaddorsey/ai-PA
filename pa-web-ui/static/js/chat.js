@@ -849,6 +849,9 @@ class ChatUI {
                                 this.inFlightRequests.delete(requestId);
                             }
                             this.finalizeThreadCard(threadCard, agentId, agentName);
+                        } else if (event.type === 'ping') {
+                            // Keepalive ping from server - ignore but keep connection alive
+                            // This prevents frontend timeout during long operations
                         } else if (event.type === 'error') {
                             this.updateThreadCardError(threadCard, event.message);
                             // Mark thread as error
