@@ -95,6 +95,9 @@ async def route_message(request: RouteRequest) -> RouteResponse:
     except Exception as e:
         logger.warning("routing_decision_log_failed", error=str(e))
 
+    # Format session context for injection (Pattern 2)
+    context_injection = session_ctx.format_for_injection()
+
     logger.info(
         "route_decision",
         session_id=str(request.session_id),
@@ -104,6 +107,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         tier=result.tier,
         confidence=result.confidence,
         processing_time_ms=processing_time_ms,
+        context_entries=session_ctx.entry_count,
     )
 
     return RouteResponse(
@@ -115,6 +119,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         processing_time_ms=processing_time_ms,
         session_context_entries=session_ctx.entry_count,
         request_id=thread.request_id if thread else None,
+        context_injection=context_injection if context_injection else None,
     )
 
 

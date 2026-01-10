@@ -381,6 +381,7 @@ def stream():
             selected_agent_id = route_data.get("agent_id")
             agent_name = route_data.get("agent_name", "Assistant")
             request_id = route_data.get("request_id")
+            context_injection = route_data.get("context_injection")  # Pattern 2
 
             logger.info(
                 "routed_message",
@@ -388,6 +389,7 @@ def stream():
                 selected_agent_id=selected_agent_id,
                 routing_method=route_data.get("routing_method"),
                 request_id=request_id,
+                has_context=bool(context_injection),
             )
 
             # Send routing event to frontend
@@ -427,7 +429,14 @@ def stream():
 
             # Step 2: Stream message to Letta agent with step notifications
             letta_url = f"{LETTA_BASE_URL}/v1/agents/{selected_agent_id}/messages/stream"
-            letta_payload = {"messages": [{"role": "user", "content": message}]}
+
+            # Pattern 2: Prepend session context to message for cross-agent awareness
+            if context_injection:
+                augmented_message = f"{context_injection}\n\n{message}"
+            else:
+                augmented_message = message
+
+            letta_payload = {"messages": [{"role": "user", "content": augmented_message}]}
 
             logger.info(
                 "letta_stream_starting",

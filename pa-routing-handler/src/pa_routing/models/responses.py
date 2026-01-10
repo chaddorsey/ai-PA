@@ -16,6 +16,7 @@ class RouteResponse(BaseModel):
     processing_time_ms: int
     session_context_entries: int = 0
     request_id: Optional[str] = None
+    context_injection: Optional[str] = None  # Formatted session context to prepend to message
 
 
 class AgentInfo(BaseModel):

@@ -8,17 +8,17 @@ This document lists all tasks associated with PBI 30.
 
 | Task ID | Name | Status | Description |
 | :------ | :--- | :----- | :---------- |
-| 30-1 | [Project Setup and Docker Configuration](./30-1.md) | Proposed | Create directory structure, Dockerfiles, and docker-compose entries for both services |
-| 30-2 | [Database Schema and Migrations](./30-2.md) | Proposed | Create pa_web schema with conversations, routing, and sessions tables |
-| 30-3 | [PA Web Service - Backend Foundation](./30-3.md) | Proposed | Create Flask application with static serving, health check, and logging |
-| 30-4 | [PA Web Service - Frontend UI](./30-4.md) | Proposed | Build dark theme chat interface with agent selection and dashboard layout |
-| 30-5 | [PA Routing Handler - Core Service](./30-5.md) | Proposed | Create FastAPI application with Pydantic models and database connection |
-| 30-6 | [PA Routing Handler - Phase 1 Routing Logic](./30-6.md) | Proposed | Implement simple pattern matching and agent selection logic |
-| 30-7 | [Letta Integration - Client Library](./30-7.md) | Proposed | Create LettaClient class with streaming support and message sanitization |
-| 30-8 | [PA Web Service - SSE Streaming](./30-8.md) | Proposed | Implement SSE endpoint that streams Letta responses to frontend |
-| 30-9 | [Dashboard Features - Agent Info](./30-9.md) | Proposed | Add agent list and memory block display to dashboard |
+| 30-1 | [Project Setup and Docker Configuration](./30-1.md) | Done | Create directory structure, Dockerfiles, and docker-compose entries for both services |
+| 30-2 | [Database Schema and Migrations](./30-2.md) | Done | Create pa_web schema with conversations, routing, and sessions tables |
+| 30-3 | [PA Web Service - Backend Foundation](./30-3.md) | Done | Create Flask application with static serving, health check, and logging |
+| 30-4 | [PA Web Service - Frontend UI](./30-4.md) | Done | Build dark theme chat interface with agent selection and dashboard layout |
+| 30-5 | [PA Routing Handler - Core Service](./30-5.md) | Done | Create FastAPI application with Pydantic models and database connection |
+| 30-6 | [PA Routing Handler - Phase 1 Routing Logic](./30-6.md) | In Progress | Implement tiered routing with SUMMARY parsing (semantic router pending) |
+| 30-7 | [Letta Integration - Client Library](./30-7.md) | In Progress | Streaming in app.py; LettaClient class and archival methods pending |
+| 30-8 | [PA Web Service - SSE Streaming](./30-8.md) | In Progress | SSE streaming done; context injection and archival write pending |
+| 30-9 | [Dashboard Features - Agent Info](./30-9.md) | In Progress | Agent list API done; memory block display pending |
 | 30-10 | [File Upload Support](./30-10.md) | Proposed | Implement file upload UI and backend with Letta integration |
-| 30-11 | [Cloudflare Tunnel Configuration](./30-11.md) | Proposed | Add pa.cd-ai-pa.work route for external access |
+| 30-11 | [Cloudflare Tunnel Configuration](./30-11.md) | Done | Add pa.cd-ai-pa.work route for external access |
 | 30-12 | [Documentation and Deployment Guide](./30-12.md) | Proposed | Create README files, environment docs, and troubleshooting guide |
 | 30-13 | [E2E Testing and Bug Fixes](./30-13.md) | Proposed | Test all workflows, fix bugs, and validate performance |
 
