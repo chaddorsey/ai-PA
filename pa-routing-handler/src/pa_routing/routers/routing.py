@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 import structlog
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from pa_routing.database import get_db_session
 from pa_routing.models.requests import AgentSelectRequest, RouteRequest
@@ -17,6 +17,7 @@ from pa_routing.services.agent_selector import (
     TieredAgentSelector,
 )
 from pa_routing.services.session_store import session_store
+from pa_routing.services.summary_parser import clean_response_for_user, extract_summary
 from pa_routing.settings import settings
 
 logger = structlog.get_logger()
@@ -273,17 +274,27 @@ async def complete_thread(
     agent_id: str,
     agent_name: str,
     response_content: str = "",
+    tool_calls: list[str] = Query(default=None),
 ) -> dict:
     """
     Mark a thread as complete.
 
     Called when an agent finishes responding. Updates the last-responding
-    agent for contextual routing.
+    agent for contextual routing and extracts SUMMARY for cross-agent awareness.
     """
     session_ctx = session_store.get(session_id)
     if not session_ctx:
         return {"error": "Session not found", "thread": None}
 
+    # Extract summary from response for cross-agent context (Pattern 2)
+    # Priority: SUMMARY line > tool name > truncated first line
+    summary = extract_summary(response_content, agent_name, tool_calls)
+    cleaned_response = clean_response_for_user(response_content)
+
+    # Append to session context for cross-agent awareness
+    session_ctx.append(agent=agent_name, action=summary)
+
+    # Complete the thread with the original response (caller may use cleaned version)
     thread = session_ctx.complete_thread(request_id, agent_id, agent_name, response_content)
     if not thread:
         return {"error": "Thread not found", "thread": None}
@@ -294,6 +305,7 @@ async def complete_thread(
         request_id=request_id,
         agent_id=agent_id,
         agent_name=agent_name,
+        summary=summary,
     )
 
     return {
@@ -301,6 +313,8 @@ async def complete_thread(
         "thread": thread.to_dict(),
         "last_responding_agent_id": session_ctx.last_responding_agent_id,
         "last_responding_agent_name": session_ctx.last_responding_agent_name,
+        "summary": summary,
+        "cleaned_response": cleaned_response,
     }
 
 

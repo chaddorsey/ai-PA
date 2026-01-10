@@ -440,6 +440,7 @@ def stream():
             # This keeps the frontend connection alive during long Letta operations
             event_queue = queue.Queue()
             assistant_response_parts = []
+            tool_calls_made = []  # Track tool calls for summary extraction
 
             def run_letta_stream():
                 """Background thread to run Letta stream and put events in queue."""
@@ -568,6 +569,7 @@ def stream():
                         if msg_type == "tool_call_message":
                             tool_call = event_data.get("tool_call", {})
                             tool_name = tool_call.get("name", "tool")
+                            tool_calls_made.append(tool_name)  # Track for summary
                             yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
 
                         elif msg_type == "assistant_message":
@@ -624,23 +626,33 @@ def stream():
                     parent_request_id=parent_request_id,
                 )
 
-            # Mark thread as complete for contextual routing
+            # Mark thread as complete for contextual routing and summary extraction
             if request_id:
                 try:
                     complete_url = f"{ROUTING_HANDLER_URL}/v1/sessions/{session_id}/threads/{request_id}/complete"
+                    full_response = "\n\n".join(assistant_response_parts) if assistant_response_parts else ""
+                    # Build params - tool_calls as repeated keys for FastAPI list handling
+                    complete_params = [
+                        ("agent_id", selected_agent_id),
+                        ("agent_name", agent_name),
+                        ("response_content", full_response),
+                    ]
+                    # Add each tool call as a separate param for FastAPI list handling
+                    for tool in tool_calls_made:
+                        complete_params.append(("tool_calls", tool))
+
                     with httpx.Client(timeout=10.0) as complete_client:
-                        complete_client.post(
+                        complete_response = complete_client.post(
                             complete_url,
-                            params={
-                                "agent_id": selected_agent_id,
-                                "agent_name": agent_name,
-                            },
+                            params=complete_params,
                         )
+                        complete_data = complete_response.json()
                     logger.info(
                         "thread_completed",
                         session_id=session_id,
                         request_id=request_id,
                         agent_id=selected_agent_id,
+                        summary=complete_data.get("summary"),
                     )
                 except Exception as e:
                     logger.warning("thread_complete_failed", error=str(e))
