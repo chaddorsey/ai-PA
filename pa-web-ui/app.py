@@ -3,11 +3,28 @@
 import json
 import os
 import queue
+import re
 import threading
 import time
 from typing import Generator
 
 import httpx
+
+# Pattern to strip internal SUMMARY/REFS lines from user-facing responses
+# SUMMARY can appear at start of line OR after punctuation mid-text
+SUMMARY_PATTERN = re.compile(r"\s*SUMMARY:.*$", re.MULTILINE)
+REFS_PATTERN = re.compile(r"\s*REFS:\s*\{.*\}$", re.MULTILINE)
+
+
+def clean_response_for_user(text: str) -> str:
+    """Strip SUMMARY and REFS lines from user-facing response."""
+    if not text:
+        return text
+    cleaned = SUMMARY_PATTERN.sub("", text)
+    cleaned = REFS_PATTERN.sub("", cleaned)
+    # Clean up extra blank lines
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 import structlog
 from flask import Flask, Response, jsonify, render_template, request
 from flask_cors import CORS
@@ -119,14 +136,18 @@ def get_conversation_history(session_id: str, limit: int = 100) -> list:
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Get most recent N messages, then order them chronologically for display
                 cur.execute(
                     """
-                    SELECT id, session_id, role, message, agent_id, agent_name,
-                           metadata, created_at
-                    FROM pa_web.conversations
-                    WHERE session_id = %s
+                    SELECT * FROM (
+                        SELECT id, session_id, role, message, agent_id, agent_name,
+                               metadata, created_at
+                        FROM pa_web.conversations
+                        WHERE session_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT %s
+                    ) sub
                     ORDER BY created_at ASC
-                    LIMIT %s
                     """,
                     (session_id, limit),
                 )
@@ -456,6 +477,7 @@ def stream():
             event_queue = queue.Queue()
             assistant_response_parts = []
             tool_calls_made = []  # Track tool calls for summary extraction
+            report_refs_data = None  # Capture report_refs tool call for handler
 
             def run_letta_stream():
                 """Background thread to run Letta stream and put events in queue."""
@@ -585,13 +607,24 @@ def stream():
                             tool_call = event_data.get("tool_call", {})
                             tool_name = tool_call.get("name", "tool")
                             tool_calls_made.append(tool_name)  # Track for summary
+                            # Capture report_refs tool call for handler
+                            if tool_name == "report_refs":
+                                report_refs_data = tool_call.get("arguments", "")
+                                logger.info(
+                                    "report_refs_captured",
+                                    refs_data=report_refs_data[:200] if report_refs_data else None,
+                                )
                             yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
 
                         elif msg_type == "assistant_message":
                             content = event_data.get("content", "")
                             if content:
+                                # Store raw content for server-side processing
                                 assistant_response_parts.append(content)
-                                yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+                                # Clean SUMMARY/REFS lines before sending to user
+                                cleaned_content = clean_response_for_user(content)
+                                if cleaned_content:
+                                    yield f"data: {json.dumps({'type': 'text', 'content': cleaned_content})}\n\n"
 
                         elif msg_type == "reasoning_message":
                             # Agent is thinking - send a ping to keep connection alive
@@ -619,8 +652,14 @@ def stream():
                 return
 
             # Save assistant response to database
-            if assistant_response_parts:
-                full_response = "\n\n".join(assistant_response_parts)
+            # Save even if no text content - create summary from tool calls
+            raw_response = "\n\n".join(assistant_response_parts) if assistant_response_parts else ""
+            # Clean SUMMARY/REFS lines before saving to database (user will see this on refresh)
+            full_response = clean_response_for_user(raw_response) if raw_response else ""
+            if full_response or tool_calls_made:
+                # If no text response but tools were called, create a brief summary
+                if not full_response and tool_calls_made:
+                    full_response = f"[Completed: {', '.join(tool_calls_made)}]"
                 save_conversation_message(
                     session_id=session_id,
                     role="assistant",
@@ -642,16 +681,17 @@ def stream():
                 )
 
             # Mark thread as complete for contextual routing and summary extraction
+            # NOTE: Send raw_response (with SUMMARY lines) to routing handler for extraction
             if request_id:
                 try:
                     complete_url = f"{ROUTING_HANDLER_URL}/v1/sessions/{session_id}/threads/{request_id}/complete"
-                    full_response = "\n\n".join(assistant_response_parts) if assistant_response_parts else ""
                     # Build params - tool_calls as repeated keys for FastAPI list handling
                     complete_params = [
                         ("agent_id", selected_agent_id),
                         ("agent_name", agent_name),
-                        ("response_content", full_response),
+                        ("response_content", raw_response),
                         ("user_message", message),  # For Pattern 3 archival passage
+                        ("report_refs_json", report_refs_data or ""),  # Structured refs from tool call
                     ]
                     # Add each tool call as a separate param for FastAPI list handling
                     for tool in tool_calls_made:

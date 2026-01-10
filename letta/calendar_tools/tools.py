@@ -991,7 +991,23 @@ def update_calendar_event(
         # Set defaults
         if timezone is None:
             timezone = "America/New_York"
-        
+
+        # Normalize empty strings to None (agent may pass "" for omitted fields)
+        if summary == "":
+            summary = None
+        if start_datetime == "":
+            start_datetime = None
+        if end_datetime == "":
+            end_datetime = None
+        if description == "":
+            description = None
+        if location == "":
+            location = None
+        if attendees is not None and len(attendees) == 0:
+            attendees = None
+        if attachment_file_ids is not None and len(attachment_file_ids) == 0:
+            attachment_file_ids = None
+
         # Validation (inline - no helper functions)
         # Validate calendar_id
         if not calendar_id or not isinstance(calendar_id, str):

@@ -16,3 +16,4 @@ This document lists all tasks associated with PBI 26.
 | 26-6 | [Register and test new tools with Letta](./26-6.md) | Done | Register consolidated tools, verify functionality |
 | 26-7 | [Deprecate old tools](./26-7.md) | Done | Decision: preserve old tools, they serve different workflow |
 | 26-8 | [E2E CoS Test](./26-8.md) | Done | All three example questions verified answerable |
+| 26-9 | [Fix mentions detection using mentionedEmailAddresses](./26-9.md) | Done | Fix bug: use API's mentionedEmailAddresses field instead of string matching |

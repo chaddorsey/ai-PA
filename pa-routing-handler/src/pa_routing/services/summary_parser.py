@@ -1,14 +1,24 @@
-"""Parse SUMMARY lines from agent responses for session context tracking.
+"""Parse SUMMARY and REFS lines from agent responses for session context tracking.
 
-Sub-agents are instructed to end responses with SUMMARY: <action taken> #topic #tags.
-This module extracts summaries and topic hashtags for archival tagging.
+Sub-agents are instructed to end responses with:
+  SUMMARY: <action taken> #topic #tags
+  REFS: {"key": "value", ...}  (optional, for actionable references)
+
+This module extracts summaries, topic hashtags, and structured refs for:
+- Cross-agent context awareness (Pattern 2)
+- Archival tagging (Pattern 3)
+- Actionable follow-up support (e.g., updating a just-created calendar event)
 """
 
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # Pattern to match SUMMARY line (case-insensitive, multiline)
 SUMMARY_PATTERN = re.compile(r"^SUMMARY:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
+
+# Pattern to match REFS line with JSON (case-insensitive, multiline)
+REFS_PATTERN = re.compile(r"^REFS:\s*(\{.+\})\s*$", re.MULTILINE | re.IGNORECASE)
 
 # Pattern to extract hashtags from summary
 HASHTAG_PATTERN = re.compile(r"#(\w+)")
@@ -19,10 +29,11 @@ MAX_SUMMARY_LENGTH = 80
 
 @dataclass
 class ParsedSummary:
-    """Parsed summary with extracted topic tags."""
+    """Parsed summary with extracted topic tags and actionable refs."""
 
     text: str  # Summary text without hashtags
     topics: list[str]  # Extracted topic tags (without # prefix)
+    refs: dict = field(default_factory=dict)  # Actionable references (IDs, titles, etc.)
 
 
 def extract_summary(
@@ -71,13 +82,37 @@ def extract_summary(
     return first_line
 
 
+def extract_refs(response_text: str) -> dict:
+    """
+    Extract REFS JSON from agent response.
+
+    Args:
+        response_text: Full response from agent
+
+    Returns:
+        Dict of actionable references, empty dict if none or parse error
+    """
+    if not response_text:
+        return {}
+
+    match = REFS_PATTERN.search(response_text)
+    if not match:
+        return {}
+
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError:
+        # Invalid JSON - log would be nice but return empty for graceful degradation
+        return {}
+
+
 def extract_summary_with_topics(
     response_text: str,
     agent_name: str,
     tool_calls: list[str] | None = None,
 ) -> ParsedSummary:
     """
-    Extract SUMMARY line and parse hashtags as topic tags.
+    Extract SUMMARY line, parse hashtags as topic tags, and extract REFS.
 
     Args:
         response_text: Full response from agent
@@ -85,7 +120,7 @@ def extract_summary_with_topics(
         tool_calls: List of tool names called (optional)
 
     Returns:
-        ParsedSummary with text (hashtags stripped) and topics list
+        ParsedSummary with text (hashtags stripped), topics list, and refs dict
     """
     raw_summary = extract_summary(response_text, agent_name, tool_calls)
 
@@ -97,24 +132,30 @@ def extract_summary_with_topics(
     # Clean up any double spaces left after hashtag removal
     clean_text = re.sub(r"\s+", " ", clean_text).strip()
 
-    return ParsedSummary(text=clean_text, topics=topics)
+    # Extract refs
+    refs = extract_refs(response_text)
+
+    return ParsedSummary(text=clean_text, topics=topics, refs=refs)
 
 
 def clean_response_for_user(response_text: str) -> str:
     """
-    Strip SUMMARY line from user-facing response.
+    Strip SUMMARY and REFS lines from user-facing response.
 
-    The SUMMARY line is for internal context tracking and shouldn't
+    These lines are for internal context tracking and shouldn't
     be shown to users.
 
     Args:
         response_text: Full response from agent
 
     Returns:
-        Response with SUMMARY line removed
+        Response with SUMMARY and REFS lines removed
     """
     if not response_text:
         return ""
 
     cleaned = SUMMARY_PATTERN.sub("", response_text)
+    cleaned = REFS_PATTERN.sub("", cleaned)
+    # Clean up any extra blank lines left behind
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()

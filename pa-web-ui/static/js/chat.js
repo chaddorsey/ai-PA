@@ -620,6 +620,11 @@ class ChatUI {
         card.dataset.agentId = agentId;
         card.dataset.agentName = agentName;
 
+        // Hide ALL status indicators (tool call spinners, etc.)
+        card.querySelectorAll('.thread-status').forEach(el => {
+            el.style.display = 'none';
+        });
+
         // Show the footer and wire up reply button
         const footer = card.querySelector('.thread-footer');
         if (footer) {
@@ -804,6 +809,7 @@ class ChatUI {
         let agentId = '';
         let requestId = null;
         let hasReceivedContent = false;
+        let toolCallsMade = [];  // Track tool calls for completion message
 
         while (true) {
             const { done, value } = await reader.read();
@@ -846,8 +852,12 @@ class ChatUI {
                         } else if (event.type === 'tool_call') {
                             // Show contextual status for tool calls
                             const toolName = event.tool || 'unknown';
-                            const statusText = TOOL_STATUS_MAP[toolName] || `Running ${toolName}...`;
-                            this.updateThreadCardStatus(threadCard, statusText);
+                            toolCallsMade.push(toolName);  // Track for completion message
+                            // Skip status update for internal/coordination tools
+                            if (toolName !== 'report_refs' && toolName !== 'send_message') {
+                                const statusText = TOOL_STATUS_MAP[toolName] || `Running ${toolName}...`;
+                                this.updateThreadCardStatus(threadCard, statusText);
+                            }
                         } else if (event.type === 'text') {
                             hasReceivedContent = true;
                             content += event.content;
@@ -875,6 +885,15 @@ class ChatUI {
                             if (requestId) {
                                 this.inFlightRequests.delete(requestId);
                             }
+                            // If no text content but tools were called, show completion message
+                            if (!hasReceivedContent && toolCallsMade.length > 0) {
+                                const displayTools = toolCallsMade.filter(t => t !== 'report_refs' && t !== 'send_message');
+                                if (displayTools.length > 0) {
+                                    this.updateThreadCardResponse(threadCard, agentName, `✓ Completed: ${displayTools.join(', ')}`);
+                                } else {
+                                    this.updateThreadCardResponse(threadCard, agentName, '✓ Done');
+                                }
+                            }
                             this.finalizeThreadCard(threadCard, agentId, agentName);
                         } else if (event.type === 'ping') {
                             // Keepalive ping from server - ignore but keep connection alive
@@ -897,14 +916,21 @@ class ChatUI {
             }
         }
 
-        // Finalize if no done event received but we got content
-        if (hasReceivedContent && threadCard.classList.contains('streaming')) {
-            this.finalizeThreadCard(threadCard, agentId, agentName);
-        }
-
-        // If stream ended without any content, show an error
-        if (!hasReceivedContent && threadCard.classList.contains('streaming')) {
-            this.updateThreadCardError(threadCard, 'No response received from agent');
+        // Finalize if stream ended without done event (fallback)
+        if (threadCard.classList.contains('streaming')) {
+            if (hasReceivedContent || toolCallsMade.length > 0) {
+                if (!hasReceivedContent && toolCallsMade.length > 0) {
+                    const displayTools = toolCallsMade.filter(t => t !== 'report_refs' && t !== 'send_message');
+                    if (displayTools.length > 0) {
+                        this.updateThreadCardResponse(threadCard, agentName, `✓ Completed: ${displayTools.join(', ')}`);
+                    } else {
+                        this.updateThreadCardResponse(threadCard, agentName, '✓ Done');
+                    }
+                }
+                this.finalizeThreadCard(threadCard, agentId, agentName);
+            } else {
+                this.updateThreadCardError(threadCard, 'No response received from agent');
+            }
         }
 
         // Clean up in-flight tracking

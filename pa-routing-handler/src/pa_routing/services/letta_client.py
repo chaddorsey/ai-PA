@@ -23,9 +23,13 @@ class LettaClient:
     Used by the orchestrator to:
     - Write session summaries to Main Agent's archival (Pattern 3)
     - Query recent passages for briefing injection (Pattern 4)
+
+    Note: Archival operations require Letta to have a working embedding model.
+    If embeddings fail, operations degrade gracefully (empty results, skipped writes).
     """
 
-    def __init__(self, base_url: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, timeout: float = 10.0):
+        """Initialize with short timeout to avoid blocking on slow embedding calls."""
         self.base_url = base_url.rstrip("/")
         self.timeout = httpx.Timeout(timeout)
 
@@ -55,7 +59,7 @@ class LettaClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{self.base_url}/v1/agents/{agent_id}/archival",
+                    f"{self.base_url}/v1/agents/{agent_id}/archival-memory",
                     json={"text": text, "tags": all_tags}
                 )
                 response.raise_for_status()
@@ -108,26 +112,30 @@ class LettaClient:
         # Always filter to session memory
         filter_tags = [SESSION_MEMORY_TAG] + (tags or [])
 
-        # Build query params
-        params = {"limit": limit}
-        # Letta API may expect comma-separated tags
+        # Build query params for search endpoint
+        params = {
+            "query": "session",  # Required query string
+            "top_k": limit,
+        }
+        # Add tags as list parameter
         if filter_tags:
-            params["tags"] = ",".join(filter_tags)
+            params["tags"] = filter_tags
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
-                    f"{self.base_url}/v1/agents/{agent_id}/archival",
+                    f"{self.base_url}/v1/agents/{agent_id}/archival-memory/search",
                     params=params
                 )
                 response.raise_for_status()
                 data = response.json()
 
-                # Handle both list response and paginated response
+                # Handle various response formats from Letta API
                 if isinstance(data, list):
                     passages = data
                 else:
-                    passages = data.get("passages", data.get("items", []))
+                    # Search endpoint returns "results", list endpoint may return "passages" or "items"
+                    passages = data.get("results", data.get("passages", data.get("items", [])))
 
                 logger.info(
                     "passages_retrieved",
@@ -170,7 +178,8 @@ class LettaClient:
 
         lines = ["[Today's session briefing:]"]
         for p in passages:
-            text = p.get("text", "")
+            # Handle both formats: search returns "content", list returns "text"
+            text = p.get("content", p.get("text", ""))
             # Truncate long passages for briefing
             if len(text) > 100:
                 text = text[:97] + "..."

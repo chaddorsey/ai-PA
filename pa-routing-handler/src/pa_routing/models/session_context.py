@@ -3,7 +3,9 @@
 In-memory session context for tracking actions across agent interactions.
 Zero extra SDK calls - all state managed locally.
 
-Enhanced with conversation thread tracking for contextual routing.
+Enhanced with:
+- Conversation thread tracking for contextual routing
+- Actionable refs for follow-up operations (e.g., updating just-created events)
 """
 
 from dataclasses import dataclass, field
@@ -14,6 +16,7 @@ from pa_routing.models.conversation_thread import ConversationThread, ThreadStat
 
 MAX_CONTEXT_ENTRIES = 5
 MAX_THREADS = 20  # Keep last N threads for context
+MAX_REFS_IN_INJECTION = 3  # Only include refs from last N entries
 
 
 @dataclass
@@ -25,9 +28,9 @@ class SessionContext:
     Before any agent call, format context and prepend to message.
     Zero extra SDK calls - all in-memory.
 
-    Enhanced with thread tracking for:
-    - Contextual routing (route follow-ups to last responding agent)
-    - Threaded UI (group responses under their requests)
+    Enhanced with:
+    - Thread tracking for contextual routing and threaded UI
+    - Actionable refs for follow-up operations (IDs, titles, etc.)
     """
 
     entries: list[dict] = field(default_factory=list)
@@ -40,19 +43,33 @@ class SessionContext:
     last_responding_agent_name: Optional[str] = None
     last_response_time: Optional[datetime] = None
 
-    def append(self, agent: str, action: str) -> None:
-        """Add agent action to context after sub-agent completes."""
-        self.entries.append({
+    def append(self, agent: str, action: str, refs: dict | None = None) -> None:
+        """
+        Add agent action to context after sub-agent completes.
+
+        Args:
+            agent: Name of the responding agent
+            action: Summary of the action taken
+            refs: Optional dict of actionable references (IDs, titles, etc.)
+        """
+        entry = {
             "agent": agent,
             "action": action,
             "timestamp": datetime.utcnow().isoformat(),
-        })
+        }
+        if refs:
+            entry["refs"] = refs
+        self.entries.append(entry)
         self.last_activity = datetime.utcnow()
 
     def format_for_injection(self, max_entries: int = MAX_CONTEXT_ENTRIES) -> str:
         """
         Format context as string to prepend to messages.
         Returns empty string if no context (zero overhead).
+
+        Includes:
+        - Recent action summaries for context awareness
+        - Recent refs for actionable follow-ups (IDs, titles, etc.)
         """
         if not self.entries:
             return ""
@@ -61,6 +78,52 @@ class SessionContext:
         lines = [f"[Session context - {len(self.entries)} prior actions:]"]
         for entry in recent:
             lines.append(f"  - {entry['agent']}: {entry['action']}")
+
+        # Add recent refs for actionable follow-ups
+        refs_lines = self._format_recent_refs()
+        if refs_lines:
+            lines.append(refs_lines)
+
+        return "\n".join(lines)
+
+    def get_recent_refs(self, max_entries: int = MAX_REFS_IN_INJECTION) -> list[dict]:
+        """
+        Get refs from the most recent entries that have them.
+
+        Args:
+            max_entries: Maximum number of ref entries to return
+
+        Returns:
+            List of dicts with agent, refs, and timestamp
+        """
+        refs_entries = []
+        # Walk backwards through entries to get most recent refs
+        for entry in reversed(self.entries):
+            if entry.get("refs"):
+                refs_entries.append({
+                    "agent": entry["agent"],
+                    "refs": entry["refs"],
+                    "timestamp": entry["timestamp"],
+                })
+                if len(refs_entries) >= max_entries:
+                    break
+        # Return in chronological order
+        return list(reversed(refs_entries))
+
+    def _format_recent_refs(self) -> str:
+        """Format recent refs as injection string."""
+        refs_entries = self.get_recent_refs()
+        if not refs_entries:
+            return ""
+
+        lines = ["[Recent actionable refs:]"]
+        for entry in refs_entries:
+            agent = entry["agent"]
+            refs = entry["refs"]
+            # Format refs as key=value pairs for readability
+            ref_parts = [f"{k}={v}" for k, v in refs.items()]
+            lines.append(f"  - {agent}: {', '.join(ref_parts)}")
+
         return "\n".join(lines)
 
     def clear(self) -> None:

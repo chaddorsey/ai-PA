@@ -222,7 +222,7 @@ def _get_file_comments(creds: Credentials, file_id: str) -> List[Dict]:
         params = {
             "fileId": file_id,
             "pageSize": 100,
-            "fields": "nextPageToken, comments(id, content, author, createdTime, modifiedTime, resolved)",
+            "fields": "nextPageToken, comments(id, content, author, createdTime, modifiedTime, resolved, mentionedEmailAddresses)",
         }
         
         if page_token:
@@ -682,91 +682,151 @@ def collect_daily_personal_activity(date: Optional[str] = None) -> str:
         })
 
 
-def collect_daily_mentions(date: Optional[str] = None) -> str:
+def collect_daily_mentions(
+    date: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    days: Optional[int] = None
+) -> str:
     """
     Collect comments that mention you in Google Drive files.
     
     Queries Drive API for files you have access to, then fetches comments
     and parses for @mentions of your email address.
     
+    Supports three modes:
+    1. Single date: collect_daily_mentions(date="2026-01-07")
+    2. Date range: collect_daily_mentions(start_date="2026-01-05", end_date="2026-01-07")
+    3. Days lookback: collect_daily_mentions(days=7)  # Last 7 days
+    
     Args:
-        date: Date in YYYY-MM-DD format. If provided, queries exactly that date
-              (including weekends). If not provided, defaults to last workday.
+        date: Single date in YYYY-MM-DD format. If provided alone, queries that date.
+        start_date: Start of date range in YYYY-MM-DD format (inclusive).
+        end_date: End of date range in YYYY-MM-DD format (inclusive). Defaults to today if start_date provided.
+        days: Number of days to look back from today (e.g., 7 = last 7 days). Ignored if date or start_date provided.
     
     Returns:
-        str: JSON string containing mentions with timestamps and document links
+        str: JSON string containing mentions with timestamps and document links.
+             For date ranges, returns mentions grouped by date.
     """
+    # Inline imports for Letta compliance (tools run in isolated environment)
+    import os
+    import json
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    from typing import Optional, Dict, List, Any
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    
+    # Configuration (inline for Letta compliance)
+    OAUTH_KEY_FILE = os.getenv(
+        "GMAIL_OAUTH_PATH",
+        str(Path.home() / ".gmail-mcp" / "gcp-oauth.admin-reports.desktop.json")
+    )
+    TOKEN_PATH = os.getenv(
+        "GMAIL_CREDENTIALS_PATH",
+        str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+    )
+    MY_EMAIL = os.getenv("MY_EMAIL", "cdorsey@concord.org")
+    SCOPES = [
+        "https://www.googleapis.com/auth/admin.reports.audit.readonly",
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/drive.activity.readonly",
+    ]
+    
     try:
-        creds = _load_credentials()
+        # Load credentials (inlined to avoid nested function schema issues)
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception:
+                pass
         
-        # Determine target date
-        if date:
-            # User provided a specific date - use it exactly as requested
-            target_date = datetime.strptime(date, "%Y-%m-%d")
-            date_str = target_date.strftime("%Y-%m-%d")
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    with open(TOKEN_PATH, "w") as token:
+                        token.write(creds.to_json())
+                except Exception:
+                    creds = None
+        
+        if not creds:
+            return json.dumps({
+                "type": "error",
+                "error": "OAuth credentials not available. Please ensure credentials are configured.",
+                "token_path": TOKEN_PATH
+            })
+        
+        # Determine date range based on parameters
+        today = datetime.now().date()
+        
+        if start_date:
+            # Date range mode
+            range_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            if end_date:
+                range_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+            else:
+                range_end = today
+            date_str = f"{start_date} to {range_end.strftime('%Y-%m-%d')}"
+        elif date:
+            # Single date mode
+            range_start = datetime.strptime(date, "%Y-%m-%d").date()
+            range_end = range_start
+            date_str = date
+        elif days:
+            # Days lookback mode
+            range_end = today
+            range_start = today - timedelta(days=days - 1)  # -1 because we include today
+            date_str = f"last {days} days"
         else:
-            # No date provided - default to last workday
-            target_date = _get_last_workday()
-            date_str = target_date.strftime("%Y-%m-%d")
+            # Default: last workday only (inline workday calculation)
+            check_date = datetime.now()
+            while check_date.weekday() >= 5:  # 5=Saturday, 6=Sunday
+                check_date = check_date - timedelta(days=1)
+            range_start = check_date.date()
+            range_end = range_start
+            date_str = range_start.strftime("%Y-%m-%d")
         
-        # Note: We query the exact date requested, even if it's a weekend
-        # The API will return whatever data exists for that date
         detected_at = datetime.now().isoformat() + "Z"
         
-        # Use a more efficient approach: query files that were recently modified
-        # This is much faster than querying all files
+        # Query all files you can access that were recently modified
+        # Using corpora='allDrives' to include Shared Drive files (not just sharedWithMe)
         try:
             service = build("drive", "v3", credentials=creds)
             
-            # Query files modified in the last 7 days (to catch recent comments)
-            # This is much more efficient than querying all files
-            cutoff_date = (target_date - timedelta(days=7)).strftime("%Y-%m-%dT00:00:00Z")
+            # Query files modified around our date range (with buffer for comments)
+            # Use 7 days before range_start to catch files that might have recent comments
+            cutoff_datetime = datetime.combine(range_start, datetime.min.time()) - timedelta(days=7)
+            cutoff_date = cutoff_datetime.strftime("%Y-%m-%dT00:00:00Z")
             
-            # Get files you own that were recently modified
-            owned_query = f"'{MY_EMAIL}' in owners and modifiedTime > '{cutoff_date}'"
-            owned_files = []
+            # Single query for all accessible files (owned, shared, and Shared Drives)
+            all_files_query = f"modifiedTime > '{cutoff_date}'"
+            all_files = []
             page_token = None
             
             while True:
                 params = {
-                    "q": owned_query,
+                    "q": all_files_query,
                     "pageSize": 100,
                     "fields": "nextPageToken, files(id, name, webViewLink)",
-                    "supportsAllDrives": True,  # Required for Shared Drives
-                    "includeItemsFromAllDrives": True,  # Include Shared Drive files
+                    "supportsAllDrives": True,
+                    "includeItemsFromAllDrives": True,
+                    "corpora": "allDrives",  # Include all Shared Drives you have access to
                 }
                 if page_token:
                     params["pageToken"] = page_token
                 
                 response = service.files().list(**params).execute()
-                owned_files.extend(response.get("files", []))
+                all_files.extend(response.get("files", []))
                 page_token = response.get("nextPageToken")
-                if not page_token:
+                if not page_token or len(all_files) >= 500:  # Cap at 500 files for performance
                     break
             
-            # Get files shared with you that were recently modified
-            shared_query = f"sharedWithMe=true and modifiedTime > '{cutoff_date}'"
-            shared_files = []
-            page_token = None
-            
-            while True:
-                params = {
-                    "q": shared_query,
-                    "pageSize": 100,
-                    "fields": "nextPageToken, files(id, name, webViewLink)",
-                    "supportsAllDrives": True,  # Required for Shared Drives
-                    "includeItemsFromAllDrives": True,  # Include Shared Drive files
-                }
-                if page_token:
-                    params["pageToken"] = page_token
-                
-                response = service.files().list(**params).execute()
-                shared_files.extend(response.get("files", []))
-                page_token = response.get("nextPageToken")
-                if not page_token:
-                    break
-            
-            all_files = owned_files + shared_files
             file_info = {f.get("id"): f for f in all_files if f.get("id")}
             
         except Exception as e:
@@ -787,20 +847,47 @@ def collect_daily_mentions(date: Optional[str] = None) -> str:
             if not file_id:
                 continue
             
-            comments = _get_file_comments(creds, file_id)
+            # Inline comment fetching (avoid nested function for Letta schema)
+            comments = []
+            comment_page_token = None
+            comment_service = build("drive", "v3", credentials=creds)
+            while True:
+                comment_params = {
+                    "fileId": file_id,
+                    "pageSize": 100,
+                    "fields": "nextPageToken, comments(id, content, author, createdTime, modifiedTime, resolved, mentionedEmailAddresses)",
+                }
+                if comment_page_token:
+                    comment_params["pageToken"] = comment_page_token
+                try:
+                    comment_response = comment_service.comments().list(**comment_params).execute()
+                    comments.extend(comment_response.get("comments", []))
+                    comment_page_token = comment_response.get("nextPageToken")
+                    if not comment_page_token:
+                        break
+                except HttpError:
+                    break
             
             for comment in comments:
                 comment_content = comment.get("content", "")
                 comment_created = comment.get("createdTime", "")
                 comment_modified = comment.get("modifiedTime", "")
                 
-                # Check if comment mentions your email
-                # Google Drive mentions may appear as @cdorsey@concord.org or just the email
-                if MY_EMAIL.lower() in comment_content.lower():
+                # Check if comment mentions your email using the dedicated API field
+                # Google Drive stores @mentions in mentionedEmailAddresses array
+                mentioned_emails = comment.get("mentionedEmailAddresses", [])
+                is_mentioned = any(
+                    MY_EMAIL.lower() == email.lower() for email in mentioned_emails
+                )
+                
+                if is_mentioned:
                     # Parse comment date to check if it's in our target date range
                     try:
                         comment_date = datetime.fromisoformat(comment_created.replace("Z", "+00:00"))
-                        if comment_date.date() == target_date.date():
+                        comment_date_only = comment_date.date()
+                        
+                        # Check if comment is within our date range
+                        if range_start <= comment_date_only <= range_end:
                             mentions.append({
                                 "comment_id": comment.get("id"),
                                 "file_id": file_id,
@@ -810,11 +897,13 @@ def collect_daily_mentions(date: Optional[str] = None) -> str:
                                 "text": comment_content,
                                 "created_time": comment_created,
                                 "modified_time": comment_modified,
+                                "date": comment_date_only.strftime("%Y-%m-%d"),  # Include date for grouping
                                 "detected_at": detected_at,
                                 "is_new": True,  # Would need to compare with previous checks
+                                "mentioned_emails": mentioned_emails,  # Include for debugging
                             })
                     except (ValueError, AttributeError):
-                        # If date parsing fails, include it anyway
+                        # If date parsing fails, include it anyway (won't have date field)
                         mentions.append({
                             "comment_id": comment.get("id"),
                             "file_id": file_id,
@@ -826,11 +915,18 @@ def collect_daily_mentions(date: Optional[str] = None) -> str:
                             "modified_time": comment_modified,
                             "detected_at": detected_at,
                             "is_new": True,
+                            "mentioned_emails": mentioned_emails,  # Include for debugging
                         })
+        
+        # Sort mentions by date (most recent first)
+        mentions.sort(key=lambda x: x.get("created_time", ""), reverse=True)
         
         result = {
             "type": "drive_analytics_mentions",
-            "date": date_str,
+            "date_range": date_str,
+            "start_date": range_start.strftime("%Y-%m-%d"),
+            "end_date": range_end.strftime("%Y-%m-%d"),
+            "total_mentions": len(mentions),
             "mentions": mentions,
         }
         
@@ -1509,6 +1605,220 @@ def initialize_drive_analytics_memory() -> str:
             }, indent=2)
         }
     })
+
+
+def get_document_comments(
+    drive_url: str,
+    include_resolved: bool = False,
+    include_replies: bool = True
+) -> str:
+    """
+    Get all comments from a specific Google Drive document.
+    
+    Retrieves all comments and their replies from a document, spreadsheet, or presentation.
+    Returns comment text, author, timestamps, mentioned users, and resolution status.
+    
+    Args:
+        drive_url: Google Drive URL or file ID. Supports formats:
+                   - https://docs.google.com/document/d/FILE_ID/edit
+                   - https://drive.google.com/file/d/FILE_ID/view
+                   - Just the FILE_ID directly
+        include_resolved: Include resolved/closed comments (default: False)
+        include_replies: Include reply threads on comments (default: True)
+    
+    Returns:
+        str: JSON string with comments array including:
+             - comment_id, author, text, created_time, modified_time
+             - mentioned_emails (users @mentioned in comment)
+             - resolved (boolean)
+             - replies (array of reply objects if include_replies=True)
+    
+    Example:
+        get_document_comments("https://docs.google.com/document/d/1abc123xyz/edit")
+        get_document_comments("1abc123xyz", include_resolved=True)
+    """
+    # Inline imports for Letta compliance
+    import os
+    import re
+    import json
+    from pathlib import Path
+    from typing import Optional, Dict, List, Any
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    
+    # Configuration
+    TOKEN_PATH = os.getenv(
+        "GMAIL_CREDENTIALS_PATH",
+        str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+    )
+    SCOPES = [
+        "https://www.googleapis.com/auth/drive.readonly",
+    ]
+    
+    try:
+        # Extract file ID from URL
+        file_id = None
+        
+        # Pattern 1: /d/FILE_ID/
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', drive_url)
+        if match:
+            file_id = match.group(1)
+        
+        # Pattern 2: ?id=FILE_ID
+        if not file_id:
+            match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', drive_url)
+            if match:
+                file_id = match.group(1)
+        
+        # Pattern 3: Just the ID
+        if not file_id:
+            if re.match(r'^[a-zA-Z0-9_-]+$', drive_url):
+                file_id = drive_url
+        
+        if not file_id:
+            return json.dumps({
+                "error": "Could not extract file ID from URL",
+                "url": drive_url,
+                "message": "Please provide a valid Google Drive URL or file ID"
+            }, indent=2)
+        
+        # Load credentials
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception:
+                pass
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    with open(TOKEN_PATH, "w") as token:
+                        token.write(creds.to_json())
+                except Exception:
+                    creds = None
+        
+        if not creds:
+            return json.dumps({
+                "error": "OAuth credentials not available",
+                "token_path": TOKEN_PATH
+            }, indent=2)
+        
+        service = build("drive", "v3", credentials=creds)
+        
+        # Get file info first
+        try:
+            file_info = service.files().get(
+                fileId=file_id,
+                fields="id, name, webViewLink",
+                supportsAllDrives=True
+            ).execute()
+        except HttpError as e:
+            if e.resp.status == 404:
+                return json.dumps({
+                    "error": "File not found",
+                    "file_id": file_id
+                }, indent=2)
+            elif e.resp.status == 403:
+                return json.dumps({
+                    "error": "Access denied to file",
+                    "file_id": file_id
+                }, indent=2)
+            else:
+                return json.dumps({
+                    "error": f"Drive API error: {e.resp.status}",
+                    "message": str(e)
+                }, indent=2)
+        
+        # Build fields for comments query
+        comment_fields = "id, content, author(displayName, emailAddress), createdTime, modifiedTime, resolved, mentionedEmailAddresses"
+        if include_replies:
+            comment_fields += ", replies(id, content, author(displayName, emailAddress), createdTime, modifiedTime)"
+        
+        # Fetch all comments
+        comments = []
+        page_token = None
+        
+        while True:
+            params = {
+                "fileId": file_id,
+                "pageSize": 100,
+                "fields": f"nextPageToken, comments({comment_fields})",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            
+            try:
+                response = service.comments().list(**params).execute()
+                comments.extend(response.get("comments", []))
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+            except HttpError as e:
+                return json.dumps({
+                    "error": f"Could not fetch comments: {e.resp.status}",
+                    "message": str(e),
+                    "file_id": file_id
+                }, indent=2)
+        
+        # Process comments
+        result_comments = []
+        for comment in comments:
+            # Skip resolved if not requested
+            if not include_resolved and comment.get("resolved", False):
+                continue
+            
+            author = comment.get("author", {})
+            comment_data = {
+                "comment_id": comment.get("id"),
+                "author": author.get("displayName", "Unknown"),
+                "author_email": author.get("emailAddress", ""),
+                "text": comment.get("content", ""),
+                "created_time": comment.get("createdTime", ""),
+                "modified_time": comment.get("modifiedTime", ""),
+                "resolved": comment.get("resolved", False),
+                "mentioned_emails": comment.get("mentionedEmailAddresses", []),
+            }
+            
+            # Add replies if requested
+            if include_replies:
+                replies = []
+                for reply in comment.get("replies", []):
+                    reply_author = reply.get("author", {})
+                    replies.append({
+                        "reply_id": reply.get("id"),
+                        "author": reply_author.get("displayName", "Unknown"),
+                        "author_email": reply_author.get("emailAddress", ""),
+                        "text": reply.get("content", ""),
+                        "created_time": reply.get("createdTime", ""),
+                        "modified_time": reply.get("modifiedTime", ""),
+                    })
+                comment_data["replies"] = replies
+                comment_data["reply_count"] = len(replies)
+            
+            result_comments.append(comment_data)
+        
+        # Sort by created time (newest first)
+        result_comments.sort(key=lambda x: x.get("created_time", ""), reverse=True)
+        
+        return json.dumps({
+            "file_id": file_id,
+            "file_title": file_info.get("name", "(untitled)"),
+            "file_link": file_info.get("webViewLink", ""),
+            "total_comments": len(result_comments),
+            "include_resolved": include_resolved,
+            "include_replies": include_replies,
+            "comments": result_comments,
+        }, indent=2)
+        
+    except Exception as e:
+        return json.dumps({
+            "error": f"Error fetching comments: {str(e)}",
+            "url": drive_url
+        }, indent=2)
 
 
 def search_drive_activity(

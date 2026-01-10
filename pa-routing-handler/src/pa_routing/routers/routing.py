@@ -314,6 +314,7 @@ async def complete_thread(
     response_content: str = "",
     tool_calls: list[str] = Query(default=None),
     user_message: str = "",
+    report_refs_json: str = "",
 ) -> dict:
     """
     Mark a thread as complete.
@@ -321,7 +322,13 @@ async def complete_thread(
     Called when an agent finishes responding. Updates the last-responding
     agent for contextual routing, extracts SUMMARY for cross-agent awareness,
     and writes to Main Agent's archival for sub-agents (Pattern 3).
+
+    Args:
+        report_refs_json: JSON string from report_refs tool call, e.g.:
+            '{"ref_type": "calendar_event", "ref_id": "abc123", "title": "Standup"}'
     """
+    import json as json_module
+
     session_ctx = session_store.get(session_id)
     if not session_ctx:
         return {"error": "Session not found", "thread": None}
@@ -333,15 +340,41 @@ async def complete_thread(
     topics = parsed.topics
     cleaned_response = clean_response_for_user(response_content)
 
-    # Append to session context for cross-agent awareness (clean summary without hashtags)
-    session_ctx.append(agent=agent_name, action=summary)
+    # Get refs from report_refs tool call (preferred) or text parsing (fallback)
+    refs = {}
+    if report_refs_json:
+        try:
+            tool_refs = json_module.loads(report_refs_json)
+            # Normalize to our refs format: {ref_type: ref_id, title: ..., ...}
+            refs = {
+                "type": tool_refs.get("ref_type", "unknown"),
+                "id": tool_refs.get("ref_id", ""),
+                "title": tool_refs.get("title", ""),
+            }
+            # Include any metadata
+            if tool_refs.get("metadata"):
+                refs.update(tool_refs["metadata"])
+            logger.info("refs_from_tool_call", refs=refs)
+        except json_module.JSONDecodeError:
+            logger.warning("invalid_report_refs_json", raw=report_refs_json[:100])
+
+    # Fallback to text-parsed refs if no tool refs
+    if not refs and parsed.refs:
+        refs = parsed.refs
+
+    # Append to session context for cross-agent awareness (includes refs for follow-ups)
+    session_ctx.append(agent=agent_name, action=summary, refs=refs if refs else None)
 
     # Pattern 3: Write to Main Agent's archival for sub-agents (fire-and-forget)
     is_sub_agent = agent_id != MAIN_AGENT_ID
     if is_sub_agent and response_content:
-        # Build passage text
+        # Build passage text (include refs if present for searchability)
         user_preview = user_message[:80] if user_message else "request"
         passage_text = f"User asked {agent_name}: {user_preview}. Action: {summary}"
+        if refs:
+            # Append refs as searchable text (e.g., "Refs: eventId=abc123, title=Standup")
+            ref_str = ", ".join(f"{k}={v}" for k, v in refs.items())
+            passage_text += f" Refs: {ref_str}"
 
         # Build tags
         tags = _letta_client.build_session_tags(
@@ -379,6 +412,7 @@ async def complete_thread(
         agent_name=agent_name,
         summary=summary,
         topics=topics,
+        has_refs=bool(refs),
     )
 
     return {
@@ -388,6 +422,7 @@ async def complete_thread(
         "last_responding_agent_name": session_ctx.last_responding_agent_name,
         "summary": summary,
         "topics": topics,
+        "refs": refs,
         "cleaned_response": cleaned_response,
     }
 
