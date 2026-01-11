@@ -20,6 +20,7 @@ from typing import Optional, List, Dict, Any, Callable
 import yaml
 import requests
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from flask_sock import Sock
 
 # Import game context loader
@@ -62,18 +63,31 @@ except ImportError:
 try:
     import sys
     from pathlib import Path
-    # Add nfl-pro-scraper to path (resolve to absolute path)
-    scraper_path = (Path(__file__).parent.parent / 'nfl-pro-scraper').resolve()
-    if scraper_path.exists():
-        sys.path.insert(0, str(scraper_path))
-    else:
-        # Fallback: try relative to workspace
-        alt_path = Path('/Volumes/main-drive/ai-PA/auto-madden/nfl-pro-scraper')
-        if alt_path.exists():
-            sys.path.insert(0, str(alt_path))
-            scraper_path = alt_path
-    
-    from services.pre_play_service import PrePlayService, UserPreferences, process_pre_play
+    # Add nfl-pro-scraper to path - check multiple locations
+    scraper_paths = [
+        Path(__file__).parent.parent / 'nfl-pro-scraper',  # /nfl-pro-scraper
+        Path(__file__).parent / 'nfl-pro-scraper',  # /app/nfl-pro-scraper
+        Path('/app/nfl-pro-scraper'),  # Docker mount location
+        Path('/Volumes/main-drive/ai-PA/auto-madden/nfl-pro-scraper'),  # Host path
+    ]
+    scraper_path = None
+    for p in scraper_paths:
+        if p.exists():
+            scraper_path = p.resolve()
+            sys.path.insert(0, str(scraper_path))
+            break
+
+    # Import directly from file to avoid services/__init__.py which needs playwright
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "pre_play_service",
+        str(scraper_path / "services" / "pre_play_service.py")
+    )
+    pre_play_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pre_play_module)
+    PrePlayService = pre_play_module.PrePlayService
+    UserPreferences = pre_play_module.UserPreferences
+    process_pre_play = pre_play_module.process_pre_play
     from models.pre_play_metadata import MetadataFrequency
     PRE_PLAY_SERVICE_AVAILABLE = True
 except ImportError as e:
@@ -91,6 +105,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 sock = Sock(app)
 
 # Configuration
@@ -3116,15 +3131,33 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
         yards >= 15
     )
     
+    # Determine play type for coverage display
+    play_type = play_data.get('playType', '').lower()
+    is_pass_play = 'pass' in play_type
+    is_run_play = 'rush' in play_type or 'run' in play_type
+    is_special_teams = any(x in play_type for x in ['kick', 'punt', 'xp', 'fg', 'two_point'])
+
     # Format coverage type nicely
     coverage = defense.get('coverageType', '')
     if coverage:
         coverage = coverage.replace('COVER_', 'Cover ').replace('_', ' ')
-    
+
     man_zone = defense.get('manZoneType', '')
     if man_zone:
         man_zone = 'Man' if 'MAN' in man_zone else 'Zone' if 'ZONE' in man_zone else ''
-    
+
+    # Build coverage display - show descriptive text for non-pass plays
+    if coverage:
+        coverage_display = f"{coverage} ({man_zone})" if man_zone else coverage
+    elif is_run_play:
+        coverage_display = "Run Play"
+    elif is_special_teams:
+        coverage_display = "Special Teams"
+    elif is_pass_play:
+        coverage_display = "Analyzing..."  # NFL Pro adds coverage data with delay
+    else:
+        coverage_display = ""
+
     return {
         'presnap': {
             'offense': {
@@ -3144,7 +3177,7 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
             },
             'defense': {
                 'personnel': defense.get('personnel', ''),
-                'coverage': f"{coverage} ({man_zone})" if man_zone else coverage,
+                'coverage': coverage_display,
                 'rushers': defense.get('numberOfPassRushers', 0),
             },
             'route': rec_info.get('route', ''),
@@ -3223,23 +3256,38 @@ def _build_espn_postsnap(description: str, state: Dict[str, Any], change: Dict[s
     possession = state.get('possession', home_abbr)
     defending = away_abbr if possession == home_abbr else home_abbr
     
+    # Build display-friendly result text
+    result_text = {
+        'gain': f"{yards} yard gain" if yards > 0 else "No gain",
+        'incomplete': "Incomplete pass",
+        'sack': f"Sack for {abs(yards)} yard loss" if yards < 0 else "Sack",
+        'touchdown': "TOUCHDOWN!",
+        'interception': "INTERCEPTION!",
+        'fumble': "FUMBLE!",
+        'first_down': f"{yards} yards - First down!",
+    }.get(result, f"{yards} yards")
+
     return {
         'playType': play_type,
         'result': result,
+        'resultText': result_text,
         'yards': yards,
         'isBigPlay': is_big,
         'isScoring': result == 'touchdown',
         'possession': possession,
         'defending': defending,
         'offense': {
-            'route': '',  # Not available from ESPN
-            'timeToThrow': 0,  # Not available from ESPN
+            'personnel': '',  # Not available from ESPN
+            'formation': '',  # Not available from ESPN
+            'route': '',
+            'timeToThrow': 0,
         },
         'defense': {
-            'coverage': '',  # Not available from ESPN
-            'rushers': 0,  # Not available from ESPN
+            'personnel': '',  # Not available from ESPN
+            'coverage': '',
+            'rushers': 0,
         },
-        'description': description[:100],  # Truncated description
+        'description': description[:100],
     }
 
 

@@ -85,31 +85,34 @@ class PlayData:
 
 class NFLProPoller:
     """Polls NFL Pro API for live play data."""
-    
+
     BASE_URL = "https://pro.nfl.com"
     PLAYS_API = "/api/secured/plays/playlist/game"
-    
+    SCHEDULE_API = "/api/schedules/game"
+
     def __init__(self):
         self._session = None
         self._cookies = None
+        self._access_token = None
         self._last_play_id: Optional[int] = None
         self._consecutive_failures = 0
         self._available = True
+        self._uuid_to_numeric: Dict[str, str] = {}  # Cache UUID -> numeric ID mapping
         self._load_session()
-    
+
     def _load_session(self):
         """Load browser session for authenticated requests."""
         state_file = BROWSER_STATES_PATH / 'nfl_pro_state.json'
-        
+
         if not state_file.exists():
             logger.warning("No NFL Pro session found - NFL Pro polling disabled")
             self._available = False
             return
-        
+
         try:
             with open(state_file) as f:
                 state = json.load(f)
-            
+
             # Extract cookies - include all nfl.com cookies
             self._cookies = {}
             for cookie in state.get('cookies', []):
@@ -117,12 +120,30 @@ class NFLProPoller:
                 # Include nfl.com, .nfl.com, auth-id.nfl.com, etc.
                 if 'nfl.com' in domain:
                     self._cookies[cookie['name']] = cookie['value']
-            
-            if self._cookies:
-                logger.info(f"Loaded {len(self._cookies)} NFL Pro cookies")
+
+            # Extract Bearer token from localStorage
+            for origin in state.get('origins', []):
+                if origin.get('origin') == 'https://id.nfl.com':
+                    for item in origin.get('localStorage', []):
+                        if item.get('name') == 'nfl.refreshableToken.v3':
+                            try:
+                                token_data = json.loads(item.get('value', '{}'))
+                                self._access_token = token_data.get('rawData', {}).get('accessToken')
+                                if self._access_token:
+                                    logger.info("Loaded NFL Pro Bearer token from localStorage")
+                            except Exception as e:
+                                logger.warning(f"Error parsing token: {e}")
+                            break
+                    break
+
+            if self._access_token:
+                logger.info(f"Loaded {len(self._cookies)} NFL Pro cookies + Bearer token")
+                self._available = True
+            elif self._cookies:
+                logger.info(f"Loaded {len(self._cookies)} NFL Pro cookies (no Bearer token)")
                 self._available = True
             else:
-                logger.warning("No NFL Pro cookies found")
+                logger.warning("No NFL Pro credentials found")
                 self._available = False
         except Exception as e:
             logger.error(f"Error loading NFL Pro session: {e}")
@@ -131,21 +152,59 @@ class NFLProPoller:
     def is_available(self) -> bool:
         """Check if NFL Pro polling is available."""
         return self._available and self._consecutive_failures < 5
-    
+
+    def _get_numeric_game_id(self, game_uuid: str) -> Optional[str]:
+        """Convert NFL Pro UUID to numeric game ID via schedules API."""
+        # Check cache first
+        if game_uuid in self._uuid_to_numeric:
+            return self._uuid_to_numeric[game_uuid]
+
+        try:
+            url = f"{self.BASE_URL}{self.SCHEDULE_API}?fapiGameId={game_uuid}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                'Accept': 'application/json',
+                'Referer': f'{self.BASE_URL}/'
+            }
+            if self._access_token:
+                headers['Authorization'] = f'Bearer {self._access_token}'
+
+            response = requests.get(url, headers=headers, cookies=self._cookies, timeout=10, verify=False)
+            if response.status_code == 200:
+                data = response.json()
+                numeric_id = data.get('gameId')
+                if numeric_id:
+                    self._uuid_to_numeric[game_uuid] = str(numeric_id)
+                    logger.info(f"Resolved UUID {game_uuid[:8]}... to numeric ID {numeric_id}")
+                    return str(numeric_id)
+        except Exception as e:
+            logger.warning(f"Error resolving game UUID: {e}")
+        return None
+
     async def get_plays(self, game_uuid: str) -> List[PlayData]:
         """Fetch plays from NFL Pro API."""
         if not self.is_available():
             return []
-        
+
         try:
-            url = f"{self.BASE_URL}{self.PLAYS_API}?gameId={game_uuid}"
-            
+            # Convert UUID to numeric game ID
+            numeric_id = self._get_numeric_game_id(game_uuid)
+            if not numeric_id:
+                logger.warning(f"Could not resolve game UUID {game_uuid[:8]}... to numeric ID")
+                return []
+
+            url = f"{self.BASE_URL}{self.PLAYS_API}?gameId={numeric_id}"
+
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
                 'Accept': 'application/json',
                 'Referer': f'{self.BASE_URL}/games/game/{game_uuid}/play-by-play'
             }
-            
+
+            # Add Bearer token if available
+            if self._access_token:
+                headers['Authorization'] = f'Bearer {self._access_token}'
+
             response = requests.get(
                 url,
                 headers=headers,
@@ -153,15 +212,15 @@ class NFLProPoller:
                 timeout=10,
                 verify=False
             )
-            
+
             if response.status_code == 401:
                 logger.warning("NFL Pro session expired")
                 self._available = False
                 return []
-            
+
             response.raise_for_status()
             data = response.json()
-            
+
             self._consecutive_failures = 0
             return self._parse_plays(data)
             
@@ -173,15 +232,31 @@ class NFLProPoller:
     def _parse_plays(self, data: Dict) -> List[PlayData]:
         """Parse NFL Pro API response into PlayData objects."""
         plays = []
-        
+
         raw_plays = data.get('plays', data.get('playlist', []))
-        
+
         for raw in raw_plays:
             try:
                 # Skip marker plays
                 if raw.get('playType') == 'GAME':
                     continue
-                
+
+                # Extract nested objects - API returns offense/defense/passInfo as nested dicts
+                offense = raw.get('offense', {}) or {}
+                defense = raw.get('defense', {}) or {}
+                pass_info = raw.get('passInfo', {}) or {}
+                rec_info = raw.get('recInfo', {}) or {}
+
+                # Format coverage type nicely
+                coverage = defense.get('coverageType', '')
+                if coverage:
+                    coverage = coverage.replace('COVER_', 'Cover ').replace('_', ' ')
+                man_zone = defense.get('manZoneType', '')
+                if man_zone:
+                    man_zone = 'Man' if 'MAN' in man_zone else 'Zone' if 'ZONE' in man_zone else ''
+                if coverage and man_zone:
+                    coverage = f"{coverage} ({man_zone})"
+
                 play = PlayData(
                     play_id=raw.get('playId', 0),
                     sequence=raw.get('sequence', 0),
@@ -196,18 +271,18 @@ class NFLProPoller:
                     home_score=raw.get('homeScore', 0),
                     away_score=raw.get('visitorScore', 0),
                     play_type=raw.get('playType', ''),
-                    formation=raw.get('offFormation', ''),
-                    personnel=raw.get('offPersonnel', ''),
-                    defenders_in_box=raw.get('defendersInBox', 0),
-                    pass_rushers=raw.get('passRushers', 0),
-                    coverage_type=raw.get('coverageType', ''),
+                    formation=offense.get('offenseFormation', ''),
+                    personnel=offense.get('personnel', ''),
+                    defenders_in_box=defense.get('defendersInTheBox', 0) or 0,
+                    pass_rushers=defense.get('numberOfPassRushers', 0) or 0,
+                    coverage_type=coverage,
                     is_redzone=raw.get('isRedzone', False),
                     source='nfl_pro'
                 )
                 plays.append(play)
             except Exception as e:
                 logger.debug(f"Error parsing play: {e}")
-        
+
         return plays
 
 
@@ -377,7 +452,7 @@ class LiveGamePoller:
     async def _emit_play_event(self, play: PlayData):
         """Send play event to insight engine."""
         try:
-            # Build event payload
+            # Build event payload with nfl_pro_play in expected format
             event = {
                 'event_type': 'play_complete',
                 'description': play.description,
@@ -391,6 +466,23 @@ class LiveGamePoller:
                     'possession_team': play.possession_team,
                     'last_play_id': play.play_id,
                 },
+                # NFL Pro play data in the format insight engine expects
+                'nfl_pro_play': {
+                    'playDescription': play.description,
+                    'playType': play.play_type,
+                    'offense': {
+                        'personnel': play.personnel,
+                        'offenseFormation': play.formation,
+                    },
+                    'defense': {
+                        'defendersInTheBox': play.defenders_in_box,
+                        'numberOfPassRushers': play.pass_rushers,
+                        'coverageType': play.coverage_type,
+                    },
+                    'isRedzone': play.is_redzone,
+                    'yardsGained': play.yards_gained,
+                },
+                # Also keep pre_play_data for backwards compatibility
                 'pre_play_data': {
                     'personnel': play.personnel,
                     'formation': play.formation,

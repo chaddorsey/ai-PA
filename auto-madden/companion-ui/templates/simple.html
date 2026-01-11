@@ -867,11 +867,17 @@
     <div id="insights"></div>
     
     <script>
+        // Service URLs - use current hostname for remote access
+        const API_HOST = window.location.hostname;
+        const GAME_STATE_URL = `http://${API_HOST}:5132`;
+        const INSIGHT_ENGINE_URL = `http://${API_HOST}:5131`;
+        const INSIGHT_WS_URL = `ws://${API_HOST}:5131/ws`;
+
         let ws = null;
         let pollInterval = null;
         let analysisTimeout = null;
         let analysisFadeTimeout = null;
-        
+
         // Buffers for delay
         let stateBuffer = [];
         let insightBuffer = [];
@@ -880,7 +886,7 @@
         // User preferences
         let userPrefs = {
             presnap: 'always',
-            postsnap: 'key'
+            postsnap: 'always'
         };
         
         // Current delay (seconds)
@@ -986,7 +992,7 @@
         // === Game State Polling ===
         async function pollState() {
             try {
-                const resp = await fetch('http://localhost:5132/live/espn/state');
+                const resp = await fetch(`${GAME_STATE_URL}/live/espn/state`);
                 const data = await resp.json();
                 if (data.status === 'ok') {
                     stateBuffer.push({
@@ -1029,11 +1035,19 @@
             
             if (stateToShow) {
                 const s = stateToShow;
-                document.getElementById('score').textContent = 
+                document.getElementById('score').textContent =
                     `${s.away_team.abbreviation} ${s.away_team.score} - ${s.home_team.abbreviation} ${s.home_team.score}`;
-                document.getElementById('situation').textContent = 
-                    `Q${s.quarter} · ${s.clock} | ${s.down_distance_text || ''}`;
-                document.getElementById('play').textContent = s.last_play || 'Waiting for play...';
+
+                // Build down/distance text from raw values
+                const downText = s.down ? `${s.down}${['st','nd','rd','th'][Math.min(s.down-1,3)]} & ${s.distance}` : '';
+                document.getElementById('situation').textContent =
+                    `Q${s.quarter} · ${s.clock} | ${downText}`;
+
+                // Get last play from recent_plays array
+                const lastPlay = s.recent_plays && s.recent_plays.length > 0
+                    ? s.recent_plays[0].description
+                    : 'Waiting for play...';
+                document.getElementById('play').textContent = lastPlay;
             }
         }
         
@@ -1231,7 +1245,7 @@
             }
             
             updateStatusDot('connecting');
-            ws = new WebSocket('ws://localhost:5131/ws');
+            ws = new WebSocket(INSIGHT_WS_URL);
             
             ws.onopen = () => {
                 console.log('WS connected!');
@@ -1339,7 +1353,7 @@
             btn?.classList.add('spinning');
             
             try {
-                const resp = await fetch('http://localhost:5132/live/espn/games');
+                const resp = await fetch(`${GAME_STATE_URL}/live/espn/games`);
                 const data = await resp.json();
                 
                 if (data.status === 'ok') {
@@ -1411,7 +1425,7 @@
             hideAnalysis();
             
             try {
-                await fetch('http://localhost:5131/game/switch', {
+                await fetch(`${INSIGHT_ENGINE_URL}/game/switch`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ game_id: gameId })
@@ -1438,7 +1452,7 @@
             }
             
             try {
-                const resp = await fetch('http://localhost:5132/live/espn/start', {
+                const resp = await fetch(`${GAME_STATE_URL}/live/espn/start`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ game_id: currentGameId, interval: 10 })
@@ -1457,7 +1471,7 @@
         }
         
         function stopLive() {
-            fetch('http://localhost:5132/live/espn/stop', { method: 'POST' });
+            fetch(`${GAME_STATE_URL}/live/espn/stop`, { method: 'POST' });
             if (pollInterval) clearInterval(pollInterval);
             if (ws) ws.close();
         }

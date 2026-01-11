@@ -161,26 +161,50 @@ class ESPNClient:
         
         # Get situation
         situation = raw_data.get('situation', {})
-        
+
         # Parse teams
         home_team, away_team = self._parse_teams(competition)
-        
+
         # Get clock and situation details
         clock_data = situation.get('clock', {})
-        down = situation.get('down', 1)
-        distance = situation.get('distance', 10)
-        yard_line = situation.get('yardLine', 25)
-        
+        down = situation.get('down')
+        distance = situation.get('distance')
+        yard_line = situation.get('yardLine')
+
         # Possession
         possession_data = situation.get('possession', {})
         possession_team = possession_data.get('abbreviation')
+
+        # If situation data is missing (timeout/commercial), try to get from last valid play
+        if down is None or down < 1:
+            drives = raw_data.get('drives', {})
+            current_drive = drives.get('current', {})
+            plays = current_drive.get('plays', [])
+            # Search backwards for a play with valid end situation
+            for play in reversed(plays):
+                end_situation = play.get('end', {})
+                if end_situation.get('down', 0) > 0:
+                    down = end_situation.get('down')
+                    distance = end_situation.get('distance')
+                    yard_line = end_situation.get('yardLine')
+                    break
+            # Also try to get possession from drive
+            if not possession_team:
+                drive_team = current_drive.get('team', {})
+                possession_team = drive_team.get('abbreviation')
+
+        # Apply defaults if still missing
+        down = down if down and down > 0 else 1
+        distance = distance if distance else 10
+        yard_line = yard_line if yard_line else 25
         
         # Is red zone
         is_red_zone = situation.get('isRedZone', False)
         
         # Two minute warning check
         period = status_data.get('period', 1)
-        clock_display = clock_data.get('displayValue', '15:00')
+        # Try status.displayClock first (more reliable), then situation.clock
+        clock_display = status_data.get('displayClock') or clock_data.get('displayValue', '15:00')
         is_two_minute = self._is_two_minute_warning(clock_display, period)
         
         # Win probability
@@ -270,14 +294,23 @@ class ESPNClient:
             
             status = event.get('status', {}).get('type', {})
             
+            # Build score string
+            home_score = home_team['score'] if home_team else 0
+            away_score = away_team['score'] if away_team else 0
+            score_str = f"{away_score}-{home_score}" if status.get('state') != 'pre' else ''
+
             return {
                 'game_id': event.get('id'),
+                'id': event.get('id'),  # UI expects 'id'
                 'name': event.get('name'),
                 'short_name': event.get('shortName'),
                 'status': self._map_status(status.get('state', 'pre')),
                 'status_detail': status.get('shortDetail', ''),
                 'home_team': home_team,
                 'away_team': away_team,
+                'home': home_team['abbreviation'] if home_team else '',  # UI expects 'home'
+                'away': away_team['abbreviation'] if away_team else '',  # UI expects 'away'
+                'score': score_str,  # UI expects 'score'
                 'date': event.get('date'),
             }
             

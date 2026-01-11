@@ -15,6 +15,7 @@ from typing import Optional, List, Dict, Any
 
 import requests
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 from models import GameState, GameChange
 from espn_client import ESPNClient
@@ -27,6 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 
 # Configuration
 INSIGHT_ENGINE_URL = os.environ.get('INSIGHT_ENGINE_URL', 'http://auto-madden-insight-engine:5131')
@@ -365,6 +367,8 @@ def health():
 
 
 @app.route('/games', methods=['GET'])
+@app.route('/live/games', methods=['GET'])
+@app.route('/live/espn/games', methods=['GET'])
 def list_games():
     """List current NFL games."""
     games = espn_client.get_scoreboard()
@@ -376,6 +380,7 @@ def list_games():
 
 
 @app.route('/start', methods=['POST'])
+@app.route('/live/espn/start', methods=['POST'])
 def start_tracking():
     """
     Start tracking a game.
@@ -449,6 +454,7 @@ def start_tracking():
 
 
 @app.route('/stop', methods=['POST'])
+@app.route('/live/espn/stop', methods=['POST'])
 def stop_tracking():
     """Stop tracking the current game."""
     global tracking_active, current_state, previous_state
@@ -473,6 +479,7 @@ def stop_tracking():
 
 
 @app.route('/state', methods=['GET'])
+@app.route('/live/espn/state', methods=['GET'])
 def get_state():
     """Get current game state."""
     if current_state is None:

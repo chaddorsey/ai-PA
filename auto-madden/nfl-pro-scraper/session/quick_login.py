@@ -17,16 +17,38 @@ async def login():
         print('1. Opening login page...')
         await page.goto('https://id.nfl.com/account/sign-in?redirectURL=https://pro.nfl.com/', wait_until='commit', timeout=120000)
         
-        print('2. Waiting for page...')
-        await asyncio.sleep(10)
-        
-        # Click Accept Cookies button
+        print('2. Waiting for page to fully load...')
+        await asyncio.sleep(5)
+
+        # Click Accept Cookies button - try multiple selectors
         print('3. Accepting cookies...')
-        try:
-            await page.click('#onetrust-accept-btn-handler', timeout=10000)
-            print('   Clicked Accept Cookies')
-        except Exception as e:
-            print(f'   Cookie click: {e}')
+        cookie_selectors = [
+            '#onetrust-accept-btn-handler',
+            'button#onetrust-accept-btn-handler',
+            '[id="onetrust-accept-btn-handler"]',
+            'button:has-text("Accept")',
+            'button:has-text("Accept All")',
+            'button:has-text("I Accept")',
+            '.onetrust-close-btn-handler',
+        ]
+
+        cookie_clicked = False
+        for selector in cookie_selectors:
+            try:
+                # Wait for element to be visible first
+                await page.wait_for_selector(selector, state='visible', timeout=3000)
+                await page.click(selector, timeout=3000)
+                print(f'   Clicked cookie consent: {selector}')
+                cookie_clicked = True
+                break
+            except Exception:
+                pass
+
+        if not cookie_clicked:
+            # Try pressing Escape to dismiss any overlays
+            print('   No cookie button found, trying Escape key...')
+            await page.keyboard.press('Escape')
+
         await asyncio.sleep(2)
         
         # Fill email using the exact ID from HTML
@@ -38,11 +60,19 @@ async def login():
             print(f'   Email error: {e}')
         await asyncio.sleep(1)
         
-        # Click Continue
+        # Click Continue - use JavaScript click as fallback
         print('5. Clicking Continue...')
         try:
-            await page.click('button[aria-label="Continue"]', timeout=10000)
-            print('   Clicked Continue')
+            continue_btn = page.locator('button[aria-label="Continue"]')
+            await continue_btn.wait_for(state='visible', timeout=10000)
+            # Try regular click first
+            try:
+                await continue_btn.click(timeout=3000)
+                print('   Clicked Continue')
+            except Exception:
+                # Fallback to JavaScript click
+                await continue_btn.evaluate('el => el.click()')
+                print('   Clicked Continue (via JS)')
         except Exception as e:
             print(f'   Continue error: {e}')
         await asyncio.sleep(4)
@@ -50,8 +80,14 @@ async def login():
         # Click "Sign in with password" if visible
         print('6. Looking for password option...')
         try:
-            await page.click('button[aria-label="Sign in with password"]', timeout=5000)
-            print('   Clicked Sign in with password')
+            pwd_option = page.locator('button[aria-label="Sign in with password"]')
+            await pwd_option.wait_for(state='visible', timeout=5000)
+            try:
+                await pwd_option.click(timeout=3000)
+                print('   Clicked Sign in with password')
+            except Exception:
+                await pwd_option.evaluate('el => el.click()')
+                print('   Clicked Sign in with password (via JS)')
         except:
             print('   (Password field may already be visible)')
         await asyncio.sleep(2)
@@ -68,8 +104,14 @@ async def login():
         # Click Sign In
         print('8. Clicking Sign In...')
         try:
-            await page.click('button[aria-label="Sign In"]', timeout=10000)
-            print('   Clicked Sign In')
+            signin_btn = page.locator('button[aria-label="Sign In"]')
+            await signin_btn.wait_for(state='visible', timeout=10000)
+            try:
+                await signin_btn.click(timeout=3000)
+                print('   Clicked Sign In')
+            except Exception:
+                await signin_btn.evaluate('el => el.click()')
+                print('   Clicked Sign In (via JS)')
         except Exception as e:
             print(f'   Sign In error: {e}')
         
