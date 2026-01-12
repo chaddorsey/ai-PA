@@ -354,27 +354,34 @@ class ESPNPoller:
 class LiveGamePoller:
     """
     Orchestrates live game polling from multiple sources.
-    
+
     Tries NFL Pro first for rich metadata, falls back to ESPN.
     Emits events to the insight engine for processing.
     """
-    
+
     def __init__(
         self,
         nfl_pro_uuid: str = None,
         espn_game_id: str = None,
-        poll_interval: int = 15
+        poll_interval: int = 15,
+        home_team: str = None,
+        away_team: str = None,
+        week: int = None
     ):
         self.nfl_pro_uuid = nfl_pro_uuid
         self.espn_game_id = espn_game_id
         self.poll_interval = poll_interval
-        
+        self.home_team = home_team
+        self.away_team = away_team
+        self.week = week
+
         self.nfl_pro = NFLProPoller()
         self.espn = ESPNPoller()
-        
+
         self._running = False
         self._last_play_id: Optional[int] = None
         self._plays_seen: set = set()
+        self._game_started_notified = False
         self._stats = {
             'nfl_pro_polls': 0,
             'nfl_pro_successes': 0,
@@ -387,20 +394,54 @@ class LiveGamePoller:
     def get_stats(self) -> Dict:
         """Get polling statistics."""
         return self._stats.copy()
-    
+
+    def _notify_game_start(self):
+        """Notify insight engine that a game is starting to load pre-game insights."""
+        if self._game_started_notified:
+            return
+
+        try:
+            game_id = self.nfl_pro_uuid or self.espn_game_id
+            payload = {
+                'game_id': game_id,
+                'home_team': self.home_team or '',
+                'away_team': self.away_team or '',
+                'mode': 'live',
+                'week': self.week
+            }
+
+            logger.info(f"Notifying insight engine: {self.away_team} @ {self.home_team} (Week {self.week})")
+            response = requests.post(
+                f"{INSIGHT_ENGINE_URL}/game/start",
+                json=payload,
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(f"Insight engine ready: {data.get('message', 'OK')}")
+                self._game_started_notified = True
+            else:
+                logger.warning(f"Insight engine notification failed: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Could not notify insight engine: {e}")
+
     async def start(self):
         """Start the polling loop."""
         self._running = True
         logger.info(f"Starting live poller (NFL Pro: {self.nfl_pro_uuid[:8] if self.nfl_pro_uuid else 'N/A'}, ESPN: {self.espn_game_id or 'N/A'})")
         logger.info(f"Poll interval: {self.poll_interval}s")
         logger.info(f"NFL Pro available: {self.nfl_pro.is_available()}")
-        
+
+        # Notify insight engine to load pre-game insights
+        self._notify_game_start()
+
         while self._running:
             try:
                 await self._poll_cycle()
             except Exception as e:
                 logger.error(f"Poll cycle error: {e}")
-            
+
             await asyncio.sleep(self.poll_interval)
     
     def stop(self):
@@ -512,21 +553,24 @@ class LiveGamePoller:
 
 
 async def find_live_game() -> tuple:
-    """Find a live game and return (nfl_pro_uuid, espn_id)."""
+    """Find a live game and return (nfl_pro_uuid, espn_id, home_team, away_team, week)."""
     from game_mapper import GameMapper
     mapper = GameMapper()
-    
+
     try:
         response = requests.get(ESPN_SCOREBOARD_URL, timeout=10, verify=False)
         response.raise_for_status()
         data = response.json()
-        
+
+        # Get week from scoreboard response
+        week = data.get('week', {}).get('number', 18)  # Default to week 18 if not found
+
         for event in data.get('events', []):
             status = event.get('status', {}).get('type', {}).get('name', '')
             if status in ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME']:
                 espn_id = event.get('id')
                 name = event.get('shortName', '')
-                
+
                 # Extract teams from event for mapping
                 competitions = event.get('competitions', [{}])
                 if competitions:
@@ -534,66 +578,86 @@ async def find_live_game() -> tuple:
                     teams = comp.get('competitors', [])
                     home_team = next((t.get('team', {}).get('abbreviation') for t in teams if t.get('homeAway') == 'home'), None)
                     away_team = next((t.get('team', {}).get('abbreviation') for t in teams if t.get('homeAway') == 'away'), None)
-                    
+
                     # Try to map to NFL Pro UUID
                     nfl_pro_uuid = mapper.get_nfl_pro_uuid(espn_id, home_team, away_team)
                     if nfl_pro_uuid:
-                        logger.info(f"Found live game: {name} (ESPN: {espn_id}, NFL Pro: {nfl_pro_uuid[:8]})")
+                        logger.info(f"Found live game: {name} (ESPN: {espn_id}, NFL Pro: {nfl_pro_uuid[:8]}, Week {week})")
                     else:
-                        logger.info(f"Found live game: {name} (ESPN: {espn_id}, NFL Pro: not mapped)")
-                    
-                    return (nfl_pro_uuid, espn_id)
-                
+                        logger.info(f"Found live game: {name} (ESPN: {espn_id}, NFL Pro: not mapped, Week {week})")
+
+                    return (nfl_pro_uuid, espn_id, home_team, away_team, week)
+
                 logger.info(f"Found live game: {name} (ESPN: {espn_id})")
-                return (None, espn_id)
-        
+                return (None, espn_id, None, None, week)
+
         # Check for upcoming
         for event in data.get('events', []):
             status = event.get('status', {}).get('type', {}).get('name', '')
             if status == 'STATUS_SCHEDULED':
                 espn_id = event.get('id')
                 name = event.get('shortName', '')
-                logger.info(f"Found upcoming game: {name} (ESPN: {espn_id})")
-                return (None, espn_id)
-                
+
+                # Extract teams from event
+                competitions = event.get('competitions', [{}])
+                home_team = None
+                away_team = None
+                if competitions:
+                    comp = competitions[0]
+                    teams = comp.get('competitors', [])
+                    home_team = next((t.get('team', {}).get('abbreviation') for t in teams if t.get('homeAway') == 'home'), None)
+                    away_team = next((t.get('team', {}).get('abbreviation') for t in teams if t.get('homeAway') == 'away'), None)
+
+                logger.info(f"Found upcoming game: {name} (ESPN: {espn_id}, Week {week})")
+                return (None, espn_id, home_team, away_team, week)
+
     except Exception as e:
         logger.error(f"Could not find live game: {e}")
-    
-    return (None, None)
+
+    return (None, None, None, None, None)
 
 
 async def main():
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Live Game Poller')
     parser.add_argument('--game-uuid', help='NFL Pro game UUID')
     parser.add_argument('--espn-id', help='ESPN game ID')
+    parser.add_argument('--home', help='Home team abbreviation (e.g., NE)')
+    parser.add_argument('--away', help='Away team abbreviation (e.g., LAC)')
+    parser.add_argument('--week', type=int, help='NFL week number')
     parser.add_argument('--auto', action='store_true', help='Auto-detect live game')
     parser.add_argument('--interval', type=int, default=15, help='Poll interval (seconds)')
     parser.add_argument('--test', action='store_true', help='Test mode - single poll')
-    
+
     args = parser.parse_args()
-    
+
     nfl_pro_uuid = args.game_uuid
     espn_id = args.espn_id
-    
+    home_team = args.home
+    away_team = args.away
+    week = args.week
+
     if args.auto:
-        nfl_pro_uuid, espn_id = await find_live_game()
+        nfl_pro_uuid, espn_id, home_team, away_team, week = await find_live_game()
         if not espn_id:
             logger.error("No live game found")
             return
-    
+
     if not nfl_pro_uuid and not espn_id:
         logger.error("Must specify --game-uuid, --espn-id, or --auto")
         parser.print_help()
         return
-    
+
     poller = LiveGamePoller(
         nfl_pro_uuid=nfl_pro_uuid,
         espn_game_id=espn_id,
-        poll_interval=args.interval
+        poll_interval=args.interval,
+        home_team=home_team,
+        away_team=away_team,
+        week=week
     )
-    
+
     if args.test:
         # Single poll for testing
         await poller._poll_cycle()

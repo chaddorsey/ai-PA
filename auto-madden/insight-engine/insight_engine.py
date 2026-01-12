@@ -2824,7 +2824,11 @@ def start_game():
     # Set current game teams for insight filtering
     if nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_teams'):
         nfl_pro_narratives.set_current_game_teams({home_team, away_team})
-    
+
+    # Set current game ID for tiered insight selection
+    if game_id and nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_id'):
+        nfl_pro_narratives.set_current_game_id(game_id)
+
     # Load week-specific insights if available
     if week and NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
         try:
@@ -3689,22 +3693,65 @@ def _count_by_type(insights: List[Dict]) -> Dict[str, int]:
 
 @app.route('/game/switch', methods=['POST'])
 def switch_game():
-    """Switch to a different game, resetting session state."""
+    """Switch to a different game, resetting session state and loading insights."""
     global session_data
-    
+
     data = request.get_json() or {}
     new_game_id = data.get('game_id')
     nfl_pro_uuid = data.get('nfl_pro_uuid', '')
-    
+    home_team = data.get('home_team', '')
+    away_team = data.get('away_team', '')
+    week = data.get('week')
+
     if not new_game_id:
         return jsonify({'status': 'error', 'message': 'game_id required'}), 400
-    
+
     logger.info(f"Switching game from {session_data.get('game_id')} to {new_game_id}")
-    
+
+    # If team info not provided, try to fetch from ESPN API
+    if not home_team or not away_team or not week:
+        try:
+            espn_url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={new_game_id}"
+            resp = requests.get(espn_url, timeout=5, verify=False)
+            if resp.status_code == 200:
+                espn_data = resp.json()
+                # Get teams from boxscore
+                boxscore = espn_data.get('boxscore', {})
+                teams_data = boxscore.get('teams', [])
+                for t in teams_data:
+                    team_info = t.get('team', {})
+                    if t.get('homeAway') == 'home':
+                        home_team = home_team or team_info.get('abbreviation', '')
+                    elif t.get('homeAway') == 'away':
+                        away_team = away_team or team_info.get('abbreviation', '')
+                # Get week from header
+                header = espn_data.get('header', {})
+                week_info = header.get('week', 18)  # Default to week 18
+                week = week or week_info
+                logger.info(f"Fetched from ESPN: {away_team} @ {home_team}, Week {week}")
+        except Exception as e:
+            logger.warning(f"Could not fetch ESPN game details: {e}")
+
+    # Try to get NFL Pro UUID from mapping file if not provided
+    if not nfl_pro_uuid:
+        try:
+            mapping_path = Path('/data/espn_nfl_pro_mapping.json')
+            if mapping_path.exists():
+                with open(mapping_path, 'r') as f:
+                    mapping = json.load(f)
+                nfl_pro_uuid = mapping.get('espn_to_nfl_pro', {}).get(str(new_game_id), '')
+                if nfl_pro_uuid:
+                    logger.info(f"Found NFL Pro UUID: {nfl_pro_uuid[:8]}...")
+        except Exception as e:
+            logger.debug(f"Could not load mapping: {e}")
+
     # Reset session data for new game
     session_data = {
         'game_id': new_game_id,
         'nfl_pro_uuid': nfl_pro_uuid,
+        'home_abbr': home_team.upper() if home_team else '',
+        'away_abbr': away_team.upper() if away_team else '',
+        'week': week,
         'session_start': datetime.now().isoformat(),
         'insights_delivered': [],
         'breaks_detected': [],
@@ -3712,29 +3759,67 @@ def switch_game():
         'user_questions': [],
         'nfl_pro_insights_loaded': False
     }
-    
-    # Load NFL Pro insights for new game if available
-    if nfl_pro_uuid and NFL_PRO_INSIGHTS_AVAILABLE:
+
+    # Set current game teams for insight filtering
+    if home_team and away_team and nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_teams'):
+        nfl_pro_narratives.set_current_game_teams([home_team.upper(), away_team.upper()])
+
+    # Set current game ID for tiered insight selection
+    if nfl_pro_uuid and nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_id'):
+        nfl_pro_narratives.set_current_game_id(nfl_pro_uuid)
+
+    # Load NFL Pro insights for new game with proper team filtering
+    insights_loaded = 0
+    if NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
         try:
-            loaded = load_narrative_insights(nfl_pro_uuid)
-            session_data['nfl_pro_insights_loaded'] = loaded > 0
-            logger.info(f"Loaded {loaded} NFL Pro insights for new game")
+            insights_loaded = load_narrative_insights(
+                game_uuid=nfl_pro_uuid or new_game_id,
+                home_team=home_team,
+                away_team=away_team,
+                week=int(week) if week else None
+            )
+            session_data['nfl_pro_insights_loaded'] = insights_loaded > 0
+            logger.info(f"✅ Loaded {insights_loaded} NFL Pro insights for {away_team} @ {home_team}")
         except Exception as e:
             logger.warning(f"Could not load NFL Pro insights: {e}")
-    
+
+    # Reset insight generator for new game
+    if insight_generator:
+        insight_generator.reset_for_new_game()
+
     # Notify connected clients about game switch
     delivery_manager.broadcast_insight(Insight(
-        type='system',
-        headline='Game Switched',
-        body=f'Now following game {new_game_id}',
+        id=str(uuid.uuid4())[:8],
+        insight_type='system',
         priority=5,
-        tags=['system']
+        timing='immediate',
+        headline='Game Switched',
+        body=f'Now following {away_team} @ {home_team}' if away_team and home_team else f'Now following game {new_game_id}',
+        ttl=30
     ))
-    
+
     return jsonify({
         'status': 'ok',
-        'message': f'Switched to game {new_game_id}',
-        'nfl_pro_insights_loaded': session_data.get('nfl_pro_insights_loaded', False)
+        'message': f'Switched to {away_team} @ {home_team}' if away_team and home_team else f'Switched to game {new_game_id}',
+        'nfl_pro_insights_loaded': session_data.get('nfl_pro_insights_loaded', False),
+        'insights_count': insights_loaded,
+        'home_team': home_team,
+        'away_team': away_team,
+        'week': week
+    })
+
+
+@app.route('/debug/insight-log', methods=['GET'])
+def get_insight_log():
+    """Get the log of served insights with tier information."""
+    if not nfl_pro_narratives or not hasattr(nfl_pro_narratives, 'get_insight_log'):
+        return jsonify({'status': 'error', 'message': 'No insight log available'}), 404
+
+    log = nfl_pro_narratives.get_insight_log()
+    return jsonify({
+        'status': 'ok',
+        'count': len(log),
+        'insights': log
     })
 
 

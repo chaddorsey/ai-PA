@@ -692,72 +692,133 @@ class NFLProNarrativeInsights:
         except Exception as e:
             logger.error(f"Error loading from DB: {e}")
             return False
-    
+
+    def _is_from_current_game(self, insight: Dict) -> bool:
+        """Check if insight is from the current game."""
+        current_game_id = getattr(self, '_current_game_id', None)
+        if not current_game_id:
+            return False
+        insight_game_id = insight.get('game_id', '')
+        # Match on full ID or partial (first 8 chars)
+        return (insight_game_id == current_game_id or
+                (insight_game_id and current_game_id and
+                 insight_game_id[:8] == current_game_id[:8]))
+
+    def _is_matchup_between_current_teams(self, insight: Dict) -> bool:
+        """Check if insight is from a game between the two current teams."""
+        valid_teams = set(t.upper() for t in getattr(self, '_current_game_teams', []) if t)
+        if not valid_teams or len(valid_teams) < 2:
+            return False
+        teams_mentioned = set(t.upper() for t in (insight.get('teams_mentioned') or []) if t)
+        # Both teams must be mentioned, and no other teams
+        return teams_mentioned == valid_teams
+
+    def _serve_with_tier(self, insight: Dict, tier: str) -> Dict:
+        """Mark insight as served, log it, and return formatted."""
+        self._served_in_game.add(insight['id'])
+        self._log_insight_served(insight, tier)
+        logger.info(f"📊 {tier}: {insight.get('player_name')}")
+        return self._format_insight(insight)
+
+    def _get_tiered_insight(self, candidates: list) -> Optional[Dict]:
+        """Apply tiered selection to a list of candidate insights."""
+        if not candidates:
+            return None
+
+        # Filter to unserved
+        unserved = [i for i in candidates if i.get('id') not in self._served_in_game]
+        if not unserved:
+            return None
+
+        # Tier 1: From current game
+        tier1 = [i for i in unserved if self._is_from_current_game(i)]
+        if tier1:
+            import random
+            return self._serve_with_tier(random.choice(tier1), 'tier1_same_game')
+
+        # Tier 2: From prior matchups
+        tier2 = [i for i in unserved if self._is_matchup_between_current_teams(i)]
+        if tier2:
+            import random
+            return self._serve_with_tier(random.choice(tier2), 'tier2_prior_matchup')
+
+        # Tier 3: Other insights for these teams
+        tier3 = [i for i in unserved if self._insight_matches_game_teams(i)]
+        if tier3:
+            import random
+            return self._serve_with_tier(random.choice(tier3), 'tier3_team_related')
+
+        return None
+
     def get_insight_by_player(self, player_name: str) -> Optional[Dict]:
-        """Get an unserved insight for a player from processed insights."""
+        """Get an unserved insight for a player using tiered selection."""
+        candidates = []
+
         key = f"player:{player_name.lower()}"
-        
         if hasattr(self, '_processed_index') and key in self._processed_index:
             insight_ids = self._processed_index[key]
-            for insight in self._processed_insights:
-                if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
-                    # Verify insight is for current game's teams
-                    if self._insight_matches_game_teams(insight):
-                        self._served_in_game.add(insight['id'])
-                        return self._format_insight(insight)
-        
-        # Fallback: search by name
-        if hasattr(self, '_processed_insights'):
-            for insight in self._processed_insights:
-                if player_name.lower() in (insight.get('player_name') or '').lower():
-                    if insight.get('id') not in self._served_in_game:
-                        # Verify insight is for current game's teams
-                        if self._insight_matches_game_teams(insight):
-                            self._served_in_game.add(insight['id'])
-                            return self._format_insight(insight)
-        
-        return None
+            candidates = [i for i in self._processed_insights if i.get('id') in insight_ids]
+
+        # Also search by name if no index matches
+        if not candidates and hasattr(self, '_processed_insights'):
+            candidates = [i for i in self._processed_insights
+                         if player_name.lower() in (i.get('player_name') or '').lower()]
+
+        return self._get_tiered_insight(candidates)
     
     def _insight_matches_game_teams(self, insight: Dict) -> bool:
-        """Check if an insight is about the current game's teams."""
+        """Check if an insight is PRIMARILY about the current game's teams."""
         if not hasattr(self, '_current_game_teams') or not self._current_game_teams:
             logger.warning(f"⚠️ No team filter set! Allowing insight: {insight.get('player_name')}")
             return True  # No filter set, allow all
-        
-        # FIRST: Check teams_mentioned field (most reliable)
-        teams_mentioned = insight.get('teams_mentioned', [])
-        if teams_mentioned:
-            teams_mentioned_upper = [t.upper() for t in teams_mentioned if t]
-            for team in self._current_game_teams:
-                if team.upper() in teams_mentioned_upper:
-                    return True
-        
-        # SECOND: Check player_team field
+
+        valid_teams_upper = {t.upper() for t in self._current_game_teams}
+        player_name = (insight.get('player_name') or '').upper()
         player_team = (insight.get('player_team') or '').upper()
-        if player_team:
-            for team in self._current_game_teams:
-                if team.upper() == player_team:
-                    return True
-                # Also check team name variants
-                if team.upper() in self.TEAM_NAMES:
-                    for name in self.TEAM_NAMES[team.upper()]:
-                        if name == player_team:
-                            return True
-        
-        # THIRD: Search in title text
-        title = (insight.get('title') or '').upper()
+        teams_mentioned = [t.upper() for t in (insight.get('teams_mentioned') or []) if t]
+
+        # Build set of ALL team names (abbr + full names) that are NOT valid
+        all_other_team_names = set()
+        for abbr, names in self.TEAM_NAMES.items():
+            if abbr not in valid_teams_upper:
+                all_other_team_names.add(abbr)
+                all_other_team_names.update(names)
+
+        # If player_name is another team's name (e.g., "Vikings", "49ers"), reject
+        if player_name in all_other_team_names:
+            logger.debug(f"❌ Rejected: {player_name} is another team name")
+            return False
+
+        # STRICT: If teams_mentioned exists, insight must be PRIMARILY about valid teams
+        if teams_mentioned:
+            teams_in_valid = [t for t in teams_mentioned if t in valid_teams_upper]
+            teams_not_valid = [t for t in teams_mentioned if t not in valid_teams_upper]
+
+            # If more non-valid teams than valid teams mentioned, reject
+            if len(teams_not_valid) > len(teams_in_valid):
+                logger.debug(f"❌ Rejected: {player_name} - more non-valid teams {teams_not_valid} than valid {teams_in_valid}")
+                return False
+
+            # Must have at least one valid team
+            if teams_in_valid:
+                return True
+            return False
+
+        # Check player_team field
+        if player_team and player_team in valid_teams_upper:
+            return True
+
+        # Check if player_name matches a valid team name
         for team in self._current_game_teams:
             team_upper = team.upper()
-            if team_upper in title:
+            if player_name == team_upper:
                 return True
-            # Also check team names
             if team_upper in self.TEAM_NAMES:
                 for name in self.TEAM_NAMES[team_upper]:
-                    if name in title:
+                    if player_name == name:
                         return True
-        
-        # Log rejection for debugging
-        logger.debug(f"❌ Rejected insight: {insight.get('player_name')} - teams_mentioned={teams_mentioned}, filter={self._current_game_teams}")
+
+        logger.debug(f"❌ Rejected insight: {player_name} - teams_mentioned={teams_mentioned}, filter={self._current_game_teams}")
         return False
     
     def set_current_game_teams(self, teams: list):
@@ -766,33 +827,27 @@ class NFLProNarrativeInsights:
         logger.info(f"Set current game teams filter: {self._current_game_teams}")
     
     def get_insight_by_team(self, team_abbr: str) -> Optional[Dict]:
-        """Get an unserved insight for a team."""
+        """Get an unserved insight for a team using tiered selection."""
         key = f"team:{team_abbr.lower()}"
-        
+        candidates = []
+
         if hasattr(self, '_processed_index') and key in self._processed_index:
             insight_ids = self._processed_index[key]
-            for insight in self._processed_insights:
-                if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
-                    if self._insight_matches_game_teams(insight):
-                        self._served_in_game.add(insight['id'])
-                        return self._format_insight(insight)
-        
-        return None
-    
+            candidates = [i for i in self._processed_insights if i.get('id') in insight_ids]
+
+        return self._get_tiered_insight(candidates)
+
     def get_insight_by_topic(self, topic: str) -> Optional[Dict]:
-        """Get an unserved insight for a topic (passing, rushing, defense, etc.)."""
+        """Get an unserved insight for a topic using tiered selection."""
         key = f"topic:{topic.lower()}"
-        
+        candidates = []
+
         if hasattr(self, '_processed_index') and key in self._processed_index:
             insight_ids = self._processed_index[key]
-            for insight in self._processed_insights:
-                if insight.get('id') in insight_ids and insight.get('id') not in self._served_in_game:
-                    if self._insight_matches_game_teams(insight):
-                        self._served_in_game.add(insight['id'])
-                        return self._format_insight(insight)
-        
-        return None
-    
+            candidates = [i for i in self._processed_insights if i.get('id') in insight_ids]
+
+        return self._get_tiered_insight(candidates)
+
     def get_contextual_insight(
         self,
         play_type: str = None,
@@ -803,7 +858,7 @@ class NFLProNarrativeInsights:
     ) -> Optional[Dict]:
         """
         Get an insight that matches the current game context.
-        
+
         Prioritizes:
         1. Player-specific if player made a notable play
         2. Situation-specific (redzone, third down)
@@ -816,33 +871,34 @@ class NFLProNarrativeInsights:
             insight = self.get_insight_by_player(player)
             if insight:
                 return insight
-        
+
         # Try situation
         if is_redzone:
             insight = self.get_insight_by_topic('redzone')
             if insight:
                 return insight
-        
+
         if is_third_down:
             insight = self.get_insight_by_topic('third_down')
             if insight:
                 return insight
-        
+
         # Try play type
         if play_type:
             topic = 'passing' if 'pass' in play_type.lower() else 'rushing'
             insight = self.get_insight_by_topic(topic)
             if insight:
                 return insight
-        
+
         # Try team
         if team:
             insight = self.get_insight_by_team(team)
             if insight:
                 return insight
-        
-        # Fallback to random
-        return self.get_random_unserved_insight(prefer_team=team)
+
+        # Fallback to random - use STRICT team filtering from current game teams
+        valid_teams = set(self._current_game_teams) if hasattr(self, '_current_game_teams') and self._current_game_teams else None
+        return self.get_random_unserved_insight(prefer_team=team, valid_teams=valid_teams)
     
     # Team abbreviation to name mapping
     TEAM_NAMES = {
@@ -881,83 +937,155 @@ class NFLProNarrativeInsights:
     }
     
     def get_random_unserved_insight(
-        self, 
+        self,
         prefer_team: str = None,
-        valid_teams: set = None
+        valid_teams: set = None,
+        current_game_id: str = None
     ) -> Optional[Dict]:
         """
-        Get a random unserved insight.
-        
+        Get an unserved insight using TIERED selection:
+
+        Tier 1: Insights from THIS specific game (game_id matches)
+        Tier 2: Insights from prior matchups of the same two teams
+        Tier 3: Other insights primarily about the game teams
+
         Args:
             prefer_team: Preferred team abbreviation
-            valid_teams: Set of valid team abbreviations - ONLY return insights for these teams
+            valid_teams: Set of valid team abbreviations (the two teams in current game)
+            current_game_id: The NFL Pro game UUID for the current game
         """
         if not hasattr(self, '_processed_insights'):
             return None
-        
+
         import random
-        
+
+        # Use stored game ID if not provided
+        if not current_game_id:
+            current_game_id = getattr(self, '_current_game_id', None)
+
         # Filter to unserved
         unserved = [i for i in self._processed_insights if i.get('id') not in self._served_in_game]
-        
+
         if not unserved:
             return None
-        
-        # Build expanded search terms including team names
-        def get_search_terms(abbr):
-            """Get all searchable terms for a team abbreviation."""
-            terms = {abbr.upper()}
-            if abbr.upper() in self.TEAM_NAMES:
-                terms.update(self.TEAM_NAMES[abbr.upper()])
-            return terms
-        
-        # STRICT team filtering - only return insights that mention game teams
-        if valid_teams:
-            # Expand abbreviations to include team names
-            expanded_terms = set()
-            for team in valid_teams:
-                expanded_terms.update(get_search_terms(team))
-            
-            def insight_matches_teams(insight):
-                # Check all text fields for team mentions (handle None values)
-                player_name = (insight.get('player_name') or '').upper()
-                player_team = (insight.get('player_team') or '').upper()
-                teams_mentioned = [t.upper() for t in (insight.get('teams_mentioned') or []) if t]
-                title = (insight.get('title') or '').upper()
-                
-                # Combine all searchable text
-                all_text = f"{player_name} {player_team} {title} {' '.join(teams_mentioned)}"
-                
-                # Check if any expanded term is in the text
-                for term in expanded_terms:
-                    if term in all_text:
-                        return True
+
+        valid_teams_upper = {t.upper() for t in valid_teams} if valid_teams else set()
+
+        # Build set of ALL team names (abbr + full names) that are NOT valid
+        all_other_team_names = set()
+        for abbr, names in self.TEAM_NAMES.items():
+            if abbr not in valid_teams_upper:
+                all_other_team_names.add(abbr)
+                all_other_team_names.update(names)
+
+        def is_primarily_about_game_teams(insight):
+            """Check if insight is PRIMARILY about the valid teams."""
+            player_name = (insight.get('player_name') or '').upper()
+            player_team = (insight.get('player_team') or '').upper()
+            teams_mentioned = [t.upper() for t in (insight.get('teams_mentioned') or []) if t]
+
+            # If player_name is another team's name, reject
+            if player_name in all_other_team_names:
                 return False
-            
-            team_filtered = [i for i in unserved if insight_matches_teams(i)]
-            
-            if team_filtered:
-                unserved = team_filtered
-                logger.info(f"Filtered to {len(unserved)} insights for teams {valid_teams} (expanded: {len(expanded_terms)} terms)")
-            else:
-                logger.warning(f"No insights found for teams {valid_teams}, returning None")
-                return None  # Don't return insights from other games
-        elif prefer_team:
-            # Soft preference - try to get team insights but fall back to any
-            team_insights = [i for i in unserved if prefer_team.upper() in (
-                (i.get('player_team') or '').upper(),
-                ' '.join(i.get('teams_mentioned') or [])
-            )]
-            if team_insights:
-                unserved = team_insights
-        
-        if not unserved:
-            return None
-        
-        insight = random.choice(unserved)
-        self._served_in_game.add(insight['id'])
-        return self._format_insight(insight)
-    
+
+            # If teams_mentioned exists, check it's primarily about valid teams
+            if teams_mentioned:
+                teams_in_valid = [t for t in teams_mentioned if t in valid_teams_upper]
+                teams_not_valid = [t for t in teams_mentioned if t not in valid_teams_upper]
+
+                # Reject if more non-valid than valid teams
+                if len(teams_not_valid) > len(teams_in_valid):
+                    return False
+
+                # Must have at least one valid team
+                return len(teams_in_valid) > 0
+
+            # Check player_team
+            if player_team and player_team in valid_teams_upper:
+                return True
+
+            # Check player_name is a valid team name
+            if player_name in valid_teams_upper:
+                return True
+            for team in valid_teams_upper:
+                if team in self.TEAM_NAMES and player_name in self.TEAM_NAMES[team]:
+                    return True
+
+            return False
+
+        def is_from_this_game(insight):
+            """Check if insight is from the current game."""
+            if not current_game_id:
+                return False
+            insight_game_id = insight.get('game_id', '')
+            # Match on full ID or partial (first 8 chars)
+            return (insight_game_id == current_game_id or
+                    (insight_game_id and current_game_id and
+                     insight_game_id[:8] == current_game_id[:8]))
+
+        def is_matchup_between_teams(insight):
+            """Check if insight is from a game between the two valid teams."""
+            if not valid_teams_upper or len(valid_teams_upper) < 2:
+                return False
+            teams_mentioned = set(t.upper() for t in (insight.get('teams_mentioned') or []) if t)
+            # Both teams must be mentioned, and no other teams
+            return teams_mentioned == valid_teams_upper
+
+        # TIERED SELECTION
+        # Tier 1: Insights from THIS game
+        tier1 = [i for i in unserved if is_from_this_game(i) and is_primarily_about_game_teams(i)]
+        if tier1:
+            insight = random.choice(tier1)
+            self._served_in_game.add(insight['id'])
+            self._log_insight_served(insight, 'tier1_same_game')
+            logger.info(f"📊 Tier 1 (same game): {insight.get('player_name')}")
+            return self._format_insight(insight)
+
+        # Tier 2: Insights from prior matchups between same two teams
+        tier2 = [i for i in unserved if is_matchup_between_teams(i) and is_primarily_about_game_teams(i)]
+        if tier2:
+            insight = random.choice(tier2)
+            self._served_in_game.add(insight['id'])
+            self._log_insight_served(insight, 'tier2_prior_matchup')
+            logger.info(f"📊 Tier 2 (prior matchup): {insight.get('player_name')}")
+            return self._format_insight(insight)
+
+        # Tier 3: Other insights primarily about game teams
+        tier3 = [i for i in unserved if is_primarily_about_game_teams(i)]
+        if tier3:
+            insight = random.choice(tier3)
+            self._served_in_game.add(insight['id'])
+            self._log_insight_served(insight, 'tier3_team_related')
+            logger.info(f"📊 Tier 3 (team related): {insight.get('player_name')}")
+            return self._format_insight(insight)
+
+        logger.warning(f"No insights found for teams {valid_teams_upper}")
+        return None
+
+    def _log_insight_served(self, insight: Dict, tier: str):
+        """Log which insight was served for which game/teams."""
+        if not hasattr(self, '_insight_log'):
+            self._insight_log = []
+        self._insight_log.append({
+            'insight_id': insight.get('id'),
+            'player_name': insight.get('player_name'),
+            'teams_mentioned': insight.get('teams_mentioned'),
+            'insight_game_id': insight.get('game_id'),
+            'served_for_game': getattr(self, '_current_game_id', None),
+            'served_for_teams': list(getattr(self, '_current_game_teams', [])),
+            'tier': tier,
+            'timestamp': datetime.now().isoformat()
+        })
+
+    def set_current_game_id(self, game_id: str):
+        """Set the current game ID for tiered insight selection."""
+        self._current_game_id = game_id
+        logger.info(f"Set current game ID: {game_id[:8] if game_id else 'None'}...")
+
+    def get_insight_log(self) -> list:
+        """Get the log of served insights."""
+        return getattr(self, '_insight_log', [])
+
     def _format_insight(self, insight: Dict) -> Dict:
         """Format a processed insight for delivery."""
         return {
