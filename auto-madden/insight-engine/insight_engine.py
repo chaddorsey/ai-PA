@@ -3026,10 +3026,14 @@ def receive_event():
                     logger.info(f"📊 Post-snap: {postsnap_data.get('defense', {}).get('coverage', 'N/A')}, {postsnap_data.get('yards', 0)} yards")
                 
                 # Send pre-snap analysis for UPCOMING play (with timing offset)
+                # Only broadcast if we have meaningful personnel/formation data
                 if current_down >= 1 and parsed.get('presnap'):
                     presnap_data = parsed['presnap']
-                    delivery_manager.broadcast_presnap(presnap_data)
-                    presnap_sent = True
+                    off = presnap_data.get('offense', {})
+                    has_presnap_data = off.get('personnel') or off.get('formation')
+                    if has_presnap_data:
+                        delivery_manager.broadcast_presnap(presnap_data)
+                        presnap_sent = True
                     
             except Exception as e:
                 logger.warning(f"Error parsing NFL Pro play data: {e}")
@@ -3158,7 +3162,8 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
     elif is_special_teams:
         coverage_display = "Special Teams"
     elif is_pass_play:
-        coverage_display = "Analyzing..."  # NFL Pro adds coverage data with delay
+        # Use man/zone info if available, otherwise leave empty (don't show placeholder)
+        coverage_display = man_zone if man_zone else ""
     else:
         coverage_display = ""
 
@@ -3271,6 +3276,14 @@ def _build_espn_postsnap(description: str, state: Dict[str, Any], change: Dict[s
         'first_down': f"{yards} yards - First down!",
     }.get(result, f"{yards} yards")
 
+    # Extract formation from ESPN description like "(Shotgun)" or "(No Huddle, Shotgun)"
+    formation = ''
+    formation_match = re.search(r'\(([^)]+)\)', description)
+    if formation_match:
+        formation_text = formation_match.group(1)
+        if any(f in formation_text.upper() for f in ['SHOTGUN', 'PISTOL', 'SINGLEBACK', 'I-FORM', 'EMPTY']):
+            formation = formation_text
+
     return {
         'playType': play_type,
         'result': result,
@@ -3282,13 +3295,13 @@ def _build_espn_postsnap(description: str, state: Dict[str, Any], change: Dict[s
         'defending': defending,
         'offense': {
             'personnel': '',  # Not available from ESPN
-            'formation': '',  # Not available from ESPN
+            'formation': formation,  # Extracted from description
             'route': '',
             'timeToThrow': 0,
         },
         'defense': {
             'personnel': '',  # Not available from ESPN
-            'coverage': '',
+            'coverage': result_text if play_type == 'run' else '',  # Show result for runs
             'rushers': 0,
         },
         'description': description[:100],
