@@ -671,6 +671,48 @@
             line-height: 1.5;
             margin-top: 8px;
         }
+
+        /* NFL Pro Connection Button */
+        .nfl-pro-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .nfl-pro-btn:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .nfl-pro-btn.connected {
+            border-color: var(--success);
+            color: var(--success);
+        }
+        .nfl-pro-btn.expired {
+            border-color: var(--warning);
+            color: var(--warning);
+        }
+        .nfl-pro-btn .nfl-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+        .nfl-pro-btn.connected .nfl-status-dot {
+            background: var(--success);
+            box-shadow: 0 0 6px var(--success);
+        }
+        .nfl-pro-btn.expired .nfl-status-dot {
+            background: var(--warning);
+            animation: pulse 1s infinite;
+        }
     </style>
 </head>
 <body>
@@ -782,6 +824,10 @@
             <div class="status-indicator">
                 <span id="ws-status" class="status-dot disconnected" title="Connection status"></span>
             </div>
+            <button class="nfl-pro-btn" id="nfl-pro-btn" onclick="connectNFLPro()" title="Connect NFL Pro for insights">
+                <span class="nfl-status-dot"></span>
+                <span id="nfl-pro-label">NFL Pro</span>
+            </button>
             <button class="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
         </div>
     </div>
@@ -914,9 +960,10 @@
         
         // Personnel code from string like "1 RB, 1 TE, 3 WR" -> "11"
         function getPersonnelCode(personnel) {
-            if (!personnel) return '??';
+            if (!personnel) return '--';
             const rbMatch = personnel.match(/(\d+)\s*RB/i);
             const teMatch = personnel.match(/(\d+)\s*TE/i);
+            if (!rbMatch && !teMatch) return '--';
             const rb = rbMatch ? rbMatch[1] : '1';
             const te = teMatch ? teMatch[1] : '1';
             return rb + te;
@@ -1481,22 +1528,223 @@
             pollState();
         }
         
+        // === NFL Pro Session Management ===
+        let nflProWindow = null;
+        let nflProSessionExpiry = null;
+        const NFL_PRO_URL = 'https://pro.nfl.com';
+        const NFL_SESSION_CHECK_INTERVAL = 30000;  // 30 seconds
+        const NFL_SESSION_REFRESH_INTERVAL = 1800000;  // 30 minutes
+
+        function connectNFLPro() {
+            // Open NFL Pro in a popup window
+            const width = 1000;
+            const height = 700;
+            const left = (window.screen.width - width) / 2;
+            const top = (window.screen.height - height) / 2;
+
+            nflProWindow = window.open(
+                NFL_PRO_URL,
+                'nfl_pro_login',
+                `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=yes,status=yes`
+            );
+
+            if (!nflProWindow) {
+                alert('Please allow popups to connect to NFL Pro');
+                return;
+            }
+
+            updateNFLProStatus('connecting');
+
+            // Start checking for login completion
+            const checkInterval = setInterval(() => {
+                try {
+                    if (nflProWindow.closed) {
+                        clearInterval(checkInterval);
+                        console.log('NFL Pro window closed');
+                        return;
+                    }
+
+                    // Check if we're on the main NFL Pro page (logged in)
+                    const currentUrl = nflProWindow.location.href;
+                    if (currentUrl.includes('pro.nfl.com') && !currentUrl.includes('sign-in')) {
+                        // User appears to be logged in
+                        console.log('NFL Pro login detected, harvesting session...');
+                        harvestNFLProSession();
+                        clearInterval(checkInterval);
+                    }
+                } catch (e) {
+                    // Cross-origin - can't access location yet, keep waiting
+                }
+            }, 2000);
+
+            // Give up after 5 minutes
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                if (nflProWindow && !nflProWindow.closed) {
+                    console.log('NFL Pro login timeout');
+                }
+            }, 300000);
+        }
+
+        async function harvestNFLProSession() {
+            try {
+                // Execute script in the popup to get session data
+                const sessionData = await extractSessionFromPopup();
+
+                if (sessionData && (sessionData.cookies.length > 0 || sessionData.accessToken)) {
+                    // Send to backend
+                    const resp = await fetch(`${INSIGHT_ENGINE_URL}/api/nfl-pro/session`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(sessionData)
+                    });
+
+                    const result = await resp.json();
+                    if (result.status === 'ok') {
+                        console.log('NFL Pro session saved successfully');
+                        updateNFLProStatus('connected');
+                        nflProSessionExpiry = Date.now() + 3600000; // 1 hour
+
+                        // Close the popup
+                        if (nflProWindow && !nflProWindow.closed) {
+                            nflProWindow.close();
+                        }
+                    } else {
+                        console.error('Failed to save NFL Pro session:', result);
+                        updateNFLProStatus('expired');
+                    }
+                } else {
+                    console.warn('No session data extracted');
+                    updateNFLProStatus('expired');
+                }
+            } catch (e) {
+                console.error('Error harvesting NFL Pro session:', e);
+                updateNFLProStatus('expired');
+            }
+        }
+
+        async function extractSessionFromPopup() {
+            if (!nflProWindow || nflProWindow.closed) {
+                return null;
+            }
+
+            try {
+                // Try to inject script to extract localStorage
+                // This only works if same-origin (which it won't be for NFL Pro)
+                // For cross-origin, we need user to manually trigger
+                const doc = nflProWindow.document;
+
+                // Get cookies from document.cookie
+                const cookies = doc.cookie.split(';').map(c => {
+                    const [name, value] = c.trim().split('=');
+                    return { name, value, domain: '.nfl.com' };
+                });
+
+                // Try to get localStorage
+                let accessToken = null;
+                try {
+                    const tokenKey = Object.keys(nflProWindow.localStorage).find(k =>
+                        k.toLowerCase().includes('accesstoken') || k.toLowerCase().includes('auth')
+                    );
+                    if (tokenKey) {
+                        const tokenData = JSON.parse(nflProWindow.localStorage.getItem(tokenKey));
+                        accessToken = tokenData.secret || tokenData.access_token || tokenData.token;
+                    }
+                } catch (e) {
+                    console.warn('Could not access localStorage:', e);
+                }
+
+                return {
+                    cookies,
+                    accessToken,
+                    timestamp: Date.now()
+                };
+            } catch (e) {
+                // Cross-origin - need alternative approach
+                console.log('Cross-origin access blocked, using fallback...');
+                return await fallbackSessionCapture();
+            }
+        }
+
+        async function fallbackSessionCapture() {
+            // For cross-origin, prompt user to copy/paste or use browser extension
+            // For now, just check if the backend already has a valid session
+            try {
+                const resp = await fetch(`${INSIGHT_ENGINE_URL}/api/nfl-pro/status`);
+                const data = await resp.json();
+
+                if (data.authenticated) {
+                    return { cookies: [], accessToken: null, fromBackend: true };
+                }
+            } catch (e) {
+                console.warn('Could not check backend session status');
+            }
+
+            // Alert user to use manual refresh
+            alert('Cross-origin restrictions prevent automatic session capture.\n\nPlease ensure you are logged into NFL Pro, then the system will use your existing browser session.');
+
+            return null;
+        }
+
+        function updateNFLProStatus(status) {
+            const btn = document.getElementById('nfl-pro-btn');
+            const label = document.getElementById('nfl-pro-label');
+
+            btn.classList.remove('connected', 'expired');
+
+            switch(status) {
+                case 'connected':
+                    btn.classList.add('connected');
+                    label.textContent = 'NFL Pro ✓';
+                    break;
+                case 'expired':
+                    btn.classList.add('expired');
+                    label.textContent = 'Reconnect';
+                    break;
+                case 'connecting':
+                    label.textContent = 'Connecting...';
+                    break;
+                default:
+                    label.textContent = 'NFL Pro';
+            }
+        }
+
+        async function checkNFLProSession() {
+            try {
+                const resp = await fetch(`${INSIGHT_ENGINE_URL}/api/nfl-pro/status`);
+                const data = await resp.json();
+
+                if (data.authenticated) {
+                    updateNFLProStatus('connected');
+                    nflProSessionExpiry = data.expiry ? new Date(data.expiry).getTime() : Date.now() + 3600000;
+                } else {
+                    updateNFLProStatus('expired');
+                }
+            } catch (e) {
+                console.warn('Could not check NFL Pro status:', e);
+            }
+        }
+
         // === Initialization ===
         async function init() {
             loadPreferences();
             updateDelayDisplay();
-            
+
             await refreshGames();
-            
+
             setInterval(pollState, 3000);
             setInterval(refreshGames, 60000);
             setInterval(displayDelayedInsights, 500);
             setInterval(displayDelayedAnalysis, 500);
-            
+
+            // Check NFL Pro session status
+            await checkNFLProSession();
+            setInterval(checkNFLProSession, NFL_SESSION_CHECK_INTERVAL);
+
             connectWS();
             pollState();
         }
-        
+
         init();
     </script>
 </body>

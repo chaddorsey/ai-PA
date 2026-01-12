@@ -14,7 +14,8 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 
 import yaml
@@ -4188,13 +4189,13 @@ def process_insights():
 def insights_status():
     """Check status of processed insights for a week."""
     week = request.args.get('week')
-    
+
     if not week:
         return jsonify({'status': 'error', 'message': 'week required'}), 400
-    
+
     import os
     processed_file = f"../data/processed_insights/week_{week}_processed.json"
-    
+
     if os.path.exists(processed_file):
         try:
             import json
@@ -4207,12 +4208,174 @@ def insights_status():
             })
         except:
             pass
-    
+
     return jsonify({
         'status': 'ok',
         'processed': False,
         'count': 0
     })
+
+
+# NFL Pro Session Management
+NFL_PRO_STATE_FILE = Path(os.environ.get('CREDENTIALS_PATH', '/Volumes/main-drive/ai-PA/auto-madden/credentials')) / 'browser_states' / 'nfl_pro_state.json'
+NFL_SESSION_EXPIRY_HOURS = 1  # NFL Pro sessions typically expire in ~1 hour
+
+
+@app.route('/api/nfl-pro/status', methods=['GET'])
+def nfl_pro_status():
+    """Check if we have a valid NFL Pro session."""
+    response = jsonify(_check_nfl_pro_session())
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
+def _check_nfl_pro_session() -> dict:
+    """Check if NFL Pro session exists and is valid."""
+    if not NFL_PRO_STATE_FILE.exists():
+        return {
+            'authenticated': False,
+            'message': 'No session file found'
+        }
+
+    try:
+        with open(NFL_PRO_STATE_FILE) as f:
+            state = json.load(f)
+
+        # Check if we have cookies
+        cookies = state.get('cookies', [])
+        if not cookies:
+            return {
+                'authenticated': False,
+                'message': 'No cookies in session'
+            }
+
+        # Check session timestamp
+        session_time = state.get('timestamp')
+        if session_time:
+            session_dt = datetime.fromisoformat(session_time) if isinstance(session_time, str) else datetime.fromtimestamp(session_time / 1000)
+            expiry_dt = session_dt + timedelta(hours=NFL_SESSION_EXPIRY_HOURS)
+
+            if datetime.now() > expiry_dt:
+                return {
+                    'authenticated': False,
+                    'expired': True,
+                    'message': 'Session expired',
+                    'session_age_hours': (datetime.now() - session_dt).total_seconds() / 3600
+                }
+
+            return {
+                'authenticated': True,
+                'expiry': expiry_dt.isoformat(),
+                'session_age_minutes': (datetime.now() - session_dt).total_seconds() / 60
+            }
+
+        # No timestamp, assume valid but warn
+        return {
+            'authenticated': True,
+            'message': 'Session exists but no timestamp',
+            'expiry': None
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking NFL Pro session: {e}")
+        return {
+            'authenticated': False,
+            'message': f'Error: {str(e)}'
+        }
+
+
+@app.route('/api/nfl-pro/session', methods=['POST', 'OPTIONS'])
+def nfl_pro_session():
+    """Receive and save NFL Pro session from companion UI."""
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        return response
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+
+        cookies = data.get('cookies', [])
+        access_token = data.get('accessToken')
+        timestamp = data.get('timestamp', int(datetime.now().timestamp() * 1000))
+
+        if not cookies and not access_token:
+            return jsonify({'status': 'error', 'message': 'No cookies or access token provided'}), 400
+
+        # Build state file in Playwright format
+        state = {
+            'cookies': [],
+            'origins': []
+        }
+
+        # Convert cookies to Playwright format
+        for cookie in cookies:
+            if cookie.get('name') and cookie.get('value'):
+                state['cookies'].append({
+                    'name': cookie['name'],
+                    'value': cookie['value'],
+                    'domain': cookie.get('domain', '.nfl.com'),
+                    'path': cookie.get('path', '/'),
+                    'expires': cookie.get('expires', -1),
+                    'httpOnly': cookie.get('httpOnly', False),
+                    'secure': cookie.get('secure', True),
+                    'sameSite': cookie.get('sameSite', 'None')
+                })
+
+        # Store access token in localStorage format
+        if access_token:
+            state['origins'] = [{
+                'origin': 'https://pro.nfl.com',
+                'localStorage': [{
+                    'name': 'oidc.user:https://id.nfl.com:nfl-fantasy-web',
+                    'value': json.dumps({'secret': access_token})
+                }]
+            }]
+
+        # Add timestamp
+        state['timestamp'] = datetime.fromtimestamp(timestamp / 1000).isoformat() if timestamp > 1e12 else datetime.now().isoformat()
+
+        # Ensure directory exists
+        NFL_PRO_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save state file
+        with open(NFL_PRO_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+
+        logger.info(f"Saved NFL Pro session with {len(state['cookies'])} cookies")
+
+        response = jsonify({
+            'status': 'ok',
+            'message': f"Saved {len(state['cookies'])} cookies",
+            'expiry': (datetime.now() + timedelta(hours=NFL_SESSION_EXPIRY_HOURS)).isoformat()
+        })
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response
+
+    except Exception as e:
+        logger.error(f"Error saving NFL Pro session: {e}")
+        response = jsonify({'status': 'error', 'message': str(e)})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        return response, 500
+
+
+@app.route('/api/nfl-pro/refresh', methods=['POST'])
+def nfl_pro_refresh():
+    """Trigger a session refresh for NFL Pro."""
+    # This could trigger a background task to refresh the session
+    # For now, just return the current status
+    status = _check_nfl_pro_session()
+    response = jsonify({
+        'status': 'ok' if status.get('authenticated') else 'needs_login',
+        **status
+    })
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
 
 
 if __name__ == '__main__':
