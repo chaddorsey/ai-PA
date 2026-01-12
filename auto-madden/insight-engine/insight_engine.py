@@ -4218,15 +4218,67 @@ def insights_status():
 
 # NFL Pro Session Management
 NFL_PRO_STATE_FILE = Path(os.environ.get('CREDENTIALS_PATH', '/Volumes/main-drive/ai-PA/auto-madden/credentials')) / 'browser_states' / 'nfl_pro_state.json'
-NFL_SESSION_EXPIRY_HOURS = 1  # NFL Pro sessions typically expire in ~1 hour
+NFL_TOKEN_REFRESH_URL = "https://api.nfl.com/identity/v3/token/refresh"
+NFL_TOKEN_REFRESH_BUFFER_SECONDS = 300  # Refresh 5 minutes before expiry
 
 
 @app.route('/api/nfl-pro/status', methods=['GET'])
 def nfl_pro_status():
-    """Check if we have a valid NFL Pro session."""
-    response = jsonify(_check_nfl_pro_session())
+    """Check if we have a valid NFL Pro session, auto-refreshing if needed."""
+    status = _check_nfl_pro_session()
+
+    # If expired or about to expire, try auto-refresh
+    if not status.get('authenticated') or status.get('needs_refresh'):
+        refresh_result = _refresh_nfl_pro_token()
+        if refresh_result.get('success'):
+            status = _check_nfl_pro_session()
+            status['refreshed'] = True
+
+    response = jsonify(status)
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+
+def _get_nfl_pro_token_info() -> dict:
+    """Extract token info from stored session."""
+    if not NFL_PRO_STATE_FILE.exists():
+        return {}
+
+    try:
+        with open(NFL_PRO_STATE_FILE) as f:
+            state = json.load(f)
+
+        token_info = {}
+
+        for origin in state.get('origins', []):
+            for item in origin.get('localStorage', []):
+                name = item.get('name', '')
+
+                if name == 'nfl.refreshableToken.v3':
+                    val = json.loads(item.get('value', '{}'))
+                    raw = val.get('rawData', {})
+                    token_info['accessToken'] = raw.get('accessToken')
+                    token_info['refreshToken'] = raw.get('refreshToken')
+                    token_info['exp'] = raw.get('exp')
+                    token_info['clientId'] = raw.get('clientId')
+                    token_info['clientKey'] = raw.get('clientKey')
+                    token_info['deviceId'] = raw.get('deviceId')
+
+                if name == 'nfl.refreshableToken.args.v3':
+                    val = json.loads(item.get('value', '{}'))
+                    token_info['clientSecret'] = val.get('clientSecret')
+                    # These may not be in the v3 token
+                    if not token_info.get('clientId'):
+                        token_info['clientId'] = val.get('clientId')
+                    if not token_info.get('clientKey'):
+                        token_info['clientKey'] = val.get('clientKey')
+                    if not token_info.get('deviceId'):
+                        token_info['deviceId'] = val.get('deviceId')
+
+        return token_info
+    except Exception as e:
+        logger.error(f"Error reading NFL Pro token info: {e}")
+        return {}
 
 
 def _check_nfl_pro_session() -> dict:
@@ -4238,42 +4290,51 @@ def _check_nfl_pro_session() -> dict:
         }
 
     try:
-        with open(NFL_PRO_STATE_FILE) as f:
-            state = json.load(f)
+        token_info = _get_nfl_pro_token_info()
 
-        # Check if we have cookies
-        cookies = state.get('cookies', [])
-        if not cookies:
+        if not token_info.get('accessToken'):
             return {
                 'authenticated': False,
-                'message': 'No cookies in session'
+                'message': 'No access token found'
             }
 
-        # Check session timestamp
-        session_time = state.get('timestamp')
-        if session_time:
-            session_dt = datetime.fromisoformat(session_time) if isinstance(session_time, str) else datetime.fromtimestamp(session_time / 1000)
-            expiry_dt = session_dt + timedelta(hours=NFL_SESSION_EXPIRY_HOURS)
+        # Check token expiry from the actual token
+        exp = token_info.get('exp')
+        if exp:
+            expiry_dt = datetime.fromtimestamp(exp)
+            now = datetime.now()
 
-            if datetime.now() > expiry_dt:
+            if now > expiry_dt:
                 return {
                     'authenticated': False,
                     'expired': True,
-                    'message': 'Session expired',
-                    'session_age_hours': (datetime.now() - session_dt).total_seconds() / 3600
+                    'needs_refresh': True,
+                    'message': 'Token expired',
+                    'expired_ago_minutes': (now - expiry_dt).total_seconds() / 60
+                }
+
+            # Check if we need to refresh soon
+            refresh_at = expiry_dt - timedelta(seconds=NFL_TOKEN_REFRESH_BUFFER_SECONDS)
+            if now > refresh_at:
+                return {
+                    'authenticated': True,
+                    'needs_refresh': True,
+                    'expiry': expiry_dt.isoformat(),
+                    'expires_in_minutes': (expiry_dt - now).total_seconds() / 60
                 }
 
             return {
                 'authenticated': True,
                 'expiry': expiry_dt.isoformat(),
-                'session_age_minutes': (datetime.now() - session_dt).total_seconds() / 60
+                'expires_in_minutes': (expiry_dt - now).total_seconds() / 60,
+                'has_refresh_token': bool(token_info.get('refreshToken'))
             }
 
-        # No timestamp, assume valid but warn
+        # No expiry info, assume valid
         return {
             'authenticated': True,
-            'message': 'Session exists but no timestamp',
-            'expiry': None
+            'message': 'Token exists but no expiry info',
+            'has_refresh_token': bool(token_info.get('refreshToken'))
         }
 
     except Exception as e:
@@ -4282,6 +4343,105 @@ def _check_nfl_pro_session() -> dict:
             'authenticated': False,
             'message': f'Error: {str(e)}'
         }
+
+
+def _refresh_nfl_pro_token() -> dict:
+    """Refresh the NFL Pro access token using the refresh token."""
+    try:
+        token_info = _get_nfl_pro_token_info()
+
+        refresh_token = token_info.get('refreshToken')
+        client_id = token_info.get('clientId')
+        client_key = token_info.get('clientKey')
+        client_secret = token_info.get('clientSecret')
+        device_id = token_info.get('deviceId')
+
+        if not all([refresh_token, client_id, client_key, client_secret, device_id]):
+            missing = [k for k in ['refreshToken', 'clientId', 'clientKey', 'clientSecret', 'deviceId']
+                      if not token_info.get(k)]
+            return {
+                'success': False,
+                'message': f'Missing required credentials: {missing}'
+            }
+
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+            'X-Domain-Id': '100'
+        }
+        payload = {
+            'refreshToken': refresh_token,
+            'clientId': client_id,
+            'clientKey': client_key,
+            'clientSecret': client_secret,
+            'deviceId': device_id
+        }
+
+        resp = requests.post(NFL_TOKEN_REFRESH_URL, json=payload, headers=headers, timeout=15)
+
+        if resp.status_code == 200:
+            new_token_data = resp.json()
+
+            # Update the stored session file
+            _update_nfl_pro_session(new_token_data)
+
+            logger.info("NFL Pro token refreshed successfully")
+            return {
+                'success': True,
+                'message': 'Token refreshed',
+                'new_expiry': new_token_data.get('exp')
+            }
+        else:
+            logger.error(f"NFL Pro token refresh failed: {resp.status_code} - {resp.text[:200]}")
+            return {
+                'success': False,
+                'message': f'Refresh failed: {resp.status_code}'
+            }
+
+    except Exception as e:
+        logger.error(f"Error refreshing NFL Pro token: {e}")
+        return {
+            'success': False,
+            'message': str(e)
+        }
+
+
+def _update_nfl_pro_session(new_token_data: dict):
+    """Update the stored NFL Pro session with new token data."""
+    try:
+        with open(NFL_PRO_STATE_FILE) as f:
+            state = json.load(f)
+
+        # Update the token in localStorage
+        for origin in state.get('origins', []):
+            for item in origin.get('localStorage', []):
+                if item.get('name') == 'nfl.refreshableToken.v3':
+                    val = json.loads(item.get('value', '{}'))
+                    raw = val.get('rawData', {})
+
+                    # Update with new token data
+                    raw['accessToken'] = new_token_data.get('accessToken', raw.get('accessToken'))
+                    raw['exp'] = new_token_data.get('exp', raw.get('exp'))
+                    raw['expiresIn'] = new_token_data.get('expiresIn', raw.get('expiresIn'))
+                    if new_token_data.get('refreshToken'):
+                        raw['refreshToken'] = new_token_data['refreshToken']
+
+                    val['rawData'] = raw
+                    item['value'] = json.dumps(val)
+                    break
+
+        # Update timestamp
+        state['timestamp'] = datetime.now().isoformat()
+        state['last_refresh'] = datetime.now().isoformat()
+
+        # Save updated state
+        with open(NFL_PRO_STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+
+        logger.info("Updated NFL Pro session file with refreshed token")
+
+    except Exception as e:
+        logger.error(f"Error updating NFL Pro session file: {e}")
 
 
 @app.route('/api/nfl-pro/session', methods=['POST', 'OPTIONS'])
@@ -4364,16 +4524,32 @@ def nfl_pro_session():
         return response, 500
 
 
-@app.route('/api/nfl-pro/refresh', methods=['POST'])
+@app.route('/api/nfl-pro/refresh', methods=['POST', 'OPTIONS'])
 def nfl_pro_refresh():
-    """Trigger a session refresh for NFL Pro."""
-    # This could trigger a background task to refresh the session
-    # For now, just return the current status
-    status = _check_nfl_pro_session()
-    response = jsonify({
-        'status': 'ok' if status.get('authenticated') else 'needs_login',
-        **status
-    })
+    """Explicitly trigger a token refresh for NFL Pro."""
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        return response
+
+    # Force a token refresh
+    refresh_result = _refresh_nfl_pro_token()
+
+    if refresh_result.get('success'):
+        status = _check_nfl_pro_session()
+        response = jsonify({
+            'status': 'ok',
+            'message': 'Token refreshed successfully',
+            **status
+        })
+    else:
+        response = jsonify({
+            'status': 'error',
+            'message': refresh_result.get('message', 'Refresh failed')
+        })
+
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
 

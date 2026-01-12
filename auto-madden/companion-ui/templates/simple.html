@@ -1696,16 +1696,24 @@
                 case 'connected':
                     btn.classList.add('connected');
                     label.textContent = 'NFL Pro ✓';
+                    btn.title = 'NFL Pro connected - tokens auto-refresh';
                     break;
                 case 'expired':
                     btn.classList.add('expired');
                     label.textContent = 'Reconnect';
+                    btn.title = 'Click to reconnect to NFL Pro';
+                    break;
+                case 'disconnected':
+                    label.textContent = 'Connect NFL Pro';
+                    btn.title = 'Click to connect to NFL Pro for insights';
                     break;
                 case 'connecting':
                     label.textContent = 'Connecting...';
+                    btn.title = 'Connecting to NFL Pro...';
                     break;
                 default:
                     label.textContent = 'NFL Pro';
+                    btn.title = 'Connect to NFL Pro for insights';
             }
         }
 
@@ -1715,9 +1723,20 @@
                 const data = await resp.json();
 
                 if (data.authenticated) {
+                    // Token is valid (auto-refresh happens server-side if needed)
                     updateNFLProStatus('connected');
-                    nflProSessionExpiry = data.expiry ? new Date(data.expiry).getTime() : Date.now() + 3600000;
+                    if (data.refreshed) {
+                        console.log('NFL Pro token was auto-refreshed');
+                    }
+                    if (data.expiry) {
+                        nflProSessionExpiry = new Date(data.expiry).getTime();
+                        console.log(`NFL Pro token expires in ${data.expires_in_minutes?.toFixed(1)} minutes`);
+                    }
+                } else if (data.message?.includes('No session') || data.message?.includes('No access')) {
+                    // No session - need initial login
+                    updateNFLProStatus('disconnected');
                 } else {
+                    // Session exists but refresh failed - need re-login
                     updateNFLProStatus('expired');
                 }
             } catch (e) {
