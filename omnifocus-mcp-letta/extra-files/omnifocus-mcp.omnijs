@@ -698,8 +698,8 @@
       effectivePlannedDate: plannedDates.effectivePlannedDate,
       duration:  t.estimatedMinutes,
       projectId: t.containingProject ? bareId(resolveValue(t.containingProject, 'id')) : null,
-      folderId:  (t.containingProject && resolveValue(t.containingProject, 'folder'))
-                ? bareId(resolveValue(resolveValue(t.containingProject, 'folder'), 'id'))
+      folderId:  (t.containingProject && t.containingProject.parentFolder)
+                ? bareId(t.containingProject.parentFolder.id)
                 : null,
       contexts:  t.tags.map(x => bareId(x.id)),
       completed: t.completed,

@@ -46,7 +46,7 @@ const quickToolSchemas = {
         default: "task",
       },
     },
-    required: ["id"],
+    required: ["id", "scope"],
     additionalProperties: false,
   },
   listUncompletedTasks: {
@@ -56,6 +56,15 @@ const quickToolSchemas = {
         type: "string",
         description: "Filter by project UUID",
         nullable: true,
+      },
+      folderId: {
+        type: "string",
+        description: "Filter by folder UUID - returns tasks from all projects in that folder",
+        nullable: true,
+      },
+      includeSubfolders: {
+        type: "boolean",
+        description: "When using folderId, also include tasks from subfolders (default false)",
       },
       onlyFlagged: {
         type: "boolean",
@@ -67,7 +76,7 @@ const quickToolSchemas = {
           "Return only OmniFocus available tasks (not blocked/deferred). Default false; requires availability data from OmniFocus.",
       },
     },
-    required: [],
+    required: ["projectId", "folderId", "includeSubfolders", "onlyFlagged", "onlyAvailable"],
     additionalProperties: false,
   },
   listProjects: {
@@ -76,6 +85,14 @@ const quickToolSchemas = {
       folderId: {
         type: "string",
         description: "Filter to a specific folder UUID (null or omit for all).",
+      },
+      includeSubfolders: {
+        type: "boolean",
+        description: "When using folderId, also include projects from subfolders (default false).",
+      },
+      includeTasks: {
+        type: "boolean",
+        description: "Include task summaries for each project (default false, or true when detailLevel is full).",
       },
       listProjectNames: {
         type: "boolean",
@@ -103,7 +120,7 @@ const quickToolSchemas = {
         description: "Include task count summary (default true).",
       },
     },
-    required: [],
+    required: ["folderId", "includeSubfolders", "includeTasks", "listProjectNames", "listByFolder", "completion", "detailLevel", "includeCounts"],
     additionalProperties: false,
   },
   moveTaskToProject: {
@@ -255,57 +272,92 @@ const tools = [
   {
     name: "taskOperations",
     description:
-      "Manage tasks – list, get, create, update, complete, delete, move",
+      "Manage tasks – list, get, create, update, complete, delete, move. Use taskId for get/update/complete/delete/move. Use name+projectId for create.",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: [
-            "list",
-            "get",
-            "create",
-            "update",
-            "complete",
-            "delete",
-            "move",
-          ],
-          description: "Task operation to perform",
+          enum: ["list", "get", "create", "update", "complete", "delete", "move"],
+          description: "Task operation: list (use filters), get/update/complete/delete (use taskId), create (use name), move (use taskId+targetProjectId)",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters specific to the action",
+        // Common identifier
+        taskId: {
+          type: "string",
+          description: "Task UUID - required for get, update, complete, delete, move actions",
         },
+        // Create/update fields
+        name: {
+          type: "string",
+          description: "Task name - required for create, optional for update",
+        },
+        note: {
+          type: "string",
+          description: "Task notes/description",
+        },
+        projectId: {
+          type: "string",
+          description: "Project UUID to assign task to (for create or update)",
+        },
+        flagged: {
+          type: "boolean",
+          description: "Whether task is flagged",
+        },
+        dueDate: {
+          type: "string",
+          description: "Due date in ISO format (e.g., 2024-12-31T17:00:00Z)",
+        },
+        deferDate: {
+          type: "string",
+          description: "Defer/start date in ISO format",
+        },
+        estimatedMinutes: {
+          type: "number",
+          description: "Estimated duration in minutes",
+        },
+        tagIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of tag UUIDs to assign",
+        },
+        completed: {
+          type: "boolean",
+          description: "For update: set completion status (true=complete, false=uncomplete)",
+        },
+        dropped: {
+          type: "boolean",
+          description: "For update: set dropped status",
+        },
+        // Move-specific fields
+        targetProjectId: {
+          type: "string",
+          description: "For move: destination project UUID (null for inbox)",
+        },
+        parentTaskId: {
+          type: "string",
+          description: "For move: make this a subtask of specified parent task",
+        },
+        position: {
+          type: "number",
+          description: "For move: position within target (0-indexed)",
+        },
+        // List filters
         filters: {
           type: "object",
           properties: {
-            projectId: {
-              type: "string",
-              description: "Filter by project UUID",
-            },
+            projectId: { type: "string", description: "Filter by project UUID" },
+            folderId: { type: "string", description: "Filter by folder UUID" },
+            includeSubfolders: { type: "boolean", description: "Include tasks from subfolders" },
             tagId: { type: "string", description: "Filter by tag UUID" },
-            includeCompleted: {
-              type: "boolean",
-              description: "Include completed tasks",
-            },
-            includeDropped: {
-              type: "boolean",
-              description: "Include dropped tasks",
-            },
+            includeCompleted: { type: "boolean", description: "Include completed tasks" },
+            includeDropped: { type: "boolean", description: "Include dropped tasks" },
             active: { type: "boolean", description: "Filter for active tasks" },
-            flagged: {
-              type: "boolean",
-              description: "Filter for flagged tasks",
-            },
-            limit: {
-              type: "number",
-              exclusiveMinimum: 0,
-              description: "Maximum number of results",
-            },
+            flagged: { type: "boolean", description: "Filter for flagged tasks" },
+            limit: { type: "number", description: "Maximum results" },
           },
-          required: [],
-          additionalProperties: true,
-          description: "Optional filters for list operations",
+          required: ["projectId", "folderId", "includeSubfolders", "tagId", "includeCompleted", "includeDropped", "active", "flagged", "limit"],
+          additionalProperties: false,
+          description: "Filters for list action only",
         },
         detailLevel: {
           type: "string",
@@ -320,34 +372,48 @@ const tools = [
           description: freshnessDescription,
         },
       },
-      required: ["action"],
+      required: ["action", "taskId", "name", "note", "projectId", "flagged", "dueDate", "deferDate", "estimatedMinutes", "tagIds", "completed", "dropped", "targetProjectId", "parentTaskId", "position", "filters", "detailLevel", "sortOrder"],
       additionalProperties: false,
     },
   },
   {
     name: "taskQuery",
     description:
-      "Query/search tasks with advanced filtering and freshness options",
+      "Query/search tasks with advanced filtering. Use query for text search, scope to limit search area.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search query (optional)" },
+        query: { type: "string", description: "Text to search for in task names/notes" },
         scope: {
           type: "string",
           enum: ["all", "project", "tag", "perspective"],
-          description: "Optional scope for search",
+          description: "Limit search to: all, project, tag, or perspective",
+        },
+        scopeId: {
+          type: "string",
+          description: "UUID of project/tag/perspective when scope is not 'all'",
         },
         searchScope: {
           type: "string",
           enum: ["nameOnly", "nameAndNotes"],
-          description: "Where to search (names only vs names + notes)",
+          description: "Search in names only or include notes",
+          default: "nameOnly",
         },
-        filters: {
-          type: "object",
-          properties: {},
-          required: [],
-          additionalProperties: false,
-          description: "Advanced filter object (dates, duration, status, tags)",
+        dueBefore: {
+          type: "string",
+          description: "Filter tasks due before this date (ISO format)",
+        },
+        dueAfter: {
+          type: "string",
+          description: "Filter tasks due after this date (ISO format)",
+        },
+        flagged: {
+          type: "boolean",
+          description: "Filter for flagged tasks only",
+        },
+        available: {
+          type: "boolean",
+          description: "Filter for available (not blocked/deferred) tasks only",
         },
         detailLevel: {
           type: "string",
@@ -362,45 +428,120 @@ const tools = [
           description: freshnessDescription,
         },
       },
-      required: [],
+      required: ["query", "scope", "scopeId", "searchScope", "dueBefore", "dueAfter", "flagged", "available", "detailLevel", "sortOrder"],
       additionalProperties: false,
     },
   },
   {
     name: "taskHierarchy",
     description:
-      "Manage task hierarchy – create subtasks, flatten, move branches, restructure",
+      "Manage task hierarchy – create subtasks, flatten task groups, move branches",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["createSubtask", "flatten", "moveBranch", "restructure"],
-          description: "Hierarchy action",
+          description: "createSubtask: add child task, flatten: convert subtasks to siblings, moveBranch: move task with children",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        taskId: {
+          type: "string",
+          description: "Parent task UUID for createSubtask, or task to flatten/move",
+        },
+        name: {
+          type: "string",
+          description: "For createSubtask: name of new subtask",
+        },
+        targetTaskId: {
+          type: "string",
+          description: "For moveBranch: destination parent task UUID",
+        },
+        targetProjectId: {
+          type: "string",
+          description: "For moveBranch: destination project UUID",
+        },
+        position: {
+          type: "number",
+          description: "Position within target (0-indexed)",
+        },
+        includeChildren: {
+          type: "boolean",
+          description: "For moveBranch: include all descendants (default true)",
+          default: true,
         },
       },
-      required: ["action"],
+      required: ["action", "taskId", "name", "targetTaskId", "targetProjectId", "position", "includeChildren"],
       additionalProperties: false,
     },
   },
   {
     name: "projectOperations",
-    description: "Manage projects – list, get, create, update, move, convert",
+    description: "Manage projects – list, get, create, update, move, convertTask. Use projectId for get/update/move.",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["list", "get", "create", "update", "move", "convertTask"],
-          description: "Project action",
+          description: "list: all projects, get: single project, create: new project, update: modify, move: relocate, convertTask: task→project",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        projectId: {
+          type: "string",
+          description: "Project UUID - required for get, update, move actions",
+        },
+        taskId: {
+          type: "string",
+          description: "For convertTask: task UUID to convert to project",
+        },
+        name: {
+          type: "string",
+          description: "Project name - required for create, optional for update",
+        },
+        note: {
+          type: "string",
+          description: "Project notes",
+        },
+        folderId: {
+          type: "string",
+          description: "Folder UUID - for create/move, or to filter list",
+        },
+        status: {
+          type: "string",
+          enum: ["active", "onHold", "completed", "dropped"],
+          description: "Project status",
+        },
+        sequential: {
+          type: "boolean",
+          description: "True for sequential project (tasks done in order)",
+        },
+        flagged: {
+          type: "boolean",
+          description: "Whether project is flagged",
+        },
+        dueDate: {
+          type: "string",
+          description: "Due date in ISO format",
+        },
+        deferDate: {
+          type: "string",
+          description: "Defer/start date in ISO format",
+        },
+        completedByChildren: {
+          type: "boolean",
+          description: "Auto-complete when all tasks done",
+        },
+        position: {
+          type: "number",
+          description: "Position within folder (for create/move)",
+        },
+        completion: {
+          type: "string",
+          enum: ["all", "active", "completed", "dropped"],
+          description: "For list: filter by completion state",
+        },
+        includeTasks: {
+          type: "boolean",
+          description: "For list/get: include task details",
         },
         detailLevel: {
           type: "string",
@@ -415,7 +556,7 @@ const tools = [
           description: freshnessDescription,
         },
       },
-      required: ["action"],
+      required: ["action", "projectId", "taskId", "name", "note", "folderId", "status", "sequential", "flagged", "dueDate", "deferDate", "completedByChildren", "position", "completion", "includeTasks", "detailLevel", "sortOrder"],
       additionalProperties: false,
     },
   },
@@ -429,111 +570,208 @@ const tools = [
         action: {
           type: "string",
           enum: ["setGroupType", "setCompletionBehavior", "setProperties"],
-          description: "Project setting action",
+          description: "setGroupType: parallel/sequential, setCompletionBehavior: auto-complete rules, setProperties: bulk update",
         },
-        parameters: {
+        projectId: {
+          type: "string",
+          description: "Project UUID - required",
+        },
+        sequential: {
+          type: "boolean",
+          description: "For setGroupType: true=sequential, false=parallel",
+        },
+        completedByChildren: {
+          type: "boolean",
+          description: "For setCompletionBehavior: auto-complete when children done",
+        },
+        properties: {
           type: "object",
-          description: "Parameters for the action",
+          description: "For setProperties: object with property names and values",
+          properties: {},
+          required: [],
+          additionalProperties: true,
         },
       },
-      required: ["action"],
+      required: ["action", "projectId", "sequential", "completedByChildren", "properties"],
       additionalProperties: false,
     },
   },
   {
     name: "folderOperations",
-    description: "Manage folders – list, get, create, delete",
+    description: "Manage folders – list, get, create, delete. Use folderId for get/delete.",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["list", "get", "create", "delete"],
-          description: "Folder action",
+          description: "list: all folders, get: single folder by folderId, create: new folder, delete: remove folder",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        folderId: {
+          type: "string",
+          description: "Folder UUID - required for get, delete",
+        },
+        name: {
+          type: "string",
+          description: "For create: folder name",
+        },
+        parentFolderId: {
+          type: "string",
+          description: "For create/list: parent folder UUID (null for top-level)",
+        },
+        includeEmpty: {
+          type: "boolean",
+          description: "For list: include folders with no projects",
+          default: true,
+        },
+        maxDepth: {
+          type: "number",
+          description: "For list: maximum nesting depth to return",
         },
       },
-      required: ["action"],
+      required: ["action", "folderId", "name", "parentFolderId", "includeEmpty", "maxDepth"],
       additionalProperties: false,
     },
   },
   {
     name: "folderNavigation",
-    description: "Navigate folders – get tree and validate moves",
+    description: "Navigate folders – get tree and validate moves. For getTree, use includeProjects:true to see projects.",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["getTree", "validateMove"],
-          description: "Navigation action",
+          description: "Navigation action: getTree returns folder hierarchy, validateMove checks if a move is valid",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        folderId: {
+          type: "string",
+          description: "Optional folder UUID to start from (omit for entire library tree)",
+        },
+        includeProjects: {
+          type: "boolean",
+          description: "Include projects in tree output (default false, recommended true for full hierarchy view)",
+          default: false,
+        },
+        maxDepth: {
+          type: "number",
+          description: "Maximum depth to traverse (omit for unlimited)",
+        },
+        targetFolderId: {
+          type: "string",
+          description: "For validateMove: the destination folder UUID",
+        },
+        projectId: {
+          type: "string",
+          description: "For validateMove: the project UUID to move",
         },
       },
-      required: ["action"],
+      required: ["action", "folderId", "includeProjects", "maxDepth", "targetFolderId", "projectId"],
       additionalProperties: false,
     },
   },
   {
     name: "inboxOperations",
-    description: "Inbox management – list, process, get context",
+    description: "Inbox management – list inbox items, process items to projects, get context",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["list", "process", "getContext"],
-          description: "Inbox action",
+          description: "list: view inbox, process: move item to project, getContext: get item details",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        itemId: {
+          type: "string",
+          description: "Inbox item UUID - for process, getContext",
+        },
+        targetProjectId: {
+          type: "string",
+          description: "For process: destination project UUID",
+        },
+        includeCompleted: {
+          type: "boolean",
+          description: "For list: include completed inbox items",
+          default: false,
+        },
+        sortBy: {
+          type: "string",
+          enum: ["added", "name", "dueDate"],
+          description: "For list: sort order",
+          default: "added",
+        },
+        limit: {
+          type: "number",
+          description: "For list: maximum items to return",
         },
       },
-      required: ["action"],
+      required: ["action", "itemId", "targetProjectId", "includeCompleted", "sortBy", "limit"],
       additionalProperties: false,
     },
   },
   {
     name: "bulkInboxProcessing",
-    description: "Execute batch inbox operations",
+    description: "Execute batch inbox operations - process multiple items at once",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["executeBulk"],
-          description: "Bulk processing action",
+          description: "executeBulk: process multiple inbox items",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for bulk processing",
+        operations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              itemId: { type: "string", description: "Inbox item UUID" },
+              targetProjectId: { type: "string", description: "Destination project UUID" },
+              action: { type: "string", enum: ["move", "delete", "complete"] },
+            },
+            required: ["itemId", "targetProjectId", "action"],
+            additionalProperties: false,
+          },
+          description: "Array of operations to perform",
+        },
+        validateFirst: {
+          type: "boolean",
+          description: "Validate all operations before executing",
+          default: true,
+        },
+        continueOnError: {
+          type: "boolean",
+          description: "Continue processing if an operation fails",
+          default: false,
         },
       },
-      required: ["action"],
+      required: ["action", "operations", "validateFirst", "continueOnError"],
       additionalProperties: false,
     },
   },
   {
     name: "perspectiveOperations",
-    description: "Manage perspectives – list, get, switch",
+    description: "Manage perspectives – list available, get details, switch active view",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["list", "get", "switch"],
-          description: "Perspective action",
+          description: "list: all perspectives, get: perspective details, switch: change active perspective",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        perspectiveId: {
+          type: "string",
+          description: "Perspective UUID - for get, switch",
+        },
+        perspectiveName: {
+          type: "string",
+          description: "Perspective name - alternative to perspectiveId for switch",
+        },
+        includeBuiltIn: {
+          type: "boolean",
+          description: "For list: include built-in perspectives (Inbox, Projects, etc.)",
+          default: true,
         },
         sortOrder: {
           type: "string",
@@ -548,24 +786,37 @@ const tools = [
           description: detailLevelDescription,
         },
       },
-      required: ["action"],
+      required: ["action", "perspectiveId", "perspectiveName", "includeBuiltIn", "sortOrder", "detailLevel"],
       additionalProperties: false,
     },
   },
   {
     name: "tagOperations",
-    description: "Manage tags – list and query tasks by tag",
+    description: "Manage tags – list all tags, get tag details, query tasks by tag",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["list", "queryTasks"],
-          description: "Tag action",
+          enum: ["list", "get", "create", "update", "delete", "queryTasks"],
+          description: "list: all tags, get: tag details, create/update/delete: manage tags, queryTasks: find tasks with tag",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        tagId: {
+          type: "string",
+          description: "Tag UUID - for get, update, delete, queryTasks",
+        },
+        name: {
+          type: "string",
+          description: "Tag name - for create, update",
+        },
+        parentTagId: {
+          type: "string",
+          description: "Parent tag UUID - for create (nested tags)",
+        },
+        includeNested: {
+          type: "boolean",
+          description: "For list/queryTasks: include nested/child tags",
+          default: false,
         },
         detailLevel: {
           type: "string",
@@ -580,135 +831,198 @@ const tools = [
           description: freshnessDescription,
         },
       },
-      required: ["action"],
+      required: ["action", "tagId", "name", "parentTagId", "includeNested", "detailLevel", "sortOrder"],
       additionalProperties: false,
     },
   },
   {
     name: "validationOperations",
-    description: "Validation helpers – validate transactions or moves",
+    description: "Validation helpers – validate operations before executing",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["validateTransaction", "validateMove"],
-          description: "Validation action",
+          enum: ["validateTransaction", "validateMove", "validateCreate"],
+          description: "validateTransaction: check transaction validity, validateMove: check move validity, validateCreate: check creation params",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        taskId: {
+          type: "string",
+          description: "For validateMove: task to move",
+        },
+        projectId: {
+          type: "string",
+          description: "For validateMove/validateCreate: target or parent project",
+        },
+        targetFolderId: {
+          type: "string",
+          description: "For validateMove: destination folder",
+        },
+        name: {
+          type: "string",
+          description: "For validateCreate: name to validate",
+        },
+        transactionId: {
+          type: "string",
+          description: "For validateTransaction: transaction to validate",
         },
       },
-      required: ["action"],
+      required: ["action", "taskId", "projectId", "targetFolderId", "name", "transactionId"],
       additionalProperties: false,
     },
   },
   {
     name: "transactionOperations",
     description:
-      "Manage transactions – begin, execute, accept, rollback, get history",
+      "Manage undo transactions – begin batch, execute, accept, rollback",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: [
-            "begin",
-            "execute",
-            "accept",
-            "rollback",
-            "rollbackRecent",
-            "getHistory",
-          ],
-          description: "Transaction action",
+          enum: ["begin", "execute", "accept", "rollback", "rollbackRecent", "getHistory"],
+          description: "begin: start batch, execute: run operations, accept: commit, rollback: undo, getHistory: view past transactions",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        transactionId: {
+          type: "string",
+          description: "Transaction UUID - for execute, accept, rollback",
+        },
+        operations: {
+          type: "array",
+          description: "For execute: array of operations to perform in transaction",
+          items: { type: "object", properties: {}, required: [], additionalProperties: true },
+        },
+        count: {
+          type: "number",
+          description: "For rollbackRecent/getHistory: number of transactions",
+          default: 1,
         },
       },
-      required: ["action"],
+      required: ["action", "transactionId", "operations", "count"],
       additionalProperties: false,
     },
   },
   {
     name: "taskGroupOperations",
-    description: "Manage task group types",
+    description: "Manage task group types – set sequential or parallel execution",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["setGroupType"],
-          description: "Task group action",
+          enum: ["getGroupType", "setGroupType"],
+          description: "getGroupType: check current setting, setGroupType: change sequential/parallel",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        taskId: {
+          type: "string",
+          description: "Parent task UUID with subtasks",
+        },
+        sequential: {
+          type: "boolean",
+          description: "For setGroupType: true=sequential (one at a time), false=parallel (all available)",
         },
       },
-      required: ["action"],
+      required: ["action", "taskId", "sequential"],
       additionalProperties: false,
     },
   },
   {
     name: "reviewOperations",
-    description: "Review support – list projects needing review, mark reviewed",
+    description: "Review support – list projects needing review, mark as reviewed",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["list", "markReviewed"],
-          description: "Review action",
+          enum: ["list", "markReviewed", "getNextReview"],
+          description: "list: projects due for review, markReviewed: complete review, getNextReview: next review date",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        projectId: {
+          type: "string",
+          description: "Project UUID - for markReviewed, getNextReview",
+        },
+        includeOnHold: {
+          type: "boolean",
+          description: "For list: include on-hold projects",
+          default: false,
+        },
+        overdue: {
+          type: "boolean",
+          description: "For list: only show overdue reviews",
+          default: false,
         },
       },
-      required: ["action"],
+      required: ["action", "projectId", "includeOnHold", "overdue"],
       additionalProperties: false,
     },
   },
   {
     name: "automationSupport",
-    description: "Automation helpers – suggestions, diagnostics, cleanup",
+    description: "Automation helpers – get suggestions, run diagnostics, cleanup stale items",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
           enum: ["suggest", "diagnose", "cleanup"],
-          description: "Automation support action",
+          description: "suggest: get actionable suggestions, diagnose: check for issues, cleanup: remove stale items",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        scope: {
+          type: "string",
+          enum: ["all", "project", "folder", "inbox"],
+          description: "Limit scope of analysis",
+        },
+        scopeId: {
+          type: "string",
+          description: "Project or folder UUID when scope is not 'all'",
+        },
+        dryRun: {
+          type: "boolean",
+          description: "For cleanup: preview changes without applying",
+          default: true,
+        },
+        maxAge: {
+          type: "number",
+          description: "For cleanup: days since last modification to consider stale",
+          default: 90,
         },
       },
-      required: ["action"],
+      required: ["action", "scope", "scopeId", "dryRun", "maxAge"],
       additionalProperties: false,
     },
   },
   {
     name: "analyticsInsights",
-    description: "Analytics insights – project health, workload, trends",
+    description: "Analytics insights – project health scores, workload analysis, completion trends",
     inputSchema: {
       type: "object",
       properties: {
         action: {
           type: "string",
-          enum: ["projectHealth", "workload", "trends"],
-          description: "Analytics action",
+          enum: ["projectHealth", "workload", "trends", "summary"],
+          description: "projectHealth: stalled/blocked projects, workload: task distribution, trends: completion rates, summary: overview",
         },
-        parameters: {
-          type: "object",
-          description: "Parameters for the action",
+        projectId: {
+          type: "string",
+          description: "For projectHealth: specific project to analyze",
+        },
+        folderId: {
+          type: "string",
+          description: "Limit analysis to projects in folder",
+        },
+        period: {
+          type: "string",
+          enum: ["day", "week", "month", "quarter", "year"],
+          description: "For trends: time period to analyze",
+          default: "week",
+        },
+        includeCompleted: {
+          type: "boolean",
+          description: "Include completed items in analysis",
+          default: false,
         },
       },
-      required: ["action"],
+      required: ["action", "projectId", "folderId", "period", "includeCompleted"],
       additionalProperties: false,
     },
   },
@@ -773,6 +1087,26 @@ function getDetailLevel(value: unknown): DetailLevel {
 function getSortOrder(value: unknown): SortOrder {
   const result = sortOrderEnum.safeParse(value);
   return result.success ? result.data : "default";
+}
+
+/**
+ * Clean up args by removing empty strings, null, undefined values.
+ * Also treats maxDepth: 0 as undefined (meaning unlimited).
+ * This is needed because OpenAI strict mode requires all properties to be sent,
+ * but OmniFocus may fail on empty string values.
+ */
+function cleanArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args)) {
+    // Skip empty strings, null, undefined
+    if (value === "" || value === null || value === undefined) continue;
+    // Skip maxDepth: 0 (treat as unlimited)
+    if (key === "maxDepth" && value === 0) continue;
+    // Skip empty arrays
+    if (Array.isArray(value) && value.length === 0) continue;
+    cleaned[key] = value;
+  }
+  return cleaned;
 }
 
 function normalizeFreshnessValue(value: unknown): number {
@@ -964,6 +1298,16 @@ function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
     "taskCounts",
     "tasks",
     "projects",
+    // Folder hierarchy fields
+    "folder",
+    "subfolders",
+    "parentFolderId",
+    "projectCount",
+    "subfolderCount",
+    "path",
+    "active",
+    "taskCount",
+    "completed",
   ]);
   const FULL_FIELDS = STANDARD_FIELDS.concat(["note", "tasks", "folderPath"]);
 
@@ -1131,7 +1475,20 @@ class OmniFocusSimplifiedMCPServer {
         case "taskOperations": {
           const {
             action,
-            parameters = {},
+            taskId,
+            name,
+            note,
+            projectId,
+            flagged,
+            dueDate,
+            deferDate,
+            estimatedMinutes,
+            tagIds,
+            completed,
+            dropped,
+            targetProjectId,
+            parentTaskId,
+            position,
             filters = {},
             detailLevel: dl,
             sortOrder: so,
@@ -1148,32 +1505,32 @@ class OmniFocusSimplifiedMCPServer {
               break;
             case "get":
               command = "getTask";
-              commandArgs = parameters;
+              commandArgs = { taskId };
               sortOrder = "default";
               break;
             case "create":
               command = "createTask";
-              commandArgs = parameters;
+              commandArgs = { name, projectId, note, flagged, dueDate, deferDate, estimatedMinutes, tagIds };
               sortOrder = "default";
               break;
             case "update":
               command = "updateTask";
-              commandArgs = parameters;
+              commandArgs = { taskId, name, note, flagged, completed, dropped, dueDate, deferDate, estimatedMinutes, projectId, tagIds };
               sortOrder = "default";
               break;
             case "complete":
               command = "completeTask";
-              commandArgs = parameters;
+              commandArgs = { taskId };
               sortOrder = "default";
               break;
             case "delete":
               command = "deleteTask";
-              commandArgs = parameters;
+              commandArgs = { taskId };
               sortOrder = "default";
               break;
             case "move":
               command = "moveTask";
-              commandArgs = parameters;
+              commandArgs = { taskId, targetProjectId, parentTaskId, position };
               sortOrder = "default";
               break;
             default:
@@ -1189,7 +1546,7 @@ class OmniFocusSimplifiedMCPServer {
           return asJsonText(completionResult);
         }
         case "listUncompletedTasks": {
-          const { projectId, onlyFlagged, onlyAvailable } = args;
+          const { projectId, folderId, includeSubfolders, onlyFlagged, onlyAvailable } = args;
           const rawList = normalizeResult<{ result?: any[] } | any[]>(
             await callOmniFocus({ command: "listRemaining", args: {} }),
           );
@@ -1202,9 +1559,29 @@ class OmniFocusSimplifiedMCPServer {
               ? (rawList as any).result
               : [];
 
+          // If filtering by folder, get the list of valid folder IDs
+          let validFolderIds: Set<string> | null = null;
+          if (folderId) {
+            validFolderIds = new Set<string>([folderId as string]);
+            if (includeSubfolders) {
+              // Get subfolder IDs from the folder hierarchy
+              const folderTree = normalizeResult<any>(
+                await callOmniFocus({ command: "getProjectTree", args: { folderId, includeProjects: false } }),
+              );
+              const collectFolderIds = (node: any) => {
+                if (node?.folder?.id) validFolderIds!.add(node.folder.id);
+                if (node?.subfolders) node.subfolders.forEach(collectFolderIds);
+              };
+              collectFolderIds(folderTree);
+            }
+          }
+
           const filtered = tasksArray
             .filter((task: any) => {
               if (projectId && task.projectId !== projectId) {
+                return false;
+              }
+              if (validFolderIds && !validFolderIds.has(task.folderId)) {
                 return false;
               }
               if (onlyFlagged && !task.flagged) {
@@ -1222,6 +1599,8 @@ class OmniFocusSimplifiedMCPServer {
         case "listProjects": {
           const {
             folderId,
+            includeSubfolders,
+            includeTasks: explicitIncludeTasks,
             listProjectNames,
             listByFolder,
             completion,
@@ -1231,31 +1610,59 @@ class OmniFocusSimplifiedMCPServer {
 
           const detailLvl = getDetailLevel(dl);
           const includeNames = Boolean(listProjectNames);
+          // includeTasks: explicit param takes precedence, otherwise true for full detail or listProjectNames
+          const shouldIncludeTasks = explicitIncludeTasks === true || includeNames || detailLvl === "full";
+
+          // If includeSubfolders, we need to get subfolder IDs first
+          let folderIds: string[] | null = null;
+          if (folderId) {
+            folderIds = [folderId as string];
+            if (includeSubfolders) {
+              const folderTree = normalizeResult<any>(
+                await callOmniFocus({ command: "getProjectTree", args: { folderId, includeProjects: false } }),
+              );
+              const collectFolderIds = (node: any, ids: string[]) => {
+                if (node?.folder?.id && node.folder.id !== "root") ids.push(node.folder.id as string);
+                if (node?.subfolders) node.subfolders.forEach((sub: any) => collectFolderIds(sub, ids));
+              };
+              collectFolderIds(folderTree, folderIds!);
+            }
+          }
 
           const rawProjects = normalizeResult<{ result?: any[] } | any[]>(
             await callOmniFocus({
               command: "listProjects",
               args: {
                 completion,
-                includeTasks: includeNames || detailLvl === "full",
+                includeTasks: shouldIncludeTasks,
                 includeNotes: detailLvl === "full",
                 includeFolderPath: detailLvl === "full",
                 includeCounts: includeCounts !== false,
-                folderId: folderId ?? null,
+                folderId: folderIds && folderIds.length === 1 ? folderIds[0] : null,
                 listByFolder: Boolean(listByFolder),
               },
             }),
           );
 
-          const rawProjectsArray = Array.isArray(rawProjects)
+          // If we have multiple folder IDs (subfolder case), filter the results
+          let rawProjectsArray = Array.isArray(rawProjects)
             ? rawProjects
             : rawProjects &&
                 typeof rawProjects === "object" &&
                 Array.isArray((rawProjects as any).result)
               ? (rawProjects as any).result
               : null;
+
+          // Filter by folder IDs if we have multiple (includeSubfolders case)
+          if (folderIds && folderIds.length > 1 && rawProjectsArray) {
+            const folderIdSet = new Set(folderIds);
+            rawProjectsArray = rawProjectsArray.filter((p: any) =>
+              p.folderId && folderIdSet.has(p.folderId)
+            );
+          }
+
           console.log(
-            `[listProjects] folderId=${folderId ?? "<all>"} completion=${completion ?? "<default>"} rawLength=${rawProjectsArray ? rawProjectsArray.length : "n/a"}`,
+            `[listProjects] folderId=${folderId ?? "<all>"} includeSubfolders=${includeSubfolders ?? false} completion=${completion ?? "<default>"} rawLength=${rawProjectsArray ? rawProjectsArray.length : "n/a"}`,
           );
           if (rawProjectsArray && rawProjectsArray.length > 0) {
             const firstProject = rawProjectsArray[0];
@@ -1264,7 +1671,9 @@ class OmniFocusSimplifiedMCPServer {
             );
           }
 
-          const detailed = filterResponseByDetailLevel(rawProjects, detailLvl);
+          // Use filtered array if we filtered, otherwise original response
+          const projectsToFilter = rawProjectsArray ?? rawProjects;
+          const detailed = filterResponseByDetailLevel(projectsToFilter, detailLvl);
 
           if (Array.isArray(detailed)) {
             return asJsonText(detailed);
@@ -1338,34 +1747,49 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "taskHierarchy": {
-          const { action, parameters = {} } = args;
+          const { action, taskId, name, targetTaskId, targetProjectId, position, includeChildren } = args;
           sortOrder = "default";
           switch (action) {
             case "createSubtask":
               command = "createSubtask";
+              commandArgs = { parentTaskId: taskId, name };
               break;
             case "flatten":
               command = "flattenTaskHierarchy";
+              commandArgs = { taskId };
               break;
             case "moveBranch":
               command = "moveTaskBranch";
+              commandArgs = { taskId, targetTaskId, targetProjectId, position, includeChildren };
               break;
             case "restructure":
               command = "restructureTaskHierarchy";
+              commandArgs = { taskId };
               break;
             default:
               throw new Error(`Unknown hierarchy action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "projectOperations": {
           const {
             action,
-            parameters = {},
+            projectId,
+            taskId,
+            name,
+            note,
+            folderId,
+            status,
+            sequential,
+            flagged,
+            dueDate,
+            deferDate,
+            completedByChildren,
+            position,
+            completion,
+            includeTasks,
             detailLevel: dl,
             sortOrder: so,
-            filters = {},
           } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
@@ -1373,47 +1797,45 @@ class OmniFocusSimplifiedMCPServer {
             case "list":
               command = "listProjects";
               commandArgs = {
-                ...(parameters && typeof parameters === "object"
-                  ? parameters
-                  : {}),
-                ...(filters && typeof filters === "object" ? filters : {}),
-                detailLevel,
+                completion,
+                folderId,
+                includeTasks: includeTasks || detailLevel === "full",
+                includeNotes: detailLevel === "full",
+                includeFolderPath: detailLevel === "full",
+                includeCounts: true,
               };
               break;
             case "get":
               command = "getProjectById";
               commandArgs = {
-                ...(parameters && typeof parameters === "object"
-                  ? parameters
-                  : {}),
+                projectId,
                 options: {
                   includeNotes: detailLevel === "full",
-                  includeTasks: detailLevel === "full",
+                  includeTasks: includeTasks || detailLevel === "full",
                   includeFolderPath: detailLevel === "full",
                   includeCounts: true,
                 },
-                detailLevel,
               };
               sortOrder = "default";
               break;
             case "create":
               command = "createProject";
-              commandArgs = parameters;
+              commandArgs = { name, folderId, position, properties: { note, sequential, flagged, dueDate, deferDate, completedByChildren } };
               sortOrder = "default";
               break;
             case "update":
-              command = "updateProject";
-              commandArgs = parameters;
+              command = "setProjectProperties";
+              commandArgs = { projectId, properties: { name, note, status, sequential, flagged, dueDate, deferDate, completedByChildren } };
               sortOrder = "default";
               break;
             case "move":
               command = "moveProject";
-              commandArgs = parameters;
+              commandArgs = { projectId, folderId, position };
               sortOrder = "default";
               break;
             case "convertTask":
               command = "convertTaskToProject";
-              commandArgs = parameters;
+              commandArgs = { taskId, folderId, position };
               sortOrder = "default";
               break;
             default:
@@ -1422,45 +1844,47 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "projectSettings": {
-          const { action, parameters = {} } = args;
+          const { action, projectId, sequential, completedByChildren, properties } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "setGroupType":
               command = "setProjectGroupType";
+              commandArgs = { projectId, sequential };
               break;
             case "setCompletionBehavior":
               command = "setProjectCompletionBehavior";
+              commandArgs = { projectId, completedByChildren };
               break;
             case "setProperties":
               command = "setProjectProperties";
+              commandArgs = { projectId, properties };
               break;
             default:
               throw new Error(`Unknown project settings action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "folderOperations": {
-          const { action, parameters = {} } = args;
+          const { action, folderId, name, parentFolderId, includeEmpty, maxDepth } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "list":
               command = "listFolders";
-              commandArgs = parameters;
+              commandArgs = { parentFolderId, includeEmpty, maxDepth };
               break;
             case "get":
               command = "getFolderById";
-              commandArgs = parameters;
+              commandArgs = { folderId };
               break;
             case "create":
               command = "createFolder";
-              commandArgs = parameters;
+              commandArgs = { name, parentFolderId };
               break;
             case "delete":
               command = "deleteFolder";
-              commandArgs = parameters;
+              commandArgs = { folderId };
               break;
             default:
               throw new Error(`Unknown folder action: ${action}`);
@@ -1468,17 +1892,17 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "folderNavigation": {
-          const { action, parameters = {} } = args;
+          const { action, folderId, includeProjects, maxDepth, targetFolderId, projectId } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "getTree":
-              command = "getProjectTree";
-              commandArgs = parameters;
+              command = "getFolderHierarchy";
+              commandArgs = { folderId, includeProjects, maxDepth };
               break;
             case "validateMove":
               command = "validateProjectMove";
-              commandArgs = parameters;
+              commandArgs = { projectId, targetFolderId };
               break;
             default:
               throw new Error(`Unknown folder navigation action: ${action}`);
@@ -1486,21 +1910,21 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "inboxOperations": {
-          const { action, parameters = {} } = args;
+          const { action, itemId, targetProjectId, includeCompleted, sortBy, limit } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "list":
               command = "listInbox";
-              commandArgs = parameters;
+              commandArgs = { includeCompleted, sortBy, limit };
               break;
             case "process":
               command = "processInboxItem";
-              commandArgs = parameters;
+              commandArgs = { itemId, targetProjectId };
               break;
             case "getContext":
               command = "getInboxProcessingContext";
-              commandArgs = parameters;
+              commandArgs = { itemId };
               break;
             default:
               throw new Error(`Unknown inbox action: ${action}`);
@@ -1508,20 +1932,22 @@ class OmniFocusSimplifiedMCPServer {
           break;
         }
         case "bulkInboxProcessing": {
-          const { action, parameters = {} } = args;
+          const { action, operations, validateFirst, continueOnError } = args;
           detailLevel = "standard";
           sortOrder = "default";
           if (action !== "executeBulk") {
             throw new Error(`Unknown bulk inbox action: ${action}`);
           }
           command = "executeBulkInboxProcessing";
-          commandArgs = parameters;
+          commandArgs = { item_operations: operations, execution_options: { validate_before_execute: validateFirst, continue_on_errors: continueOnError } };
           break;
         }
         case "perspectiveOperations": {
           const {
             action,
-            parameters = {},
+            perspectiveId,
+            perspectiveName,
+            includeBuiltIn,
             detailLevel: dl,
             sortOrder: so,
           } = args;
@@ -1530,16 +1956,16 @@ class OmniFocusSimplifiedMCPServer {
           switch (action) {
             case "list":
               command = "listPerspectives";
-              commandArgs = {};
+              commandArgs = { includeBuiltIn };
               break;
             case "get":
               command = "getPerspective";
-              commandArgs = parameters;
+              commandArgs = { perspectiveId };
               sortOrder = "default";
               break;
             case "switch":
               command = "switchToPerspective";
-              commandArgs = parameters;
+              commandArgs = { perspectiveId, perspectiveName };
               sortOrder = "default";
               break;
             default:
@@ -1550,7 +1976,10 @@ class OmniFocusSimplifiedMCPServer {
         case "tagOperations": {
           const {
             action,
-            parameters = {},
+            tagId,
+            name,
+            parentTagId,
+            includeNested,
             detailLevel: dl,
             sortOrder: so,
           } = args;
@@ -1559,132 +1988,180 @@ class OmniFocusSimplifiedMCPServer {
           switch (action) {
             case "list":
               command = "listTags";
-              commandArgs = {};
+              commandArgs = { includeNested };
+              break;
+            case "get":
+              command = "getTagById";
+              commandArgs = { tagId };
+              sortOrder = "default";
+              break;
+            case "create":
+              command = "createTag";
+              commandArgs = { name, parentTagId };
+              sortOrder = "default";
+              break;
+            case "update":
+              command = "updateTag";
+              commandArgs = { tagId, name };
+              sortOrder = "default";
+              break;
+            case "delete":
+              command = "deleteTag";
+              commandArgs = { tagId };
+              sortOrder = "default";
               break;
             case "queryTasks":
               command = "listTasksByTag";
-              commandArgs = parameters;
+              commandArgs = { tagId, includeNested };
+              sortOrder = "default";
               break;
             default:
               throw new Error(`Unknown tag action: ${action}`);
           }
-          if (action !== "list") {
-            sortOrder = "default";
-          }
           break;
         }
         case "validationOperations": {
-          const { action, parameters = {} } = args;
+          const { action, taskId, projectId, targetFolderId, name, transactionId } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "validateTransaction":
               command = "validateTransaction";
+              commandArgs = { transactionId };
               break;
             case "validateMove":
               command = "validateProjectMove";
+              commandArgs = { projectId, targetFolderId };
+              break;
+            case "validateCreate":
+              command = "validateProjectCreation";
+              commandArgs = { name, folderId: targetFolderId };
               break;
             default:
               throw new Error(`Unknown validation action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "transactionOperations": {
-          const { action, parameters = {} } = args;
+          const { action, transactionId, operations, count } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "begin":
               command = "beginTransaction";
+              commandArgs = {};
               break;
             case "execute":
               command = "executeTransactional";
+              commandArgs = { transactionId, operations };
               break;
             case "accept":
               command = "acceptTransaction";
+              commandArgs = { transactionId };
               break;
             case "rollback":
               command = "rollbackTransaction";
+              commandArgs = { transactionId };
               break;
             case "rollbackRecent":
               command = "rollbackRecentTransaction";
+              commandArgs = { count };
               break;
             case "getHistory":
               command = "getTransactionHistory";
+              commandArgs = { count };
               break;
             default:
               throw new Error(`Unknown transaction action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "taskGroupOperations": {
-          const { action, parameters = {} } = args;
+          const { action, taskId, sequential } = args;
           detailLevel = "standard";
           sortOrder = "default";
-          if (action !== "setGroupType") {
-            throw new Error(`Unknown task group action: ${action}`);
+          switch (action) {
+            case "getGroupType":
+              command = "getTaskGroupType";
+              commandArgs = { taskId };
+              break;
+            case "setGroupType":
+              command = "setTaskGroupType";
+              commandArgs = { taskId, sequential };
+              break;
+            default:
+              throw new Error(`Unknown task group action: ${action}`);
           }
-          command = "setTaskGroupType";
-          commandArgs = parameters;
           break;
         }
         case "reviewOperations": {
-          const { action, parameters = {} } = args;
+          const { action, projectId, includeOnHold, overdue } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "list":
               command = "listProjectsNeedingReview";
+              commandArgs = { includeOnHold, overdue };
               break;
             case "markReviewed":
               command = "markProjectReviewed";
+              commandArgs = { projectId };
+              break;
+            case "getNextReview":
+              command = "getProjectNextReview";
+              commandArgs = { projectId };
               break;
             default:
               throw new Error(`Unknown review action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "automationSupport": {
-          const { action, parameters = {} } = args;
+          const { action, scope, scopeId, dryRun, maxAge } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "suggest":
               command = "suggestAutomation";
+              commandArgs = { scope, scopeId };
               break;
             case "diagnose":
               command = "diagnoseAutomation";
+              commandArgs = { scope, scopeId };
               break;
             case "cleanup":
               command = "cleanupAutomationArtifacts";
+              commandArgs = { scope, scopeId, dryRun, maxAge };
               break;
             default:
               throw new Error(`Unknown automation action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "analyticsInsights": {
-          const { action, parameters = {} } = args;
+          const { action, projectId, folderId, period, includeCompleted } = args;
           detailLevel = "standard";
           sortOrder = "default";
           switch (action) {
             case "projectHealth":
               command = "getProjectHealth";
+              commandArgs = { projectId, folderId };
               break;
             case "workload":
               command = "getWorkloadSummary";
+              commandArgs = { folderId, includeCompleted };
               break;
             case "trends":
               command = "getTrendInsights";
+              commandArgs = { period, folderId, includeCompleted };
+              break;
+            case "summary":
+              command = "getAnalyticsSummary";
+              commandArgs = { folderId, includeCompleted };
               break;
             default:
               throw new Error(`Unknown analytics action: ${action}`);
           }
-          commandArgs = parameters;
           break;
         }
         case "systemOperations": {
@@ -1702,7 +2179,7 @@ class OmniFocusSimplifiedMCPServer {
           throw new Error(`Unknown tool: ${toolName}`);
       }
 
-      const rawResult = await callOmniFocus({ command, args: commandArgs });
+      const rawResult = await callOmniFocus({ command, args: cleanArgs(commandArgs) });
 
       let parsedResult = rawResult;
       if (typeof rawResult === "string") {
@@ -1714,6 +2191,60 @@ class OmniFocusSimplifiedMCPServer {
       }
       if (toolName === "taskOperations" && args?.action === "get") {
         console.log("[taskOperations.get] parsedResult", parsedResult);
+      }
+
+      // Apply folder filtering for taskOperations list action
+      if (toolName === "taskOperations" && args?.action === "list" && (args?.filters as any)?.folderId) {
+        const filters = args.filters as {
+          folderId?: string;
+          includeSubfolders?: boolean;
+          projectId?: string;
+          tagId?: string;
+          includeCompleted?: boolean;
+          includeDropped?: boolean;
+          active?: boolean;
+          flagged?: boolean;
+          limit?: number;
+        };
+        const { folderId, includeSubfolders, projectId, tagId, includeCompleted, includeDropped, active, flagged, limit } = filters;
+
+        // Get folder IDs to filter by
+        let validFolderIds: Set<string> = new Set([folderId as string]);
+        if (includeSubfolders) {
+          const folderTree = normalizeResult<any>(
+            await callOmniFocus({ command: "getProjectTree", args: { folderId, includeProjects: false } }),
+          );
+          const collectFolderIds = (node: any) => {
+            if (node?.folder?.id && node.folder.id !== "root") validFolderIds.add(node.folder.id);
+            if (node?.subfolders) node.subfolders.forEach(collectFolderIds);
+          };
+          collectFolderIds(folderTree);
+        }
+
+        // Filter the task results
+        let tasksArray = Array.isArray(parsedResult)
+          ? parsedResult
+          : parsedResult?.result && Array.isArray(parsedResult.result)
+            ? parsedResult.result
+            : [];
+
+        tasksArray = tasksArray.filter((task: any) => {
+          if (!validFolderIds.has(task.folderId)) return false;
+          if (projectId && task.projectId !== projectId) return false;
+          if (tagId && (!task.contexts || !task.contexts.includes(tagId))) return false;
+          if (!includeCompleted && task.completed) return false;
+          if (!includeDropped && task.dropped) return false;
+          if (active === true && !task.active) return false;
+          if (flagged === true && !task.flagged) return false;
+          return true;
+        });
+
+        if (limit && limit > 0) {
+          tasksArray = tasksArray.slice(0, limit);
+        }
+
+        parsedResult = tasksArray;
+        console.log(`[taskOperations.list] folderId=${folderId} includeSubfolders=${includeSubfolders} filtered to ${tasksArray.length} tasks`);
       }
 
       const filtered = filterResponseByDetailLevel(parsedResult, detailLevel);
