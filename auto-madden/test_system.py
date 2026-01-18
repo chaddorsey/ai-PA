@@ -72,16 +72,17 @@ def test_insight_loading():
     """Test that insights can be loaded and retrieved."""
     try:
         from nfl_pro_integration import load_narrative_insights, nfl_pro_narratives
-        
+
         count = load_narrative_insights("test", week=18)
         if count == 0:
             return False, "No insights loaded for Week 18"
-        
-        # Test retrieval
-        insight = nfl_pro_narratives.get_random_unserved_insight()
+
+        # Test retrieval - must provide valid_teams (simulates real game scenario)
+        # Using SEA vs SF which are in Week 18 data
+        insight = nfl_pro_narratives.get_random_unserved_insight(valid_teams={'SEA', 'SF'})
         if not insight:
-            return False, "Could not retrieve insight"
-        
+            return False, "Could not retrieve insight for SEA vs SF"
+
         return True, f"{count} insights loaded, retrieval working"
     except Exception as e:
         return False, f"Error: {e}"

@@ -91,6 +91,12 @@ def config():
     })
 
 
+@app.route('/nfl-pro-capture')
+def nfl_pro_capture():
+    """Page that receives NFL Pro session data via postMessage from bookmarklet."""
+    return render_template('nfl-pro-capture.html', insight_engine_url=INSIGHT_ENGINE_URL)
+
+
 if __name__ == '__main__':
     logger.info("Starting Auto-Madden Companion UI")
     app.run(host='0.0.0.0', port=5130, debug=False, threaded=True)

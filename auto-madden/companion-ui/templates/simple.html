@@ -808,6 +808,31 @@
                 Pre-snap shows formation and personnel before the play. Post-snap shows coverage, routes, and timing after.
             </div>
         </div>
+
+        <!-- NFL Pro Connection -->
+        <div class="settings-section">
+            <div class="settings-section-title">NFL Pro Connection</div>
+            <div class="settings-info" style="margin-bottom: 10px;">
+                For detailed coverage, routes, and timing data, connect your NFL Pro account:
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="font-size: 12px; color: var(--text-secondary);">
+                    <strong>Step 1:</strong> <a href="https://pro.nfl.com" target="_blank" style="color: var(--accent);">Log into NFL Pro</a> in this browser
+                </div>
+                <div style="font-size: 12px; color: var(--text-secondary);">
+                    <strong>Step 2:</strong> Drag this to your bookmarks bar:
+                    <a href="javascript:(function(){var d={cookies:document.cookie.split(';').map(function(c){var p=c.trim().split('=');return{name:p[0],value:p.slice(1).join('='),domain:'.nfl.com'}}),localStorage:{},origin:location.origin};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k.includes('nfl')||k.includes('token')||k.includes('auth'))d.localStorage[k]=localStorage.getItem(k)}var w=window.open('http://localhost:5130/nfl-pro-capture','nfl_capture','width=400,height=300');window.addEventListener('message',function h(e){if(e.data&&e.data.type==='nfl-pro-capture-ready'){w.postMessage({type:'nfl-pro-session',session:d},'*');window.removeEventListener('message',h)}});setTimeout(function(){if(w&&!w.closed)w.postMessage({type:'nfl-pro-session',session:d},'*')},1000)})();"
+                       style="display: inline-block; background: #3b82f6; color: white; padding: 4px 10px; border-radius: 4px; text-decoration: none; font-size: 11px; cursor: move;"
+                       onclick="alert('Drag this to your bookmarks bar, then click it while on pro.nfl.com'); return false;">
+                        Capture NFL Pro
+                    </a>
+                </div>
+                <div style="font-size: 12px; color: var(--text-secondary);">
+                    <strong>Step 3:</strong> While on NFL Pro, click the bookmarklet
+                </div>
+            </div>
+            <div id="nfl-pro-status-info" class="settings-info" style="margin-top: 10px;"></div>
+        </div>
     </div>
 
     <!-- Header -->
@@ -988,7 +1013,7 @@
         
         function savePreferences() {
             userPrefs.presnap = document.querySelector('input[name="pref-presnap"]:checked')?.value || 'always';
-            userPrefs.postsnap = document.querySelector('input[name="pref-postsnap"]:checked')?.value || 'key';
+            userPrefs.postsnap = document.querySelector('input[name="pref-postsnap"]:checked')?.value || 'all';
             
             localStorage.setItem('autoMaddenPrefs', JSON.stringify({...userPrefs, presnapOffset, currentDelay}));
         }
@@ -999,7 +1024,7 @@
                 try {
                     const data = JSON.parse(saved);
                     userPrefs.presnap = data.presnap || 'always';
-                    userPrefs.postsnap = data.postsnap || 'key';
+                    userPrefs.postsnap = data.postsnap || 'all';
                     presnapOffset = data.presnapOffset || 5;
                     currentDelay = data.currentDelay || 0;
                     
@@ -1156,8 +1181,8 @@
             if (analysisTimeout) clearTimeout(analysisTimeout);
             if (analysisFadeTimeout) clearTimeout(analysisFadeTimeout);
             
-            // Set to post-snap mode
-            panel.className = `analysis-panel postsnap visible ${isBigPlay ? 'bigplay' : ''}`;
+            // Set to post-snap mode (always blue, even for big plays)
+            panel.className = 'analysis-panel postsnap visible';
             document.getElementById('analysis-mode').textContent = 'POST-SNAP';
             document.getElementById('bigplay-badge').style.display = isBigPlay ? 'inline-block' : 'none';
             
@@ -1170,23 +1195,64 @@
             const defPersonnel = data.defense?.personnel || '';
             document.getElementById('def-personnel').textContent = defPersonnel;
             document.getElementById('def-package').textContent = data.defense?.coverage || getDefPackage(defPersonnel);
-            document.getElementById('def-box').textContent = data.defense?.rushers ? `${data.defense.rushers} rushers` : '--';
+            // Show rushers for pass plays, box count for run plays
+            const rushers = data.defense?.rushers;
+            const box = data.defense?.box;
+            if (rushers > 0) {
+                document.getElementById('def-box').textContent = `${rushers} rushers`;
+            } else if (box > 0) {
+                document.getElementById('def-box').textContent = `${box} in box`;
+            } else {
+                document.getElementById('def-box').textContent = '';
+            }
             
-            // Show post-snap stats
+            // Show post-snap stats - hide items without data instead of showing '--'
             const statsDiv = document.getElementById('analysis-stats');
-            statsDiv.style.display = 'flex';
-            
-            document.getElementById('stat-route').textContent = data.route || '--';
-            document.getElementById('stat-ttt').textContent = data.timeToThrow ? `${data.timeToThrow.toFixed(2)}s` : '--';
-            document.getElementById('stat-coverage').textContent = data.defense?.coverage || '--';
-            document.getElementById('stat-rushers').textContent = data.defense?.rushers || '--';
-            
-            // Show big play stats if applicable
+
+            // Helper to show/hide stat item based on whether data exists
+            function setStatItem(elementId, value, formatter = v => v) {
+                const el = document.getElementById(elementId);
+                const item = el.closest('.stat-item');
+                if (value != null && value !== '' && value !== 0) {
+                    el.textContent = formatter(value);
+                    item.style.display = 'flex';
+                } else {
+                    item.style.display = 'none';
+                }
+            }
+
+            setStatItem('stat-route', data.route);
+            setStatItem('stat-ttt', data.timeToThrow, v => `${v.toFixed(2)}s`);
+            setStatItem('stat-coverage', data.defense?.coverage);
+
+            // Show rushers for pass plays, box for run plays
+            const rushersEl = document.getElementById('stat-rushers');
+            const rushersItem = rushersEl.closest('.stat-item');
+            const rushersLabel = rushersItem?.querySelector('.stat-label');
+            if (data.defense?.rushers > 0) {
+                rushersEl.textContent = data.defense.rushers;
+                if (rushersLabel) rushersLabel.textContent = 'Rushers';
+                rushersItem.style.display = 'flex';
+            } else if (data.defense?.box > 0) {
+                rushersEl.textContent = data.defense.box;
+                if (rushersLabel) rushersLabel.textContent = 'In Box';
+                rushersItem.style.display = 'flex';
+            } else {
+                rushersItem.style.display = 'none';
+            }
+
+            // Only show stats container if at least one stat is visible
+            const visibleStats = statsDiv.querySelectorAll('.stat-item[style*="display: flex"], .stat-item:not([style*="display: none"])');
+            statsDiv.style.display = visibleStats.length > 0 ? 'flex' : 'none';
+
+            // Show big play stats if applicable - also hide empty items
             const bigplayStats = document.getElementById('bigplay-stats');
             if (isBigPlay) {
-                bigplayStats.style.display = 'flex';
-                document.getElementById('stat-yards').textContent = data.yards || '--';
-                document.getElementById('stat-airyards').textContent = data.airYards ? data.airYards.toFixed(1) : '--';
+                setStatItem('stat-yards', data.yards);
+                setStatItem('stat-airyards', data.airYards, v => v.toFixed(1));
+
+                const visibleBigplay = bigplayStats.querySelectorAll('.stat-item[style*="display: flex"]');
+                bigplayStats.style.display = visibleBigplay.length > 0 ? 'flex' : 'none';
             } else {
                 bigplayStats.style.display = 'none';
             }

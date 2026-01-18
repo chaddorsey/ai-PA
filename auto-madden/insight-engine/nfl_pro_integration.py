@@ -988,6 +988,16 @@ class NFLProNarrativeInsights:
             if player_name in all_other_team_names:
                 return False
 
+            # If player_team is set, it MUST be one of the valid teams
+            # This prevents Josh Allen (BUF) insights from appearing in SF @ SEA games
+            if player_team:
+                if player_team not in valid_teams_upper:
+                    return False
+            elif player_name:
+                # Player-specific insight with no player_team - reject to be safe
+                # (Can't verify which team the player is on)
+                return False
+
             # If teams_mentioned exists, check it's primarily about valid teams
             if teams_mentioned:
                 teams_in_valid = [t for t in teams_mentioned if t in valid_teams_upper]
@@ -1011,6 +1021,8 @@ class NFLProNarrativeInsights:
                 if team in self.TEAM_NAMES and player_name in self.TEAM_NAMES[team]:
                     return True
 
+            # STRICT: If no team data at all, reject the insight
+            # (no teams_mentioned, no player_team, and player isn't a team name)
             return False
 
         def is_from_this_game(insight):
@@ -1056,7 +1068,7 @@ class NFLProNarrativeInsights:
             insight = random.choice(tier3)
             self._served_in_game.add(insight['id'])
             self._log_insight_served(insight, 'tier3_team_related')
-            logger.info(f"📊 Tier 3 (team related): {insight.get('player_name')}")
+            logger.info(f"📊 Tier 3 (team related): {insight.get('player_name')} [teams_mentioned={insight.get('teams_mentioned')}, player_team={insight.get('player_team')}, filter={list(valid_teams_upper)}]")
             return self._format_insight(insight)
 
         logger.warning(f"No insights found for teams {valid_teams_upper}")

@@ -918,7 +918,11 @@ class DeliveryManager:
             'data': postsnap_data
         })
         
-        logger.info(f"Broadcasting post-snap: yards={postsnap_data.get('yards', '?')}, coverage={postsnap_data.get('defense', {}).get('coverage', '?')}")
+        defense = postsnap_data.get('defense', {})
+        cov = defense.get('coverage', '?')
+        rushers = defense.get('rushers', 0)
+        box = defense.get('box', 0)
+        logger.info(f"Broadcasting post-snap: yards={postsnap_data.get('yards', '?')}, coverage={cov}, rushers={rushers}, box={box}")
         
         for client in self.connected_clients[:]:
             try:
@@ -2900,15 +2904,31 @@ def receive_event():
     if state.get('game_id') and not session_data['game_id']:
         session_data['game_id'] = state['game_id']
         session_data['session_start'] = datetime.now().isoformat()
-        
+
+        # Look up NFL Pro UUID from mapping if not in state
+        nfl_pro_uuid = state.get('nfl_pro_uuid')
+        if not nfl_pro_uuid:
+            try:
+                mapping_path = Path('/Volumes/main-drive/ai-PA/auto-madden/data/espn_nfl_pro_mapping.json')
+                if mapping_path.exists():
+                    with open(mapping_path, 'r') as f:
+                        mapping = json.load(f)
+                    nfl_pro_uuid = mapping.get('espn_to_nfl_pro', {}).get(str(state['game_id']), '')
+            except Exception as e:
+                logger.debug(f"Could not load NFL Pro mapping: {e}")
+
+        if nfl_pro_uuid:
+            session_data['nfl_pro_uuid'] = nfl_pro_uuid
+            logger.info(f"📊 NFL Pro UUID for auto-fetch: {nfl_pro_uuid[:8]}...")
+
         # === LOAD NFL PRO NARRATIVE INSIGHTS FOR THIS GAME ===
         if NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
             try:
                 home_team = state.get('home_team', {}).get('abbreviation', '')
                 away_team = state.get('away_team', {}).get('abbreviation', '')
-                
-                # Try to get NFL Pro game UUID from state, or use ESPN game ID as fallback key
-                nfl_pro_uuid = state.get('nfl_pro_uuid', state.get('game_id', ''))
+
+                # Use session nfl_pro_uuid or fallback to game_id
+                nfl_pro_uuid = session_data.get('nfl_pro_uuid', state.get('game_id', ''))
                 
                 if home_team and away_team:
                     # Get week from session (set by /game/start) or state
@@ -3010,10 +3030,17 @@ def receive_event():
     
     if change_type in ['play_complete', 'new_play', 'score_change', 'turnover', 'big_play', 'first_down']:
         current_down = state.get('down', 0)
-        
+
         # Check if NFL Pro play data was provided (has rich pre/post data)
         nfl_pro_play = data.get('nfl_pro_play') or data.get('play_data')
-        
+
+        # Auto-fetch from NFL Pro if not provided and we have a session UUID
+        if not nfl_pro_play and session_data.get('nfl_pro_uuid'):
+            nfl_pro_play = _get_matching_nfl_pro_play(state, change)
+
+        if nfl_pro_play:
+            logger.info(f"NFL Pro play data received: offense={nfl_pro_play.get('offense')}, defense={nfl_pro_play.get('defense')}")
+
         if nfl_pro_play and isinstance(nfl_pro_play, dict) and nfl_pro_play.get('offense'):
             # === NFL PRO DATA AVAILABLE - Rich analysis ===
             try:
@@ -3155,7 +3182,7 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
     if man_zone:
         man_zone = 'Man' if 'MAN' in man_zone else 'Zone' if 'ZONE' in man_zone else ''
 
-    # Build coverage display - show descriptive text for non-pass plays
+    # Build coverage display - show descriptive text for all play types
     if coverage:
         coverage_display = f"{coverage} ({man_zone})" if man_zone else coverage
     elif is_run_play:
@@ -3163,10 +3190,19 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
     elif is_special_teams:
         coverage_display = "Special Teams"
     elif is_pass_play:
-        # Use man/zone info if available, otherwise leave empty (don't show placeholder)
-        coverage_display = man_zone if man_zone else ""
+        # Use man/zone info if available, otherwise indicate pass play
+        coverage_display = man_zone if man_zone else "Pass Play"
     else:
-        coverage_display = ""
+        # Fallback based on play description
+        desc = play_data.get('playDescription', '').lower()
+        if 'scramble' in desc:
+            coverage_display = "Scramble"
+        elif 'sack' in desc:
+            coverage_display = "Sack"
+        elif 'pass' in desc or 'incomplete' in desc:
+            coverage_display = "Pass Play"
+        else:
+            coverage_display = "Run Play"
 
     return {
         'presnap': {
@@ -3189,6 +3225,7 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
                 'personnel': defense.get('personnel', ''),
                 'coverage': coverage_display,
                 'rushers': defense.get('numberOfPassRushers', 0),
+                'box': defense.get('defendersInTheBox', 0),
             },
             'route': rec_info.get('route', ''),
             'timeToThrow': pass_info.get('timeToThrow', 0),
@@ -3302,9 +3339,11 @@ def _build_espn_postsnap(description: str, state: Dict[str, Any], change: Dict[s
         },
         'defense': {
             'personnel': '',  # Not available from ESPN
-            'coverage': result_text if play_type == 'run' else '',  # Show result for runs
+            'coverage': 'Run Play' if play_type == 'run' else '',  # ESPN doesn't have coverage data
             'rushers': 0,
         },
+        'route': '',  # ESPN doesn't have route info
+        'timeToThrow': 0,  # ESPN doesn't have timing data
         'description': description[:100],
     }
 
@@ -4217,9 +4256,12 @@ def insights_status():
 
 
 # NFL Pro Session Management
-NFL_PRO_STATE_FILE = Path(os.environ.get('CREDENTIALS_PATH', '/Volumes/main-drive/ai-PA/auto-madden/credentials')) / 'browser_states' / 'nfl_pro_state.json'
+CREDENTIALS_PATH = Path(os.environ.get('CREDENTIALS_PATH', '/Volumes/main-drive/ai-PA/auto-madden/credentials'))
+BROWSER_STATES_PATH = CREDENTIALS_PATH / 'browser_states'
+NFL_PRO_STATE_FILE = BROWSER_STATES_PATH / 'nfl_pro_state.json'
 NFL_TOKEN_REFRESH_URL = "https://api.nfl.com/identity/v3/token/refresh"
 NFL_TOKEN_REFRESH_BUFFER_SECONDS = 300  # Refresh 5 minutes before expiry
+NFL_SESSION_EXPIRY_HOURS = 1  # Session valid for 1 hour
 
 
 @app.route('/api/nfl-pro/status', methods=['GET'])
@@ -4462,10 +4504,12 @@ def nfl_pro_session():
 
         cookies = data.get('cookies', [])
         access_token = data.get('accessToken')
+        local_storage = data.get('localStorage', {})  # From bookmarklet
+        origin = data.get('origin', 'https://pro.nfl.com')
         timestamp = data.get('timestamp', int(datetime.now().timestamp() * 1000))
 
-        if not cookies and not access_token:
-            return jsonify({'status': 'error', 'message': 'No cookies or access token provided'}), 400
+        if not cookies and not access_token and not local_storage:
+            return jsonify({'status': 'error', 'message': 'No cookies, token, or localStorage provided'}), 400
 
         # Build state file in Playwright format
         state = {
@@ -4487,8 +4531,16 @@ def nfl_pro_session():
                     'sameSite': cookie.get('sameSite', 'None')
                 })
 
-        # Store access token in localStorage format
-        if access_token:
+        # Handle localStorage from bookmarklet (object format)
+        if local_storage and isinstance(local_storage, dict):
+            ls_items = [{'name': k, 'value': v} for k, v in local_storage.items()]
+            state['origins'] = [{
+                'origin': origin,
+                'localStorage': ls_items
+            }]
+            logger.info(f"Received {len(ls_items)} localStorage items from bookmarklet")
+        # Handle direct access token
+        elif access_token:
             state['origins'] = [{
                 'origin': 'https://pro.nfl.com',
                 'localStorage': [{
@@ -4552,6 +4604,619 @@ def nfl_pro_refresh():
 
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+
+# NFL Pro plays fetching with Playwright
+_nfl_pro_plays_cache: Dict[str, tuple] = {}  # game_uuid -> (plays, timestamp)
+NFL_PRO_PLAYS_CACHE_TTL = 60  # 60 seconds cache - new plays come through every few seconds anyway
+
+
+def _get_matching_nfl_pro_play(state: Dict[str, Any], change: Dict[str, Any]) -> Optional[Dict]:
+    """
+    Auto-fetch NFL Pro plays and match the current ESPN play.
+
+    Uses quarter + clock time to find the matching play from NFL Pro data.
+    """
+    import asyncio
+
+    # Get NFL Pro UUID from session
+    nfl_pro_uuid = session_data.get('nfl_pro_uuid')
+    if not nfl_pro_uuid:
+        return None
+
+    # Get plays from cache or fetch
+    if nfl_pro_uuid in _nfl_pro_plays_cache:
+        cached_plays, cached_time = _nfl_pro_plays_cache[nfl_pro_uuid]
+        if (datetime.now() - cached_time).total_seconds() < NFL_PRO_PLAYS_CACHE_TTL:
+            plays = cached_plays
+        else:
+            plays = None
+    else:
+        plays = None
+
+    if plays is None:
+        try:
+            plays = asyncio.run(_fetch_nfl_pro_plays(nfl_pro_uuid))
+            if plays:
+                _nfl_pro_plays_cache[nfl_pro_uuid] = (plays, datetime.now())
+                logger.info(f"🏈 Fetched {len(plays)} NFL Pro plays for matching")
+            else:
+                logger.debug("No NFL Pro plays fetched")
+                return None
+        except Exception as e:
+            logger.debug(f"Error fetching NFL Pro plays: {e}")
+            return None
+
+    if not plays:
+        return None
+
+    # Match by quarter + clock time
+    quarter = state.get('quarter', 0)
+    clock = state.get('clock', '')
+
+    # Also try to get from change data
+    if not clock:
+        clock = change.get('clock', '')
+
+    if not quarter or not clock:
+        # Try matching by play description
+        espn_desc = change.get('description', '').lower()
+        if not espn_desc:
+            return None
+
+        # Find most recent play that matches description keywords
+        for play in reversed(plays):
+            nfl_desc = play.get('playDescription', '').lower()
+            # Check for key player names or play types
+            if any(word in nfl_desc for word in espn_desc.split()[:3] if len(word) > 3):
+                logger.info(f"📊 Matched NFL Pro play by description: {nfl_desc[:50]}...")
+                return play
+        return None
+
+    # Parse clock to seconds for comparison
+    def clock_to_seconds(clock_str: str) -> int:
+        try:
+            parts = clock_str.split(':')
+            if len(parts) == 2:
+                return int(parts[0]) * 60 + int(parts[1])
+            return 0
+        except (ValueError, IndexError):
+            return 0
+
+    espn_seconds = clock_to_seconds(clock)
+
+    # Extract clock from playDescription if not in clock field
+    # NFL Pro format: "(14:47) B.Purdy pass..."
+    import re
+
+    def extract_clock_from_desc(play: Dict) -> str:
+        desc = play.get('playDescription', '')
+        match = re.search(r'^\((\d+:\d+)\)', desc)
+        if match:
+            return match.group(1)
+        return play.get('endClock') or play.get('clock') or play.get('startClock', '')
+
+    # Find best matching play (same quarter, closest clock time)
+    best_match = None
+    best_diff = float('inf')
+
+    for play in plays:
+        play_quarter = play.get('quarter', 0)
+        play_clock = extract_clock_from_desc(play)
+
+        if play_quarter != quarter:
+            continue
+
+        play_seconds = clock_to_seconds(play_clock)
+        diff = abs(play_seconds - espn_seconds)
+
+        # Clock should be within 45 seconds (plays take time, ESPN may be slightly delayed)
+        if diff < best_diff and diff <= 45:
+            best_diff = diff
+            best_match = play
+
+    if best_match:
+        rushers = best_match.get('defense', {}).get('numberOfPassRushers', 0)
+        coverage = best_match.get('defense', {}).get('coverageType', '')
+        logger.info(f"📊 Matched NFL Pro play: Q{quarter} {clock} -> rushers={rushers}, coverage={coverage}")
+        return best_match
+
+    # Log why no match was found
+    logger.warning(f"No NFL Pro match for Q{quarter} clock={clock} ({espn_seconds}s). ESPN: '{change.get('description', '')[:40]}'")
+    if plays:
+        sample = plays[-1]
+        sample_clock = extract_clock_from_desc(sample)
+        logger.warning(f"Latest NFL Pro play: Q{sample.get('quarter')} clock={sample_clock} '{sample.get('playDescription', '')[:50]}'")
+
+    return None
+
+
+@app.route('/api/nfl-pro/plays/<game_uuid>', methods=['GET'])
+def nfl_pro_plays(game_uuid: str):
+    """Fetch plays from NFL Pro API using Playwright browser context."""
+    import asyncio
+    from datetime import datetime
+
+    # Check cache first
+    if game_uuid in _nfl_pro_plays_cache:
+        cached_plays, cached_time = _nfl_pro_plays_cache[game_uuid]
+        if (datetime.now() - cached_time).total_seconds() < NFL_PRO_PLAYS_CACHE_TTL:
+            logger.debug(f"Returning cached plays for {game_uuid[:8]}")
+            return jsonify({
+                'status': 'ok',
+                'plays': cached_plays,
+                'cached': True
+            })
+
+    try:
+        plays = asyncio.run(_fetch_nfl_pro_plays(game_uuid))
+
+        if plays:
+            # Cache the result
+            _nfl_pro_plays_cache[game_uuid] = (plays, datetime.now())
+            return jsonify({
+                'status': 'ok',
+                'plays': plays,
+                'count': len(plays),
+                'cached': False
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'No plays found',
+                'plays': []
+            }), 404
+
+    except Exception as e:
+        logger.error(f"Error fetching NFL Pro plays: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'plays': []
+        }), 500
+
+
+async def _fetch_nfl_pro_plays(game_uuid: str) -> List[Dict]:
+    """Fetch plays using stored Bearer token or Playwright fallback."""
+
+    # First try direct API call with Bearer token (much faster than Playwright)
+    plays = await _fetch_nfl_pro_plays_direct_api(game_uuid)
+    if plays:
+        return plays
+
+    logger.info("Direct API failed, falling back to Playwright")
+    return await _fetch_nfl_pro_plays_playwright(game_uuid)
+
+
+async def _fetch_nfl_pro_plays_direct_api(game_uuid: str) -> List[Dict]:
+    """Fetch plays using direct API call with Bearer token from saved session."""
+    import aiohttp
+
+    if not NFL_PRO_STATE_FILE.exists():
+        logger.debug("No NFL Pro session file for direct API")
+        return []
+
+    try:
+        with open(NFL_PRO_STATE_FILE) as f:
+            state = json.load(f)
+    except Exception as e:
+        logger.warning(f"Error loading NFL Pro session: {e}")
+        return []
+
+    # Extract Bearer token from localStorage
+    access_token = None
+    for origin in state.get('origins', []):
+        if 'nfl.com' in origin.get('origin', ''):
+            for item in origin.get('localStorage', []):
+                if item.get('name') == 'nfl.refreshableToken.v3':
+                    try:
+                        token_data = json.loads(item.get('value', '{}'))
+                        access_token = token_data.get('rawData', {}).get('accessToken')
+                    except:
+                        pass
+                    break
+            break
+
+    if not access_token:
+        logger.debug("No Bearer token found for direct API")
+        return []
+
+    # Build cookies from session
+    cookies = {}
+    for cookie in state.get('cookies', []):
+        if cookie.get('name') and cookie.get('value'):
+            cookies[cookie['name']] = cookie['value']
+
+    # Call NFL Pro plays API directly
+    url = f"https://pro.nfl.com/api/secured/plays/playlist/game?gameId={game_uuid}"
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15',
+        'Accept': 'application/json',
+        'Referer': f'https://pro.nfl.com/games/game/{game_uuid}/play-by-play',
+        'Origin': 'https://pro.nfl.com',
+    }
+
+    try:
+        async with aiohttp.ClientSession(cookies=cookies) as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    plays_raw = await resp.json()
+                    logger.info(f"Direct API success: got {len(plays_raw.get('plays', []))} plays")
+                    return _parse_raw_plays(plays_raw)
+                else:
+                    logger.warning(f"Direct API returned {resp.status}")
+                    return []
+    except Exception as e:
+        logger.warning(f"Direct API error: {e}")
+        return []
+
+
+async def _fetch_nfl_pro_plays_playwright(game_uuid: str) -> List[Dict]:
+    """Fetch plays using Playwright with user's Chrome profile for authentication."""
+    from playwright.async_api import async_playwright
+    import os
+    import shutil
+    import tempfile
+
+    # Use user's Chrome profile for authentication (shares login with their browser)
+    chrome_profile_path = os.path.expanduser("~/Library/Application Support/Google/Chrome")
+
+    plays_raw = None
+
+    async with async_playwright() as p:
+        # Try to use Chrome profile - if Chrome is running, copy profile to temp location
+        context = None
+        temp_profile = None
+
+        try:
+            # First try direct access (works if Chrome is closed)
+            context = await p.chromium.launch_persistent_context(
+                chrome_profile_path,
+                headless=True,
+                channel='chrome',
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                ],
+                timeout=10000,
+            )
+            logger.info("Using Chrome profile directly")
+        except Exception as e:
+            # Chrome is likely running - try copying critical files to temp profile
+            logger.info(f"Chrome profile locked ({str(e)[:50]}...), copying cookies to temp profile")
+            try:
+                temp_profile = tempfile.mkdtemp(prefix='chrome_profile_')
+                default_profile = os.path.join(chrome_profile_path, 'Default')
+
+                # Copy only essential files for cookies/auth
+                for filename in ['Cookies', 'Login Data', 'Web Data', 'Preferences', 'Local State']:
+                    src = os.path.join(default_profile if filename != 'Local State' else chrome_profile_path, filename)
+                    if os.path.exists(src):
+                        dst_dir = os.path.join(temp_profile, 'Default') if filename != 'Local State' else temp_profile
+                        os.makedirs(dst_dir, exist_ok=True)
+                        shutil.copy2(src, os.path.join(dst_dir, filename))
+
+                context = await p.chromium.launch_persistent_context(
+                    temp_profile,
+                    headless=True,
+                    args=['--disable-blink-features=AutomationControlled'],
+                    timeout=10000,
+                )
+                logger.info("Using copied Chrome profile")
+            except Exception as e2:
+                logger.warning(f"Could not copy Chrome profile: {e2}, falling back to session file")
+                if temp_profile and os.path.exists(temp_profile):
+                    shutil.rmtree(temp_profile, ignore_errors=True)
+                return await _fetch_nfl_pro_plays_from_session(game_uuid)
+
+        if not context:
+            return await _fetch_nfl_pro_plays_from_session(game_uuid)
+
+        page = context.pages[0] if context.pages else await context.new_page()
+
+        async def capture_plays(response):
+            nonlocal plays_raw
+            # Log all API calls for debugging
+            if '/api/' in response.url:
+                logger.debug(f"API response: {response.status} {response.url[:100]}")
+            if 'plays/playlist' in response.url:
+                logger.info(f"Plays API response: status={response.status}, url={response.url}")
+                if response.status == 200:
+                    try:
+                        plays_raw = await response.json()
+                        logger.info(f"Captured plays response from {response.url}")
+                    except Exception as e:
+                        logger.warning(f"Error parsing plays response: {e}")
+
+        page.on('response', capture_plays)
+
+        try:
+            url = f"https://pro.nfl.com/games/game/{game_uuid}/play-by-play"
+            logger.info(f"Navigating to {url}")
+            await page.goto(url, wait_until='networkidle', timeout=30000)
+            await asyncio.sleep(3)  # Wait for API calls
+
+            # Debug: Log final URL and page state
+            final_url = page.url
+            logger.info(f"Final URL after navigation: {final_url}")
+            if 'login' in final_url.lower() or final_url != url:
+                logger.warning(f"Page redirected - may need fresh login")
+        except Exception as e:
+            logger.warning(f"Error navigating to NFL Pro: {e}")
+        finally:
+            await context.close()
+            # Clean up temp profile if we created one
+            if temp_profile and os.path.exists(temp_profile):
+                shutil.rmtree(temp_profile, ignore_errors=True)
+
+    if not plays_raw:
+        logger.warning("No plays captured from NFL Pro")
+        return []
+
+    # Parse plays into structured format
+    raw_plays = plays_raw.get('plays', plays_raw.get('playlist', []))
+    parsed_plays = []
+
+    for raw in raw_plays:
+        try:
+            if raw.get('playType') == 'GAME' or raw.get('play_type') == 'GAME':
+                continue
+
+            # Handle both nested (camelCase) and flat (snake_case) API formats
+            offense = raw.get('offense', {}) or {}
+            defense = raw.get('defense', {}) or {}
+            pass_info = raw.get('passInfo', {}) or {}
+            rec_info = raw.get('recInfo', {}) or {}
+
+            # Get coverage - try nested first, then flat
+            coverage = (
+                defense.get('coverageType') or
+                raw.get('coverage_type', '') or
+                raw.get('coverageType', '')
+            )
+            if coverage:
+                coverage = coverage.replace('COVER_', 'Cover ').replace('_', ' ')
+
+            # Get man/zone - try nested first, then flat
+            man_zone = (
+                defense.get('manZoneType') or
+                raw.get('man_zone', '') or
+                raw.get('manZoneType', '')
+            )
+            if man_zone:
+                man_zone = 'Man' if 'MAN' in man_zone.upper() else 'Zone' if 'ZONE' in man_zone.upper() else ''
+
+            # Get pass info fields - try nested first, then flat
+            time_to_throw = (
+                pass_info.get('timeToThrow') or
+                raw.get('time_to_throw') or
+                raw.get('timeToThrow') or 0
+            )
+            air_yards = (
+                pass_info.get('airYards') or
+                raw.get('air_yards') or
+                raw.get('airYards') or 0
+            )
+            was_pressure = (
+                pass_info.get('wasPressure') or
+                raw.get('was_pressure') or
+                raw.get('wasPressure') or False
+            )
+
+            # Get route - try nested first, then flat
+            route = (
+                rec_info.get('route') or
+                raw.get('route', '')
+            )
+
+            # Get defense info - try nested first, then flat
+            defenders_in_box = (
+                defense.get('defendersInTheBox') or
+                raw.get('defenders_in_box') or
+                raw.get('defendersInTheBox') or 0
+            )
+            pass_rushers = (
+                defense.get('numberOfPassRushers') or
+                raw.get('pass_rushers') or
+                raw.get('numberOfPassRushers') or 0
+            )
+
+            # Get offense info - try nested first, then flat
+            off_personnel = (
+                offense.get('personnel') or
+                raw.get('off_personnel') or
+                raw.get('personnel', '')
+            )
+            off_formation = (
+                offense.get('offenseFormation') or
+                raw.get('off_formation') or
+                raw.get('offenseFormation', '')
+            )
+            def_personnel = (
+                defense.get('personnel') or
+                raw.get('def_personnel', '')
+            )
+
+            play = {
+                'playId': raw.get('playId') or raw.get('play_id', 0),
+                'sequence': raw.get('sequence', 0),
+                'quarter': raw.get('quarter', 0),
+                'clock': raw.get('endClock') or raw.get('end_clock') or raw.get('startClock') or raw.get('start_clock', ''),
+                'down': raw.get('down', 0),
+                'distance': raw.get('yardsToGo') or raw.get('yards_to_go', 0),
+                'yardLine': raw.get('yardLine') or raw.get('yard_line', ''),
+                'possessionTeam': raw.get('possessionTeam') or raw.get('possession_team', ''),
+                'playDescription': raw.get('playDescription') or raw.get('description', ''),
+                'yardsGained': raw.get('yardsGained') or raw.get('yards_gained', 0),
+                'offense': {
+                    'personnel': off_personnel,
+                    'offenseFormation': off_formation,
+                },
+                'defense': {
+                    'personnel': def_personnel,
+                    'defendersInTheBox': int(defenders_in_box) if defenders_in_box else 0,
+                    'numberOfPassRushers': int(pass_rushers) if pass_rushers else 0,
+                    'coverageType': coverage,
+                    'manZoneType': man_zone,
+                },
+                'passInfo': {
+                    'timeToThrow': float(time_to_throw) if time_to_throw else 0,
+                    'airYards': float(air_yards) if air_yards else 0,
+                    'wasPressure': bool(was_pressure),
+                },
+                'recInfo': {
+                    'route': route,
+                },
+                'isRedzone': raw.get('isRedzone') or raw.get('is_redzone', False),
+            }
+            parsed_plays.append(play)
+        except Exception as e:
+            logger.debug(f"Error parsing play: {e}")
+
+    logger.info(f"Parsed {len(parsed_plays)} plays from NFL Pro")
+    return parsed_plays
+
+
+async def _fetch_nfl_pro_plays_from_session(game_uuid: str) -> List[Dict]:
+    """Fallback: Fetch plays using saved session file (cookies + localStorage)."""
+    from playwright.async_api import async_playwright
+
+    if not NFL_PRO_STATE_FILE.exists():
+        logger.warning(f"NFL Pro session file not found at {NFL_PRO_STATE_FILE}")
+        return []
+
+    try:
+        with open(NFL_PRO_STATE_FILE) as f:
+            state = json.load(f)
+        cookies = state.get('cookies', [])
+        if not cookies:
+            logger.warning("No cookies in NFL Pro session file")
+            return []
+    except Exception as e:
+        logger.warning(f"Error loading NFL Pro session: {e}")
+        return []
+
+    plays_raw = None
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+
+        # Build storage state for context
+        storage_state = {
+            'cookies': [],
+            'origins': state.get('origins', [])
+        }
+        for c in cookies:
+            pc = {
+                'name': c['name'],
+                'value': c['value'],
+                'domain': c.get('domain', '.nfl.com'),
+                'path': c.get('path', '/'),
+            }
+            if c.get('secure'):
+                pc['secure'] = True
+            if c.get('httpOnly'):
+                pc['httpOnly'] = True
+            if c.get('sameSite'):
+                pc['sameSite'] = c['sameSite']
+            storage_state['cookies'].append(pc)
+
+        context = await browser.new_context(storage_state=storage_state)
+        page = await context.new_page()
+
+        async def capture_plays(response):
+            nonlocal plays_raw
+            if 'plays/playlist' in response.url and response.status == 200:
+                try:
+                    plays_raw = await response.json()
+                    logger.info(f"Captured plays from session fallback: {response.url}")
+                except:
+                    pass
+
+        page.on('response', capture_plays)
+
+        try:
+            url = f"https://pro.nfl.com/games/game/{game_uuid}/play-by-play"
+            await page.goto(url, wait_until='networkidle', timeout=30000)
+            await asyncio.sleep(3)
+        except Exception as e:
+            logger.warning(f"Session fallback navigation error: {e}")
+        finally:
+            await context.close()
+            await browser.close()
+
+    return _parse_raw_plays(plays_raw) if plays_raw else []
+
+
+def _parse_raw_plays(plays_raw: Dict) -> List[Dict]:
+    """Parse raw NFL Pro plays response into structured format."""
+    raw_plays = plays_raw.get('plays', plays_raw.get('playlist', []))
+    parsed_plays = []
+
+    for raw in raw_plays:
+        try:
+            if raw.get('playType') == 'GAME' or raw.get('play_type') == 'GAME':
+                continue
+
+            offense = raw.get('offense', {}) or {}
+            defense = raw.get('defense', {}) or {}
+            pass_info = raw.get('passInfo', {}) or {}
+            rec_info = raw.get('recInfo', {}) or {}
+
+            coverage = defense.get('coverageType') or raw.get('coverage_type', '') or raw.get('coverageType', '')
+            if coverage:
+                coverage = coverage.replace('COVER_', 'Cover ').replace('_', ' ')
+
+            man_zone = defense.get('manZoneType') or raw.get('man_zone', '') or raw.get('manZoneType', '')
+            if man_zone:
+                man_zone = 'Man' if 'MAN' in man_zone.upper() else 'Zone' if 'ZONE' in man_zone.upper() else ''
+
+            time_to_throw = pass_info.get('timeToThrow') or raw.get('time_to_throw') or raw.get('timeToThrow') or 0
+            air_yards = pass_info.get('airYards') or raw.get('air_yards') or raw.get('airYards') or 0
+            was_pressure = pass_info.get('wasPressure') or raw.get('was_pressure') or raw.get('wasPressure') or False
+            route = rec_info.get('route') or raw.get('route', '')
+
+            defenders_in_box = defense.get('defendersInTheBox') or raw.get('defenders_in_box') or raw.get('defendersInTheBox') or 0
+            pass_rushers = defense.get('numberOfPassRushers') or raw.get('pass_rushers') or raw.get('numberOfPassRushers') or 0
+
+            off_personnel = offense.get('personnel') or raw.get('off_personnel') or raw.get('personnel', '')
+            off_formation = offense.get('offenseFormation') or raw.get('off_formation') or raw.get('offenseFormation', '')
+            def_personnel = defense.get('personnel') or raw.get('def_personnel', '')
+
+            play = {
+                'playId': raw.get('playId') or raw.get('play_id', 0),
+                'sequence': raw.get('sequence', 0),
+                'quarter': raw.get('quarter', 0),
+                'clock': raw.get('endClock') or raw.get('end_clock') or raw.get('startClock') or raw.get('start_clock', ''),
+                'down': raw.get('down', 0),
+                'distance': raw.get('yardsToGo') or raw.get('yards_to_go', 0),
+                'yardLine': raw.get('yardLine') or raw.get('yard_line', ''),
+                'possessionTeam': raw.get('possessionTeam') or raw.get('possession_team', ''),
+                'playDescription': raw.get('playDescription') or raw.get('description', ''),
+                'yardsGained': raw.get('yardsGained') or raw.get('yards_gained', 0),
+                'offense': {'personnel': off_personnel, 'offenseFormation': off_formation},
+                'defense': {
+                    'personnel': def_personnel,
+                    'defendersInTheBox': int(defenders_in_box) if defenders_in_box else 0,
+                    'numberOfPassRushers': int(pass_rushers) if pass_rushers else 0,
+                    'coverageType': coverage,
+                    'manZoneType': man_zone,
+                },
+                'passInfo': {
+                    'timeToThrow': float(time_to_throw) if time_to_throw else 0,
+                    'airYards': float(air_yards) if air_yards else 0,
+                    'wasPressure': bool(was_pressure),
+                },
+                'recInfo': {'route': route},
+                'isRedzone': raw.get('isRedzone') or raw.get('is_redzone', False),
+            }
+            parsed_plays.append(play)
+        except Exception as e:
+            logger.debug(f"Error parsing play: {e}")
+
+    return parsed_plays
 
 
 if __name__ == '__main__':

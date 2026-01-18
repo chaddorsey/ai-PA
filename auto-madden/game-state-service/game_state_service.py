@@ -11,6 +11,7 @@ import os
 import threading
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 import requests
@@ -19,6 +20,7 @@ from flask_cors import CORS
 
 from models import GameState, GameChange
 from espn_client import ESPNClient
+from nfl_pro_client import NFLProClient
 
 # Configure logging
 logging.basicConfig(
@@ -30,8 +32,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Configuration
-INSIGHT_ENGINE_URL = os.environ.get('INSIGHT_ENGINE_URL', 'http://auto-madden-insight-engine:5131')
+# Configuration - supports both Docker and local environments
+_default_engine_url = 'http://auto-madden-insight-engine:5131' if os.environ.get('DOCKER_ENV') else 'http://localhost:5131'
+INSIGHT_ENGINE_URL = os.environ.get('INSIGHT_ENGINE_URL', _default_engine_url)
 BASE_POLL_INTERVAL = float(os.environ.get('ESPN_POLL_INTERVAL', '3'))
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
@@ -40,11 +43,14 @@ logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 
 # Global state
 espn_client = ESPNClient()
+nfl_pro_client = NFLProClient()
 current_state: Optional[GameState] = None
 previous_state: Optional[GameState] = None
 tracking_active = False
 tracking_thread: Optional[threading.Thread] = None
 last_play_id: Optional[str] = None
+current_nfl_pro_uuid: Optional[str] = None
+last_nfl_pro_play_id: Optional[int] = None
 
 
 def detect_changes(old_state: Optional[GameState], new_state: GameState) -> List[GameChange]:
@@ -230,32 +236,77 @@ def detect_changes(old_state: Optional[GameState], new_state: GameState) -> List
 def emit_changes(changes: List[GameChange], state: GameState):
     """
     Send detected changes to the insight engine.
-    
+
     Args:
         changes: List of detected changes
         state: Current game state
     """
+    global last_nfl_pro_play_id
+
     if not changes:
         return
-    
+
+    # Try to get NFL Pro play data for rich pre-snap/post-snap info
+    nfl_pro_play_data = None
+    if current_nfl_pro_uuid and nfl_pro_client.is_available():
+        try:
+            latest_play = nfl_pro_client.get_latest_play(current_nfl_pro_uuid)
+            if latest_play and latest_play.play_id != last_nfl_pro_play_id:
+                last_nfl_pro_play_id = latest_play.play_id
+
+                # Build NFL Pro play data in format insight engine expects
+                nfl_pro_play_data = {
+                    'playDescription': latest_play.description,
+                    'playType': 'PASS' if 'pass' in latest_play.description.lower() else 'RUSH',
+                    'offense': {
+                        'personnel': latest_play.personnel,
+                        'offenseFormation': latest_play.formation,
+                    },
+                    'defense': {
+                        'defendersInTheBox': latest_play.defenders_in_box,
+                        'numberOfPassRushers': latest_play.pass_rushers,
+                        'coverageType': latest_play.coverage_type,
+                        'manZoneType': latest_play.man_zone,
+                    },
+                    'passInfo': {
+                        'timeToThrow': latest_play.time_to_throw,
+                        'airYards': latest_play.air_yards,
+                        'wasPressure': latest_play.was_pressure,
+                    },
+                    'recInfo': {
+                        'route': latest_play.route,
+                    },
+                    'isRedzone': latest_play.is_redzone,
+                    'yardsGained': latest_play.yards_gained,
+                }
+
+                if latest_play.has_rich_data():
+                    logger.info(f"NFL Pro: {latest_play.personnel} {latest_play.formation}, {latest_play.defenders_in_box} in box, {latest_play.coverage_type}")
+        except Exception as e:
+            logger.warning(f"Error fetching NFL Pro play data: {e}")
+
     for change in changes:
         try:
             payload = {
                 'change': change.to_dict(),
                 'state': state.to_dict()
             }
-            
+
+            # Include NFL Pro play data if available
+            if nfl_pro_play_data:
+                payload['nfl_pro_play'] = nfl_pro_play_data
+
             response = requests.post(
                 f"{INSIGHT_ENGINE_URL}/event",
                 json=payload,
                 timeout=5
             )
-            
+
             if response.status_code == 200:
                 logger.debug(f"Emitted change: {change.change_type}")
             else:
                 logger.warning(f"Failed to emit change: {response.status_code}")
-                
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Error emitting change to insight engine: {e}")
         except Exception as e:
@@ -379,18 +430,38 @@ def list_games():
     })
 
 
+def load_espn_to_nfl_pro_mapping() -> Dict[str, str]:
+    """Load ESPN to NFL Pro UUID mapping from data file."""
+    mapping_paths = [
+        Path('/data/espn_nfl_pro_mapping.json'),
+        Path('/Volumes/main-drive/ai-PA/auto-madden/data/espn_nfl_pro_mapping.json'),
+    ]
+
+    for path in mapping_paths:
+        if path.exists():
+            try:
+                with open(path) as f:
+                    data = json.load(f)
+                    return data.get('espn_to_nfl_pro', {})
+            except Exception as e:
+                logger.warning(f"Error loading mapping from {path}: {e}")
+
+    return {}
+
+
 @app.route('/start', methods=['POST'])
 @app.route('/live/espn/start', methods=['POST'])
 def start_tracking():
     """
     Start tracking a game.
-    
+
     Request body:
         - team: Team name/abbreviation to find game for
         - game_id: Specific ESPN game ID (optional, overrides team)
+        - nfl_pro_uuid: NFL Pro game UUID (optional)
     """
-    global tracking_active, tracking_thread, current_state, previous_state
-    
+    global tracking_active, tracking_thread, current_state, previous_state, current_nfl_pro_uuid, last_nfl_pro_play_id
+
     data = request.get_json() or {}
     
     # Check if already tracking
@@ -421,7 +492,21 @@ def start_tracking():
             'status': 'error',
             'message': 'Must provide team or game_id'
         }), 400
-    
+
+    # Look up NFL Pro UUID for rich play data
+    nfl_pro_uuid = data.get('nfl_pro_uuid')
+    if not nfl_pro_uuid:
+        mapping = load_espn_to_nfl_pro_mapping()
+        nfl_pro_uuid = mapping.get(str(game_id))
+
+    if nfl_pro_uuid:
+        current_nfl_pro_uuid = nfl_pro_uuid
+        last_nfl_pro_play_id = None
+        logger.info(f"NFL Pro UUID: {nfl_pro_uuid[:8]}... for ESPN {game_id}")
+    else:
+        logger.warning(f"No NFL Pro UUID mapping for ESPN {game_id} - using ESPN only")
+        current_nfl_pro_uuid = None
+
     # Get initial state
     raw_data = espn_client.get_game_summary(game_id)
     if not raw_data:
@@ -429,26 +514,28 @@ def start_tracking():
             'status': 'error',
             'message': f"Could not fetch game data for {game_id}"
         }), 404
-    
+
     current_state = espn_client.parse_game_state(raw_data)
     previous_state = None
-    
+
     # Start tracking thread
     tracking_active = True
     tracking_thread = threading.Thread(target=poll_loop, args=(game_id,), daemon=True)
     tracking_thread.start()
-    
+
     logger.info(f"Started tracking game: {current_state.short_name}")
-    
+
     return jsonify({
         'status': 'ok',
         'message': f"Now tracking: {current_state.short_name}",
         'game': {
             'game_id': game_id,
+            'nfl_pro_uuid': nfl_pro_uuid,
             'name': current_state.game_name,
             'short_name': current_state.short_name,
             'status': current_state.status,
-            'score': f"{current_state.home_team.abbreviation if current_state.home_team else 'HOME'} {current_state.home_score}, {current_state.away_team.abbreviation if current_state.away_team else 'AWAY'} {current_state.away_score}"
+            'score': f"{current_state.home_team.abbreviation if current_state.home_team else 'HOME'} {current_state.home_score}, {current_state.away_team.abbreviation if current_state.away_team else 'AWAY'} {current_state.away_score}",
+            'nfl_pro_available': nfl_pro_client.is_available()
         }
     })
 

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Deep-Graph-MCP__folder-tree-structure",
+      "Bash(python3:*)",
+      "Bash(curl:*)",
+      "Bash(CREDENTIALS_PATH=\"credentials\" python3:*)",
+      "Bash(./start_companion.sh)",
+      "Bash(lsof:*)",
+      "Bash(xargs:*)",
+      "Bash(pip3 install:*)",
+      "Bash(ln:*)",
+      "Bash(sqlite3:*)"
+    ]
+  }
+}

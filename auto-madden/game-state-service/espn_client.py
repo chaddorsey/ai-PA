@@ -207,10 +207,16 @@ class ESPNClient:
         clock_display = status_data.get('displayClock') or clock_data.get('displayValue', '15:00')
         is_two_minute = self._is_two_minute_warning(clock_display, period)
         
-        # Win probability
+        # Win probability (ESPN may return as string)
         predictor = raw_data.get('predictor', {})
-        home_wp = predictor.get('homeTeam', {}).get('gameProjection', 50.0)
-        away_wp = predictor.get('awayTeam', {}).get('gameProjection', 50.0)
+        try:
+            home_wp = float(predictor.get('homeTeam', {}).get('gameProjection', 50.0))
+        except (TypeError, ValueError):
+            home_wp = 50.0
+        try:
+            away_wp = float(predictor.get('awayTeam', {}).get('gameProjection', 50.0))
+        except (TypeError, ValueError):
+            away_wp = 50.0
         
         # Parse plays from drives
         recent_plays = self._parse_recent_plays(raw_data.get('drives', {}))
