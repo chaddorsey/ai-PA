@@ -1483,9 +1483,9 @@ def load_narrative_insights(
             logger.info(f"Loaded Week {week} insights from raw database")
             return nfl_pro_narratives.get_unserved_count()
     else:
-        # Load from all available processed weeks
+        # Load from all available processed weeks (including playoffs up to week 22)
         total_loaded = 0
-        for w in range(1, 19):  # Weeks 1-18
+        for w in range(1, 23):  # Weeks 1-22 (regular + playoffs)
             if nfl_pro_narratives.load_from_processed(w, append=True):
                 total_loaded += 1
         if total_loaded > 0:

@@ -1,0 +1,2464 @@
+{
+  "week": 20,
+  "season": 2025,
+  "processed_at": "2026-01-18T16:26:00.207237",
+  "total_insights": 66,
+  "games": 1,
+  "index": {
+    "team:hou": [
+      "696938de94893e88049326fb",
+      "69693aba7b9e0afe6fb31485",
+      "696939a9f46bf7433f01441f",
+      "6969393f94893e88049326fc",
+      "696939364faa81fbf5c41098",
+      "696938c7e0fbbe0095060a60",
+      "696938a67b9e0afe6fb31481",
+      "696938994faa81fbf5c41096",
+      "696934d2f46bf7433f014414",
+      "696934bee0fbbe0095060a5d",
+      "6969344af46bf7433f014413",
+      "696933eee0fbbe0095060a5c",
+      "696933c8f46bf7433f014412",
+      "69680fd25f43d0f7192f10c9",
+      "69680fc719ad4dfef5e5d982"
+    ],
+    "team:pit": [
+      "696938de94893e88049326fb",
+      "696939627b9e0afe6fb31483"
+    ],
+    "topic:matchup": [
+      "696938de94893e88049326fb",
+      "69693aba7b9e0afe6fb31485",
+      "69693a77f46bf7433f014420",
+      "69693a26e0fbbe0095060a63",
+      "696939f55cd8ec598ed6d73a",
+      "6969399b7b9e0afe6fb31484",
+      "696939627b9e0afe6fb31483",
+      "696938e97b9e0afe6fb31482",
+      "6969338c7b9e0afe6fb31479"
+    ],
+    "team:ne": [
+      "69698e2368f89677857133c3",
+      "69693a1094893e88049326fd",
+      "69693a04e0fbbe0095060a62",
+      "696939f55cd8ec598ed6d73a",
+      "696937e17b9e0afe6fb31480",
+      "696937d27b9e0afe6fb3147f",
+      "696937bb5cd8ec598ed6d739",
+      "6969377e7b9e0afe6fb3147e",
+      "6969375e7b9e0afe6fb3147d",
+      "69693718f46bf7433f01441b",
+      "696936f44faa81fbf5c41095",
+      "696936d74faa81fbf5c41094",
+      "6969339e7b9e0afe6fb3147a",
+      "69693391f46bf7433f014411",
+      "6969338c7b9e0afe6fb31479",
+      "69693307f46bf7433f014410",
+      "69680fb41e817b7dc78153c3",
+      "69680fad5f43d0f7192f10c8",
+      "69680fa6e683e7b155844366"
+    ],
+    "topic:passing": [
+      "69698e2368f89677857133c3",
+      "69693aba7b9e0afe6fb31485",
+      "69693a77f46bf7433f014420",
+      "69693a26e0fbbe0095060a63",
+      "696939a9f46bf7433f01441f",
+      "6969399b7b9e0afe6fb31484",
+      "6969390af46bf7433f01441e",
+      "696938e97b9e0afe6fb31482",
+      "6969388894893e88049326fa",
+      "69693818f46bf7433f01441c",
+      "696937e17b9e0afe6fb31480",
+      "696937d27b9e0afe6fb3147f",
+      "6969372494893e88049326f9",
+      "69693712f46bf7433f01441a",
+      "696936f44faa81fbf5c41095",
+      "696936eee0fbbe0095060a5f",
+      "696936d74faa81fbf5c41094",
+      "696936b24faa81fbf5c41093",
+      "69693698f46bf7433f014419",
+      "696935edf46bf7433f014417",
+      "696935bff46bf7433f014416",
+      "696935a6f46bf7433f014415",
+      "696935677b9e0afe6fb3147c",
+      "6969353994893e88049326f8",
+      "696934bee0fbbe0095060a5d",
+      "696933e7e0fbbe0095060a5b",
+      "696933d95cd8ec598ed6d737",
+      "69680fb91e817b7dc78153c4"
+    ],
+    "topic:stats": [
+      "69698e2368f89677857133c3",
+      "69693aba7b9e0afe6fb31485",
+      "69693a77f46bf7433f014420",
+      "69693a04e0fbbe0095060a62",
+      "696939f55cd8ec598ed6d73a",
+      "696939a9f46bf7433f01441f",
+      "696939627b9e0afe6fb31483",
+      "6969390af46bf7433f01441e",
+      "696938e97b9e0afe6fb31482",
+      "696938d04faa81fbf5c41097",
+      "696938c7e0fbbe0095060a60",
+      "696938a67b9e0afe6fb31481",
+      "696938994faa81fbf5c41096",
+      "6969388894893e88049326fa",
+      "69693864f46bf7433f01441d",
+      "69693818f46bf7433f01441c",
+      "696937e17b9e0afe6fb31480",
+      "696937d27b9e0afe6fb3147f",
+      "696937bb5cd8ec598ed6d739",
+      "6969377e7b9e0afe6fb3147e",
+      "6969375e7b9e0afe6fb3147d",
+      "69693718f46bf7433f01441b",
+      "696936eee0fbbe0095060a5f",
+      "696936d74faa81fbf5c41094",
+      "696936b24faa81fbf5c41093",
+      "69693698f46bf7433f014419",
+      "69693642f46bf7433f014418",
+      "696936054faa81fbf5c41092",
+      "696935edf46bf7433f014417",
+      "696935bff46bf7433f014416",
+      "696935a6f46bf7433f014415",
+      "696935677b9e0afe6fb3147c",
+      "6969353994893e88049326f8",
+      "69693509e0fbbe0095060a5e",
+      "696934d2f46bf7433f014414",
+      "696934bee0fbbe0095060a5d",
+      "696934887b9e0afe6fb3147b",
+      "696933eee0fbbe0095060a5c",
+      "696933e7e0fbbe0095060a5b",
+      "696933d95cd8ec598ed6d737",
+      "696933c8f46bf7433f014412",
+      "6969339e7b9e0afe6fb3147a",
+      "69693391f46bf7433f014411",
+      "6969338c7b9e0afe6fb31479",
+      "69693307f46bf7433f014410",
+      "69680ffee22f7208feda845c",
+      "69680fb91e817b7dc78153c4"
+    ],
+    "topic:defense": [
+      "69693aba7b9e0afe6fb31485",
+      "69693a77f46bf7433f014420",
+      "69693a04e0fbbe0095060a62",
+      "696939bce0fbbe0095060a61",
+      "696939a9f46bf7433f01441f",
+      "6969393f94893e88049326fc",
+      "696938e97b9e0afe6fb31482",
+      "696938994faa81fbf5c41096",
+      "6969388894893e88049326fa",
+      "69693818f46bf7433f01441c",
+      "696937d27b9e0afe6fb3147f",
+      "696937bb5cd8ec598ed6d739",
+      "6969375e7b9e0afe6fb3147d",
+      "6969372494893e88049326f9",
+      "69693712f46bf7433f01441a",
+      "696936f44faa81fbf5c41095",
+      "696936eee0fbbe0095060a5f",
+      "6969362b5cd8ec598ed6d738",
+      "696935a6f46bf7433f014415",
+      "696935677b9e0afe6fb3147c",
+      "6969353994893e88049326f8",
+      "69693509e0fbbe0095060a5e",
+      "696934d2f46bf7433f014414",
+      "696934bee0fbbe0095060a5d",
+      "696934887b9e0afe6fb3147b",
+      "6969344af46bf7433f014413",
+      "696933d95cd8ec598ed6d737",
+      "69680fc719ad4dfef5e5d982"
+    ],
+    "topic:redzone": [
+      "69693a77f46bf7433f014420"
+    ],
+    "topic:turnovers": [
+      "69693a77f46bf7433f014420",
+      "69693712f46bf7433f01441a"
+    ],
+    "term:man coverage": [
+      "69693a77f46bf7433f014420",
+      "696938e97b9e0afe6fb31482",
+      "696934bee0fbbe0095060a5d"
+    ],
+    "term:red zone": [
+      "69693a77f46bf7433f014420"
+    ],
+    "team:lac": [
+      "69693a26e0fbbe0095060a63",
+      "696939f55cd8ec598ed6d73a",
+      "6969338c7b9e0afe6fb31479",
+      "69681010d068eeeb79e017c7"
+    ],
+    "term:blitz": [
+      "69693a26e0fbbe0095060a63"
+    ],
+    "team:was": [
+      "69693a1094893e88049326fd",
+      "696938e97b9e0afe6fb31482",
+      "696938d04faa81fbf5c41097",
+      "69693718f46bf7433f01441b",
+      "69693712f46bf7433f01441a",
+      "696936eee0fbbe0095060a5f",
+      "696934887b9e0afe6fb3147b",
+      "696933eee0fbbe0095060a5c",
+      "69681010d068eeeb79e017c7"
+    ],
+    "term:pressure": [
+      "69693a04e0fbbe0095060a62",
+      "696939a9f46bf7433f01441f",
+      "6969393f94893e88049326fc",
+      "696938994faa81fbf5c41096",
+      "69693818f46bf7433f01441c",
+      "696935a6f46bf7433f014415",
+      "696935677b9e0afe6fb3147c",
+      "6969353994893e88049326f8",
+      "69693509e0fbbe0095060a5e"
+    ],
+    "topic:rushing": [
+      "696939f55cd8ec598ed6d73a",
+      "696939627b9e0afe6fb31483",
+      "696938d04faa81fbf5c41097",
+      "696938c7e0fbbe0095060a60",
+      "69693818f46bf7433f01441c",
+      "696937bb5cd8ec598ed6d739",
+      "6969377e7b9e0afe6fb3147e",
+      "6969372494893e88049326f9",
+      "69693718f46bf7433f01441b",
+      "696936b24faa81fbf5c41093",
+      "69693642f46bf7433f014418",
+      "6969362b5cd8ec598ed6d738",
+      "6969353994893e88049326f8",
+      "696934d2f46bf7433f014414"
+    ],
+    "term:sack": [
+      "6969393f94893e88049326fc"
+    ],
+    "term:completion percentage": [
+      "6969390af46bf7433f01441e",
+      "6969388894893e88049326fa",
+      "696933d95cd8ec598ed6d737"
+    ],
+    "term:yards per attempt": [
+      "6969390af46bf7433f01441e",
+      "696938e97b9e0afe6fb31482",
+      "69693698f46bf7433f014419"
+    ],
+    "term:passer rating": [
+      "696938e97b9e0afe6fb31482",
+      "696935edf46bf7433f014417",
+      "696933e7e0fbbe0095060a5b"
+    ],
+    "team:min": [
+      "696938d04faa81fbf5c41097",
+      "6969388894893e88049326fa",
+      "6969372494893e88049326f9",
+      "696936f44faa81fbf5c41095",
+      "69693642f46bf7433f014418",
+      "6969362b5cd8ec598ed6d738",
+      "696935edf46bf7433f014417",
+      "696935bff46bf7433f014416",
+      "696935a6f46bf7433f014415",
+      "6969353994893e88049326f8"
+    ],
+    "team:no": [
+      "696938d04faa81fbf5c41097",
+      "696937d27b9e0afe6fb3147f"
+    ],
+    "term:running back": [
+      "696938d04faa81fbf5c41097"
+    ],
+    "team:lv": [
+      "696938c7e0fbbe0095060a60"
+    ],
+    "term:cornerback": [
+      "6969388894893e88049326fa",
+      "696936f44faa81fbf5c41095",
+      "696934887b9e0afe6fb3147b",
+      "696933eee0fbbe0095060a5c",
+      "696933e7e0fbbe0095060a5b"
+    ],
+    "term:dropback": [
+      "696937e17b9e0afe6fb31480",
+      "696937d27b9e0afe6fb3147f",
+      "696936f44faa81fbf5c41095",
+      "696936eee0fbbe0095060a5f",
+      "696934bee0fbbe0095060a5d"
+    ],
+    "term:zone coverage": [
+      "696937d27b9e0afe6fb3147f",
+      "69693712f46bf7433f01441a"
+    ],
+    "term:linebacker": [
+      "6969372494893e88049326f9"
+    ],
+    "term:air yards": [
+      "69693698f46bf7433f014419",
+      "696936054faa81fbf5c41092"
+    ],
+    "term:play action": [
+      "696935bff46bf7433f014416"
+    ],
+    "term:tight end": [
+      "696935bff46bf7433f014416"
+    ],
+    "topic:third_down": [
+      "6969353994893e88049326f8"
+    ],
+    "term:third down": [
+      "6969353994893e88049326f8"
+    ],
+    "term:jumbo": [
+      "696933c8f46bf7433f014412",
+      "69693391f46bf7433f014411"
+    ],
+    "term:22 personnel": [
+      "6969338c7b9e0afe6fb31479"
+    ],
+    "term:shotgun": [
+      "69693307f46bf7433f014410"
+    ],
+    "team:ari": [
+      "69680fb41e817b7dc78153c3"
+    ]
+  },
+  "insights": [
+    {
+      "id": "696938de94893e88049326fb",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Texans may be without Nico Collins, who suffered a concussion in the Texans' Wild Card win against the Steelers.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "matchup"
+      ],
+      "teams_mentioned": [
+        "HOU",
+        "PIT"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "team:pit",
+        "topic:matchup"
+      ],
+      "llm_summary": "Topics: matchup",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69698e2368f89677857133c3",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Kayshon Boutte has had 10 receptions of at least 20 yards in 2025, totaling 270 receiving yards and four touchdowns, the most receiving touchdowns of at least 20 yards by a Patriots pass catcher this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:passing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: passing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693aba7b9e0afe6fb31485",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Drake Maye threw his first career touchdown pass against the Texans in Week 6, 2024, a 40-yard score to Kayshon Boutte that beat the coverage of Derek Stingley Jr.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "matchup",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense",
+        "topic:matchup",
+        "topic:passing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, matchup, passing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693a77f46bf7433f014420",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "C.J. Stroud completed 66.7% of his pass attempts against man coverage in the red zone in the regular season, tied for the 3rd-highest mark among qualified quarterbacks, throwing 11 touchdowns without a single interception.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "man coverage",
+        "red zone"
+      ],
+      "topics": [
+        "defense",
+        "matchup",
+        "passing",
+        "redzone",
+        "stats",
+        "turnovers"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:matchup",
+        "topic:passing",
+        "topic:redzone",
+        "topic:stats",
+        "topic:turnovers",
+        "term:man coverage",
+        "term:red zone"
+      ],
+      "llm_summary": "Topics: defense, matchup, passing, redzone, stats, turnovers | Terms: man coverage, red zone",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693a26e0fbbe0095060a63",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "In the Wild Card game, Drake Maye completed 6 of 9 passes for 122 yards and a touchdown against the Chargers blitz.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "blitz"
+      ],
+      "topics": [
+        "matchup",
+        "passing"
+      ],
+      "teams_mentioned": [
+        "LAC"
+      ],
+      "retrieval_keys": [
+        "team:lac",
+        "topic:matchup",
+        "topic:passing",
+        "term:blitz"
+      ],
+      "llm_summary": "Topics: matchup, passing | Terms: blitz",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693a1094893e88049326fd",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Rhamondre Stevenson was the Patriots leading receiver in the Wild Card round with 3 receptions for 75 yards on just 4 targets.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "NE",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:was"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693a04e0fbbe0095060a62",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "In the Wild Card Round, 11 different Patriots defenders generated at least one pressure, tied for their 2nd-most in a game this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:defense",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696939f55cd8ec598ed6d73a",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots allowed just 36 yards against the Chargers 14 designed rushes in the Wild Card Round, their fewest in a game this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "matchup",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAC",
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:lac",
+        "topic:matchup",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: matchup, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696939bce0fbbe0095060a61",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Across 26 coverage snaps in the Wild Card Round, Christian Gonzalez did not allow a single reception on any of his 5 targets faced.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense"
+      ],
+      "llm_summary": "Topics: defense",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696939a9f46bf7433f01441f",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "In the Texans' Wild Card win, C.J. Stroud completed 8 of 14 pass attempts for 148 yards when under pressure, tied for the 2nd-most yards under pressure of his career.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969399b7b9e0afe6fb31484",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Christian Kirk caught 8 passes for 144 yards and a touchdown in the Wild Card round, recording 6 of those receptions for 132 yards and his lone score when covered by Brandin Echols, the most receiving yards against a single defender in a playoff game since at least 2018.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "matchup",
+        "passing"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:matchup",
+        "topic:passing"
+      ],
+      "llm_summary": "Topics: matchup, passing",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696939627b9e0afe6fb31483",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Woody Marks rushed 19 times for a career-high 112 yards and a touchdown against the Steelers.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "matchup",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "PIT"
+      ],
+      "retrieval_keys": [
+        "team:pit",
+        "topic:matchup",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: matchup, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969393f94893e88049326fc",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Will Anderson Jr. (8) and Danielle Hunter (7) combined for 15 pressures and 1.5 sacks in the Wild card round, helping the Texans generate a 44.7% pressure rate, their 3rd-highest in a game in 2025.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure",
+        "sack"
+      ],
+      "topics": [
+        "defense"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense",
+        "term:pressure",
+        "term:sack"
+      ],
+      "llm_summary": "Topics: defense | Terms: pressure, sack",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696939364faa81fbf5c41098",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Texans defensive backs combined to allow 7 receptions for 48 yards across 15 targets (3.2 yards per target) in the Wild Card Round.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969390af46bf7433f01441e",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "C.J. Stroud posted a league-high 64.7% success rate when targeting in-breaking routes this season, along with the 2nd-highest completion percentage (75.3%) and 2nd-most yards per attempt (10.7) behind only Jared Goff (11.0).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "completion percentage",
+        "yards per attempt"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:completion percentage",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: completion percentage, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696938e97b9e0afe6fb31482",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "C.J. Stroud was successful against man coverage this season, completing 60.2% of his pass attempts (11th-highest) while averaging 7.1 yards per attempt (9th-most) and recording a 116.2 passer rating, the 5th-highest among qualified quarterbacks.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "man coverage",
+        "passer rating",
+        "yards per attempt"
+      ],
+      "topics": [
+        "defense",
+        "matchup",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:defense",
+        "topic:matchup",
+        "topic:passing",
+        "topic:stats",
+        "term:man coverage",
+        "term:passer rating",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: defense, matchup, passing, stats | Terms: man coverage, passer rating, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696938d04faa81fbf5c41097",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Woody Marks was stuffed for a loss or no gain on 23.0% of his carries this season, the 5th-highest rate among running backs (min. 100 carries).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "running back"
+      ],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN",
+        "NO",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "team:was",
+        "team:no",
+        "topic:rushing",
+        "topic:stats",
+        "term:running back"
+      ],
+      "llm_summary": "Topics: rushing, stats | Terms: running back",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696938c7e0fbbe0095060a60",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Texans generated a 34.0% rushing success rate on designed carries this season, the 2nd-lowest in the NFL, ahead of only the Raiders (30.5%).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU",
+        "LV"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "team:lv",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696938a67b9e0afe6fb31481",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Rookies totaled 20.6% of the Texans' offensive snaps this season, the 5th-highest share in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696938994faa81fbf5c41096",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Texans allowed a 31.9% pressure rate in the regular season, the 10th-lowest in the NFL and their lowest in a season since at least 2018.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969388894893e88049326fa",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Christian Gonzalez allowed a 50.6% completion percentage when targeted in coverage this season, the 8th-lowest mark among cornerbacks (min. 50 targets).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "completion percentage",
+        "cornerback"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:completion percentage",
+        "term:cornerback"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: completion percentage, cornerback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693864f46bf7433f01441d",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Tytus Howard played three different offensive line positions for at least 100 snaps this season, one of just two players in the NFL to do so (Jordan Morgan).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693818f46bf7433f01441c",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "During the regular season, Christian Barmore generated the 2nd-highest pressure rate among defensive tackles with at least 250 pass rushes (13.6%) while teammate Milton Williams ranked one spot behind him at 3rd-highest (12.4%).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:passing",
+        "topic:rushing",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, rushing, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696937e17b9e0afe6fb31480",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots blitzed on 27.6% of opposing dropbacks during the regular season, the 14th-lowest rate in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: dropback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696937d27b9e0afe6fb3147f",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots defense utilized zone coverage on 70.2% of dropbacks during the regular season (NFL average: 72.7%); no Patriots defense from 2018-2024 played zone at a rate above 64%.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "zone coverage"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE",
+        "NO"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:no",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:zone coverage"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: dropback, zone coverage",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696937bb5cd8ec598ed6d739",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots defense allowed 2.9 yards after contact per designed run this season (4th-fewest in NFL) despite giving up 1.2 yards before contact (10th-most).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:defense",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969377e7b9e0afe6fb3147e",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Deploying base personnel on 25.7% of their defensive snaps (12th-lowest), the Patriots allowed just 3.2 yards per rush (6th-lowest), with only 5.6% gaining 10+ yards (6th-lowest), with four defensive backs on the field this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969375e7b9e0afe6fb3147d",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots missed just 11.3% of their tackle opportunities during the regular season (5th-lowest), but converted a league-low 58.0% of opportunities behind the line of scrimmage.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:defense",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969372494893e88049326f9",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Christian Elliss tackled the ball carrier on 15.9% of his snaps (9th-highest among linebackers, min. 200 snaps), pressured the quarterback on 18.5% of his rushes (21st-highest, min. 50 pass rushes) and allowed 6.4 yards per target in coverage (21st-fewest, min. 25 targets).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "linebacker"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "rushing"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:defense",
+        "topic:passing",
+        "topic:rushing",
+        "term:linebacker"
+      ],
+      "llm_summary": "Topics: defense, passing, rushing | Terms: linebacker",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693718f46bf7433f01441b",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots allowed 3.7 yards per called run with Robert Spillane ON the field this season, compared to 4.6 when he was not in the formation.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:was",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693712f46bf7433f01441a",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Jaylinn Hawkins was targeted on 3.8% of his snaps in zone coverage, the 5th-lowest mark of any player with at least 200 snaps in zone, and allowed 7 receptions for 62 yards on 16 targets while recording 4 interceptions.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "zone coverage"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "turnovers"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:defense",
+        "topic:passing",
+        "topic:turnovers",
+        "term:zone coverage"
+      ],
+      "llm_summary": "Topics: defense, passing, turnovers | Terms: zone coverage",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696936f44faa81fbf5c41095",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "With Christian Gonzalez ON the field, the Patriots defense allowed 1.4 fewer yards per dropback (5th-largest split among outside cornerbacks, min. 200 coverage snaps ON, 25 coverage snaps OFF).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "cornerback",
+        "dropback"
+      ],
+      "topics": [
+        "defense",
+        "passing"
+      ],
+      "teams_mentioned": [
+        "MIN",
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:min",
+        "topic:defense",
+        "topic:passing",
+        "term:cornerback",
+        "term:dropback"
+      ],
+      "llm_summary": "Topics: defense, passing | Terms: cornerback, dropback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696936eee0fbbe0095060a5f",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Drake Maye was pressured on 38.6% of his dropbacks during the regular season, the 6th-highest rate among qualified quarterbacks.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: dropback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696936d74faa81fbf5c41094",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots called passes on 56.0% of plays when holding a lead during the regular season, the 7th-highest mark in the NFL and the 2nd-highest by any Patriots team in the Next Gen Stats era (since 2016).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:passing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: passing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696936b24faa81fbf5c41093",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Drake Maye generated 706 total yards when scrambling during the regular season (run + pass), tied for the 2nd-most in the NFL with Josh Allen and trailing only Patrick Mahomes.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: passing, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693698f46bf7433f014419",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Drake Maye completed a league-high 72.0% of his passes despite averaging 9.1 air yards per attempt during the regular season, the 4th-most in the league.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "air yards",
+        "yards per attempt"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:air yards",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: air yards, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693642f46bf7433f014418",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "TreVeyon Henderson averaged a speed of 12.58 mph on his rush attempts during the regular season, good for the 7th-fastest in the NFL (min. 100 carries).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969362b5cd8ec598ed6d738",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "From Week 8 onward, Rhamondre Stevenson and TreVeyon Henderson led the league in yards per carry on rushes between the tackles (min. 25 such carries), averaging 6.4 and 6.0 yards, respectively.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "rushing"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:defense",
+        "topic:rushing"
+      ],
+      "llm_summary": "Topics: defense, rushing",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696936054faa81fbf5c41092",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Stefon Diggs averaged a career-low 8.5 air yards per target this season, with only 32.4% of his targets coming at a depth of 10+ air yards, his lowest rate since his 2018 season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "air yards"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats",
+        "term:air yards"
+      ],
+      "llm_summary": "Topics: stats | Terms: air yards",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696935edf46bf7433f014417",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Kayshon Boutte earned the most yards per target (12.0) and highest passer rating when targeted (133.2) among wide receivers this season (min. 25 targets).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "passer rating"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:passing",
+        "topic:stats",
+        "term:passer rating"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: passer rating",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696935bff46bf7433f014416",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Hunter Henry gained the 3rd-most receiving yards among tight ends on play action passes this season (333), earning 15+ yards on 11.5% of his routes (highest, min. 50 play action routes) and scoring five touchdowns (t-most among TE), adding another in the Wild Card game.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "play action",
+        "tight end"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:passing",
+        "topic:stats",
+        "term:play action",
+        "term:tight end"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: play action, tight end",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696935a6f46bf7433f014415",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Returning to right guard full time this season, Mike Onwenu allowed a 4.6% pressure rate, the 3rd-lowest at the position (min. 200 pass sets), establishing a new career-best mark.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696935677b9e0afe6fb3147c",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Left tackle Will Campbell allowed pressure on 11.5% of his pass-blocking snaps during the regular season, the 8th-highest rate among left tackles with at least 200 pass blocks.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969353994893e88049326f8",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Will Anderson Jr. generated 48 pressures on third downs this season, the most by any player in at least the last eight seasons, equating to a league-high 27.7% pressure rate (min. 50 third down pass rushes).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure",
+        "third down"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "rushing",
+        "stats",
+        "third_down"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:defense",
+        "topic:passing",
+        "topic:rushing",
+        "topic:stats",
+        "topic:third_down",
+        "term:pressure",
+        "term:third down"
+      ],
+      "llm_summary": "Topics: defense, passing, rushing, stats, third_down | Terms: pressure, third down",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693509e0fbbe0095060a5e",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Danielle Hunter and Will Anderson Jr. combined for 153 pressures this season, the most by any duo in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696934d2f46bf7433f014414",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Tommy Togiai led the Texans with 38 run stops that forced unsuccessful plays this season, the 10th-most among defensive tackles.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696934bee0fbbe0095060a5d",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "During the Texans' nine-game win streak to close the season, they increased their man coverage usage to 31.8% (10th-highest) after using man on 17.4% of opponent dropbacks (4th-lowest) in the first nine weeks.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "man coverage"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:man coverage"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: dropback, man coverage",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696934887b9e0afe6fb3147b",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Derek Stingley Jr. was targeted on just 8.5% of his coverage snaps in zone defense this season, the 6th-lowest rate among cornerbacks with at least 150 snaps in zone.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "cornerback"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:defense",
+        "topic:stats",
+        "term:cornerback"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: cornerback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969344af46bf7433f014413",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Derek Stingley Jr. did not allow more than 45 yards in coverage in any game during the Texans' nine-game win streak, including three games where he allowed 0 yards.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense"
+      ],
+      "llm_summary": "Topics: defense",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696933eee0fbbe0095060a5c",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "While the Texans typically oriented their cornerbacks to the left and right this season, Kamari Lassiter was much more effective when aligned to the field side.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "cornerback"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "team:was",
+        "topic:stats",
+        "term:cornerback"
+      ],
+      "llm_summary": "Topics: stats | Terms: cornerback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696933e7e0fbbe0095060a5b",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Jalen Pitre allowed a 58.9 passer rating when targeted during the regular season, the lowest mark among slot cornerbacks with at least 25 targets.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "cornerback",
+        "passer rating"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:cornerback",
+        "term:passer rating"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: cornerback, passer rating",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696933d95cd8ec598ed6d737",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Calen Bullock allowed a 44.7% completion percentage in coverage in the regular season, the lowest among safeties and 4th-lowest of any player targeted at least 40 times.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "completion percentage"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:completion percentage"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: completion percentage",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696933c8f46bf7433f014412",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Texans used jumbo personnel on 18.2% of offensive snaps this season (198 plays), the 2nd-highest jumbo usage in the league and an outsized contrast from their 1.1% usage in the previous two seasons combined.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "jumbo"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:stats",
+        "term:jumbo"
+      ],
+      "llm_summary": "Topics: stats | Terms: jumbo",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969339e7b9e0afe6fb3147a",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots offense put 17 unique personnel groups on the field during the regular season, tied for the 3rd-most among all offenses this season and the most for the Patriots since 2019 with Josh McDaniels in his second stint with the team.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693391f46bf7433f014411",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Prior to Week 11 the Patriots had deployed Jumbo personnel (6+ OL) just five total times (0.8%, 9th-lowest), but in their last seven regular season games the Patriots utilized 6+ offensive linemen on 17.4% of their snaps (4th-highest).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "jumbo"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:stats",
+        "term:jumbo"
+      ],
+      "llm_summary": "Topics: stats | Terms: jumbo",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6969338c7b9e0afe6fb31479",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots utilized 22 personnel on a season-high 35.9% of their offensive snaps in their Wild Card game against the Chargers, the 2nd-highest rate of any offense in a game this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "22 personnel"
+      ],
+      "topics": [
+        "matchup",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAC",
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:lac",
+        "topic:matchup",
+        "topic:stats",
+        "term:22 personnel"
+      ],
+      "llm_summary": "Topics: matchup, stats | Terms: 22 personnel",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69693307f46bf7433f014410",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Despite aligning in the shotgun at the 9th-lowest rate this season (53.2%), the Patriots gained the most yards per play (7.1), earned the highest success rate (50.6%) and generated the highest explosive play rate (18.7%) from the shotgun than any other offense this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "shotgun"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "topic:stats",
+        "term:shotgun"
+      ],
+      "llm_summary": "Topics: stats | Terms: shotgun",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69681010d068eeeb79e017c7",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Stefon Diggs was held to just 16 receiving yards on 2 catches in the Wild Card Round vs the Chargers.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "LAC",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "team:lac"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680ffee22f7208feda845c",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Mike Vrabel and DeMeco Ryans will be the 4th pair of head coaches to meet in the playoffs that both made the Pro Bowl as players in the same season \u2013 both were named Pro Bowlers in 2007.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fd8d068eeeb79e017c6",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Christian Kirk has had a receiving touchdown in each of his last 3 playoff games played.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [],
+      "retrieval_keys": [],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fd25f43d0f7192f10c9",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Texans have won 16 consecutive games, including the playoffs, when they score at least 20 points in a game.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fc719ad4dfef5e5d982",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Drake Maye will face the Texans top-ranked total defense \u2013 allowing just 277.2 yards per game \u2013 in the Divisional Round.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense"
+      ],
+      "teams_mentioned": [
+        "HOU"
+      ],
+      "retrieval_keys": [
+        "team:hou",
+        "topic:defense"
+      ],
+      "llm_summary": "Topics: defense",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fb91e817b7dc78153c4",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "C.J. Stroud is the 5th quarterback all-time to reach the Divisional Round of the playoffs in each of their first 3 seasons.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: passing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fb41e817b7dc78153c3",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots are 24-5 all-time at home in the playoffs, which is the 2nd-best home playoff W-L in NFL history behind the Cardinals at 5-0.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "ARI",
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne",
+        "team:ari"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fad5f43d0f7192f10c8",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots have won 8 consecutive games in the Divisional Round of the NFL Playoffs, the longest winning streak by any team in a single playoff round in NFL history.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "69680fa6e683e7b155844366",
+      "game_id": "dbcb3890-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Patriots have won 28 playoff games and appeared in 12 conference championship games since 2002 realignment, both the most in the NFL over that span.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "NE"
+      ],
+      "retrieval_keys": [
+        "team:ne"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    }
+  ]
+}

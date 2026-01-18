@@ -223,6 +223,219 @@ def generate_matchup_summary(home: Dict, away: Dict) -> str:
     
     return ". ".join(parts) + "." if parts else ""
 
+
+def ensure_game_insights(
+    nfl_pro_uuid: str,
+    home_team: str,
+    away_team: str,
+    week: int = None,
+    espn_game_id: str = None
+) -> int:
+    """
+    Check if insights exist for a game, fetch and process them if missing.
+
+    This ensures that when any game is loaded, the system automatically
+    fetches any missing insights from NFL Pro.
+
+    Args:
+        nfl_pro_uuid: NFL Pro game UUID
+        home_team: Home team abbreviation (e.g., 'NE')
+        away_team: Away team abbreviation (e.g., 'HOU')
+        week: Week number (for processed insights lookup)
+        espn_game_id: ESPN game ID (for mapping)
+
+    Returns:
+        Number of insights fetched (0 if already existed or fetch failed)
+    """
+    import sqlite3
+
+    DATA_PATH = Path('/Volumes/main-drive/ai-PA/auto-madden/data')
+    DB_PATH = DATA_PATH / 'nfl_insights_2025.db'
+    PROCESSED_PATH = DATA_PATH / 'processed_insights'
+
+    if not nfl_pro_uuid:
+        logger.debug("No NFL Pro UUID provided, skipping insight fetch")
+        return 0
+
+    # Check if we already have insights for this game in database
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM insights WHERE game_id = ?",
+            (nfl_pro_uuid,)
+        )
+        existing_count = cursor.fetchone()[0]
+        conn.close()
+
+        if existing_count > 0:
+            logger.debug(f"Game {nfl_pro_uuid[:8]}... already has {existing_count} insights")
+            return 0
+    except Exception as e:
+        logger.debug(f"Could not check existing insights: {e}")
+
+    # Need to fetch insights from NFL Pro API
+    logger.info(f"📥 Fetching missing insights for {away_team} @ {home_team} ({nfl_pro_uuid[:8]}...)")
+
+    # NFL Pro team ID mapping (commonly used teams)
+    TEAM_IDS = {
+        'ARI': '0100', 'ATL': '0200', 'BAL': '0325', 'BUF': '0610',
+        'CAR': '0750', 'CHI': '0810', 'CIN': '0920', 'CLE': '1050',
+        'DAL': '1200', 'DEN': '1400', 'DET': '1540', 'GB': '1800',
+        'HOU': '2120', 'IND': '2200', 'JAX': '2250', 'KC': '2310',
+        'LAC': '4400', 'LAR': '2510', 'LV': '2520', 'MIA': '2700',
+        'MIN': '3000', 'NE': '3200', 'NO': '3300', 'NYG': '3410',
+        'NYJ': '3430', 'PHI': '3700', 'PIT': '3800', 'SEA': '4600',
+        'SF': '4500', 'TB': '4900', 'TEN': '2100', 'WAS': '5110'
+    }
+
+    home_id = TEAM_IDS.get(home_team.upper(), '0000')
+    away_id = TEAM_IDS.get(away_team.upper(), '0000')
+
+    try:
+        # Try using aiohttp/playwright to fetch insights
+        import asyncio
+        from playwright.async_api import async_playwright
+
+        BROWSER_STATE = Path('/Volumes/main-drive/ai-PA/auto-madden/credentials/browser_states/nfl_pro_state.json')
+
+        async def fetch_game_insights():
+            if not BROWSER_STATE.exists():
+                logger.warning("NFL Pro browser state not found, cannot fetch insights")
+                return []
+
+            all_insights = []
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                context = await browser.new_context(storage_state=str(BROWSER_STATE))
+                page = await context.new_page()
+
+                try:
+                    # Load main page first
+                    await page.goto("https://pro.nfl.com", wait_until='networkidle', timeout=30000)
+                    await asyncio.sleep(2)
+
+                    # Fetch pregame insights (usually has the most)
+                    for tags in ['nfl-pro,pregame', 'nfl-pro,postgame', 'nfl-pro']:
+                        api_url = f"https://pro.nfl.com/api/content/insights/game?season=2025&limit=100&tags={tags}&excludeTags=betting&fapiGameId={nfl_pro_uuid}&awayTeamId={away_id}&homeTeamId={home_id}"
+
+                        response = await page.evaluate(f'''
+                            async () => {{
+                                try {{
+                                    const resp = await fetch("{api_url}");
+                                    if (!resp.ok) return [];
+                                    const text = await resp.text();
+                                    return text ? JSON.parse(text) : [];
+                                }} catch(e) {{
+                                    return [];
+                                }}
+                            }}
+                        ''')
+
+                        if isinstance(response, list) and len(response) > 0:
+                            for i in response:
+                                i['game_id'] = nfl_pro_uuid
+                                # Avoid duplicates
+                                if not any(x.get('id') == i.get('id') for x in all_insights):
+                                    all_insights.append(i)
+
+                except Exception as e:
+                    logger.warning(f"Error fetching insights: {e}")
+                finally:
+                    await page.close()
+                    await browser.close()
+
+            return all_insights
+
+        # Run async fetch
+        insights = asyncio.run(fetch_game_insights())
+
+        if not insights:
+            logger.info(f"No insights found for {away_team} @ {home_team}")
+            return 0
+
+        logger.info(f"📥 Fetched {len(insights)} insights for {away_team} @ {home_team}")
+
+        # Save to database
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        # Determine week (default to 20 for playoffs if not specified)
+        save_week = week or 20
+
+        saved = 0
+        for i in insights:
+            try:
+                insight_id = i.get('id', f"{nfl_pro_uuid}_{saved}")
+                player = i.get('player', {}) or {}
+                second_player = i.get('secondPlayer', {}) or {}
+
+                cursor.execute('''
+                    INSERT OR REPLACE INTO insights (
+                        insight_id, game_id, season, week, title, sub_note, sub_note2,
+                        player_name, position, team_abbr, jersey_number,
+                        second_player_name, second_position, second_team_abbr, second_team_type,
+                        image_url, headshot_url, scraped_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    insight_id,
+                    nfl_pro_uuid,
+                    2025,
+                    save_week,
+                    i.get('title', ''),
+                    i.get('subNote', ''),
+                    i.get('subNote2', ''),
+                    player.get('displayName', ''),
+                    player.get('position', ''),
+                    player.get('teamAbbr', ''),
+                    player.get('jerseyNumber'),
+                    second_player.get('displayName', ''),
+                    second_player.get('position', ''),
+                    second_player.get('teamAbbr', ''),
+                    second_player.get('teamType', ''),
+                    i.get('imageUrl', ''),
+                    player.get('headshotUrl', ''),
+                    datetime.now().isoformat()
+                ))
+                saved += 1
+            except Exception as e:
+                logger.debug(f"Save error: {e}")
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"💾 Saved {saved} insights to database")
+
+        # Now process them into the processed_insights folder
+        if saved > 0 and save_week:
+            try:
+                # Import and run the preprocessor
+                import subprocess
+                preprocessor_path = Path('/Volumes/main-drive/ai-PA/auto-madden/nfl-pro-scraper/services/insight_preprocessor.py')
+                if preprocessor_path.exists():
+                    result = subprocess.run(
+                        ['python3', str(preprocessor_path), '--week', str(save_week), '--season', '2025'],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    if result.returncode == 0:
+                        logger.info(f"✅ Processed insights for Week {save_week}")
+                    else:
+                        logger.warning(f"Preprocessor warning: {result.stderr}")
+            except Exception as e:
+                logger.warning(f"Could not run preprocessor: {e}")
+
+        return saved
+
+    except ImportError:
+        logger.warning("Playwright not available for insight fetching")
+        return 0
+    except Exception as e:
+        logger.error(f"Error fetching game insights: {e}")
+        return 0
+
+
 # Set log level
 logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 
@@ -2834,6 +3047,33 @@ def start_game():
     if game_id and nfl_pro_narratives and hasattr(nfl_pro_narratives, 'set_current_game_id'):
         nfl_pro_narratives.set_current_game_id(game_id)
 
+    # Look up NFL Pro UUID from mapping
+    nfl_pro_uuid = data.get('nfl_pro_uuid', '')
+    if not nfl_pro_uuid and game_id:
+        try:
+            mapping_path = Path('/Volumes/main-drive/ai-PA/auto-madden/data/espn_nfl_pro_mapping.json')
+            if mapping_path.exists():
+                with open(mapping_path, 'r') as f:
+                    mapping = json.load(f)
+                nfl_pro_uuid = mapping.get('espn_to_nfl_pro', {}).get(str(game_id), '')
+                if nfl_pro_uuid:
+                    logger.info(f"📊 Found NFL Pro UUID: {nfl_pro_uuid[:8]}...")
+                    session_data['nfl_pro_uuid'] = nfl_pro_uuid
+        except Exception as e:
+            logger.debug(f"Could not load NFL Pro mapping: {e}")
+
+    # Ensure insights exist for this game (fetch if missing)
+    if nfl_pro_uuid and home_team and away_team:
+        fetched = ensure_game_insights(
+            nfl_pro_uuid=nfl_pro_uuid,
+            home_team=home_team,
+            away_team=away_team,
+            week=int(week) if week else None,
+            espn_game_id=game_id
+        )
+        if fetched > 0:
+            logger.info(f"📥 Auto-fetched {fetched} insights for this game")
+
     # Load week-specific insights if available
     if week and NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
         try:
@@ -2921,12 +3161,25 @@ def receive_event():
             session_data['nfl_pro_uuid'] = nfl_pro_uuid
             logger.info(f"📊 NFL Pro UUID for auto-fetch: {nfl_pro_uuid[:8]}...")
 
+        # === ENSURE INSIGHTS EXIST FOR THIS GAME (FETCH IF MISSING) ===
+        home_team = state.get('home_team', {}).get('abbreviation', '')
+        away_team = state.get('away_team', {}).get('abbreviation', '')
+        week = session_data.get('week') or state.get('week')
+
+        if nfl_pro_uuid and home_team and away_team:
+            fetched = ensure_game_insights(
+                nfl_pro_uuid=nfl_pro_uuid,
+                home_team=home_team,
+                away_team=away_team,
+                week=int(week) if week else None,
+                espn_game_id=state.get('game_id')
+            )
+            if fetched > 0:
+                logger.info(f"📥 Auto-fetched {fetched} insights for this game")
+
         # === LOAD NFL PRO NARRATIVE INSIGHTS FOR THIS GAME ===
         if NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
             try:
-                home_team = state.get('home_team', {}).get('abbreviation', '')
-                away_team = state.get('away_team', {}).get('abbreviation', '')
-
                 # Use session nfl_pro_uuid or fallback to game_id
                 nfl_pro_uuid = session_data.get('nfl_pro_uuid', state.get('game_id', ''))
                 
@@ -3035,6 +3288,20 @@ def receive_event():
         nfl_pro_play = data.get('nfl_pro_play') or data.get('play_data')
 
         # Auto-fetch from NFL Pro if not provided and we have a session UUID
+        # Fallback: look up UUID from mapping if we have game_id but no UUID
+        if not session_data.get('nfl_pro_uuid') and state.get('game_id'):
+            try:
+                mapping_path = Path('/Volumes/main-drive/ai-PA/auto-madden/data/espn_nfl_pro_mapping.json')
+                if mapping_path.exists():
+                    with open(mapping_path, 'r') as f:
+                        mapping = json.load(f)
+                    game_uuid = mapping.get('espn_to_nfl_pro', {}).get(str(state['game_id']), '')
+                    if game_uuid:
+                        session_data['nfl_pro_uuid'] = game_uuid
+                        logger.info(f"📊 NFL Pro UUID (fallback lookup): {game_uuid[:8]}...")
+            except Exception as e:
+                logger.debug(f"Could not load NFL Pro mapping: {e}")
+
         if not nfl_pro_play and session_data.get('nfl_pro_uuid'):
             nfl_pro_play = _get_matching_nfl_pro_play(state, change)
 
