@@ -3471,8 +3471,11 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             coverage_display = "Run Play"
 
-    return {
-        'presnap': {
+    # Skip presnap for special teams plays (field goals, punts, kickoffs)
+    # These don't have meaningful offensive formation/personnel data
+    presnap_data = None
+    if not is_special_teams:
+        presnap_data = {
             'offense': {
                 'personnel': offense.get('personnel', ''),
                 'formation': offense.get('offenseFormation', ''),
@@ -3482,7 +3485,17 @@ def _parse_nfl_pro_play_data(play_data: Dict[str, Any]) -> Dict[str, Any]:
                 'box': defense.get('defendersInTheBox', 0),
             },
             'playDuration': play_duration,
-        },
+        }
+
+    # Also skip postsnap for special teams
+    if is_special_teams:
+        return {
+            'presnap': None,
+            'postsnap': None,
+        }
+
+    return {
+        'presnap': presnap_data,
         'postsnap': {
             'offense': {
                 'personnel': offense.get('personnel', ''),

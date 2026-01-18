@@ -713,6 +713,121 @@
             background: var(--warning);
             animation: pulse 1s infinite;
         }
+
+        /* Dashboard Mode Toggle */
+        .dashboard-toggle {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .dashboard-toggle:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        .dashboard-toggle.active {
+            background: var(--insight-bg);
+            border-color: var(--insight-border);
+            color: var(--insight-text);
+        }
+
+        /* ============================================
+           DASHBOARD MODE - Large text for distance viewing
+           Scoreboard stays same size, everything else larger
+           ============================================ */
+
+        /* Hide non-essential controls in dashboard mode */
+        body.dashboard-mode .game-selector,
+        body.dashboard-mode .settings-btn,
+        body.dashboard-mode .nfl-pro-btn,
+        body.dashboard-mode .controls {
+            display: none;
+        }
+
+        /* Play Summary - Large and readable */
+        body.dashboard-mode .play-summary {
+            font-size: 28px;
+            font-weight: 600;
+            padding: 16px 24px;
+            min-height: 70px;
+            line-height: 1.4;
+        }
+
+        /* Analysis Panel - Larger */
+        body.dashboard-mode .analysis-panel {
+            padding: 16px 24px;
+        }
+
+        body.dashboard-mode .analysis-header {
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        body.dashboard-mode .analysis-label {
+            font-size: 12px;
+        }
+
+        body.dashboard-mode .analysis-value {
+            font-size: 28px;
+        }
+
+        body.dashboard-mode .analysis-value.primary {
+            font-size: 36px;
+        }
+
+        body.dashboard-mode .analysis-detail {
+            font-size: 18px;
+        }
+
+        body.dashboard-mode .analysis-stats {
+            gap: 32px;
+        }
+
+        body.dashboard-mode .stat-value {
+            font-size: 28px;
+        }
+
+        body.dashboard-mode .stat-label {
+            font-size: 12px;
+        }
+
+        body.dashboard-mode .bigplay-badge {
+            font-size: 14px;
+            padding: 3px 10px;
+        }
+
+        /* Insights - Larger and more readable */
+        body.dashboard-mode #insights {
+            max-height: none;
+        }
+
+        body.dashboard-mode .insight {
+            padding: 20px 24px;
+            margin-bottom: 14px;
+        }
+
+        body.dashboard-mode .insight-headline {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        body.dashboard-mode .insight-body {
+            font-size: 20px;
+            line-height: 1.5;
+        }
+
+        /* Delay display - hidden (not needed) */
+        .dashboard-delay {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -839,6 +954,10 @@
     <div class="header">
         <h1 class="title"><span class="title-emoji">🏈</span>Auto-Madden Live</h1>
         <div class="header-controls">
+            <!-- Dashboard Mode Delay Display -->
+            <div class="dashboard-delay" id="dashboard-delay">
+                <span id="dashboard-delay-value">0s</span> delay
+            </div>
             <!-- Game Selector -->
             <div class="game-selector">
                 <select id="game-select" onchange="switchGame(this.value)" title="Select game">
@@ -852,6 +971,10 @@
             <button class="nfl-pro-btn" id="nfl-pro-btn" onclick="connectNFLPro()" title="Connect NFL Pro for insights">
                 <span class="nfl-status-dot"></span>
                 <span id="nfl-pro-label">NFL Pro</span>
+            </button>
+            <!-- Dashboard Mode Toggle -->
+            <button class="dashboard-toggle" id="dashboard-toggle" onclick="toggleDashboardMode()" title="Toggle dashboard mode for distance viewing">
+                📺 Dashboard
             </button>
             <button class="settings-btn" onclick="openSettings()" title="Settings">⚙️</button>
         </div>
@@ -998,7 +1121,40 @@
         function getDefPackage(personnel) {
             return DEF_PACKAGES[personnel] || 'Custom';
         }
-        
+
+        // === Dashboard Mode ===
+        let dashboardMode = false;
+
+        function toggleDashboardMode() {
+            dashboardMode = !dashboardMode;
+            document.body.classList.toggle('dashboard-mode', dashboardMode);
+            document.getElementById('dashboard-toggle').classList.toggle('active', dashboardMode);
+
+            // Update dashboard delay display
+            updateDashboardDelayDisplay();
+
+            // Save preference
+            localStorage.setItem('dashboardMode', dashboardMode ? 'true' : 'false');
+
+            console.log('Dashboard mode:', dashboardMode ? 'ON' : 'OFF');
+        }
+
+        function updateDashboardDelayDisplay() {
+            const el = document.getElementById('dashboard-delay-value');
+            if (el) {
+                el.textContent = `${currentDelay}s`;
+            }
+        }
+
+        function loadDashboardMode() {
+            const saved = localStorage.getItem('dashboardMode');
+            if (saved === 'true') {
+                dashboardMode = true;
+                document.body.classList.add('dashboard-mode');
+                document.getElementById('dashboard-toggle').classList.add('active');
+            }
+        }
+
         // === Settings Panel ===
         function openSettings() {
             document.getElementById('settingsPanel').classList.add('open');
@@ -1041,6 +1197,7 @@
         function adjustDelay(delta) {
             currentDelay = Math.max(0, currentDelay + delta);
             updateDelayDisplay();
+            updateDashboardDelayDisplay();
             displayDelayedState();
             console.log(`Delay now ${currentDelay}s`);
         }
@@ -1813,7 +1970,9 @@
         // === Initialization ===
         async function init() {
             loadPreferences();
+            loadDashboardMode();
             updateDelayDisplay();
+            updateDashboardDelayDisplay();
 
             await refreshGames();
 
