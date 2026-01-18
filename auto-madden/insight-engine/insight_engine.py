@@ -3074,19 +3074,22 @@ def start_game():
         if fetched > 0:
             logger.info(f"📥 Auto-fetched {fetched} insights for this game")
 
-    # Load week-specific insights if available
-    if week and NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
+    # Load insights (week-specific or all weeks if week not specified)
+    if NFL_PRO_NARRATIVES_AVAILABLE and load_narrative_insights:
         try:
             loaded = load_narrative_insights(
-                game_uuid=game_id,
+                game_uuid=nfl_pro_uuid or game_id,
                 home_team=home_team,
                 away_team=away_team,
-                week=int(week)
+                week=int(week) if week else None
             )
             session_data['nfl_pro_insights_loaded'] = loaded > 0
-            logger.info(f"✅ Loaded {loaded} NFL Pro insights for Week {week}")
+            if week:
+                logger.info(f"✅ Loaded {loaded} NFL Pro insights for Week {week}")
+            else:
+                logger.info(f"✅ Loaded {loaded} NFL Pro insights (all weeks)")
         except Exception as e:
-            logger.warning(f"Could not load Week {week} insights: {e}")
+            logger.warning(f"Could not load insights: {e}")
     
     # Reset insight generator
     if insight_generator:
