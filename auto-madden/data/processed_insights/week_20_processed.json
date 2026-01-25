@@ -1,10 +1,14 @@
 {
   "week": 20,
   "season": 2025,
-  "processed_at": "2026-01-18T16:26:00.207237",
-  "total_insights": 66,
-  "games": 1,
+  "processed_at": "2026-01-18T20:30:44.753458",
+  "total_insights": 139,
+  "games": 2,
   "index": {
+    "team:pit": [
+      "696938de94893e88049326fb",
+      "696939627b9e0afe6fb31483"
+    ],
     "team:hou": [
       "696938de94893e88049326fb",
       "69693aba7b9e0afe6fb31485",
@@ -22,10 +26,6 @@
       "69680fd25f43d0f7192f10c9",
       "69680fc719ad4dfef5e5d982"
     ],
-    "team:pit": [
-      "696938de94893e88049326fb",
-      "696939627b9e0afe6fb31483"
-    ],
     "topic:matchup": [
       "696938de94893e88049326fb",
       "69693aba7b9e0afe6fb31485",
@@ -35,7 +35,14 @@
       "6969399b7b9e0afe6fb31484",
       "696939627b9e0afe6fb31483",
       "696938e97b9e0afe6fb31482",
-      "6969338c7b9e0afe6fb31479"
+      "6969338c7b9e0afe6fb31479",
+      "696810dd18e81ea0e4129aa5",
+      "6967ecf634a3fc57bf5a1e91",
+      "6967e9af19ad4dfef5e5d971",
+      "6967e9a6e683e7b155844355",
+      "6967e94218e81ea0e4129a91",
+      "6967e88a1e817b7dc78153ac",
+      "6967e7c618e81ea0e4129a89"
     ],
     "team:ne": [
       "69698e2368f89677857133c3",
@@ -86,7 +93,29 @@
       "696934bee0fbbe0095060a5d",
       "696933e7e0fbbe0095060a5b",
       "696933d95cd8ec598ed6d737",
-      "69680fb91e817b7dc78153c4"
+      "69680fb91e817b7dc78153c4",
+      "696810f618e81ea0e4129aa7",
+      "696810cdd068eeeb79e017c9",
+      "696810c1e22f7208feda845e",
+      "6967ecf634a3fc57bf5a1e91",
+      "6967ecdc34a3fc54285a1e90",
+      "6967eca68bf044305bce2cf9",
+      "6967e9745f43d0f7192f10bd",
+      "6967e97260a512b3b0f96a90",
+      "6967e96d19ad4dfef5e5d970",
+      "6967e96b1e817b7dc78153b3",
+      "6967e93719ad4dfef5e5d96f",
+      "6967e91b5f43d0f7192f10b9",
+      "6967e8ea1e817b7dc78153b0",
+      "6967e8e319ad4dfef5e5d96d",
+      "6967e8dd1e817b7dc78153af",
+      "6967e8d81e817b7dc78153ae",
+      "6967e8cc18e81ea0e4129a8d",
+      "6967e8c819ad4dfef5e5d96c",
+      "6967e88a1e817b7dc78153ac",
+      "6967e87918e81ea0e4129a8b",
+      "6967e7dc18e81ea0e4129a8a",
+      "6967e7c618e81ea0e4129a89"
     ],
     "topic:stats": [
       "69698e2368f89677857133c3",
@@ -135,7 +164,67 @@
       "6969338c7b9e0afe6fb31479",
       "69693307f46bf7433f014410",
       "69680ffee22f7208feda845c",
-      "69680fb91e817b7dc78153c4"
+      "69680fb91e817b7dc78153c4",
+      "696810e618e81ea0e4129aa6",
+      "696810dd18e81ea0e4129aa5",
+      "696810c1e22f7208feda845e",
+      "696810b9d068eeeb79e017c8",
+      "6967ed6eb83ceb5a1f384be5",
+      "6967ed57ca71dd1ac135b432",
+      "6967ed36b3631a4ce37e78a4",
+      "6967ecdc34a3fc54285a1e90",
+      "6967ecc06790f7bd5fbd3eb9",
+      "6967ec8f34a3fc33d55a1e8f",
+      "6967ebff34a3fc79ec5a1e8e",
+      "6967ebe068d16bc1a9971490",
+      "6967e9af19ad4dfef5e5d971",
+      "6967e9a6e683e7b155844355",
+      "6967e99e18e81ea0e4129a93",
+      "6967e9821e817b7dc78153b4",
+      "6967e9745f43d0f7192f10bd",
+      "6967e97260a512b3b0f96a90",
+      "6967e96d19ad4dfef5e5d970",
+      "6967e96b1e817b7dc78153b3",
+      "6967e96318e81ea0e4129a92",
+      "6967e961e683e7b155844354",
+      "6967e95a5f43d0f7192f10bb",
+      "6967e94fe683e7b155844353",
+      "6967e94218e81ea0e4129a91",
+      "6967e93e60a512b3b0f96a8f",
+      "6967e93b1e817b7dc78153b2",
+      "6967e93719ad4dfef5e5d96f",
+      "6967e933e683e7b155844352",
+      "6967e91b5f43d0f7192f10b9",
+      "6967e9151e817b7dc78153b1",
+      "6967e90b18e81ea0e4129a8f",
+      "6967e9005f43d0f7192f10b8",
+      "6967e8fa18e81ea0e4129a8e",
+      "6967e8f760a512b3b0f96a8e",
+      "6967e8f4e683e7b155844351",
+      "6967e8ef5f43d0f7192f10b7",
+      "6967e8ea1e817b7dc78153b0",
+      "6967e8e319ad4dfef5e5d96d",
+      "6967e8dd1e817b7dc78153af",
+      "6967e8d81e817b7dc78153ae",
+      "6967e8cc18e81ea0e4129a8d",
+      "6967e8c819ad4dfef5e5d96c",
+      "6967e8c3e683e7b155844350",
+      "6967e8bd18e81ea0e4129a8c",
+      "6967e8b31e817b7dc78153ad",
+      "6967e8ac5f43d0f7192f10b6",
+      "6967e8a65f43d0f7192f10b5",
+      "6967e89fe683e7b15584434f",
+      "6967e8945f43d0f7192f10b4",
+      "6967e88a1e817b7dc78153ac",
+      "6967e87918e81ea0e4129a8b",
+      "6967e87160a512b3b0f96a8d",
+      "6967e8385f43d0f7192f10b3",
+      "6967e83460a512b3b0f96a8c",
+      "6967e81d60a512b3b0f96a8b",
+      "6967e8101e817b7dc78153ab",
+      "6967e7dc18e81ea0e4129a8a",
+      "6967e7c618e81ea0e4129a89",
+      "6967e7b95f43d0f7192f10b1"
     ],
     "topic:defense": [
       "69693aba7b9e0afe6fb31485",
@@ -165,19 +254,47 @@
       "696934887b9e0afe6fb3147b",
       "6969344af46bf7433f014413",
       "696933d95cd8ec598ed6d737",
-      "69680fc719ad4dfef5e5d982"
+      "69680fc719ad4dfef5e5d982",
+      "696810f618e81ea0e4129aa7",
+      "6967ecdc34a3fc54285a1e90",
+      "6967eca68bf044305bce2cf9",
+      "6967e9af19ad4dfef5e5d971",
+      "6967e9a6e683e7b155844355",
+      "6967e99e18e81ea0e4129a93",
+      "6967e9745f43d0f7192f10bd",
+      "6967e97260a512b3b0f96a90",
+      "6967e96d19ad4dfef5e5d970",
+      "6967e96b1e817b7dc78153b3",
+      "6967e961e683e7b155844354",
+      "6967e95a5f43d0f7192f10bb",
+      "6967e94fe683e7b155844353",
+      "6967e94218e81ea0e4129a91",
+      "6967e93e60a512b3b0f96a8f",
+      "6967e93b1e817b7dc78153b2",
+      "6967e933e683e7b155844352",
+      "6967e91b5f43d0f7192f10b9",
+      "6967e8cc18e81ea0e4129a8d",
+      "6967e8b31e817b7dc78153ad",
+      "6967e89fe683e7b15584434f",
+      "6967e88a1e817b7dc78153ac",
+      "6967e7c618e81ea0e4129a89"
     ],
     "topic:redzone": [
       "69693a77f46bf7433f014420"
     ],
     "topic:turnovers": [
       "69693a77f46bf7433f014420",
-      "69693712f46bf7433f01441a"
+      "69693712f46bf7433f01441a",
+      "696810f618e81ea0e4129aa7",
+      "696810c1e22f7208feda845e",
+      "6967eca68bf044305bce2cf9",
+      "6967e88a1e817b7dc78153ac"
     ],
     "term:man coverage": [
       "69693a77f46bf7433f014420",
       "696938e97b9e0afe6fb31482",
-      "696934bee0fbbe0095060a5d"
+      "696934bee0fbbe0095060a5d",
+      "6967e97260a512b3b0f96a90"
     ],
     "term:red zone": [
       "69693a77f46bf7433f014420"
@@ -189,7 +306,8 @@
       "69681010d068eeeb79e017c7"
     ],
     "term:blitz": [
-      "69693a26e0fbbe0095060a63"
+      "69693a26e0fbbe0095060a63",
+      "6967e88a1e817b7dc78153ac"
     ],
     "team:was": [
       "69693a1094893e88049326fd",
@@ -200,7 +318,14 @@
       "696936eee0fbbe0095060a5f",
       "696934887b9e0afe6fb3147b",
       "696933eee0fbbe0095060a5c",
-      "69681010d068eeeb79e017c7"
+      "69681010d068eeeb79e017c7",
+      "696810c1e22f7208feda845e",
+      "6967ecdc34a3fc54285a1e90",
+      "6967e91019ad4dfef5e5d96e",
+      "6967e8945f43d0f7192f10b4",
+      "6967e7d65f43d0f7192f10b2",
+      "6967e7d060a512b3b0f96a8a",
+      "6967e7c119ad4dfef5e5d96b"
     ],
     "term:pressure": [
       "69693a04e0fbbe0095060a62",
@@ -211,7 +336,16 @@
       "696935a6f46bf7433f014415",
       "696935677b9e0afe6fb3147c",
       "6969353994893e88049326f8",
-      "69693509e0fbbe0095060a5e"
+      "69693509e0fbbe0095060a5e",
+      "6967ecdc34a3fc54285a1e90",
+      "6967e9745f43d0f7192f10bd",
+      "6967e96b1e817b7dc78153b3",
+      "6967e94218e81ea0e4129a91",
+      "6967e93e60a512b3b0f96a8f",
+      "6967e93b1e817b7dc78153b2",
+      "6967e933e683e7b155844352",
+      "6967e91b5f43d0f7192f10b9",
+      "6967e7c618e81ea0e4129a89"
     ],
     "topic:rushing": [
       "696939f55cd8ec598ed6d73a",
@@ -227,25 +361,52 @@
       "69693642f46bf7433f014418",
       "6969362b5cd8ec598ed6d738",
       "6969353994893e88049326f8",
-      "696934d2f46bf7433f014414"
+      "696934d2f46bf7433f014414",
+      "6967ebff34a3fc79ec5a1e8e",
+      "6967e9af19ad4dfef5e5d971",
+      "6967e9a6e683e7b155844355",
+      "6967e961e683e7b155844354",
+      "6967e9151e817b7dc78153b1",
+      "6967e91019ad4dfef5e5d96e",
+      "6967e90b18e81ea0e4129a8f",
+      "6967e9005f43d0f7192f10b8",
+      "6967e8f760a512b3b0f96a8e",
+      "6967e8bd18e81ea0e4129a8c",
+      "6967e8b31e817b7dc78153ad",
+      "6967e8101e817b7dc78153ab",
+      "6967e7c618e81ea0e4129a89"
     ],
     "term:sack": [
-      "6969393f94893e88049326fc"
+      "6969393f94893e88049326fc",
+      "6967e93b1e817b7dc78153b2",
+      "6967e8cc18e81ea0e4129a8d"
     ],
     "term:completion percentage": [
       "6969390af46bf7433f01441e",
       "6969388894893e88049326fa",
-      "696933d95cd8ec598ed6d737"
+      "696933d95cd8ec598ed6d737",
+      "6967ecdc34a3fc54285a1e90",
+      "6967e97260a512b3b0f96a90"
     ],
     "term:yards per attempt": [
       "6969390af46bf7433f01441e",
       "696938e97b9e0afe6fb31482",
-      "69693698f46bf7433f014419"
+      "69693698f46bf7433f014419",
+      "6967ebe068d16bc1a9971490",
+      "6967e97260a512b3b0f96a90",
+      "6967e96d19ad4dfef5e5d970",
+      "6967e7b95f43d0f7192f10b1"
     ],
     "term:passer rating": [
       "696938e97b9e0afe6fb31482",
       "696935edf46bf7433f014417",
-      "696933e7e0fbbe0095060a5b"
+      "696933e7e0fbbe0095060a5b",
+      "696810f618e81ea0e4129aa7"
+    ],
+    "team:no": [
+      "696938d04faa81fbf5c41097",
+      "696937d27b9e0afe6fb3147f",
+      "6967e961e683e7b155844354"
     ],
     "team:min": [
       "696938d04faa81fbf5c41097",
@@ -257,14 +418,15 @@
       "696935edf46bf7433f014417",
       "696935bff46bf7433f014416",
       "696935a6f46bf7433f014415",
-      "6969353994893e88049326f8"
-    ],
-    "team:no": [
-      "696938d04faa81fbf5c41097",
-      "696937d27b9e0afe6fb3147f"
+      "6969353994893e88049326f8",
+      "6967e961e683e7b155844354",
+      "6967e8fa18e81ea0e4129a8e",
+      "6967e8f760a512b3b0f96a8e"
     ],
     "term:running back": [
-      "696938d04faa81fbf5c41097"
+      "696938d04faa81fbf5c41097",
+      "6967e9151e817b7dc78153b1",
+      "6967e91019ad4dfef5e5d96e"
     ],
     "team:lv": [
       "696938c7e0fbbe0095060a60"
@@ -274,14 +436,24 @@
       "696936f44faa81fbf5c41095",
       "696934887b9e0afe6fb3147b",
       "696933eee0fbbe0095060a5c",
-      "696933e7e0fbbe0095060a5b"
+      "696933e7e0fbbe0095060a5b",
+      "6967e8b31e817b7dc78153ad"
     ],
     "term:dropback": [
       "696937e17b9e0afe6fb31480",
       "696937d27b9e0afe6fb3147f",
       "696936f44faa81fbf5c41095",
       "696936eee0fbbe0095060a5f",
-      "696934bee0fbbe0095060a5d"
+      "696934bee0fbbe0095060a5d",
+      "6967ecdc34a3fc54285a1e90",
+      "6967e9745f43d0f7192f10bd",
+      "6967e96b1e817b7dc78153b3",
+      "6967e93719ad4dfef5e5d96f",
+      "6967e8e319ad4dfef5e5d96d",
+      "6967e8d81e817b7dc78153ae",
+      "6967e8cc18e81ea0e4129a8d",
+      "6967e87918e81ea0e4129a8b",
+      "6967e7dc18e81ea0e4129a8a"
     ],
     "term:zone coverage": [
       "696937d27b9e0afe6fb3147f",
@@ -292,19 +464,33 @@
     ],
     "term:air yards": [
       "69693698f46bf7433f014419",
-      "696936054faa81fbf5c41092"
+      "696936054faa81fbf5c41092",
+      "6967ebe068d16bc1a9971490",
+      "6967e96d19ad4dfef5e5d970",
+      "6967e8f4e683e7b155844351",
+      "6967e7b95f43d0f7192f10b1"
     ],
     "term:play action": [
-      "696935bff46bf7433f014416"
+      "696935bff46bf7433f014416",
+      "6967ec8f34a3fc33d55a1e8f",
+      "6967e95a5f43d0f7192f10bb",
+      "6967e8e319ad4dfef5e5d96d",
+      "6967e87918e81ea0e4129a8b"
     ],
     "term:tight end": [
-      "696935bff46bf7433f014416"
+      "696935bff46bf7433f014416",
+      "6967ed57ca71dd1ac135b432",
+      "6967e8f4e683e7b155844351",
+      "6967e8ef5f43d0f7192f10b7",
+      "6967e803e683e7b15584434e"
     ],
     "topic:third_down": [
-      "6969353994893e88049326f8"
+      "6969353994893e88049326f8",
+      "6967ebe068d16bc1a9971490"
     ],
     "term:third down": [
-      "6969353994893e88049326f8"
+      "6969353994893e88049326f8",
+      "6967ebe068d16bc1a9971490"
     ],
     "term:jumbo": [
       "696933c8f46bf7433f014412",
@@ -318,6 +504,120 @@
     ],
     "team:ari": [
       "69680fb41e817b7dc78153c3"
+    ],
+    "team:gb": [
+      "696810f618e81ea0e4129aa7",
+      "6967ed14b3631a870a7e78a3",
+      "6967ecf634a3fc57bf5a1e91",
+      "6967ecdc34a3fc54285a1e90",
+      "6967e8101e817b7dc78153ab",
+      "6967e803e683e7b15584434e",
+      "6967e7dc18e81ea0e4129a8a",
+      "6967e7d65f43d0f7192f10b2"
+    ],
+    "team:lar": [
+      "696810dd18e81ea0e4129aa5",
+      "6968109ee22f7208feda845d",
+      "6967ed57ca71dd1ac135b432",
+      "6967ed36b3631a4ce37e78a4",
+      "6967ecc06790f7bd5fbd3eb9",
+      "6967eca68bf044305bce2cf9",
+      "6967ec8f34a3fc33d55a1e8f",
+      "6967ebff34a3fc79ec5a1e8e",
+      "6967ebe068d16bc1a9971490",
+      "6967e95a5f43d0f7192f10bb",
+      "6967e94fe683e7b155844353",
+      "6967e93e60a512b3b0f96a8f",
+      "6967e93719ad4dfef5e5d96f",
+      "6967e933e683e7b155844352",
+      "6967e8bd18e81ea0e4129a8c",
+      "6967e8b31e817b7dc78153ad",
+      "6967e8385f43d0f7192f10b3",
+      "6967e83460a512b3b0f96a8c",
+      "6967e81d60a512b3b0f96a8b",
+      "6967e7c618e81ea0e4129a89",
+      "6967e7c119ad4dfef5e5d96b",
+      "6967e7b95f43d0f7192f10b1",
+      "6967e7b060a512b3b0f96a89"
+    ],
+    "team:chi": [
+      "696810dd18e81ea0e4129aa5",
+      "6968109ee22f7208feda845d",
+      "6967ed14b3631a870a7e78a3",
+      "6967ecdc34a3fc54285a1e90",
+      "6967e9af19ad4dfef5e5d971",
+      "6967e9a6e683e7b155844355",
+      "6967e99e18e81ea0e4129a93",
+      "6967e9821e817b7dc78153b4",
+      "6967e9745f43d0f7192f10bd",
+      "6967e97260a512b3b0f96a90",
+      "6967e96d19ad4dfef5e5d970",
+      "6967e96b1e817b7dc78153b3",
+      "6967e90b18e81ea0e4129a8f",
+      "6967e9005f43d0f7192f10b8",
+      "6967e8101e817b7dc78153ab",
+      "6967e803e683e7b15584434e",
+      "6967e7dc18e81ea0e4129a8a",
+      "6967e7d65f43d0f7192f10b2",
+      "6967e7d060a512b3b0f96a8a"
+    ],
+    "term:13 personnel": [
+      "6967ed57ca71dd1ac135b432",
+      "6967ed36b3631a4ce37e78a4",
+      "6967e8385f43d0f7192f10b3",
+      "6967e83460a512b3b0f96a8c",
+      "6967e7b060a512b3b0f96a89"
+    ],
+    "term:cover 3": [
+      "6967ecf634a3fc57bf5a1e91"
+    ],
+    "term:clean pocket": [
+      "6967ecdc34a3fc54285a1e90"
+    ],
+    "team:car": [
+      "6967ecc06790f7bd5fbd3eb9",
+      "6967eca68bf044305bce2cf9",
+      "6967ec8f34a3fc33d55a1e8f",
+      "6967e7c618e81ea0e4129a89",
+      "6967e7c119ad4dfef5e5d96b",
+      "6967e7b95f43d0f7192f10b1",
+      "6967e7b060a512b3b0f96a89"
+    ],
+    "term:under center": [
+      "6967ec8f34a3fc33d55a1e8f",
+      "6967e87160a512b3b0f96a8d"
+    ],
+    "term:light box": [
+      "6967ebff34a3fc79ec5a1e8e"
+    ],
+    "term:nickel": [
+      "6967e99e18e81ea0e4129a93"
+    ],
+    "term:epa": [
+      "6967e961e683e7b155844354",
+      "6967e7dc18e81ea0e4129a8a"
+    ],
+    "term:dime": [
+      "6967e94fe683e7b155844353"
+    ],
+    "term:11 personnel": [
+      "6967e9005f43d0f7192f10b8"
+    ],
+    "term:post": [
+      "6967e8ea1e817b7dc78153b0",
+      "6967e8a65f43d0f7192f10b5"
+    ],
+    "term:pressured dropback": [
+      "6967e8cc18e81ea0e4129a8d"
+    ],
+    "term:goal line": [
+      "6967e8ac5f43d0f7192f10b6"
+    ],
+    "term:fourth down": [
+      "6967e81d60a512b3b0f96a8b"
+    ],
+    "team:cin": [
+      "6967e7c618e81ea0e4129a89"
     ]
   },
   "insights": [
@@ -344,8 +644,8 @@
         "PIT"
       ],
       "retrieval_keys": [
-        "team:hou",
         "team:pit",
+        "team:hou",
         "topic:matchup"
       ],
       "llm_summary": "Topics: matchup",
@@ -580,8 +880,8 @@
         "NE"
       ],
       "retrieval_keys": [
-        "team:ne",
         "team:lac",
+        "team:ne",
         "topic:matchup",
         "topic:rushing",
         "topic:stats"
@@ -875,9 +1175,9 @@
         "WAS"
       ],
       "retrieval_keys": [
-        "team:min",
         "team:was",
         "team:no",
+        "team:min",
         "topic:rushing",
         "topic:stats",
         "term:running back"
@@ -910,8 +1210,8 @@
         "LV"
       ],
       "retrieval_keys": [
-        "team:hou",
         "team:lv",
+        "team:hou",
         "topic:rushing",
         "topic:stats"
       ],
@@ -2179,8 +2479,8 @@
         "NE"
       ],
       "retrieval_keys": [
-        "team:ne",
         "team:lac",
+        "team:ne",
         "topic:matchup",
         "topic:stats",
         "term:22 personnel"
@@ -2242,8 +2542,8 @@
         "WAS"
       ],
       "retrieval_keys": [
-        "team:was",
-        "team:lac"
+        "team:lac",
+        "team:was"
       ],
       "llm_summary": "",
       "times_served": 0,
@@ -2401,8 +2701,8 @@
         "NE"
       ],
       "retrieval_keys": [
-        "team:ne",
-        "team:ari"
+        "team:ari",
+        "team:ne"
       ],
       "llm_summary": "",
       "times_served": 0,
@@ -2457,6 +2757,2370 @@
         "team:ne"
       ],
       "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810f618e81ea0e4129aa7",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams had 184 pass yards, 2 pass touchdowns, 0 interceptions, and a 110.0 passer rating in the 4th quarter of the Wild Card game vs the Packers.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "passer rating"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "turnovers"
+      ],
+      "teams_mentioned": [
+        "GB"
+      ],
+      "retrieval_keys": [
+        "team:gb",
+        "topic:defense",
+        "topic:passing",
+        "topic:turnovers",
+        "term:passer rating"
+      ],
+      "llm_summary": "Topics: defense, passing, turnovers | Terms: passer rating",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810eb60a512b3b0f96aa0",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Colston Loveland became the first rookie TE in NFL history with 8+ receptions & 100+ receiving yds in a playoff game with his 8 receptions & 137 receiving yards in the Wild Card Round.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [],
+      "retrieval_keys": [],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810e618e81ea0e4129aa6",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Puka Nacua has averaged 108.3 receiving yards per game in his playoff career, first in NFL history among all players with 4+ playoff games.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810dd18e81ea0e4129aa5",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams' Divisional Round matchup at Chicago will be Matthew Stafford's 23rd career game vs the Bears (3rd such game with Rams and first career playoff matchup vs Bears).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "matchup",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "team:chi",
+        "topic:matchup",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: matchup, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810cdd068eeeb79e017c9",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Matthew Stafford (15) and Caleb Williams (12) are 2 of 3 quarterbacks with 12+ total touchdowns in the 4th quarter of games in 2025, including playoffs.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing"
+      ],
+      "llm_summary": "Topics: passing",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810c1e22f7208feda845e",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "This will be the 5th game in Matthew Stafford's playoff career that he faces off with another starting quarterback who was a first overall pick in the NFL Draft (Caleb Williams).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "stats",
+        "turnovers"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:passing",
+        "topic:stats",
+        "topic:turnovers"
+      ],
+      "llm_summary": "Topics: passing, stats, turnovers",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "696810b9d068eeeb79e017c8",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Ben Johnson became the third head coach in NFL history to make the playoffs in his first season with a team in a season after that team finished last in the NFL in total offense.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6968109ee22f7208feda845d",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams and Bears will meet for the third time in the playoffs and first since the 1985 NFC Championship Game, which the Bears won 24-0 on their way to winning Super Bowl XX.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "CHI",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "team:chi"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ed6eb83ceb5a1f384be5",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "DJ Moore aligned in the slot on 27.5% of his offensive snaps this season, the 2nd-highest rate of his career, trailing only his 29.7% mark as a rookie in 2018.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ed57ca71dd1ac135b432",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Davis Allen led Rams\u2019 tight ends with a 100% playtime percentage across their 331 team snaps using 13 personnel this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "13 personnel",
+        "tight end"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:stats",
+        "term:13 personnel",
+        "term:tight end"
+      ],
+      "llm_summary": "Topics: stats | Terms: 13 personnel, tight end",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ed36b3631a4ce37e78a4",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams logged 168 of their 331 snaps in 13 personnel when neither Puka Nacua nor Davante Adams were on the field this season (50.8%).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "13 personnel"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:stats",
+        "term:13 personnel"
+      ],
+      "llm_summary": "Topics: stats | Terms: 13 personnel",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ed14b3631a870a7e78a3",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Kyler Gordon returned from injury in the Bears Wild Card win over the Packers, marking his first appearance since Week 13 and playing on 61.4% of defensive snaps.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "CHI",
+        "GB"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:gb"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ecf634a3fc57bf5a1e91",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams completed 10 of 13 pass attempts for 149 yards and a touchdown against the Packers when they used Cover 3 in the Wild Card round.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "cover 3"
+      ],
+      "topics": [
+        "matchup",
+        "passing"
+      ],
+      "teams_mentioned": [
+        "GB"
+      ],
+      "retrieval_keys": [
+        "team:gb",
+        "topic:matchup",
+        "topic:passing",
+        "term:cover 3"
+      ],
+      "llm_summary": "Topics: matchup, passing | Terms: cover 3",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ecdc34a3fc54285a1e90",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "While Caleb Williams was pressured on only 25.0% of his dropbacks in the Bears Wild Card win over the Packers, he completed just 19 of his 36 pass attempts (52.8%) when not under pressure, his lowest completion percentage from a clean pocket in a game this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "clean pocket",
+        "completion percentage",
+        "dropback",
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI",
+        "GB",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:gb",
+        "team:was",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:clean pocket",
+        "term:completion percentage",
+        "term:dropback",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: clean pocket, completion percentage, dropback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ecc06790f7bd5fbd3eb9",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Quentin Lake allowed career highs in receptions (7) and receiving yards (83) in his first game-action since Week 11 during the Rams Wild Card win over the Panthers.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CAR",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:car",
+        "team:lar",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967eca68bf044305bce2cf9",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Davante Adams caught 5 of 13 targets for 72 yards and an interception in the Rams Wild Card win over the Panthers.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "passing",
+        "turnovers"
+      ],
+      "teams_mentioned": [
+        "CAR",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:car",
+        "team:lar",
+        "topic:defense",
+        "topic:passing",
+        "topic:turnovers"
+      ],
+      "llm_summary": "Topics: defense, passing, turnovers",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ec8f34a3fc33d55a1e8f",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Matthew Stafford used play action when aligned under center just 7 times in the Rams Wild Card win over the Panthers, tied for his fewest in a game this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "play action",
+        "under center"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CAR",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:car",
+        "team:lar",
+        "topic:stats",
+        "term:play action",
+        "term:under center"
+      ],
+      "llm_summary": "Topics: stats | Terms: play action, under center",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ebff34a3fc79ec5a1e8e",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams deployed a light box (six or fewer defenders) on 44.7% of opponent run snaps this season, the 5th-highest rate in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "light box"
+      ],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:rushing",
+        "topic:stats",
+        "term:light box"
+      ],
+      "llm_summary": "Topics: rushing, stats | Terms: light box",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967ebe068d16bc1a9971490",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Despite the Rams offense averaging a league-low 5.7 yards to go on third down this season, Matthew Stafford averaged the 7th-most air yards per attempt (10.1) and threw past the sticks at the third-highest rate (66.9%) in those situations.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "air yards",
+        "third down",
+        "yards per attempt"
+      ],
+      "topics": [
+        "stats",
+        "third_down"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:stats",
+        "topic:third_down",
+        "term:air yards",
+        "term:third down",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: stats, third_down | Terms: air yards, third down, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e9af19ad4dfef5e5d971",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears defense allowed 1.6 yards before contact per carry against opposing designed runs this season, the 2nd-most in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "matchup",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:matchup",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, matchup, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e9a6e683e7b155844355",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "When facing two-back sets this season, the Bears defense allowed the 3rd-highest rushing success rate (50.0%) and 11th-most yards per carry (4.4).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "matchup",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:matchup",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, matchup, rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e99e18e81ea0e4129a93",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears defense used nickel on 73.6% of their defensive snaps this season, the 4th-highest rate in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "nickel"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:stats",
+        "term:nickel"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: nickel",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e9821e817b7dc78153b4",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "From when Jaylon Johnson returned to the lineup in Week 13 to the end of the regular season, Johnson aligned as the Bears left side corner on 93.4% of snaps with Nahshon Wright aligning as right side corner on 95.3%.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e9745f43d0f7192f10bd",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears defense intercepted 12 passes on dropbacks without generating pressure this season, the 5th-most in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: dropback, pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e97260a512b3b0f96a90",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears allowed a league-high 64.7% completion percentage and 8.4 yards per attempt when playing man coverage this season, the only defense to allow more than 8.0 yards per attempt in man.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "completion percentage",
+        "man coverage",
+        "yards per attempt"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:completion percentage",
+        "term:man coverage",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: completion percentage, man coverage, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e96d19ad4dfef5e5d970",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears defense allowed 2,273 passing yards on downfield throws (10+ air yards) this season, the 2nd-most in the NFL, while giving up 12.7 yards per attempt, also the 2nd-most in the league.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "air yards",
+        "yards per attempt"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:air yards",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: air yards, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e96b1e817b7dc78153b3",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears defense generated pressure on just 31.6% of dropbacks this season, the 6th-lowest rate in the NFL, while posting a league-low 9.8% quick pressure rate (under 2.5 seconds).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: dropback, pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e96318e81ea0e4129a92",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Emmanuel Forbes allowed 21 downfield receptions this season, tied for the 6th-most among all players.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e961e683e7b155844354",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Poona Ford recorded career highs in both run stop rate (run resulting in negative EPA for the offense) and run stuff rate (run resulting in no gain or negative yards) this season, posting a 15.0% run stop rate (5th-highest) and a 4.5% run stuff rate (9th-highest) among defensive tackles (min. 200 run snaps).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "epa"
+      ],
+      "topics": [
+        "defense",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN",
+        "NO"
+      ],
+      "retrieval_keys": [
+        "team:no",
+        "team:min",
+        "topic:defense",
+        "topic:rushing",
+        "topic:stats",
+        "term:epa"
+      ],
+      "llm_summary": "Topics: defense, rushing, stats | Terms: epa",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e95a5f43d0f7192f10bb",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams defense struggled to defend play action this season, specifically when they used base personnel.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "play action"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:defense",
+        "topic:stats",
+        "term:play action"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: play action",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e94fe683e7b155844353",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams defense utilized dime personnel on a league-high 32.4% of their snaps this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dime"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:defense",
+        "topic:stats",
+        "term:dime"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: dime",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e94218e81ea0e4129a91",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "This season including the playoffs, Braden Fiske has generated 16 pressures against double teams (T-3rd most), while teammate Kobie Turner has recorded 15 (T-5th most).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "matchup",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:matchup",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, matchup, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e93e60a512b3b0f96a8f",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams defense generated the highest pressure rate in the NFL on 3rd and long (7+ yards) this season (54.6%) despite blitzing at the 8th-lowest rate (25.8%).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:defense",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e93b1e817b7dc78153b2",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Jared Verse generated a team-high 67 pressures this season and converted 11.2% of those into sacks (7.5), nearly double his rookie rate.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure",
+        "sack"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:stats",
+        "term:pressure",
+        "term:sack"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: pressure, sack",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e93719ad4dfef5e5d96f",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams used 5+ man fronts on 44.2% of opponent dropbacks this season, the 7th-highest rate.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: dropback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e933e683e7b155844352",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams were one of two teams to have three players generate 50+ pressures this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:defense",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e91b5f43d0f7192f10b9",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Darnell Wright allowed just one quick pressure (under 2.5 seconds) across his 597 pass blocks this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e9151e817b7dc78153b1",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Kyle Monangai averaged 10.72 mph when crossing the line of scrimmage this season, the 3rd-fastest mark among running backs with at least 100 carries.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "running back"
+      ],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:rushing",
+        "topic:stats",
+        "term:running back"
+      ],
+      "llm_summary": "Topics: rushing, stats | Terms: running back",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e91019ad4dfef5e5d96e",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "D'Andre Swift was more efficient on outside carries, recording the 2nd-highest success rate (51.7%) and 7th-most yards per carry (5.5) among running backs with at least 50 outside carries.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "running back"
+      ],
+      "topics": [
+        "rushing"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:rushing",
+        "term:running back"
+      ],
+      "llm_summary": "Topics: rushing | Terms: running back",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e90b18e81ea0e4129a8f",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Bears rushers averaged 1.4 yards before contact per carry on designed rushes this season, the 5th-most in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e9005f43d0f7192f10b8",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears offense called a run on 34.5% of their offensive snaps out of 11 personnel (1 RB, 1 TE) this season, the 2nd-highest rate in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "11 personnel"
+      ],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "topic:rushing",
+        "topic:stats",
+        "term:11 personnel"
+      ],
+      "llm_summary": "Topics: rushing, stats | Terms: 11 personnel",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8fa18e81ea0e4129a8e",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Luther Burden gained 7.4 yards after the catch per reception this season, the 4th-most among wide receivers (min. 25 receptions).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8f760a512b3b0f96a8e",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Luther Burden generated 2.7 yards per route run this season, the 2nd-most by any rookie in any season in the Next Gen Stats era (min. 200 routes), trailing only A.J. Brown in 2019.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "MIN"
+      ],
+      "retrieval_keys": [
+        "team:min",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8f4e683e7b155844351",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Colston Loveland averaged 8.9 air yards per target this season, the 4th-highest mark among tight ends with at least 35 targets.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "air yards",
+        "tight end"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats",
+        "term:air yards",
+        "term:tight end"
+      ],
+      "llm_summary": "Topics: stats | Terms: air yards, tight end",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8ef5f43d0f7192f10b7",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Colston Loveland aligned out wide on 19.3% of his snaps this season \u2014 the highest rate among tight ends with at least 500 snaps \u2014 while lining up in the slot on just 23.7% of snaps, below the group average (30.5%).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "tight end"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats",
+        "term:tight end"
+      ],
+      "llm_summary": "Topics: stats | Terms: tight end",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8ea1e817b7dc78153b0",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams generated a league-high 580 passing yards and 7 touchdowns when targeting post routes this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "post"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:post"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: post",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8e319ad4dfef5e5d96d",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams used play action on 27.8% of his dropbacks when trailing in the second half of games this season, the 2nd-highest in the NFL behind only Daniel Jones (28.8%) and 8.3% higher than the league average (19.5%).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "play action"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:play action"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: dropback, play action",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8dd1e817b7dc78153af",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams reached a top speed of 20+ mph as a ball carrier five different times this season, the most among quarterbacks.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: passing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8d81e817b7dc78153ae",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams scrambled on 20.5% of his dropbacks this season, the highest in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:dropback"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: dropback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8cc18e81ea0e4129a8d",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams took a sack on just 11.9% of his pressured dropbacks this season, the 5th-lowest in the NFL and a stark difference to his 26.2% rate as a rookie that ranked 2nd-highest.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "pressured dropback",
+        "sack"
+      ],
+      "topics": [
+        "defense",
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:pressured dropback",
+        "term:sack"
+      ],
+      "llm_summary": "Topics: defense, passing, stats | Terms: dropback, pressured dropback, sack",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8c819ad4dfef5e5d96c",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams recorded an average time to throw of 3.20 seconds this season, the longest mark in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: passing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8c3e683e7b155844350",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "During his rookie season, Blake Corum averaged just 8.2 snaps per game while playing on only 11.1% of snaps across the full season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8bd18e81ea0e4129a8c",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams have been significantly less effective running the ball without Kevin Dotson this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8b31e817b7dc78153ad",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams faced a cornerback or slot corner as the first tackler on 16.2% of their designed runs this season, the 4th-highest rate in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "cornerback"
+      ],
+      "topics": [
+        "defense",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:defense",
+        "topic:rushing",
+        "topic:stats",
+        "term:cornerback"
+      ],
+      "llm_summary": "Topics: defense, rushing, stats | Terms: cornerback",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8ac5f43d0f7192f10b6",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Despite missing the final three weeks of the regular season, Davante Adams' 6 goal line touchdown receptions (inside the 3 yard line) were tied for the most by any player in a season since 2016.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "goal line"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats",
+        "term:goal line"
+      ],
+      "llm_summary": "Topics: stats | Terms: goal line",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8a65f43d0f7192f10b5",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Puka Nacua led the NFL in receiving yards on both post routes (278) and in routes (253) this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "post"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats",
+        "term:post"
+      ],
+      "llm_summary": "Topics: stats | Terms: post",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e89fe683e7b15584434f",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Puka Nacua led the NFL with 28 missed tackles forced and 402 yards after contact on receptions this season, making him the first player to have gained more than 400 yards after contact on receptions in a season since at least 2018.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "defense",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: defense, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8945f43d0f7192f10b4",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Puka Nacua gained a league-high 473 receiving yards on snaps he was used in motion this season, the most by any player in a season since at least 2018.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:was",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e88a1e817b7dc78153ac",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Matthew Stafford threw a league-high 32 touchdowns and a single interception against the blitz this season, including 24 touchdowns without an interception across 53 red-zone passes.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "blitz"
+      ],
+      "topics": [
+        "defense",
+        "matchup",
+        "passing",
+        "stats",
+        "turnovers"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:defense",
+        "topic:matchup",
+        "topic:passing",
+        "topic:stats",
+        "topic:turnovers",
+        "term:blitz"
+      ],
+      "llm_summary": "Topics: defense, matchup, passing, stats, turnovers | Terms: blitz",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e87918e81ea0e4129a8b",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Matthew Stafford led the NFL in play action rate this season, utilizing play fakes on 36.0% of his dropbacks.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "play action"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:play action"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: dropback, play action",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e87160a512b3b0f96a8d",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Matthew Stafford aligned under center on 57.8% of his offensive snaps this season, the highest in the NFL by 6.0%.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "under center"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [],
+      "retrieval_keys": [
+        "topic:stats",
+        "term:under center"
+      ],
+      "llm_summary": "Topics: stats | Terms: under center",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8385f43d0f7192f10b3",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "When the Rams have used 13 personnel this season, they stay in 13 personnel on the subsequent play 63.8% of the time, the highest rate in the NFL.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "13 personnel"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:stats",
+        "term:13 personnel"
+      ],
+      "llm_summary": "Topics: stats | Terms: 13 personnel",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e83460a512b3b0f96a8c",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams offense utilized 13 personnel on a season-high 30.5% of plays this season, a mark over 10 percentage points higher than any other offense in a season during the Next Gen Stats era.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "13 personnel"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:stats",
+        "term:13 personnel"
+      ],
+      "llm_summary": "Topics: stats | Terms: 13 personnel",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e81d60a512b3b0f96a8b",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Across his first eight seasons as the Rams head coach (2017-2024), Sean McVay made the optimal decision on fourth down on just 50.0% of his opportunities, 5th-lowest in the NFL and 8.2% lower than the league average.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "fourth down"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:lar",
+        "topic:stats",
+        "term:fourth down"
+      ],
+      "llm_summary": "Topics: stats | Terms: fourth down",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e8101e817b7dc78153ab",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Bears recorded a 28.0% rushing success rate on designed carries in their Wild Card win over the Packers, their 2nd-lowest in a game this season.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI",
+        "GB"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:gb",
+        "topic:rushing",
+        "topic:stats"
+      ],
+      "llm_summary": "Topics: rushing, stats",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e803e683e7b15584434e",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Colston Loveland caught 8 of 15 targets for 137 yards in the Bears Wild Card win over the Packers, including 111 yards on 6 receptions (10 targets) when open (3-5 yards of separation), the most by a tight end in a playoff game in the Next Gen Stats era (since 2016).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "tight end"
+      ],
+      "topics": [],
+      "teams_mentioned": [
+        "CHI",
+        "GB"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:gb",
+        "term:tight end"
+      ],
+      "llm_summary": "Terms: tight end",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7dc18e81ea0e4129a8a",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams found success in the fourth quarter in the Bears Wild Card win over the Packers, completing 10 of his 21 pass attempts for career-highs in passing yards (184), first downs (10) and dropback EPA (+10.8).",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "dropback",
+        "epa"
+      ],
+      "topics": [
+        "passing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CHI",
+        "GB"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:gb",
+        "topic:passing",
+        "topic:stats",
+        "term:dropback",
+        "term:epa"
+      ],
+      "llm_summary": "Topics: passing, stats | Terms: dropback, epa",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7d65f43d0f7192f10b2",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Caleb Williams was efficient in the quick game in the Bears Wild Card win over the Packers, completing 10 of 14 attempts under 2.5 seconds for 113 yards and a touchdown.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "CHI",
+        "GB",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:gb",
+        "team:was"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7d060a512b3b0f96a8a",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Trailing 27 to 16 with 5:37 remaining in the fourth quarter, the Bears win probability was as low as 3.0% facing the 4th and 8 from their own 43-yard line.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "CHI",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:chi",
+        "team:was"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7c618e81ea0e4129a89",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Byron Young generated a team-high 9 pressures across 32 pass rushes in the Rams Wild Card win over the Panthers, tying his regular-season career-high of 9 pressures set in Week 3, 2023 against the Bengals.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "pressure"
+      ],
+      "topics": [
+        "defense",
+        "matchup",
+        "passing",
+        "rushing",
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CAR",
+        "CIN",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:cin",
+        "team:car",
+        "team:lar",
+        "topic:defense",
+        "topic:matchup",
+        "topic:passing",
+        "topic:rushing",
+        "topic:stats",
+        "term:pressure"
+      ],
+      "llm_summary": "Topics: defense, matchup, passing, rushing, stats | Terms: pressure",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7c119ad4dfef5e5d96b",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Puka Nacua was targeted on 18 of his 38 routes in the Rams Wild Card win over the Panthers, hauling in 10 receptions for 111 yards and a touchdown.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [],
+      "topics": [],
+      "teams_mentioned": [
+        "CAR",
+        "LAR",
+        "WAS"
+      ],
+      "retrieval_keys": [
+        "team:car",
+        "team:lar",
+        "team:was"
+      ],
+      "llm_summary": "",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7b95f43d0f7192f10b1",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "Matthew Stafford averaged 11.7 air yards per attempt in the Rams Wild Card win over the Panthers, his 5th-most in a game since joining the Rams in 2021, including the playoffs.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "air yards",
+        "yards per attempt"
+      ],
+      "topics": [
+        "stats"
+      ],
+      "teams_mentioned": [
+        "CAR",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:car",
+        "team:lar",
+        "topic:stats",
+        "term:air yards",
+        "term:yards per attempt"
+      ],
+      "llm_summary": "Topics: stats | Terms: air yards, yards per attempt",
+      "times_served": 0,
+      "last_served_game": null
+    },
+    {
+      "id": "6967e7b060a512b3b0f96a89",
+      "game_id": "adedf70c-f037-11f0-9442-5911216651e2",
+      "week": 20,
+      "season": 2025,
+      "title": "The Rams offense used 13 personnel on 23 of their 72 snaps (31.9%) in their Wild Card win over the Panthers, a rate nearly two times higher than their mark of 17.6% during their prior meeting in Week 13.",
+      "sub_note": "",
+      "player_name": "",
+      "player_team": "",
+      "player_position": "",
+      "secondary_entity": "",
+      "secondary_team": "",
+      "image_url": "",
+      "local_image": null,
+      "terms_of_art": [
+        "13 personnel"
+      ],
+      "topics": [],
+      "teams_mentioned": [
+        "CAR",
+        "LAR"
+      ],
+      "retrieval_keys": [
+        "team:car",
+        "team:lar",
+        "term:13 personnel"
+      ],
+      "llm_summary": "Terms: 13 personnel",
       "times_served": 0,
       "last_served_game": null
     }

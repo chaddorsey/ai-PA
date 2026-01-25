@@ -3317,21 +3317,25 @@ def receive_event():
                 parsed = _parse_nfl_pro_play_data(nfl_pro_play)
                 
                 # Send post-snap analysis (for the COMPLETED play)
+                # This includes the formation/personnel that was used AND the result
                 if parsed.get('postsnap'):
                     postsnap_data = parsed['postsnap']
                     delivery_manager.broadcast_postsnap(postsnap_data)
                     postsnap_sent = True
                     logger.info(f"📊 Post-snap: {postsnap_data.get('defense', {}).get('coverage', 'N/A')}, {postsnap_data.get('yards', 0)} yards")
-                
-                # Send pre-snap analysis for UPCOMING play (with timing offset)
-                # Only broadcast if we have meaningful personnel/formation data
-                if current_down >= 1 and parsed.get('presnap'):
+
+                # Send pre-snap data (formation/personnel for this play)
+                # With the viewing delay, frontend shows this BEFORE the play text appears,
+                # giving viewers a preview of what's coming. Frontend suppresses this if
+                # delay is too short for it to be useful.
+                if parsed.get('presnap'):
                     presnap_data = parsed['presnap']
                     off = presnap_data.get('offense', {})
                     has_presnap_data = off.get('personnel') or off.get('formation')
                     if has_presnap_data:
                         delivery_manager.broadcast_presnap(presnap_data)
                         presnap_sent = True
+                        logger.info(f"📊 Pre-snap: {off.get('personnel', '')} {off.get('formation', '')}")
                     
             except Exception as e:
                 logger.warning(f"Error parsing NFL Pro play data: {e}")
@@ -3346,23 +3350,9 @@ def receive_event():
                     if espn_postsnap:
                         delivery_manager.broadcast_postsnap(espn_postsnap)
                         postsnap_sent = True
-                
-                # Check for legacy preplay format for NEXT play
-                if current_down >= 1:
-                    preplay_result = data.get('preplay')
-                    
-                    if preplay_result and preplay_result.get('items'):
-                        delivery_manager.broadcast_preplay(preplay_result)
-                        presnap_sent = True
-                    elif PRE_PLAY_SERVICE_AVAILABLE and pre_play_service_instance:
-                        play_data = _build_preplay_data_from_state(state, change)
-                        
-                        if play_data and play_data.get('down', 0) >= 1:
-                            preplay_result = process_pre_play(play_data)
-                            
-                            if preplay_result.get('items'):
-                                delivery_manager.broadcast_preplay(preplay_result)
-                                presnap_sent = True
+
+                # NOTE: No pre-play/pre-snap broadcast here - we don't have formation
+                # data for the upcoming play, only for the play that just completed.
             except Exception as e:
                 logger.warning(f"Error generating analysis metadata: {e}")
 
@@ -4891,7 +4881,7 @@ def nfl_pro_refresh():
 
 # NFL Pro plays fetching with Playwright
 _nfl_pro_plays_cache: Dict[str, tuple] = {}  # game_uuid -> (plays, timestamp)
-NFL_PRO_PLAYS_CACHE_TTL = 60  # 60 seconds cache - new plays come through every few seconds anyway
+NFL_PRO_PLAYS_CACHE_TTL = 10  # 10 seconds cache - fetch fresh data for each play
 
 
 def _get_matching_nfl_pro_play(state: Dict[str, Any], change: Dict[str, Any]) -> Optional[Dict]:

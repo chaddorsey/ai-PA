@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NFL Pro Session Capture</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            background: #0f0f1a;
+            color: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: #1a1a2e;
+            border-radius: 16px;
+            max-width: 400px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .status {
+            font-size: 18px;
+            margin: 20px 0;
+        }
+        .status.waiting { color: #f59e0b; }
+        .status.success { color: #22c55e; }
+        .status.error { color: #ef4444; }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f59e0b;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .info {
+            font-size: 14px;
+            color: #a0a0b0;
+            margin-top: 20px;
+        }
+        .close-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            display: none;
+        }
+        .close-btn:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NFL Pro Session</h1>
+        <div class="status waiting" id="status">
+            <span class="spinner"></span>
+            Waiting for session data...
+        </div>
+        <p class="info" id="info">Keep this window open while the bookmarklet runs.</p>
+        <button class="close-btn" id="closeBtn" onclick="window.close()">Close Window</button>
+    </div>
+
+    <script>
+        const INSIGHT_ENGINE_URL = '{{ insight_engine_url }}';
+
+        // Listen for postMessage from the bookmarklet
+        window.addEventListener('message', async function(event) {
+            console.log('Received message from:', event.origin);
+
+            // Accept from any origin (bookmarklet could be on pro.nfl.com or id.nfl.com)
+            if (!event.data || event.data.type !== 'nfl-pro-session') {
+                return;
+            }
+
+            const statusEl = document.getElementById('status');
+            const infoEl = document.getElementById('info');
+            const closeBtn = document.getElementById('closeBtn');
+
+            statusEl.innerHTML = '<span class="spinner"></span> Saving session...';
+
+            try {
+                const sessionData = event.data.session;
+                console.log('Session data received, cookies:', sessionData.cookies?.length, 'localStorage keys:', Object.keys(sessionData.localStorage || {}).length);
+
+                const resp = await fetch(`${INSIGHT_ENGINE_URL}/api/nfl-pro/session`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(sessionData)
+                });
+
+                const result = await resp.json();
+
+                if (result.status === 'ok') {
+                    statusEl.className = 'status success';
+                    statusEl.textContent = 'Session saved successfully!';
+                    infoEl.textContent = 'You can now close this window.';
+                    closeBtn.style.display = 'inline-block';
+
+                    // Notify opener if it's still there
+                    if (window.opener && !window.opener.closed) {
+                        window.opener.postMessage({ type: 'nfl-pro-session-saved', success: true }, '*');
+                    }
+
+                    // Auto-close after 3 seconds
+                    setTimeout(() => window.close(), 3000);
+                } else {
+                    throw new Error(result.message || 'Unknown error');
+                }
+            } catch (e) {
+                console.error('Error saving session:', e);
+                statusEl.className = 'status error';
+                statusEl.textContent = 'Error: ' + e.message;
+                infoEl.textContent = 'Please try again.';
+                closeBtn.style.display = 'inline-block';
+            }
+        });
+
+        // Signal to the opener that we're ready to receive data
+        if (window.opener && !window.opener.closed) {
+            // Send ready signal
+            window.opener.postMessage({ type: 'nfl-pro-capture-ready' }, '*');
+        }
+
+        // Timeout after 30 seconds
+        setTimeout(() => {
+            const statusEl = document.getElementById('status');
+            if (statusEl.classList.contains('waiting')) {
+                statusEl.className = 'status error';
+                statusEl.textContent = 'Timeout waiting for data';
+                document.getElementById('info').textContent = 'Please try the bookmarklet again.';
+                document.getElementById('closeBtn').style.display = 'inline-block';
+            }
+        }, 30000);
+    </script>
+</body>
+</html>

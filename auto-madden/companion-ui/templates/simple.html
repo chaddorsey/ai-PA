@@ -1097,8 +1097,9 @@
         
         // Analysis panel timing (ms)
         const PRESNAP_DISPLAY_DURATION = 10000;   // Show pre-snap for 10s
-        const POSTSNAP_DISPLAY_DURATION = 8000;   // Show post-snap for 8s
-        const FADE_DURATION = 3000;
+        const POSTSNAP_HIDE_BEFORE_PRESNAP = 2000; // Hide post-snap 2s before pre-snap
+        const FADE_DURATION = 500;  // Quick fade
+        let currentPanelType = null;  // 'presnap' or 'postsnap'
         
         // Defense package abbreviations
         const DEF_PACKAGES = {
@@ -1289,20 +1290,33 @@
         // === Analysis Panel ===
         function showPresnap(data) {
             if (userPrefs.presnap === 'never') return;
-            
+
             const panel = document.getElementById('analysis-panel');
-            
+
             // Clear timeouts
             if (analysisTimeout) clearTimeout(analysisTimeout);
             if (analysisFadeTimeout) clearTimeout(analysisFadeTimeout);
-            
+
+            // If post-snap is showing, hide it first then show pre-snap
+            if (currentPanelType === 'postsnap' && panel.classList.contains('visible')) {
+                panel.classList.add('fading');
+                setTimeout(() => {
+                    _displayPresnap(data, panel);
+                }, FADE_DURATION);
+            } else {
+                _displayPresnap(data, panel);
+            }
+        }
+
+        function _displayPresnap(data, panel) {
             // Set to pre-snap mode
             panel.className = 'analysis-panel presnap visible';
+            currentPanelType = 'presnap';
             document.getElementById('analysis-mode').textContent = 'PRE-SNAP';
             document.getElementById('bigplay-badge').style.display = 'none';
             document.getElementById('analysis-stats').style.display = 'none';
             document.getElementById('bigplay-stats').style.display = 'none';
-            
+
             // Update offense
             const offPersonnel = data.offense?.personnel || '';
             // Personnel could be "1 RB, 1 TE, 3 WR" (full) or "11" (code only)
@@ -1311,24 +1325,25 @@
             document.getElementById('off-formation').textContent = data.offense?.formation || '--';
             // Use description if available, otherwise use full personnel string
             document.getElementById('off-detail').textContent = data.offense?.description || offPersonnel || '';
-            
+
             // Update defense
             const defPersonnel = data.defense?.personnel || '';
             document.getElementById('def-personnel').textContent = defPersonnel || '--';
             document.getElementById('def-package').textContent = defPersonnel ? getDefPackage(defPersonnel) : '';
-            
+
             const boxValue = data.defense?.box;
             document.getElementById('def-box').textContent = boxValue ? `${boxValue} in box` : '--';
-            
+
             // Set fade timeout for pre-snap
             analysisFadeTimeout = setTimeout(() => {
                 panel.classList.add('fading');
             }, PRESNAP_DISPLAY_DURATION);
-            
+
             analysisTimeout = setTimeout(() => {
                 panel.classList.remove('visible', 'fading', 'presnap', 'postsnap', 'bigplay');
+                currentPanelType = null;
             }, PRESNAP_DISPLAY_DURATION + FADE_DURATION);
-            
+
             console.log('Showing pre-snap:', data);
         }
         
@@ -1419,22 +1434,18 @@
             } else {
                 bigplayStats.style.display = 'none';
             }
-            
-            // Set fade timeout
-            analysisFadeTimeout = setTimeout(() => {
-                panel.classList.add('fading');
-            }, POSTSNAP_DISPLAY_DURATION);
-            
-            analysisTimeout = setTimeout(() => {
-                panel.classList.remove('visible', 'fading', 'presnap', 'postsnap', 'bigplay');
-            }, POSTSNAP_DISPLAY_DURATION + FADE_DURATION);
-            
+
+            // Track that post-snap is showing - it stays visible until next pre-snap arrives
+            currentPanelType = 'postsnap';
+            // No auto-hide timeout - post-snap stays up until pre-snap replaces it
+
             console.log('Showing post-snap:', data);
         }
         
         function hideAnalysis() {
             const panel = document.getElementById('analysis-panel');
             panel.classList.remove('visible', 'fading', 'presnap', 'postsnap', 'bigplay');
+            currentPanelType = null;
         }
         
         // === Insights ===
@@ -1541,15 +1552,22 @@
                         insightBuffer.shift();
                     }
                 } else if (data.type === 'presnap') {
-                    // Pre-snap data with timing info
-                    const playDuration = data.data.playDuration || 5;  // seconds
-                    const presnapTime = Date.now() - (playDuration * 1000) - (presnapOffset * 1000);
-                    
-                    analysisBuffer.push({
-                        type: 'presnap',
-                        data: data.data,
-                        timestamp: presnapTime  // Scheduled to show before play summary
-                    });
+                    // Pre-snap provides a preview of what's coming
+                    // Only show if delay is long enough for it to appear before the play
+                    const minDelayForPresnap = presnapOffset + 3;  // Need presnapOffset + 3s buffer
+                    if (currentDelay >= minDelayForPresnap) {
+                        const playDuration = data.data.playDuration || 5;  // seconds
+                        const presnapTime = Date.now() - (playDuration * 1000) - (presnapOffset * 1000);
+
+                        analysisBuffer.push({
+                            type: 'presnap',
+                            data: data.data,
+                            timestamp: presnapTime  // Scheduled to show before play summary
+                        });
+                        console.log(`Pre-snap scheduled (delay=${currentDelay}s >= ${minDelayForPresnap}s required)`);
+                    } else {
+                        console.log(`Pre-snap suppressed (delay=${currentDelay}s < ${minDelayForPresnap}s required)`);
+                    }
                 } else if (data.type === 'postsnap') {
                     // Post-snap data comes with play summary
                     analysisBuffer.push({
