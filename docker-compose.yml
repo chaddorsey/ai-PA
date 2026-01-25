@@ -1022,6 +1022,10 @@ services:
       - INSIGHT_ENGINE_URL=http://auto-madden-insight-engine:5131
       - ESPN_POLL_INTERVAL=3
       - LOG_LEVEL=INFO
+      - CREDENTIALS_PATH=/credentials
+    volumes:
+      - ./auto-madden/credentials:/credentials:ro
+      - ./auto-madden/data:/data:ro
     ports:
       - "5132:5132"
     healthcheck:
@@ -1062,10 +1066,14 @@ services:
       - MAX_INSIGHTS_PER_MINUTE=4
       - MIN_INSIGHT_GAP_SECONDS=8
       - LOG_LEVEL=INFO
+      - CREDENTIALS_PATH=/credentials
     ports:
       - "5131:5131"
     volumes:
       - ./auto-madden/config:/app/config:ro
+      - ./auto-madden/nfl-pro-scraper:/app/nfl-pro-scraper:ro
+      - ./auto-madden/data:/data:ro
+      - ./auto-madden/credentials:/credentials:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5131/health"]
       interval: 30s
