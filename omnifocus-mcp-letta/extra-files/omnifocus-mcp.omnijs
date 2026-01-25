@@ -8912,6 +8912,649 @@
     return validation;
   }
 
+  // ===== MISSING MCP SERVER METHODS =====
+
+  // Move a project to a different folder
+  lib.moveProject = params => {
+    const startTime = Date.now();
+
+    if (!params.projectId || typeof params.projectId !== 'string') {
+      throw new Error("Project ID is required and must be a string");
+    }
+
+    const projectId = params.projectId;
+    const targetFolderId = params.targetFolderId; // null for library root
+    const position = params.position;
+
+    try {
+      const project = flattenedProjects.find(p => bareId(p.id) === projectId);
+      if (!project) {
+        throw new Error(`Project not found: ${projectId}`);
+      }
+
+      const originalFolderId = project.parentFolder ? bareId(project.parentFolder.id) : null;
+      const originalFolderName = project.parentFolder ? project.parentFolder.name : null;
+
+      let insertionLocation = null;
+
+      if (targetFolderId) {
+        const targetFolder = flattenedSections.find(f =>
+          f.constructor.name === 'Folder' && bareId(f.id) === targetFolderId
+        );
+        if (!targetFolder) {
+          throw new Error(`Target folder not found: ${targetFolderId}`);
+        }
+
+        if (typeof position === 'number') {
+          const folderProjects = Array.from(targetFolder.projects);
+          if (position >= 0 && position < folderProjects.length) {
+            insertionLocation = folderProjects[position].before;
+          } else {
+            insertionLocation = targetFolder.ending;
+          }
+        } else {
+          insertionLocation = targetFolder.ending;
+        }
+      } else {
+        // Move to library root
+        if (typeof position === 'number') {
+          const libraryItems = Array.from(library).filter(item =>
+            item.constructor.name === 'Project' || item.constructor.name === 'Folder'
+          );
+          if (position >= 0 && position < libraryItems.length) {
+            insertionLocation = libraryItems[position].before;
+          } else {
+            insertionLocation = library.ending;
+          }
+        } else {
+          insertionLocation = library.ending;
+        }
+      }
+
+      moveSections([project], insertionLocation);
+
+      // Invalidate caches
+      invalidateOrganizationalCache('project', projectId);
+      if (originalFolderId) invalidateOrganizationalCache('folder', originalFolderId);
+      if (targetFolderId) invalidateOrganizationalCache('folder', targetFolderId);
+      invalidateOrganizationalCache('global', null);
+
+      const result = {
+        projectId: bareId(project.id),
+        projectName: project.name,
+        moved: true,
+        originalFolder: { id: originalFolderId, name: originalFolderName },
+        newFolder: {
+          id: project.parentFolder ? bareId(project.parentFolder.id) : null,
+          name: project.parentFolder ? project.parentFolder.name : null
+        }
+      };
+
+      trackPerformance('moveProject', startTime, false);
+      console.log(`[TIMING] moveProject completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] moveProject failed: ${error.message}`);
+      throw new Error(`Failed to move project: ${error.message}`);
+    }
+  };
+
+  // Create a new folder
+  lib.createFolder = params => {
+    const startTime = Date.now();
+
+    if (!params.name || typeof params.name !== 'string' || params.name.trim() === '') {
+      throw new Error("Folder name is required and must be a non-empty string");
+    }
+
+    const folderName = params.name.trim();
+    const parentFolderId = params.parentFolderId;
+    const position = params.position;
+
+    try {
+      let insertionLocation = null;
+
+      if (parentFolderId) {
+        const parentFolder = flattenedSections.find(f =>
+          f.constructor.name === 'Folder' && bareId(f.id) === parentFolderId
+        );
+        if (!parentFolder) {
+          throw new Error(`Parent folder not found: ${parentFolderId}`);
+        }
+
+        if (typeof position === 'number') {
+          const subfolders = Array.from(parentFolder.folders);
+          if (position >= 0 && position < subfolders.length) {
+            insertionLocation = subfolders[position].before;
+          } else {
+            insertionLocation = parentFolder.ending;
+          }
+        } else {
+          insertionLocation = parentFolder.ending;
+        }
+      } else {
+        // Create at library root
+        if (typeof position === 'number') {
+          const libraryItems = Array.from(library);
+          if (position >= 0 && position < libraryItems.length) {
+            insertionLocation = libraryItems[position].before;
+          } else {
+            insertionLocation = library.ending;
+          }
+        } else {
+          insertionLocation = library.ending;
+        }
+      }
+
+      const folder = new Folder(folderName, insertionLocation);
+
+      invalidateOrganizationalCache('global', null);
+      if (parentFolderId) invalidateOrganizationalCache('folder', parentFolderId);
+
+      const result = {
+        folderId: bareId(folder.id),
+        folderName: folder.name,
+        parentFolderId: folder.parent ? bareId(folder.parent.id) : null,
+        created: true,
+        added: toIsoOrNull(folder.added)
+      };
+
+      trackPerformance('createFolder', startTime, false);
+      console.log(`[TIMING] createFolder completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] createFolder failed: ${error.message}`);
+      throw new Error(`Failed to create folder: ${error.message}`);
+    }
+  };
+
+  // Delete a folder
+  lib.deleteFolder = params => {
+    const startTime = Date.now();
+
+    if (!params.folderId || typeof params.folderId !== 'string') {
+      throw new Error("Folder ID is required and must be a string");
+    }
+
+    const folderId = params.folderId;
+
+    try {
+      const folder = flattenedSections.find(f =>
+        f.constructor.name === 'Folder' && bareId(f.id) === folderId
+      );
+      if (!folder) {
+        throw new Error(`Folder not found: ${folderId}`);
+      }
+
+      // Check if folder has content
+      const hasProjects = folder.projects.length > 0;
+      const hasSubfolders = folder.folders.length > 0;
+
+      if (hasProjects || hasSubfolders) {
+        throw new Error(`Cannot delete folder with content. Has ${folder.projects.length} projects and ${folder.folders.length} subfolders.`);
+      }
+
+      const folderName = folder.name;
+      const parentFolderId = folder.parent ? bareId(folder.parent.id) : null;
+
+      deleteObject(folder);
+
+      invalidateOrganizationalCache('folder', folderId);
+      if (parentFolderId) invalidateOrganizationalCache('folder', parentFolderId);
+      invalidateOrganizationalCache('global', null);
+
+      const result = {
+        folderId: folderId,
+        folderName: folderName,
+        deleted: true
+      };
+
+      trackPerformance('deleteFolder', startTime, false);
+      console.log(`[TIMING] deleteFolder completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] deleteFolder failed: ${error.message}`);
+      throw new Error(`Failed to delete folder: ${error.message}`);
+    }
+  };
+
+  // Validate a project move operation
+  lib.validateProjectMove = params => {
+    const projectId = params.projectId;
+    const targetFolderId = params.targetFolderId;
+
+    if (!projectId) {
+      return { valid: false, error: "Project ID is required" };
+    }
+
+    const project = flattenedProjects.find(p => bareId(p.id) === projectId);
+    if (!project) {
+      return { valid: false, error: `Project not found: ${projectId}` };
+    }
+
+    if (targetFolderId) {
+      const targetFolder = flattenedSections.find(f =>
+        f.constructor.name === 'Folder' && bareId(f.id) === targetFolderId
+      );
+      if (!targetFolder) {
+        return { valid: false, error: `Target folder not found: ${targetFolderId}` };
+      }
+    }
+
+    return {
+      valid: true,
+      projectId: bareId(project.id),
+      projectName: project.name,
+      currentFolderId: project.parentFolder ? bareId(project.parentFolder.id) : null,
+      targetFolderId: targetFolderId || null
+    };
+  };
+
+  // Get tag by ID
+  lib.getTagById = params => {
+    if (!params.tagId || typeof params.tagId !== 'string') {
+      throw new Error("Tag ID is required and must be a string");
+    }
+
+    const tag = flattenedTags.find(t => bareId(t.id) === params.tagId);
+    if (!tag) {
+      throw new Error(`Tag not found: ${params.tagId}`);
+    }
+
+    return {
+      id: bareId(tag.id),
+      name: tag.name,
+      parentTagId: tag.parent ? bareId(tag.parent.id) : null,
+      parentTagName: tag.parent ? tag.parent.name : null,
+      active: tag.active,
+      allowsNextAction: tag.allowsNextAction,
+      availableTaskCount: tag.availableTasks.length,
+      remainingTaskCount: tag.remainingTasks.length,
+      added: toIsoOrNull(tag.added),
+      modified: toIsoOrNull(tag.modified)
+    };
+  };
+
+  // Create a new tag
+  lib.createTag = params => {
+    const startTime = Date.now();
+
+    if (!params.name || typeof params.name !== 'string' || params.name.trim() === '') {
+      throw new Error("Tag name is required and must be a non-empty string");
+    }
+
+    const tagName = params.name.trim();
+    const parentTagId = params.parentTagId;
+
+    try {
+      let insertionLocation = null;
+
+      if (parentTagId) {
+        const parentTag = flattenedTags.find(t => bareId(t.id) === parentTagId);
+        if (!parentTag) {
+          throw new Error(`Parent tag not found: ${parentTagId}`);
+        }
+        insertionLocation = parentTag.ending;
+      } else {
+        insertionLocation = tags.ending;
+      }
+
+      const tag = new Tag(tagName, insertionLocation);
+
+      const result = {
+        tagId: bareId(tag.id),
+        tagName: tag.name,
+        parentTagId: tag.parent ? bareId(tag.parent.id) : null,
+        created: true,
+        added: toIsoOrNull(tag.added)
+      };
+
+      trackPerformance('createTag', startTime, false);
+      console.log(`[TIMING] createTag completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] createTag failed: ${error.message}`);
+      throw new Error(`Failed to create tag: ${error.message}`);
+    }
+  };
+
+  // Update a tag
+  lib.updateTag = params => {
+    const startTime = Date.now();
+
+    if (!params.tagId || typeof params.tagId !== 'string') {
+      throw new Error("Tag ID is required and must be a string");
+    }
+
+    try {
+      const tag = flattenedTags.find(t => bareId(t.id) === params.tagId);
+      if (!tag) {
+        throw new Error(`Tag not found: ${params.tagId}`);
+      }
+
+      const changes = [];
+
+      if (params.name && typeof params.name === 'string') {
+        tag.name = params.name.trim();
+        changes.push('name');
+      }
+
+      const result = {
+        tagId: bareId(tag.id),
+        tagName: tag.name,
+        updated: true,
+        changes: changes,
+        modified: toIsoOrNull(tag.modified)
+      };
+
+      trackPerformance('updateTag', startTime, false);
+      console.log(`[TIMING] updateTag completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] updateTag failed: ${error.message}`);
+      throw new Error(`Failed to update tag: ${error.message}`);
+    }
+  };
+
+  // Delete a tag
+  lib.deleteTag = params => {
+    const startTime = Date.now();
+
+    if (!params.tagId || typeof params.tagId !== 'string') {
+      throw new Error("Tag ID is required and must be a string");
+    }
+
+    try {
+      const tag = flattenedTags.find(t => bareId(t.id) === params.tagId);
+      if (!tag) {
+        throw new Error(`Tag not found: ${params.tagId}`);
+      }
+
+      const tagName = tag.name;
+      const taskCount = tag.remainingTasks.length;
+
+      if (taskCount > 0 && !params.force) {
+        throw new Error(`Cannot delete tag with ${taskCount} remaining tasks. Use force=true to delete anyway.`);
+      }
+
+      deleteObject(tag);
+
+      const result = {
+        tagId: params.tagId,
+        tagName: tagName,
+        deleted: true,
+        tasksAffected: taskCount
+      };
+
+      trackPerformance('deleteTag', startTime, false);
+      console.log(`[TIMING] deleteTag completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] deleteTag failed: ${error.message}`);
+      throw new Error(`Failed to delete tag: ${error.message}`);
+    }
+  };
+
+  // List projects needing review
+  lib.listProjectsNeedingReview = params => {
+    const startTime = Date.now();
+    const includeOnHold = params.includeOnHold || false;
+    const overdueOnly = params.overdue || false;
+    const now = new Date();
+
+    const results = [];
+
+    for (const project of flattenedProjects) {
+      // Skip completed/dropped projects
+      if (project.status.name === 'Done' || project.status.name === 'Dropped') continue;
+
+      // Skip on-hold unless requested
+      if (!includeOnHold && project.status.name === 'On Hold') continue;
+
+      // Check if project has review interval and next review date
+      const nextReview = project.nextReviewDate;
+      if (!nextReview) continue;
+
+      const isOverdue = nextReview <= now;
+
+      // Skip if we only want overdue and this isn't
+      if (overdueOnly && !isOverdue) continue;
+
+      results.push({
+        id: bareId(project.id),
+        name: project.name,
+        status: project.status.name,
+        nextReviewDate: toIsoOrNull(nextReview),
+        lastReviewDate: toIsoOrNull(project.lastReviewDate),
+        isOverdue: isOverdue,
+        daysUntilReview: Math.ceil((nextReview - now) / (1000 * 60 * 60 * 24)),
+        folderId: project.parentFolder ? bareId(project.parentFolder.id) : null,
+        folderName: project.parentFolder ? project.parentFolder.name : null
+      });
+    }
+
+    // Sort by next review date (soonest first)
+    results.sort((a, b) => new Date(a.nextReviewDate) - new Date(b.nextReviewDate));
+
+    trackPerformance('listProjectsNeedingReview', startTime, false);
+    console.log(`[TIMING] listProjectsNeedingReview completed in ${Date.now() - startTime}ms (${results.length} projects)`);
+    return results;
+  };
+
+  // Mark a project as reviewed
+  lib.markProjectReviewed = params => {
+    const startTime = Date.now();
+
+    if (!params.projectId || typeof params.projectId !== 'string') {
+      throw new Error("Project ID is required and must be a string");
+    }
+
+    try {
+      const project = flattenedProjects.find(p => bareId(p.id) === params.projectId);
+      if (!project) {
+        throw new Error(`Project not found: ${params.projectId}`);
+      }
+
+      project.markReviewed();
+
+      const result = {
+        projectId: bareId(project.id),
+        projectName: project.name,
+        reviewed: true,
+        lastReviewDate: toIsoOrNull(project.lastReviewDate),
+        nextReviewDate: toIsoOrNull(project.nextReviewDate)
+      };
+
+      trackPerformance('markProjectReviewed', startTime, false);
+      console.log(`[TIMING] markProjectReviewed completed in ${Date.now() - startTime}ms`);
+      return result;
+
+    } catch (error) {
+      console.log(`[ERROR] markProjectReviewed failed: ${error.message}`);
+      throw new Error(`Failed to mark project reviewed: ${error.message}`);
+    }
+  };
+
+  // Get next review date for a project
+  lib.getProjectNextReview = params => {
+    if (!params.projectId || typeof params.projectId !== 'string') {
+      throw new Error("Project ID is required and must be a string");
+    }
+
+    const project = flattenedProjects.find(p => bareId(p.id) === params.projectId);
+    if (!project) {
+      throw new Error(`Project not found: ${params.projectId}`);
+    }
+
+    const now = new Date();
+    const nextReview = project.nextReviewDate;
+
+    return {
+      projectId: bareId(project.id),
+      projectName: project.name,
+      lastReviewDate: toIsoOrNull(project.lastReviewDate),
+      nextReviewDate: toIsoOrNull(nextReview),
+      reviewInterval: project.reviewInterval ? project.reviewInterval.toString() : null,
+      isOverdue: nextReview ? nextReview <= now : false,
+      daysUntilReview: nextReview ? Math.ceil((nextReview - now) / (1000 * 60 * 60 * 24)) : null
+    };
+  };
+
+  // Health check
+  lib.health = params => {
+    const startTime = Date.now();
+
+    try {
+      const stats = {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        omnifocus: {
+          version: app.version,
+          buildVersion: app.buildVersion
+        },
+        data: {
+          projectCount: flattenedProjects.length,
+          taskCount: flattenedTasks.length,
+          folderCount: flattenedSections.filter(s => s.constructor.name === 'Folder').length,
+          tagCount: flattenedTags.length,
+          inboxCount: inbox.length
+        },
+        cache: {
+          mainCacheSize: Object.keys(cache).length,
+          hierarchyCacheSize: Object.keys(hierarchyCache).length,
+          organizationalCacheSize: Object.keys(organizationalCache).length
+        },
+        responseTime: Date.now() - startTime
+      };
+
+      return stats;
+
+    } catch (error) {
+      return {
+        status: 'unhealthy',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  };
+
+  // Placeholder methods for automation/analytics (return not-implemented)
+  lib.suggestAutomation = params => {
+    return {
+      implemented: false,
+      message: "Automation suggestions not yet implemented",
+      scope: params.scope || 'all'
+    };
+  };
+
+  lib.diagnoseAutomation = params => {
+    return {
+      implemented: false,
+      message: "Automation diagnostics not yet implemented",
+      scope: params.scope || 'all'
+    };
+  };
+
+  lib.cleanupAutomationArtifacts = params => {
+    return {
+      implemented: false,
+      message: "Automation cleanup not yet implemented",
+      dryRun: params.dryRun !== false
+    };
+  };
+
+  lib.getProjectHealth = params => {
+    // Basic implementation - return project status info
+    if (params.projectId) {
+      const project = flattenedProjects.find(p => bareId(p.id) === params.projectId);
+      if (!project) {
+        throw new Error(`Project not found: ${params.projectId}`);
+      }
+
+      const remainingTasks = project.flattenedTasks.filter(t => !t.completed && !t.dropped);
+      const staleTasks = remainingTasks.filter(t => {
+        const daysSinceModified = (Date.now() - new Date(t.modified)) / (1000 * 60 * 60 * 24);
+        return daysSinceModified > 30;
+      });
+
+      return {
+        projectId: bareId(project.id),
+        projectName: project.name,
+        status: project.status.name,
+        totalTasks: project.flattenedTasks.length,
+        remainingTasks: remainingTasks.length,
+        staleTasks: staleTasks.length,
+        health: staleTasks.length === 0 ? 'good' : staleTasks.length < 3 ? 'fair' : 'needs-attention'
+      };
+    }
+
+    return { implemented: false, message: "Provide projectId for health check" };
+  };
+
+  lib.getWorkloadSummary = params => {
+    const now = new Date();
+    const dueSoon = flattenedTasks.filter(t => {
+      if (t.completed || t.dropped) return false;
+      if (!t.dueDate) return false;
+      const daysUntilDue = (t.dueDate - now) / (1000 * 60 * 60 * 24);
+      return daysUntilDue <= 7 && daysUntilDue >= 0;
+    });
+
+    const overdue = flattenedTasks.filter(t => {
+      if (t.completed || t.dropped) return false;
+      if (!t.dueDate) return false;
+      return t.dueDate < now;
+    });
+
+    const flagged = flattenedTasks.filter(t => !t.completed && !t.dropped && t.flagged);
+
+    return {
+      dueSoonCount: dueSoon.length,
+      overdueCount: overdue.length,
+      flaggedCount: flagged.length,
+      inboxCount: inbox.length,
+      totalRemaining: flattenedTasks.filter(t => !t.completed && !t.dropped).length
+    };
+  };
+
+  lib.getTrendInsights = params => {
+    return {
+      implemented: false,
+      message: "Trend analysis not yet implemented",
+      period: params.period || 'week'
+    };
+  };
+
+  lib.getAnalyticsSummary = params => {
+    const projectCount = flattenedProjects.length;
+    const activeProjects = flattenedProjects.filter(p => p.status.name === 'Active').length;
+    const taskCount = flattenedTasks.length;
+    const completedTasks = flattenedTasks.filter(t => t.completed).length;
+
+    return {
+      projects: {
+        total: projectCount,
+        active: activeProjects,
+        onHold: flattenedProjects.filter(p => p.status.name === 'On Hold').length,
+        completed: flattenedProjects.filter(p => p.status.name === 'Done').length
+      },
+      tasks: {
+        total: taskCount,
+        completed: completedTasks,
+        remaining: taskCount - completedTasks,
+        inbox: inbox.length
+      },
+      folders: flattenedSections.filter(s => s.constructor.name === 'Folder').length,
+      tags: flattenedTags.length
+    };
+  };
+
   lib.request = raw => {
     let msg;
     try { msg = JSON.parse(raw); }
