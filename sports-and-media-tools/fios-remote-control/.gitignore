@@ -1,0 +1,5 @@
+.venv/
+.androidtvremote/
+.androidtvremote2/
+__pycache__/
+*.pyc
