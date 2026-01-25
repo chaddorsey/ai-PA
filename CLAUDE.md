@@ -109,12 +109,34 @@ python letta/attach_slack_analytics_to_agent.py
 ### Backup and Recovery
 
 ```bash
-# Comprehensive system backup
+# Comprehensive system backup (preferred - more complete)
+./deployment/scripts/backup.sh --verbose
+
+# Backup to specific location
+./deployment/scripts/backup.sh --output /Volumes/main-filestore/ai-PA-backups
+
+# Dry run to see what would be backed up
+./deployment/scripts/backup.sh --dry-run
+
+# Legacy backup script
 ./scripts/comprehensive_backup.sh
 
 # Emergency recovery
 ./scripts/system-recovery.sh
 ```
+
+**Automated Backups:** Daily at 2am via cron (`deployment/scripts/backup-wrapper.sh`)
+
+**Backup Location:** `/Volumes/main-filestore/ai-PA-backups/`
+
+**What's Backed Up:**
+- All PostgreSQL databases (pg_dumpall + individual dumps)
+- Docker volumes (n8n, neo4j, open-webui, etc.)
+- Host data (Auto-Madden DBs, credentials, Letta filesystem)
+- Letta agent exports and memory blocks (via API)
+- n8n workflow exports
+- Configuration files (.env, docker-compose.yml)
+- Git reference (commit hash for recovery)
 
 ## Architecture
 
@@ -158,9 +180,52 @@ The sports-and-media-tools subsystem provides end-to-end control:
 ### Auto-Madden Architecture
 
 Real-time NFL game companion with three microservices:
-- `auto-madden-game-state` (port 5132) - ESPN API polling
-- `auto-madden-insight-engine` (port 5131) - LLM-based insights and Q&A
-- `auto-madden-companion-ui` (port 5130) - Web interface
+- `auto-madden-game-state` (port 5132) - ESPN API polling every 3 seconds, change detection
+- `auto-madden-insight-engine` (port 5131) - LLM-based insights (Claude/GPT-4), WebSocket delivery, Q&A
+- `auto-madden-companion-ui` (port 5130) - Flask web interface with live/replay modes
+
+### Service Entry Points
+
+Key entry point files for each service:
+
+| Service | Entry Point | Framework |
+|---------|-------------|-----------|
+| scheduler-service | `src/scheduler_service/main.py` | FastAPI |
+| slackbot | `app.py` | Slack Bolt |
+| auto-madden-game-state | `game_state_service.py` | Flask |
+| auto-madden-insight-engine | `insight_engine.py` | Flask + WebSocket |
+| auto-madden-companion-ui | `app.py` | Flask |
+| sports-service | `sports_api.py` | Flask |
+| flipper-api | `flipper_api.py` | Flask |
+| gmail-mcp | `src/index.ts` | Node.js MCP |
+| omnifocus-mcp-letta | `server-mcp-simplified.ts` | Node.js MCP |
+| scheduler-mcp | `src/scheduler_mcp/server.py` | FastAPI MCP |
+| pa-routing-handler | `src/pa_routing/main.py` | FastAPI |
+
+### Letta MCP Configuration
+
+MCP servers are registered in `/letta/letta_mcp_config.json`. All use HTTP transport:
+
+| MCP Server | Endpoint | Purpose |
+|------------|----------|---------|
+| gmail-tools | `http://gmail-mcp-server:8080/mcp` | Gmail API (OAuth) |
+| slack-tools | `http://localhost:3001/sse` | Slack integration |
+| graphiti-tools | `http://graphiti-mcp-server:8000/mcp` | Knowledge graph (Neo4j) |
+| rag-tools | `http://rag-mcp-server:8082/mcp` | Vector database |
+| calendly-tools | `http://calendly-mcp-server:8086/mcp` | Availability checking |
+| scheduler-tools | `http://scheduler-mcp:8088/mcp` | Job scheduling |
+| omnifocus-tools | `http://host.docker.internal:8888/mcp` | Task management (AppleScript bridge) |
+
+### Database Schemas
+
+PostgreSQL databases/schemas in Supabase:
+- `scheduler_service` - Jobs and executions for scheduler
+- `letta` - Agent memory and vector embeddings
+- `n8n` / `n8n_restore` - Workflow automation data
+- `postgres` (public) - Shared data
+
+Neo4j (port 7474/7687):
+- Graphiti knowledge graph for semantic memory
 
 ## Project Management (Critical)
 
@@ -244,11 +309,36 @@ cd scheduler-service && poetry run pytest
 
 ### Environment Variables
 
-Environment variables are defined in `.env` (gitignored). Key variables include:
+Environment variables are defined in `.env` (gitignored). Key categories:
+
+**Database:**
 - `POSTGRES_PASSWORD` - Supabase DB password
 - `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` - API keys
-- `N8N_ENCRYPTION_KEY` - n8n encryption
-- Service-specific API keys and tokens
+- `SCHEDULER_DB_URL` - Scheduler service connection
+
+**AI/LLM APIs:**
+- `OPENAI_API_KEY` - OpenAI API
+- `ANTHROPIC_API_KEY` - Claude API
+- `GEMINI_API_KEY` - Google Gemini
+
+**Slack Integration:**
+- `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` - Slack credentials
+- `SLACK_MCP_XOXP_TOKEN` - MCP server token
+- `LETTA_AGENT_ID` - Default agent for Slack
+
+**Scheduler:**
+- `SCHEDULER_API_KEY` - API authentication
+- `LETTA_CALLBACK_URL` - Agent callback URL
+
+**Sports & Media:**
+- `SD_USERNAME`, `SD_PASSWORD` - Schedules Direct
+
+**Auto-Madden:**
+- `LLM_PROVIDER`, `LLM_MODEL` - Insight generation config
+
+**n8n:**
+- `N8N_ENCRYPTION_KEY` - Workflow encryption
+- `WEBHOOK_URL` - External webhook base
 
 ### Secrets Management
 
@@ -259,6 +349,7 @@ Environment variables are defined in `.env` (gitignored). Key variables include:
 
 ## Service Ports Reference
 
+### Core Services
 | Service | Internal Port | External Port | Purpose |
 |---------|---------------|---------------|---------|
 | supabase-db | 5432 | - | PostgreSQL database |
@@ -267,12 +358,44 @@ Environment variables are defined in `.env` (gitignored). Key variables include:
 | supabase-studio | 3000 | 3000 | Web UI |
 | n8n | 5678 | 5678 | Workflow automation |
 | letta | 8283 | 8283 | Agent server |
-| scheduler-service | 8000 | 8001 | Scheduling API |
-| sports-service | 5123 | 5123 | ESPN API |
-| flipper-api | 5124 | 5124 | IR control |
-| auto-madden-ui | 5130 | 5130 | Game companion |
-| auto-madden-insights | 5131 | 5131 | Insights engine |
-| auto-madden-game-state | 5132 | 5132 | Game data |
+| neo4j | 7474/7687 | 7474/7687 | Graph database |
+
+### MCP Servers
+| Service | Port | Purpose |
+|---------|------|---------|
+| gmail-mcp-server | 8084 | Gmail API integration |
+| omnifocus-mcp-server | 8888 | OmniFocus (AppleScript bridge) |
+| scheduler-mcp | 8088 | Scheduling tools |
+| slack-mcp-server | 3001 | Slack integration |
+| graphiti-mcp-server | 8082 | Knowledge graph tools |
+| rag-mcp-server | 8085 | RAG vector tools |
+| calendly-mcp-server | 8086 | Calendly availability |
+| slack-analytics-mcp-server | 8097 | Slack analytics export |
+
+### Application Services
+| Service | Port | Purpose |
+|---------|------|---------|
+| scheduler-service | 8001 | Scheduling API |
+| slackbot | 8081/8083 | Slack bot (health/main) |
+| pa-routing-handler | 5201 | Agent conversation routing |
+| pa-web-ui | 5200 | Web interface |
+| open-webui | 8080 | Chat UI for Letta |
+
+### Sports & Media
+| Service | Port | Purpose |
+|---------|------|---------|
+| sports-service | 5123 | ESPN API |
+| flipper-api | 5124 | IR control |
+| schedules-direct-service | 5125 | TV listings |
+| content-database | 5126 | JustWatch content |
+| watch-history-service | 5127 | Roku history |
+
+### Auto-Madden
+| Service | Port | Purpose |
+|---------|------|---------|
+| auto-madden-companion-ui | 5130 | Web interface |
+| auto-madden-insight-engine | 5131 | LLM insights |
+| auto-madden-game-state | 5132 | ESPN polling |
 
 ## Key Implementation Patterns
 
@@ -357,8 +480,83 @@ Per `.cursorrules` principle #9: When proposing tasks involving external package
 
 ## Network and Security
 
-- All internal communication over `pa-internal` network
+- All internal communication over `pa-internal` network (172.20.0.0/16)
 - External access via Cloudflare tunnels (managed by `cloudflare-tunnel` service)
 - TLS/SSL for external communications
 - Network segmentation between services
 - No services directly exposed to internet except via tunnel
+
+## Key Files Reference
+
+Understanding these files helps navigate the codebase:
+
+**Configuration:**
+- `docker-compose.yml` - Complete service orchestration (25+ services)
+- `.env` - Environment variables (gitignored)
+- `letta/letta_mcp_config.json` - MCP server registration
+
+**Scheduler Service:**
+- `scheduler-service/src/scheduler_service/main.py` - App factory
+- `scheduler-service/src/scheduler_service/services/scheduler.py` - Job execution
+- `scheduler-service/src/scheduler_service/services/schedule_parser.py` - NLP parsing
+
+**Slackbot:**
+- `slackbot/app.py` - Main entry, Slack Bolt setup
+- `slackbot/listeners/listeners.py` - Event handler registration
+- `slackbot/listeners/messages/message_im_hybrid.py` - DM handling
+- `slackbot/manifest.json` - Slack app configuration
+
+**Auto-Madden:**
+- `auto-madden/game-state-service/game_state_service.py` - ESPN polling
+- `auto-madden/insight-engine/insight_engine.py` - LLM insight generation (~190KB)
+- `auto-madden/companion-ui/app.py` - Flask web UI
+
+**Letta Integration:**
+- `letta/configure_mcp_servers.py` - Register MCP servers with Letta
+- `letta/attach_*.py` - Tool attachment scripts
+- `letta/register_*.py` - Tool registration
+
+**Sports & Media:**
+- `sports-and-media-tools/sports-service/sports_api.py` - ESPN API client
+- `sports-and-media-tools/flipper-api/flipper_api.py` - IR commands
+
+## Letta Agents
+
+The system has ~20 Letta agents. Key agent management:
+
+```bash
+# List all agents
+curl http://localhost:8283/v1/agents
+
+# Export agent for backup
+curl http://localhost:8283/v1/agents/{agent_id}/export
+
+# Get agent memory blocks
+curl http://localhost:8283/v1/blocks
+```
+
+Agents are configured via the Letta API and have MCP tools attached for:
+- Gmail operations
+- OmniFocus task management
+- Scheduling (create/manage reminders)
+- Slack messaging
+- Knowledge graph queries (Graphiti)
+- RAG document retrieval
+
+## macOS Considerations
+
+When running on macOS, metadata files (`.DS_Store`, `._*` files) can cause issues:
+
+```bash
+# Clean macOS metadata from a directory (e.g., before Letta restart)
+find ./letta -name "._*" -type f -delete
+find ./letta -name ".DS_Store" -type f -delete
+```
+
+The `letta/env` directory is a sandbox venv that Letta creates. If Letta gets stuck in a restart loop, try removing it:
+
+```bash
+docker-compose stop letta
+rm -rf ./letta/env
+docker-compose up -d letta
+```
