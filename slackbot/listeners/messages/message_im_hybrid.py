@@ -10,6 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from ai.providers.letta_stream import LettaAPIStreaming
+from ai.conversation_helper import get_conversation_for_user
 from listeners.messages.status_messages import get_status_for_tool, get_default_status
 
 MAX_SLACK_MESSAGE_LENGTH = 3500  # Slack hard limit is 4000 characters; keep buffer for formatting
@@ -309,8 +310,20 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 loading_messages=default_status["loading_messages"],
             )
 
+        # Get or create conversation for this user (enables per-user context isolation)
+        # Falls back to None (legacy agent-level messaging) if lookup/creation fails
+        conversation_id = None
+        try:
+            conversation_id = get_conversation_for_user(user_id, logger=logger)
+            if conversation_id:
+                logger.info(f"Using Letta conversation: {conversation_id} for user {user_id}")
+            else:
+                logger.info(f"Using legacy agent messaging for user {user_id} (no conversation)")
+        except Exception as conv_err:
+            logger.warning(f"Conversation lookup failed, using legacy messaging: {conv_err}")
+
         # Get full response from Letta with event detection
-        streamer = LettaAPIStreaming(logger=logger)
+        streamer = LettaAPIStreaming(logger=logger, conversation_id=conversation_id)
         text_chunks = []
         
         for event in streamer.chat_stream_with_events(system_prompt, user_prompt):

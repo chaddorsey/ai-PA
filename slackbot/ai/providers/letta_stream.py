@@ -13,13 +13,33 @@ StreamEvent = Dict[str, Union[str, Dict]]
 
 
 class LettaAPIStreaming:
-    """Stream responses from Letta's SSE endpoint and yield text deltas and events."""
+    """Stream responses from Letta's SSE endpoint and yield text deltas and events.
+
+    Supports both agent-level messaging (legacy) and conversation-level messaging
+    (multi-user isolation). When conversation_id is provided, uses the Conversations
+    API which provides per-user context isolation.
+    """
 
     _DEFAULT_TIMEOUT: RequestTimeout = (5.0, 120.0)
 
-    def __init__(self, *, timeout: RequestTimeout | None = None, logger: logging.Logger | None = None) -> None:
+    # Default scheduler agent ID - can be overridden via LETTA_SCHEDULER_AGENT_ID env var
+    _DEFAULT_SCHEDULER_AGENT_ID = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+
+    def __init__(
+        self,
+        *,
+        timeout: RequestTimeout | None = None,
+        logger: logging.Logger | None = None,
+        conversation_id: str | None = None,
+        agent_id: str | None = None,
+    ) -> None:
         self.base = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
-        self.agent = os.environ["LETTA_AGENT_ID"]
+        # Use provided agent_id, or env var, or default scheduler agent
+        self.agent = agent_id or os.getenv(
+            "LETTA_SCHEDULER_AGENT_ID",
+            os.getenv("LETTA_AGENT_ID", self._DEFAULT_SCHEDULER_AGENT_ID)
+        )
+        self.conversation_id = conversation_id
         self.headers = {"Content-Type": "application/json"}
         self.timeout = timeout or self._DEFAULT_TIMEOUT
         self.logger = logger or logging.getLogger(__name__)
@@ -28,9 +48,17 @@ class LettaAPIStreaming:
     def chat_stream(self, system: str | None, user: str) -> Generator[str, None, None]:
         """Yield response deltas from Letta as they arrive."""
 
-        url = f"{self.base}/v1/agents/{self.agent}/messages/stream"
         prompt = f"{system}\n\n{user}" if system else user
-        body = {"messages": [{"role": "user", "content": prompt}]}
+
+        # Use conversation endpoint if conversation_id is provided
+        if self.conversation_id:
+            url = f"{self.base}/v1/conversations/{self.conversation_id}/messages"
+            body = {"input": prompt}
+            self.logger.info(f"Using Conversations API: {self.conversation_id}")
+        else:
+            url = f"{self.base}/v1/agents/{self.agent}/messages/stream"
+            body = {"messages": [{"role": "user", "content": prompt}]}
+            self.logger.info(f"Using Agent API (legacy): {self.agent}")
 
         assembled: str = ""
         last_segment: str | None = None
@@ -87,9 +115,17 @@ class LettaAPIStreaming:
     def chat_stream_with_events(self, system: str | None, user: str) -> Generator[StreamEvent, None, None]:
         """Yield events from Letta stream, including text deltas and tool calls."""
 
-        url = f"{self.base}/v1/agents/{self.agent}/messages/stream"
         prompt = f"{system}\n\n{user}" if system else user
-        body = {"messages": [{"role": "user", "content": prompt}]}
+
+        # Use conversation endpoint if conversation_id is provided
+        if self.conversation_id:
+            url = f"{self.base}/v1/conversations/{self.conversation_id}/messages"
+            body = {"input": prompt}
+            self.logger.info(f"Using Conversations API: {self.conversation_id}")
+        else:
+            url = f"{self.base}/v1/agents/{self.agent}/messages/stream"
+            body = {"messages": [{"role": "user", "content": prompt}]}
+            self.logger.info(f"Using Agent API (legacy): {self.agent}")
 
         assembled: str = ""
         last_segment: str | None = None

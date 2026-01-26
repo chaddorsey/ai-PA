@@ -683,6 +683,11 @@ services:
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
       LETTA_BASE_URL: "http://letta:8283"
       LETTA_AGENT_ID: ${LETTA_AGENT_ID}
+      # Scheduler agent for multi-user conversations (configurable)
+      LETTA_SCHEDULER_AGENT_ID: ${LETTA_SCHEDULER_AGENT_ID:-agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218}
+      # Supabase for conversation tracking
+      SUPABASE_URL: "http://supabase-rest:3000"
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
       HEALTH_CHECK_PORT: "8081"
     ports:
       - "8083:8081"  # Health check port - external 8083, internal 8081
