@@ -51,7 +51,7 @@ def test_tools_registered(client) -> bool:
         tools = tools_result.items if hasattr(tools_result, 'items') else tools_result
         tool_names = [t.name if hasattr(t, 'name') else t.get('name') for t in tools]
 
-        required = ["find_user_blocks", "create_user_memory_block"]
+        required = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
         all_found = True
         for name in required:
             if name in tool_names:
@@ -89,7 +89,7 @@ def test_tools_attached(client) -> bool:
 
         attached_names = [id_to_name.get(tid, tid) for tid in attached_tool_ids]
 
-        required = ["find_user_blocks", "create_user_memory_block"]
+        required = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
         all_found = True
         for name in required:
             if name in attached_names:
@@ -197,6 +197,102 @@ def test_block_creation(client) -> Optional[str]:
         return None
 
 
+def test_identities_exist(client) -> bool:
+    """Verify staff identities were migrated."""
+    print("\n[Test 6] Staff Identities Exist")
+    import requests
+    try:
+        response = requests.get(
+            f"{LETTA_BASE_URL}/v1/identities/",
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        if response.status_code == 200:
+            identities = response.json()
+            staff_count = len(identities)
+
+            if staff_count >= 20:
+                print(f"  [OK] Found {staff_count} identities")
+                return True
+            else:
+                print(f"  [FAIL] Only {staff_count} identities (expected 20+)")
+                return False
+        else:
+            print(f"  [FAIL] API returned {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"  [FAIL] {e}")
+        return False
+
+
+def test_identity_has_properties(client) -> bool:
+    """Verify Dan Damelin identity has required properties."""
+    print("\n[Test 7] Identity Has Properties")
+    import requests
+    try:
+        response = requests.get(
+            f"{LETTA_BASE_URL}/v1/identities/",
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        if response.status_code != 200:
+            print(f"  [FAIL] API returned {response.status_code}")
+            return False
+
+        identities = response.json()
+        dan = None
+        for identity in identities:
+            if identity.get("identifier_key") == "ddamelin@concord.org":
+                dan = identity
+                break
+
+        if not dan:
+            print("  [FAIL] Dan Damelin identity not found")
+            return False
+
+        # Check required properties
+        props = {}
+        for prop in (dan.get("properties") or []):
+            if isinstance(prop, dict):
+                key = prop.get("key")
+                value = prop.get("value")
+                if key:
+                    props[key] = value
+
+        required = ["colloquial_name", "slack_id", "calendar_id"]
+        all_found = True
+        for key in required:
+            if key in props:
+                print(f"  [OK] {key}: {props[key]}")
+            else:
+                print(f"  [FAIL] Missing {key}")
+                all_found = False
+
+        return all_found
+    except Exception as e:
+        print(f"  [FAIL] {e}")
+        return False
+
+
+def test_lookup_staff_tool_registered(client) -> bool:
+    """Verify lookup_staff tool is registered."""
+    print("\n[Test 8] lookup_staff Tool Registered")
+    try:
+        tools_result = client.tools.list()
+        tools = tools_result.items if hasattr(tools_result, 'items') else tools_result
+        tool_names = [t.name if hasattr(t, 'name') else t.get('name') for t in tools]
+
+        if "lookup_staff" in tool_names:
+            print("  [OK] lookup_staff tool registered")
+            return True
+        else:
+            print("  [FAIL] lookup_staff tool not registered")
+            return False
+    except Exception as e:
+        print(f"  [FAIL] {e}")
+        return False
+
+
 def cleanup(client, conversation_id: Optional[str], block_id: Optional[str]):
     """Clean up test resources."""
     print("\n[Cleanup]")
@@ -285,6 +381,24 @@ def main():
     # Test 5: Block creation & attachment
     block_id = test_block_creation(client)
     if block_id:
+        passed += 1
+    else:
+        failed += 1
+
+    # Test 6: Identities exist
+    if test_identities_exist(client):
+        passed += 1
+    else:
+        failed += 1
+
+    # Test 7: Identity has properties
+    if test_identity_has_properties(client):
+        passed += 1
+    else:
+        failed += 1
+
+    # Test 8: lookup_staff tool registered
+    if test_lookup_staff_tool_registered(client):
         passed += 1
     else:
         failed += 1
