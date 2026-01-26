@@ -38,3 +38,6 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+markers = [
+    "live: marks tests as requiring live services (deselect with '-m \"not live\"')",
+]
