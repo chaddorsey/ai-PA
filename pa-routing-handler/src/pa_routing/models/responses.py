@@ -18,6 +18,9 @@ class RouteResponse(BaseModel):
     request_id: Optional[str] = None
     context_injection: Optional[str] = None  # Formatted session context to prepend to message
     briefing_injection: Optional[str] = None  # Pattern 4: Session briefing for main agent only
+    # NEW: Identity and conversation resolution
+    identity_id: Optional[str] = None  # Resolved Letta identity
+    conversation_id: Optional[str] = None  # For caller to use with Letta
 
 
 class AgentInfo(BaseModel):

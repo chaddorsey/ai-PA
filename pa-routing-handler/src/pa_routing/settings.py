@@ -1,5 +1,8 @@
 """Application settings loaded from environment variables."""
 
+from typing import Optional
+
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -18,6 +21,12 @@ class Settings(BaseSettings):
     # Feature flags
     enable_dspy_routing: bool = False
     enable_semantic_routing: bool = False
+
+    # Identity resolution
+    default_identity_id: Optional[str] = Field(
+        default=None,
+        description="Default identity ID for single-user mode (web UI)"
+    )
 
     # Logging
     log_level: str = "INFO"

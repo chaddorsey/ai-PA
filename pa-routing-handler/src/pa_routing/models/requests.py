@@ -15,6 +15,9 @@ class RouteRequest(BaseModel):
     user_id: Optional[str] = Field(default=None, description="User identifier for context")
     context: Optional[dict] = Field(default=None, description="Additional context")
     request_id: Optional[str] = Field(default=None, description="Request ID for thread tracking")
+    # Identity context for multi-modality support
+    platform: Optional[str] = Field(default=None, description="Source platform (e.g., 'slack', 'telegram', 'web')")
+    platform_id: Optional[str] = Field(default=None, description="Platform-specific user identifier")
 
 
 class AgentSelectRequest(BaseModel):
