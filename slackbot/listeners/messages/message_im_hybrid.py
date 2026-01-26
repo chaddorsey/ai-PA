@@ -363,10 +363,20 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         # Post any overflow chunks in the same channel
         for extra_chunk in final_chunks[1:]:
             client.chat_postMessage(
-                channel=working_channel, 
+                channel=working_channel,
                 text=extra_chunk
             )
-        
+
+        # Clear the assistant status now that response is complete
+        if streaming_enabled and user_message_ts:
+            _set_assistant_status(
+                client,
+                logger,
+                working_channel,
+                user_message_ts,
+                status="",  # Empty status clears the indicator
+            )
+
         # Set thread title if enabled
         if streaming_enabled and user_message_ts:
             try:
@@ -385,6 +395,13 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
             # Use the working channel for error messages too
             error_channel = working_channel if 'working_channel' in locals() else channel_id
             client.chat_postMessage(channel=error_channel, text=f"Received an error from Bolty:\n{e}")
+        except Exception:
+            pass
+        # Clear status on error as well
+        try:
+            if 'streaming_enabled' in locals() and streaming_enabled and 'user_message_ts' in locals() and user_message_ts:
+                err_channel = working_channel if 'working_channel' in locals() else channel_id
+                _set_assistant_status(client, logger, err_channel, user_message_ts, status="")
         except Exception:
             pass
 
