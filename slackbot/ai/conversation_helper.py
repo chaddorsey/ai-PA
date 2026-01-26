@@ -92,7 +92,7 @@ class ConversationHelper:
     ) -> Optional[str]:
         """Look up existing conversation in Supabase."""
         try:
-            url = f"{SUPABASE_URL}/rest/v1/user_conversations"
+            url = f"{SUPABASE_URL}/user_conversations"
             params = {
                 "select": "conversation_id",
                 "user_id": f"eq.{user_id}",
@@ -206,9 +206,9 @@ class ConversationHelper:
             block_id = block_data.get("id")
 
             if block_id:
-                # Attach to agent
-                attach_url = f"{LETTA_BASE_URL}/v1/agents/{agent_id}/blocks/{block_id}"
-                attach_response = requests.post(
+                # Attach to agent via core-memory endpoint (PATCH method)
+                attach_url = f"{LETTA_BASE_URL}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}"
+                attach_response = requests.patch(
                     attach_url,
                     headers={"Content-Type": "application/json"},
                     timeout=10.0
@@ -232,7 +232,7 @@ class ConversationHelper:
     ) -> bool:
         """Store user-conversation mapping in Supabase."""
         try:
-            url = f"{SUPABASE_URL}/rest/v1/user_conversations"
+            url = f"{SUPABASE_URL}/user_conversations"
             headers = {
                 "apikey": SUPABASE_SERVICE_KEY,
                 "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
@@ -262,7 +262,7 @@ class ConversationHelper:
     ) -> None:
         """Update last_active_at timestamp (fire and forget)."""
         try:
-            url = f"{SUPABASE_URL}/rest/v1/user_conversations"
+            url = f"{SUPABASE_URL}/user_conversations"
             params = {
                 "user_id": f"eq.{user_id}",
                 "user_source": f"eq.{user_source}",
