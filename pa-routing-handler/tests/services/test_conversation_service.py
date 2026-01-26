@@ -236,3 +236,102 @@ class TestConversationService:
         assert result is not None
         # Either has error or creates new conversation
         assert "error" in result or "conversation_id" in result
+
+    @pytest.fixture
+    def mock_identity_service(self):
+        """Create mock IdentityService."""
+        service = MagicMock()
+        service.find_by_property = MagicMock(return_value=None)
+        service.find_by_identifier_key = MagicMock(return_value=None)
+        service.create_external_user = MagicMock()
+        service.get_property = MagicMock(return_value=None)
+        return service
+
+    @pytest.mark.asyncio
+    async def test_resolves_staff_identity_by_slack_id(
+        self, mock_letta_client, mock_supabase_client, mock_identity_service
+    ):
+        """Resolves existing staff identity when messaging from Slack."""
+        from pa_routing.services.conversation_service import ConversationService
+
+        # Staff identity exists
+        staff_identity = MagicMock()
+        staff_identity.id = "identity-staff-123"
+        staff_identity.name = "Dan Damelin"
+        mock_identity_service.find_by_property.return_value = staff_identity
+
+        # No existing conversation
+        mock_supabase_client.execute.return_value.data = []
+
+        # Mock conversation creation
+        mock_conversation = MagicMock()
+        mock_conversation.id = "conv-new"
+        mock_letta_client.conversations.create.return_value = mock_conversation
+
+        # Mock block creation
+        mock_block = MagicMock()
+        mock_block.id = "block-1"
+        mock_letta_client.blocks.create.return_value = mock_block
+
+        service = ConversationService(
+            letta_client=mock_letta_client,
+            supabase_client=mock_supabase_client,
+            identity_service=mock_identity_service
+        )
+
+        result = await service.get_or_create_conversation(
+            user_id="U0303SG91",  # Dan's Slack ID
+            user_source="slack",
+            agent_id="agent-abc"
+        )
+
+        # Should have looked up by slack_id
+        mock_identity_service.find_by_property.assert_called_with("slack_id", "U0303SG91")
+        # Should use existing identity, NOT create new one
+        mock_letta_client.identities.create.assert_not_called()
+        assert result["identity_id"] == "identity-staff-123"
+
+    @pytest.mark.asyncio
+    async def test_creates_external_identity_for_unknown_user(
+        self, mock_letta_client, mock_supabase_client, mock_identity_service
+    ):
+        """Creates external identity for unknown Slack user."""
+        from pa_routing.services.conversation_service import ConversationService
+
+        # No staff identity found
+        mock_identity_service.find_by_property.return_value = None
+        mock_identity_service.find_by_identifier_key.return_value = None
+
+        # External identity created
+        external_identity = MagicMock()
+        external_identity.id = "identity-external-999"
+        mock_identity_service.create_external_user.return_value = external_identity
+
+        # No existing conversation
+        mock_supabase_client.execute.return_value.data = []
+
+        # Mock conversation creation
+        mock_conversation = MagicMock()
+        mock_conversation.id = "conv-new"
+        mock_letta_client.conversations.create.return_value = mock_conversation
+
+        # Mock block creation
+        mock_block = MagicMock()
+        mock_block.id = "block-1"
+        mock_letta_client.blocks.create.return_value = mock_block
+
+        service = ConversationService(
+            letta_client=mock_letta_client,
+            supabase_client=mock_supabase_client,
+            identity_service=mock_identity_service
+        )
+
+        result = await service.get_or_create_conversation(
+            user_id="U99999999",  # Unknown user
+            user_source="slack",
+            agent_id="agent-abc"
+        )
+
+        # Should create external identity
+        mock_identity_service.create_external_user.assert_called_once()
+        assert result["identity_id"] == "identity-external-999"
