@@ -268,6 +268,25 @@ When updating task status, **ALWAYS update both**:
 3. Never make "improvements" outside the task scope
 4. Document all changes in the task file
 
+### Plan and Task File Tracking
+
+When using superpowers skills (brainstorming, writing-plans, executing-plans) to create implementation plans:
+
+1. **Write task files to Git-tracked locations**: Save plans to `docs/plans/YYYY-MM-DD-<feature-name>-tasks.md`
+2. **Never leave plans only in `~/.claude/plans/`**: This directory is outside the repo and not tracked in Git
+3. **Commit plan files immediately**: After creating or modifying a plan file, add and commit it:
+   ```bash
+   git add docs/plans/<plan-file>.md
+   git commit -m "docs: add/update <feature> implementation plan"
+   ```
+4. **Design documents go alongside task files**: Save design docs to `docs/plans/YYYY-MM-DD-<feature-name>-design.md`
+5. **Keep both synchronized**: If the plan changes during execution, update the tracked file
+
+**Plan File Naming Convention:**
+- Design documents: `docs/plans/YYYY-MM-DD-<feature>-design.md`
+- Implementation tasks: `docs/plans/YYYY-MM-DD-<feature>-tasks.md`
+- Implementation plans: `docs/plans/YYYY-MM-DD-<feature>-impl.md`
+
 ## Testing Strategy
 
 ### Test Distribution
