@@ -40,7 +40,7 @@ SCHEDULER_AGENT_ID = os.getenv(
 )
 
 # Tools to attach
-CONVERSATION_TOOLS = ["find_user_blocks", "create_user_memory_block"]
+CONVERSATION_TOOLS = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
 
 
 def find_tool_id(client, tool_name):
@@ -144,6 +144,7 @@ def main():
         print("\nThe scheduler agent can now:")
         print("  - Discover user memory blocks via find_user_blocks")
         print("  - Create new preference blocks via create_user_memory_block")
+        print("  - Look up staff by name or email via lookup_staff")
         print("\nMulti-user conversation isolation is now enabled!\n")
 
         return 0

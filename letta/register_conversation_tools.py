@@ -39,6 +39,7 @@ except ImportError:
 
 from conversation_tools.find_user_blocks import find_user_blocks
 from conversation_tools.create_user_memory_block import create_user_memory_block
+from conversation_tools.lookup_staff import lookup_staff
 
 # Configuration
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
@@ -106,6 +107,11 @@ def main():
                 "func": create_user_memory_block,
                 "name": "create_user_memory_block",
                 "tags": ["conversation", "multi-user", "memory", "custom"]
+            },
+            {
+                "func": lookup_staff,
+                "name": "lookup_staff",
+                "tags": ["conversation", "identity", "staff", "custom"]
             }
         ]
 
@@ -128,6 +134,7 @@ def main():
         print("\nTools registered:")
         print("  1. find_user_blocks - Discover memory blocks for a user")
         print("  2. create_user_memory_block - Create new user preference blocks")
+        print("  3. lookup_staff - Look up staff by colloquial name or email")
         print("\nTo attach these tools to the scheduler agent, run:")
         print("  python3 letta/attach_conversation_tools_to_agent.py\n")
 
