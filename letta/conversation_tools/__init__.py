@@ -12,5 +12,6 @@ Architecture Note (2026-01-26):
 
 from .find_user_blocks import find_user_blocks
 from .create_user_memory_block import create_user_memory_block
+from .lookup_staff import lookup_staff
 
-__all__ = ["find_user_blocks", "create_user_memory_block"]
+__all__ = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
