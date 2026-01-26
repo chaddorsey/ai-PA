@@ -4,7 +4,9 @@ import asyncio
 import os
 import time
 from datetime import datetime
+from typing import Optional
 
+import httpx
 import structlog
 from fastapi import APIRouter, Query
 
@@ -42,6 +44,87 @@ _letta_client = LettaClient(LETTA_BASE_URL)
 # Main agent ID for archival writes
 MAIN_AGENT_ID = settings.default_agent_id or DEFAULT_AGENT_ID
 
+# Identity cache (simple in-memory cache for identities list)
+_identities_cache: Optional[list[dict]] = None
+
+
+async def _fetch_identities() -> list[dict]:
+    """Fetch all identities from Letta API with simple caching."""
+    global _identities_cache
+    if _identities_cache is not None:
+        return _identities_cache
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.get(f"{LETTA_BASE_URL}/v1/identities/")
+            response.raise_for_status()
+            _identities_cache = response.json()
+            logger.info("identities_cache_populated", count=len(_identities_cache))
+            return _identities_cache
+    except Exception as e:
+        logger.warning("identities_fetch_failed", error=str(e))
+        return []
+
+
+async def resolve_identity(
+    platform: Optional[str],
+    platform_id: Optional[str],
+    default_identity_id: Optional[str]
+) -> Optional[str]:
+    """
+    Resolve identity from platform credentials or fall back to default.
+
+    For multi-modality support, looks up identity by platform-specific property
+    (e.g., telegram_id, slack_id). Falls back to default_identity_id for
+    single-user mode (web UI without platform context).
+
+    Args:
+        platform: Platform name ("telegram", "slack", "web", etc.)
+        platform_id: Platform-specific user ID
+        default_identity_id: Fallback identity for single-user mode
+
+    Returns:
+        Resolved identity_id or None if resolution fails
+    """
+    # Multi-modality: resolve via platform-specific property
+    if platform and platform_id:
+        property_key = f"{platform}_id"
+        identities = await _fetch_identities()
+
+        for identity in identities:
+            properties = identity.get("properties", []) or []
+            for prop in properties:
+                if prop.get("key") == property_key and prop.get("value") == platform_id:
+                    identity_id = identity.get("id")
+                    logger.info(
+                        "identity_resolved",
+                        platform=platform,
+                        platform_id=platform_id,
+                        identity_id=identity_id
+                    )
+                    return identity_id
+
+        logger.warning(
+            "identity_not_found",
+            platform=platform,
+            platform_id=platform_id,
+            property_key=property_key
+        )
+
+    # Single-user fallback (web UI, etc.)
+    if default_identity_id:
+        logger.debug("using_default_identity", identity_id=default_identity_id)
+        return default_identity_id
+
+    return None
+
+
+def invalidate_identities_cache() -> None:
+    """Clear the identities cache (call after creating/modifying identities)."""
+    global _identities_cache
+    _identities_cache = None
+    logger.info("identities_cache_invalidated")
+
 
 @router.post("/route", response_model=RouteResponse)
 async def route_message(request: RouteRequest) -> RouteResponse:
@@ -58,9 +141,16 @@ async def route_message(request: RouteRequest) -> RouteResponse:
     """
     start_time = time.perf_counter()
 
-    # Get or create session context
-    user_id = request.user_id or str(request.session_id)
-    session_ctx = session_store.get_or_create(user_id)
+    # Resolve identity from platform credentials or use default
+    identity_id = await resolve_identity(
+        platform=request.platform,
+        platform_id=request.platform_id,
+        default_identity_id=settings.default_identity_id
+    )
+
+    # Get or create session context (keyed by identity_id when available)
+    session_key = identity_id or request.user_id or str(request.session_id)
+    session_ctx = session_store.get_or_create(session_key)
 
     # Create or get thread for this request
     thread = None
@@ -132,6 +222,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
     logger.info(
         "route_decision",
         session_id=str(request.session_id),
+        identity_id=identity_id,
         agent_id=result.agent_id,
         agent_name=result.agent_name,
         routing_method=routing_method,
@@ -153,6 +244,8 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         request_id=thread.request_id if thread else None,
         context_injection=context_injection if context_injection else None,
         briefing_injection=briefing_injection if briefing_injection else None,
+        identity_id=identity_id,
+        conversation_id=None,  # Phase 4 will populate this
     )
 
 
