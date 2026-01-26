@@ -38,7 +38,7 @@ services:
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
-      PGRST_DB_SCHEMA: public
+      PGRST_DB_SCHEMA: public,pa_web
       PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
       PGRST_DB_USE_LEGACY_GUCS: false
     ports:
@@ -1147,6 +1147,10 @@ services:
       - PA_ROUTING_DEFAULT_AGENT_ID=${PA_ROUTING_DEFAULT_AGENT_ID:-}
       - PA_ROUTING_POSTGRES_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       - PA_ROUTING_LOG_LEVEL=INFO
+      # Session persistence and conversation lookup
+      - SUPABASE_URL=http://supabase-rest:3000
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - PA_ROUTING_DEFAULT_IDENTITY_ID=${PA_ROUTING_DEFAULT_IDENTITY_ID:-}
     ports:
       - "5201:5201"
     healthcheck:

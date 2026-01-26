@@ -112,19 +112,24 @@ class TestRouteResponseFields:
         """Route response includes conversation_id when lookup succeeds."""
         from pa_routing.routers.routing import route_message, set_supabase_client
         from pa_routing.models.requests import RouteRequest
+        import httpx
+        import json
 
-        # Mock Supabase client for conversation lookup
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value = mock_supabase
-        mock_supabase.select.return_value = mock_supabase
-        mock_supabase.eq.return_value = mock_supabase
-        mock_supabase.execute.return_value = MagicMock(
-            data=[{"conversation_id": "conv-123"}]
-        )
+        # Configure PostgREST URL
+        set_supabase_client(None)  # Triggers URL initialization
 
-        set_supabase_client(mock_supabase)
+        # Mock HTTP response for conversation lookup
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"conversation_id": "conv-123"}]
 
-        try:
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
             request = RouteRequest(
                 session_id=uuid4(),
                 message="test message"
@@ -133,9 +138,6 @@ class TestRouteResponseFields:
             response = await route_message(request)
 
             assert response.conversation_id == "conv-123"
-        finally:
-            # Clean up
-            set_supabase_client(None)
 
     @pytest.mark.asyncio
     async def test_route_returns_none_conversation_when_not_found(
@@ -146,16 +148,21 @@ class TestRouteResponseFields:
         from pa_routing.routers.routing import route_message, set_supabase_client
         from pa_routing.models.requests import RouteRequest
 
-        # Mock Supabase client returning empty result
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value = mock_supabase
-        mock_supabase.select.return_value = mock_supabase
-        mock_supabase.eq.return_value = mock_supabase
-        mock_supabase.execute.return_value = MagicMock(data=[])
+        # Configure PostgREST URL
+        set_supabase_client(None)
 
-        set_supabase_client(mock_supabase)
+        # Mock HTTP response returning empty result
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
 
-        try:
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
             request = RouteRequest(
                 session_id=uuid4(),
                 message="test message"
@@ -164,28 +171,27 @@ class TestRouteResponseFields:
             response = await route_message(request)
 
             assert response.conversation_id is None
-        finally:
-            set_supabase_client(None)
 
     @pytest.mark.asyncio
-    async def test_route_handles_supabase_error_gracefully(
+    async def test_route_handles_postgrest_error_gracefully(
         self, mock_settings, mock_letta_client, mock_selector,
         mock_db_session, mock_identities_cache
     ):
-        """Route continues even when Supabase lookup fails."""
+        """Route continues even when PostgREST lookup fails."""
         from pa_routing.routers.routing import route_message, set_supabase_client
         from pa_routing.models.requests import RouteRequest
 
-        # Mock Supabase client that raises an error
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value = mock_supabase
-        mock_supabase.select.return_value = mock_supabase
-        mock_supabase.eq.return_value = mock_supabase
-        mock_supabase.execute.side_effect = Exception("DB connection failed")
+        # Configure PostgREST URL
+        set_supabase_client(None)
 
-        set_supabase_client(mock_supabase)
+        # Mock HTTP client that raises an error
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
 
-        try:
             request = RouteRequest(
                 session_id=uuid4(),
                 message="test message"
@@ -196,8 +202,6 @@ class TestRouteResponseFields:
 
             assert response.conversation_id is None
             assert response.agent_id == "agent-123"  # Routing still works
-        finally:
-            set_supabase_client(None)
 
 
 class TestIdentityResolutionByPlatform:
@@ -274,42 +278,49 @@ class TestIdentityResolutionByPlatform:
 
 
 class TestSessionPersistence:
-    """Tests for session state persistence."""
+    """Tests for session state persistence via PostgREST."""
 
-    def test_session_persists_to_supabase(self):
-        """Session state is persisted to Supabase."""
+    @pytest.fixture
+    def mock_httpx_response(self):
+        """Create a mock httpx response."""
+        def _make_response(data=None, status_code=200):
+            response = MagicMock()
+            response.status_code = status_code
+            response.json.return_value = data if data else []
+            response.text = "{}"
+            return response
+        return _make_response
+
+    def test_session_persists_to_postgrest(self, mock_httpx_response):
+        """Session state is persisted to PostgREST."""
         from pa_routing.services.session_store import PersistentSessionStore
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value = mock_supabase
-        mock_supabase.select.return_value = mock_supabase
-        mock_supabase.eq.return_value = mock_supabase
-        mock_supabase.upsert.return_value = mock_supabase
-        mock_supabase.execute.return_value = MagicMock(data=[])
+        store = PersistentSessionStore()
 
-        store = PersistentSessionStore(mock_supabase)
+        with patch.object(store, '_get_http_client') as mock_client_getter:
+            mock_client = MagicMock()
+            mock_client.get.return_value = mock_httpx_response([])
+            mock_client.post.return_value = mock_httpx_response(status_code=201)
+            mock_client_getter.return_value = mock_client
 
-        # Create and modify session
-        ctx = store.get_or_create("identity-test")
-        ctx.last_responding_agent_id = "agent-123"
-        ctx.append(agent="Test", action="did something")
+            # Create and modify session
+            ctx = store.get_or_create("identity-test")
+            ctx.last_responding_agent_id = "agent-123"
+            ctx.append(agent="Test", action="did something")
 
-        # Persist
-        store._persist("identity-test", ctx)
+            # Persist
+            store._persist("identity-test", ctx)
 
-        # Verify upsert was called
-        mock_supabase.table.assert_called_with("session_state")
-        mock_supabase.upsert.assert_called_once()
+            # Verify HTTP POST was called
+            mock_client.post.assert_called_once()
+            call_args = mock_client.post.call_args
+            assert "session_state" in call_args[0][0]
 
-    def test_session_hydrates_from_supabase(self):
-        """Session state is hydrated from Supabase on cold start."""
+    def test_session_hydrates_from_postgrest(self, mock_httpx_response):
+        """Session state is hydrated from PostgREST on cold start."""
         from pa_routing.services.session_store import PersistentSessionStore
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value = mock_supabase
-        mock_supabase.select.return_value = mock_supabase
-        mock_supabase.eq.return_value = mock_supabase
-        mock_supabase.execute.return_value = MagicMock(data=[{
+        db_data = [{
             "identity_id": "identity-test",
             "last_responding_agent_id": "agent-restored",
             "last_responding_agent_name": "Restored Agent",
@@ -317,10 +328,16 @@ class TestSessionPersistence:
             "context_entries": [
                 {"agent": "Test", "action": "previous action", "timestamp": "2026-01-26T11:00:00"}
             ]
-        }])
+        }]
 
-        store = PersistentSessionStore(mock_supabase)
-        ctx = store.get_or_create("identity-test")
+        store = PersistentSessionStore()
+
+        with patch.object(store, '_get_http_client') as mock_client_getter:
+            mock_client = MagicMock()
+            mock_client.get.return_value = mock_httpx_response(db_data)
+            mock_client_getter.return_value = mock_client
+
+            ctx = store.get_or_create("identity-test")
 
         assert ctx.last_responding_agent_id == "agent-restored"
         assert ctx.last_responding_agent_name == "Restored Agent"

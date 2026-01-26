@@ -126,15 +126,20 @@ def invalidate_identities_cache() -> None:
     logger.info("identities_cache_invalidated")
 
 
-# Supabase client for conversation lookups (set during app startup)
-_supabase_client = None
+# PostgREST URL for conversation lookups (from environment)
+_postgrest_url: Optional[str] = None
 
 
 def set_supabase_client(client) -> None:
-    """Set Supabase client for conversation lookups (called during app startup)."""
-    global _supabase_client
-    _supabase_client = client
-    logger.info("routing_supabase_configured")
+    """Configure PostgREST URL for conversation lookups (called during app startup).
+
+    Note: We use direct HTTP to PostgREST instead of the Supabase Python client
+    for compatibility with self-hosted setups without the Supabase API gateway.
+    """
+    global _postgrest_url
+    import os
+    _postgrest_url = os.getenv("SUPABASE_URL", "http://supabase-rest:3000")
+    logger.info("routing_postgrest_configured", url=_postgrest_url)
 
 
 async def lookup_conversation(
@@ -145,7 +150,7 @@ async def lookup_conversation(
     """
     Look up existing conversation for identity + agent pair.
 
-    Uses the user_conversations table in Supabase to find existing
+    Uses the user_conversations table in PostgREST to find existing
     conversation mappings. Returns None if no conversation exists.
 
     Args:
@@ -156,27 +161,41 @@ async def lookup_conversation(
     Returns:
         Conversation ID if found, None otherwise
     """
-    if not _supabase_client:
-        logger.debug("conversation_lookup_skipped", reason="no_supabase_client")
+    if not _postgrest_url:
+        logger.debug("conversation_lookup_skipped", reason="no_postgrest_url")
         return None
 
     try:
-        result = (
-            _supabase_client.table("user_conversations")
-            .select("conversation_id")
-            .eq("identity_id", identity_id)
-            .eq("agent_id", agent_id)
-            .execute()
-        )
-        if result.data:
-            conversation_id = result.data[0]["conversation_id"]
-            logger.info(
-                "conversation_found",
-                identity_id=identity_id,
-                agent_id=agent_id,
-                conversation_id=conversation_id
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{_postgrest_url}/user_conversations",
+                params={
+                    "identity_id": f"eq.{identity_id}",
+                    "agent_id": f"eq.{agent_id}",
+                    "select": "conversation_id"
+                },
+                headers={"Accept": "application/json"}
             )
-            return conversation_id
+
+            if response.status_code != 200:
+                logger.debug(
+                    "conversation_lookup_response",
+                    identity_id=identity_id,
+                    agent_id=agent_id,
+                    status_code=response.status_code
+                )
+                return None
+
+            data = response.json()
+            if data:
+                conversation_id = data[0]["conversation_id"]
+                logger.info(
+                    "conversation_found",
+                    identity_id=identity_id,
+                    agent_id=agent_id,
+                    conversation_id=conversation_id
+                )
+                return conversation_id
 
         logger.debug(
             "conversation_not_found",
@@ -192,7 +211,6 @@ async def lookup_conversation(
             agent_id=agent_id,
             error=str(e)
         )
-        return None
 
 
 @router.post("/route", response_model=RouteResponse)
@@ -487,6 +505,7 @@ async def complete_thread(
     tool_calls: list[str] = Query(default=None),
     user_message: str = "",
     report_refs_json: str = "",
+    identity_id: Optional[str] = None,
 ) -> dict:
     """
     Mark a thread as complete.
@@ -498,10 +517,17 @@ async def complete_thread(
     Args:
         report_refs_json: JSON string from report_refs tool call, e.g.:
             '{"ref_type": "calendar_event", "ref_id": "abc123", "title": "Standup"}'
+        identity_id: Optional identity ID for session lookup (preferred over session_id)
     """
     import json as json_module
 
-    session_ctx = session_store.get(session_id)
+    # Try identity_id first (sessions are keyed by identity_id when available)
+    session_ctx = None
+    session_key = identity_id or session_id
+    if identity_id:
+        session_ctx = session_store.get(identity_id)
+    if not session_ctx:
+        session_ctx = session_store.get(session_id)
     if not session_ctx:
         return {"error": "Session not found", "thread": None}
 
@@ -577,7 +603,7 @@ async def complete_thread(
         return {"error": "Thread not found", "thread": None}
 
     # Persist session state (fire-and-forget, non-blocking)
-    session_store.persist_async(session_id, session_ctx)
+    session_store.persist_async(session_key, session_ctx)
 
     logger.info(
         "thread_completed",

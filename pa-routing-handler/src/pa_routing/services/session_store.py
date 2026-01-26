@@ -1,20 +1,20 @@
-"""Hybrid session store with in-memory cache and Supabase persistence.
+"""Hybrid session store with in-memory cache and PostgREST persistence.
 
 Architecture (2026-01-26):
 - In-memory cache for fast lookups (~0ms)
-- Supabase backup for persistence across restarts (~20ms hydration)
+- PostgREST backup for persistence across restarts (~20ms hydration)
 - Fire-and-forget async writes for non-blocking persistence
 - Keyed by identity_id for cross-platform state sharing
 
-Phase 1: Simple dict with user_id key.
-Phase 2: Redis with TTL for persistence and expiration.
-Phase 3: Hybrid persistence (in-memory + Supabase backup).
+Uses direct HTTP requests to PostgREST for compatibility with self-hosted setups.
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
+import httpx
 import structlog
 
 from pa_routing.models.session_context import SessionContext
@@ -24,21 +24,33 @@ logger = structlog.get_logger()
 # Sessions expire after 1 hour of inactivity
 SESSION_TTL_MINUTES = 60
 
+# PostgREST base URL (from environment or default)
+POSTGREST_URL = os.getenv("SUPABASE_URL", "http://supabase-rest:3000")
+
 
 class PersistentSessionStore:
     """
-    Hybrid session store with in-memory cache and Supabase backup.
+    Hybrid session store with in-memory cache and PostgREST backup.
 
     Provides:
     - Fast lookups via in-memory cache (~0ms for warm cache)
-    - Persistence across restarts via Supabase (~20ms hydration on cold start)
+    - Persistence across restarts via PostgREST (~20ms hydration on cold start)
     - Fire-and-forget async writes for non-blocking operation
     - Identity-keyed storage for cross-platform state sharing
     """
 
     def __init__(self, supabase_client: Optional[Any] = None):
+        """Initialize store. supabase_client param kept for backwards compatibility."""
         self._cache: dict[str, SessionContext] = {}
         self._supabase = supabase_client
+        self._postgrest_url = POSTGREST_URL
+        self._http_client: Optional[httpx.Client] = None
+
+    def _get_http_client(self) -> httpx.Client:
+        """Get or create HTTP client for PostgREST requests."""
+        if self._http_client is None:
+            self._http_client = httpx.Client(timeout=10.0)
+        return self._http_client
 
     def get_or_create(self, identity_id: str) -> SessionContext:
         """Get existing session or create new one."""
@@ -48,7 +60,7 @@ class PersistentSessionStore:
         if identity_id in self._cache:
             return self._cache[identity_id]
 
-        # Cache miss: try to hydrate from Supabase (~20ms, once per restart)
+        # Cache miss: try to hydrate from PostgREST (~20ms, once per restart)
         ctx = self._load_from_db(identity_id)
         if ctx is None:
             ctx = SessionContext()
@@ -72,52 +84,68 @@ class PersistentSessionStore:
         if identity_id in self._cache:
             del self._cache[identity_id]
 
-        # Also clear from DB
-        if self._supabase:
-            try:
-                self._supabase.table("session_state").delete().eq(
-                    "identity_id", identity_id
-                ).execute()
+        # Also clear from DB via PostgREST
+        try:
+            client = self._get_http_client()
+            response = client.delete(
+                f"{self._postgrest_url}/session_state",
+                params={"identity_id": f"eq.{identity_id}"}
+            )
+            if response.status_code in (200, 204):
                 logger.info("session_cleared_from_db", identity_id=identity_id)
-            except Exception as e:
-                logger.warning("session_clear_db_failed", identity_id=identity_id, error=str(e))
+            else:
+                logger.warning(
+                    "session_clear_db_failed",
+                    identity_id=identity_id,
+                    status_code=response.status_code
+                )
+        except Exception as e:
+            logger.warning("session_clear_db_failed", identity_id=identity_id, error=str(e))
 
     def _load_from_db(self, identity_id: str) -> Optional[SessionContext]:
-        """Load session from Supabase."""
-        if self._supabase is None:
-            return None
-
+        """Load session from PostgREST."""
         try:
-            result = (
-                self._supabase.table("session_state")
-                .select("*")
-                .eq("identity_id", identity_id)
-                .execute()
+            client = self._get_http_client()
+            response = client.get(
+                f"{self._postgrest_url}/session_state",
+                params={"identity_id": f"eq.{identity_id}"},
+                headers={"Accept": "application/json"}
             )
-            if result.data:
-                row = result.data[0]
-                ctx = SessionContext()
-                ctx.last_responding_agent_id = row.get("last_responding_agent_id")
-                ctx.last_responding_agent_name = row.get("last_responding_agent_name")
 
-                if row.get("last_response_time"):
-                    # Handle ISO format with timezone
-                    ts_str = row["last_response_time"]
-                    if ts_str.endswith("Z"):
-                        ts_str = ts_str[:-1] + "+00:00"
-                    ctx.last_response_time = datetime.fromisoformat(ts_str)
-
-                # Restore context entries (already dicts)
-                for entry in row.get("context_entries", []) or []:
-                    # Entries are already in correct format
-                    ctx.entries.append(entry)
-
-                logger.info(
-                    "session_hydrated",
+            if response.status_code != 200:
+                logger.debug(
+                    "session_load_response",
                     identity_id=identity_id,
-                    entry_count=len(ctx.entries)
+                    status_code=response.status_code
                 )
-                return ctx
+                return None
+
+            data = response.json()
+            if not data:
+                return None
+
+            row = data[0]
+            ctx = SessionContext()
+            ctx.last_responding_agent_id = row.get("last_responding_agent_id")
+            ctx.last_responding_agent_name = row.get("last_responding_agent_name")
+
+            if row.get("last_response_time"):
+                # Handle ISO format with timezone
+                ts_str = row["last_response_time"]
+                if ts_str.endswith("Z"):
+                    ts_str = ts_str[:-1] + "+00:00"
+                ctx.last_response_time = datetime.fromisoformat(ts_str)
+
+            # Restore context entries (already dicts)
+            for entry in row.get("context_entries", []) or []:
+                ctx.entries.append(entry)
+
+            logger.info(
+                "session_hydrated",
+                identity_id=identity_id,
+                entry_count=len(ctx.entries)
+            )
+            return ctx
 
         except Exception as e:
             logger.warning(
@@ -129,10 +157,7 @@ class PersistentSessionStore:
         return None
 
     def _persist(self, identity_id: str, ctx: SessionContext) -> None:
-        """Persist session to Supabase (synchronous, for internal use)."""
-        if self._supabase is None:
-            return
-
+        """Persist session to PostgREST (synchronous, for internal use)."""
         try:
             data = {
                 "identity_id": identity_id,
@@ -144,8 +169,26 @@ class PersistentSessionStore:
                 "context_entries": ctx.entries,  # Already list of dicts
             }
 
-            self._supabase.table("session_state").upsert(data).execute()
-            logger.debug("session_persisted", identity_id=identity_id)
+            client = self._get_http_client()
+            # Use upsert via PostgREST (Prefer: resolution=merge-duplicates)
+            response = client.post(
+                f"{self._postgrest_url}/session_state",
+                json=data,
+                headers={
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates"
+                }
+            )
+
+            if response.status_code in (200, 201):
+                logger.debug("session_persisted", identity_id=identity_id)
+            else:
+                logger.warning(
+                    "session_persist_failed",
+                    identity_id=identity_id,
+                    status_code=response.status_code,
+                    response=response.text[:200]
+                )
 
         except Exception as e:
             logger.warning(
@@ -156,15 +199,12 @@ class PersistentSessionStore:
 
     def persist_async(self, identity_id: str, ctx: SessionContext) -> None:
         """Schedule async persist (non-blocking, fire-and-forget)."""
-        if self._supabase is None:
-            return
-
         # Fire-and-forget: don't await the task
         asyncio.create_task(self._persist_async(identity_id, ctx))
 
     async def _persist_async(self, identity_id: str, ctx: SessionContext) -> None:
         """Async wrapper for persist (runs in background)."""
-        # Run in thread pool since supabase client is sync
+        # Run in thread pool since httpx client is sync
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._persist, identity_id, ctx)
 
@@ -180,21 +220,20 @@ class PersistentSessionStore:
             del self._cache[identity_id]
 
     def set_supabase_client(self, client: Any) -> None:
-        """Set Supabase client for persistence (called during app startup)."""
+        """Set Supabase client (kept for backwards compatibility, not used)."""
         self._supabase = client
-        logger.info("session_store_supabase_configured")
+        logger.info("session_store_configured")
 
 
 # Backwards compatible: SessionStore is now an alias for PersistentSessionStore
 class SessionStore(PersistentSessionStore):
     """
-    Session store with optional Supabase persistence.
+    Session store with optional PostgREST persistence.
 
-    When no Supabase client is provided, operates as in-memory only.
-    Call set_supabase_client() during app startup to enable persistence.
+    Automatically connects to PostgREST using SUPABASE_URL environment variable.
     """
     pass
 
 
-# Global session store instance (Supabase client set during app startup)
+# Global session store instance
 session_store = SessionStore()
