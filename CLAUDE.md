@@ -427,6 +427,79 @@ Environment variables are defined in `.env` (gitignored). Key categories:
 5. Register in `letta/configure_mcp_servers.py`
 6. Create corresponding task in appropriate PBI
 
+### Creating Custom Letta Tools
+
+Custom tools for Letta agents have strict requirements due to how Letta extracts and executes function bodies. **Full guidelines are in `context/coding_custom_letta_tools.md`.**
+
+#### Critical Requirements Checklist
+
+- [ ] **All imports inside the main function** - at the very beginning, immediately after docstring
+- [ ] **NO nested `def` statements** - inline all helper logic (lambdas OK for simple sorting)
+- [ ] **NO module-level helper functions** - they won't be available when Letta runs the extracted function
+- [ ] **Parameter types use only basic JSON types**: `str`, `int`, `bool`, `float`, `Optional[...]` with `None`
+- [ ] **Multi-value parameters**: Use `str` type with comma-separated values, parse inside function
+- [ ] **All parameters documented** in docstring `Args:` section (mandatory)
+- [ ] **Entire function body wrapped in try-except**
+- [ ] **Return value is `Dict[str, Any]`** with consistent structure (`status`, `error_message`)
+
+#### Correct Code Order
+
+```python
+from typing import Dict, Any, Optional  # Only typing imports at module level
+
+def my_letta_tool(param: str) -> Dict[str, Any]:
+    """
+    Tool description.
+
+    Args:
+        param: Description of param (REQUIRED - Letta fails without this)
+
+    Returns:
+        Dictionary with status and result keys.
+    """
+    # 1. IMPORTS FIRST (inside function, after docstring)
+    import os
+    import traceback
+    from datetime import datetime
+
+    # 2. TRY-EXCEPT WRAPPER
+    try:
+        # 3. DEFAULT VALUES AND VALIDATION
+        if param is None:
+            param = "default"
+
+        # 4. MAIN LOGIC (inline everything, NO nested def)
+        result = param.upper()
+
+        return {"status": "ok", "result": result}
+
+    except Exception as e:
+        return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
+```
+
+#### Common Mistakes
+
+| Mistake | Error | Fix |
+|---------|-------|-----|
+| Module-level imports | `NameError` at runtime | Move imports inside function |
+| Module-level helpers | `NameError` when called | Inline the logic |
+| Nested `def` statements | Letta extracts as separate tools | Use lambdas or inline |
+| `Union[str, List[str]]` param | Schema generation fails | Use `str`, parse comma-separated |
+| Missing `Args:` in docstring | Registration fails | Document all parameters |
+
+#### Testing Tools
+
+```bash
+# Register tool
+python letta/register_conversation_tools.py
+
+# Attach to agent
+python letta/attach_conversation_tools_to_agent.py
+
+# Verify in Letta
+curl http://localhost:8283/v1/tools | python -c "import sys,json; print([t['name'] for t in json.load(sys.stdin)])"
+```
+
 ### Database Migrations
 
 For scheduler-service (uses Alembic):

@@ -11,40 +11,7 @@ Architecture Note (2026-01-26):
 - Blocks are created and attached to the agent for the specified user
 """
 
-import os
-import re
 from typing import Dict, Any, Optional
-
-try:
-    from letta_client import Letta
-except ImportError:
-    try:
-        from letta import Letta
-    except ImportError:
-        Letta = None
-
-
-# Configuration from environment
-AGENT_NAME = os.getenv("AGENT_NAME", "meeting_scheduler")
-LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-LETTA_AGENT_ID = os.getenv(
-    "LETTA_AGENT_ID",
-    os.getenv("SCHEDULER_AGENT_ID", "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218")
-)
-
-
-def _get_letta_client():
-    """
-    Get Letta client instance.
-
-    Returns Letta client or None if unavailable.
-    """
-    if Letta is None:
-        return None
-    try:
-        return Letta(base_url=LETTA_BASE_URL)
-    except Exception:
-        return None
 
 
 def create_user_memory_block(
@@ -52,7 +19,7 @@ def create_user_memory_block(
     category: str,
     value: str,
     purpose: Optional[str] = None,
-    agent_specific: bool = False
+    agent_specific: Optional[bool] = None
 ) -> Dict[str, Any]:
     """
     Create a new memory block for emergent user preferences.
@@ -70,11 +37,14 @@ def create_user_memory_block(
         category: Block category (e.g., "preferences", "calendar", "context")
         value: Initial block content (max 2000 characters)
         purpose: Optional specific purpose (e.g., "meeting_duration", "timezone")
-        agent_specific: If True, prefix with agent name (only this agent sees it)
+        agent_specific: If True, prefix with agent name (only this agent sees it). Default: False.
 
     Returns:
-        dict with block_id and label on success.
-        dict with "error" key on failure.
+        Dictionary with keys:
+        - status: "ok" or "error"
+        - block_id: ID of created block (if successful)
+        - label: Label of created block (if successful)
+        - error_message: Error message if status is "error"
 
     Example:
         >>> create_user_memory_block(
@@ -83,43 +53,88 @@ def create_user_memory_block(
         ...     value="Prefers 30 minute meetings in the morning",
         ...     purpose="meeting_duration"
         ... )
-        {"block_id": "block-abc123", "label": "preferences_U12345678_meeting_duration"}
+        {"status": "ok", "block_id": "block-abc123", "label": "preferences_U12345678_meeting_duration"}
     """
-    # Input validation
-    if not re.match(r'^[a-zA-Z0-9_-]+$', user_id):
-        return {"error": f"Invalid user_id format: {user_id}. Must be alphanumeric with underscores/hyphens."}
+    # IMPORTS FIRST - inside function for Letta tool extraction
+    import os
+    import re
+    import traceback
 
-    if not re.match(r'^[a-zA-Z0-9_-]+$', category):
-        return {"error": f"Invalid category format: {category}. Must be alphanumeric with underscores/hyphens."}
-
-    if purpose and not re.match(r'^[a-zA-Z0-9_-]+$', purpose):
-        return {"error": f"Invalid purpose format: {purpose}. Must be alphanumeric with underscores/hyphens."}
-
-    if len(value) > 2000:
-        return {"error": f"Block value too long ({len(value)} chars). Maximum is 2000 characters."}
-
-    # Build label based on naming convention
-    if agent_specific:
-        label = f"{AGENT_NAME}_{category}_{user_id}"
-    else:
-        label = f"{category}_{user_id}"
-
-    if purpose:
-        label += f"_{purpose}"
-
-    # Normalize label
-    label = label.lower().replace(" ", "_")
-
-    if len(label) > 200:
-        return {"error": f"Block label too long ({len(label)} chars). Maximum is 200 characters."}
-
-    # Get Letta client
-    client = _get_letta_client()
-    if client is None:
-        return {"error": "Letta client not available. Check LETTA_BASE_URL configuration."}
-
-    # Create the block
     try:
+        from letta_client import Letta
+    except ImportError:
+        try:
+            from letta import Letta
+        except ImportError:
+            Letta = None
+
+    # TRY-EXCEPT WRAPPER
+    try:
+        # SET DEFAULTS
+        if agent_specific is None:
+            agent_specific = False
+
+        # CONFIGURATION - inside function for Letta tool extraction
+        agent_name = os.getenv("AGENT_NAME", "meeting_scheduler")
+        letta_base_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
+        letta_agent_id = os.getenv(
+            "LETTA_AGENT_ID",
+            os.getenv("SCHEDULER_AGENT_ID", "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218")
+        )
+
+        # INPUT VALIDATION
+        if not re.match(r'^[a-zA-Z0-9_-]+$', user_id):
+            return {
+                "status": "error",
+                "error_message": f"Invalid user_id format: {user_id}. Must be alphanumeric with underscores/hyphens."
+            }
+
+        if not re.match(r'^[a-zA-Z0-9_-]+$', category):
+            return {
+                "status": "error",
+                "error_message": f"Invalid category format: {category}. Must be alphanumeric with underscores/hyphens."
+            }
+
+        if purpose and not re.match(r'^[a-zA-Z0-9_-]+$', purpose):
+            return {
+                "status": "error",
+                "error_message": f"Invalid purpose format: {purpose}. Must be alphanumeric with underscores/hyphens."
+            }
+
+        if len(value) > 2000:
+            return {
+                "status": "error",
+                "error_message": f"Block value too long ({len(value)} chars). Maximum is 2000 characters."
+            }
+
+        # BUILD LABEL BASED ON NAMING CONVENTION
+        if agent_specific:
+            label = f"{agent_name}_{category}_{user_id}"
+        else:
+            label = f"{category}_{user_id}"
+
+        if purpose:
+            label += f"_{purpose}"
+
+        # Normalize label
+        label = label.lower().replace(" ", "_")
+
+        if len(label) > 200:
+            return {
+                "status": "error",
+                "error_message": f"Block label too long ({len(label)} chars). Maximum is 200 characters."
+            }
+
+        # GET LETTA CLIENT (inline, no helper function)
+        if Letta is None:
+            return {
+                "status": "error",
+                "error_message": "Letta client not available. Check LETTA_BASE_URL configuration."
+            }
+
+        client = Letta(base_url=letta_base_url)
+
+        # CREATE THE BLOCK
         description = f"{category} for {user_id}"
         if purpose:
             description += f": {purpose}"
@@ -131,16 +146,20 @@ def create_user_memory_block(
             limit=2000
         )
 
-        # Attach block to agent
+        # ATTACH BLOCK TO AGENT
         client.agents.blocks.attach(
-            agent_id=LETTA_AGENT_ID,
+            agent_id=letta_agent_id,
             block_id=block.id
         )
 
         return {
+            "status": "ok",
             "block_id": block.id,
             "label": label
         }
 
     except Exception as e:
-        return {"error": f"Failed to create block: {str(e)}"}
+        return {
+            "status": "error",
+            "error_message": f"Failed to create block: {str(e)}\n{traceback.format_exc()}"
+        }
