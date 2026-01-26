@@ -497,6 +497,9 @@ async def complete_thread(
     if not thread:
         return {"error": "Thread not found", "thread": None}
 
+    # Persist session state (fire-and-forget, non-blocking)
+    session_store.persist_async(session_id, session_ctx)
+
     logger.info(
         "thread_completed",
         session_id=session_id,

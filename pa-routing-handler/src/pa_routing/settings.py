@@ -31,6 +31,19 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Supabase connection (for session persistence)
+    # Note: These use standard env vars without prefix
+    supabase_url: Optional[str] = Field(
+        default=None,
+        description="Supabase project URL",
+        validation_alias="SUPABASE_URL"
+    )
+    supabase_service_key: Optional[str] = Field(
+        default=None,
+        description="Supabase service role key",
+        validation_alias="SUPABASE_SERVICE_KEY"
+    )
+
     class Config:
         env_prefix = "PA_ROUTING_"
 
