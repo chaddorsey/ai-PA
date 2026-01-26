@@ -126,6 +126,75 @@ def invalidate_identities_cache() -> None:
     logger.info("identities_cache_invalidated")
 
 
+# Supabase client for conversation lookups (set during app startup)
+_supabase_client = None
+
+
+def set_supabase_client(client) -> None:
+    """Set Supabase client for conversation lookups (called during app startup)."""
+    global _supabase_client
+    _supabase_client = client
+    logger.info("routing_supabase_configured")
+
+
+async def lookup_conversation(
+    identity_id: str,
+    agent_id: str,
+    user_source: str = "web"
+) -> Optional[str]:
+    """
+    Look up existing conversation for identity + agent pair.
+
+    Uses the user_conversations table in Supabase to find existing
+    conversation mappings. Returns None if no conversation exists.
+
+    Args:
+        identity_id: Letta identity ID for the user
+        agent_id: Agent ID to find conversation for
+        user_source: Platform source (web, slack, telegram, etc.)
+
+    Returns:
+        Conversation ID if found, None otherwise
+    """
+    if not _supabase_client:
+        logger.debug("conversation_lookup_skipped", reason="no_supabase_client")
+        return None
+
+    try:
+        result = (
+            _supabase_client.table("user_conversations")
+            .select("conversation_id")
+            .eq("identity_id", identity_id)
+            .eq("agent_id", agent_id)
+            .execute()
+        )
+        if result.data:
+            conversation_id = result.data[0]["conversation_id"]
+            logger.info(
+                "conversation_found",
+                identity_id=identity_id,
+                agent_id=agent_id,
+                conversation_id=conversation_id
+            )
+            return conversation_id
+
+        logger.debug(
+            "conversation_not_found",
+            identity_id=identity_id,
+            agent_id=agent_id
+        )
+        return None
+
+    except Exception as e:
+        logger.warning(
+            "conversation_lookup_failed",
+            identity_id=identity_id,
+            agent_id=agent_id,
+            error=str(e)
+        )
+        return None
+
+
 @router.post("/route", response_model=RouteResponse)
 async def route_message(request: RouteRequest) -> RouteResponse:
     """
@@ -169,6 +238,15 @@ async def route_message(request: RouteRequest) -> RouteResponse:
 
     # Use tiered agent selector with context
     result = _selector.select_detailed(request.message, request.agent_id, context)
+
+    # Look up existing conversation for this identity + agent pair
+    conversation_id = None
+    if identity_id:
+        conversation_id = await lookup_conversation(
+            identity_id=identity_id,
+            agent_id=result.agent_id,
+            user_source=request.platform or "web"
+        )
 
     # Calculate processing time
     processing_time_ms = int((time.perf_counter() - start_time) * 1000)
@@ -223,6 +301,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         "route_decision",
         session_id=str(request.session_id),
         identity_id=identity_id,
+        conversation_id=conversation_id,
         agent_id=result.agent_id,
         agent_name=result.agent_name,
         routing_method=routing_method,
@@ -245,7 +324,7 @@ async def route_message(request: RouteRequest) -> RouteResponse:
         context_injection=context_injection if context_injection else None,
         briefing_injection=briefing_injection if briefing_injection else None,
         identity_id=identity_id,
-        conversation_id=None,  # Phase 4 will populate this
+        conversation_id=conversation_id,
     )
 
 

@@ -404,6 +404,8 @@ def stream():
             request_id = route_data.get("request_id")
             context_injection = route_data.get("context_injection")  # Pattern 2
             briefing_injection = route_data.get("briefing_injection")  # Pattern 4
+            identity_id = route_data.get("identity_id")  # Resolved identity
+            conversation_id = route_data.get("conversation_id")  # Letta conversation
 
             logger.info(
                 "routed_message",
@@ -411,6 +413,8 @@ def stream():
                 selected_agent_id=selected_agent_id,
                 routing_method=route_data.get("routing_method"),
                 request_id=request_id,
+                identity_id=identity_id,
+                conversation_id=conversation_id,
                 has_context=bool(context_injection),
                 has_briefing=bool(briefing_injection),
             )
@@ -464,12 +468,16 @@ def stream():
             augmented_message = "\n\n".join(message_parts)
 
             letta_payload = {"messages": [{"role": "user", "content": augmented_message}]}
+            # Include conversation_id if available (for Letta Conversations persistence)
+            if conversation_id:
+                letta_payload["conversation_id"] = conversation_id
 
             logger.info(
                 "letta_stream_starting",
                 agent_id=selected_agent_id,
                 agent_name=agent_name,
                 request_id=request_id,
+                conversation_id=conversation_id,
             )
 
             # Use a queue-based approach with keepalive pings
