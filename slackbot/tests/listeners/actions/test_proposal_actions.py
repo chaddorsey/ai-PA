@@ -26,13 +26,19 @@ def test_register_adds_handlers():
     register(mock_app)
 
     # Should register handlers for:
-    # - schedule_proposal_select (button click)
+    # - schedule_proposal_select_* (button click, uses regex)
     # - schedule_proposal_expand (expand conflicts)
     assert mock_app.action.call_count >= 2
 
-    # Get the action IDs registered
+    # Get the action IDs registered (first one is a regex pattern)
     action_ids = [call[0][0] for call in mock_app.action.call_args_list]
-    assert "schedule_proposal_select" in action_ids
+
+    # First handler uses regex for schedule_proposal_select_*
+    import re
+    assert hasattr(action_ids[0], 'pattern')  # It's a compiled regex
+    assert action_ids[0].pattern == r"^schedule_proposal_select_"
+
+    # Second handler is string for expand
     assert "schedule_proposal_expand" in action_ids
 
 

@@ -127,8 +127,10 @@ def _handle_proposal_expand(
 
 def register(app: App) -> None:
     """Register action handlers with the Slack app."""
+    import re
 
-    @app.action("schedule_proposal_select")
+    # Use regex to match schedule_proposal_select_* action IDs
+    @app.action(re.compile(r"^schedule_proposal_select_"))
     def on_proposal_select(ack, body, client, logger):
         _handle_proposal_select(ack, body, client, logger)
 

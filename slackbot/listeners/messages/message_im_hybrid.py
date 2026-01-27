@@ -354,7 +354,12 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
 
         # Check if response contains scheduling proposals
         proposals_posted = False
-        if "## Best Options" in final_text or "[VERBATIM_USER_OUTPUT]" in final_text:
+        has_best_options = "## Best Options" in final_text
+        has_conflict_options = "## If We Can Move" in final_text
+        has_verbatim = "[VERBATIM_USER_OUTPUT]" in final_text
+        logger.error(f"🔍 PROPOSAL DETECTION: has_best_options={has_best_options}, has_conflict={has_conflict_options}, has_verbatim={has_verbatim}, text_len={len(final_text)}")
+
+        if has_best_options or has_conflict_options or has_verbatim:
             try:
                 import uuid as uuid_module
                 from services.proposal_formatter import parse_orchestrator_proposals
@@ -363,6 +368,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
 
                 # Generate a unique session ID
                 session_id = f"sess_{uuid_module.uuid4().hex[:12]}"
+                logger.error(f"🔍 PROPOSAL PARSING: session_id={session_id}")
 
                 # Parse proposals from the response
                 proposal_set = parse_orchestrator_proposals(
@@ -371,6 +377,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                     user_id=user_id,
                     participants=[],  # TODO: Extract from context
                 )
+                logger.error(f"🔍 PROPOSAL PARSED: clean={len(proposal_set.clean_proposals)}, conflict={len(proposal_set.conflict_proposals)}")
 
                 # Only proceed if we found proposals
                 if proposal_set.clean_proposals or proposal_set.conflict_proposals:
@@ -379,6 +386,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
 
                     # Render interactive blocks
                     proposal_blocks = render_proposal_blocks(proposal_set)
+                    logger.error(f"🔍 PROPOSAL BLOCKS: {len(proposal_blocks)} blocks")
 
                     # Post text response first
                     client.chat_postMessage(
@@ -394,11 +402,14 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                             blocks=proposal_blocks,
                         )
                         proposals_posted = True
+                        logger.error(f"✅ PROPOSALS POSTED: session={session_id}")
 
                     logger.info(f"Posted interactive scheduling proposals for session {session_id}")
+                else:
+                    logger.error("⚠️ PROPOSAL PARSING: No proposals found in output")
 
             except Exception as proposal_err:
-                logger.warning(f"Could not parse scheduling proposals: {proposal_err}")
+                logger.error(f"❌ PROPOSAL ERROR: {proposal_err}", exc_info=True)
                 # Fall through to regular posting
 
         # Post regular response if proposals weren't handled

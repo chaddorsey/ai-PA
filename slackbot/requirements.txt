@@ -8,3 +8,4 @@ anthropic
 google-cloud-aiplatform
 sseclient-py
 requests>=2.31.0
+pytz>=2024.1

@@ -45,7 +45,7 @@ def test_render_proposal_buttons_clean():
 
     # Button should have correct action_id and value format
     button = actions_blocks[0]["elements"][0]
-    assert button["action_id"] == "schedule_proposal_select"
+    assert button["action_id"] == "schedule_proposal_select_prop_001"
     assert button["value"] == "sess_abc123:prop_001"
 
 

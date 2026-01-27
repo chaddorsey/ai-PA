@@ -104,7 +104,7 @@ def _create_proposal_buttons(
                 "text": f"{prop.index} {label}",
                 "emoji": True,
             },
-            "action_id": "schedule_proposal_select",
+            "action_id": f"schedule_proposal_select_{prop.id}",
             "value": f"{session_id}:{prop.id}",
         })
 
