@@ -338,16 +338,19 @@ def format_refined_user_display(
     user_id: Optional[str] = None,
     timezone_str: str = "America/New_York",
     context_json: Optional[Dict[str, Any]] = None,
-    external_participants: Optional[List[str]] = None
+    external_participants: Optional[List[str]] = None,
+    free_transparent_events: Optional[List[Tuple[str, str, str, str]]] = None
 ) -> str:
     """
     Generate refined user-facing display with grouped, prioritized formatting.
-    
+
     Format:
     - Rescheduling header (if rescheduling): Shows original meeting details
     - "Best options" section: Zero-conflict proposals grouped by day
+      - Includes subheader if any proposals overlap transparent events
     - "If We Can Move or Override" section: Move and override proposals
-    
+      - Includes subheader if any proposals overlap transparent events
+
     Args:
         free_proposals: Zero-conflict proposals (already sorted by priority)
         move_proposals: Proposals requiring event moves (already sorted by priority)
@@ -418,9 +421,21 @@ def format_refined_user_display(
     
     # Section 1: Best Options (zero-conflict)
     if free_proposals:
+        # CRITICAL message comes before VERBATIM tag (instruction for how to handle the content)
+        lines.append("**CRITICAL: This output contains specific event titles in quotes (e.g., \"Hold\", \"Weekly Review\"). You MUST use this text exactly as written, including all event titles, time ranges, and formatting. Do NOT paraphrase, summarize, or modify any part of this output.**")
+        lines.append("")
+        # VERBATIM tag appears immediately before the actual proposal output
+        lines.append("[VERBATIM_USER_OUTPUT]")
         lines.append("## Best Options")
         lines.append("")
-        
+
+        # Add subheader if any proposals overlap transparent events (marked as "free")
+        if free_transparent_events:
+            subheader = format_transparent_subheader(free_transparent_events, user_id)
+            if subheader:
+                lines.append(subheader)
+                lines.append("")
+
         # Group by day
         proposals_by_day: Dict[str, List[Proposal]] = {}
         for prop in free_proposals:
@@ -442,32 +457,56 @@ def format_refined_user_display(
     
     # Section 2: If We Can Move or Override Current Meetings
     if move_proposals or override_proposals:
+        # Start VERBATIM section if not already started (no free_proposals case)
+        if not free_proposals:
+            # CRITICAL message comes before VERBATIM tag (instruction for how to handle the content)
+            lines.append("**CRITICAL: This output contains specific event titles in quotes (e.g., \"Hold\", \"Weekly Review\"). You MUST use this text exactly as written, including all event titles, time ranges, and formatting. Do NOT paraphrase, summarize, or modify any part of this output.**")
+            lines.append("")
+            # VERBATIM tag appears immediately before the actual proposal output
+            lines.append("[VERBATIM_USER_OUTPUT]")
         lines.append("## If We Can Move or Override Current Meetings")
         lines.append("")
         
         # Subsection 2a: Override Options
         if override_proposals:
+            # First pass: collect all transparent events from override proposals for subheader
+            override_transparent_events: List[Tuple[str, str, str, str]] = []
+            for prop in override_proposals:
+                overlapping_events = _find_all_overlapping_solo_events(prop, normalized_data, event_registry, timezone_str)
+                for owner, event_id, event_title, event_time_range, transparency in overlapping_events:
+                    if transparency:  # True = transparent/free (boolean from normalizer)
+                        evt_tuple = (owner, event_id, event_title, event_time_range)
+                        if evt_tuple not in override_transparent_events:
+                            override_transparent_events.append(evt_tuple)
+
+            # Add subheader if any override proposals overlap transparent events
+            if override_transparent_events:
+                subheader = format_transparent_subheader(override_transparent_events, user_id)
+                if subheader:
+                    lines.append(subheader)
+                    lines.append("")
+
             # Group override proposals by the requester's (user_id's) overridden event, then by proposal day
             # Structure: (requester_event_key) -> {proposal_day: [proposals]}
             # If no requester event, use a fallback key
             override_groups: Dict[Optional[Tuple[str, str]], Dict[str, List[Proposal]]] = {}
-            
+
             for prop in override_proposals:
                 # Find all overlapping solo events for this proposal
                 overlapping_events = _find_all_overlapping_solo_events(prop, normalized_data, event_registry, timezone_str)
-                
+
                 # Find the requester's (user_id's) event if it exists
                 requester_event_key = None
                 if user_id:
-                    for owner, event_id, event_title, event_time_range in overlapping_events:
+                    for owner, event_id, event_title, event_time_range, transparency in overlapping_events:
                         if owner == user_id:
                             requester_event_key = (owner, event_id)
                             break
-                
+
                 # If no requester event found, use None as the key (will be grouped separately)
                 if requester_event_key not in override_groups:
                     override_groups[requester_event_key] = {}
-                
+
                 # Group by proposal day
                 proposal_day = format_day_header(prop.start_utc, timezone_str)
                 if proposal_day not in override_groups[requester_event_key]:
@@ -493,81 +532,88 @@ def format_refined_user_display(
                     day_props = day_groups[proposal_day]
                     
                     # Collect all unique solo events that are overridden by any proposal in this group
-                    all_overridden_events: Dict[Tuple[str, str], Tuple[str, str, str, str]] = {}
-                    
+                    all_overridden_events: Dict[Tuple[str, str], Tuple[str, str, str, str, str]] = {}
+
                     for prop in day_props:
                         overlapping_events = _find_all_overlapping_solo_events(prop, normalized_data, event_registry, timezone_str)
-                        for owner, event_id, event_title, event_time_range in overlapping_events:
+                        for owner, event_id, event_title, event_time_range, transparency in overlapping_events:
                             key = (owner, event_id)
                             if key not in all_overridden_events:
-                                all_overridden_events[key] = (owner, event_id, event_title, event_time_range)
-                    
+                                all_overridden_events[key] = (owner, event_id, event_title, event_time_range, transparency)
+
                     # Format the header
                     if all_overridden_events:
                         # Separate requester's events from other participants' events
                         requester_events = []
                         other_events = []
-                        
-                        for owner, event_id, event_title, event_time_range in all_overridden_events.values():
+
+                        for owner, event_id, event_title, event_time_range, transparency in all_overridden_events.values():
                             if user_id and owner == user_id:
-                                requester_events.append((owner, event_id, event_title, event_time_range))
+                                requester_events.append((owner, event_id, event_title, event_time_range, transparency))
                             else:
-                                other_events.append((owner, event_id, event_title, event_time_range))
+                                other_events.append((owner, event_id, event_title, event_time_range, transparency))
                         
                         # Build the override description
+                        # Format: Overrides owner's time *EventTitle* event
                         if requester_events:
                             # Primary: requester's event(s)
+                            # Note: Individual "(marked as free)" removed - covered by section subheader
                             requester_descriptions = []
-                            for owner, event_id, event_title, event_time_range in requester_events:
+                            for owner, event_id, event_title, event_time_range, transparency in requester_events:
                                 if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
-                                    requester_descriptions.append(f"{event_time_range} \"{event_title}\" event")
+                                    # Format: your time_range *EventTitle* event
+                                    requester_descriptions.append(f"your {event_time_range} *{event_title}* event")
                                 else:
-                                    requester_descriptions.append(f"{event_time_range} solo/blocking event")
-                            
-                            primary_text = "your " + requester_descriptions[0]  # Use first requester event
-                            
+                                    requester_descriptions.append(f"your {event_time_range} *solo/blocking* event")
+
+                            primary_text = requester_descriptions[0]  # Use first requester event
+
                             # Secondary: other participants' events as annotation
                             if other_events:
+                                # Note: Individual "(marked as free)" removed - covered by section subheader
                                 other_descriptions = []
-                                for owner, event_id, event_title, event_time_range in other_events:
+                                for owner, event_id, event_title, event_time_range, transparency in other_events:
                                     owner_name = owner.split("@")[0]
                                     if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
-                                        other_descriptions.append(f"{owner_name}'s {event_time_range} \"{event_title}\" event")
+                                        # Format: and owner's time_range *EventTitle* event
+                                        other_descriptions.append(f"{owner_name}'s {event_time_range} *{event_title}* event")
                                     else:
-                                        other_descriptions.append(f"{owner_name}'s {event_time_range} solo/blocking event")
-                                
-                                # Join other events with ", " and "and" for the last one
+                                        other_descriptions.append(f"{owner_name}'s {event_time_range} *solo/blocking* event")
+
+                                # Join other events with " and " for proper markdown flow
                                 if len(other_descriptions) == 1:
                                     annotation_text = other_descriptions[0]
                                 elif len(other_descriptions) == 2:
                                     annotation_text = f"{other_descriptions[0]} and {other_descriptions[1]}"
                                 else:
                                     annotation_text = ", ".join(other_descriptions[:-1]) + f", and {other_descriptions[-1]}"
-                                
-                                lines.append(f"{proposal_day}  — Overrides {primary_text} (and {annotation_text})")
+
+                                lines.append(f"{proposal_day}  — Overrides {primary_text} and {annotation_text}")
                             else:
                                 lines.append(f"{proposal_day}  — Overrides {primary_text}")
                         else:
                             # No requester event, fall back to listing all events
+                            # Note: Individual "(marked as free)" removed - covered by section subheader
+                            # Format: Overrides owner's time_range *EventTitle* event
                             override_descriptions = []
-                            for owner, event_id, event_title, event_time_range in sorted(all_overridden_events.values(), key=lambda x: x[0].lower()):
+                            for owner, event_id, event_title, event_time_range, transparency in sorted(all_overridden_events.values(), key=lambda x: x[0].lower()):
                                 owner_name = owner.split("@")[0] if owner != user_id else "your"
                                 if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
-                                    override_descriptions.append(f"{owner_name}'s {event_time_range} \"{event_title}\" event")
+                                    override_descriptions.append(f"{owner_name}'s {event_time_range} *{event_title}* event")
                                 else:
-                                    override_descriptions.append(f"{owner_name}'s {event_time_range} solo/blocking event")
-                            
+                                    override_descriptions.append(f"{owner_name}'s {event_time_range} *solo/blocking* event")
+
                             if len(override_descriptions) == 1:
                                 override_text = override_descriptions[0]
                             elif len(override_descriptions) == 2:
                                 override_text = f"{override_descriptions[0]} and {override_descriptions[1]}"
                             else:
                                 override_text = ", ".join(override_descriptions[:-1]) + f", and {override_descriptions[-1]}"
-                            
+
                             lines.append(f"{proposal_day}  — Overrides {override_text}")
                     else:
                         # Fallback: no solo events found, use generic description
-                        lines.append(f"{proposal_day}  — Overrides solo/blocking events")
+                        lines.append(f"{proposal_day}  — Overrides *solo/blocking events*")
                     
                     # List proposal times
                     for prop in day_props:
@@ -651,14 +697,14 @@ def format_refined_user_display(
                         for proposal_day in sorted_days:
                             day_props = day_groups[proposal_day]
                             
-                            # Format: "Day – If owner's time_range "title" event moves to new_time"
+                            # Format: "Day – If owner's time_range *EventTitle* event moves to new_time"
                             # Check if new location is on a different day
                             if new_date != proposal_day:
                                 # Show full date for new location
-                                lines.append(f"{proposal_day} – If {owner_display} {old_time_range} \"{event_title}\" event moves to {new_date} at {new_time}")
+                                lines.append(f"{proposal_day} – If {owner_display} {old_time_range} *{event_title}* event moves to {new_date} at {new_time}")
                             else:
                                 # Same day, just show time
-                                lines.append(f"{proposal_day} – If {owner_display} {old_time_range} \"{event_title}\" event moves to {new_time}")
+                                lines.append(f"{proposal_day} – If {owner_display} {old_time_range} *{event_title}* event moves to {new_time}")
                             
                             # List proposal times
                             for prop in day_props:
@@ -666,10 +712,13 @@ def format_refined_user_display(
                                 lines.append(f"* {time_range}")
                             lines.append("")
     
-    # Wrap the output with bracketing tags for better agent recognition
-    # Add explicit instruction to use verbatim - this is critical for agent to preserve event titles
+    # Add closing tag for VERBATIM section (opening tag added at first section header)
+    # Only add if we have any proposals (otherwise no VERBATIM section was started)
+    if free_proposals or move_proposals or override_proposals:
+        lines.append("[/VERBATIM_USER_OUTPUT]")
+
     output_text = "\n".join(lines)
-    return f"[VERBATIM_USER_OUTPUT]\n**CRITICAL: This output contains specific event titles in quotes (e.g., \"Hold\", \"Weekly Review\"). You MUST use this text exactly as written, including all event titles, time ranges, and formatting. Do NOT paraphrase, summarize, or modify any part of this output.**\n\n{output_text}\n[/VERBATIM_USER_OUTPUT]"
+    return output_text
 
 
 def _get_day_sort_key(day_str: str, fallback_dt_str: str) -> float:
@@ -805,12 +854,17 @@ def _find_all_overlapping_solo_events(
     normalized_data: Optional[Dict[str, Any]],
     event_registry: Dict[str, EventMetadata],
     timezone_str: str = "America/New_York"
-) -> List[Tuple[str, str, str, str]]:
+) -> List[Tuple[str, str, str, str, str]]:
     """
-    Find ALL solo events being overridden by this proposal.
-    
+    Find ALL solo events and transparent events being overridden by this proposal.
+
+    Solo events (num_attendees == 0) and transparent events (marked as "free")
+    are both included. Transparent events don't block scheduling but should be
+    noted in the output.
+
     Returns:
-        List of tuples: [(owner, event_id, event_title, event_time_range), ...]
+        List of tuples: [(owner, event_id, event_title, event_time_range, transparency), ...]
+        - transparency is a boolean: True = free/transparent, False = busy/opaque
     """
     results = []
     if not normalized_data:
@@ -849,15 +903,20 @@ def _find_all_overlapping_solo_events(
         event_slots_map = normalized_data.get("event_slots_map", {})
         event_metadata = normalized_data.get("event_metadata", {})
         
-        # Collect all overlapping solo events
+        # Collect all overlapping solo events AND transparent events
         for (owner, event_id), event_slots in event_slots_map.items():
             overlap = proposal_slots.intersection(event_slots)
             if overlap:
-                # Check if this is a solo event (num_attendees == 0)
                 event_meta = event_metadata.get((owner, event_id), {})
                 num_attendees = event_meta.get("number_of_attendees", -1)
-                
-                if num_attendees == 0:
+                transparency = event_meta.get("transparent", False)
+
+                # Include event if it's a solo event OR if it's transparent (marked as free)
+                # Solo events can be overridden; transparent events don't block but should be noted
+                is_solo_event = (num_attendees == 0)
+                is_transparent = bool(transparency)  # True = free/transparent
+
+                if is_solo_event or is_transparent:
                     # Get event title - try event_meta first (both title and summary), then event_registry as fallback
                     event_title = event_meta.get("title") or event_meta.get("summary") or ""
                     
@@ -902,11 +961,116 @@ def _find_all_overlapping_solo_events(
                             # Last resort: use proposal time
                             event_time_range = format_time_range(proposal.start_utc, proposal.end_utc, timezone_str)
                     
-                    results.append((owner, event_id, event_title, event_time_range))
-        
+                    results.append((owner, event_id, event_title, event_time_range, transparency))
+
         return results
     except Exception as e:
         import sys
         print(f"[formatting] Error finding all overlapping solo events: {e}", file=sys.stderr, flush=True)
         return results
+
+
+def proposal_only_overlaps_transparent(
+    proposal: Proposal,
+    normalized_data: Optional[Dict[str, Any]],
+    event_registry: Dict[str, EventMetadata]
+) -> Tuple[bool, List[Tuple[str, str, str, str]]]:
+    """
+    Check if a proposal ONLY overlaps with transparent events (no opaque solo events).
+
+    Transparent events are marked as "free" in Google Calendar and should not
+    demote a proposal to the override section.
+
+    Args:
+        proposal: The proposal to check
+        normalized_data: Normalized calendar data
+        event_registry: Map of event_id -> EventMetadata
+
+    Returns:
+        Tuple of (only_transparent, transparent_events):
+        - only_transparent: True if ALL overlapping events are transparent (none opaque)
+        - transparent_events: List of (owner, event_id, event_title, time_range) for transparent events
+    """
+    overlapping = _find_all_overlapping_solo_events(proposal, normalized_data, event_registry)
+
+    if not overlapping:
+        return (False, [])
+
+    transparent_events = []
+    has_opaque = False
+
+    for owner, event_id, event_title, event_time_range, transparency in overlapping:
+        if transparency:  # True = transparent/free
+            transparent_events.append((owner, event_id, event_title, event_time_range))
+        else:
+            has_opaque = True
+
+    # Only transparent if there are transparent events AND no opaque events
+    only_transparent = (len(transparent_events) > 0) and (not has_opaque)
+
+    return (only_transparent, transparent_events)
+
+
+def format_transparent_subheader(
+    transparent_events: List[Tuple[str, str, str, str]],
+    user_id: Optional[str] = None
+) -> str:
+    """
+    Format a subheader noting which transparent events may be overlapped.
+
+    Args:
+        transparent_events: List of (owner, event_id, event_title, time_range)
+        user_id: Current user's ID for "your" vs name formatting
+
+    Returns:
+        Formatted subheader string like:
+        "Note: Times may override cdorsey's Letta Office Hours or clore's Walk events (marked as \"free\")"
+    """
+    if not transparent_events:
+        return ""
+
+    # Group events by owner and title for cleaner display
+    # Structure: (owner_name, event_title) -> count
+    event_descriptions = []
+    seen = set()
+
+    for owner, event_id, event_title, time_range in transparent_events:
+        # Avoid duplicates (same owner + title)
+        key = (owner, event_title)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        owner_name = owner.split("@")[0] if owner and "@" in owner else owner
+        if user_id and owner == user_id:
+            owner_name = "your"
+
+        # Format: owner's* EventTitle * (event titles NOT italicized)
+        if event_title and event_title not in ["", "Hold", "solo/blocking events"]:
+            event_descriptions.append((f"{owner_name}'s", event_title))
+        else:
+            event_descriptions.append((f"{owner_name}'s", "event"))
+
+    if not event_descriptions:
+        return ""
+
+    # Format the list with event titles not italicized
+    # Pattern: *Note: Times may overlap owner's* Title *or owner's* Title *events (marked as Free)*
+    if len(event_descriptions) == 1:
+        owner_part, title = event_descriptions[0]
+        events_str = f"{owner_part}* {title} *"
+    elif len(event_descriptions) == 2:
+        owner1, title1 = event_descriptions[0]
+        owner2, title2 = event_descriptions[1]
+        events_str = f"{owner1}* {title1} *or {owner2}* {title2} *"
+    else:
+        parts = []
+        for i, (owner_part, title) in enumerate(event_descriptions):
+            if i == len(event_descriptions) - 1:
+                parts.append(f"or {owner_part}* {title} *")
+            else:
+                parts.append(f"{owner_part}* {title} *")
+        events_str = ", ".join(parts[:-1]) + ", " + parts[-1]
+
+    return f'*Note: Times may overlap {events_str}events (marked as Free)*'
 

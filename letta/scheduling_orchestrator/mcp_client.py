@@ -244,6 +244,7 @@ class MCPCalendarClient:
                 "locked": false,
                 "protected": false,
                 "flexible": true,
+                "transparent": false,  # True = "show as free" (doesn't block scheduling)
                 "number_of_attendees": 0,
                 "internal_only": true,
                 "attendees_list": ["email1@example.com", ...],  # Legacy field (for backward compatibility)

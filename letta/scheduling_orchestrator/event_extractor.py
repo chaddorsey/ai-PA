@@ -296,23 +296,24 @@ def merge_event_details_with_utterance(
         has_change_keyword = any(kw in utt_lower for kw in change_keywords)
         return has_change_keyword or (has_with and any(kw in utt_lower for kw in ["add", "also"]))
     
-    # For rescheduling, use event participants as base unless explicitly changed
-    if extracted_event_details and event_participants:
-        # Event was identified - use its participants as base
+    # PRIORITY: If participant_ids is explicitly provided via API, ALWAYS use it
+    # This handles:
+    # 1. New meeting requests where caller specifies participants
+    # 2. Cases where event was incorrectly matched but caller knows the right participants
+    # participant_ids takes precedence because the caller explicitly provided it
+    if participant_ids:
+        merged_participants = participant_ids
+    elif extracted_event_details and event_participants:
+        # Event was identified but no participant_ids provided - use event participants
         if has_explicit_participant_changes(utterance):
-            # Utterance explicitly changes participants - use participant_ids or utterance participants
-            if participant_ids:
-                merged_participants = participant_ids
-            elif scheduling_problem.participants:
+            # Utterance explicitly changes participants - use scheduling_problem.participants if available
+            if scheduling_problem.participants:
                 merged_participants = scheduling_problem.participants
             else:
                 merged_participants = event_participants
         else:
             # No explicit changes - use event participants
             merged_participants = event_participants
-    elif participant_ids:
-        # No event identified or no event participants - use participant_ids
-        merged_participants = participant_ids
     elif scheduling_problem.participants:
         merged_participants = scheduling_problem.participants
     elif event_participants:

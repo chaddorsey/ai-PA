@@ -158,6 +158,16 @@ def normalize_events(
                 locked = True
                 protected = True
                 flexible = False
+
+            # Check description for protection indicators (fallback if protected not set via metadata)
+            # This handles cases where users mark events as protected via description text
+            if not protected:
+                event_description = (event_dict.get("description") or "").upper()
+                # Check for common protection keywords in description
+                protection_keywords = ["PROTECTED", "DO NOT SCHEDULE", "DO NOT MOVE", "BLOCKED TIME", "BLOCKING TIME"]
+                if any(kw in event_description for kw in protection_keywords):
+                    protected = True
+                    flexible = False  # Protected events should not be flexible
             
             # Parse datetimes
             try:
@@ -185,7 +195,23 @@ def normalize_events(
                 
                 # Get slots for this event
                 event_slots = slot_indexer.get_slots_in_range(start_dt, end_dt)
-                busy_slots[participant_id].update(event_slots)
+
+                # Check transparent: True means "show as free" - don't block scheduling
+                # False (default) means "show as busy" - blocks scheduling
+                transparency = event_dict.get("transparent", False)
+
+                # Handle multiple formats:
+                # - Google API: "transparent" / "opaque"
+                # - n8n boolean: true / false
+                # - n8n string: "true" / "false"
+                if isinstance(transparency, str):
+                    is_transparent = transparency.lower() in ("transparent", "true", "1", "yes")
+                else:
+                    is_transparent = bool(transparency)  # True = free, False = busy
+
+                # Only add to busy_slots if event is NOT transparent (i.e., actually busy)
+                if not is_transparent:
+                    busy_slots[participant_id].update(event_slots)
                 
                 # Store event-to-slots mapping for move logic
                 event_key = (participant_id, event_id)
@@ -240,6 +266,7 @@ def normalize_events(
                     "locked": locked,
                     "protected": protected,
                     "flexible": flexible,
+                    "transparent": is_transparent,  # True = free/transparent, False = busy/opaque
                     "internal_only": final_internal_only,  # Mark as False if external participants detected
                     "number_of_attendees": len(attendees),  # Use actual count from attendees list
                     "attendees": attendees  # Store full attendees list for validation

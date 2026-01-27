@@ -650,6 +650,13 @@ def _find_slots_with_single_move(
                 # Look through event_slots_map to find events that overlap with conflicting_slots
                 for (p_id, e_id), slots in event_slots_map_full.items():
                     if p_id == participant_id and slots.intersection(conflicting_slots):
+                        # Skip transparent events - they don't actually block the slot
+                        # Transparent events appear in event_slots_map but NOT in busy_slots,
+                        # so they may overlap with conflicting_slots from other blocking events
+                        event_meta_check = event_metadata_map.get((p_id, e_id), {})
+                        if event_meta_check.get("transparent", False):
+                            continue  # Skip transparent events - they're not blocking
+
                         # Check if event is locked
                         protection = event_protection.get((p_id, e_id), "flexible")
                         if protection == "locked":
@@ -698,7 +705,15 @@ def _find_slots_with_single_move(
             internal_only = event_meta.get("internal_only", True)  # Default to True for backwards compatibility
             if not internal_only:
                 continue  # Skip external events - they cannot be moved
-            
+
+            # CRITICAL: Skip transparent events - they don't actually block the slot
+            # Transparent events appear in event_slots_map but NOT in busy_slots,
+            # so they may overlap with conflicting_slots from other blocking events.
+            # We should never try to move a transparent event since it's not blocking.
+            is_transparent = event_meta.get("transparent", False)
+            if is_transparent:
+                continue  # Skip transparent events - they're not blocking
+
             protection = event_protection.get(event_key, "flexible")
             current_event_slots = event_slots_map_full.get(event_key, set())
             
@@ -1032,8 +1047,15 @@ def _find_slots_with_solo_override(
                 for (p_id, e_id), slots in event_slots_map_full.items():
                     if p_id == participant_id and slots.intersection(conflicting_slots):
                         event_key = (p_id, e_id)
+
+                        # Skip transparent events - they don't actually block the slot
+                        # Transparent events appear in event_slots_map but NOT in busy_slots
+                        event_meta_check = event_metadata_map.get(event_key, {})
+                        if event_meta_check.get("transparent", False):
+                            continue  # Skip transparent events - they're not blocking
+
                         protection = event_protection.get(event_key, "flexible")
-                        
+
                         # Skip locked events (cannot override)
                         if protection == "locked":
                             non_solo_conflicts.append(event_key)

@@ -503,18 +503,22 @@ def get_calendar_events(
 ) -> Dict[str, Any]:
     """
     Retrieve calendar events within a date range.
-    
+
     Gets all events from the specified calendar that fall within the given
     time range, with options for result limits and sorting.
-    
+
     Args:
         calendar_id: Calendar ID (email address) or "primary"
-        time_min: ISO 8601 datetime string for start of query range (required)
-        time_max: ISO 8601 datetime string for end of query range (required)
+        time_min: RFC3339 datetime string with timezone for start of query range (required).
+            MUST include timezone suffix. Examples: "2026-01-27T00:00:00Z" (UTC) or
+            "2026-01-27T00:00:00-05:00" (EST). If timezone is omitted, UTC (Z) is assumed.
+        time_max: RFC3339 datetime string with timezone for end of query range (required).
+            MUST include timezone suffix. Examples: "2026-01-28T00:00:00Z" (UTC) or
+            "2026-01-28T00:00:00-05:00" (EST). If timezone is omitted, UTC (Z) is assumed.
         max_results: Maximum number of events to return (default: 100)
         single_events: Expand recurring events (default: True)
         order_by: "startTime" or "updated" (default: "startTime")
-    
+
     Returns:
         Dictionary with keys:
         - status: "ok" or "error"
@@ -587,7 +591,15 @@ def get_calendar_events(
                 "count": 0,
                 "error_message": f"time_max must be in ISO 8601 format. Got: {time_max}"
             }
-        
+
+        # Auto-fix missing timezone: Google Calendar API requires RFC3339 with timezone
+        # If no timezone suffix (Z or +/-HH:MM), append Z (UTC)
+        timezone_pattern = r'.*([Zz]|[+-]\d{2}:\d{2})$'
+        if not re.match(timezone_pattern, time_min):
+            time_min = time_min + 'Z'
+        if not re.match(timezone_pattern, time_max):
+            time_max = time_max + 'Z'
+
         # Validate time_max is after time_min
         try:
             min_dt = datetime.fromisoformat(time_min.replace('Z', '+00:00'))
@@ -712,6 +724,11 @@ def get_calendar_events(
         # Transform to structured format
         events = []
         for evt in events_list:
+            # Google Calendar API returns "transparency" with values "transparent" (free) or "opaque" (busy)
+            # Convert to boolean for easier handling: True = free/transparent, False = busy/opaque
+            raw_transparency = evt.get("transparency", "opaque")  # Default to opaque (busy)
+            is_transparent = raw_transparency == "transparent"
+
             events.append({
                 "id": evt.get("id", ""),
                 "summary": evt.get("summary", ""),
@@ -723,7 +740,8 @@ def get_calendar_events(
                 "organizer": evt.get("organizer", {}),
                 "attachments": evt.get("attachments", []),
                 "created": evt.get("created", ""),
-                "updated": evt.get("updated", "")
+                "updated": evt.get("updated", ""),
+                "transparent": is_transparent  # True = free/available, False = busy/blocking
             })
         
         return {
@@ -888,6 +906,11 @@ def get_calendar_event(
         event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
         
         # Transform to structured format
+        # Google Calendar API returns "transparency" with values "transparent" (free) or "opaque" (busy)
+        # Convert to boolean for easier handling: True = free/transparent, False = busy/opaque
+        raw_transparency = event.get("transparency", "opaque")  # Default to opaque (busy)
+        is_transparent = raw_transparency == "transparent"
+
         event_result = {
             "id": event.get("id", ""),
             "summary": event.get("summary", ""),
@@ -899,9 +922,10 @@ def get_calendar_event(
             "organizer": event.get("organizer", {}),
             "attachments": event.get("attachments", []),
             "created": event.get("created", ""),
-            "updated": event.get("updated", "")
+            "updated": event.get("updated", ""),
+            "transparent": is_transparent  # True = free/available, False = busy/blocking
         }
-        
+
         return {
             "status": "ok",
             "event": event_result

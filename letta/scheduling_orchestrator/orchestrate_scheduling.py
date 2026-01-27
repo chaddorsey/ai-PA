@@ -962,10 +962,12 @@ def orchestrate_scheduling(
                                     "locked": evt.get("locked", False),
                                     "protected": evt.get("protected", False),
                                     "flexible": evt.get("flexible", True),
+                                    "transparent": evt.get("transparent", False),  # True = "show as free"
+                                    "description": evt.get("description", ""),  # For description-based protection detection
                                     "attendees": attendees_list,  # Keep for backward compatibility
                                     "attendees_details": attendees_details  # New field with names
                                 })
-                            
+
                             return participant_id, normalized_events
                         except Exception as e:
                             import logging
@@ -1846,12 +1848,14 @@ def orchestrate_scheduling(
                                     "locked": evt.get("locked", False),
                                     "protected": evt.get("protected", False),
                                     "flexible": evt.get("flexible", True),
+                                    "transparent": evt.get("transparent", False),  # True = "show as free"
+                                    "description": evt.get("description", ""),  # For description-based protection detection
                                     "attendees": attendees_list,
                                     "attendees_details": attendees_details
                                 })
-                            
+
                             normalized_events_by_participant[calendar_id] = normalized_events
-                        
+
                         # Create events_by_participant with fetched calendars
                         events_by_participant = normalized_events_by_participant
                         
@@ -2403,19 +2407,21 @@ def orchestrate_scheduling(
                                                 "locked": evt.get("locked", False),
                                                 "protected": evt.get("protected", False),
                                                 "flexible": evt.get("flexible", True),
+                                                "transparent": evt.get("transparent", False),  # True = "show as free"
+                                                "description": evt.get("description", ""),  # For description-based protection detection
                                                 "attendees": attendees_list,
                                                 "attendees_details": attendees_details
                                             })
-                                        
+
                                         all_events[pid] = normalized_events
                                     except Exception as e:
                                         import logging
                                         logger = logging.getLogger(__name__)
                                         logger.error(f"Failed to fetch events for {pid}: {e}")
                                         all_events[pid] = []
-                                
+
                                 return all_events
-                            
+
                             # Fetch calendars only for missing participants
                             async def fetch_missing_calendars():
                                 await mcp_client.initialize()
@@ -2502,19 +2508,21 @@ def orchestrate_scheduling(
                                                 "locked": evt.get("locked", False),
                                                 "protected": evt.get("protected", False),
                                                 "flexible": evt.get("flexible", True),
+                                                "transparent": evt.get("transparent", False),  # True = "show as free"
+                                                "description": evt.get("description", ""),  # For description-based protection detection
                                                 "attendees": attendees_list,
                                                 "attendees_details": attendees_details
                                             })
-                                        
+
                                         all_events[pid] = normalized_events
                                     except Exception as e:
                                         import logging
                                         logger = logging.getLogger(__name__)
                                         logger.error(f"Failed to fetch events for {pid}: {e}")
                                         all_events[pid] = []
-                                
+
                                 return all_events
-                            
+
                             # Fetch calendars for missing participants
                             additional_events = asyncio.run(fetch_missing_calendars())
                             
@@ -2826,14 +2834,36 @@ def orchestrate_scheduling(
                 participant_tz = pytz.timezone(default_work_hours_tz)
                 work_hours = parse_work_hours(default_work_hours_str, default_work_hours_tz)
 
-                # Issue #16 fix: Use helper function
-                work_slots = _calculate_work_slots_for_horizon(
-                    work_hours=work_hours,
-                    participant_tz=participant_tz,
-                    slot_indexer=slot_indexer,
-                    horizon_start=slot_indexer.horizon_start,
-                    horizon_end=slot_indexer.horizon_end
-                )
+                # Inline work hours calculation (Issue #16 helper moved inline for Letta compatibility)
+                work_slots = set()
+                current_date = slot_indexer.horizon_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                from datetime import timedelta as td_inline_1
+
+                while current_date < slot_indexer.horizon_end:
+                    current_date_local = current_date.astimezone(participant_tz)
+                    day_of_week = current_date_local.weekday()
+
+                    for day, start_hm, end_hm in work_hours:
+                        if day_of_week == day:
+                            start_hour = start_hm // 100
+                            start_min = start_hm % 100
+                            end_hour = end_hm // 100
+                            end_min = end_hm % 100
+
+                            work_start = current_date_local.replace(
+                                hour=start_hour, minute=start_min, second=0, microsecond=0
+                            )
+                            work_end = current_date_local.replace(
+                                hour=end_hour, minute=end_min, second=0, microsecond=0
+                            )
+
+                            work_start_utc = work_start.astimezone(pytz.UTC)
+                            work_end_utc = work_end.astimezone(pytz.UTC)
+
+                            work_period_slots = slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
+                            work_slots.update(work_period_slots)
+
+                    current_date += td_inline_1(days=1)
 
                 work_hours_slots[participant_id] = work_slots
                 normalized_data["work_hours_slots"] = work_hours_slots
@@ -3041,14 +3071,36 @@ def orchestrate_scheduling(
                                 # Parse work hours
                                 work_hours = parse_work_hours(work_hours_str, work_hours_tz)
 
-                                # Issue #16 fix: Use helper function instead of duplicated code
-                                work_slots = _calculate_work_slots_for_horizon(
-                                    work_hours=work_hours,
-                                    participant_tz=participant_tz,
-                                    slot_indexer=new_slot_indexer,
-                                    horizon_start=original_start,
-                                    horizon_end=original_end
-                                )
+                                # Inline work hours calculation (Letta compatibility)
+                                work_slots = set()
+                                current_date = original_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                                from datetime import timedelta as td_inline_2
+
+                                while current_date < original_end:
+                                    current_date_local = current_date.astimezone(participant_tz)
+                                    day_of_week = current_date_local.weekday()
+
+                                    for day, start_hm, end_hm in work_hours:
+                                        if day_of_week == day:
+                                            start_hour = start_hm // 100
+                                            start_min = start_hm % 100
+                                            end_hour = end_hm // 100
+                                            end_min = end_hm % 100
+
+                                            work_start = current_date_local.replace(
+                                                hour=start_hour, minute=start_min, second=0, microsecond=0
+                                            )
+                                            work_end = current_date_local.replace(
+                                                hour=end_hour, minute=end_min, second=0, microsecond=0
+                                            )
+
+                                            work_start_utc = work_start.astimezone(pytz.UTC)
+                                            work_end_utc = work_end.astimezone(pytz.UTC)
+
+                                            work_period_slots = new_slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
+                                            work_slots.update(work_period_slots)
+
+                                    current_date += td_inline_2(days=1)
 
                                 new_work_hours_slots[participant_id] = work_slots
 
@@ -3075,14 +3127,36 @@ def orchestrate_scheduling(
                                 participant_tz = pytz.timezone(default_work_hours_tz)
                                 work_hours = parse_work_hours(default_work_hours_str, default_work_hours_tz)
 
-                                # Issue #16 fix: Use helper function
-                                work_slots = _calculate_work_slots_for_horizon(
-                                    work_hours=work_hours,
-                                    participant_tz=participant_tz,
-                                    slot_indexer=new_slot_indexer,
-                                    horizon_start=original_start,
-                                    horizon_end=original_end
-                                )
+                                # Inline work hours calculation (Letta compatibility)
+                                work_slots = set()
+                                current_date = original_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                                from datetime import timedelta as td_inline_3
+
+                                while current_date < original_end:
+                                    current_date_local = current_date.astimezone(participant_tz)
+                                    day_of_week = current_date_local.weekday()
+
+                                    for day, start_hm, end_hm in work_hours:
+                                        if day_of_week == day:
+                                            start_hour = start_hm // 100
+                                            start_min = start_hm % 100
+                                            end_hour = end_hm // 100
+                                            end_min = end_hm % 100
+
+                                            work_start = current_date_local.replace(
+                                                hour=start_hour, minute=start_min, second=0, microsecond=0
+                                            )
+                                            work_end = current_date_local.replace(
+                                                hour=end_hour, minute=end_min, second=0, microsecond=0
+                                            )
+
+                                            work_start_utc = work_start.astimezone(pytz.UTC)
+                                            work_end_utc = work_end.astimezone(pytz.UTC)
+
+                                            work_period_slots = new_slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
+                                            work_slots.update(work_period_slots)
+
+                                    current_date += td_inline_3(days=1)
 
                                 new_work_hours_slots[participant_id] = work_slots
                         
@@ -4162,17 +4236,19 @@ def orchestrate_scheduling(
                                             "locked": evt.get("locked", False),
                                             "protected": evt.get("protected", False),
                                             "flexible": evt.get("flexible", True),
+                                            "transparent": evt.get("transparent", False),  # True = "show as free"
+                                            "description": evt.get("description", ""),  # For description-based protection detection
                                             "attendees": attendees_list,  # Keep for backward compatibility
                                             "attendees_details": attendees_details  # New field with names
                                         })
-                                    
+
                                     return participant_id, normalized_events
                                 except Exception as e:
                                     import logging
                                     logger = logging.getLogger(__name__)
                                     logger.error(f"Failed to fetch events for {participant_id}: {e}")
                                     return participant_id, []
-                            
+
                             # Fetch all missing calendars concurrently
                             tasks = [fetch_participant_events(pid) for pid in missing_participants]
                             results = await asyncio.gather(*tasks)
@@ -4686,23 +4762,72 @@ def orchestrate_scheduling(
                 # For now, we'll keep it as it might be useful for debugging
             
             # Generate explanation grouped by proposal type
+            # Import helper to check if proposal only overlaps transparent events
+            try:
+                from .formatting import proposal_only_overlaps_transparent
+            except (ImportError, ValueError):
+                try:
+                    from scheduling_orchestrator.formatting import proposal_only_overlaps_transparent
+                except ImportError:
+                    from formatting import proposal_only_overlaps_transparent
+
             # Group proposals by type
             free_proposals = []
             single_move_proposals = []
             solo_override_proposals = []
             multi_move_proposals = []
-            
+            # Track transparent events for each section (for subheader display)
+            free_transparent_events = []  # Transparent events overlapping free proposals
+
+            # Define formatting_normalized_data early for use in proposal categorization
+            # (also used later in format_refined_user_display)
+            formatting_normalized_data = original_normalized_data if 'original_normalized_data' in locals() else normalized_data
+
+            # Build event_registry early for use in proposal categorization
+            # (also used later in format_refined_user_display)
+            try:
+                from .agent_data_builder import build_event_registry
+            except (ImportError, ValueError):
+                try:
+                    from scheduling_orchestrator.agent_data_builder import build_event_registry
+                except ImportError:
+                    from agent_data_builder import build_event_registry
+            event_registry = build_event_registry(all_proposals, formatting_normalized_data)
+
             for prop in all_proposals:
                 moved_count = len(prop.moved_events) if prop.moved_events else 0
                 notes = prop.notes_for_invite or ""
                 is_solo_override = "solo/blocking events" in notes.lower()
-                
+
                 if moved_count == 0 and not is_solo_override:
+                    # "True free" proposal - but check if it overlaps any transparent events
+                    # (Transparent events aren't blocking, but we want to note the overlap)
+                    _, transparent_events = proposal_only_overlaps_transparent(
+                        prop, formatting_normalized_data, event_registry
+                    )
+                    if transparent_events:
+                        for owner, event_id, event_title, time_range in transparent_events:
+                            if (owner, event_id, event_title, time_range) not in free_transparent_events:
+                                free_transparent_events.append((owner, event_id, event_title, time_range))
                     free_proposals.append(prop)
                 elif moved_count == 1:
                     single_move_proposals.append(prop)
                 elif is_solo_override:
-                    solo_override_proposals.append(prop)
+                    # Check if this "solo_override" only overlaps transparent events
+                    # If so, treat it as a free proposal instead
+                    only_transparent, transparent_events = proposal_only_overlaps_transparent(
+                        prop, formatting_normalized_data, event_registry
+                    )
+                    if only_transparent:
+                        # Transparent-only overlap: keep in free_proposals, not override section
+                        free_proposals.append(prop)
+                        # Track the transparent events for the subheader
+                        for owner, event_id, event_title, time_range in transparent_events:
+                            if (owner, event_id, event_title, time_range) not in free_transparent_events:
+                                free_transparent_events.append((owner, event_id, event_title, time_range))
+                    else:
+                        # Has at least one opaque solo event: stays in override section
+                        solo_override_proposals.append(prop)
                 else:
                     multi_move_proposals.append(prop)
             
@@ -4851,7 +4976,8 @@ def orchestrate_scheduling(
                 user_id=user_id,
                 timezone_str=timezone_str,
                 context_json=context_json_for_formatting,
-                external_participants=external_participants_for_formatting
+                external_participants=external_participants_for_formatting,
+                free_transparent_events=free_transparent_events  # For subheader in Best Options
             )
             
             # Add note if proposals were truncated, with specific counts per category
