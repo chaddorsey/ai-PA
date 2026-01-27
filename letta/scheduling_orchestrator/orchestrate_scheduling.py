@@ -1167,10 +1167,19 @@ def orchestrate_scheduling(
                     ).model_dump()
         
         # 2. Extract scheduling problem from utterance using DSPy
+        # ISSUE #11 FIX: Reuse scheduling_problem_preview if available (500-2000ms savings)
+        # The preview extraction was done earlier to check for rescheduling intent
         extraction_start = time.time()
         try:
-            scheduling_problem = extract_with_fallback(utterance, context_json)
-            extraction_time_ms = int((time.time() - extraction_start) * 1000)
+            if scheduling_problem_preview is not None:
+                # Reuse cached extraction result
+                scheduling_problem = scheduling_problem_preview
+                extraction_time_ms = 0  # Already extracted
+                print(f"[orchestrate_scheduling] Reusing cached DSPy extraction (Issue #11 fix)", file=sys.stderr, flush=True)
+            else:
+                # Fallback to fresh extraction if preview failed
+                scheduling_problem = extract_with_fallback(utterance, context_json)
+                extraction_time_ms = int((time.time() - extraction_start) * 1000)
             debug_info.extraction_time_ms = extraction_time_ms
             if extraction_time_ms == 0:
                 print(f"[orchestrate_scheduling] WARNING: Extraction time is 0ms - DSPy may not have been used", file=sys.stderr, flush=True)
