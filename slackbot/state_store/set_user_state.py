@@ -1,11 +1,13 @@
 import json
 import os
+from typing import Optional
+
 from state_store.user_identity import UserIdentity
 from state_store.file_state_store import FileStateStore
 
 store = FileStateStore()
 
-def set_user_state(user_id: str, provider: str, model: str | None = None, is_app_home: bool = False):
+def set_user_state(user_id: str, provider: str, model: Optional[str] = None, is_app_home: bool = False):
     """
     Save the user's chosen provider/model to ./data/{user_id}.
     Always writes a JSON with 'provider' and 'model' keys.
