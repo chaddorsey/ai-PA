@@ -351,21 +351,73 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 text_chunks.append(event.get("content", ""))
 
         final_text = (streamer.last_message or "".join(text_chunks)).strip()
-        final_chunks = list(_chunk_text(final_text)) or [""]
 
-        # Post the response in the same channel (not threaded)
-        post_response = client.chat_postMessage(
-            channel=working_channel, 
-            text=final_chunks[0]
-        )
-        reply_ts = post_response.get("ts")
+        # Check if response contains scheduling proposals
+        proposals_posted = False
+        if "## Best Options" in final_text or "[VERBATIM_USER_OUTPUT]" in final_text:
+            try:
+                import uuid as uuid_module
+                from services.proposal_formatter import parse_orchestrator_proposals
+                from services.proposal_cache import proposal_cache
+                from adapters.slack_proposal_adapter import render_proposal_blocks
 
-        # Post any overflow chunks in the same channel
-        for extra_chunk in final_chunks[1:]:
-            client.chat_postMessage(
+                # Generate a unique session ID
+                session_id = f"sess_{uuid_module.uuid4().hex[:12]}"
+
+                # Parse proposals from the response
+                proposal_set = parse_orchestrator_proposals(
+                    output=final_text,
+                    session_id=session_id,
+                    user_id=user_id,
+                    participants=[],  # TODO: Extract from context
+                )
+
+                # Only proceed if we found proposals
+                if proposal_set.clean_proposals or proposal_set.conflict_proposals:
+                    # Store in cache
+                    proposal_cache.store(session_id, proposal_set)
+
+                    # Render interactive blocks
+                    proposal_blocks = render_proposal_blocks(proposal_set)
+
+                    # Post text response first
+                    client.chat_postMessage(
+                        channel=working_channel,
+                        text=final_text,
+                    )
+
+                    # Then post interactive buttons
+                    if proposal_blocks:
+                        client.chat_postMessage(
+                            channel=working_channel,
+                            text="Select a time:",
+                            blocks=proposal_blocks,
+                        )
+                        proposals_posted = True
+
+                    logger.info(f"Posted interactive scheduling proposals for session {session_id}")
+
+            except Exception as proposal_err:
+                logger.warning(f"Could not parse scheduling proposals: {proposal_err}")
+                # Fall through to regular posting
+
+        # Post regular response if proposals weren't handled
+        if not proposals_posted:
+            final_chunks = list(_chunk_text(final_text)) or [""]
+
+            # Post the response in the same channel (not threaded)
+            post_response = client.chat_postMessage(
                 channel=working_channel,
-                text=extra_chunk
+                text=final_chunks[0]
             )
+            reply_ts = post_response.get("ts")
+
+            # Post any overflow chunks in the same channel
+            for extra_chunk in final_chunks[1:]:
+                client.chat_postMessage(
+                    channel=working_channel,
+                    text=extra_chunk
+                )
 
         # Clear the assistant status now that response is complete
         if streaming_enabled and user_message_ts:
