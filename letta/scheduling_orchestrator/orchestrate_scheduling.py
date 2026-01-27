@@ -1181,7 +1181,9 @@ def orchestrate_scheduling(
                 scheduling_problem = extract_with_fallback(utterance, context_json)
                 extraction_time_ms = int((time.time() - extraction_start) * 1000)
             debug_info.extraction_time_ms = extraction_time_ms
-            if extraction_time_ms == 0:
+            # Note: extraction_time_ms == 0 is expected when reusing cached preview (Issue #11 fix)
+            # Only warn if preview was NOT used and extraction still took 0ms
+            if extraction_time_ms == 0 and scheduling_problem_preview is None:
                 print(f"[orchestrate_scheduling] WARNING: Extraction time is 0ms - DSPy may not have been used", file=sys.stderr, flush=True)
             
             # Ensure is_rescheduling is set correctly if event_id is provided or local is_rescheduling is True
@@ -3227,7 +3229,8 @@ def orchestrate_scheduling(
             # CRITICAL: Use original_normalized_data for Python solver to ensure we don't lose solutions
             # due to horizon reduction. The Python solver can handle the full horizon efficiently.
             # Only use reduced horizon for ASP fallback (which has stricter memory/time constraints)
-            python_normalized_data = original_normalized_data.copy()
+            # NOTE: Use deepcopy to prevent shared references (Issue #10 consistency fix)
+            python_normalized_data = copy_module.deepcopy(original_normalized_data)
             python_slot_indexer = original_normalized_data["slot_indexer"]
             
             solve_start_time = time.time()
@@ -4286,7 +4289,7 @@ def orchestrate_scheduling(
                             if event_key[0] in fetched_events.keys():
                                 validation_normalized_data["event_protection"][event_key] = protection
 
-                        print(f"[DEBUG] Stored {len(fetched_events)} validation calendars SEPARATELY (Issue #1 fix)", file=sys.stderr, flush=True)
+                        print(f"[orchestrate_scheduling] Stored {len(fetched_events)} validation calendars SEPARATELY (Issue #1 fix)", file=sys.stderr, flush=True)
                         
                 except Exception as e:
                     # Log error but don't fail - we'll validate with available data
