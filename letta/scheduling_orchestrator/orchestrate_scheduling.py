@@ -46,24 +46,85 @@ def _is_internal_participant(participant_id: str, internal_domains: Optional[Lis
 def _separate_internal_external_participants(participants: List[str], internal_domains: Optional[List[str]] = None) -> tuple[List[str], List[str]]:
     """
     Separate participants into internal and external lists.
-    
+
     Args:
         participants: List of participant email addresses
         internal_domains: List of internal domain suffixes (default: ["@concord.org"])
-    
+
     Returns:
         Tuple of (internal_participants, external_participants)
     """
     internal = []
     external = []
-    
+
     for p in participants:
         if _is_internal_participant(p, internal_domains):
             internal.append(p)
         else:
             external.append(p)
-    
+
     return internal, external
+
+
+def _calculate_work_slots_for_horizon(
+    work_hours: List[tuple],
+    participant_tz: Any,
+    slot_indexer: Any,
+    horizon_start: datetime,
+    horizon_end: datetime
+) -> set:
+    """
+    Calculate work hours slots for a participant over a given horizon.
+
+    This helper function consolidates the repeated work hours slot calculation
+    logic that was duplicated 3+ times in orchestrate_scheduling (Issue #16 fix).
+
+    Args:
+        work_hours: Parsed work hours list of tuples (day_of_week, start_hhmm, end_hhmm)
+                   e.g., [(0, 900, 1700), (1, 900, 1700), ...]  # Mon-Fri 9am-5pm
+        participant_tz: pytz timezone object for the participant
+        slot_indexer: SlotIndexer instance for converting datetimes to slots
+        horizon_start: Start of the scheduling horizon (UTC datetime)
+        horizon_end: End of the scheduling horizon (UTC datetime)
+
+    Returns:
+        Set of slot indices representing work hours within the horizon
+    """
+    import pytz
+    from datetime import timedelta
+
+    work_slots = set()
+    current_date = horizon_start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    while current_date < horizon_end:
+        current_date_local = current_date.astimezone(participant_tz)
+        day_of_week = current_date_local.weekday()
+
+        for day, start_hm, end_hm in work_hours:
+            if day_of_week == day:
+                start_hour = start_hm // 100
+                start_min = start_hm % 100
+                end_hour = end_hm // 100
+                end_min = end_hm % 100
+
+                work_start = current_date_local.replace(
+                    hour=start_hour, minute=start_min, second=0, microsecond=0
+                )
+                work_end = current_date_local.replace(
+                    hour=end_hour, minute=end_min, second=0, microsecond=0
+                )
+
+                # Convert to UTC
+                work_start_utc = work_start.astimezone(pytz.UTC)
+                work_end_utc = work_end.astimezone(pytz.UTC)
+
+                # Get slots in the indexer
+                work_period_slots = slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
+                work_slots.update(work_period_slots)
+
+        current_date += timedelta(days=1)
+
+    return work_slots
 
 
 def orchestrate_scheduling(
@@ -2749,6 +2810,7 @@ def orchestrate_scheduling(
         for participant_id in scheduling_problem.participants:
             if participant_id not in work_hours_slots or not work_hours_slots[participant_id]:
                 # Participant missing work hours - apply default 9-5 Eastern
+                # Issue #16 fix: Use helper function instead of duplicating calculation
                 try:
                     from .normalizer import parse_work_hours
                 except (ImportError, ValueError):
@@ -2756,43 +2818,23 @@ def orchestrate_scheduling(
                         from normalizer import parse_work_hours
                     except ImportError:
                         from scheduling_orchestrator.normalizer import parse_work_hours
-                
+
                 import pytz
-                from datetime import timedelta
-                
+
                 default_work_hours_tz = "America/New_York"
                 default_work_hours_str = "M-F 09:00-17:00"
                 participant_tz = pytz.timezone(default_work_hours_tz)
                 work_hours = parse_work_hours(default_work_hours_str, default_work_hours_tz)
-                
-                work_slots = set()
-                from_date_utc = slot_indexer.horizon_start
-                to_date_utc = slot_indexer.horizon_end
-                current_date = from_date_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-                while current_date < to_date_utc:
-                    current_date_local = current_date.astimezone(participant_tz)
-                    day_of_week = current_date_local.weekday()
-                    
-                    for day, start_hm, end_hm in work_hours:
-                        if day_of_week == day:
-                            start_hour = start_hm // 100
-                            start_min = start_hm % 100
-                            end_hour = end_hm // 100
-                            end_min = end_hm % 100
-                            
-                            work_start = current_date_local.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                            work_end = current_date_local.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-                            
-                            # Convert to UTC
-                            work_start_utc = work_start.astimezone(pytz.UTC)
-                            work_end_utc = work_end.astimezone(pytz.UTC)
-                            
-                            # Get slots
-                            work_period_slots = slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
-                            work_slots.update(work_period_slots)
-                    
-                    current_date += timedelta(days=1)
-                
+
+                # Issue #16 fix: Use helper function
+                work_slots = _calculate_work_slots_for_horizon(
+                    work_hours=work_hours,
+                    participant_tz=participant_tz,
+                    slot_indexer=slot_indexer,
+                    horizon_start=slot_indexer.horizon_start,
+                    horizon_end=slot_indexer.horizon_end
+                )
+
                 work_hours_slots[participant_id] = work_slots
                 normalized_data["work_hours_slots"] = work_hours_slots
         
@@ -2998,92 +3040,25 @@ def orchestrate_scheduling(
                                 
                                 # Parse work hours
                                 work_hours = parse_work_hours(work_hours_str, work_hours_tz)
-                                
-                                # Calculate work hours slots for the new horizon
-                                work_slots = set()
-                                current_date = original_start.replace(hour=0, minute=0, second=0, microsecond=0)
-                                while current_date < original_end:
-                                    current_date_local = current_date.astimezone(participant_tz)
-                                    day_of_week = current_date_local.weekday()
-                                    
-                                    for day, start_hm, end_hm in work_hours:
-                                        if day_of_week == day:
-                                            start_hour = start_hm // 100
-                                            start_min = start_hm % 100
-                                            end_hour = end_hm // 100
-                                            end_min = end_hm % 100
-                                            
-                                            work_start = current_date_local.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                                            work_end = current_date_local.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-                                            
-                                            # Convert to UTC
-                                            work_start_utc = work_start.astimezone(pytz.UTC)
-                                            work_end_utc = work_end.astimezone(pytz.UTC)
-                                            
-                                            # Get slots in new indexer
-                                            work_period_slots = new_slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
-                                            work_slots.update(work_period_slots)
-                                    
-                                    current_date += timedelta(days=1)
-                                
+
+                                # Issue #16 fix: Use helper function instead of duplicated code
+                                work_slots = _calculate_work_slots_for_horizon(
+                                    work_hours=work_hours,
+                                    participant_tz=participant_tz,
+                                    slot_indexer=new_slot_indexer,
+                                    horizon_start=original_start,
+                                    horizon_end=original_end
+                                )
+
                                 new_work_hours_slots[participant_id] = work_slots
-                        
-                        # CRITICAL: Ensure ALL participants in the scheduling problem have work hours
-                        # If any participant is missing from new_work_hours_slots, recalculate using defaults
-                        default_work_hours_tz = "America/New_York"
-                        default_work_hours_str = "M-F 09:00-17:00"
-                        
-                        for participant_id in scheduling_problem.participants:
-                            if participant_id not in new_work_hours_slots:
-                                # Participant missing - recalculate using default 9-5 Eastern
-                                try:
-                                    from .normalizer import parse_work_hours
-                                except (ImportError, ValueError):
-                                    try:
-                                        from normalizer import parse_work_hours
-                                    except ImportError:
-                                        from scheduling_orchestrator.normalizer import parse_work_hours
-                                
-                                import pytz
-                                from datetime import timedelta
-                                
-                                participant_tz = pytz.timezone(default_work_hours_tz)
-                                work_hours = parse_work_hours(default_work_hours_str, default_work_hours_tz)
-                                
-                                work_slots = set()
-                                current_date = original_start.replace(hour=0, minute=0, second=0, microsecond=0)
-                                while current_date < original_end:
-                                    current_date_local = current_date.astimezone(participant_tz)
-                                    day_of_week = current_date_local.weekday()
-                                    
-                                    for day, start_hm, end_hm in work_hours:
-                                        if day_of_week == day:
-                                            start_hour = start_hm // 100
-                                            start_min = start_hm % 100
-                                            end_hour = end_hm // 100
-                                            end_min = end_hm % 100
-                                            
-                                            work_start = current_date_local.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                                            work_end = current_date_local.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-                                            
-                                            # Convert to UTC
-                                            work_start_utc = work_start.astimezone(pytz.UTC)
-                                            work_end_utc = work_end.astimezone(pytz.UTC)
-                                            
-                                            # Get slots in new indexer
-                                            work_period_slots = new_slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
-                                            work_slots.update(work_period_slots)
-                                    
-                                    current_date += timedelta(days=1)
-                                
-                                new_work_hours_slots[participant_id] = work_slots
-                        
+
                         # CRITICAL: Ensure ALL participants in scheduling_problem have work hours defined
                         # After horizon reduction, some participants might be missing work hours
                         # Apply default 9-5 Eastern for any missing participants
+                        # Issue #16 fix: Consolidated two separate loops into one
                         default_work_hours_tz = "America/New_York"
                         default_work_hours_str = "M-F 09:00-17:00"
-                        
+
                         for participant_id in scheduling_problem.participants:
                             if participant_id not in new_work_hours_slots or not new_work_hours_slots[participant_id]:
                                 # Participant missing work hours - apply default 9-5 Eastern
@@ -3094,39 +3069,21 @@ def orchestrate_scheduling(
                                         from normalizer import parse_work_hours
                                     except ImportError:
                                         from scheduling_orchestrator.normalizer import parse_work_hours
-                                
+
                                 import pytz
-                                from datetime import timedelta
-                                
+
                                 participant_tz = pytz.timezone(default_work_hours_tz)
                                 work_hours = parse_work_hours(default_work_hours_str, default_work_hours_tz)
-                                
-                                work_slots = set()
-                                current_date = original_start.replace(hour=0, minute=0, second=0, microsecond=0)
-                                while current_date < original_end:
-                                    current_date_local = current_date.astimezone(participant_tz)
-                                    day_of_week = current_date_local.weekday()
-                                    
-                                    for day, start_hm, end_hm in work_hours:
-                                        if day_of_week == day:
-                                            start_hour = start_hm // 100
-                                            start_min = start_hm % 100
-                                            end_hour = end_hm // 100
-                                            end_min = end_hm % 100
-                                            
-                                            work_start = current_date_local.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-                                            work_end = current_date_local.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-                                            
-                                            # Convert to UTC
-                                            work_start_utc = work_start.astimezone(pytz.UTC)
-                                            work_end_utc = work_end.astimezone(pytz.UTC)
-                                            
-                                            # Get slots in new indexer
-                                            work_period_slots = new_slot_indexer.get_slots_in_range(work_start_utc, work_end_utc)
-                                            work_slots.update(work_period_slots)
-                                    
-                                    current_date += timedelta(days=1)
-                                
+
+                                # Issue #16 fix: Use helper function
+                                work_slots = _calculate_work_slots_for_horizon(
+                                    work_hours=work_hours,
+                                    participant_tz=participant_tz,
+                                    slot_indexer=new_slot_indexer,
+                                    horizon_start=original_start,
+                                    horizon_end=original_end
+                                )
+
                                 new_work_hours_slots[participant_id] = work_slots
                         
                         # Update normalized_data
