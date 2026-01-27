@@ -2708,16 +2708,16 @@ def orchestrate_scheduling(
         
         # 3. Normalize events to 15-minute grid
         try:
+            import copy as copy_module  # For deepcopy
+
             normalized_data = normalize_events(events_by_participant, context_json or {})
             debug_info.normalization_time_ms = int((time.time() - start_time) * 1000) - debug_info.extraction_time_ms
-            
+
             # Save original normalized_data before any horizon reduction
             # ASP fallback needs the original data, not the reduced version used by Python solver
-            original_normalized_data = normalized_data.copy()
-            
-            # Save original normalized_data before any horizon reduction
-            # ASP fallback needs the original data, not the reduced version
-            original_normalized_data = normalized_data.copy()
+            # CRITICAL: Use deepcopy to prevent shared references between nested dictionaries
+            # (Issue #10 fix - shallow copy caused data mutation bugs)
+            original_normalized_data = copy_module.deepcopy(normalized_data)
         except Exception as e:
             error_traceback = traceback.format_exc()
             return ResponseEnvelope(
@@ -4068,7 +4068,12 @@ def orchestrate_scheduling(
             # Phase 5: Proactive Calendar Fetching for Missing Participants
             # Identify participants from moved events who are not in the original request
             # and fetch their calendars before validation
+            #
+            # IMPORTANT (Issue #1 fix): Validation calendars are stored SEPARATELY from
+            # original_normalized_data to prevent leaking validation data into user output.
+            # The validation_normalized_data is passed explicitly to validate_moved_event_dict().
             missing_participants = set()
+            validation_normalized_data = None  # Will hold additional calendars for validation only
             event_participants_map = original_normalized_data.get("event_participants", {})
             
             # Collect all participants from moved events
@@ -4214,37 +4219,50 @@ def orchestrate_scheduling(
                         
                         # Re-normalize with all participants (original + newly fetched)
                         updated_normalized_data = normalize_events(events_by_participant, context_json)
-                        
-                        # Merge new participants' data into original_normalized_data
-                        # Update busy_slots, event_slots_map, event_metadata, event_participants
+
+                        # ISSUE #1 FIX: Store new participants' data in validation_normalized_data (SEPARATE)
+                        # instead of merging into original_normalized_data to prevent data leakage to user output.
+                        # Validation functions receive this data explicitly via additional_calendars parameter.
+                        validation_normalized_data = {
+                            "busy_slots": {},
+                            "event_slots_map": {},
+                            "event_metadata": {},
+                            "event_participants": {},
+                            "event_protection": {},
+                            "work_hours_slots": {},
+                            "slot_indexer": original_normalized_data["slot_indexer"],  # Share slot_indexer
+                        }
+
                         for pid in fetched_events.keys():
                             # Add busy slots
                             if pid in updated_normalized_data["busy_slots"]:
-                                original_normalized_data["busy_slots"][pid] = updated_normalized_data["busy_slots"][pid]
-                            
+                                validation_normalized_data["busy_slots"][pid] = updated_normalized_data["busy_slots"][pid]
+
                             # Add event_slots_map entries
                             for event_key, slots in updated_normalized_data["event_slots_map"].items():
                                 if event_key[0] == pid:  # Event belongs to this participant
-                                    original_normalized_data["event_slots_map"][event_key] = slots
-                            
+                                    validation_normalized_data["event_slots_map"][event_key] = slots
+
                             # Add event_metadata entries
                             for event_key, metadata in updated_normalized_data["event_metadata"].items():
                                 if event_key[0] == pid:  # Event belongs to this participant
-                                    original_normalized_data["event_metadata"][event_key] = metadata
-                            
+                                    validation_normalized_data["event_metadata"][event_key] = metadata
+
                             # Add event_participants entries
                             for event_key, participants_list in updated_normalized_data["event_participants"].items():
                                 if event_key[0] == pid:  # Event belongs to this participant
-                                    original_normalized_data["event_participants"][event_key] = participants_list
-                            
+                                    validation_normalized_data["event_participants"][event_key] = participants_list
+
                             # Add work_hours_slots if available
                             if pid in updated_normalized_data.get("work_hours_slots", {}):
-                                original_normalized_data["work_hours_slots"][pid] = updated_normalized_data["work_hours_slots"][pid]
-                        
-                        # Update event_protection if needed
+                                validation_normalized_data["work_hours_slots"][pid] = updated_normalized_data["work_hours_slots"][pid]
+
+                        # Update event_protection for validation calendars
                         for event_key, protection in updated_normalized_data["event_protection"].items():
                             if event_key[0] in fetched_events.keys():
-                                original_normalized_data["event_protection"][event_key] = protection
+                                validation_normalized_data["event_protection"][event_key] = protection
+
+                        print(f"[DEBUG] Stored {len(fetched_events)} validation calendars SEPARATELY (Issue #1 fix)", file=sys.stderr, flush=True)
                         
                 except Exception as e:
                     # Log error but don't fail - we'll validate with available data
@@ -4457,7 +4475,8 @@ def orchestrate_scheduling(
                             moved_event_dict,
                             original_normalized_data,
                             original_normalized_data["slot_indexer"],
-                            exclude_event_keys=all_moved_event_keys
+                            exclude_event_keys=all_moved_event_keys,
+                            additional_calendars=validation_normalized_data  # Issue #1 fix: pass validation data explicitly
                         )
                         
                         if not is_valid:

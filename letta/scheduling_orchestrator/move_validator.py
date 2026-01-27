@@ -97,28 +97,47 @@ def validate_moved_event_dict(
     moved_event_dict: Dict[str, Any],
     normalized_data: Dict[str, Any],
     slot_indexer: Any,
-    exclude_event_keys: Optional[set] = None
+    exclude_event_keys: Optional[set] = None,
+    additional_calendars: Optional[Dict[str, Any]] = None
 ) -> Tuple[bool, Optional[str]]:
     """
     Validate a moved event from a dictionary format.
-    
+
     This is a convenience wrapper that extracts the necessary information
     from a moved_event dictionary and calls validate_move_for_all_participants.
-    
+
     Args:
         moved_event_dict: Dictionary with keys: owner, event_id, new_start, new_end
         normalized_data: Normalized data with all necessary mappings
         slot_indexer: Slot indexer for time calculations
-        
+        exclude_event_keys: Event keys to exclude from conflict checking
+        additional_calendars: Optional additional calendar data for validation only
+            (Issue #1 fix: validation calendars are kept separate from main data)
+
     Returns:
         Tuple of (is_valid, error_message)
     """
     # Extract event key
     event_key = (moved_event_dict["owner"], moved_event_dict["event_id"])
-    
-    # Get event metadata and participants
-    event_metadata = normalized_data.get("event_metadata", {})
-    event_participants = normalized_data.get("event_participants", {})
+
+    # ISSUE #1 FIX: Merge additional_calendars into a local working copy for validation
+    # This ensures validation data is used only here and doesn't leak to user output
+    working_data = normalized_data
+    if additional_calendars:
+        # Create a shallow merge (safe because we only read from it)
+        working_data = {
+            **normalized_data,
+            "busy_slots": {**normalized_data.get("busy_slots", {}), **additional_calendars.get("busy_slots", {})},
+            "event_slots_map": {**normalized_data.get("event_slots_map", {}), **additional_calendars.get("event_slots_map", {})},
+            "event_metadata": {**normalized_data.get("event_metadata", {}), **additional_calendars.get("event_metadata", {})},
+            "event_participants": {**normalized_data.get("event_participants", {}), **additional_calendars.get("event_participants", {})},
+            "event_protection": {**normalized_data.get("event_protection", {}), **additional_calendars.get("event_protection", {})},
+            "work_hours_slots": {**normalized_data.get("work_hours_slots", {}), **additional_calendars.get("work_hours_slots", {})},
+        }
+
+    # Get event metadata and participants from working data
+    event_metadata = working_data.get("event_metadata", {})
+    event_participants = working_data.get("event_participants", {})
     
     # Convert new_start and new_end to slots
     new_start_str = moved_event_dict.get("new_start", "")
@@ -150,14 +169,14 @@ def validate_moved_event_dict(
         if new_start_slot is None or new_end_slot is None:
             return False, f"Could not convert new_start or new_end to slots: start={new_start_slot}, end={new_end_slot}"
         
-        # Call main validation function
+        # Call main validation function using working_data (includes additional_calendars if provided)
         return validate_move_for_all_participants(
             moved_event_dict,
             new_start_slot,
             new_end_slot,
             event_metadata,
             event_participants,
-            normalized_data,
+            working_data,  # Issue #1 fix: use merged working_data for validation
             slot_indexer,
             exclude_event_keys=exclude_event_keys
         )
