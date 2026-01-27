@@ -530,20 +530,20 @@ Work hours calculation repeated 3+ times in horizon reduction section.
 ### Reliability Fixes
 - [x] Complete leak point analysis (Issue #1)
 - [x] Decide on fix approach → **Separate validation data chosen**
-- [ ] Implement fix for Issue #1 (validation data leakage)
-- [ ] Add regression tests for Issue #1
+- [x] Implement fix for Issue #1 (validation data leakage) → **Commit 73a4230**
+- [x] Issue #10: Use deep copy for normalized_data → **Commit 73a4230**
+- [ ] Add regression tests for Issues #1 and #10
 - [ ] Issue #2: Replace over-broad exception handling
 - [ ] Issue #3: Fix timezone edge cases
 - [ ] Issue #4: Distinguish empty calendar from fetch failure
 - [ ] Issue #5: Normalize participant ID casing
-- [ ] Issue #10: Use deep copy for normalized_data
 
 ### Efficiency Optimizations
-- [ ] Issue #11: Cache DSPy extraction (quick win)
+- [x] Issue #11: Cache DSPy extraction (quick win) → **Commit 10f1a42**
 - [ ] Issue #12: Implement request-level caching
 - [ ] Issue #13: Index events for O(1) lookup
 - [ ] Issue #15: Add early exit from free slot search (quick win)
-- [ ] Issue #15: Skip ASP when Python found free slots (quick win)
+- [x] Issue #15: Skip ASP when Python found free slots (quick win) → **Commit a210bec**
 - [ ] Issue #16: Cache work hours calculation (quick win)
 
 ### Code Quality
@@ -562,3 +562,52 @@ Work hours calculation repeated 3+ times in horizon reduction section.
 | 2026-01-26 | Completed leak point analysis: 2 confirmed leak points |
 | 2026-01-26 | Finalized fix approach: separate validation data; added detailed implementation plan |
 | 2026-01-26 | **Comprehensive codebase exploration completed**: Added architecture overview, 9 additional reliability issues (#2-#10), 6 efficiency issues (#11-#16), performance profile, quick wins table, and key files reference |
+| 2026-01-26 | **Implemented Issues #1 and #10**: Validation data isolation (separate `validation_normalized_data` structure) and deep copy fix (commit 73a4230) |
+| 2026-01-26 | **Implemented Issue #11**: Reuse DSPy extraction result instead of redundant LLM call (commit 10f1a42) |
+| 2026-01-26 | **Implemented Issue #15**: Skip ASP solver when Python solver found free slots (commit a210bec) |
+| 2026-01-26 | **Code review fixes**: Fixed additional shallow copy (line 3230), misleading warning, and logging prefix (commit 0b73327) |
+
+---
+
+## Session Summary
+
+### Accomplished
+
+| Issue | Description | Impact | Commit |
+|-------|-------------|--------|--------|
+| **#1** | Validation data isolation | Fixes validation calendars leaking to user output | 73a4230 |
+| **#10** | Deep copy for normalized_data | Prevents shared reference bugs | 73a4230 |
+| **#11** | Cache DSPy extraction | **500-2000ms savings** per request | 10f1a42 |
+| **#15** | Skip ASP when Python found free slots | **500-5000ms savings** when free slots exist | a210bec |
+| - | Code review fixes | Consistency improvements | 0b73327 |
+
+### Estimated Performance Impact
+
+- **Best case**: ~7000ms savings (DSPy reuse + ASP skip)
+- **Typical case**: ~1500ms savings (DSPy reuse)
+- **Worst case**: ~0ms savings (no free slots, no preview)
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `orchestrate_scheduling.py` | Deep copy, validation data isolation, DSPy caching, ASP early exit |
+| `move_validator.py` | Added `additional_calendars` parameter for validation data isolation |
+
+### Remaining Work
+
+**High Priority:**
+- [ ] Add regression tests for Issues #1, #10, #11, #15
+- [ ] Issue #2: Replace over-broad exception handling (52+ instances)
+
+**Medium Priority:**
+- [ ] Issue #3: Fix timezone edge cases
+- [ ] Issue #4: Distinguish empty calendar from fetch failure
+- [ ] Issue #12: Implement request-level caching
+- [ ] Issue #16: Cache work hours calculation
+
+**Low Priority:**
+- [ ] Issue #5: Normalize participant ID casing
+- [ ] Issue #6: Improve DSPy fallback robustness
+- [ ] Issue #13: Index events for O(1) lookup
+- [ ] Dead code removal (`_find_overridden_solo_event`)
