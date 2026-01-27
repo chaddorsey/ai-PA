@@ -37,7 +37,7 @@ class ConversationHelper:
     to legacy agent-level messaging when Supabase/Letta fails.
     """
 
-    def __init__(self, logger: logging.Logger | None = None):
+    def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or logging.getLogger(__name__)
         self._supabase_available = bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 
@@ -49,7 +49,7 @@ class ConversationHelper:
     def get_or_create_conversation(
         self,
         user_id: str,
-        agent_id: str | None = None,
+        agent_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Get existing conversation or create new one for user.
@@ -285,7 +285,7 @@ class ConversationHelper:
 _conversation_helper: Optional[ConversationHelper] = None
 
 
-def get_conversation_helper(logger: logging.Logger | None = None) -> ConversationHelper:
+def get_conversation_helper(logger: Optional[logging.Logger] = None) -> ConversationHelper:
     """Get or create the conversation helper singleton."""
     global _conversation_helper
     if _conversation_helper is None:
@@ -295,8 +295,8 @@ def get_conversation_helper(logger: logging.Logger | None = None) -> Conversatio
 
 def get_conversation_for_user(
     user_id: str,
-    agent_id: str | None = None,
-    logger: logging.Logger | None = None
+    agent_id: Optional[str] = None,
+    logger: Optional[logging.Logger] = None
 ) -> Optional[str]:
     """
     Convenience function to get conversation_id for a Slack user.

@@ -3,7 +3,7 @@ import os
 import threading
 import time
 from logging import Logger
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from slack_bolt import App
 from slack_sdk import WebClient
@@ -138,8 +138,8 @@ def _stream_dm_reply(
                 logger.debug("Unable to close Slack stream cleanly", exc_info=True)
 
         return False, fallback_text
-def _force_open_dm_channel(client: WebClient, user_id: str, logger: Logger) -> tuple[str | None, dict[str, object]]:
-    debug: dict[str, object] = {}
+def _force_open_dm_channel(client: WebClient, user_id: str, logger: Logger) -> Tuple[Optional[str], Dict[str, object]]:
+    debug: Dict[str, object] = {}
     try:
         response = client.conversations_open(users=[user_id])
         data = getattr(response, "data", response)
@@ -157,8 +157,8 @@ def _force_open_dm_channel(client: WebClient, user_id: str, logger: Logger) -> t
 
 def _resolve_dm_channel(
     client: WebClient,
-    user_id: str | None,
-    fallback_channel: str | None,
+    user_id: Optional[str],
+    fallback_channel: Optional[str],
     logger: Logger,
 ):
     """Try to obtain the bot-writable DM channel for the given user."""

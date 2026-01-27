@@ -2,13 +2,13 @@ import json
 import logging
 import os
 import re
-from typing import Dict, Generator, Iterable, List, Union
+from typing import Dict, Generator, Iterable, List, Optional, Tuple, Union
 
 import requests
 import sseclient
 
 
-RequestTimeout = tuple[float, float]
+RequestTimeout = Tuple[float, float]
 StreamEvent = Dict[str, Union[str, Dict]]
 
 
@@ -28,10 +28,10 @@ class LettaAPIStreaming:
     def __init__(
         self,
         *,
-        timeout: RequestTimeout | None = None,
-        logger: logging.Logger | None = None,
-        conversation_id: str | None = None,
-        agent_id: str | None = None,
+        timeout: Optional[RequestTimeout] = None,
+        logger: Optional[logging.Logger] = None,
+        conversation_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> None:
         self.base = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
         # Use provided agent_id, or env var, or default scheduler agent
@@ -45,7 +45,7 @@ class LettaAPIStreaming:
         self.logger = logger or logging.getLogger(__name__)
         self.last_message: str = ""
 
-    def chat_stream(self, system: str | None, user: str) -> Generator[str, None, None]:
+    def chat_stream(self, system: Optional[str], user: str) -> Generator[str, None, None]:
         """Yield response deltas from Letta as they arrive."""
 
         prompt = f"{system}\n\n{user}" if system else user
@@ -61,7 +61,7 @@ class LettaAPIStreaming:
             self.logger.info(f"Using Agent API (legacy): {self.agent}")
 
         assembled: str = ""
-        last_segment: str | None = None
+        last_segment: Optional[str] = None
 
         with requests.post(
             url,
@@ -112,7 +112,7 @@ class LettaAPIStreaming:
 
             self.last_message = assembled.strip()
 
-    def chat_stream_with_events(self, system: str | None, user: str) -> Generator[StreamEvent, None, None]:
+    def chat_stream_with_events(self, system: Optional[str], user: str) -> Generator[StreamEvent, None, None]:
         """Yield events from Letta stream, including text deltas and tool calls."""
 
         prompt = f"{system}\n\n{user}" if system else user
@@ -128,7 +128,7 @@ class LettaAPIStreaming:
             self.logger.info(f"Using Agent API (legacy): {self.agent}")
 
         assembled: str = ""
-        last_segment: str | None = None
+        last_segment: Optional[str] = None
 
         with requests.post(
             url,
@@ -191,7 +191,7 @@ class LettaAPIStreaming:
             self.last_message = assembled.strip()
 
     # ------------------------------------------------------------------
-    def _extract_tool_call(self, payload: object) -> StreamEvent | None:
+    def _extract_tool_call(self, payload: object) -> Optional[StreamEvent]:
         """Extract tool call information from SSE payload."""
         if not isinstance(payload, dict):
             return None
