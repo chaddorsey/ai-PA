@@ -611,3 +611,36 @@ Work hours calculation repeated 3+ times in horizon reduction section.
 - [ ] Issue #6: Improve DSPy fallback robustness
 - [ ] Issue #13: Index events for O(1) lookup
 - [ ] Dead code removal (`_find_overridden_solo_event`)
+
+---
+
+## Letta Tool Guidelines Compliance
+
+**Reference:** [context/coding_custom_letta_tools.md](../../context/coding_custom_letta_tools.md)
+
+### Current State
+
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| Imports inside function | ✅ Compliant | Lines 198-202 |
+| No nested `def` | ✅ Compliant | Only `async def` (allowed) |
+| Docstring with `Args:` | ✅ Compliant | All params documented |
+| Try-except wrapper | ✅ Compliant | Line 207 |
+| Basic JSON param types | ⚠️ Issue | `participant_ids: Optional[List[str]]` should be `str` |
+| No module-level helpers | ⚠️ Issue | Lines 25-66 have helper functions |
+
+### Pre-existing Issues (Not From This Session)
+
+1. **`participant_ids` parameter type** (line 71): Uses `Optional[List[str]]` which may fail Letta schema generation. Guidelines recommend `str` with comma-separated parsing.
+
+2. **Module-level helper functions** (lines 25-66): `_is_internal_participant()` and `_separate_internal_external_participants()` are at module level. If these are called from inside the Letta-extracted function, they would cause `NameError`.
+
+### Recommendation
+
+For future Letta tool work, always verify against `context/coding_custom_letta_tools.md` checklist:
+- [ ] All imports inside main function at beginning
+- [ ] **NO nested `def` statements** (inline all logic)
+- [ ] Parameter types use only: `str`, `int`, `bool`, `float`, `Optional[...]`
+- [ ] All parameters documented in `Args:` section
+- [ ] Entire function wrapped in try-except
+- [ ] Return value is `Dict[str, Any]` with consistent structure
