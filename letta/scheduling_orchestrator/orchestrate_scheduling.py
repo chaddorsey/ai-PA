@@ -3303,11 +3303,19 @@ def orchestrate_scheduling(
             
             solve_time_ms = int((time.time() - solve_start_time) * 1000)
             debug_info.solve_time_ms = solve_time_ms
-            
-            # Always run ASP sliding window to explore full date range for best solutions
-            # Even if Python solver found solutions, ASP might find better options across more days
+
+            # ISSUE #15 FIX: Skip ASP if Python solver found free slots (no moves needed)
+            # Free slots are optimal - no conflicts, no moves - ASP cannot improve on them
+            python_found_free_slots = False
+            if solutions:
+                # Count how many free slot solutions we have
+                free_slot_count = sum(1 for sol in solutions if sol.get("method") == "free_slot")
+                python_found_free_slots = free_slot_count > 0
+                if python_found_free_slots:
+                    print(f"[SOLVER] Python solver found {free_slot_count} free slots - skipping ASP (Issue #15 optimization)", file=sys.stderr, flush=True)
+
             asp_solution_found = False
-            
+
             try:
                     # Import ASP solver components
                     try:
@@ -3327,7 +3335,14 @@ def orchestrate_scheduling(
                             except ImportError:
                                 # ASP not available - fall through to UNSAT
                                 asp_available = False
-                    
+
+                    # ISSUE #15 FIX: Skip ASP if we already have free slot solutions
+                    # Free slots are optimal (0-move) - ASP cannot improve on them
+                    if python_found_free_slots:
+                        asp_available = False  # This skips all ASP logic below
+                    else:
+                        print(f"[SOLVER] No free slots from Python solver - running ASP sliding window...", file=sys.stderr, flush=True)
+
                     if asp_available:
                         # SLIDING WINDOW APPROACH: Explore full date range by solving overlapping windows
                         # This allows us to find solutions across the entire timeframe without
