@@ -382,6 +382,10 @@ def render_confirmation_modal(
     session_id: str,
 ) -> Dict[str, Any]:
     """Render confirmation modal with pre-filled meeting details."""
+    # Use email addresses for participants display (lowercase)
+    participants_text = ", ".join([email.lower() for email in proposal.participants]) if proposal.participants else "No participants"
+
+    # Keep participant names for title placeholder
     participant_names = []
     for email in proposal.participants:
         name = context.participant_names.get(email)
@@ -389,8 +393,6 @@ def render_confirmation_modal(
             participant_names.append(name)
         else:
             participant_names.append(email.split("@")[0].capitalize())
-
-    participants_text = ", ".join(participant_names) if participant_names else "No participants"
 
     tz = pytz.timezone("America/New_York")
 
