@@ -1,7 +1,13 @@
 """Parse natural language time windows into structured data."""
+import logging
 import re
 from datetime import date, time, timedelta
 from typing import Dict, List, Any, Optional
+
+try:
+    from .evaluation_models import ProposedWindow, TimeRange
+except ImportError:
+    from evaluation_models import ProposedWindow, TimeRange
 
 
 # Default business hours
@@ -190,3 +196,62 @@ def parse_date_phrase(phrase: str, reference_date: date) -> date:
             return reference_date + timedelta(days=days_ahead)
 
     raise ValueError(f"Could not parse date: {phrase}")
+
+
+def parse_proposed_windows(text: str, reference_date: date) -> List[ProposedWindow]:
+    """
+    Parse multiple proposed time windows from text.
+
+    Args:
+        text: Multi-line text with one window per line
+              Format: "MM/DD (Day), time description"
+        reference_date: Reference date for parsing
+
+    Returns:
+        List of ProposedWindow objects
+    """
+    windows = []
+
+    # Split into lines and process each
+    lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
+
+    for line in lines:
+        # Try to split on comma to separate date from time
+        parts = line.split(',', 1)
+
+        if len(parts) >= 2:
+            date_part = parts[0].strip()
+            time_part = parts[1].strip()
+        else:
+            # No comma - try to detect date vs time
+            date_part = line
+            time_part = "anytime"
+
+        try:
+            # Parse the date
+            parsed_date = parse_date_phrase(date_part, reference_date)
+
+            # Parse the time phrase
+            time_info = parse_time_phrase(time_part)
+
+            # Convert exclusions to TimeRange objects
+            exclusions = [
+                TimeRange(start=exc["start"], end=exc["end"])
+                for exc in time_info.get("exclusions", [])
+            ]
+
+            window = ProposedWindow(
+                date=parsed_date,
+                start_time=time_info["start"],
+                end_time=time_info["end"],
+                exclusions=exclusions,
+                raw_text=line
+            )
+            windows.append(window)
+
+        except (ValueError, KeyError) as e:
+            # Skip unparseable lines but log them
+            logging.warning(f"Could not parse window line: {line} - {e}")
+            continue
+
+    return windows

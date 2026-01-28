@@ -106,3 +106,44 @@ class TestParseDatePhrase:
         # Jan 28, 2026 is Wednesday
         result = parse_date_phrase("Monday", reference_date=date(2026, 1, 28))
         assert result == date(2026, 2, 2)  # Next Monday
+
+
+class TestParseProposedWindows:
+    """Test parsing complete window specifications."""
+
+    def test_single_window(self):
+        """Parse single window line."""
+        from scheduling_orchestrator.window_parser import parse_proposed_windows
+
+        text = "01/29 (Thu), anytime but 3:30-4:30pm"
+        result = parse_proposed_windows(text, reference_date=date(2026, 1, 28))
+
+        assert len(result) == 1
+        assert result[0].date == date(2026, 1, 29)
+        assert result[0].start_time == time(8, 0)
+        assert result[0].end_time == time(18, 0)
+        assert len(result[0].exclusions) == 1
+
+    def test_multiple_windows(self):
+        """Parse multiple window lines."""
+        from scheduling_orchestrator.window_parser import parse_proposed_windows
+
+        text = """01/29 (Thu), anytime but 3:30-4:30pm
+01/30 (Fri), anytime until 4pm
+02/02 (Mon), after 1pm"""
+
+        result = parse_proposed_windows(text, reference_date=date(2026, 1, 28))
+
+        assert len(result) == 3
+        assert result[0].date == date(2026, 1, 29)
+        assert result[1].date == date(2026, 1, 30)
+        assert result[2].date == date(2026, 2, 2)
+
+    def test_window_with_raw_text(self):
+        """Parsed window preserves raw text."""
+        from scheduling_orchestrator.window_parser import parse_proposed_windows
+
+        text = "01/29 (Thu), morning only"
+        result = parse_proposed_windows(text, reference_date=date(2026, 1, 28))
+
+        assert "morning" in result[0].raw_text.lower()
