@@ -31,9 +31,9 @@ def lookup_participant_names(
     if not participant_emails:
         return {}
 
-    # Get Letta URL
+    # Get Letta URL - use localhost since orchestrator runs inside Letta container
     if letta_base_url is None:
-        letta_base_url = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+        letta_base_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 
     result: Dict[str, str] = {}
 
