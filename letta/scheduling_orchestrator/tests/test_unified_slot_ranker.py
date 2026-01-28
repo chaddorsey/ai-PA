@@ -1,7 +1,7 @@
 """Tests for unified slot ranker."""
 
 import pytest
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 
 # Import will fail until we create the module
 from scheduling_orchestrator.unified_slot_ranker import rank_evaluated_slots
@@ -142,7 +142,6 @@ class TestRankEvaluatedSlots:
         # Create a slot for tomorrow
         tomorrow = datetime(today.year, today.month, today.day, 10, 0, tzinfo=timezone.utc)
         # Add 1 day
-        from datetime import timedelta
         tomorrow = tomorrow + timedelta(days=1)
 
         slots = [

@@ -62,13 +62,12 @@ def rank_evaluated_slots(
         reference_date = date.today()
 
     # Score each slot
+    # Note: identity_id, participants, and context_json are reserved for
+    # preference scoring in Task 1.2 (preference_scorer integration)
     for slot in slots:
         score = _compute_slot_score(
             slot=slot,
             reference_date=reference_date,
-            identity_id=identity_id,
-            participants=participants,
-            context_json=context_json
         )
         slot.score = score
 
@@ -79,9 +78,6 @@ def rank_evaluated_slots(
 def _compute_slot_score(
     slot: EvaluatedSlot,
     reference_date: date,
-    identity_id: Optional[str],
-    participants: List[str],
-    context_json: Optional[Dict[str, Any]]
 ) -> float:
     """
     Compute composite score for a single slot.
@@ -89,9 +85,6 @@ def _compute_slot_score(
     Args:
         slot: The slot to score
         reference_date: Today's date for calculating days out
-        identity_id: Optional identity ID (unused in Task 1.1)
-        participants: List of participant emails (unused in Task 1.1)
-        context_json: Optional context (unused in Task 1.1)
 
     Returns:
         Numeric score (higher is better)
@@ -102,8 +95,7 @@ def _compute_slot_score(
     score += CATEGORY_SCORES.get(slot.category, 0)
 
     # 2. Date proximity penalty
-    slot_date = slot.start.date() if hasattr(slot.start, 'date') else slot.start
-    days_out = (slot_date - reference_date).days
+    days_out = (slot.start.date() - reference_date).days
     score -= days_out * DATE_PENALTY_PER_DAY
 
     # 3. Preference score (Task 1.2 will add this)
