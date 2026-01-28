@@ -241,3 +241,4 @@ docs/technical/slack-analytics-export.md
 # Streaming service credentials
 sports-and-media-tools/credentials/*.json
 sports-and-media-tools/credentials/browser_states/
+.worktrees/
