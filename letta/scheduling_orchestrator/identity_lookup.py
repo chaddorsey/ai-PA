@@ -175,6 +175,104 @@ def get_user_preferences_from_identity(
     return _extract_scheduling_preferences(identity)
 
 
+def lookup_identity_by_property(
+    property_key: str,
+    property_value: str,
+    letta_base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[dict]:
+    """
+    Look up an identity by any property key/value pair.
+
+    This enables lookup by slack_id, calendar_id, or any other property.
+
+    Args:
+        property_key: The property key to search for (e.g., "slack_id", "calendar_id")
+        property_value: The value to match
+        letta_base_url: Base URL for Letta API (default: from env or http://localhost:8283)
+        timeout: Request timeout in seconds
+
+    Returns:
+        The matching identity dict, or None if not found
+    """
+    if not property_key or not property_value:
+        return None
+
+    if letta_base_url is None:
+        letta_base_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
+
+    try:
+        import httpx
+    except ImportError:
+        logger.warning("httpx not available, cannot lookup identity by property")
+        return None
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(f"{letta_base_url}/v1/identities/")
+            response.raise_for_status()
+            identities = response.json()
+    except Exception as e:
+        logger.warning(f"Failed to fetch identities from Letta: {e}")
+        return None
+
+    # Search for matching property
+    for identity in identities:
+        # Check identifier_key first (for email lookups)
+        if property_key == "email" or property_key == "identifier_key":
+            if identity.get("identifier_key", "").lower() == property_value.lower():
+                return identity
+
+        # Check properties array
+        for prop in identity.get("properties", []):
+            if prop.get("key") == property_key and prop.get("value") == property_value:
+                return identity
+
+    return None
+
+
+def resolve_participant_identifier(
+    identifier: str,
+    letta_base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[str]:
+    """
+    Resolve any participant identifier (email, Slack ID, etc.) to an email address.
+
+    This is a convenience function that tries multiple lookup strategies:
+    1. If identifier looks like an email, return it directly
+    2. If identifier looks like a Slack ID (starts with U), look up by slack_id
+    3. Otherwise, try looking up by identifier_key
+
+    Args:
+        identifier: Email address, Slack ID (U...), or other identifier
+        letta_base_url: Base URL for Letta API
+        timeout: Request timeout in seconds
+
+    Returns:
+        Email address (identifier_key) if found, None otherwise
+    """
+    if not identifier:
+        return None
+
+    # If it looks like an email, return it directly
+    if "@" in identifier:
+        return identifier
+
+    # If it looks like a Slack ID, look up by slack_id property
+    if identifier.startswith("U") and len(identifier) >= 9:
+        identity = lookup_identity_by_property("slack_id", identifier, letta_base_url, timeout)
+        if identity:
+            return identity.get("identifier_key")
+
+    # Try direct identifier_key lookup as fallback
+    identity = lookup_identity_by_property("identifier_key", identifier, letta_base_url, timeout)
+    if identity:
+        return identity.get("identifier_key")
+
+    return None
+
+
 def _extract_scheduling_preferences(identity: dict) -> Dict[str, List[str]]:
     """
     Extract scheduling preferences from an identity's properties.

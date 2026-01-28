@@ -6,6 +6,8 @@ from unittest.mock import patch, MagicMock
 from scheduling_orchestrator.identity_lookup import (
     get_user_preferences_from_identity,
     _extract_scheduling_preferences,
+    lookup_identity_by_property,
+    resolve_participant_identifier,
 )
 
 
@@ -194,3 +196,150 @@ class TestExtractSchedulingPreferences:
         result = _extract_scheduling_preferences(identity)
 
         assert result == {"preferred_times": ["morning"]}
+
+
+class TestLookupIdentityByProperty:
+    """Tests for lookup_identity_by_property function."""
+
+    MOCK_IDENTITIES = [
+        {
+            "id": "identity-123",
+            "identifier_key": "user1@example.com",
+            "name": "User One",
+            "properties": [
+                {"key": "slack_id", "value": "U0A7B9ZQ35Y"},
+                {"key": "calendar_id", "value": "user1@example.com"},
+            ]
+        },
+        {
+            "id": "identity-456",
+            "identifier_key": "user2@example.com",
+            "name": "User Two",
+            "properties": [
+                {"key": "slack_id", "value": "U0AB18G54ET"},
+            ]
+        },
+    ]
+
+    @patch.dict("sys.modules", {"httpx": MagicMock()})
+    def test_finds_identity_by_slack_id(self):
+        """Should find identity by slack_id property."""
+        import sys
+
+        mock_httpx = sys.modules["httpx"]
+        mock_response = MagicMock()
+        mock_response.json.return_value = self.MOCK_IDENTITIES
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_httpx.Client.return_value = mock_client
+
+        result = lookup_identity_by_property("slack_id", "U0A7B9ZQ35Y")
+
+        assert result is not None
+        assert result["id"] == "identity-123"
+        assert result["identifier_key"] == "user1@example.com"
+
+    @patch.dict("sys.modules", {"httpx": MagicMock()})
+    def test_finds_identity_by_email(self):
+        """Should find identity by email (identifier_key)."""
+        import sys
+
+        mock_httpx = sys.modules["httpx"]
+        mock_response = MagicMock()
+        mock_response.json.return_value = self.MOCK_IDENTITIES
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_httpx.Client.return_value = mock_client
+
+        result = lookup_identity_by_property("email", "user2@example.com")
+
+        assert result is not None
+        assert result["id"] == "identity-456"
+
+    @patch.dict("sys.modules", {"httpx": MagicMock()})
+    def test_returns_none_when_not_found(self):
+        """Should return None when no matching identity found."""
+        import sys
+
+        mock_httpx = sys.modules["httpx"]
+        mock_response = MagicMock()
+        mock_response.json.return_value = self.MOCK_IDENTITIES
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_httpx.Client.return_value = mock_client
+
+        result = lookup_identity_by_property("slack_id", "UNOTEXIST123")
+
+        assert result is None
+
+    def test_returns_none_for_empty_inputs(self):
+        """Should return None for empty key or value."""
+        assert lookup_identity_by_property("", "value") is None
+        assert lookup_identity_by_property("key", "") is None
+        assert lookup_identity_by_property(None, "value") is None
+
+
+class TestResolveParticipantIdentifier:
+    """Tests for resolve_participant_identifier function."""
+
+    MOCK_IDENTITIES = [
+        {
+            "id": "identity-123",
+            "identifier_key": "user@example.com",
+            "properties": [
+                {"key": "slack_id", "value": "U0A7B9ZQ35Y"},
+            ]
+        },
+    ]
+
+    def test_returns_email_directly(self):
+        """Should return email addresses directly without lookup."""
+        result = resolve_participant_identifier("user@example.com")
+        assert result == "user@example.com"
+
+    @patch.dict("sys.modules", {"httpx": MagicMock()})
+    def test_resolves_slack_id_to_email(self):
+        """Should resolve Slack ID to email address."""
+        import sys
+
+        mock_httpx = sys.modules["httpx"]
+        mock_response = MagicMock()
+        mock_response.json.return_value = self.MOCK_IDENTITIES
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_httpx.Client.return_value = mock_client
+
+        result = resolve_participant_identifier("U0A7B9ZQ35Y")
+
+        assert result == "user@example.com"
+
+    @patch.dict("sys.modules", {"httpx": MagicMock()})
+    def test_returns_none_for_unknown_slack_id(self):
+        """Should return None when Slack ID not found."""
+        import sys
+
+        mock_httpx = sys.modules["httpx"]
+        mock_response = MagicMock()
+        mock_response.json.return_value = self.MOCK_IDENTITIES
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_httpx.Client.return_value = mock_client
+
+        result = resolve_participant_identifier("UNOTEXIST123")
+
+        assert result is None
+
+    def test_returns_none_for_empty_input(self):
+        """Should return None for empty identifier."""
+        assert resolve_participant_identifier("") is None
+        assert resolve_participant_identifier(None) is None
