@@ -81,11 +81,13 @@ def parse_orchestrator_proposals(
                 current_day = (weekday, month, int(day))
 
                 # Check for conflict info in the same line
-                if '–' in line and is_conflict_section:
-                    # Extract text after the date
-                    parts = line.split('–', 1)
-                    if len(parts) > 1:
-                        current_conflict_info = parts[1].strip()
+                # Handle both em-dash (—) from orchestrator and en-dash (–)
+                dash_match = re.search(r'[–—]', line)
+                if dash_match and is_conflict_section:
+                    # Extract text after the dash
+                    conflict_part = line[dash_match.end():].strip()
+                    if conflict_part:
+                        current_conflict_info = conflict_part
                 else:
                     current_conflict_info = None
                 continue

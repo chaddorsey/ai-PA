@@ -84,12 +84,16 @@ def render_schedule_view(
             "type": "context",
             "elements": [{"type": "mrkdwn", "text": "_Options currently open for all participants_"}],
         })
+        # Get participant names for conflict text conversion
+        participant_names = proposal_set.meeting_context.participant_names if proposal_set.meeting_context else None
+
         blocks.extend(_render_proposals_with_buttons(
             proposal_set.clean_proposals,
             proposal_set.session_id,
             tz,
             include_annotation=False,
             primary_buttons=False,  # All buttons default style
+            participant_names=participant_names,
         ))
 
     # Divider after Best Options
@@ -100,6 +104,9 @@ def render_schedule_view(
     )
     if proposal_set.clean_proposals and has_conflict_sections:
         blocks.append({"type": "divider"})
+
+    # Get participant names for conflict text conversion (if not already set)
+    participant_names = proposal_set.meeting_context.participant_names if proposal_set.meeting_context else None
 
     # Single Solo-Meeting Overrides section
     single_solo_proposals = proposal_set.get_single_solo_overlap_proposals()
@@ -117,6 +124,7 @@ def render_schedule_view(
             proposal_set.session_id,
             tz,
             include_annotation=True,
+            participant_names=participant_names,
         ))
 
     # Multiple Solo-Meeting Overrides section
@@ -136,6 +144,7 @@ def render_schedule_view(
             proposal_set.session_id,
             tz,
             include_annotation=True,
+            participant_names=participant_names,
         ))
 
     # Multi-Person Meeting Moves and Overrides section
@@ -155,6 +164,7 @@ def render_schedule_view(
             proposal_set.session_id,
             tz,
             include_annotation=True,
+            participant_names=participant_names,
         ))
 
     return {
@@ -386,7 +396,8 @@ def render_build_list_view(
         title_line = f"*{day_str}* {time_str}"
 
         # Add context line based on conflict type (use normalized summary)
-        normalized_summary = _normalize_conflict_summary(prop.conflict_summary) if prop.conflict_summary else None
+        participant_names = proposal_set.meeting_context.participant_names if proposal_set.meeting_context else None
+        normalized_summary = _normalize_conflict_summary(prop.conflict_summary, participant_names) if prop.conflict_summary else None
 
         if prop.conflict_type in ("single_solo_overlap", "solo_overlap"):
             if normalized_summary:
@@ -711,10 +722,7 @@ def render_confirm_meeting_view(
     """
     tz = pytz.timezone("America/New_York")
 
-    # Use actual email addresses for participants display (lowercase)
-    participants_text = ", ".join([email.lower() for email in proposal.participants]) if proposal.participants else "No participants"
-
-    # Keep participant names for title placeholder
+    # Convert emails to display names for participants display
     participant_names = []
     for email in proposal.participants:
         name = context.participant_names.get(email)
@@ -722,6 +730,8 @@ def render_confirm_meeting_view(
             participant_names.append(name)
         else:
             participant_names.append(email.split("@")[0].capitalize())
+
+    participants_text = ", ".join(participant_names) if participant_names else "No participants"
 
     # Format time
     try:
@@ -749,12 +759,12 @@ def render_confirm_meeting_view(
         if summary.lower().startswith("if "):
             # Clean up and convert names
             summary = summary.replace("*", "")
-            summary = _convert_email_prefix_to_name(summary)
+            summary = _convert_email_prefix_to_name(summary, context.participant_names)
             # Move scenario: "If X can move" -> "is available if X can move"
             note_text = f"⚠️ *Note:* This option is available if {summary[3:]}"
         else:
             # Override scenario - use full normalization
-            normalized = _normalize_conflict_summary(summary)
+            normalized = _normalize_conflict_summary(summary, context.participant_names)
             if normalized and normalized.lower().startswith("intersects with"):
                 note_text = f"⚠️ *Note:* This option {normalized.lower()}"
             else:
@@ -835,6 +845,7 @@ def _render_proposals_with_buttons(
     tz: "pytz.BaseTzInfo",
     include_annotation: bool = False,
     primary_buttons: bool = False,
+    participant_names: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Render proposals grouped by day with time buttons."""
     blocks: List[Dict[str, Any]] = []
@@ -852,7 +863,7 @@ def _render_proposals_with_buttons(
 
         if include_annotation:
             # Group by normalized conflict summary (same event = same group)
-            conflict_groups = _group_by_conflict(day_proposals)
+            conflict_groups = _group_by_conflict(day_proposals, participant_names)
             for conflict_summary, group in conflict_groups.items():
                 # Annotation line (below date)
                 if conflict_summary:
@@ -897,41 +908,41 @@ def _group_by_day(
     return groups
 
 
-def _convert_email_prefix_to_name(text: str) -> str:
+def _convert_email_prefix_to_name(
+    text: str,
+    participant_names: Optional[Dict[str, str]] = None,
+) -> str:
     """
     Convert email prefixes in text to proper first names.
 
     "cdorsey's 3:00 Hold event" -> "Chad's 3:00 Hold event"
-    "rellis's Focus Time" -> "Ruth's Focus Time"
+    "rellis's Focus Time" -> "Rebecca's Focus Time"
 
-    Uses a known mapping for common users, falls back to capitalizing
-    the first part of the email prefix for unknown users.
+    Uses participant_names mapping from identity service when available,
+    falls back to capitalizing the first part of the email prefix.
+
+    Args:
+        text: Text containing email prefixes to convert
+        participant_names: Dict mapping email -> display name from identity service
     """
     import re
 
-    # Known email prefix to first name mappings
-    # Format: email_prefix (lowercase) -> First Name
-    name_map = {
-        "cdorsey": "Chad",
-        "rellis": "Ruth",
-        "clore": "Cynthia",
-        "pkremer": "Paul",
-        "dbloom": "Dan",
-        "sbannasch": "Scott",
-        "nvaras": "Nathan",
-        "jgibbons": "Judi",
-        "akitson": "Andy",
-        "alubin": "Andrew",
-        "wmcchrystal": "Will",
-    }
+    # Build name lookup from participant_names (email -> name)
+    # Convert to prefix -> name for matching in text
+    prefix_to_name: Dict[str, str] = {}
+    if participant_names:
+        for email, name in participant_names.items():
+            if "@" in email:
+                prefix = email.split("@")[0].lower()
+                prefix_to_name[prefix] = name
 
     # Pattern to find possessive email prefixes: "cdorsey's" or "cdorsey's"
     pattern = re.compile(r"\b([a-z][a-z0-9_.]+)'s\b", re.IGNORECASE)
 
     def replace_name(match):
         prefix = match.group(1).lower()
-        if prefix in name_map:
-            return f"{name_map[prefix]}'s"
+        if prefix in prefix_to_name:
+            return f"{prefix_to_name[prefix]}'s"
         else:
             # Fallback: capitalize first letter of prefix
             # Handle formats like "first.last" -> "First"
@@ -946,28 +957,36 @@ def _convert_email_prefix_to_name(text: str) -> str:
 
 def _group_by_conflict(
     proposals: List[InteractiveProposal],
+    participant_names: Optional[Dict[str, str]] = None,
 ) -> Dict[Optional[str], List[InteractiveProposal]]:
     """Group proposals by normalized conflict summary (event name only)."""
     groups: Dict[Optional[str], List[InteractiveProposal]] = defaultdict(list)
     for prop in proposals:
-        normalized = _normalize_conflict_summary(prop.conflict_summary)
+        normalized = _normalize_conflict_summary(prop.conflict_summary, participant_names)
         groups[normalized].append(prop)
     return groups
 
 
-def _normalize_conflict_summary(summary: Optional[str]) -> Optional[str]:
+def _normalize_conflict_summary(
+    summary: Optional[str],
+    participant_names: Optional[Dict[str, str]] = None,
+) -> Optional[str]:
     """
     Normalize conflict summary to "Intersects with" format, grouping by person.
 
     "cdorsey's 11:00 – 12:00 Mapping Time event moves to 12:00 – 1:00"
-    -> "Intersects with cdorsey's Mapping Time event"
+    -> "Intersects with Chad's Mapping Time event"
 
     "cdorsey's 3:00 Hold event, cdorsey's 3:30 – 5:00 Weekly Review event"
-    -> "Intersects with cdorsey's 3:00 Hold and 3:30 – 5:00 Weekly Review events"
+    -> "Intersects with Chad's 3:00 Hold and 3:30 – 5:00 Weekly Review events"
 
     Multiple people:
     "cdorsey's Hold event, rellis's Focus Time event"
-    -> "Intersects with cdorsey's Hold event and rellis's Focus Time event"
+    -> "Intersects with Chad's Hold event and Rebecca's Focus Time event"
+
+    Args:
+        summary: Raw conflict summary from orchestrator
+        participant_names: Dict mapping email -> display name from identity service
     """
     import re
     from collections import defaultdict
@@ -980,7 +999,7 @@ def _normalize_conflict_summary(summary: Optional[str]) -> Optional[str]:
 
     # Already in intersects format
     if cleaned.lower().startswith("intersects with"):
-        return _convert_email_prefix_to_name(cleaned)
+        return _convert_email_prefix_to_name(cleaned, participant_names)
 
     # Parse out event patterns - handles both "person's" and "your"
     # Pattern 1: "person's [time] EventName event"
@@ -1022,7 +1041,7 @@ def _normalize_conflict_summary(summary: Optional[str]) -> Optional[str]:
                 result = f"Intersects with {parts[0]} and {parts[1]}"
             else:
                 result = f"Intersects with {', '.join(parts[:-1])}, and {parts[-1]}"
-            return _convert_email_prefix_to_name(result)
+            return _convert_email_prefix_to_name(result, participant_names)
 
     # Fallback patterns
     # Pattern: "moves 'EventName' to..."
@@ -1030,21 +1049,21 @@ def _normalize_conflict_summary(summary: Optional[str]) -> Optional[str]:
     if match:
         event_name = match.group(1).strip()
         result = f"Intersects with {event_name} event"
-        return _convert_email_prefix_to_name(result)
+        return _convert_email_prefix_to_name(result, participant_names)
 
     # Pattern: "overlaps with X"
     if "overlap" in summary.lower():
         match = re.search(r"overlaps?\s+with\s+(.+)", summary, re.IGNORECASE)
         if match:
             result = f"Intersects with {match.group(1).strip()}"
-            return _convert_email_prefix_to_name(result)
+            return _convert_email_prefix_to_name(result, participant_names)
 
     # If nothing matched, prefix with "Intersects with" if reasonable
     if len(summary) < 100:  # Only for short summaries
         result = f"Intersects with {summary}"
-        return _convert_email_prefix_to_name(result)
+        return _convert_email_prefix_to_name(result, participant_names)
 
-    return _convert_email_prefix_to_name(summary)
+    return _convert_email_prefix_to_name(summary, participant_names)
 
 
 def _format_day(prop: InteractiveProposal, tz: "pytz.BaseTzInfo") -> str:
