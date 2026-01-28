@@ -24,6 +24,7 @@ from adapters.slack_proposal_modal import (
     render_confirm_meeting_view,
     render_schedule_view,
 )
+from services.agent_bridge import send_synthetic_message
 from services.interactive_proposals import MeetingContext
 from services.proposal_cache import proposal_cache
 
@@ -485,7 +486,7 @@ def register_modal_actions(app: App) -> None:
 
     @app.view("confirm_meeting_modal")
     def handle_confirm_meeting_submit(ack, body, client, view):
-        """Handle meeting confirmation submission."""
+        """Handle meeting confirmation submission - triggers agent scheduling."""
         ack()
         try:
             private_metadata = view.get("private_metadata", "")
@@ -505,6 +506,13 @@ def register_modal_actions(app: App) -> None:
             proposal_set = proposal_cache.get(session_id)
             if not proposal_set:
                 logger.error(f"No proposal set found for session {session_id}")
+                # Notify user
+                channel_id = _get_user_dm_channel(client, user_id)
+                if channel_id:
+                    client.chat_postMessage(
+                        channel=channel_id,
+                        text="Those options expired while you were editing. Please ask me to find times again!",
+                    )
                 return
 
             proposal = proposal_set.get_proposal_by_id(proposal_id)
@@ -512,18 +520,46 @@ def register_modal_actions(app: App) -> None:
                 logger.error(f"No proposal found with id {proposal_id}")
                 return
 
-            logger.info(f"User {user_id} confirmed meeting: {title} at {proposal.start_utc}")
+            # Use extracted values or fall back to proposal defaults
+            final_title = title or proposal.suggested_title or "Meeting"
+            final_description = description or ""
 
-            # TODO: Actually schedule the meeting via calendar API
-            # For now, just log and notify user
+            # Build scheduling data for agent
+            scheduling_data = {
+                "title": final_title,
+                "description": final_description,
+                "start": proposal.start_utc,
+                "end": proposal.end_utc,
+                "participants": proposal.participants,
+                "proposal_id": proposal.id,
+                "proposal_index": proposal.index,
+                "category": proposal.category,
+            }
 
-            channel_id = _get_user_dm_channel(client, user_id)
-            if channel_id:
-                client.chat_postEphemeral(
-                    channel=channel_id,
-                    user=user_id,
-                    text=f"✅ Meeting scheduled: *{title}* at {proposal.label}",
-                )
+            # Add conflict info if present
+            if proposal.moved_events:
+                scheduling_data["moved_events"] = [
+                    {
+                        "event_id": me.event_id,
+                        "event_title": me.event_title,
+                        "old_start": me.old_start,
+                        "new_start": me.new_start,
+                        "owner": me.owner,
+                    }
+                    for me in proposal.moved_events
+                ]
+
+            # Send synthetic message to agent to actually create the calendar event
+            send_synthetic_message(
+                user_id=user_id,
+                proposal=proposal,
+                scheduling_data=scheduling_data,
+                meeting_context=proposal_set.meeting_context,
+                client=client,
+                logger=logger,
+            )
+
+            logger.info(f"Sent synthetic scheduling message for proposal {proposal_id}: {final_title}")
 
         except Exception as e:
             logger.error(f"Error handling meeting confirmation: {e}", exc_info=True)
