@@ -61,8 +61,9 @@ def Evaluate_Proposed_Times(
             "Wednesday morning"
             "Thursday 1pm-3pm except 1:30-2pm"
             "Friday after 10am"
-        participants: Comma-separated list of participant email addresses. Example:
-            "cdorsey@concord.org,alex@example.com"
+        participants: Comma-separated list of participant identifiers. Accepts email addresses
+            or Slack IDs (starting with U). Slack IDs are auto-resolved to email addresses.
+            Example: "cdorsey@concord.org,U0A7B9ZQ35Y"
         duration_minutes: Meeting duration in minutes. Defaults to 30 if not specified.
             Use this to find slots that can fit the required meeting length.
         timezone: Timezone for interpreting times. Defaults to "America/New_York".

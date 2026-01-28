@@ -18,7 +18,7 @@ try:
     )
     from .normalizer import normalize_events
     from .identity_working_hours import get_all_participants_working_hours
-    from .identity_lookup import lookup_participant_names
+    from .identity_lookup import lookup_participant_names, resolve_participant_identifier
 except ImportError:
     from window_parser import parse_proposed_windows
     from slot_evaluator import find_available_slots
@@ -28,7 +28,7 @@ except ImportError:
     )
     from normalizer import normalize_events
     from identity_working_hours import get_all_participants_working_hours
-    from identity_lookup import lookup_participant_names
+    from identity_lookup import lookup_participant_names, resolve_participant_identifier
 
 
 logger = logging.getLogger(__name__)
@@ -354,7 +354,8 @@ async def evaluate_proposed_times(
 
     Args:
         proposed_times: Natural language time windows, one per line
-        participants: Comma-separated list of participant emails
+        participants: Comma-separated list of participant identifiers (emails or Slack IDs).
+            Slack IDs (starting with U) are auto-resolved to email addresses.
         duration_minutes: Meeting duration in minutes (default 30)
         timezone: Timezone for interpretation (default America/New_York)
         identity_id: Optional Letta identity ID for preference lookup
@@ -370,10 +371,31 @@ async def evaluate_proposed_times(
         - no_availability_windows: Windows with no availability
     """
     try:
-        participant_list = [p.strip() for p in participants.split(",") if p.strip()]
+        # Parse and resolve participant identifiers (email, Slack ID, etc.)
+        raw_participants = [p.strip() for p in participants.split(",") if p.strip()]
+
+        if not raw_participants:
+            return {"status": "error", "error_message": "No participants provided"}
+
+        # Resolve each identifier to an email address
+        participant_list = []
+        unresolved = []
+        for identifier in raw_participants:
+            resolved = resolve_participant_identifier(identifier)
+            if resolved:
+                participant_list.append(resolved)
+            else:
+                unresolved.append(identifier)
+                logger.warning(f"Could not resolve participant identifier: {identifier}")
 
         if not participant_list:
-            return {"status": "error", "error_message": "No participants provided"}
+            return {
+                "status": "error",
+                "error_message": f"Could not resolve any participants. Unresolved: {', '.join(unresolved)}"
+            }
+
+        if unresolved:
+            logger.info(f"Proceeding with {len(participant_list)} resolved participants, {len(unresolved)} unresolved")
 
         tz = pytz.timezone(timezone)
         today = datetime.now(tz).date()
