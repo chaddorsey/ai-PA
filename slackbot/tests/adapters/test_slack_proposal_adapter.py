@@ -31,14 +31,11 @@ def test_render_proposal_buttons_clean():
     assert isinstance(blocks, list)
     assert len(blocks) > 0
 
-    # Should have image block for section header
-    image_blocks = [b for b in blocks if b.get("type") == "image"]
-    assert len(image_blocks) > 0
-
-    # Should have header block with day (dates now use header blocks)
+    # Should have header block for "Best Options" section and date headers
     header_blocks = [b for b in blocks if b.get("type") == "header"]
     header_texts = [b.get("text", {}).get("text", "") for b in header_blocks]
-    assert any("Jan" in t for t in header_texts)
+    assert any("Best Options" in t for t in header_texts)
+    assert any("Jan" in t or "Wed" in t for t in header_texts)
 
     # Buttons should be in actions blocks
     actions_blocks = [b for b in blocks if b.get("type") == "actions"]
