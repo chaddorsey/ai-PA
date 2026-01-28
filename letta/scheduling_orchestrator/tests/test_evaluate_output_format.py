@@ -55,7 +55,7 @@ class TestFormatEvaluationOutput:
         assert "[PARTICIPANT_NAMES:User One,User Two]" in result["markdown_display"]
 
     def test_groups_slots_by_day(self):
-        """Slots should be grouped under day headers."""
+        """Slots should be grouped under day headers with abbreviated month format."""
         slots = [
             EvaluatedSlot(
                 start=datetime(2026, 1, 29, 18, 0, tzinfo=timezone.utc),  # Thu 10am PST
@@ -80,12 +80,13 @@ class TestFormatEvaluationOutput:
             timezone="America/Los_Angeles"
         )
 
-        # Should have day headers (Jan 29, 2026 is Thursday, Jan 30 is Friday)
-        assert "Thursday, January 29" in result["markdown_display"]
-        assert "Friday, January 30" in result["markdown_display"]
+        # Should have day headers with abbreviated month (Slack parser format)
+        # Jan 29, 2026 is Thursday, Jan 30 is Friday
+        assert "Thursday, Jan. 29" in result["markdown_display"]
+        assert "Friday, Jan. 30" in result["markdown_display"]
 
     def test_includes_conflict_annotations(self):
-        """Conflicted slots should show conflict details."""
+        """Conflicted slots should show conflict details in day header."""
         slots = [
             EvaluatedSlot(
                 start=datetime(2026, 1, 29, 22, 0, tzinfo=timezone.utc),  # 2pm PST
@@ -110,9 +111,12 @@ class TestFormatEvaluationOutput:
             timezone="America/Los_Angeles"
         )
 
-        # Should show conflict indicator and details
+        # Conflict info should be in day header line (Slack parser format)
+        # Format: "Day — Conflicts with \"Event\" (Participant)"
         assert "Team Standup" in result["markdown_display"]
-        assert "User One" in result["markdown_display"] or "user1@example.com" in result["markdown_display"]
+        assert "User One" in result["markdown_display"]
+        # Should use em-dash (—) for conflict annotation
+        assert "—" in result["markdown_display"]
 
     def test_includes_interactive_data(self):
         """Result should include interactive_data for Slack rendering."""
@@ -261,11 +265,57 @@ class TestSlotToProposalDict:
         assert proposal["conflicts"][0]["event_title"] == "Team Meeting"
 
 
-class TestCategoryIcons:
-    """Tests for category icon rendering."""
+class TestSlackParserCompatibleFormat:
+    """Tests for Slack parser compatible output format."""
 
-    def test_clean_shows_checkmark(self):
-        """Clean slots should show checkmark icon."""
+    def test_time_format_24_hour_with_endash(self):
+        """Time slots should use 24-hour format with en-dash separator."""
+        slots = [
+            EvaluatedSlot(
+                start=datetime(2026, 1, 29, 18, 0, tzinfo=timezone.utc),  # 10:00 PST
+                end=datetime(2026, 1, 29, 19, 0, tzinfo=timezone.utc),   # 11:00 PST
+                category="clean",
+                conflicts=[],
+                score=100.0
+            ),
+        ]
+
+        result = format_evaluation_output(
+            ranked_slots=slots,
+            participants=["user1@example.com"],
+            participant_names=["User One"],
+            timezone="America/Los_Angeles"
+        )
+
+        markdown = result["markdown_display"]
+        # Should have bullet with 24-hour time and en-dash
+        assert "* 10:00 – 11:00" in markdown
+
+    def test_time_format_afternoon_24_hour(self):
+        """Afternoon times should be in 24-hour format."""
+        slots = [
+            EvaluatedSlot(
+                start=datetime(2026, 1, 29, 22, 0, tzinfo=timezone.utc),  # 14:00 PST
+                end=datetime(2026, 1, 29, 23, 0, tzinfo=timezone.utc),   # 15:00 PST
+                category="clean",
+                conflicts=[],
+                score=100.0
+            ),
+        ]
+
+        result = format_evaluation_output(
+            ranked_slots=slots,
+            participants=["user1@example.com"],
+            participant_names=["User One"],
+            timezone="America/Los_Angeles"
+        )
+
+        markdown = result["markdown_display"]
+        # Should have 14:00 not 2:00 PM
+        assert "* 14:00 – 15:00" in markdown
+
+    def test_day_header_no_hash_prefix(self):
+        """Day headers should not have ### prefix."""
         slots = [
             EvaluatedSlot(
                 start=datetime(2026, 1, 29, 18, 0, tzinfo=timezone.utc),
@@ -283,25 +333,24 @@ class TestCategoryIcons:
             timezone="America/Los_Angeles"
         )
 
-        # Should have checkmark for clean
         markdown = result["markdown_display"]
-        # Find the line with the time slot
-        lines = markdown.split("\n")
-        time_line = [l for l in lines if "10:00 AM" in l][0]
-        assert time_line.startswith("\u2705")  # checkmark emoji
+        # Should NOT have "### Thursday"
+        assert "### Thursday" not in markdown
+        # Should have "Thursday, Jan. 29" without prefix
+        assert "Thursday, Jan. 29" in markdown
 
-    def test_solo_adjust_shows_warning(self):
-        """Solo adjust slots should show warning icon."""
+    def test_conflict_in_day_header(self):
+        """Conflict info should appear in the day header line."""
         slots = [
             EvaluatedSlot(
-                start=datetime(2026, 1, 29, 18, 0, tzinfo=timezone.utc),
-                end=datetime(2026, 1, 29, 19, 0, tzinfo=timezone.utc),
+                start=datetime(2026, 1, 29, 22, 0, tzinfo=timezone.utc),
+                end=datetime(2026, 1, 29, 23, 0, tzinfo=timezone.utc),
                 category="solo_adjust",
                 conflicts=[
                     ConflictInfo(
                         participant="user1@example.com",
-                        event_title="Meeting",
-                        event_time="10:00 AM",
+                        event_title="Team Standup",
+                        event_time="2:00 PM",
                         event_property="flexible"
                     )
                 ],
@@ -318,42 +367,11 @@ class TestCategoryIcons:
 
         markdown = result["markdown_display"]
         lines = markdown.split("\n")
-        time_line = [l for l in lines if "10:00 AM" in l][0]
-        assert time_line.startswith("\u26a0\ufe0f")  # warning emoji
 
-    def test_multi_adjust_shows_x(self):
-        """Multi adjust slots should show X icon."""
-        slots = [
-            EvaluatedSlot(
-                start=datetime(2026, 1, 29, 18, 0, tzinfo=timezone.utc),
-                end=datetime(2026, 1, 29, 19, 0, tzinfo=timezone.utc),
-                category="multi_adjust",
-                conflicts=[
-                    ConflictInfo(
-                        participant="user1@example.com",
-                        event_title="Meeting A",
-                        event_time="10:00 AM",
-                        event_property="flexible"
-                    ),
-                    ConflictInfo(
-                        participant="user2@example.com",
-                        event_title="Meeting B",
-                        event_time="10:00 AM",
-                        event_property="flexible"
-                    )
-                ],
-                score=25.0
-            ),
-        ]
+        # Find the day header line
+        day_header_line = [l for l in lines if "Thursday, Jan. 29" in l][0]
 
-        result = format_evaluation_output(
-            ranked_slots=slots,
-            participants=["user1@example.com", "user2@example.com"],
-            participant_names=["User One", "User Two"],
-            timezone="America/Los_Angeles"
-        )
-
-        markdown = result["markdown_display"]
-        lines = markdown.split("\n")
-        time_line = [l for l in lines if "10:00 AM" in l][0]
-        assert time_line.startswith("\u274c")  # X emoji
+        # Conflict info should be on the same line with em-dash
+        assert "—" in day_header_line
+        assert "Team Standup" in day_header_line
+        assert "User One" in day_header_line

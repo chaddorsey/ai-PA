@@ -34,11 +34,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-# Category icons for markdown display
-CATEGORY_ICONS = {
-    "clean": "\u2705",       # checkmark
-    "solo_adjust": "\u26a0\ufe0f",  # warning
-    "multi_adjust": "\u274c",      # X
+# Month abbreviation map for Slack-compatible format
+MONTH_ABBREV = {
+    1: "Jan.", 2: "Feb.", 3: "Mar.", 4: "Apr.",
+    5: "May", 6: "Jun.", 7: "Jul.", 8: "Aug.",
+    9: "Sep.", 10: "Oct.", 11: "Nov.", 12: "Dec."
 }
 
 
@@ -50,6 +50,11 @@ def format_evaluation_output(
 ) -> Dict[str, Any]:
     """
     Format ranked slots for both LLM display and Slack interaction.
+
+    Output format is designed to be parseable by slackbot's parse_orchestrator_proposals():
+    - Day headers: "Wednesday, Jan. 29" (no ### prefix, abbreviated month)
+    - Time slots: "* 10:00 – 11:00" (bullet, 24-hour time, en-dash separator)
+    - Conflict info on day header: "Thursday, Jan. 30  — Conflicts with \"Event\" (Name)"
 
     Args:
         ranked_slots: List of EvaluatedSlot objects, already ranked
@@ -68,10 +73,17 @@ def format_evaluation_output(
     name_lookup = dict(zip(participants, participant_names))
 
     # Group slots by day (in user's timezone)
+    # Use tuple key (weekday, month_abbrev, day_num) for proper formatting
     slots_by_day = defaultdict(list)
+    day_keys_ordered = []
     for slot in ranked_slots:
         local_start = slot.start.astimezone(tz)
-        day_key = local_start.strftime("%A, %B %d")
+        weekday = local_start.strftime("%A")
+        month_abbrev = MONTH_ABBREV[local_start.month]
+        day_num = local_start.day
+        day_key = (weekday, month_abbrev, day_num)
+        if day_key not in slots_by_day:
+            day_keys_ordered.append(day_key)
         slots_by_day[day_key].append(slot)
 
     # Build markdown output
@@ -85,29 +97,32 @@ def format_evaluation_output(
     ]
 
     # Add slots grouped by day
-    for day_key in slots_by_day:
-        lines.append(f"### {day_key}")
-        lines.append("")
+    for day_key in day_keys_ordered:
+        weekday, month_abbrev, day_num = day_key
+        day_slots = slots_by_day[day_key]
 
-        for slot in slots_by_day[day_key]:
+        # Build day header with optional conflict annotation
+        day_header = f"{weekday}, {month_abbrev} {day_num}"
+
+        # Check if any slot in this day has conflicts - add to day header
+        conflicted_slots = [s for s in day_slots if s.conflicts]
+        if conflicted_slots:
+            # Use first conflict for the day header annotation
+            first_conflict = conflicted_slots[0].conflicts[0]
+            participant_name = name_lookup.get(first_conflict.participant, first_conflict.participant)
+            day_header += f"  — Conflicts with \"{first_conflict.event_title}\" ({participant_name})"
+
+        lines.append(day_header)
+
+        for slot in day_slots:
             local_start = slot.start.astimezone(tz)
             local_end = slot.end.astimezone(tz)
 
-            time_str = f"{local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')}"
-            icon = CATEGORY_ICONS.get(slot.category, "\u2753")  # question mark fallback
-            category_display = slot.category.replace("_", " ")
+            # Format time in 24-hour format with en-dash separator
+            time_str = f"* {local_start.strftime('%H:%M')} – {local_end.strftime('%H:%M')}"
+            lines.append(time_str)
 
-            lines.append(f"{icon} **{time_str}** ({category_display})")
-
-            if slot.category == "clean" or not slot.conflicts:
-                lines.append("   No conflicts")
-            else:
-                # Show conflict details
-                for conflict in slot.conflicts:
-                    participant_name = name_lookup.get(conflict.participant, conflict.participant)
-                    lines.append(f"   Conflicts with: \"{conflict.event_title}\" ({participant_name})")
-
-            lines.append("")
+        lines.append("")
 
     # Summary line
     clean_count = sum(1 for s in ranked_slots if s.category == "clean")
