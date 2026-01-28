@@ -14,13 +14,13 @@ from typing import Dict, Any, Optional
 
 def lookup_staff(name_or_email: str) -> Dict[str, Any]:
     """
-    Look up staff member by colloquial name or email address.
+    Look up staff member by colloquial name, email address, or Slack ID.
 
     This tool resolves staff queries like "What's Dan's schedule?" by
     finding the identity and returning all known properties.
 
     Args:
-        name_or_email: Colloquial name (e.g., "Dan") or email address
+        name_or_email: Colloquial name (e.g., "Dan"), email address, or Slack ID (e.g., "U0A7B9ZQ35Y")
 
     Returns:
         Dictionary with keys:
@@ -97,6 +97,18 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
             for identity in all_identities:
                 if identity.get("identifier_key") == name_or_email:
                     found_identity = identity
+                    break
+
+        # THIRD PASS: FIND BY SLACK ID (if not found and looks like Slack ID)
+        if found_identity is None and name_or_email.startswith("U") and len(name_or_email) >= 9:
+            for identity in all_identities:
+                properties = identity.get("properties") or []
+                for prop in properties:
+                    if isinstance(prop, dict) and prop.get("key") == "slack_id":
+                        if prop.get("value") == name_or_email:
+                            found_identity = identity
+                            break
+                if found_identity:
                     break
 
         # NOT FOUND
