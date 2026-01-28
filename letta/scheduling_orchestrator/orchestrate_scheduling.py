@@ -4997,9 +4997,9 @@ def orchestrate_scheduling(
                 if lookup_participant_names:
                     try:
                         participant_names_for_formatting = lookup_participant_names(list(all_participant_emails))
-                        logger.info(f"Resolved {len(participant_names_for_formatting)} participant names from identity service")
+                        print(f"[orchestrate_scheduling] Resolved {len(participant_names_for_formatting)} participant names from identity service", file=sys.stderr, flush=True)
                     except Exception as e:
-                        logger.warning(f"Failed to lookup participant names: {e}")
+                        print(f"[orchestrate_scheduling] Failed to lookup participant names: {e}", file=sys.stderr, flush=True)
 
             verbatim_user_output_text = format_refined_user_display(
                 free_proposals=limited_free_proposals,
