@@ -4,6 +4,7 @@ Main entry point for evaluating proposed meeting times.
 This module provides the Evaluate_Proposed_Times tool for Letta agents.
 """
 import logging
+from collections import defaultdict
 from datetime import date, datetime
 from typing import Dict, List, Any, Optional, Set, Tuple
 import pytz
@@ -29,6 +30,143 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+
+
+# Category icons for markdown display
+CATEGORY_ICONS = {
+    "clean": "\u2705",       # checkmark
+    "solo_adjust": "\u26a0\ufe0f",  # warning
+    "multi_adjust": "\u274c",      # X
+}
+
+
+def format_evaluation_output(
+    ranked_slots: List[EvaluatedSlot],
+    participants: List[str],
+    participant_names: List[str],
+    timezone: str
+) -> Dict[str, Any]:
+    """
+    Format ranked slots for both LLM display and Slack interaction.
+
+    Args:
+        ranked_slots: List of EvaluatedSlot objects, already ranked
+        participants: List of participant email addresses
+        participant_names: List of participant display names (same order as participants)
+        timezone: Timezone for display (e.g., "America/Los_Angeles")
+
+    Returns:
+        Dictionary with:
+        - markdown_display: VERBATIM-wrapped text for LLM response
+        - interactive_data: Structured data for Slack adapter
+    """
+    tz = pytz.timezone(timezone)
+
+    # Build participant lookup for names
+    name_lookup = dict(zip(participants, participant_names))
+
+    # Group slots by day (in user's timezone)
+    slots_by_day = defaultdict(list)
+    for slot in ranked_slots:
+        local_start = slot.start.astimezone(tz)
+        day_key = local_start.strftime("%A, %B %d")
+        slots_by_day[day_key].append(slot)
+
+    # Build markdown output
+    lines = [
+        "[VERBATIM_USER_OUTPUT]",
+        f"[PARTICIPANTS:{','.join(participants)}]",
+        f"[PARTICIPANT_NAMES:{','.join(participant_names)}]",
+        "",
+        "## Available Times",
+        ""
+    ]
+
+    # Add slots grouped by day
+    for day_key in slots_by_day:
+        lines.append(f"### {day_key}")
+        lines.append("")
+
+        for slot in slots_by_day[day_key]:
+            local_start = slot.start.astimezone(tz)
+            local_end = slot.end.astimezone(tz)
+
+            time_str = f"{local_start.strftime('%I:%M %p')} - {local_end.strftime('%I:%M %p')}"
+            icon = CATEGORY_ICONS.get(slot.category, "\u2753")  # question mark fallback
+            category_display = slot.category.replace("_", " ")
+
+            lines.append(f"{icon} **{time_str}** ({category_display})")
+
+            if slot.category == "clean" or not slot.conflicts:
+                lines.append("   No conflicts")
+            else:
+                # Show conflict details
+                for conflict in slot.conflicts:
+                    participant_name = name_lookup.get(conflict.participant, conflict.participant)
+                    lines.append(f"   Conflicts with: \"{conflict.event_title}\" ({participant_name})")
+
+            lines.append("")
+
+    # Summary line
+    clean_count = sum(1 for s in ranked_slots if s.category == "clean")
+    conflict_count = len(ranked_slots) - clean_count
+
+    lines.append("---")
+    summary_parts = [f"{len(ranked_slots)} times evaluated"]
+    if clean_count > 0:
+        summary_parts.append(f"{clean_count} clean")
+    if conflict_count > 0:
+        summary_parts.append(f"{conflict_count} with conflicts")
+    lines.append(", ".join(summary_parts))
+
+    lines.append("[/VERBATIM_USER_OUTPUT]")
+
+    # Build interactive data for Slack
+    interactive_data = {
+        "participants": participants,
+        "participant_names": participant_names,
+        "proposals": [
+            _slot_to_proposal_dict(slot, tz) for slot in ranked_slots
+        ]
+    }
+
+    return {
+        "markdown_display": "\n".join(lines),
+        "interactive_data": interactive_data
+    }
+
+
+def _slot_to_proposal_dict(slot: EvaluatedSlot, tz: pytz.BaseTzInfo) -> Dict[str, Any]:
+    """
+    Convert EvaluatedSlot to proposal dictionary for Slack rendering.
+
+    Args:
+        slot: The EvaluatedSlot to convert
+        tz: Timezone for local time display
+
+    Returns:
+        Dictionary with slot data in a format suitable for Slack Block Kit rendering
+    """
+    local_start = slot.start.astimezone(tz)
+    local_end = slot.end.astimezone(tz)
+
+    return {
+        "start": slot.start.isoformat(),
+        "end": slot.end.isoformat(),
+        "start_local": local_start.isoformat(),
+        "end_local": local_end.isoformat(),
+        "category": slot.category,
+        "conflicts": [
+            {
+                "participant": c.participant,
+                "event_title": c.event_title,
+                "event_time": c.event_time,
+                "event_property": c.event_property
+            }
+            for c in slot.conflicts
+        ],
+        "score": slot.score
+    }
 
 
 async def fetch_calendar_data(
