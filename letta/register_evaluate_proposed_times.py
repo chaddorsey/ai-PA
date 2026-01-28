@@ -41,7 +41,8 @@ def Evaluate_Proposed_Times(
     proposed_times: str,
     participants: str,
     duration_minutes: Optional[int] = None,
-    timezone: Optional[str] = None
+    timezone: Optional[str] = None,
+    identity_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Evaluate externally-proposed meeting time windows against participant calendars.
@@ -49,6 +50,10 @@ def Evaluate_Proposed_Times(
     Use this tool when someone external (recruiter, vendor, client) proposes specific
     time windows and you need to check which slots work for your participants. The tool
     fetches calendar data, identifies conflicts, and categorizes slots by feasibility.
+
+    IMPORTANT: The markdown_display in the response is wrapped with [VERBATIM_USER_OUTPUT]
+    markers. Always present this content EXACTLY as-is to the user without summarizing or
+    reformatting. The Slack interface will parse this content to create interactive buttons.
 
     Args:
         proposed_times: Natural language time windows, one per line. Examples:
@@ -62,10 +67,16 @@ def Evaluate_Proposed_Times(
             Use this to find slots that can fit the required meeting length.
         timezone: Timezone for interpreting times. Defaults to "America/New_York".
             Use standard timezone names like "America/Los_Angeles", "Europe/London".
+        identity_id: Optional Letta identity ID for the requester. When provided,
+            user-specific scheduling preferences (preferred/avoid times) are applied
+            to rank slots according to the user's preferences.
 
     Returns:
         Dictionary with evaluation results containing:
         - status: "ok" on success, "error" on failure
+        - markdown_display: Formatted output with VERBATIM markers for direct display
+        - interactive_data: Structured data for Slack interactive buttons
+        - summary: Brief text summary of results
         - clean_slots: List of time slots with NO conflicts (best options)
         - solo_adjust_slots: Slots where only ONE participant has a flexible conflict
         - multi_adjust_slots: Slots where MULTIPLE participants have conflicts
@@ -76,6 +87,8 @@ def Evaluate_Proposed_Times(
         - start: ISO datetime string
         - end: ISO datetime string
         - display: Human-readable format like "Tue 01/28 2:00PM-2:30PM"
+        - category: "clean", "solo_adjust", or "multi_adjust"
+        - score: Numeric ranking score (higher is better)
         - conflicts: List of conflict details (for adjust slots)
 
     Example:
@@ -85,7 +98,7 @@ def Evaluate_Proposed_Times(
         ...     duration_minutes=30,
         ...     timezone="America/New_York"
         ... )
-        >>> # Returns categorized slots for the agent to present to user
+        >>> # Returns categorized slots with markdown_display for user presentation
     """
     # ALL IMPORTS INSIDE FUNCTION (Letta requirement)
     import asyncio
@@ -137,7 +150,8 @@ def Evaluate_Proposed_Times(
                         proposed_times=proposed_times,
                         participants=participants,
                         duration_minutes=duration_minutes,
-                        timezone=timezone
+                        timezone=timezone,
+                        identity_id=identity_id
                     )
                 )
                 result = future.result(timeout=60)
@@ -148,7 +162,8 @@ def Evaluate_Proposed_Times(
                     proposed_times=proposed_times,
                     participants=participants,
                     duration_minutes=duration_minutes,
-                    timezone=timezone
+                    timezone=timezone,
+                    identity_id=identity_id
                 )
             )
 
@@ -260,8 +275,12 @@ def main():
         print("    - participants: Comma-separated list of participant emails")
         print("    - duration_minutes: Meeting duration (optional, default 30)")
         print("    - timezone: Timezone for interpretation (optional, default America/New_York)")
+        print("    - identity_id: Letta identity ID for user preferences (optional)")
         print("  Outputs:")
         print("    - status: 'ok' or 'error'")
+        print("    - markdown_display: VERBATIM-wrapped formatted output")
+        print("    - interactive_data: Structured data for Slack buttons")
+        print("    - summary: Brief result summary")
         print("    - clean_slots: Slots with no conflicts")
         print("    - solo_adjust_slots: Slots with one flexible conflict")
         print("    - multi_adjust_slots: Slots with multiple conflicts")
