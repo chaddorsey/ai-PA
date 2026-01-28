@@ -65,3 +65,44 @@ class TestParseTimePhrase:
         result = parse_time_phrase("afternoon")
         assert result["start"] == time(12, 0)
         assert result["end"] == time(18, 0)
+
+
+class TestParseDatePhrase:
+    """Test parsing date phrases."""
+
+    def test_mm_dd_format(self):
+        """'01/29' parses to correct date."""
+        from scheduling_orchestrator.window_parser import parse_date_phrase
+
+        # Assuming current year is 2026
+        result = parse_date_phrase("01/29", reference_date=date(2026, 1, 28))
+        assert result == date(2026, 1, 29)
+
+    def test_mm_dd_with_day_name(self):
+        """'01/29 (Thu)' parses correctly."""
+        from scheduling_orchestrator.window_parser import parse_date_phrase
+
+        result = parse_date_phrase("01/29 (Thu)", reference_date=date(2026, 1, 28))
+        assert result == date(2026, 1, 29)
+
+    def test_mm_dd_with_day_name_no_parens(self):
+        """'01/30 Fri' parses correctly."""
+        from scheduling_orchestrator.window_parser import parse_date_phrase
+
+        result = parse_date_phrase("01/30 Fri", reference_date=date(2026, 1, 28))
+        assert result == date(2026, 1, 30)
+
+    def test_relative_date_tomorrow(self):
+        """'tomorrow' parses relative to reference."""
+        from scheduling_orchestrator.window_parser import parse_date_phrase
+
+        result = parse_date_phrase("tomorrow", reference_date=date(2026, 1, 28))
+        assert result == date(2026, 1, 29)
+
+    def test_day_name_next_week(self):
+        """'Monday' finds next Monday."""
+        from scheduling_orchestrator.window_parser import parse_date_phrase
+
+        # Jan 28, 2026 is Wednesday
+        result = parse_date_phrase("Monday", reference_date=date(2026, 1, 28))
+        assert result == date(2026, 2, 2)  # Next Monday

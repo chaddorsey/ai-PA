@@ -1,12 +1,23 @@
 """Parse natural language time windows into structured data."""
 import re
-from datetime import time
+from datetime import date, time, timedelta
 from typing import Dict, List, Any, Optional
 
 
 # Default business hours
 DEFAULT_START = time(8, 0)
 DEFAULT_END = time(18, 0)
+
+# Day name mappings
+DAY_NAMES = {
+    'monday': 0, 'mon': 0,
+    'tuesday': 1, 'tue': 1, 'tues': 1,
+    'wednesday': 2, 'wed': 2,
+    'thursday': 3, 'thu': 3, 'thur': 3, 'thurs': 3,
+    'friday': 4, 'fri': 4,
+    'saturday': 5, 'sat': 5,
+    'sunday': 6, 'sun': 6,
+}
 
 
 def _parse_time_string(time_str: str, suffix_hint: Optional[str] = None) -> time:
@@ -132,3 +143,50 @@ def parse_time_phrase(phrase: str) -> Dict[str, Any]:
         result["exclusions"].append(exclusion)
 
     return result
+
+
+def parse_date_phrase(phrase: str, reference_date: date) -> date:
+    """
+    Parse a date phrase into a date object.
+
+    Args:
+        phrase: Date phrase like "01/29", "01/29 (Thu)", "tomorrow", "Monday"
+        reference_date: Reference date for relative parsing
+
+    Returns:
+        date object
+    """
+    phrase = phrase.strip().lower()
+
+    # Handle "today"
+    if phrase == 'today':
+        return reference_date
+
+    # Handle "tomorrow"
+    if phrase == 'tomorrow':
+        return reference_date + timedelta(days=1)
+
+    # Handle MM/DD format with optional day name
+    mm_dd_match = re.match(r'^(\d{1,2})/(\d{1,2})(?:\s*\(?(?:mon|tue|wed|thu|fri|sat|sun)\w*\)?)?', phrase)
+    if mm_dd_match:
+        month = int(mm_dd_match.group(1))
+        day = int(mm_dd_match.group(2))
+        year = reference_date.year
+
+        # Handle year rollover (if date is in past, assume next year)
+        result = date(year, month, day)
+        if result < reference_date:
+            result = date(year + 1, month, day)
+        return result
+
+    # Handle day name (find next occurrence)
+    for day_name, day_num in DAY_NAMES.items():
+        if phrase.startswith(day_name):
+            # Calculate days until next occurrence
+            current_day = reference_date.weekday()
+            days_ahead = day_num - current_day
+            if days_ahead <= 0:  # Target day already happened this week
+                days_ahead += 7
+            return reference_date + timedelta(days=days_ahead)
+
+    raise ValueError(f"Could not parse date: {phrase}")
