@@ -372,19 +372,35 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
 
                 # Extract participants from orchestrator output
                 # Format: [PARTICIPANTS:email1@domain.com,email2@domain.com]
+                # Format: [PARTICIPANT_NAMES:email1@domain.com=Name1,email2@domain.com=Name2]
                 import re as re_module
                 from services.interactive_proposals import MeetingContext
                 participants = []
                 participant_names = {}  # email -> display name
+
+                # First, try to get resolved names from PARTICIPANT_NAMES tag (from identity service)
+                names_match = re_module.search(r'\[PARTICIPANT_NAMES:([^\]]+)\]', final_text)
+                if names_match:
+                    # Parse email=name pairs
+                    for pair in names_match.group(1).split(','):
+                        if '=' in pair:
+                            email, name = pair.split('=', 1)
+                            email = email.strip()
+                            name = name.strip()
+                            if email and name:
+                                participant_names[email] = name
+
+                # Extract participant emails from PARTICIPANTS tag
                 participants_match = re_module.search(r'\[PARTICIPANTS:([^\]]+)\]', final_text)
                 if participants_match:
                     participants = [p.strip() for p in participants_match.group(1).split(',') if p.strip()]
-                    # Generate display names from email prefixes
+                    # For any participants without resolved names, fall back to email prefix
                     for email in participants:
-                        if '@' in email:
+                        if email not in participant_names and '@' in email:
                             name = email.split('@')[0].replace('.', ' ').replace('_', ' ').title()
                             participant_names[email] = name
-                logger.error(f"🔍 EXTRACTED PARTICIPANTS from orchestrator: {participants}, names: {participant_names}")
+
+                logger.info(f"Extracted participants: {participants}, names: {participant_names}")
 
                 # Build meeting context with participant names
                 meeting_context = MeetingContext(

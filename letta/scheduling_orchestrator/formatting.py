@@ -477,6 +477,11 @@ def format_refined_user_display(
         # Add participants line for slackbot parsing
         if proposal_participants:
             lines.append(f"[PARTICIPANTS:{','.join(proposal_participants)}]")
+        # Add resolved participant names for downstream integrations (Slack, etc.)
+        if participant_names:
+            name_pairs = [f"{email}={name}" for email, name in participant_names.items() if name]
+            if name_pairs:
+                lines.append(f"[PARTICIPANT_NAMES:{','.join(name_pairs)}]")
         lines.append("## Best Options")
         lines.append("")
 
@@ -518,6 +523,11 @@ def format_refined_user_display(
             # Add participants line for slackbot parsing
             if proposal_participants:
                 lines.append(f"[PARTICIPANTS:{','.join(proposal_participants)}]")
+            # Add resolved participant names for downstream integrations (Slack, etc.)
+            if participant_names:
+                name_pairs = [f"{email}={name}" for email, name in participant_names.items() if name]
+                if name_pairs:
+                    lines.append(f"[PARTICIPANT_NAMES:{','.join(name_pairs)}]")
         lines.append("## If We Can Move or Override Current Meetings")
         lines.append("")
         
