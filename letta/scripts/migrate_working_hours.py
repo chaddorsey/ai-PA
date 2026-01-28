@@ -31,8 +31,10 @@ DEFAULT_TIMEZONE = "America/New_York"
 
 # Staff known to be on West Coast (update this list as needed)
 WEST_COAST_STAFF = {
-    # Add emails of staff in Pacific timezone
-    # "example@concord.org": "America/Los_Angeles"
+    "wfinzer@concord.org": "America/Los_Angeles",      # Bill Finzer
+    "kswenson@concord.org": "America/Los_Angeles",     # Kirk Swenson
+    "tfristoe@concord.org": "America/Los_Angeles",     # Teale Fristoe
+    "hlee@concord.org": "America/Los_Angeles",         # Hee-Sun Lee
 }
 
 # Default working hours for full-time staff (9-5)
@@ -122,6 +124,18 @@ def get_property(properties: List[Dict], key: str) -> Optional[str]:
     return None
 
 
+def is_new_format_working_hours(hours_str: str) -> bool:
+    """Check if working_hours is already in new JSON format."""
+    if not hours_str:
+        return False
+    try:
+        parsed = json.loads(hours_str)
+        # New format has day keys with dict values
+        return isinstance(parsed, dict) and "monday" in parsed
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
 def build_new_working_hours(
     existing_week: Optional[str],
     existing_hours: Optional[str],
@@ -195,8 +209,12 @@ def migrate_identity(identity: Dict, dry_run: bool = True) -> Optional[Dict]:
     existing_hours = get_property(properties, "working_hours")
     existing_timezone = get_property(properties, "timezone")
 
-    # Skip if no working hours data and already has timezone
-    if not existing_week and not existing_hours and existing_timezone:
+    # Skip if already has new format working_hours and timezone
+    if is_new_format_working_hours(existing_hours) and existing_timezone:
+        return None
+
+    # Skip non-Concord staff (family members, etc.) - they don't need working hours
+    if email and not email.endswith("@concord.org"):
         return None
 
     # Build new properties list (preserve existing, update working hours)
@@ -211,14 +229,25 @@ def migrate_identity(identity: Dict, dry_run: bool = True) -> Optional[Dict]:
     timezone = WEST_COAST_STAFF.get(email, DEFAULT_TIMEZONE)
     new_properties.append({"key": "timezone", "value": timezone, "type": "string"})
 
-    # Add structured working_hours if there was any working hours data
+    # Add structured working_hours
+    # - If existing old format, convert it
+    # - If no working hours, add default 9-5 M-F
+    new_working_hours = None
     if existing_week or existing_hours:
-        new_working_hours = build_new_working_hours(existing_week, existing_hours)
-        new_properties.append({
-            "key": "working_hours",
-            "value": json.dumps(new_working_hours),
-            "type": "string"
-        })
+        # If already in new format, preserve it
+        if is_new_format_working_hours(existing_hours):
+            new_working_hours = json.loads(existing_hours)
+        else:
+            new_working_hours = build_new_working_hours(existing_week, existing_hours)
+    else:
+        # No existing working hours - add default for Concord staff
+        new_working_hours = DEFAULT_FULL_TIME_HOURS.copy()
+
+    new_properties.append({
+        "key": "working_hours",
+        "value": json.dumps(new_working_hours),
+        "type": "string"
+    })
 
     migration_info = {
         "identity_id": identity_id,
@@ -228,7 +257,7 @@ def migrate_identity(identity: Dict, dry_run: bool = True) -> Optional[Dict]:
         "existing_hours": existing_hours,
         "existing_timezone": existing_timezone,
         "new_timezone": timezone,
-        "new_working_hours": new_working_hours if (existing_week or existing_hours) else None,
+        "new_working_hours": new_working_hours,
     }
 
     if not dry_run:
