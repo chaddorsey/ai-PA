@@ -329,6 +329,48 @@ def generate_proposal_id() -> str:
     return f"prop_{uuid.uuid4().hex[:12]}"
 
 
+def _get_owner_display_name(
+    owner: str,
+    user_id: Optional[str],
+    participant_names: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    Get display name for an event owner.
+
+    Priority:
+    1. "your" if owner matches user_id
+    2. Look up in participant_names dict (colloquial name from identity service)
+    3. Fall back to email prefix
+
+    Args:
+        owner: Email address of the event owner
+        user_id: Current user's email (to show "your" for their events)
+        participant_names: Dict mapping email -> display name
+
+    Returns:
+        Display name string (e.g., "your", "Dan", "ddamelin")
+    """
+    if user_id and owner == user_id:
+        return "your"
+
+    # Look up in participant names
+    if participant_names:
+        # Try exact match first
+        if owner in participant_names:
+            return participant_names[owner]
+        # Try lowercase match
+        owner_lower = owner.lower()
+        for email, name in participant_names.items():
+            if email.lower() == owner_lower:
+                return name
+
+    # Fall back to email prefix
+    if owner and "@" in owner:
+        return owner.split("@")[0]
+
+    return owner or "unknown"
+
+
 def format_refined_user_display(
     free_proposals: List[Proposal],
     move_proposals: List[Proposal],
@@ -339,7 +381,8 @@ def format_refined_user_display(
     timezone_str: str = "America/New_York",
     context_json: Optional[Dict[str, Any]] = None,
     external_participants: Optional[List[str]] = None,
-    free_transparent_events: Optional[List[Tuple[str, str, str, str]]] = None
+    free_transparent_events: Optional[List[Tuple[str, str, str, str]]] = None,
+    participant_names: Optional[Dict[str, str]] = None,
 ) -> str:
     """
     Generate refined user-facing display with grouped, prioritized formatting.
@@ -439,7 +482,7 @@ def format_refined_user_display(
 
         # Add subheader if any proposals overlap transparent events (marked as "free")
         if free_transparent_events:
-            subheader = format_transparent_subheader(free_transparent_events, user_id)
+            subheader = format_transparent_subheader(free_transparent_events, user_id, participant_names)
             if subheader:
                 lines.append(subheader)
                 lines.append("")
@@ -492,7 +535,7 @@ def format_refined_user_display(
 
             # Add subheader if any override proposals overlap transparent events
             if override_transparent_events:
-                subheader = format_transparent_subheader(override_transparent_events, user_id)
+                subheader = format_transparent_subheader(override_transparent_events, user_id, participant_names)
                 if subheader:
                     lines.append(subheader)
                     lines.append("")
@@ -584,7 +627,7 @@ def format_refined_user_display(
                                 # Note: Individual "(marked as free)" removed - covered by section subheader
                                 other_descriptions = []
                                 for owner, event_id, event_title, event_time_range, transparency in other_events:
-                                    owner_name = owner.split("@")[0]
+                                    owner_name = _get_owner_display_name(owner, user_id, participant_names)
                                     if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
                                         # Format: and owner's time_range *EventTitle* event
                                         other_descriptions.append(f"{owner_name}'s {event_time_range} *{event_title}* event")
@@ -608,7 +651,7 @@ def format_refined_user_display(
                             # Format: Overrides owner's time_range *EventTitle* event
                             override_descriptions = []
                             for owner, event_id, event_title, event_time_range, transparency in sorted(all_overridden_events.values(), key=lambda x: x[0].lower()):
-                                owner_name = owner.split("@")[0] if owner != user_id else "your"
+                                owner_name = _get_owner_display_name(owner, user_id, participant_names)
                                 if event_title and event_title != "solo/blocking events" and len(event_title) > 0:
                                     override_descriptions.append(f"{owner_name}'s {event_time_range} *{event_title}* event")
                                 else:
@@ -690,13 +733,9 @@ def format_refined_user_display(
                     moved_event = first_prop.moved_events[0]
                     old_time_range = format_time_range(moved_event.old_start, moved_event.old_end, timezone_str)
                     
-                    # Get owner's name (trim domain)
-                    if owner == user_id:
-                        owner_display = "your"
-                    else:
-                        # Remove @domain.com from email
-                        owner_name = owner.split("@")[0]
-                        owner_display = f"{owner_name}'s"
+                    # Get owner's display name (use identity service name or fall back to email prefix)
+                    owner_name = _get_owner_display_name(owner, user_id, participant_names)
+                    owner_display = "your" if owner_name == "your" else f"{owner_name}'s"
                     
                     # Format each location
                     sorted_locations = sorted(location_groups.items(), key=lambda x: _get_day_sort_key(x[0][0], first_prop.moved_events[0].new_start if first_prop.moved_events else ""))
@@ -1024,7 +1063,8 @@ def proposal_only_overlaps_transparent(
 
 def format_transparent_subheader(
     transparent_events: List[Tuple[str, str, str, str]],
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    participant_names: Optional[Dict[str, str]] = None,
 ) -> str:
     """
     Format a subheader noting which transparent events may be overlapped.
@@ -1032,10 +1072,11 @@ def format_transparent_subheader(
     Args:
         transparent_events: List of (owner, event_id, event_title, time_range)
         user_id: Current user's ID for "your" vs name formatting
+        participant_names: Dict mapping email -> display name
 
     Returns:
         Formatted subheader string like:
-        "Note: Times may override cdorsey's Letta Office Hours or clore's Walk events (marked as \"free\")"
+        "Note: Times may override Dan's Letta Office Hours or Carolyn's Walk events (marked as \"free\")"
     """
     if not transparent_events:
         return ""
@@ -1052,9 +1093,7 @@ def format_transparent_subheader(
             continue
         seen.add(key)
 
-        owner_name = owner.split("@")[0] if owner and "@" in owner else owner
-        if user_id and owner == user_id:
-            owner_name = "your"
+        owner_name = _get_owner_display_name(owner, user_id, participant_names)
 
         # Format: owner's* EventTitle * (event titles NOT italicized)
         if event_title and event_title not in ["", "Hold", "solo/blocking events"]:

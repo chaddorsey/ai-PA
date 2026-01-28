@@ -4966,7 +4966,41 @@ def orchestrate_scheduling(
             
             # Get external_participants_for_display if it exists, otherwise use empty list
             external_participants_for_formatting = external_participants_for_display if 'external_participants_for_display' in locals() and external_participants_for_display else None
-            
+
+            # Look up participant display names from identity service
+            # Collect all unique participant emails from various sources
+            all_participant_emails = set()
+            if participant_ids:
+                all_participant_emails.update(participant_ids)
+            if user_id:
+                all_participant_emails.add(user_id)
+            # Also collect from event registry (event owners)
+            if event_registry:
+                for event_meta in event_registry.values():
+                    if hasattr(event_meta, 'owner') and event_meta.owner:
+                        all_participant_emails.add(event_meta.owner)
+
+            # Look up display names (colloquial names) from Letta identity service
+            participant_names_for_formatting = {}
+            if all_participant_emails:
+                try:
+                    from .identity_lookup import lookup_participant_names
+                except ImportError:
+                    try:
+                        from scheduling_orchestrator.identity_lookup import lookup_participant_names
+                    except ImportError:
+                        try:
+                            from identity_lookup import lookup_participant_names
+                        except ImportError:
+                            lookup_participant_names = None
+
+                if lookup_participant_names:
+                    try:
+                        participant_names_for_formatting = lookup_participant_names(list(all_participant_emails))
+                        logger.info(f"Resolved {len(participant_names_for_formatting)} participant names from identity service")
+                    except Exception as e:
+                        logger.warning(f"Failed to lookup participant names: {e}")
+
             verbatim_user_output_text = format_refined_user_display(
                 free_proposals=limited_free_proposals,
                 move_proposals=limited_move_proposals,
@@ -4977,7 +5011,8 @@ def orchestrate_scheduling(
                 timezone_str=timezone_str,
                 context_json=context_json_for_formatting,
                 external_participants=external_participants_for_formatting,
-                free_transparent_events=free_transparent_events  # For subheader in Best Options
+                free_transparent_events=free_transparent_events,  # For subheader in Best Options
+                participant_names=participant_names_for_formatting,
             )
             
             # Add note if proposals were truncated, with specific counts per category
