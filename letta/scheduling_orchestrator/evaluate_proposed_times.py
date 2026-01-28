@@ -12,21 +12,23 @@ import pytz
 try:
     from .window_parser import parse_proposed_windows
     from .slot_evaluator import find_available_slots
-    from .ranking import rank_slots
+    from .unified_slot_ranker import rank_evaluated_slots
     from .evaluation_models import (
         ProposedWindow, EvaluatedSlot, EvaluationResult, ConflictInfo
     )
     from .normalizer import normalize_events
     from .identity_working_hours import get_all_participants_working_hours
+    from .identity_lookup import lookup_participant_names
 except ImportError:
     from window_parser import parse_proposed_windows
     from slot_evaluator import find_available_slots
-    from ranking import rank_slots
+    from unified_slot_ranker import rank_evaluated_slots
     from evaluation_models import (
         ProposedWindow, EvaluatedSlot, EvaluationResult, ConflictInfo
     )
     from normalizer import normalize_events
     from identity_working_hours import get_all_participants_working_hours
+    from identity_lookup import lookup_participant_names
 
 
 logger = logging.getLogger(__name__)
@@ -169,6 +171,32 @@ def _slot_to_proposal_dict(slot: EvaluatedSlot, tz: pytz.BaseTzInfo) -> Dict[str
     }
 
 
+def _slot_to_dict(slot: EvaluatedSlot) -> Dict[str, Any]:
+    """
+    Convert EvaluatedSlot to dictionary for backward-compatible API response.
+
+    Args:
+        slot: The EvaluatedSlot to convert
+
+    Returns:
+        Dictionary with slot data in backward-compatible format
+    """
+    return {
+        "start": slot.start.isoformat(),
+        "end": slot.end.isoformat(),
+        "category": slot.category,
+        "conflicts": [
+            {
+                "participant": c.participant,
+                "event": c.event_title,
+                "property": c.event_property
+            }
+            for c in slot.conflicts
+        ],
+        "score": slot.score
+    }
+
+
 async def fetch_calendar_data(
     participants: List[str],
     start_date: date,
@@ -303,7 +331,8 @@ async def evaluate_proposed_times(
     proposed_times: str,
     participants: str,
     duration_minutes: int = 30,
-    timezone: str = "America/New_York"
+    timezone: str = "America/New_York",
+    identity_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Evaluate externally-proposed meeting time windows.
@@ -313,10 +342,17 @@ async def evaluate_proposed_times(
         participants: Comma-separated list of participant emails
         duration_minutes: Meeting duration in minutes (default 30)
         timezone: Timezone for interpretation (default America/New_York)
+        identity_id: Optional Letta identity ID for preference lookup
 
     Returns:
-        Dictionary with clean_slots, solo_adjust_slots, multi_adjust_slots,
-        and no_availability_windows
+        Dictionary with:
+        - status: "ok" or "error"
+        - slots: List of ranked slot dictionaries (backward compatible)
+        - markdown_display: VERBATIM-wrapped text for LLM response
+        - interactive_data: Structured data for Slack adapter
+        - summary: Counts of evaluated slots by category
+        - clean_slots, solo_adjust_slots, multi_adjust_slots: Legacy format (backward compatible)
+        - no_availability_windows: Windows with no availability
     """
     try:
         participant_list = [p.strip() for p in participants.split(",") if p.strip()]
@@ -387,16 +423,55 @@ async def evaluate_proposed_times(
             else:
                 all_slots.extend(window_slots)
 
-        ranked_slots = rank_slots(all_slots, reference_date=today)
+        # Use unified slot ranker with preference scoring
+        ranked_slots = rank_evaluated_slots(
+            slots=all_slots,
+            identity_id=identity_id,
+            participants=participant_list,
+            context_json=context_json,
+            reference_date=today
+        )
 
-        result = EvaluationResult(
+        # Look up participant display names for formatted output
+        participant_names_map = lookup_participant_names(participant_list)
+        participant_names = [participant_names_map.get(p, p) for p in participant_list]
+
+        # Generate formatted output for display and interaction
+        formatted = format_evaluation_output(
+            ranked_slots=ranked_slots,
+            participants=participant_list,
+            participant_names=participant_names,
+            timezone=timezone
+        )
+
+        # Build backward-compatible result structure (EvaluationResult)
+        legacy_result = EvaluationResult(
             clean_slots=[s for s in ranked_slots if s.category == "clean"],
             solo_adjust_slots=[s for s in ranked_slots if s.category == "solo_adjust"],
             multi_adjust_slots=[s for s in ranked_slots if s.category == "multi_adjust"],
             no_availability_windows=no_availability
         )
+        legacy_output = _format_output(legacy_result)
 
-        return _format_output(result)
+        # Combine new and legacy formats
+        return {
+            "status": "ok",
+            # New format fields
+            "slots": [_slot_to_dict(s) for s in ranked_slots],
+            "markdown_display": formatted["markdown_display"],
+            "interactive_data": formatted["interactive_data"],
+            "summary": {
+                "total_proposed": len(windows),
+                "total_evaluated": len(ranked_slots),
+                "clean_count": sum(1 for s in ranked_slots if s.category == "clean"),
+                "conflict_count": sum(1 for s in ranked_slots if s.category != "clean")
+            },
+            # Backward compatible fields (from legacy format)
+            "clean_slots": legacy_output["clean_slots"],
+            "solo_adjust_slots": legacy_output["solo_adjust_slots"],
+            "multi_adjust_slots": legacy_output["multi_adjust_slots"],
+            "no_availability_windows": no_availability
+        }
 
     except Exception as e:
         logger.exception("Error evaluating proposed times")
