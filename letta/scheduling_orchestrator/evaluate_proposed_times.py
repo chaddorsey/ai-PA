@@ -16,6 +16,7 @@ try:
         ProposedWindow, EvaluatedSlot, EvaluationResult, ConflictInfo
     )
     from .normalizer import normalize_events
+    from .identity_working_hours import get_all_participants_working_hours
 except ImportError:
     from window_parser import parse_proposed_windows
     from slot_evaluator import find_available_slots
@@ -24,6 +25,7 @@ except ImportError:
         ProposedWindow, EvaluatedSlot, EvaluationResult, ConflictInfo
     )
     from normalizer import normalize_events
+    from identity_working_hours import get_all_participants_working_hours
 
 
 logger = logging.getLogger(__name__)
@@ -210,6 +212,25 @@ async def evaluate_proposed_times(
         normalized = normalize_events(calendar_data, context_json)
         busy_slots, event_details = _convert_to_busy_slots(normalized, participant_list)
 
+        # Fetch working hours from Letta identities
+        # Convert dates to UTC datetimes for slot calculation
+        from_dt_utc = tz.localize(datetime.combine(min_date, datetime.min.time())).astimezone(pytz.UTC)
+        to_dt_utc = tz.localize(datetime.combine(max_date, datetime.max.time())).astimezone(pytz.UTC)
+
+        work_hours_slots = get_all_participants_working_hours(
+            participant_emails=participant_list,
+            from_date_utc=from_dt_utc,
+            to_date_utc=to_dt_utc,
+            default_hours="M-F 09:00-17:00",
+            default_timezone=timezone
+        )
+
+        logger.info(
+            "Loaded working hours for participants",
+            participants=participant_list,
+            work_hours_loaded=len(work_hours_slots)
+        )
+
         all_slots = []
         no_availability = []
 
@@ -219,7 +240,8 @@ async def evaluate_proposed_times(
                 participants=participant_list,
                 duration_minutes=duration_minutes,
                 busy_slots=busy_slots,
-                event_details=event_details
+                event_details=event_details,
+                work_hours_slots=work_hours_slots
             )
 
             if not window_slots:

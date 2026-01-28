@@ -5,7 +5,7 @@ Evaluates proposed time windows against participant calendars to find
 available meeting slots, categorizing by conflict level.
 """
 from datetime import date, time, datetime, timedelta
-from typing import Dict, List, Set, Tuple, Any, Optional
+from typing import Dict, List, Optional, Set, Tuple, Any
 
 try:
     from .evaluation_models import (
@@ -99,7 +99,8 @@ def find_available_slots(
     participants: List[str],
     duration_minutes: int,
     busy_slots: Dict[str, Set[int]],
-    event_details: Dict[Tuple[str, str], Dict]
+    event_details: Dict[Tuple[str, str], Dict],
+    work_hours_slots: Optional[Dict[str, Set[int]]] = None
 ) -> List[EvaluatedSlot]:
     """
     Find available meeting slots within a proposed window.
@@ -112,6 +113,9 @@ def find_available_slots(
         event_details: Dict mapping (participant, event_id) -> event info
             with keys: property (locked/protected/flexible/transparent),
             title, slots (set of slot indices)
+        work_hours_slots: Optional dict mapping participant -> set of working hour
+            slot indices. If provided, slots outside any participant's working
+            hours will be skipped.
 
     Returns:
         List of EvaluatedSlot objects with category and conflicts
@@ -130,6 +134,20 @@ def find_available_slots(
         meeting_range = range(slot, slot + duration_slots)
         if any(_is_in_exclusion(s, window.exclusions) for s in meeting_range):
             continue
+
+        # Check working hours: skip if any participant is outside their working hours
+        if work_hours_slots:
+            outside_work_hours = False
+            for participant in participants:
+                p_work = work_hours_slots.get(participant)
+                if p_work is not None:
+                    # Check if ALL meeting slots are within working hours
+                    meeting_slots = set(meeting_range)
+                    if not meeting_slots.issubset(p_work):
+                        outside_work_hours = True
+                        break
+            if outside_work_hours:
+                continue
 
         # Check each participant for conflicts
         conflicts = []

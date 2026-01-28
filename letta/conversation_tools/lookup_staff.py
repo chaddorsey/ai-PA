@@ -50,30 +50,20 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
     # IMPORTS FIRST - inside function for Letta tool extraction
     import os
     import traceback
-
-    try:
-        from letta_client import Letta
-    except ImportError:
-        try:
-            from letta import Letta
-        except ImportError:
-            Letta = None
+    import requests
 
     # TRY-EXCEPT WRAPPER
     try:
         # CONFIGURATION - inside function for Letta tool extraction
         letta_base_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 
-        # CHECK LETTA AVAILABILITY
-        if Letta is None:
-            return {
-                "status": "error",
-                "error_message": "Letta client not available"
-            }
-
-        # GET LETTA CLIENT AND ALL IDENTITIES (inline, no helper function)
-        client = Letta(base_url=letta_base_url)
-        all_identities = list(client.identities.list())
+        # FETCH ALL IDENTITIES VIA HTTP API (avoids letta_client import issues)
+        response = requests.get(
+            f"{letta_base_url}/v1/identities/",
+            timeout=30
+        )
+        response.raise_for_status()
+        all_identities = response.json()
 
         # SEARCH PARAMETER
         search_lower = name_or_email.lower()
@@ -83,7 +73,8 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
         for identity in all_identities:
             # Get colloquial_name from properties (inline _get_prop logic)
             colloquial = None
-            for prop in (getattr(identity, 'properties', None) or []):
+            properties = identity.get("properties") or []
+            for prop in properties:
                 if isinstance(prop, dict) and prop.get("key") == "colloquial_name":
                     colloquial = prop.get("value")
                     break
@@ -94,9 +85,9 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
                 break
 
             # Check if first name of full name matches
-            full_name = getattr(identity, 'name', '') or ''
+            full_name = identity.get("name") or ""
             if full_name:
-                first_name = full_name.split()[0] if full_name.split() else ''
+                first_name = full_name.split()[0] if full_name.split() else ""
                 if first_name.lower() == search_lower:
                     found_identity = identity
                     break
@@ -104,7 +95,7 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
         # SECOND PASS: FIND BY EMAIL/IDENTIFIER_KEY (if not found and contains @)
         if found_identity is None and "@" in name_or_email:
             for identity in all_identities:
-                if getattr(identity, 'identifier_key', '') == name_or_email:
+                if identity.get("identifier_key") == name_or_email:
                     found_identity = identity
                     break
 
@@ -118,13 +109,14 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
         # EXTRACT PROPERTIES (inline _extract_properties logic)
         result = {
             "status": "ok",
-            "name": getattr(found_identity, 'name', None),
-            "identity_id": getattr(found_identity, 'id', None),
-            "email": getattr(found_identity, 'identifier_key', None),
+            "name": found_identity.get("name"),
+            "identity_id": found_identity.get("id"),
+            "email": found_identity.get("identifier_key"),
         }
 
         # Extract all properties into flat dict
-        for prop in (getattr(found_identity, 'properties', None) or []):
+        properties = found_identity.get("properties") or []
+        for prop in properties:
             if isinstance(prop, dict):
                 key = prop.get("key")
                 value = prop.get("value")
@@ -133,6 +125,11 @@ def lookup_staff(name_or_email: str) -> Dict[str, Any]:
 
         return result
 
+    except requests.exceptions.RequestException as e:
+        return {
+            "status": "error",
+            "error_message": f"Failed to connect to Letta API: {str(e)}\n{traceback.format_exc()}"
+        }
     except Exception as e:
         return {
             "status": "error",
