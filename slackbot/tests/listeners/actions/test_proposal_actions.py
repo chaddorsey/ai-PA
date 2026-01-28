@@ -28,7 +28,8 @@ def test_register_adds_handlers():
     # Should register handlers for:
     # - schedule_proposal_select_* (button click, uses regex)
     # - schedule_proposal_expand (expand conflicts)
-    assert mock_app.action.call_count >= 2
+    # - schedule_proposal_collapse (hide conflicts)
+    assert mock_app.action.call_count >= 3
 
     # Get the action IDs registered (first one is a regex pattern)
     action_ids = [call[0][0] for call in mock_app.action.call_args_list]
@@ -38,8 +39,9 @@ def test_register_adds_handlers():
     assert hasattr(action_ids[0], 'pattern')  # It's a compiled regex
     assert action_ids[0].pattern == r"^schedule_proposal_select_"
 
-    # Second handler is string for expand
+    # Other handlers are strings for expand and collapse
     assert "schedule_proposal_expand" in action_ids
+    assert "schedule_proposal_collapse" in action_ids
 
 
 def test_proposal_select_opens_modal():

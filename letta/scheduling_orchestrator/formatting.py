@@ -419,6 +419,11 @@ def format_refined_user_display(
         lines.append("Here are alternative time options:")
         lines.append("")
     
+    # Get participants from proposals (all proposals have the same participants)
+    proposal_participants = []
+    if all_proposals and all_proposals[0].participants:
+        proposal_participants = all_proposals[0].participants
+
     # Section 1: Best Options (zero-conflict)
     if free_proposals:
         # CRITICAL message comes before VERBATIM tag (instruction for how to handle the content)
@@ -426,6 +431,9 @@ def format_refined_user_display(
         lines.append("")
         # VERBATIM tag appears immediately before the actual proposal output
         lines.append("[VERBATIM_USER_OUTPUT]")
+        # Add participants line for slackbot parsing
+        if proposal_participants:
+            lines.append(f"[PARTICIPANTS:{','.join(proposal_participants)}]")
         lines.append("## Best Options")
         lines.append("")
 
@@ -464,6 +472,9 @@ def format_refined_user_display(
             lines.append("")
             # VERBATIM tag appears immediately before the actual proposal output
             lines.append("[VERBATIM_USER_OUTPUT]")
+            # Add participants line for slackbot parsing
+            if proposal_participants:
+                lines.append(f"[PARTICIPANTS:{','.join(proposal_participants)}]")
         lines.append("## If We Can Move or Override Current Meetings")
         lines.append("")
         

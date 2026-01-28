@@ -3,7 +3,7 @@ import pytest
 
 
 def test_render_proposal_buttons_clean():
-    """Renders clean proposals as buttons."""
+    """Renders clean proposals as buttons grouped by day."""
     from adapters.slack_proposal_adapter import render_proposal_blocks
     from services.interactive_proposals import (
         InteractiveProposal,
@@ -14,8 +14,8 @@ def test_render_proposal_buttons_clean():
         id="prop_001",
         index=1,
         label="Mon 2-3pm",
-        start_utc="2026-01-28T14:00:00Z",
-        end_utc="2026-01-28T15:00:00Z",
+        start_utc="2026-01-28T19:00:00Z",  # 2pm ET
+        end_utc="2026-01-28T20:00:00Z",    # 3pm ET
         participants=["alice@example.com"],
         category="clean",
     )
@@ -31,26 +31,29 @@ def test_render_proposal_buttons_clean():
     assert isinstance(blocks, list)
     assert len(blocks) > 0
 
-    # Should have a section with "Best Options" header
-    section_texts = [
-        b.get("text", {}).get("text", "")
-        for b in blocks
-        if b.get("type") == "section"
-    ]
-    assert any("Best Options" in t for t in section_texts)
+    # Should have image block for section header
+    image_blocks = [b for b in blocks if b.get("type") == "image"]
+    assert len(image_blocks) > 0
 
-    # Should have actions block with buttons
+    # Should have header block with day (dates now use header blocks)
+    header_blocks = [b for b in blocks if b.get("type") == "header"]
+    header_texts = [b.get("text", {}).get("text", "") for b in header_blocks]
+    assert any("Jan" in t for t in header_texts)
+
+    # Buttons should be in actions blocks
     actions_blocks = [b for b in blocks if b.get("type") == "actions"]
     assert len(actions_blocks) > 0
 
-    # Button should have correct action_id and value format
+    # Find the button
     button = actions_blocks[0]["elements"][0]
     assert button["action_id"] == "schedule_proposal_select_prop_001"
     assert button["value"] == "sess_abc123:prop_001"
+    # Button text should be time range format
+    assert "-" in button["text"]["text"]  # e.g., "2:00-3:00"
 
 
-def test_render_conflict_proposals_with_expand():
-    """Conflict proposals show with expand button when clean options exist."""
+def test_render_conflict_proposals_with_modal_button():
+    """Conflict proposals show modal button when clean options exist."""
     from adapters.slack_proposal_adapter import render_proposal_blocks
     from services.interactive_proposals import (
         InteractiveProposal,
@@ -76,6 +79,7 @@ def test_render_conflict_proposals_with_expand():
         participants=["alice@example.com"],
         category="move",
         conflict_summary="moves 'Standup' to 3pm",
+        conflict_type="multi_person",  # Moving standup is multi-person
     )
 
     proposal_set = InteractiveProposalSet(
@@ -88,19 +92,23 @@ def test_render_conflict_proposals_with_expand():
 
     blocks = render_proposal_blocks(proposal_set)
 
-    # Should have expand button
-    button_texts = []
+    # Should have button to open modal with override/move/share text
+    button_found = False
+    button_text = ""
     for b in blocks:
         if b.get("type") == "actions":
             for elem in b.get("elements", []):
-                if elem.get("type") == "button":
-                    button_texts.append(elem.get("text", {}).get("text", ""))
+                if elem.get("action_id") == "open_options_modal":
+                    button_found = True
+                    button_text = elem.get("text", {}).get("text", "")
+                    break
 
-    assert any("more options" in t.lower() for t in button_texts)
+    assert button_found, "Expected 'open_options_modal' button"
+    assert "override" in button_text.lower() or "move" in button_text.lower() or "share" in button_text.lower()
 
 
 def test_render_only_conflict_proposals():
-    """When no clean options, conflict proposals shown directly."""
+    """When only conflict options exist, show button to open modal."""
     from adapters.slack_proposal_adapter import render_proposal_blocks
     from services.interactive_proposals import (
         InteractiveProposal,
@@ -110,12 +118,13 @@ def test_render_only_conflict_proposals():
     conflict_prop = InteractiveProposal(
         id="prop_001",
         index=1,
-        label="Tue 10-11am ⚡",
+        label="Tue 10-11am",
         start_utc="2026-01-29T10:00:00Z",
         end_utc="2026-01-29T11:00:00Z",
         participants=["alice@example.com"],
         category="move",
         conflict_summary="moves 'Standup' to 3pm",
+        conflict_type="multi_person",  # Moving standup is multi-person
     )
 
     proposal_set = InteractiveProposalSet(
@@ -127,13 +136,18 @@ def test_render_only_conflict_proposals():
 
     blocks = render_proposal_blocks(proposal_set)
 
-    # Should show conflict section header
-    section_texts = [
-        b.get("text", {}).get("text", "")
-        for b in blocks
-        if b.get("type") == "section"
-    ]
-    assert any("changes" in t.lower() or "move" in t.lower() for t in section_texts)
+    # Should have button to open modal (since we have conflict proposals)
+    actions_blocks = [b for b in blocks if b.get("type") == "actions"]
+    assert len(actions_blocks) > 0
+
+    # Find the open modal button
+    button_found = False
+    for b in actions_blocks:
+        for elem in b.get("elements", []):
+            if elem.get("action_id") == "open_options_modal":
+                button_found = True
+                break
+    assert button_found, "Expected 'open_options_modal' button"
 
 
 def test_render_confirmation_modal():

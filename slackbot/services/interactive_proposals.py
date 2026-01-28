@@ -40,6 +40,13 @@ class InteractiveProposal:
     conflict_summary: Optional[str] = None     # "moves 'Standup' to 3pm"
     moved_events: List[MovedEventInfo] = field(default_factory=list)
 
+    # Conflict categorization for UI grouping
+    # "single_solo_overlap" = overlaps one single-person event
+    # "multiple_solo_overlap" = overlaps more than one single-person event
+    # "multi_person" = moves multi-attendee meeting or affects multiple people
+    # Legacy "solo_overlap" maps to "single_solo_overlap"
+    conflict_type: Optional[str] = None
+
 
 @dataclass
 class MeetingContext:
@@ -69,3 +76,23 @@ class InteractiveProposalSet:
             if prop.id == proposal_id:
                 return prop
         return None
+
+    def get_single_solo_overlap_proposals(self) -> List[InteractiveProposal]:
+        """Get conflict proposals that overlap one single-person event."""
+        return [
+            p for p in self.conflict_proposals
+            if p.conflict_type in ("single_solo_overlap", "solo_overlap")  # Include legacy
+        ]
+
+    def get_multiple_solo_overlap_proposals(self) -> List[InteractiveProposal]:
+        """Get conflict proposals that overlap more than one single-person event."""
+        return [p for p in self.conflict_proposals if p.conflict_type == "multiple_solo_overlap"]
+
+    def get_multi_person_proposals(self) -> List[InteractiveProposal]:
+        """Get conflict proposals involving multi-attendee meeting moves."""
+        return [p for p in self.conflict_proposals if p.conflict_type == "multi_person"]
+
+    # Legacy compatibility
+    def get_solo_overlap_proposals(self) -> List[InteractiveProposal]:
+        """Legacy: Get all solo overlap proposals (single + multiple)."""
+        return self.get_single_solo_overlap_proposals() + self.get_multiple_solo_overlap_proposals()

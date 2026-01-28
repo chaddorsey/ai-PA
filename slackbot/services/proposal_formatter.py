@@ -109,6 +109,14 @@ def parse_orchestrator_proposals(
                     # Generate label
                     label = _format_short_label(weekday, start_time, end_time)
 
+                    # Determine conflict type from summary
+                    conflict_type = None
+                    if is_conflict_section and current_conflict_info:
+                        conflict_type = _categorize_conflict(current_conflict_info)
+                    elif is_conflict_section:
+                        # Default to solo_overlap if no info
+                        conflict_type = "solo_overlap"
+
                     # Create proposal
                     proposal = InteractiveProposal(
                         id=f"prop_{uuid.uuid4().hex[:8]}",
@@ -119,6 +127,7 @@ def parse_orchestrator_proposals(
                         participants=participants,
                         category="move" if is_conflict_section else "clean",
                         conflict_summary=current_conflict_info if is_conflict_section else None,
+                        conflict_type=conflict_type,
                     )
 
                     if is_conflict_section:
@@ -194,6 +203,42 @@ def _parse_times_to_utc(
 
     except Exception:
         return None, None
+
+
+def _categorize_conflict(conflict_summary: str) -> str:
+    """
+    Categorize a conflict into solo_overlap or multi_person.
+
+    - solo_overlap: affects only one person's solo meeting (focus time, personal event)
+    - multi_person: involves moving a multi-attendee meeting or affects multiple people
+
+    Args:
+        conflict_summary: Text describing the conflict (e.g., "moves 'Standup' to 3pm")
+
+    Returns:
+        "solo_overlap" or "multi_person"
+    """
+    summary_lower = conflict_summary.lower()
+
+    # Multi-person indicators
+    multi_person_keywords = [
+        "move",           # Moving a meeting typically affects multiple attendees
+        " and ",          # "Chad and Bob" suggests multiple people
+        "both",           # "both calendars" suggests multiple
+        "team",           # Team meetings
+        "standup",        # Standups are typically multi-person
+        "sync",           # Syncs are typically multi-person
+        "meeting with",   # Meetings with others
+        "1:1",            # One-on-ones involve two people
+        "one-on-one",
+    ]
+
+    for keyword in multi_person_keywords:
+        if keyword in summary_lower:
+            return "multi_person"
+
+    # Default to solo_overlap (focus time, personal events, etc.)
+    return "solo_overlap"
 
 
 def _format_short_label(weekday: str, start_time: str, end_time: str) -> str:

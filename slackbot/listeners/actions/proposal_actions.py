@@ -92,37 +92,99 @@ def _handle_proposal_expand(
                 client.chat_postEphemeral(
                     channel=channel_id,
                     user=user_id,
-                    text="Those options have expired. Ask me to find times again! 🔄",
+                    text="Those options have expired. Ask me to find times again!",
                 )
             return
 
         # Mark as expanded and get new blocks
         proposal_set.show_conflicts_expanded = True
 
-        # Get the expanded conflict blocks
-        expanded_blocks = render_expanded_conflicts(proposal_set)
+        # Reconstruct the full block list with intro
+        from adapters.slack_proposal_adapter import render_proposal_blocks, INTRO_TEXT
+        full_blocks = _build_full_blocks(proposal_set, INTRO_TEXT)
 
-        if expanded_blocks:
-            # Update the message to include expanded conflicts
-            # We need to reconstruct the full block list
-            from adapters.slack_proposal_adapter import render_proposal_blocks
-            full_blocks = render_proposal_blocks(proposal_set)
+        # Update the message
+        channel_id = body.get("channel", {}).get("id")
+        message_ts = body.get("message", {}).get("ts")
 
-            # Update the message
-            channel_id = body.get("channel", {}).get("id")
-            message_ts = body.get("message", {}).get("ts")
-
-            if channel_id and message_ts:
-                client.chat_update(
-                    channel=channel_id,
-                    ts=message_ts,
-                    blocks=full_blocks,
-                )
+        if channel_id and message_ts:
+            client.chat_update(
+                channel=channel_id,
+                ts=message_ts,
+                text=INTRO_TEXT,
+                blocks=full_blocks,
+            )
 
         logger.info(f"Expanded conflict proposals for session {session_id}")
 
     except Exception as e:
         logger.error(f"Error handling proposal expand: {e}", exc_info=True)
+
+
+def _handle_proposal_collapse(
+    ack: Ack,
+    body: dict,
+    client: WebClient,
+    logger: Logger,
+) -> None:
+    """Handle collapse button click - hides conflict proposals."""
+    ack()
+
+    try:
+        session_id = body["actions"][0]["value"]
+
+        proposal_set = proposal_cache.get(session_id)
+
+        if not proposal_set:
+            channel_id = body.get("channel", {}).get("id")
+            user_id = body.get("user", {}).get("id")
+
+            if channel_id and user_id:
+                client.chat_postEphemeral(
+                    channel=channel_id,
+                    user=user_id,
+                    text="Those options have expired. Ask me to find times again!",
+                )
+            return
+
+        # Mark as collapsed
+        proposal_set.show_conflicts_expanded = False
+
+        # Reconstruct the full block list with intro
+        from adapters.slack_proposal_adapter import render_proposal_blocks, INTRO_TEXT
+        full_blocks = _build_full_blocks(proposal_set, INTRO_TEXT)
+
+        # Update the message
+        channel_id = body.get("channel", {}).get("id")
+        message_ts = body.get("message", {}).get("ts")
+
+        if channel_id and message_ts:
+            client.chat_update(
+                channel=channel_id,
+                ts=message_ts,
+                text=INTRO_TEXT,
+                blocks=full_blocks,
+            )
+
+        logger.info(f"Collapsed conflict proposals for session {session_id}")
+
+    except Exception as e:
+        logger.error(f"Error handling proposal collapse: {e}", exc_info=True)
+
+
+def _build_full_blocks(proposal_set, intro_text: str) -> list:
+    """Build full block list with intro section."""
+    from adapters.slack_proposal_adapter import render_proposal_blocks
+
+    intro_block = {
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": intro_text,
+        },
+    }
+    proposal_blocks = render_proposal_blocks(proposal_set)
+    return [intro_block] + proposal_blocks
 
 
 def register(app: App) -> None:
@@ -137,3 +199,7 @@ def register(app: App) -> None:
     @app.action("schedule_proposal_expand")
     def on_proposal_expand(ack, body, client, logger):
         _handle_proposal_expand(ack, body, client, logger)
+
+    @app.action("schedule_proposal_collapse")
+    def on_proposal_collapse(ack, body, client, logger):
+        _handle_proposal_collapse(ack, body, client, logger)

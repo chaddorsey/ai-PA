@@ -370,12 +370,34 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 session_id = f"sess_{uuid_module.uuid4().hex[:12]}"
                 logger.error(f"🔍 PROPOSAL PARSING: session_id={session_id}")
 
+                # Extract participants from orchestrator output
+                # Format: [PARTICIPANTS:email1@domain.com,email2@domain.com]
+                import re as re_module
+                from services.interactive_proposals import MeetingContext
+                participants = []
+                participant_names = {}  # email -> display name
+                participants_match = re_module.search(r'\[PARTICIPANTS:([^\]]+)\]', final_text)
+                if participants_match:
+                    participants = [p.strip() for p in participants_match.group(1).split(',') if p.strip()]
+                    # Generate display names from email prefixes
+                    for email in participants:
+                        if '@' in email:
+                            name = email.split('@')[0].replace('.', ' ').replace('_', ' ').title()
+                            participant_names[email] = name
+                logger.error(f"🔍 EXTRACTED PARTICIPANTS from orchestrator: {participants}, names: {participant_names}")
+
+                # Build meeting context with participant names
+                meeting_context = MeetingContext(
+                    participant_names=participant_names,
+                )
+
                 # Parse proposals from the response
                 proposal_set = parse_orchestrator_proposals(
                     output=final_text,
                     session_id=session_id,
                     user_id=user_id,
-                    participants=[],  # TODO: Extract from context
+                    participants=participants,
+                    meeting_context=meeting_context,
                 )
                 logger.error(f"🔍 PROPOSAL PARSED: clean={len(proposal_set.clean_proposals)}, conflict={len(proposal_set.conflict_proposals)}")
 
@@ -388,18 +410,24 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                     proposal_blocks = render_proposal_blocks(proposal_set)
                     logger.error(f"🔍 PROPOSAL BLOCKS: {len(proposal_blocks)} blocks")
 
-                    # Post text response first
-                    client.chat_postMessage(
-                        channel=working_channel,
-                        text=final_text,
-                    )
-
-                    # Then post interactive buttons
+                    # Post interactive buttons only (suppress text version)
                     if proposal_blocks:
+                        from adapters.slack_proposal_adapter import INTRO_TEXT
+
+                        # Add intro section at the beginning
+                        intro_block = {
+                            "type": "section",
+                            "text": {
+                                "type": "mrkdwn",
+                                "text": INTRO_TEXT,
+                            },
+                        }
+                        full_blocks = [intro_block] + proposal_blocks
+
                         client.chat_postMessage(
                             channel=working_channel,
-                            text="Select a time:",
-                            blocks=proposal_blocks,
+                            text=INTRO_TEXT,  # Fallback for notifications
+                            blocks=full_blocks,
                         )
                         proposals_posted = True
                         logger.error(f"✅ PROPOSALS POSTED: session={session_id}")
