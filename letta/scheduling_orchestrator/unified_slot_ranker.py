@@ -24,11 +24,13 @@ try:
     from .slot_indexer import SlotIndexer
     from .preference_merger import merge_standing_preferences
     from .preference_scorer import compute_aggregate_preference_score
+    from .identity_lookup import get_user_preferences_from_identity
 except ImportError:
     from schemas import SchedulingProblem
     from slot_indexer import SlotIndexer
     from preference_merger import merge_standing_preferences
     from preference_scorer import compute_aggregate_preference_score
+    from identity_lookup import get_user_preferences_from_identity
 
 # Category scores (higher = better)
 CATEGORY_SCORES = {
@@ -77,6 +79,16 @@ def rank_evaluated_slots(
 
     if reference_date is None:
         reference_date = date.today()
+
+    # Fetch preferences from identity if identity_id is provided (Task 1.3)
+    if identity_id and participants:
+        identity_preferences = get_user_preferences_from_identity(identity_id)
+        if identity_preferences:
+            context_json = _merge_identity_preferences_into_context(
+                context_json=context_json,
+                identity_preferences=identity_preferences,
+                requester_id=identity_id,
+            )
 
     # Build preference scoring context if context_json is provided
     preference_context = None
@@ -253,3 +265,67 @@ def _compute_preference_score(
         slot_indexer=slot_indexer,
         requester_id=requester_id,
     )
+
+
+def _merge_identity_preferences_into_context(
+    context_json: Optional[Dict[str, Any]],
+    identity_preferences: Dict[str, List[str]],
+    requester_id: str,
+) -> Dict[str, Any]:
+    """
+    Merge identity preferences into context_json for the requester.
+
+    If context_json is None or empty, creates a new context.
+    If the requester already exists in participants, merges preferences.
+    Otherwise, adds the requester as a new participant with preferences.
+
+    Args:
+        context_json: Existing context or None
+        identity_preferences: Preferences from identity (preferred_times, avoid_days, etc.)
+        requester_id: The identity ID to use as participant ID
+
+    Returns:
+        Updated context_json with merged preferences
+    """
+    import copy
+
+    # Initialize context if needed
+    if context_json is None:
+        context_json = {}
+    else:
+        # Deep copy to avoid mutating the original
+        context_json = copy.deepcopy(context_json)
+
+    # Initialize participants list if needed
+    if "participants" not in context_json:
+        context_json["participants"] = []
+
+    # Find or create requester participant
+    requester_participant = None
+    for participant in context_json["participants"]:
+        if participant.get("id") == requester_id:
+            requester_participant = participant
+            break
+
+    if requester_participant is None:
+        # Add requester as first participant (gets 2x weight)
+        requester_participant = {"id": requester_id}
+        context_json["participants"].insert(0, requester_participant)
+
+    # Initialize preferences dict if needed
+    if "preferences" not in requester_participant:
+        requester_participant["preferences"] = {}
+
+    # Merge identity preferences into participant preferences
+    # Identity preferences are additive - don't overwrite existing
+    for key, values in identity_preferences.items():
+        if key not in requester_participant["preferences"]:
+            requester_participant["preferences"][key] = values
+        else:
+            # Merge lists, avoiding duplicates
+            existing = requester_participant["preferences"][key]
+            for value in values:
+                if value not in existing:
+                    existing.append(value)
+
+    return context_json

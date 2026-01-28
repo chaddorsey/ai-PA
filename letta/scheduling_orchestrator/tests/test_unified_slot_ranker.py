@@ -2,6 +2,7 @@
 
 import pytest
 from datetime import datetime, date, timezone, timedelta
+from unittest.mock import patch, MagicMock
 
 # Import will fail until we create the module
 from scheduling_orchestrator.unified_slot_ranker import rank_evaluated_slots
@@ -317,4 +318,142 @@ class TestPreferenceScoring:
 
         # Score should only be category + date proximity
         # 100 (clean) - 2 (1 day out) = 98
+        assert ranked[0].score == 98.0
+
+
+class TestIdentityBasedPreferences:
+    """Tests for identity-based preference lookup (Task 1.3)."""
+
+    @patch("scheduling_orchestrator.unified_slot_ranker.get_user_preferences_from_identity")
+    def test_fetches_preferences_from_identity(self, mock_get_prefs):
+        """When identity_id is provided, should fetch preferences from identity."""
+        # Mock returns avoid_days preference
+        mock_get_prefs.return_value = {
+            "avoid_days": ["Thursday"]
+        }
+
+        # Thursday slot and Friday slot
+        thursday_slot = EvaluatedSlot(
+            start=datetime(2026, 1, 29, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 1, 29, 11, 0, tzinfo=timezone.utc),
+            category="clean",
+            conflicts=[]
+        )
+        friday_slot = EvaluatedSlot(
+            start=datetime(2026, 1, 30, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 1, 30, 11, 0, tzinfo=timezone.utc),
+            category="clean",
+            conflicts=[]
+        )
+
+        ranked = rank_evaluated_slots(
+            slots=[thursday_slot, friday_slot],
+            identity_id="identity-123",
+            participants=["user1@example.com"],
+            context_json=None,  # No pre-existing context
+            reference_date=date(2026, 1, 28)
+        )
+
+        # Verify the API was called with the identity_id
+        mock_get_prefs.assert_called_once_with("identity-123")
+
+        # Friday should rank first (no avoid penalty)
+        assert ranked[0].start.day == 30  # Friday
+        assert ranked[1].start.day == 29  # Thursday
+        # Thursday should have lower score due to avoid penalty
+        assert ranked[0].score > ranked[1].score
+
+    @patch("scheduling_orchestrator.unified_slot_ranker.get_user_preferences_from_identity")
+    def test_skips_identity_lookup_when_no_identity(self, mock_get_prefs):
+        """When identity_id is None, should not call the API."""
+        slot = EvaluatedSlot(
+            start=datetime(2026, 1, 29, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 1, 29, 11, 0, tzinfo=timezone.utc),
+            category="clean",
+            conflicts=[]
+        )
+
+        ranked = rank_evaluated_slots(
+            slots=[slot],
+            identity_id=None,  # No identity
+            participants=["user1@example.com"],
+            reference_date=date(2026, 1, 28)
+        )
+
+        # Verify the API was NOT called
+        mock_get_prefs.assert_not_called()
+
+        # Score should only be category + date proximity
+        assert ranked[0].score == 98.0
+
+    @patch("scheduling_orchestrator.unified_slot_ranker.get_user_preferences_from_identity")
+    def test_merges_identity_prefs_with_existing_context(self, mock_get_prefs):
+        """Identity preferences should merge with existing context_json."""
+        # Mock returns preferred_times
+        mock_get_prefs.return_value = {
+            "preferred_times": ["morning"]
+        }
+
+        # Existing context with avoid_days
+        context_json = {
+            "participants": [
+                {
+                    "id": "identity-123",
+                    "preferences": {
+                        "avoid_days": ["Thursday"]
+                    }
+                }
+            ]
+        }
+
+        # Thursday morning and Friday afternoon
+        thursday_morning = EvaluatedSlot(
+            start=datetime(2026, 1, 29, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 1, 29, 11, 0, tzinfo=timezone.utc),
+            category="clean",
+            conflicts=[]
+        )
+        friday_afternoon = EvaluatedSlot(
+            start=datetime(2026, 1, 30, 14, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 1, 30, 15, 0, tzinfo=timezone.utc),
+            category="clean",
+            conflicts=[]
+        )
+
+        ranked = rank_evaluated_slots(
+            slots=[thursday_morning, friday_afternoon],
+            identity_id="identity-123",
+            participants=["user1@example.com"],
+            context_json=context_json,
+            reference_date=date(2026, 1, 28)
+        )
+
+        # Both preferences should apply:
+        # - Thursday is avoided (penalty)
+        # - Morning is preferred (bonus)
+        # Net: avoid penalty should outweigh prefer bonus
+        assert ranked[0].start.day == 30  # Friday wins (no avoid)
+        assert ranked[1].start.day == 29  # Thursday (avoided)
+
+    @patch("scheduling_orchestrator.unified_slot_ranker.get_user_preferences_from_identity")
+    def test_handles_identity_not_found(self, mock_get_prefs):
+        """When identity not found, should proceed without preferences."""
+        # Mock returns None (identity not found)
+        mock_get_prefs.return_value = None
+
+        slot = EvaluatedSlot(
+            start=datetime(2026, 1, 29, 10, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 1, 29, 11, 0, tzinfo=timezone.utc),
+            category="clean",
+            conflicts=[]
+        )
+
+        ranked = rank_evaluated_slots(
+            slots=[slot],
+            identity_id="nonexistent-id",
+            participants=["user1@example.com"],
+            reference_date=date(2026, 1, 28)
+        )
+
+        # Should still rank the slot without preference scoring
         assert ranked[0].score == 98.0

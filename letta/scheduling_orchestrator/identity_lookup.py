@@ -123,3 +123,88 @@ def _email_to_fallback_name(email: str) -> str:
         return prefix.split(".")[0]
 
     return prefix
+
+
+def get_user_preferences_from_identity(
+    identity_id: str,
+    letta_base_url: Optional[str] = None,
+    timeout: float = 5.0,
+) -> Optional[Dict[str, List[str]]]:
+    """
+    Fetch scheduling preferences from a Letta identity.
+
+    Looks up the identity by ID and extracts scheduling preference properties:
+    - preferred_times (list of strings like "morning", "09:00-11:00")
+    - preferred_days (list of strings like "Monday", "Tuesday")
+    - avoid_times (list of strings)
+    - avoid_days (list of strings)
+
+    Args:
+        identity_id: The Letta identity ID to look up
+        letta_base_url: Base URL for Letta API (default: from env or http://localhost:8283)
+        timeout: Request timeout in seconds
+
+    Returns:
+        Dict with preference lists, or None if identity not found
+    """
+    if not identity_id:
+        return None
+
+    # Get Letta URL
+    if letta_base_url is None:
+        letta_base_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
+
+    try:
+        import httpx
+    except ImportError:
+        logger.warning("httpx not available, cannot fetch identity preferences")
+        return None
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.get(f"{letta_base_url}/v1/identities/{identity_id}")
+            if response.status_code == 404:
+                logger.debug(f"Identity not found: {identity_id}")
+                return None
+            response.raise_for_status()
+            identity = response.json()
+    except Exception as e:
+        logger.warning(f"Failed to fetch identity {identity_id} from Letta: {e}")
+        return None
+
+    return _extract_scheduling_preferences(identity)
+
+
+def _extract_scheduling_preferences(identity: dict) -> Dict[str, List[str]]:
+    """
+    Extract scheduling preferences from an identity's properties.
+
+    Expected property format:
+        {"key": "preferred_times", "value": "morning,09:00-11:00"}
+        {"key": "avoid_days", "value": "Friday,Saturday"}
+
+    Args:
+        identity: The identity record from Letta API
+
+    Returns:
+        Dict with preference lists (empty dict if no preferences found)
+    """
+    PREFERENCE_KEYS = ["preferred_times", "preferred_days", "avoid_times", "avoid_days"]
+
+    properties = identity.get("properties", [])
+    if not properties:
+        return {}
+
+    result: Dict[str, List[str]] = {}
+
+    for prop in properties:
+        key = prop.get("key", "")
+        if key in PREFERENCE_KEYS:
+            value = prop.get("value", "")
+            if value:
+                # Parse comma-separated values into list
+                items = [item.strip() for item in value.split(",") if item.strip()]
+                if items:
+                    result[key] = items
+
+    return result
