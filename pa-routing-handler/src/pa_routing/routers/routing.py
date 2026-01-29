@@ -53,7 +53,7 @@ _coordination_logger = None
 _orchestrator = None
 
 
-def init_coordination_orchestrator(supabase_client, letta_client, coordination_handler):
+def init_coordination_orchestrator(postgrest_url: str, service_key: str, letta_base_url: str, coordination_handler):
     """Initialize coordination orchestrator with dependencies."""
     global _task_type_loader, _coordination_logger, _orchestrator
 
@@ -65,12 +65,12 @@ def init_coordination_orchestrator(supabase_client, letta_client, coordination_h
     task_types_dir = os.path.join(os.path.dirname(__file__), "../../../docs/task-types")
 
     _task_type_loader = TaskTypeLoader(task_types_dir)
-    _coordination_logger = CoordinationLogger(supabase_client)
+    _coordination_logger = CoordinationLogger(postgrest_url, service_key)
     _orchestrator = CoordinationOrchestrator(
         task_type_loader=_task_type_loader,
         coordination_handler=coordination_handler,
         coordination_logger=_coordination_logger,
-        letta_client=letta_client
+        letta_base_url=letta_base_url
     )
 
 

@@ -61,12 +61,13 @@ async def lifespan(app: FastAPI):
 
     # Initialize coordination orchestrator
     try:
-        from letta import Letta
-        letta_client = Letta(base_url=settings.letta_base_url)
         coordination_handler = CoordinationBlockHandler(settings.letta_base_url)
+        # Use PostgREST URL directly (supabase-rest service exposes port 3000 internally)
+        postgrest_url = settings.supabase_url or "http://supabase-rest:3000"
         init_coordination_orchestrator(
-            supabase_client=supabase_client,
-            letta_client=letta_client,
+            postgrest_url=postgrest_url,
+            service_key=settings.supabase_service_key or "",
+            letta_base_url=settings.letta_base_url,
             coordination_handler=coordination_handler,
         )
         logger.info("coordination_orchestrator_initialized")

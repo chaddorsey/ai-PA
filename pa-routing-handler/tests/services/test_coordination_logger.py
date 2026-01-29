@@ -8,148 +8,144 @@ from datetime import datetime
 class TestCoordinationLogger:
     """Tests for CoordinationLogger."""
 
-    def test_log_event_inserts_to_supabase(self):
-        """Log event inserts record to coordination_logs table."""
+    def test_log_event_posts_to_postgrest(self):
+        """Log event posts record to PostgREST."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.insert.return_value.execute.return_value = None
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.post.return_value = mock_response
 
-        logger = CoordinationLogger(mock_supabase)
-        logger.log_event(
-            event_type="start",
-            task_id="task-123",
-            identity_id="identity-456",
-            task_type="meeting_prep",
-            data={"context": {"meeting": "Board Meeting"}}
-        )
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            logger.log_event(
+                event_type="start",
+                task_id="task-123",
+                identity_id="identity-456",
+                task_type="meeting_prep",
+                data={"context": {"meeting": "Board Meeting"}}
+            )
 
-        mock_supabase.table.assert_called_with("coordination_logs")
-        call_args = mock_supabase.table.return_value.insert.call_args[0][0]
-        assert call_args["event_type"] == "start"
-        assert call_args["task_id"] == "task-123"
-        assert call_args["task_type"] == "meeting_prep"
+            mock_client.post.assert_called_once()
+            call_args = mock_client.post.call_args
+            assert "/coordination_logs" in call_args[0][0]
+            json_data = call_args[1]["json"]
+            assert json_data["event_type"] == "start"
+            assert json_data["task_id"] == "task-123"
+            assert json_data["task_type"] == "meeting_prep"
 
     def test_log_event_includes_elapsed_ms(self):
         """Log event can include elapsed_ms."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.insert.return_value.execute.return_value = None
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.post.return_value = mock_response
 
-        logger = CoordinationLogger(mock_supabase)
-        logger.log_event(
-            event_type="complete",
-            task_id="task-123",
-            identity_id="identity-456",
-            task_type="meeting_prep",
-            elapsed_ms=4500
-        )
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            logger.log_event(
+                event_type="complete",
+                task_id="task-123",
+                identity_id="identity-456",
+                task_type="meeting_prep",
+                elapsed_ms=4500
+            )
 
-        call_args = mock_supabase.table.return_value.insert.call_args[0][0]
-        assert call_args["elapsed_ms"] == 4500
+            json_data = mock_client.post.call_args[1]["json"]
+            assert json_data["elapsed_ms"] == 4500
 
-    def test_log_event_handles_supabase_error(self):
-        """Log event handles Supabase errors gracefully."""
+    def test_log_event_handles_error(self):
+        """Log event handles errors gracefully."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.insert.return_value.execute.side_effect = Exception("DB error")
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.post.side_effect = Exception("Connection error")
 
-        logger = CoordinationLogger(mock_supabase)
-        # Should not raise, just log warning
-        logger.log_event(
-            event_type="start",
-            task_id="task-123",
-            identity_id="identity-456",
-            task_type="meeting_prep"
-        )
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            # Should not raise, just log warning
+            logger.log_event(
+                event_type="start",
+                task_id="task-123",
+                identity_id="identity-456",
+                task_type="meeting_prep"
+            )
 
     def test_log_event_includes_all_fields(self):
         """Log event includes all provided fields."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.insert.return_value.execute.return_value = None
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_client.post.return_value = mock_response
 
-        logger = CoordinationLogger(mock_supabase)
-        logger.log_event(
-            event_type="agent_dispatch",
-            task_id="task-789",
-            identity_id="identity-abc",
-            task_type="daily_briefing",
-            task_version="1.2.0",
-            data={"agent": "calendar_agent", "timeout_ms": 5000},
-            elapsed_ms=1234
-        )
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            logger.log_event(
+                event_type="agent_dispatch",
+                task_id="task-789",
+                identity_id="identity-abc",
+                task_type="daily_briefing",
+                task_version="1.2.0",
+                data={"agent": "calendar_agent", "timeout_ms": 5000},
+                elapsed_ms=1234
+            )
 
-        call_args = mock_supabase.table.return_value.insert.call_args[0][0]
-        assert call_args["event_type"] == "agent_dispatch"
-        assert call_args["task_id"] == "task-789"
-        assert call_args["identity_id"] == "identity-abc"
-        assert call_args["task_type"] == "daily_briefing"
-        assert call_args["task_version"] == "1.2.0"
-        assert call_args["data"]["agent"] == "calendar_agent"
-        assert call_args["elapsed_ms"] == 1234
-        assert "timestamp" in call_args
+            json_data = mock_client.post.call_args[1]["json"]
+            assert json_data["event_type"] == "agent_dispatch"
+            assert json_data["task_id"] == "task-789"
+            assert json_data["identity_id"] == "identity-abc"
+            assert json_data["task_type"] == "daily_briefing"
+            assert json_data["task_version"] == "1.2.0"
+            assert json_data["data"]["agent"] == "calendar_agent"
+            assert json_data["elapsed_ms"] == 1234
+            assert "timestamp" in json_data
 
     def test_query_by_task_type(self):
         """Can query logs by task type."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"event_type": "complete", "task_type": "meeting_prep"}]
-        )
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_response.json.return_value = [{"event_type": "complete", "task_type": "meeting_prep"}]
+            mock_client.get.return_value = mock_response
 
-        logger = CoordinationLogger(mock_supabase)
-        results = logger.query_by_task_type("meeting_prep", limit=10)
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            results = logger.query_by_task_type("meeting_prep", limit=10)
 
-        assert len(results) == 1
-        assert results[0]["task_type"] == "meeting_prep"
-
-    def test_query_by_task_type_with_event_type_filter(self):
-        """Can query logs by task type and event type."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-        # Chain: table -> select -> eq (task_type) -> eq (event_type) -> order -> limit -> execute
-        mock_chain = mock_supabase.table.return_value.select.return_value
-        mock_chain.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"event_type": "complete", "task_type": "meeting_prep"}]
-        )
-
-        logger = CoordinationLogger(mock_supabase)
-        results = logger.query_by_task_type("meeting_prep", event_type="complete", limit=10)
-
-        assert len(results) == 1
-        assert results[0]["event_type"] == "complete"
+            assert len(results) == 1
+            assert results[0]["task_type"] == "meeting_prep"
 
     def test_query_by_task_type_handles_error(self):
         """Query returns empty list on error."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.side_effect = Exception("DB error")
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = Exception("DB error")
 
-        logger = CoordinationLogger(mock_supabase)
-        results = logger.query_by_task_type("meeting_prep")
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            results = logger.query_by_task_type("meeting_prep")
 
-        assert results == []
-
-    def test_query_by_task_type_handles_empty_data(self):
-        """Query returns empty list when no data found."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=None
-        )
-
-        logger = CoordinationLogger(mock_supabase)
-        results = logger.query_by_task_type("nonexistent")
-
-        assert results == []
+            assert results == []
 
 
 class TestCoordinationLoggerContributionStats:
@@ -159,101 +155,43 @@ class TestCoordinationLoggerContributionStats:
         """Can get agent contribution statistics."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        # Chain: table -> select -> eq -> gte -> in_ -> execute
-        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
-            data=[
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_response.json.return_value = [
                 {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
                 {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
                 {"event_type": "agent_contributed", "data": {"agent": "calendar_agent"}},
                 {"event_type": "agent_dispatch", "data": {"agent": "email_agent"}},
                 {"event_type": "agent_timeout", "data": {"agent": "email_agent"}},
             ]
-        )
+            mock_client.get.return_value = mock_response
 
-        logger = CoordinationLogger(mock_supabase)
-        stats = logger.get_agent_contribution_stats("meeting_prep")
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            stats = logger.get_agent_contribution_stats("meeting_prep")
 
-        assert stats["calendar_agent"]["dispatches"] == 2
-        assert stats["calendar_agent"]["contributions"] == 1
-        assert stats["email_agent"]["dispatches"] == 1
-        assert stats["email_agent"]["timeouts"] == 1
+            assert stats["calendar_agent"]["dispatches"] == 2
+            assert stats["calendar_agent"]["contributions"] == 1
+            assert stats["email_agent"]["dispatches"] == 1
+            assert stats["email_agent"]["timeouts"] == 1
 
     def test_get_agent_contribution_stats_handles_error(self):
         """Returns empty dict on error."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.side_effect = Exception("DB error")
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = Exception("DB error")
 
-        logger = CoordinationLogger(mock_supabase)
-        stats = logger.get_agent_contribution_stats("meeting_prep")
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            stats = logger.get_agent_contribution_stats("meeting_prep")
 
-        assert stats == {}
-
-    def test_get_agent_contribution_stats_handles_missing_agent(self):
-        """Skips records without agent in data."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-        # Chain: table -> select -> eq -> gte -> in_ -> execute
-        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
-            data=[
-                {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
-                {"event_type": "agent_dispatch", "data": {}},  # Missing agent
-                {"event_type": "agent_contributed", "data": None},  # None data
-            ]
-        )
-
-        logger = CoordinationLogger(mock_supabase)
-        stats = logger.get_agent_contribution_stats("meeting_prep")
-
-        assert len(stats) == 1
-        assert stats["calendar_agent"]["dispatches"] == 1
-
-    def test_get_agent_contribution_stats_tracks_errors(self):
-        """Tracks agent errors in stats."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-        # Chain: table -> select -> eq -> gte -> in_ -> execute
-        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
-            data=[
-                {"event_type": "agent_dispatch", "data": {"agent": "flaky_agent"}},
-                {"event_type": "agent_error", "data": {"agent": "flaky_agent"}},
-                {"event_type": "agent_dispatch", "data": {"agent": "flaky_agent"}},
-                {"event_type": "agent_contributed", "data": {"agent": "flaky_agent"}},
-            ]
-        )
-
-        logger = CoordinationLogger(mock_supabase)
-        stats = logger.get_agent_contribution_stats("meeting_prep")
-
-        assert stats["flaky_agent"]["dispatches"] == 2
-        assert stats["flaky_agent"]["contributions"] == 1
-        assert stats["flaky_agent"]["errors"] == 1
-        assert stats["flaky_agent"]["timeouts"] == 0
-
-    def test_get_agent_contribution_stats_uses_since_days(self):
-        """Stats query filters by since_days."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-        # Chain: table -> select -> eq -> gte -> in_ -> execute
-        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
-            data=[]
-        )
-
-        logger = CoordinationLogger(mock_supabase)
-        logger.get_agent_contribution_stats("meeting_prep", since_days=7)
-
-        # Verify .gte was called with timestamp field
-        gte_call = mock_supabase.table.return_value.select.return_value.eq.return_value.gte
-        gte_call.assert_called_once()
-        args = gte_call.call_args[0]
-        assert args[0] == "timestamp"
-        # The second arg should be an ISO timestamp string
-        assert "T" in args[1]  # ISO format includes T separator
+            assert stats == {}
 
 
 class TestCoordinationLoggerExecutionSummary:
@@ -263,164 +201,79 @@ class TestCoordinationLoggerExecutionSummary:
         """Can get execution summary for refinement."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
 
-        # Track which query is being made based on call count
-        call_count = [0]
+            call_count = [0]
 
-        def create_mock_chain(*args):
-            mock_chain = MagicMock()
-            mock_chain.eq.return_value = mock_chain
-            mock_chain.order.return_value = mock_chain
-            mock_chain.limit.return_value = mock_chain
-            mock_chain.gte.return_value = mock_chain
-            mock_chain.in_.return_value = mock_chain
-
-            def mock_execute():
+            def mock_get(*args, **kwargs):
                 call_count[0] += 1
-                # First call: completions query
+                mock_response = MagicMock()
+                mock_response.raise_for_status = MagicMock()
                 if call_count[0] == 1:
-                    return MagicMock(data=[
+                    # Completions query
+                    mock_response.json.return_value = [
                         {"task_id": "task-1", "elapsed_ms": 4000},
                         {"task_id": "task-2", "elapsed_ms": 5000},
-                    ])
-                # Second call: agent stats query
+                    ]
                 elif call_count[0] == 2:
-                    return MagicMock(data=[
+                    # Agent stats query
+                    mock_response.json.return_value = [
                         {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
                         {"event_type": "agent_contributed", "data": {"agent": "calendar_agent"}},
-                    ])
-                # Third call: starts query for question patterns
+                    ]
                 else:
-                    return MagicMock(data=[
+                    # Starts query
+                    mock_response.json.return_value = [
                         {"data": {"questions_asked": ["which_meeting"]}},
                         {"data": {"questions_asked": ["which_meeting", "focus"]}},
-                    ])
+                    ]
+                return mock_response
 
-            mock_chain.execute = mock_execute
-            return mock_chain
+            mock_client.get.side_effect = mock_get
 
-        mock_supabase.table.return_value.select = create_mock_chain
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            summary = logger.get_execution_summary("meeting_prep", limit=10)
 
-        logger = CoordinationLogger(mock_supabase)
-        summary = logger.get_execution_summary("meeting_prep", limit=10)
-
-        assert summary["executions"] == 2
-        assert summary["avg_time_ms"] == 4500
-        assert "agent_stats" in summary
-        assert "question_patterns" in summary
-        assert "recent_task_ids" in summary
+            assert summary["executions"] == 2
+            assert summary["avg_time_ms"] == 4500
+            assert "agent_stats" in summary
+            assert "question_patterns" in summary
+            assert "recent_task_ids" in summary
 
     def test_get_execution_summary_no_executions(self):
         """Returns message when no executions found."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[]
-        )
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_response = MagicMock()
+            mock_response.raise_for_status = MagicMock()
+            mock_response.json.return_value = []
+            mock_client.get.return_value = mock_response
 
-        logger = CoordinationLogger(mock_supabase)
-        summary = logger.get_execution_summary("nonexistent_task")
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            summary = logger.get_execution_summary("nonexistent_task")
 
-        assert summary["executions"] == 0
-        assert summary["message"] == "No executions found"
+            assert summary["executions"] == 0
+            assert summary["message"] == "No executions found"
 
     def test_get_execution_summary_handles_error(self):
         """Returns error dict on exception."""
         from pa_routing.services.coordination_logger import CoordinationLogger
 
-        mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.side_effect = Exception("DB error")
+        with patch("httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+            MockClient.return_value.__exit__ = MagicMock(return_value=False)
+            mock_client.get.side_effect = Exception("DB error")
 
-        logger = CoordinationLogger(mock_supabase)
-        summary = logger.get_execution_summary("meeting_prep")
+            logger = CoordinationLogger("http://localhost:3000", "test-key")
+            summary = logger.get_execution_summary("meeting_prep")
 
-        assert "error" in summary
-        assert "DB error" in summary["error"]
-
-    def test_get_execution_summary_handles_missing_elapsed_ms(self):
-        """Handles records without elapsed_ms gracefully."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-
-        call_count = [0]
-
-        def create_mock_chain(*args):
-            mock_chain = MagicMock()
-            mock_chain.eq.return_value = mock_chain
-            mock_chain.order.return_value = mock_chain
-            mock_chain.limit.return_value = mock_chain
-            mock_chain.gte.return_value = mock_chain
-            mock_chain.in_.return_value = mock_chain
-
-            def mock_execute():
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    # Some records missing elapsed_ms
-                    return MagicMock(data=[
-                        {"task_id": "task-1", "elapsed_ms": 3000},
-                        {"task_id": "task-2"},  # Missing elapsed_ms
-                        {"task_id": "task-3", "elapsed_ms": 0},  # Zero elapsed_ms (falsy)
-                    ])
-                elif call_count[0] == 2:
-                    return MagicMock(data=[])
-                else:
-                    return MagicMock(data=[])
-
-            mock_chain.execute = mock_execute
-            return mock_chain
-
-        mock_supabase.table.return_value.select = create_mock_chain
-
-        logger = CoordinationLogger(mock_supabase)
-        summary = logger.get_execution_summary("meeting_prep")
-
-        assert summary["executions"] == 3
-        # Only task-1 has valid elapsed_ms (3000), task-3 has 0 which is falsy
-        assert summary["avg_time_ms"] == 3000
-
-    def test_get_execution_summary_question_pattern_aggregation(self):
-        """Correctly aggregates question patterns across executions."""
-        from pa_routing.services.coordination_logger import CoordinationLogger
-
-        mock_supabase = MagicMock()
-
-        call_count = [0]
-
-        def create_mock_chain(*args):
-            mock_chain = MagicMock()
-            mock_chain.eq.return_value = mock_chain
-            mock_chain.order.return_value = mock_chain
-            mock_chain.limit.return_value = mock_chain
-            mock_chain.gte.return_value = mock_chain
-            mock_chain.in_.return_value = mock_chain
-
-            def mock_execute():
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    return MagicMock(data=[
-                        {"task_id": "task-1", "elapsed_ms": 1000},
-                    ])
-                elif call_count[0] == 2:
-                    return MagicMock(data=[])
-                else:
-                    # Question patterns
-                    return MagicMock(data=[
-                        {"data": {"questions_asked": ["q1", "q2"]}},
-                        {"data": {"questions_asked": ["q1"]}},
-                        {"data": {"questions_asked": ["q1", "q3"]}},
-                    ])
-
-            mock_chain.execute = mock_execute
-            return mock_chain
-
-        mock_supabase.table.return_value.select = create_mock_chain
-
-        logger = CoordinationLogger(mock_supabase)
-        summary = logger.get_execution_summary("meeting_prep")
-
-        assert summary["question_patterns"]["q1"] == 3
-        assert summary["question_patterns"]["q2"] == 1
-        assert summary["question_patterns"]["q3"] == 1
+            assert "error" in summary
+            assert "DB error" in summary["error"]

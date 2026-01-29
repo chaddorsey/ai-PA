@@ -32,6 +32,7 @@ agents:
     expected_contribution: "Event details, participant list, conflicts"
 
   document:
+    enabled: false  # Document agent not yet created
     prompt_template: |
       Search for documents related to '{meeting_title}' or shared by/with
       these participants: {participants}.

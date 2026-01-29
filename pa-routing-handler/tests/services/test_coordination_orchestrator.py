@@ -15,7 +15,7 @@ class TestCoordinationOrchestrator:
             "task_type_loader": MagicMock(),
             "coordination_handler": MagicMock(),
             "coordination_logger": MagicMock(),
-            "letta_client": MagicMock()
+            "letta_base_url": "http://localhost:8283"
         }
 
     @pytest.fixture
@@ -232,7 +232,7 @@ class TestCoordinationOrchestrator:
 
         async def track_dispatch(agent_name, **kwargs):
             dispatched_agents.append(agent_name)
-            return "Finding for " + agent_name
+            return {"status": "success", "response": f"Finding for {agent_name}"}
 
         with patch.object(orchestrator, '_dispatch_to_agent', side_effect=track_dispatch):
             await orchestrator.coordinate(request)
@@ -272,7 +272,7 @@ class TestCoordinationOrchestrator:
         with patch.object(
             orchestrator, '_dispatch_to_agent', new_callable=AsyncMock
         ) as mock_dispatch:
-            mock_dispatch.return_value = "Agent response"
+            mock_dispatch.return_value = {"status": "success", "response": "Agent response"}
             response = await orchestrator.coordinate(request)
 
         assert response.status == "complete"
@@ -308,7 +308,13 @@ class TestCoordinationOrchestrator:
             context={}
         )
 
-        with patch.object(orchestrator, '_dispatch_to_agent', new_callable=AsyncMock):
+        async def mock_dispatch(agent_name, **kwargs):
+            if agent_name == "calendar":
+                return {"status": "success", "response": "Meeting at 2pm"}
+            else:
+                return {"status": "timeout"}
+
+        with patch.object(orchestrator, '_dispatch_to_agent', side_effect=mock_dispatch):
             response = await orchestrator.coordinate(request)
 
         assert response.status == "partial"
@@ -394,7 +400,7 @@ class TestAgentPromptBuilding:
             task_type_loader=MagicMock(),
             coordination_handler=MagicMock(),
             coordination_logger=MagicMock(),
-            letta_client=MagicMock()
+            letta_base_url="http://localhost:8283"
         )
 
     def test_build_agent_prompt_substitutes_placeholders(self, orchestrator):
@@ -445,7 +451,7 @@ class TestSynthesis:
             task_type_loader=MagicMock(),
             coordination_handler=MagicMock(),
             coordination_logger=MagicMock(),
-            letta_client=MagicMock()
+            letta_base_url="http://localhost:8283"
         )
 
     @pytest.mark.asyncio

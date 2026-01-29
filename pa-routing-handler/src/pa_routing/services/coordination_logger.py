@@ -1,6 +1,6 @@
 """Coordination logging utility for pattern analysis and refinement.
 
-Logs all coordination events to Supabase for:
+Logs all coordination events to PostgREST for:
 - Tracking agent contribution rates
 - Measuring coordination efficiency
 - Enabling guided refinement
@@ -8,21 +8,29 @@ Logs all coordination events to Supabase for:
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+import httpx
 import structlog
 
 logger = structlog.get_logger()
 
 
 class CoordinationLogger:
-    """Logs coordination events to Supabase."""
+    """Logs coordination events to PostgREST."""
 
-    def __init__(self, supabase_client: Any):
-        """Initialize with Supabase client.
+    def __init__(self, postgrest_url: str, service_key: str):
+        """Initialize with PostgREST URL.
 
         Args:
-            supabase_client: Supabase client instance
+            postgrest_url: PostgREST base URL (e.g., http://supabase-rest:3000)
+            service_key: Service key for authentication
         """
-        self._supabase = supabase_client
+        self._base_url = postgrest_url.rstrip("/")
+        self._headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
 
     def log_event(
         self,
@@ -57,7 +65,13 @@ class CoordinationLogger:
         }
 
         try:
-            self._supabase.table("coordination_logs").insert(record).execute()
+            with httpx.Client(timeout=5.0) as client:
+                response = client.post(
+                    f"{self._base_url}/coordination_logs",
+                    headers=self._headers,
+                    json=record
+                )
+                response.raise_for_status()
             logger.debug(
                 "coordination_event_logged",
                 event_type=event_type,
@@ -89,17 +103,22 @@ class CoordinationLogger:
             List of log records
         """
         try:
-            query = (
-                self._supabase.table("coordination_logs")
-                .select("*")
-                .eq("task_type", task_type)
-            )
-
+            params = {
+                "task_type": f"eq.{task_type}",
+                "order": "timestamp.desc",
+                "limit": str(limit),
+            }
             if event_type:
-                query = query.eq("event_type", event_type)
+                params["event_type"] = f"eq.{event_type}"
 
-            result = query.order("timestamp", desc=True).limit(limit).execute()
-            return result.data or []
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    f"{self._base_url}/coordination_logs",
+                    headers=self._headers,
+                    params=params
+                )
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.warning("coordination_query_failed", error=str(e))
             return []
@@ -124,19 +143,25 @@ class CoordinationLogger:
             # Calculate cutoff timestamp
             cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
 
-            # Get all dispatch and contribution events within time window
-            result = (
-                self._supabase.table("coordination_logs")
-                .select("event_type, data")
-                .eq("task_type", task_type)
-                .gte("timestamp", cutoff.isoformat())
-                .in_("event_type", ["agent_dispatch", "agent_contributed", "agent_timeout", "agent_error"])
-                .execute()
-            )
+            params = {
+                "task_type": f"eq.{task_type}",
+                "timestamp": f"gte.{cutoff.isoformat()}",
+                "event_type": "in.(agent_dispatch,agent_contributed,agent_timeout,agent_error)",
+                "select": "event_type,data",
+            }
+
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    f"{self._base_url}/coordination_logs",
+                    headers=self._headers,
+                    params=params
+                )
+                response.raise_for_status()
+                records = response.json()
 
             stats: Dict[str, Dict[str, int]] = {}
 
-            for record in result.data or []:
+            for record in records:
                 data = record.get("data") or {}
                 agent = data.get("agent")
                 if not agent:
@@ -150,14 +175,14 @@ class CoordinationLogger:
                         "errors": 0
                     }
 
-                event_type = record["event_type"]
-                if event_type == "agent_dispatch":
+                evt = record["event_type"]
+                if evt == "agent_dispatch":
                     stats[agent]["dispatches"] += 1
-                elif event_type == "agent_contributed":
+                elif evt == "agent_contributed":
                     stats[agent]["contributions"] += 1
-                elif event_type == "agent_timeout":
+                elif evt == "agent_timeout":
                     stats[agent]["timeouts"] += 1
-                elif event_type == "agent_error":
+                elif evt == "agent_error":
                     stats[agent]["errors"] += 1
 
             return stats
@@ -181,49 +206,62 @@ class CoordinationLogger:
         """
         try:
             # Get complete events
-            completions = (
-                self._supabase.table("coordination_logs")
-                .select("*")
-                .eq("task_type", task_type)
-                .eq("event_type", "complete")
-                .order("timestamp", desc=True)
-                .limit(limit)
-                .execute()
-            )
+            params = {
+                "task_type": f"eq.{task_type}",
+                "event_type": "eq.complete",
+                "order": "timestamp.desc",
+                "limit": str(limit),
+            }
 
-            if not completions.data:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    f"{self._base_url}/coordination_logs",
+                    headers=self._headers,
+                    params=params
+                )
+                response.raise_for_status()
+                completions = response.json()
+
+            if not completions:
                 return {"executions": 0, "message": "No executions found"}
 
             # Calculate statistics
-            times = [r.get("elapsed_ms", 0) for r in completions.data if r.get("elapsed_ms")]
+            times = [r.get("elapsed_ms", 0) for r in completions if r.get("elapsed_ms")]
             avg_time = sum(times) / len(times) if times else 0
 
             # Get agent stats
             agent_stats = self.get_agent_contribution_stats(task_type)
 
             # Get question patterns from start events
-            starts = (
-                self._supabase.table("coordination_logs")
-                .select("data")
-                .eq("task_type", task_type)
-                .eq("event_type", "start")
-                .order("timestamp", desc=True)
-                .limit(limit)
-                .execute()
-            )
+            params = {
+                "task_type": f"eq.{task_type}",
+                "event_type": "eq.start",
+                "order": "timestamp.desc",
+                "limit": str(limit),
+                "select": "data",
+            }
+
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    f"{self._base_url}/coordination_logs",
+                    headers=self._headers,
+                    params=params
+                )
+                response.raise_for_status()
+                starts = response.json()
 
             question_counts: Dict[str, int] = {}
-            for start in starts.data or []:
+            for start in starts:
                 questions = start.get("data", {}).get("questions_asked", [])
                 for q in questions:
                     question_counts[q] = question_counts.get(q, 0) + 1
 
             return {
-                "executions": len(completions.data),
+                "executions": len(completions),
                 "avg_time_ms": int(avg_time),
                 "agent_stats": agent_stats,
                 "question_patterns": question_counts,
-                "recent_task_ids": [r.get("task_id") for r in completions.data[:5]]
+                "recent_task_ids": [r.get("task_id") for r in completions[:5]]
             }
 
         except Exception as e:

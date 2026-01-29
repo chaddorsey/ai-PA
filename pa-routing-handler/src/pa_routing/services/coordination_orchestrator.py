@@ -11,6 +11,7 @@ import asyncio
 import time
 from typing import Any, Dict, Optional
 
+import httpx
 import structlog
 
 from pa_routing.models.requests import CoordinateRequest
@@ -55,7 +56,7 @@ class CoordinationOrchestrator:
         task_type_loader: TaskTypeLoader,
         coordination_handler: CoordinationBlockHandler,
         coordination_logger: CoordinationLogger,
-        letta_client: Any,
+        letta_base_url: str,
     ):
         """Initialize the orchestrator.
 
@@ -63,12 +64,12 @@ class CoordinationOrchestrator:
             task_type_loader: Loads task type definitions from YAML files
             coordination_handler: Manages Letta memory blocks for coordination
             coordination_logger: Logs events to Supabase for analysis
-            letta_client: Letta SDK client for agent communication
+            letta_base_url: Base URL for Letta API (e.g., http://letta:8283)
         """
         self._loader = task_type_loader
         self._handler = coordination_handler
         self._logger = coordination_logger
-        self._letta = letta_client
+        self._letta_url = letta_base_url
 
     async def coordinate(self, request: CoordinateRequest) -> CoordinateResponse:
         """Execute a coordination task.
@@ -138,38 +139,35 @@ class CoordinationOrchestrator:
             },
         )
 
-        # Dispatch agents in parallel
-        await self._dispatch_all_agents(
+        # Dispatch agents in parallel and collect responses directly
+        dispatch_results = await self._dispatch_all_agents(
             task_id=task_id,
             identity_id=request.identity_id,
             task_type=task_type,
             context=request.context,
         )
 
-        # Wait for contributions (with timeout)
-        await self._wait_for_contributions(
-            identity_id=request.identity_id,
-            task_type=task_type,
-            task_id=task_id,
-        )
+        # Extract findings and track completion from dispatch results
+        findings: Dict[str, str] = {}
+        agents_completed = []
+        agents_failed = []
+        agents_skipped = []
 
-        # Get status and findings
-        status = await self._handler.get_task_status(request.identity_id) or {}
-        findings = await self._handler.get_gathered_findings(request.identity_id) or {}
-
-        # Determine completion status for each agent
-        agents_completed = [
-            agent for agent, state in status.items()
-            if state == "done" and agent != "task_id"
-        ]
-        agents_failed = [
-            agent for agent, state in status.items()
-            if state in ("error", "timeout") and agent != "task_id"
-        ]
-        agents_skipped = [
-            agent for agent in enabled_agents
-            if agent not in agents_completed and agent not in agents_failed
-        ]
+        for agent_name in enabled_agents:
+            result = dispatch_results.get(agent_name)
+            if result is None:
+                # Agent not in AGENT_IDS or dispatch failed
+                agents_skipped.append(agent_name)
+            elif result.get("status") == "success":
+                agents_completed.append(agent_name)
+                if result.get("response"):
+                    findings[agent_name] = result["response"]
+            elif result.get("status") == "timeout":
+                agents_failed.append(agent_name)
+            elif result.get("status") == "error":
+                agents_failed.append(agent_name)
+            else:
+                agents_skipped.append(agent_name)
 
         # Synthesize response
         synthesis = await self._synthesize(
@@ -224,7 +222,7 @@ class CoordinationOrchestrator:
         identity_id: str,
         task_type: TaskType,
         context: Dict[str, Any],
-    ) -> None:
+    ) -> Dict[str, Dict[str, Any]]:
         """Dispatch all enabled agents in parallel.
 
         Args:
@@ -232,8 +230,12 @@ class CoordinationOrchestrator:
             identity_id: User identity
             task_type: Loaded task type definition
             context: Request context for prompt substitution
+
+        Returns:
+            Dict mapping agent name to result dict with status and response
         """
         enabled_agents = task_type.get_enabled_agents()
+        agent_names = list(enabled_agents.keys())
         tasks = []
 
         for agent_name, agent_config in enabled_agents.items():
@@ -250,7 +252,19 @@ class CoordinationOrchestrator:
             )
 
         # Run all dispatches concurrently
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Build results dict mapping agent name to result
+        dispatch_results: Dict[str, Dict[str, Any]] = {}
+        for i, result in enumerate(results):
+            agent_name = agent_names[i]
+            if isinstance(result, Exception):
+                dispatch_results[agent_name] = {"status": "error", "error": str(result)}
+            elif result is not None:
+                dispatch_results[agent_name] = result
+            # If result is None, agent_name won't be in dispatch_results
+
+        return dispatch_results
 
     def _build_agent_prompt(
         self,
@@ -286,7 +300,7 @@ class CoordinationOrchestrator:
         task_id: str,
         task_type: str,
         timeout: int,
-    ) -> Optional[str]:
+    ) -> Optional[Dict[str, Any]]:
         """Dispatch a single agent.
 
         Sends message to agent and handles timeout/errors.
@@ -300,7 +314,7 @@ class CoordinationOrchestrator:
             timeout: Timeout in seconds
 
         Returns:
-            Agent response string or None on failure
+            Result dict with status and response/error, or None if agent not found
         """
         agent_id = AGENT_IDS.get(agent_name)
         if not agent_id:
@@ -333,7 +347,7 @@ class CoordinationOrchestrator:
                     "contribution_length": len(response) if response else 0,
                 },
             )
-            return response
+            return {"status": "success", "response": response}
 
         except asyncio.TimeoutError:
             self._logger.log_event(
@@ -343,7 +357,7 @@ class CoordinationOrchestrator:
                 task_type=task_type,
                 data={"agent": agent_name, "timeout_seconds": timeout},
             )
-            return None
+            return {"status": "timeout"}
 
         except Exception as e:
             self._logger.log_event(
@@ -353,7 +367,7 @@ class CoordinationOrchestrator:
                 task_type=task_type,
                 data={"agent": agent_name, "error": str(e)},
             )
-            return None
+            return {"status": "error", "error": str(e)}
 
     async def _send_to_letta(
         self,
@@ -361,7 +375,7 @@ class CoordinationOrchestrator:
         message: str,
         identity_id: str,
     ) -> Optional[str]:
-        """Send message to Letta agent.
+        """Send message to Letta agent via HTTP.
 
         Args:
             agent_id: Letta agent identifier
@@ -372,16 +386,20 @@ class CoordinationOrchestrator:
             Assistant message response or None
         """
         try:
-            response = self._letta.send_message(
-                agent_id=agent_id,
-                message=message,
-                role="user",
-            )
+            url = f"{self._letta_url}/v1/agents/{agent_id}/messages"
+            payload = {
+                "messages": [{"role": "user", "content": message}],
+            }
+
+            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
 
             # Extract assistant message from response
-            for msg in response.messages:
-                if hasattr(msg, "assistant_message") and msg.assistant_message:
-                    return msg.assistant_message
+            for msg in data.get("messages", []):
+                if msg.get("message_type") == "assistant_message":
+                    return msg.get("content")
 
             return None
 

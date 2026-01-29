@@ -1153,6 +1153,8 @@ services:
       - PA_ROUTING_DEFAULT_IDENTITY_ID=${PA_ROUTING_DEFAULT_IDENTITY_ID:-}
     ports:
       - "5201:5201"
+    volumes:
+      - ./docs/task-types:/app/docs/task-types:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5201/health"]
       interval: 30s
