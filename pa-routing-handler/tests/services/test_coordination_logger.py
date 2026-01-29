@@ -160,7 +160,8 @@ class TestCoordinationLoggerContributionStats:
         from pa_routing.services.coordination_logger import CoordinationLogger
 
         mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock(
+        # Chain: table -> select -> eq -> gte -> in_ -> execute
+        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
             data=[
                 {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
                 {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
@@ -195,7 +196,8 @@ class TestCoordinationLoggerContributionStats:
         from pa_routing.services.coordination_logger import CoordinationLogger
 
         mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock(
+        # Chain: table -> select -> eq -> gte -> in_ -> execute
+        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
             data=[
                 {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
                 {"event_type": "agent_dispatch", "data": {}},  # Missing agent
@@ -214,7 +216,8 @@ class TestCoordinationLoggerContributionStats:
         from pa_routing.services.coordination_logger import CoordinationLogger
 
         mock_supabase = MagicMock()
-        mock_supabase.table.return_value.select.return_value.eq.return_value.in_.return_value.execute.return_value = MagicMock(
+        # Chain: table -> select -> eq -> gte -> in_ -> execute
+        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
             data=[
                 {"event_type": "agent_dispatch", "data": {"agent": "flaky_agent"}},
                 {"event_type": "agent_error", "data": {"agent": "flaky_agent"}},
@@ -230,3 +233,24 @@ class TestCoordinationLoggerContributionStats:
         assert stats["flaky_agent"]["contributions"] == 1
         assert stats["flaky_agent"]["errors"] == 1
         assert stats["flaky_agent"]["timeouts"] == 0
+
+    def test_get_agent_contribution_stats_uses_since_days(self):
+        """Stats query filters by since_days."""
+        from pa_routing.services.coordination_logger import CoordinationLogger
+
+        mock_supabase = MagicMock()
+        # Chain: table -> select -> eq -> gte -> in_ -> execute
+        mock_supabase.table.return_value.select.return_value.eq.return_value.gte.return_value.in_.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
+
+        logger = CoordinationLogger(mock_supabase)
+        logger.get_agent_contribution_stats("meeting_prep", since_days=7)
+
+        # Verify .gte was called with timestamp field
+        gte_call = mock_supabase.table.return_value.select.return_value.eq.return_value.gte
+        gte_call.assert_called_once()
+        args = gte_call.call_args[0]
+        assert args[0] == "timestamp"
+        # The second arg should be an ISO timestamp string
+        assert "T" in args[1]  # ISO format includes T separator

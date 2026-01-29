@@ -119,11 +119,17 @@ class CoordinationLogger:
             Dict mapping agent name to {dispatches, contributions, timeouts, errors}
         """
         try:
-            # Get all dispatch and contribution events
+            from datetime import timedelta
+
+            # Calculate cutoff timestamp
+            cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
+
+            # Get all dispatch and contribution events within time window
             result = (
                 self._supabase.table("coordination_logs")
                 .select("event_type, data")
                 .eq("task_type", task_type)
+                .gte("timestamp", cutoff.isoformat())
                 .in_("event_type", ["agent_dispatch", "agent_contributed", "agent_timeout", "agent_error"])
                 .execute()
             )
