@@ -19,7 +19,10 @@ success_criteria:
 agents:
   calendar:
     prompt_template: |
-      COORDINATION TASK: Find the meeting matching '{meeting_identifier}'.
+      COORDINATION TASK: Find the UPCOMING meeting matching '{meeting_identifier}'.
+
+      IMPORTANT: Focus on meetings happening TODAY or in the near future, not past events.
+      If multiple meetings match, choose the soonest upcoming one.
 
       Look up:
       - Meeting title, date, time, and location
