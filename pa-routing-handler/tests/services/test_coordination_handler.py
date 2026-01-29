@@ -160,3 +160,37 @@ class TestCoordinationBlockHandler:
         assert result is True
         # Should have updated status block
         mock_httpx_client.patch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_check_and_rotate_archives_when_full(self, mock_httpx_client):
+        """Archives gathered block when approaching capacity."""
+        from pa_routing.services.coordination_handler import (
+            CoordinationBlockHandler,
+            ROTATION_THRESHOLD
+        )
+
+        # Create content that exceeds threshold
+        large_content = "[Calendar 10:30] " + "x" * (ROTATION_THRESHOLD + 100)
+
+        mock_httpx_client.get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: [{"id": "gathered-123", "value": large_content}]
+        )
+        mock_httpx_client.post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {}
+        )
+        mock_httpx_client.patch.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {}
+        )
+
+        handler = CoordinationBlockHandler("http://letta:8283")
+        rotated = await handler.check_and_rotate_gathered(
+            identity_id="identity-abc",
+            main_agent_id="agent-main-123"
+        )
+
+        assert rotated is True
+        # Should have called archival memory POST
+        assert mock_httpx_client.post.called

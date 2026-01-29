@@ -353,3 +353,141 @@ Expected contributions:
                 return False
 
         return True
+
+    async def check_and_rotate_gathered(
+        self,
+        identity_id: str,
+        main_agent_id: str,
+    ) -> bool:
+        """
+        Archive gathered block if approaching capacity.
+
+        Writes current content to main agent's archival memory,
+        then resets block with archive marker.
+
+        Args:
+            identity_id: User's identity ID
+            main_agent_id: Main agent ID for archival storage
+
+        Returns:
+            True if rotation occurred, False otherwise
+        """
+        gathered = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
+        if not gathered:
+            return False
+
+        value = gathered.get("value", "")
+        if len(value) < ROTATION_THRESHOLD:
+            return False
+
+        # Get task context for archive
+        task_block = await self.get_block_by_label(f"coordination_task_{identity_id}")
+        task_context = task_block.get("value", "") if task_block else "Unknown task"
+
+        # Archive to main agent's archival memory
+        archive_text = f"""Coordination Session Findings
+
+Task: {task_context}
+Timestamp: {datetime.now(timezone.utc).isoformat()}
+
+{value}"""
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/v1/agents/{main_agent_id}/archival-memory",
+                    json={
+                        "text": archive_text,
+                        "tags": [
+                            f"identity:{identity_id}",
+                            "type:coordination_findings",
+                        ]
+                    }
+                )
+
+                if response.status_code != 200:
+                    logger.warning(
+                        "coordination_archive_failed",
+                        identity_id=identity_id,
+                        status=response.status_code
+                    )
+                    return False
+
+        except Exception as e:
+            logger.warning("coordination_archive_error", error=str(e))
+            return False
+
+        # Reset gathered block with archive marker
+        reset_value = f"[Archived at {datetime.now(timezone.utc).strftime('%H:%M')}]\n\n"
+        await self.update_block(gathered["id"], reset_value)
+
+        logger.info("coordination_block_rotated", identity_id=identity_id)
+        return True
+
+    async def complete_task(
+        self,
+        identity_id: str,
+        main_agent_id: str,
+    ) -> bool:
+        """
+        Archive coordination state and reset blocks.
+
+        Called when all agents have completed their contributions.
+
+        Args:
+            identity_id: User's identity ID
+            main_agent_id: Main agent ID for archival storage
+
+        Returns:
+            True on success, False on failure
+        """
+        # Get all blocks
+        task_block = await self.get_block_by_label(f"coordination_task_{identity_id}")
+        gathered_block = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
+        status_block = await self.get_block_by_label(f"coordination_status_{identity_id}")
+
+        task_value = task_block.get("value", "") if task_block else ""
+        gathered_value = gathered_block.get("value", "") if gathered_block else ""
+        status_value = status_block.get("value", "{}") if status_block else "{}"
+
+        # Archive complete session
+        archive_text = f"""COMPLETED COORDINATION TASK
+
+{task_value}
+
+Gathered Findings:
+{gathered_value}
+
+Status: {status_value}
+Completed: {datetime.now(timezone.utc).isoformat()}"""
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/v1/agents/{main_agent_id}/archival-memory",
+                    json={
+                        "text": archive_text,
+                        "tags": [
+                            f"identity:{identity_id}",
+                            "status:completed",
+                            "type:coordination_session",
+                        ]
+                    }
+                )
+
+                if response.status_code != 200:
+                    logger.warning("task_complete_archive_failed", status=response.status_code)
+
+        except Exception as e:
+            logger.warning("task_complete_archive_error", error=str(e))
+
+        # Reset all blocks
+        if task_block:
+            await self.update_block(task_block["id"], "")
+        if gathered_block:
+            await self.update_block(gathered_block["id"], "")
+        if status_block:
+            await self.update_block(status_block["id"], "{}")
+
+        logger.info("coordinated_task_completed", identity_id=identity_id)
+        return True
