@@ -23,13 +23,13 @@ class TestBlockAttachment:
             MockClient.return_value.__aenter__.return_value = mock_client
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_client.post.return_value = mock_response
+            mock_client.patch.return_value = mock_response
 
             result = await handler.attach_block_to_agent("block-123", "agent-456")
 
             assert result is True
-            mock_client.post.assert_called_once_with(
-                "http://localhost:8283/v1/agents/agent-456/memory/blocks/block-123"
+            mock_client.patch.assert_called_once_with(
+                "http://localhost:8283/v1/agents/agent-456/core-memory/blocks/attach/block-123"
             )
 
     @pytest.mark.asyncio
@@ -40,7 +40,7 @@ class TestBlockAttachment:
             MockClient.return_value.__aenter__.return_value = mock_client
             mock_response = MagicMock()
             mock_response.status_code = 404
-            mock_client.post.return_value = mock_response
+            mock_client.patch.return_value = mock_response
 
             result = await handler.attach_block_to_agent("block-123", "agent-456")
 
@@ -52,7 +52,7 @@ class TestBlockAttachment:
         with patch("httpx.AsyncClient") as MockClient:
             mock_client = AsyncMock()
             MockClient.return_value.__aenter__.return_value = mock_client
-            mock_client.post.side_effect = Exception("Connection error")
+            mock_client.patch.side_effect = Exception("Connection error")
 
             result = await handler.attach_block_to_agent("block-123", "agent-456")
 
@@ -66,13 +66,13 @@ class TestBlockAttachment:
             MockClient.return_value.__aenter__.return_value = mock_client
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_client.delete.return_value = mock_response
+            mock_client.patch.return_value = mock_response
 
             result = await handler.detach_block_from_agent("block-123", "agent-456")
 
             assert result is True
-            mock_client.delete.assert_called_once_with(
-                "http://localhost:8283/v1/agents/agent-456/memory/blocks/block-123"
+            mock_client.patch.assert_called_once_with(
+                "http://localhost:8283/v1/agents/agent-456/core-memory/blocks/detach/block-123"
             )
 
     @pytest.mark.asyncio
@@ -83,7 +83,7 @@ class TestBlockAttachment:
             MockClient.return_value.__aenter__.return_value = mock_client
             mock_response = MagicMock()
             mock_response.status_code = 404
-            mock_client.delete.return_value = mock_response
+            mock_client.patch.return_value = mock_response
 
             result = await handler.detach_block_from_agent("block-123", "agent-456")
 

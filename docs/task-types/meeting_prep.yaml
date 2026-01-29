@@ -28,11 +28,11 @@ agents:
       - Link to the calendar event if available
 
       IMPORTANT: After finding information, use memory_insert to record your findings:
-      memory_insert("coordination_gathered", "[Calendar HH:MM] Your summary here")
+      memory_insert("coordination_gathered_{identity_id}", "[Calendar HH:MM] Your summary here")
 
       Keep summary under 100 characters.
       Example: [Calendar 14:30] Board Meeting, 2pm Jan 30, Room A, 5 participants
-    timeout_seconds: 15
+    timeout_seconds: 60
     expected_contribution: "Event details, participant list, conflicts"
 
   document:
@@ -47,10 +47,10 @@ agents:
       - Action items from previous related meetings
 
       IMPORTANT: After finding information, use memory_insert to record your findings:
-      memory_insert("coordination_gathered", "[Document HH:MM] Your summary here")
+      memory_insert("coordination_gathered_{identity_id}", "[Document HH:MM] Your summary here")
 
       Keep summary under 100 characters.
-    timeout_seconds: 20
+    timeout_seconds: 45
     expected_contribution: "Relevant docs, agendas, action items"
 
   email:
@@ -64,11 +64,11 @@ agents:
       - Any concerns, questions, or action items raised
 
       IMPORTANT: After finding information, use memory_insert to record your findings:
-      memory_insert("coordination_gathered", "[Email HH:MM] Your summary here")
+      memory_insert("coordination_gathered_{identity_id}", "[Email HH:MM] Your summary here")
 
       Keep summary under 100 characters.
       Example: [Email 14:31] 3 threads found: budget concerns, venue confirmed, agenda draft
-    timeout_seconds: 20
+    timeout_seconds: 60
     expected_contribution: "Recent communications, concerns raised"
     default_lookback_days: 7
 
@@ -83,11 +83,11 @@ agents:
       - Working hours or timezone considerations
 
       IMPORTANT: After finding information, use memory_insert to record your findings:
-      memory_insert("coordination_gathered", "[Pulse HH:MM] Your summary here")
+      memory_insert("coordination_gathered_{identity_id}", "[Pulse HH:MM] Your summary here")
 
       Keep summary under 100 characters.
       Example: [Pulse 14:32] Bob OOO tomorrow, Alice working remote Wed
-    timeout_seconds: 10
+    timeout_seconds: 30
     expected_contribution: "Availability, OOO status"
 
 synthesis:

@@ -255,8 +255,11 @@ class CoordinationOrchestrator:
         agent_names = list(enabled_agents.keys())
         tasks = []
 
+        # Enrich context with identity_id for block label substitution
+        enriched_context = {**context, "identity_id": identity_id}
+
         for agent_name, agent_config in enabled_agents.items():
-            prompt = self._build_agent_prompt(agent_config, context)
+            prompt = self._build_agent_prompt(agent_config, enriched_context)
             tasks.append(
                 self._dispatch_to_agent(
                     agent_name=agent_name,

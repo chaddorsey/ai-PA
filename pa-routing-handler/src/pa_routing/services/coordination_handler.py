@@ -189,8 +189,8 @@ class CoordinationBlockHandler:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/agents/{agent_id}/memory/blocks/{block_id}"
+                response = await client.patch(
+                    f"{self.base_url}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}"
                 )
                 if response.status_code == 200:
                     logger.info("block_attached", block_id=block_id, agent_id=agent_id)
@@ -219,8 +219,8 @@ class CoordinationBlockHandler:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.delete(
-                    f"{self.base_url}/v1/agents/{agent_id}/memory/blocks/{block_id}"
+                response = await client.patch(
+                    f"{self.base_url}/v1/agents/{agent_id}/core-memory/blocks/detach/{block_id}"
                 )
                 if response.status_code == 200:
                     logger.info("block_detached", block_id=block_id, agent_id=agent_id)
