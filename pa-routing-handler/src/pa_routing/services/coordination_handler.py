@@ -86,3 +86,87 @@ class CoordinationBlockHandler:
         except Exception as e:
             logger.warning("block_operation_failed", label=label, error=str(e))
             return None
+
+    async def update_block(self, block_id: str, value: str) -> bool:
+        """
+        Update block value.
+
+        Args:
+            block_id: Block ID to update
+            value: New value
+
+        Returns:
+            True on success, False on failure
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.patch(
+                    f"{self.base_url}/v1/blocks/{block_id}",
+                    json={"value": value}
+                )
+
+                if response.status_code == 200:
+                    logger.debug("block_updated", block_id=block_id)
+                    return True
+
+                logger.warning(
+                    "block_update_failed",
+                    block_id=block_id,
+                    status=response.status_code
+                )
+                return False
+
+        except Exception as e:
+            logger.warning("block_update_error", block_id=block_id, error=str(e))
+            return False
+
+    async def get_block_value(self, block_id: str) -> Optional[str]:
+        """
+        Get block value by ID.
+
+        Args:
+            block_id: Block ID to retrieve
+
+        Returns:
+            Block value string, or None if not found
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/v1/blocks/{block_id}")
+
+                if response.status_code == 200:
+                    return response.json().get("value")
+
+                return None
+
+        except Exception as e:
+            logger.warning("block_get_error", block_id=block_id, error=str(e))
+            return None
+
+    async def get_block_by_label(self, label: str) -> Optional[dict]:
+        """
+        Get block by label.
+
+        Args:
+            label: Block label to find
+
+        Returns:
+            Block dict with id, value, label, or None if not found
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/blocks/",
+                    params={"label": label}
+                )
+
+                if response.status_code == 200:
+                    blocks = response.json()
+                    if blocks and len(blocks) > 0:
+                        return blocks[0]
+
+                return None
+
+        except Exception as e:
+            logger.warning("block_get_by_label_error", label=label, error=str(e))
+            return None
