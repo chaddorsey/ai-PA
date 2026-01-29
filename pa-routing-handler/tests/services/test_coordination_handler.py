@@ -90,3 +90,40 @@ class TestCoordinationBlockHandler:
         assert block is not None
         assert block["id"] == "block-123"
         assert block["label"] == "test_label"
+
+    @pytest.mark.asyncio
+    async def test_start_coordinated_task_creates_three_blocks(self, mock_httpx_client):
+        """Starting task creates task, gathered, and status blocks."""
+        from pa_routing.services.coordination_handler import CoordinationBlockHandler
+
+        created_blocks = []
+
+        def track_post(*args, **kwargs):
+            label = kwargs.get("json", {}).get("label", "")
+            block_id = f"block-{len(created_blocks)}"
+            created_blocks.append(label)
+            return MagicMock(
+                status_code=200,
+                json=lambda bid=block_id: {"id": bid, "label": label}
+            )
+
+        mock_httpx_client.get.return_value = MagicMock(status_code=200, json=lambda: [])
+        mock_httpx_client.post.side_effect = track_post
+        mock_httpx_client.patch.return_value = MagicMock(status_code=200, json=lambda: {})
+
+        handler = CoordinationBlockHandler("http://letta:8283")
+        task_id = await handler.start_coordinated_task(
+            identity_id="identity-abc",
+            task_type="meeting_prep",
+            title="Board Meeting",
+            event_id="event-123",
+            participants=["Alice", "Bob"],
+            required_agents=["calendar", "email"]
+        )
+
+        assert task_id is not None
+        assert "task-meeting_prep-" in task_id
+        assert len(created_blocks) == 3
+        assert any("coordination_task_" in label for label in created_blocks)
+        assert any("coordination_gathered_" in label for label in created_blocks)
+        assert any("coordination_status_" in label for label in created_blocks)

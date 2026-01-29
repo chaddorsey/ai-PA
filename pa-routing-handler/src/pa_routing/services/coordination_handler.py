@@ -8,6 +8,8 @@ Manages three per-identity blocks:
 See: docs/plans/2026-01-28-multi-agent-coordination-design.md
 """
 
+import json
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -170,3 +172,97 @@ class CoordinationBlockHandler:
         except Exception as e:
             logger.warning("block_get_by_label_error", label=label, error=str(e))
             return None
+
+    async def start_coordinated_task(
+        self,
+        identity_id: str,
+        task_type: str,
+        title: str,
+        event_id: Optional[str] = None,
+        participants: Optional[list[str]] = None,
+        required_agents: Optional[list[str]] = None,
+    ) -> Optional[str]:
+        """
+        Initialize coordination blocks for a multi-agent task.
+
+        Creates three blocks:
+        - coordination_task_{identity_id}: Task context for agents
+        - coordination_gathered_{identity_id}: Empty, for agent findings
+        - coordination_status_{identity_id}: Status tracking
+
+        Args:
+            identity_id: User's identity ID
+            task_type: Type of task (e.g., "meeting_prep")
+            title: Human-readable task title
+            event_id: Optional event ID for calendar tasks
+            participants: Optional list of participant names
+            required_agents: List of agent names that should contribute
+
+        Returns:
+            Task ID string, or None on failure
+        """
+        task_id = f"task-{task_type}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+        agents = required_agents or ["calendar", "document", "email", "pulse"]
+        parts = participants or []
+
+        # Build task block content
+        task_content = f"""{task_type.replace('_', ' ').title()} for {title}
+Task ID: {task_id}
+Agents: {', '.join(agents)}"""
+
+        if event_id:
+            task_content = f"""Event ID: {event_id}
+{task_content}"""
+
+        if parts:
+            task_content += f"\nParticipants: {', '.join(parts)}"
+
+        task_content += """
+
+Expected contributions:
+- Calendar: event details, conflicts
+- Document: agenda summary, action items
+- Email: relevant threads (last 7 days)
+- Pulse: availability/status updates"""
+
+        # Create task block
+        task_block_id = await self.get_or_create_block(
+            label=f"coordination_task_{identity_id}",
+            initial_value=task_content,
+            description="Task context for coordinated multi-agent task"
+        )
+        if not task_block_id:
+            return None
+
+        # Update task block value (in case it existed with old content)
+        await self.update_block(task_block_id, task_content)
+
+        # Create/reset gathered block
+        gathered_block_id = await self.get_or_create_block(
+            label=f"coordination_gathered_{identity_id}",
+            initial_value="",
+            description="Agent findings (append-only)"
+        )
+        if gathered_block_id:
+            await self.update_block(gathered_block_id, "")
+
+        # Create/initialize status block
+        status = {agent: "pending" for agent in agents}
+        status["task_id"] = task_id
+
+        status_block_id = await self.get_or_create_block(
+            label=f"coordination_status_{identity_id}",
+            initial_value=json.dumps(status),
+            description="Task completion status (handler only)"
+        )
+        if status_block_id:
+            await self.update_block(status_block_id, json.dumps(status))
+
+        logger.info(
+            "coordinated_task_started",
+            task_id=task_id,
+            identity_id=identity_id,
+            agents=agents
+        )
+
+        return task_id
