@@ -1,6 +1,6 @@
 """Pydantic request models for the routing API."""
 
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -26,3 +26,13 @@ class AgentSelectRequest(BaseModel):
     session_id: UUID
     agent_id: str
     reason: Optional[str] = Field(default=None, description="Reason for manual selection")
+
+
+class CoordinateRequest(BaseModel):
+    """Request to execute multi-agent coordination."""
+
+    identity_id: str
+    task_type: str
+    context: Dict[str, Any]
+    questions_asked: Optional[List[str]] = None
+    conversation_id: Optional[str] = None

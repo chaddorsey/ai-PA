@@ -1,6 +1,6 @@
 """Pydantic response models for the routing API."""
 
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -37,3 +37,17 @@ class AgentListResponse(BaseModel):
 
     agents: list[AgentInfo]
     count: int
+
+
+class CoordinateResponse(BaseModel):
+    """Response from multi-agent coordination."""
+
+    status: str  # complete, partial, error
+    task_id: str
+    synthesis: Optional[str] = None
+    findings: Optional[Dict[str, str]] = None
+    agents_completed: List[str] = []
+    agents_failed: List[str] = []
+    agents_skipped: List[str] = []
+    coordination_time_ms: Optional[int] = None
+    error_message: Optional[str] = None
