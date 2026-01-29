@@ -822,3 +822,42 @@ Phases 1 and 2 can run in parallel.
 Phase 3 depends on Phase 1.
 Phase 4 depends on Phase 2.
 Phase 5 depends on Phases 3 and 4.
+
+---
+
+## Future Work (Deferred)
+
+### Git Versioning for Task Type Refinement
+
+**Status:** Deferred until live execution data available
+
+**Context:** Task type YAMLs in `docs/task-types/` serve as the objects of record for coordination processes. They should be version-controlled as refinements are made based on execution logs.
+
+**Design Decision:** Handler-side Git (not agent-accessible)
+- The coordination handler or a refinement service commits task type changes
+- Agents never touch Git directly
+- Changes go to `refinement/auto` branch for human review before merge
+
+**Implementation Sketch:**
+```python
+# In refinement_service.py (future)
+TASK_TYPES_DIR = Path("docs/task-types")
+
+def commit_task_type_change(task_type: str, yaml_content: str, commit_msg: str):
+    # Guardrail: only allow writes to task-types directory
+    file_path = TASK_TYPES_DIR / f"{task_type}.yaml"
+    file_path.write_text(yaml_content)
+    subprocess.run(["git", "checkout", "-B", "refinement/auto"])
+    subprocess.run(["git", "add", str(file_path)])
+    subprocess.run(["git", "commit", "-m", commit_msg])
+```
+
+**Prerequisites:**
+1. Live execution data from coordination tasks
+2. Pattern recognition from `coordination_logs` table
+3. Validated refinement suggestions from `analyze_task_executions` tool
+
+**Guardrails:**
+- Path restriction: Only `docs/task-types/*.yaml` writable
+- Branch protection: Auto-commits to `refinement/auto`, not `main`
+- Human review: PR workflow before merge
