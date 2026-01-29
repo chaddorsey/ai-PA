@@ -266,3 +266,90 @@ Expected contributions:
         )
 
         return task_id
+
+    async def check_agent_contribution(
+        self,
+        identity_id: str,
+        agent_name: str,
+    ) -> bool:
+        """
+        Check if agent has added findings to gathered block.
+
+        Looks for [AgentName pattern in gathered block. If found,
+        updates status block to mark agent as "done".
+
+        Args:
+            identity_id: User's identity ID
+            agent_name: Agent name to check (calendar, email, etc.)
+
+        Returns:
+            True if agent has contributed, False otherwise
+        """
+        # Get gathered block
+        gathered = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
+        if not gathered:
+            return False
+
+        gathered_value = gathered.get("value", "")
+
+        # Check for agent's entry (case-insensitive match)
+        agent_pattern = f"[{agent_name.title()}"
+        if agent_pattern not in gathered_value:
+            return False
+
+        # Agent has contributed - update status
+        status_block = await self.get_block_by_label(f"coordination_status_{identity_id}")
+        if status_block:
+            try:
+                status = json.loads(status_block.get("value", "{}"))
+                status[agent_name.lower()] = "done"
+                await self.update_block(status_block["id"], json.dumps(status))
+                logger.info(
+                    "agent_contribution_recorded",
+                    identity_id=identity_id,
+                    agent=agent_name
+                )
+            except json.JSONDecodeError:
+                logger.warning("status_block_parse_error", identity_id=identity_id)
+
+        return True
+
+    async def get_task_status(self, identity_id: str) -> Optional[dict]:
+        """
+        Get current task status.
+
+        Args:
+            identity_id: User's identity ID
+
+        Returns:
+            Status dict with agent statuses and task_id, or None
+        """
+        status_block = await self.get_block_by_label(f"coordination_status_{identity_id}")
+        if not status_block:
+            return None
+
+        try:
+            return json.loads(status_block.get("value", "{}"))
+        except json.JSONDecodeError:
+            return None
+
+    async def is_task_complete(self, identity_id: str) -> bool:
+        """
+        Check if all agents have completed their contributions.
+
+        Args:
+            identity_id: User's identity ID
+
+        Returns:
+            True if all agents are "done", False otherwise
+        """
+        status = await self.get_task_status(identity_id)
+        if not status:
+            return False
+
+        # Check all agents except task_id
+        for key, value in status.items():
+            if key != "task_id" and value != "done":
+                return False
+
+        return True

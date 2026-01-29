@@ -127,3 +127,36 @@ class TestCoordinationBlockHandler:
         assert any("coordination_task_" in label for label in created_blocks)
         assert any("coordination_gathered_" in label for label in created_blocks)
         assert any("coordination_status_" in label for label in created_blocks)
+
+    @pytest.mark.asyncio
+    async def test_check_agent_contribution_detects_entry(self, mock_httpx_client):
+        """Detects when agent has added entry to gathered block."""
+        from pa_routing.services.coordination_handler import CoordinationBlockHandler
+
+        # Mock gathered block with Calendar entry
+        mock_httpx_client.get.side_effect = [
+            # First call: get gathered block by label
+            MagicMock(
+                status_code=200,
+                json=lambda: [{
+                    "id": "gathered-block-123",
+                    "value": "[Calendar 10:30] Board Meeting, 2pm, 3 participants"
+                }]
+            ),
+            # Second call: get status block by label
+            MagicMock(
+                status_code=200,
+                json=lambda: [{
+                    "id": "status-block-456",
+                    "value": '{"calendar": "pending", "email": "pending", "task_id": "task-123"}'
+                }]
+            ),
+        ]
+        mock_httpx_client.patch.return_value = MagicMock(status_code=200, json=lambda: {})
+
+        handler = CoordinationBlockHandler("http://letta:8283")
+        result = await handler.check_agent_contribution("identity-abc", "calendar")
+
+        assert result is True
+        # Should have updated status block
+        mock_httpx_client.patch.assert_called_once()
