@@ -5,12 +5,15 @@ Manages three per-identity blocks:
 - coordination_gathered_{identity_id}: Agent findings (agents append, handler reads)
 - coordination_status_{identity_id}: Completion tracking (handler only)
 
+Agents write findings in natural language format: [AgentName HH:MM] findings...
+This is easier for LLMs than JSON and the handler parses via get_gathered_findings().
+
 See: docs/plans/2026-01-28-multi-agent-coordination-design.md
 """
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 import structlog
@@ -173,6 +176,66 @@ class CoordinationBlockHandler:
             logger.warning("block_get_by_label_error", label=label, error=str(e))
             return None
 
+    async def attach_block_to_agent(self, block_id: str, agent_id: str) -> bool:
+        """
+        Attach a block to an agent's memory.
+
+        Args:
+            block_id: Block ID to attach
+            agent_id: Agent ID to attach to
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/v1/agents/{agent_id}/memory/blocks/{block_id}"
+                )
+                if response.status_code == 200:
+                    logger.info("block_attached", block_id=block_id, agent_id=agent_id)
+                    return True
+                logger.warning(
+                    "block_attach_failed",
+                    block_id=block_id,
+                    agent_id=agent_id,
+                    status=response.status_code
+                )
+                return False
+        except Exception as e:
+            logger.warning("block_attach_error", block_id=block_id, error=str(e))
+            return False
+
+    async def detach_block_from_agent(self, block_id: str, agent_id: str) -> bool:
+        """
+        Detach a block from an agent's memory.
+
+        Args:
+            block_id: Block ID to detach
+            agent_id: Agent ID to detach from
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.delete(
+                    f"{self.base_url}/v1/agents/{agent_id}/memory/blocks/{block_id}"
+                )
+                if response.status_code == 200:
+                    logger.info("block_detached", block_id=block_id, agent_id=agent_id)
+                    return True
+                logger.warning(
+                    "block_detach_failed",
+                    block_id=block_id,
+                    agent_id=agent_id,
+                    status=response.status_code
+                )
+                return False
+        except Exception as e:
+            logger.warning("block_detach_error", block_id=block_id, error=str(e))
+            return False
+
     async def start_coordinated_task(
         self,
         identity_id: str,
@@ -181,6 +244,7 @@ class CoordinationBlockHandler:
         event_id: Optional[str] = None,
         participants: Optional[list[str]] = None,
         required_agents: Optional[list[str]] = None,
+        agent_ids: Optional[Dict[str, str]] = None,
     ) -> Optional[str]:
         """
         Initialize coordination blocks for a multi-agent task.
@@ -190,6 +254,9 @@ class CoordinationBlockHandler:
         - coordination_gathered_{identity_id}: Empty, for agent findings
         - coordination_status_{identity_id}: Status tracking
 
+        If agent_ids provided, attaches task and gathered blocks to all
+        participating agents so they can read context and write findings.
+
         Args:
             identity_id: User's identity ID
             task_type: Type of task (e.g., "meeting_prep")
@@ -197,6 +264,7 @@ class CoordinationBlockHandler:
             event_id: Optional event ID for calendar tasks
             participants: Optional list of participant names
             required_agents: List of agent names that should contribute
+            agent_ids: Optional mapping of agent_name -> agent_id for block attachment
 
         Returns:
             Task ID string, or None on failure
@@ -257,6 +325,22 @@ Expected contributions:
         )
         if status_block_id:
             await self.update_block(status_block_id, json.dumps(status))
+
+        # Attach task and gathered blocks to participating agents
+        # (Status block is handler-only, not attached to agents)
+        if agent_ids and task_block_id and gathered_block_id:
+            for agent_name, agent_id in agent_ids.items():
+                if agent_name in agents:
+                    # Attach task block (read-only for agents)
+                    await self.attach_block_to_agent(task_block_id, agent_id)
+                    # Attach gathered block (agents will memory_insert here)
+                    await self.attach_block_to_agent(gathered_block_id, agent_id)
+                    logger.info(
+                        "coordination_blocks_attached",
+                        agent_name=agent_name,
+                        agent_id=agent_id,
+                        identity_id=identity_id
+                    )
 
         logger.info(
             "coordinated_task_started",
@@ -428,15 +512,18 @@ Timestamp: {datetime.now(timezone.utc).isoformat()}
         self,
         identity_id: str,
         main_agent_id: str,
+        agent_ids: Optional[Dict[str, str]] = None,
     ) -> bool:
         """
         Archive coordination state and reset blocks.
 
         Called when all agents have completed their contributions.
+        If agent_ids provided, detaches coordination blocks from agents.
 
         Args:
             identity_id: User's identity ID
             main_agent_id: Main agent ID for archival storage
+            agent_ids: Optional mapping of agent_name -> agent_id for block detachment
 
         Returns:
             True on success, False on failure
@@ -480,6 +567,19 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
 
         except Exception as e:
             logger.warning("task_complete_archive_error", error=str(e))
+
+        # Detach blocks from agents before cleanup
+        if agent_ids:
+            for agent_name, agent_id in agent_ids.items():
+                if task_block:
+                    await self.detach_block_from_agent(task_block["id"], agent_id)
+                if gathered_block:
+                    await self.detach_block_from_agent(gathered_block["id"], agent_id)
+            logger.info(
+                "coordination_blocks_detached",
+                identity_id=identity_id,
+                agent_count=len(agent_ids)
+            )
 
         # Reset all blocks
         if task_block:

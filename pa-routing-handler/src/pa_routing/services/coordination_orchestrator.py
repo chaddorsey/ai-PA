@@ -110,12 +110,20 @@ class CoordinationOrchestrator:
         # Get enabled agents
         enabled_agents = task_type.get_enabled_agents()
 
-        # Initialize coordination blocks
+        # Build agent_ids mapping for enabled agents
+        agent_ids = {
+            name: AGENT_IDS[name]
+            for name in enabled_agents
+            if name in AGENT_IDS
+        }
+
+        # Initialize coordination blocks and attach to agents
         task_id = await self._handler.start_coordinated_task(
             identity_id=request.identity_id,
             task_type=request.task_type,
             title=request.context.get("meeting_title", request.task_type),
             required_agents=list(enabled_agents.keys()),
+            agent_ids=agent_ids,
         )
 
         if not task_id:
@@ -139,7 +147,7 @@ class CoordinationOrchestrator:
             },
         )
 
-        # Dispatch agents in parallel and collect responses directly
+        # Dispatch agents in parallel (they will write to gathered block)
         dispatch_results = await self._dispatch_all_agents(
             task_id=task_id,
             identity_id=request.identity_id,
@@ -147,27 +155,32 @@ class CoordinationOrchestrator:
             context=request.context,
         )
 
-        # Extract findings and track completion from dispatch results
-        findings: Dict[str, str] = {}
-        agents_completed = []
+        # Wait for contributions by polling the gathered block
+        findings = await self._wait_for_contributions(
+            identity_id=request.identity_id,
+            task_type=task_type,
+            task_id=task_id,
+        )
+
+        # Determine completion status from gathered findings
+        agents_completed = list(findings.keys())
         agents_failed = []
         agents_skipped = []
 
         for agent_name in enabled_agents:
-            result = dispatch_results.get(agent_name)
-            if result is None:
-                # Agent not in AGENT_IDS or dispatch failed
+            if agent_name not in agent_ids:
+                # Agent not in AGENT_IDS mapping
                 agents_skipped.append(agent_name)
-            elif result.get("status") == "success":
-                agents_completed.append(agent_name)
-                if result.get("response"):
-                    findings[agent_name] = result["response"]
-            elif result.get("status") == "timeout":
-                agents_failed.append(agent_name)
-            elif result.get("status") == "error":
-                agents_failed.append(agent_name)
-            else:
-                agents_skipped.append(agent_name)
+            elif agent_name not in findings:
+                # Agent didn't write to gathered block
+                result = dispatch_results.get(agent_name)
+                if result and result.get("status") == "timeout":
+                    agents_failed.append(agent_name)
+                elif result and result.get("status") == "error":
+                    agents_failed.append(agent_name)
+                else:
+                    # Message was sent but agent didn't write findings
+                    agents_failed.append(agent_name)
 
         # Synthesize response
         synthesis = await self._synthesize(
@@ -176,8 +189,12 @@ class CoordinationOrchestrator:
             context=request.context,
         )
 
-        # Complete task and archive
-        await self._handler.complete_task(request.identity_id, MAIN_AGENT_ID)
+        # Complete task (archive and detach blocks from agents)
+        await self._handler.complete_task(
+            request.identity_id,
+            MAIN_AGENT_ID,
+            agent_ids=agent_ids,
+        )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
 
@@ -303,7 +320,8 @@ class CoordinationOrchestrator:
     ) -> Optional[Dict[str, Any]]:
         """Dispatch a single agent.
 
-        Sends message to agent and handles timeout/errors.
+        Sends message to agent. The agent is expected to write findings
+        to the coordination_gathered block via memory_insert.
 
         Args:
             agent_name: Name of agent to dispatch
@@ -314,7 +332,7 @@ class CoordinationOrchestrator:
             timeout: Timeout in seconds
 
         Returns:
-            Result dict with status and response/error, or None if agent not found
+            Result dict with status (success/timeout/error), or None if agent not found
         """
         agent_id = AGENT_IDS.get(agent_name)
         if not agent_id:
@@ -327,27 +345,17 @@ class CoordinationOrchestrator:
             task_id=task_id,
             identity_id=identity_id,
             task_type=task_type,
-            data={"agent": agent_name, "prompt": prompt[:200]},
+            data={"agent": agent_name, "timeout_seconds": timeout},
         )
 
         try:
-            response = await asyncio.wait_for(
+            # Send message to agent - agent will process and memory_insert to gathered block
+            await asyncio.wait_for(
                 self._send_to_letta(agent_id, prompt, identity_id),
                 timeout=timeout,
             )
-
-            # Log contribution event
-            self._logger.log_event(
-                event_type="agent_contributed",
-                task_id=task_id,
-                identity_id=identity_id,
-                task_type=task_type,
-                data={
-                    "agent": agent_name,
-                    "contribution_length": len(response) if response else 0,
-                },
-            )
-            return {"status": "success", "response": response}
+            # Note: We don't capture the response here - agent should write to gathered block
+            return {"status": "success"}
 
         except asyncio.TimeoutError:
             self._logger.log_event(
@@ -412,18 +420,22 @@ class CoordinationOrchestrator:
         identity_id: str,
         task_type: TaskType,
         task_id: str,
-    ) -> None:
-        """Wait for agent contributions with polling.
+    ) -> Dict[str, str]:
+        """Wait for agent contributions by polling the gathered block.
 
-        Polls coordination blocks until all agents have contributed
-        or maximum timeout is reached.
+        Polls coordination_gathered_{identity_id} block looking for
+        [AgentName HH:MM] patterns indicating agent contributions.
 
         Args:
             identity_id: User identity
             task_type: Task type definition with agent timeouts
             task_id: Current task identifier
+
+        Returns:
+            Dict mapping agent name (lowercase) to their findings
         """
         enabled_agents = task_type.get_enabled_agents()
+        agents_found: set[str] = set()
 
         # Calculate deadline from max agent timeout + buffer
         max_timeout = max(
@@ -432,18 +444,41 @@ class CoordinationOrchestrator:
         buffer_seconds = 5
         deadline = time.time() + max_timeout + buffer_seconds
 
-        polling_interval = 0.5
+        polling_interval = 1.0  # Check every second
 
         while time.time() < deadline:
-            # Check if task is complete
-            if await self._handler.is_task_complete(identity_id):
-                break
-
             # Check each agent for contributions
             for agent_name in enabled_agents:
-                await self._handler.check_agent_contribution(identity_id, agent_name)
+                if agent_name in agents_found:
+                    continue
+
+                contributed = await self._handler.check_agent_contribution(
+                    identity_id, agent_name
+                )
+                if contributed:
+                    agents_found.add(agent_name)
+                    self._logger.log_event(
+                        event_type="agent_contributed",
+                        task_id=task_id,
+                        identity_id=identity_id,
+                        task_type=task_type.name,
+                        data={"agent": agent_name},
+                    )
+
+            # Check if all agents done
+            if agents_found == set(enabled_agents.keys()):
+                logger.info(
+                    "all_agents_contributed",
+                    task_id=task_id,
+                    agents=list(agents_found)
+                )
+                break
 
             await asyncio.sleep(polling_interval)
+
+        # Parse and return findings from gathered block
+        findings = await self._handler.get_gathered_findings(identity_id)
+        return findings
 
     async def _synthesize(
         self,

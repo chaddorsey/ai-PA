@@ -19,44 +19,55 @@ success_criteria:
 agents:
   calendar:
     prompt_template: |
-      Find the meeting matching '{meeting_identifier}'.
+      COORDINATION TASK: Find the meeting matching '{meeting_identifier}'.
 
-      Return:
+      Look up:
       - Meeting title, date, time, and location
       - All participants with their response status (accepted/tentative/declined)
       - Any scheduling conflicts in the 30 minutes before or after
       - Link to the calendar event if available
 
-      Format your response as a brief summary starting with [Calendar HH:MM].
+      IMPORTANT: After finding information, use memory_insert to record your findings:
+      memory_insert("coordination_gathered", "[Calendar HH:MM] Your summary here")
+
+      Keep summary under 100 characters.
+      Example: [Calendar 14:30] Board Meeting, 2pm Jan 30, Room A, 5 participants
     timeout_seconds: 15
     expected_contribution: "Event details, participant list, conflicts"
 
   document:
     enabled: false  # Document agent not yet created
     prompt_template: |
-      Search for documents related to '{meeting_title}' or shared by/with
-      these participants: {participants}.
+      COORDINATION TASK: Search for documents related to '{meeting_title}'
+      or shared by/with these participants: {participants}.
 
       Look for:
       - Meeting agendas or prep materials
       - Recent shared documents
       - Action items from previous related meetings
 
-      Format your response as a brief summary starting with [Document HH:MM].
+      IMPORTANT: After finding information, use memory_insert to record your findings:
+      memory_insert("coordination_gathered", "[Document HH:MM] Your summary here")
+
+      Keep summary under 100 characters.
     timeout_seconds: 20
     expected_contribution: "Relevant docs, agendas, action items"
 
   email:
     prompt_template: |
-      Find email threads from the last {lookback_days} days involving
-      these participants: {participants}.
+      COORDINATION TASK: Find email threads from the last {lookback_days} days
+      involving these participants: {participants}.
 
       Focus on:
       - Threads mentioning '{meeting_title}' or related topics
       - Recent communications that provide context
       - Any concerns, questions, or action items raised
 
-      Format your response as a brief summary starting with [Email HH:MM].
+      IMPORTANT: After finding information, use memory_insert to record your findings:
+      memory_insert("coordination_gathered", "[Email HH:MM] Your summary here")
+
+      Keep summary under 100 characters.
+      Example: [Email 14:31] 3 threads found: budget concerns, venue confirmed, agenda draft
     timeout_seconds: 20
     expected_contribution: "Recent communications, concerns raised"
     default_lookback_days: 7
@@ -64,14 +75,18 @@ agents:
   pulse:
     enabled: true
     prompt_template: |
-      Check availability and status for these participants: {participants}.
+      COORDINATION TASK: Check availability and status for: {participants}.
 
       Look for:
       - Who is OOO or has limited availability
       - Any status updates relevant to the meeting
       - Working hours or timezone considerations
 
-      Format your response as a brief summary starting with [Pulse HH:MM].
+      IMPORTANT: After finding information, use memory_insert to record your findings:
+      memory_insert("coordination_gathered", "[Pulse HH:MM] Your summary here")
+
+      Keep summary under 100 characters.
+      Example: [Pulse 14:32] Bob OOO tomorrow, Alice working remote Wed
     timeout_seconds: 10
     expected_contribution: "Availability, OOO status"
 

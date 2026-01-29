@@ -97,6 +97,7 @@ class TestCoordinationOrchestrator:
         handler.get_gathered_findings = AsyncMock(return_value={})
         handler.is_task_complete = AsyncMock(return_value=True)
         handler.get_task_status = AsyncMock(return_value={"calendar": "done"})
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
@@ -127,6 +128,7 @@ class TestCoordinationOrchestrator:
         handler.get_gathered_findings = AsyncMock(return_value={})
         handler.is_task_complete = AsyncMock(return_value=True)
         handler.get_task_status = AsyncMock(return_value={"calendar": "done"})
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
@@ -218,6 +220,7 @@ class TestCoordinationOrchestrator:
             "calendar": "done",
             "email": "done"
         })
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
@@ -232,7 +235,7 @@ class TestCoordinationOrchestrator:
 
         async def track_dispatch(agent_name, **kwargs):
             dispatched_agents.append(agent_name)
-            return {"status": "success", "response": f"Finding for {agent_name}"}
+            return {"status": "success"}
 
         with patch.object(orchestrator, '_dispatch_to_agent', side_effect=track_dispatch):
             await orchestrator.coordinate(request)
@@ -259,6 +262,7 @@ class TestCoordinationOrchestrator:
             "calendar": "done",
             "task_id": "task-123"
         })
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
@@ -272,7 +276,7 @@ class TestCoordinationOrchestrator:
         with patch.object(
             orchestrator, '_dispatch_to_agent', new_callable=AsyncMock
         ) as mock_dispatch:
-            mock_dispatch.return_value = {"status": "success", "response": "Agent response"}
+            mock_dispatch.return_value = {"status": "success"}
             response = await orchestrator.coordinate(request)
 
         assert response.status == "complete"
@@ -298,6 +302,7 @@ class TestCoordinationOrchestrator:
             "email": "error",
             "task_id": "task-123"
         })
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
@@ -310,7 +315,7 @@ class TestCoordinationOrchestrator:
 
         async def mock_dispatch(agent_name, **kwargs):
             if agent_name == "calendar":
-                return {"status": "success", "response": "Meeting at 2pm"}
+                return {"status": "success"}
             else:
                 return {"status": "timeout"}
 
@@ -340,6 +345,7 @@ class TestCoordinationOrchestrator:
             "calendar": "done",
             "task_id": "task-123"
         })
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
@@ -371,6 +377,7 @@ class TestCoordinationOrchestrator:
         handler.get_gathered_findings = AsyncMock(return_value={})
         handler.is_task_complete = AsyncMock(return_value=True)
         handler.get_task_status = AsyncMock(return_value={"calendar": "done"})
+        handler.check_agent_contribution = AsyncMock(return_value=True)
         handler.complete_task = AsyncMock(return_value=True)
 
         orchestrator = CoordinationOrchestrator(**mock_dependencies)
