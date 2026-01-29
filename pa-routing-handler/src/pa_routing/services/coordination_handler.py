@@ -491,3 +491,52 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
 
         logger.info("coordinated_task_completed", identity_id=identity_id)
         return True
+
+    async def get_gathered_findings(
+        self,
+        identity_id: str,
+    ) -> dict[str, str]:
+        """
+        Parse gathered block into agent-keyed findings dictionary.
+
+        Looks for patterns like [AgentName HH:MM] in the block content
+        and extracts the content following each agent marker.
+
+        Args:
+            identity_id: User's identity ID
+
+        Returns:
+            Dict mapping agent name (lowercase) to their finding text
+        """
+        gathered = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
+        if not gathered:
+            return {}
+
+        value = gathered.get("value", "")
+        if not value:
+            return {}
+
+        findings: dict[str, str] = {}
+
+        # Parse agent entries using simple pattern matching
+        # Format: [AgentName HH:MM] finding text
+        import re
+
+        # Match [AgentName ...] patterns
+        pattern = r"\[([A-Za-z]+)\s+\d{1,2}:\d{2}\]"
+        matches = list(re.finditer(pattern, value))
+
+        for i, match in enumerate(matches):
+            agent_name = match.group(1).lower()
+            start = match.end()
+
+            # Find end of this entry (start of next entry or end of string)
+            if i + 1 < len(matches):
+                end = matches[i + 1].start()
+            else:
+                end = len(value)
+
+            finding_text = value[start:end].strip()
+            findings[agent_name] = finding_text
+
+        return findings

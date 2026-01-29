@@ -165,8 +165,8 @@ class TestCoordinationBlockHandler:
     async def test_check_and_rotate_archives_when_full(self, mock_httpx_client):
         """Archives gathered block when approaching capacity."""
         from pa_routing.services.coordination_handler import (
+            ROTATION_THRESHOLD,
             CoordinationBlockHandler,
-            ROTATION_THRESHOLD
         )
 
         # Create content that exceeds threshold
@@ -194,3 +194,43 @@ class TestCoordinationBlockHandler:
         assert rotated is True
         # Should have called archival memory POST
         assert mock_httpx_client.post.called
+
+    @pytest.mark.asyncio
+    async def test_get_gathered_findings_parses_agents(self, mock_httpx_client):
+        """Parses gathered block into agent-keyed findings dict."""
+        from pa_routing.services.coordination_handler import CoordinationBlockHandler
+
+        # Mock gathered block with multiple agent entries
+        gathered_content = """[Calendar 10:30] Board Meeting scheduled for 2pm in Conference Room A
+[Email 10:31] Found 3 related threads from last week
+[Pulse 10:32] Alice is available, Bob is in meetings"""
+
+        mock_httpx_client.get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: [{"id": "gathered-123", "value": gathered_content}]
+        )
+
+        handler = CoordinationBlockHandler("http://letta:8283")
+        findings = await handler.get_gathered_findings("identity-abc")
+
+        assert "calendar" in findings
+        assert "email" in findings
+        assert "pulse" in findings
+        assert "Board Meeting" in findings["calendar"]
+        assert "3 related threads" in findings["email"]
+        assert "Alice is available" in findings["pulse"]
+
+    @pytest.mark.asyncio
+    async def test_get_gathered_findings_returns_empty_when_no_block(self, mock_httpx_client):
+        """Returns empty dict when gathered block not found."""
+        from pa_routing.services.coordination_handler import CoordinationBlockHandler
+
+        mock_httpx_client.get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: []
+        )
+
+        handler = CoordinationBlockHandler("http://letta:8283")
+        findings = await handler.get_gathered_findings("identity-abc")
+
+        assert findings == {}
