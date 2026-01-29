@@ -1,14 +1,19 @@
 """
 Conversation helper for multi-user Letta Conversations.
 
-Handles looking up and creating conversations for Slack users,
-enabling per-user context isolation in the scheduler agent.
+Handles looking up and creating conversations for users across platforms,
+enabling per-identity context isolation in the scheduler agent.
 
-Architecture Note (2026-01-26):
-- Uses tool-based permission approach since isolated_block_labels
-  doesn't provide memory isolation (confirmed bug in Letta 0.16.3)
-- Conversations are looked up/stored in Supabase user_conversations table
-- Falls back to legacy agent-level messaging if lookup/creation fails
+Architecture (2026-01-28):
+- ONE conversation per identity per agent (shared across all platforms)
+- Identity resolved from platform-specific ID (Slack ID, email, etc.)
+- Falls back to legacy agent-level messaging if identity cannot be resolved
+- Conversations stored in Supabase user_conversations table, keyed by identity_id
+
+Cross-Platform Support:
+- Same identity messaging from Slack and Web shares one conversation
+- Memory blocks and conversation history unified across platforms
+- Platform tracking is external (for analytics), not in Letta
 """
 
 import logging
@@ -31,10 +36,15 @@ SCHEDULER_AGENT_ID = os.getenv("LETTA_SCHEDULER_AGENT_ID", DEFAULT_SCHEDULER_AGE
 
 class ConversationHelper:
     """
-    Helper for managing Letta Conversations for Slack users.
+    Helper for managing Letta Conversations by identity.
 
-    Provides conversation lookup and creation with graceful fallback
-    to legacy agent-level messaging when Supabase/Letta fails.
+    Key principle: ONE conversation per identity per agent, shared across
+    all platforms (Slack, Web, etc.). This ensures unified context.
+
+    Falls back to legacy agent-level messaging when:
+    - Identity cannot be resolved (unknown user)
+    - Supabase is not configured
+    - Any error occurs during lookup/creation
     """
 
     def __init__(self, logger: Optional[logging.Logger] = None):
@@ -50,13 +60,22 @@ class ConversationHelper:
         self,
         user_id: str,
         agent_id: Optional[str] = None,
+        user_source: str = "slack",
     ) -> Optional[str]:
         """
-        Get existing conversation or create new one for user.
+        Get existing conversation or create new one for user's identity.
+
+        Flow:
+        1. Resolve platform user_id to Letta identity
+        2. If no identity found → return None (fall back to legacy)
+        3. Look up conversation by identity_id + agent_id
+        4. If found → return existing conversation_id
+        5. If not found → create new conversation for this identity
 
         Args:
-            user_id: Slack user ID (e.g., "U12345678")
+            user_id: Platform-specific user ID (Slack ID, email, etc.)
             agent_id: Letta agent ID (defaults to scheduler agent)
+            user_source: Platform name for identity resolution ("slack", "web", "email")
 
         Returns:
             conversation_id if successful, None to fall back to legacy behavior
@@ -66,37 +85,122 @@ class ConversationHelper:
             return None
 
         agent_id = agent_id or SCHEDULER_AGENT_ID
-        user_source = "slack"
 
-        # Try to find existing conversation
-        existing = self._lookup_conversation(user_id, user_source, agent_id)
+        # Step 1: Resolve identity from platform user_id
+        identity = self._resolve_identity(user_id, user_source)
+        if not identity or not identity.get("id"):
+            self.logger.info(
+                "No identity found for %s user %s, using legacy agent messaging",
+                user_source,
+                user_id
+            )
+            return None
+
+        identity_id = identity["id"]
+        identity_name = identity.get("name")
+
+        # Step 2: Look up existing conversation by identity_id + agent_id
+        existing = self._lookup_conversation(identity_id, agent_id)
         if existing:
             self.logger.info(
-                "Found existing conversation for user %s: %s",
-                user_id,
+                "Found existing conversation for %s (identity %s): %s",
+                identity_name or user_id,
+                identity_id,
                 existing
             )
-            # Update last_active_at in background (fire and forget)
-            self._update_last_active(user_id, user_source, agent_id)
+            # Update last_active_at (fire and forget)
+            self._update_last_active(identity_id, agent_id)
             return existing
 
-        # Create new conversation
-        self.logger.info("Creating new conversation for user %s", user_id)
-        return self._create_conversation(user_id, user_source, agent_id)
+        # Step 3: Create new conversation for this identity
+        self.logger.info(
+            "Creating new conversation for %s (identity %s)",
+            identity_name or user_id,
+            identity_id
+        )
+        return self._create_conversation(
+            identity_id=identity_id,
+            identity_name=identity_name,
+            user_id=user_id,
+            user_source=user_source,
+            agent_id=agent_id
+        )
+
+    def _resolve_identity(self, user_id: str, user_source: str) -> Optional[Dict[str, Any]]:
+        """
+        Resolve platform user ID to Letta identity.
+
+        Looks up the identity by the appropriate property based on user_source:
+        - slack: looks up by slack_id property
+        - web/email: looks up by identifier_key (email)
+
+        Args:
+            user_id: Platform-specific user ID (Slack ID, email, etc.)
+            user_source: Platform name ("slack", "web", "email")
+
+        Returns:
+            Identity dict with 'id', 'name', and 'email' keys, or None if not found
+        """
+        try:
+            # Fetch all identities from Letta
+            response = requests.get(
+                f"{LETTA_BASE_URL}/v1/identities/",
+                timeout=5.0
+            )
+            response.raise_for_status()
+            identities = response.json()
+
+            # Search by appropriate property based on source
+            for identity in identities:
+                # For Slack, look up by slack_id property
+                if user_source == "slack":
+                    for prop in identity.get("properties", []):
+                        if prop.get("key") == "slack_id" and prop.get("value") == user_id:
+                            self.logger.info(
+                                "Resolved Slack user %s to identity %s (%s)",
+                                user_id,
+                                identity.get("id"),
+                                identity.get("name")
+                            )
+                            return {
+                                "id": identity.get("id"),
+                                "name": identity.get("name"),
+                                "email": identity.get("identifier_key")
+                            }
+
+                # For web/email, look up by identifier_key
+                elif user_source in ("web", "email"):
+                    if identity.get("identifier_key", "").lower() == user_id.lower():
+                        self.logger.info(
+                            "Resolved email %s to identity %s (%s)",
+                            user_id,
+                            identity.get("id"),
+                            identity.get("name")
+                        )
+                        return {
+                            "id": identity.get("id"),
+                            "name": identity.get("name"),
+                            "email": identity.get("identifier_key")
+                        }
+
+            self.logger.debug("No identity found for %s user %s", user_source, user_id)
+            return None
+
+        except Exception as e:
+            self.logger.warning("Identity resolution failed for %s: %s", user_id, e)
+            return None
 
     def _lookup_conversation(
         self,
-        user_id: str,
-        user_source: str,
+        identity_id: str,
         agent_id: str
     ) -> Optional[str]:
-        """Look up existing conversation in Supabase."""
+        """Look up existing conversation by identity_id + agent_id."""
         try:
             url = f"{SUPABASE_URL}/user_conversations"
             params = {
                 "select": "conversation_id",
-                "user_id": f"eq.{user_id}",
-                "user_source": f"eq.{user_source}",
+                "identity_id": f"eq.{identity_id}",
                 "agent_id": f"eq.{agent_id}",
                 "limit": "1"
             }
@@ -120,6 +224,8 @@ class ConversationHelper:
 
     def _create_conversation(
         self,
+        identity_id: str,
+        identity_name: Optional[str],
         user_id: str,
         user_source: str,
         agent_id: str
@@ -127,18 +233,22 @@ class ConversationHelper:
         """Create new conversation via Letta API and store mapping."""
         try:
             # Create initial preference block with naming convention
+            # Use identity_id in label for uniqueness across platforms
             self._create_user_block(
-                user_id=user_id,
+                identity_id=identity_id,
                 agent_id=agent_id,
-                label=f"preferences_{user_id}",
+                label=f"preferences_{identity_id}",
                 value="No preferences learned yet. This block stores scheduling preferences for this user.",
-                description=f"Scheduling preferences for {user_id}"
+                description=f"Scheduling preferences for {identity_name or identity_id}"
             )
+
+            # Build conversation label - just use name (no platform since shared)
+            label = identity_name or identity_id
 
             # Create conversation via Letta
             letta_url = f"{LETTA_BASE_URL}/v1/conversations/"
             params = {"agent_id": agent_id}
-            body = {"label": f"{user_id} - Slack"}
+            body = {"label": label}
 
             response = requests.post(
                 letta_url,
@@ -156,8 +266,9 @@ class ConversationHelper:
                 self.logger.error("Letta returned no conversation ID")
                 return None
 
-            # Store mapping in Supabase
+            # Store mapping in Supabase (keyed by identity_id)
             self._store_conversation_mapping(
+                identity_id=identity_id,
                 user_id=user_id,
                 user_source=user_source,
                 agent_id=agent_id,
@@ -165,9 +276,10 @@ class ConversationHelper:
             )
 
             self.logger.info(
-                "Created conversation %s for user %s",
+                "Created conversation %s for identity %s (%s)",
                 conversation_id,
-                user_id
+                identity_id,
+                identity_name or "unknown"
             )
             return conversation_id
 
@@ -177,7 +289,7 @@ class ConversationHelper:
 
     def _create_user_block(
         self,
-        user_id: str,
+        identity_id: str,
         agent_id: str,
         label: str,
         value: str,
@@ -214,7 +326,7 @@ class ConversationHelper:
                     timeout=10.0
                 )
                 attach_response.raise_for_status()
-                self.logger.info("Created and attached block %s for user %s", label, user_id)
+                self.logger.info("Created and attached block %s for identity %s", label, identity_id)
                 return block_id
 
             return None
@@ -225,12 +337,21 @@ class ConversationHelper:
 
     def _store_conversation_mapping(
         self,
+        identity_id: str,
         user_id: str,
         user_source: str,
         agent_id: str,
         conversation_id: str
     ) -> bool:
-        """Store user-conversation mapping in Supabase."""
+        """Store identity-conversation mapping in Supabase.
+
+        Args:
+            identity_id: Letta identity ID (primary lookup key)
+            user_id: Platform-specific user ID (for reference/debugging)
+            user_source: Platform name (for reference/debugging)
+            agent_id: Letta agent ID
+            conversation_id: Letta conversation ID
+        """
         try:
             url = f"{SUPABASE_URL}/user_conversations"
             headers = {
@@ -240,6 +361,7 @@ class ConversationHelper:
                 "Prefer": "return=minimal"
             }
             body = {
+                "identity_id": identity_id,
                 "user_id": user_id,
                 "user_source": user_source,
                 "agent_id": agent_id,
@@ -256,16 +378,14 @@ class ConversationHelper:
 
     def _update_last_active(
         self,
-        user_id: str,
-        user_source: str,
+        identity_id: str,
         agent_id: str
     ) -> None:
         """Update last_active_at timestamp (fire and forget)."""
         try:
             url = f"{SUPABASE_URL}/user_conversations"
             params = {
-                "user_id": f"eq.{user_id}",
-                "user_source": f"eq.{user_source}",
+                "identity_id": f"eq.{identity_id}",
                 "agent_id": f"eq.{agent_id}"
             }
             headers = {
@@ -296,18 +416,20 @@ def get_conversation_helper(logger: Optional[logging.Logger] = None) -> Conversa
 def get_conversation_for_user(
     user_id: str,
     agent_id: Optional[str] = None,
-    logger: Optional[logging.Logger] = None
+    logger: Optional[logging.Logger] = None,
+    user_source: str = "slack"
 ) -> Optional[str]:
     """
-    Convenience function to get conversation_id for a Slack user.
+    Convenience function to get conversation_id for a user.
 
     Args:
-        user_id: Slack user ID
+        user_id: Platform-specific user ID (Slack ID, email, etc.)
         agent_id: Optional agent ID (defaults to scheduler)
         logger: Optional logger
+        user_source: Platform name for identity resolution
 
     Returns:
         conversation_id or None (to use legacy agent messaging)
     """
     helper = get_conversation_helper(logger)
-    return helper.get_or_create_conversation(user_id, agent_id)
+    return helper.get_or_create_conversation(user_id, agent_id, user_source)
