@@ -164,3 +164,68 @@ class CoordinationLogger:
         except Exception as e:
             logger.warning("contribution_stats_failed", error=str(e))
             return {}
+
+    def get_execution_summary(
+        self,
+        task_type: str,
+        limit: int = 10
+    ) -> Dict[str, Any]:
+        """Get execution summary for refinement review.
+
+        Args:
+            task_type: Task type to analyze
+            limit: Number of recent executions to analyze
+
+        Returns:
+            Summary dict with statistics and patterns
+        """
+        try:
+            # Get complete events
+            completions = (
+                self._supabase.table("coordination_logs")
+                .select("*")
+                .eq("task_type", task_type)
+                .eq("event_type", "complete")
+                .order("timestamp", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+            if not completions.data:
+                return {"executions": 0, "message": "No executions found"}
+
+            # Calculate statistics
+            times = [r.get("elapsed_ms", 0) for r in completions.data if r.get("elapsed_ms")]
+            avg_time = sum(times) / len(times) if times else 0
+
+            # Get agent stats
+            agent_stats = self.get_agent_contribution_stats(task_type)
+
+            # Get question patterns from start events
+            starts = (
+                self._supabase.table("coordination_logs")
+                .select("data")
+                .eq("task_type", task_type)
+                .eq("event_type", "start")
+                .order("timestamp", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+            question_counts: Dict[str, int] = {}
+            for start in starts.data or []:
+                questions = start.get("data", {}).get("questions_asked", [])
+                for q in questions:
+                    question_counts[q] = question_counts.get(q, 0) + 1
+
+            return {
+                "executions": len(completions.data),
+                "avg_time_ms": int(avg_time),
+                "agent_stats": agent_stats,
+                "question_patterns": question_counts,
+                "recent_task_ids": [r.get("task_id") for r in completions.data[:5]]
+            }
+
+        except Exception as e:
+            logger.warning("execution_summary_failed", error=str(e))
+            return {"error": str(e)}

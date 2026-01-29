@@ -254,3 +254,173 @@ class TestCoordinationLoggerContributionStats:
         assert args[0] == "timestamp"
         # The second arg should be an ISO timestamp string
         assert "T" in args[1]  # ISO format includes T separator
+
+
+class TestCoordinationLoggerExecutionSummary:
+    """Tests for execution summary analysis."""
+
+    def test_get_execution_summary(self):
+        """Can get execution summary for refinement."""
+        from pa_routing.services.coordination_logger import CoordinationLogger
+
+        mock_supabase = MagicMock()
+
+        # Track which query is being made based on call count
+        call_count = [0]
+
+        def create_mock_chain(*args):
+            mock_chain = MagicMock()
+            mock_chain.eq.return_value = mock_chain
+            mock_chain.order.return_value = mock_chain
+            mock_chain.limit.return_value = mock_chain
+            mock_chain.gte.return_value = mock_chain
+            mock_chain.in_.return_value = mock_chain
+
+            def mock_execute():
+                call_count[0] += 1
+                # First call: completions query
+                if call_count[0] == 1:
+                    return MagicMock(data=[
+                        {"task_id": "task-1", "elapsed_ms": 4000},
+                        {"task_id": "task-2", "elapsed_ms": 5000},
+                    ])
+                # Second call: agent stats query
+                elif call_count[0] == 2:
+                    return MagicMock(data=[
+                        {"event_type": "agent_dispatch", "data": {"agent": "calendar_agent"}},
+                        {"event_type": "agent_contributed", "data": {"agent": "calendar_agent"}},
+                    ])
+                # Third call: starts query for question patterns
+                else:
+                    return MagicMock(data=[
+                        {"data": {"questions_asked": ["which_meeting"]}},
+                        {"data": {"questions_asked": ["which_meeting", "focus"]}},
+                    ])
+
+            mock_chain.execute = mock_execute
+            return mock_chain
+
+        mock_supabase.table.return_value.select = create_mock_chain
+
+        logger = CoordinationLogger(mock_supabase)
+        summary = logger.get_execution_summary("meeting_prep", limit=10)
+
+        assert summary["executions"] == 2
+        assert summary["avg_time_ms"] == 4500
+        assert "agent_stats" in summary
+        assert "question_patterns" in summary
+        assert "recent_task_ids" in summary
+
+    def test_get_execution_summary_no_executions(self):
+        """Returns message when no executions found."""
+        from pa_routing.services.coordination_logger import CoordinationLogger
+
+        mock_supabase = MagicMock()
+        mock_supabase.table.return_value.select.return_value.eq.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[]
+        )
+
+        logger = CoordinationLogger(mock_supabase)
+        summary = logger.get_execution_summary("nonexistent_task")
+
+        assert summary["executions"] == 0
+        assert summary["message"] == "No executions found"
+
+    def test_get_execution_summary_handles_error(self):
+        """Returns error dict on exception."""
+        from pa_routing.services.coordination_logger import CoordinationLogger
+
+        mock_supabase = MagicMock()
+        mock_supabase.table.return_value.select.side_effect = Exception("DB error")
+
+        logger = CoordinationLogger(mock_supabase)
+        summary = logger.get_execution_summary("meeting_prep")
+
+        assert "error" in summary
+        assert "DB error" in summary["error"]
+
+    def test_get_execution_summary_handles_missing_elapsed_ms(self):
+        """Handles records without elapsed_ms gracefully."""
+        from pa_routing.services.coordination_logger import CoordinationLogger
+
+        mock_supabase = MagicMock()
+
+        call_count = [0]
+
+        def create_mock_chain(*args):
+            mock_chain = MagicMock()
+            mock_chain.eq.return_value = mock_chain
+            mock_chain.order.return_value = mock_chain
+            mock_chain.limit.return_value = mock_chain
+            mock_chain.gte.return_value = mock_chain
+            mock_chain.in_.return_value = mock_chain
+
+            def mock_execute():
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    # Some records missing elapsed_ms
+                    return MagicMock(data=[
+                        {"task_id": "task-1", "elapsed_ms": 3000},
+                        {"task_id": "task-2"},  # Missing elapsed_ms
+                        {"task_id": "task-3", "elapsed_ms": 0},  # Zero elapsed_ms (falsy)
+                    ])
+                elif call_count[0] == 2:
+                    return MagicMock(data=[])
+                else:
+                    return MagicMock(data=[])
+
+            mock_chain.execute = mock_execute
+            return mock_chain
+
+        mock_supabase.table.return_value.select = create_mock_chain
+
+        logger = CoordinationLogger(mock_supabase)
+        summary = logger.get_execution_summary("meeting_prep")
+
+        assert summary["executions"] == 3
+        # Only task-1 has valid elapsed_ms (3000), task-3 has 0 which is falsy
+        assert summary["avg_time_ms"] == 3000
+
+    def test_get_execution_summary_question_pattern_aggregation(self):
+        """Correctly aggregates question patterns across executions."""
+        from pa_routing.services.coordination_logger import CoordinationLogger
+
+        mock_supabase = MagicMock()
+
+        call_count = [0]
+
+        def create_mock_chain(*args):
+            mock_chain = MagicMock()
+            mock_chain.eq.return_value = mock_chain
+            mock_chain.order.return_value = mock_chain
+            mock_chain.limit.return_value = mock_chain
+            mock_chain.gte.return_value = mock_chain
+            mock_chain.in_.return_value = mock_chain
+
+            def mock_execute():
+                call_count[0] += 1
+                if call_count[0] == 1:
+                    return MagicMock(data=[
+                        {"task_id": "task-1", "elapsed_ms": 1000},
+                    ])
+                elif call_count[0] == 2:
+                    return MagicMock(data=[])
+                else:
+                    # Question patterns
+                    return MagicMock(data=[
+                        {"data": {"questions_asked": ["q1", "q2"]}},
+                        {"data": {"questions_asked": ["q1"]}},
+                        {"data": {"questions_asked": ["q1", "q3"]}},
+                    ])
+
+            mock_chain.execute = mock_execute
+            return mock_chain
+
+        mock_supabase.table.return_value.select = create_mock_chain
+
+        logger = CoordinationLogger(mock_supabase)
+        summary = logger.get_execution_summary("meeting_prep")
+
+        assert summary["question_patterns"]["q1"] == 3
+        assert summary["question_patterns"]["q2"] == 1
+        assert summary["question_patterns"]["q3"] == 1
