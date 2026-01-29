@@ -3,392 +3,440 @@
 > **Status:** Design complete, ready for implementation
 > **Date:** 2026-01-29
 > **Related:** [Multi-Agent Coordination Design](./2026-01-28-multi-agent-coordination-design.md)
-> **Philosophy:** Lean/MVP approach - conversational discovery with observability for pattern honing
+> **Philosophy:** Superpowers-inspired task lifecycle with guided meta-refinement
 
 ## Overview
 
-This design adds orchestration to the existing CoordinationBlockHandler infrastructure, enabling the Main Agent to coordinate specialist agents (Calendar, Document, Email, Pulse) for complex tasks like "prep me for my next meeting."
+This design enables the Main Agent to **develop, execute, and refine multi-agent coordination tasks** through a structured lifecycle, analogous to how superpowers guides software development from brainstorming through implementation to refinement.
 
 **Key Principles:**
-- **V1 Mindset**: Start conversational, discover patterns, graduate to structure
-- **Supervisor Pattern**: Handler orchestrates, agents contribute, Main Agent synthesizes
-- **Observability First**: Log everything to enable pattern discovery
-- **No Premature UI**: Let usage patterns emerge before building structured interfaces
+- **Task Types are Projects**: Each coordination task type goes through its own development lifecycle
+- **Intentional Entry + Self-Guided Progression**: User or agent recognizes the need, then agent drives through phases with user confirmation at gates
+- **Documents for Designs, Database for Logs**: Task designs in Git-versioned YAML, execution logs in queryable database
+- **Guided Meta-Refinement**: Agent structures reviews AND questions whether evaluation criteria are right
+- **Lean/MVP**: Start conversational, discover patterns, graduate to structure
 
 ---
 
-## Architecture
-
-### Flow Overview
+## Task Type Lifecycle
 
 ```
-User: "Prep me for my next meeting"
-         ↓
-    Main Agent (via normal routing)
-         ↓
-    Conversational clarification
-    "Which meeting? What focus areas?"
-         ↓
-    User provides context
-         ↓
-    Main Agent calls coordinate_task tool
-         ↓
-    POST /coordinate (with full context)
-         ↓
-┌────────────────────────────────────┐
-│     Coordination Orchestrator      │
-│  1. Initialize blocks              │
-│  2. Dispatch agents (parallel)     │
-│  3. Collect findings               │
-│  4. Synthesize response            │
-│  5. Archive & cleanup              │
-└────────────────────────────────────┘
-         ↓
-    Synthesized response to Main Agent
-         ↓
-    Main Agent delivers to user
-```
+┌─────────────────────────────────────────────────────────────────┐
+│                    TASK TYPE LIFECYCLE                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐    │
+│  │ BRAIN-   │   │ DESIGN   │   │ CREATE   │   │ EXECUTE  │    │
+│  │ STORM    │──▶│          │──▶│          │──▶│          │──┐ │
+│  └──────────┘   └──────────┘   └──────────┘   └──────────┘  │ │
+│       │                                             │        │ │
+│       │              ┌──────────┐                   │        │ │
+│       │              │ REFINE   │◀──────────────────┘        │ │
+│       │              │          │                            │ │
+│       │              └────┬─────┘                            │ │
+│       │                   │                                  │ │
+│       │                   ▼                                  │ │
+│       │         [hardened, reusable process]                 │ │
+│       │                   │                                  │ │
+│       └───────────────────┴──────────────────────────────────┘ │
+│                    (new task type idea)                        │
+└─────────────────────────────────────────────────────────────────┘
 
-### Key Insight: Main Agent as Conversation Layer
-
-The Main Agent handles:
-- Natural language understanding
-- Clarifying questions (conversationally)
-- Context gathering
-- Final delivery to user
-
-The `/coordinate` endpoint handles:
-- Agent dispatch
-- Block management
-- Findings collection
-- Response synthesis
-
-This separation means the orchestrator receives **fully-clarified context**, not ambiguous requests.
-
----
-
-## API Design
-
-### Endpoint: `POST /v1/coordinate`
-
-Called by Main Agent after gathering context conversationally.
-
-**Request:**
-```json
-{
-    "identity_id": "identity-123",
-    "task_type": "meeting_prep",
-    "context": {
-        "meeting_identifier": "Board Meeting tomorrow 2pm",
-        "event_id": "event-abc123",
-        "focus_areas": ["participants", "prep_materials", "recent_context"],
-        "depth": "thorough",
-        "additional_context": "User mentioned Alice has timeline concerns"
-    },
-    "conversation_id": "conv-456"
-}
-```
-
-**Response:**
-```json
-{
-    "status": "complete",
-    "task_id": "task-meeting-prep-20260129-143000",
-    "synthesis": "**Board Meeting** - Tomorrow 2:00 PM\n\n**Participants:**\n- Alice Chen...",
-    "findings": {
-        "calendar": "[Calendar 14:30] Board Meeting, 2pm Jan 30, 3 participants confirmed",
-        "document": "[Document 14:31] Q4 Budget deck updated yesterday, 2 action items pending",
-        "email": "[Email 14:31] Alice flagged timeline, Bob confirmed ready",
-        "pulse": "[Pulse 14:32] Carol OOO Friday"
-    },
-    "agents_completed": ["calendar", "document", "email", "pulse"],
-    "agents_failed": [],
-    "coordination_time_ms": 4500
-}
+Lifecycle Stages:
+  draft     → Being designed (phases 1-2)
+  active    → Deployable, in use (phases 3-4)
+  refined   → Improved based on execution data (phase 5)
+  hardened  → Stable, potentially with UI shortcuts
 ```
 
 ---
 
-## Task Type Configuration
+## Phase 1: Task Brainstorming
 
-Minimal configuration - just enough to know which agents to dispatch and how to synthesize.
+**Purpose:** Explore what the user wants to accomplish and which agents could help.
 
-```python
-TASK_TYPES = {
-    "meeting_prep": {
-        "agents": ["calendar", "document", "email", "pulse"],
-        "synthesis_mode": "template_with_enhancement",
-        "template": """**{meeting_title}** - {meeting_time}
+**Entry:** Intentional - user says "I want help with X" or "Let's develop a task for Y", or Main Agent recognizes the need.
 
-**Participants:**
-{participant_details}
+**Main Agent Behavior:**
 
-**Prep Materials:**
-{document_findings}
+1. **Survey capabilities:**
+   ```
+   "Here are the specialist agents available:
+    - Calendar: events, conflicts, participants, scheduling
+    - Document: files, agendas, shared docs, action items
+    - Email: threads, communications, attachments
+    - Pulse: availability, OOO status, working hours
+    - Task: OmniFocus tasks, projects, deadlines
 
-**Recent Context:**
-{email_findings}
+   Which of these might help with what you're trying to do?"
+   ```
 
-**Availability Notes:**
-{pulse_findings}
-""",
-        "main_agent_prompt": "Review these findings and add any insights about preparation priorities or potential issues.",
-        "timeout_seconds": 30
-    },
+2. **One question at a time** (superpowers pattern):
+   - "What triggers this task? When would you want this?"
+   - "What's the goal? What does success look like?"
+   - "What information would be most valuable?"
+   - "How detailed should the output be?"
 
-    "project_status": {
-        "agents": ["document", "email", "task"],
-        "synthesis_mode": "main_agent_only",
-        "main_agent_prompt": "Synthesize these findings into a concise project status update.",
-        "timeout_seconds": 45
-    },
+3. **Explore 2-3 approaches with tradeoffs:**
+   ```
+   "Two ways we could approach meeting prep:
 
-    "weekly_prep": {
-        "agents": ["calendar", "task", "email"],
-        "synthesis_mode": "template_only",
-        "template": "...",
-        "timeout_seconds": 30
-    }
-}
-```
+   A) Full sweep - all 4 agents gather everything
+      + Thorough, won't miss anything
+      - Slower, may include irrelevant info
 
-**Synthesis Modes:**
-- `template_only`: Use template, no LLM call
-- `template_with_enhancement`: Template + Main Agent polish
-- `main_agent_only`: Main Agent synthesizes from scratch
+   B) Targeted - Calendar first, expand based on meeting type
+      + Faster, more focused
+      - May miss unexpected context
 
----
+   I'd recommend A for important meetings, B for routine ones.
+   Or we could make it configurable. Thoughts?"
+   ```
 
-## Orchestration Implementation
+4. **Confirm understanding before proceeding:**
+   ```
+   "Here's what I understand:
 
-### Phase 1: Initialize
+   Task: meeting_prep
+   Goal: Gather relevant context before meetings
+   Trigger: User asks to prep for a specific meeting
+   Agents: Calendar, Document, Email, Pulse
+   Success: Know participants, have docs, understand recent context
 
-```python
-async def coordinate(request: CoordinateRequest) -> CoordinateResponse:
-    task_config = TASK_TYPES[request.task_type]
+   Does this capture it? Ready to design the specifics?"
+   ```
 
-    # Start coordinated task (creates blocks)
-    task_id = coordination_handler.start_coordinated_task(
-        identity_id=request.identity_id,
-        task_type=request.task_type,
-        context=request.context,
-        required_agents=task_config["agents"]
-    )
+**Output:** Task Brief (stored in agent's working memory, used for Phase 2)
 
-    # Log coordination start
-    log_coordination_event("start", task_id, request)
-```
-
-### Phase 2: Dispatch Agents (Parallel)
-
-```python
-    # Build agent-specific prompts from context
-    agent_prompts = build_agent_prompts(request.context, task_config)
-
-    # Dispatch all agents in parallel
-    dispatch_tasks = [
-        dispatch_to_agent(agent, agent_prompts[agent], request.identity_id)
-        for agent in task_config["agents"]
-    ]
-
-    results = await asyncio.gather(*dispatch_tasks, return_exceptions=True)
-
-    # Log dispatch results
-    for agent, result in zip(task_config["agents"], results):
-        log_coordination_event("agent_dispatch", task_id, {
-            "agent": agent,
-            "success": not isinstance(result, Exception),
-            "error": str(result) if isinstance(result, Exception) else None
-        })
-```
-
-### Phase 3: Collect Findings
-
-```python
-    # Poll for agent contributions (with timeout)
-    deadline = time.time() + task_config["timeout_seconds"]
-
-    while time.time() < deadline:
-        status = coordination_handler.get_task_status(request.identity_id)
-
-        if coordination_handler.is_task_complete(request.identity_id):
-            break
-
-        # Check for new contributions
-        for agent in task_config["agents"]:
-            if status.get(agent) == "pending":
-                if coordination_handler.check_agent_contribution(
-                    request.identity_id, agent
-                ):
-                    log_coordination_event("agent_contributed", task_id, {
-                        "agent": agent
-                    })
-
-        await asyncio.sleep(0.5)  # Poll interval
-
-    # Get gathered findings
-    findings = coordination_handler.get_gathered_findings(request.identity_id)
-```
-
-### Phase 4: Synthesize Response
-
-```python
-    synthesis_mode = task_config["synthesis_mode"]
-
-    if synthesis_mode == "template_only":
-        synthesis = apply_template(task_config["template"], findings, request.context)
-
-    elif synthesis_mode == "template_with_enhancement":
-        template_output = apply_template(task_config["template"], findings, request.context)
-        synthesis = await enhance_with_main_agent(
-            template_output,
-            task_config["main_agent_prompt"]
-        )
-
-    elif synthesis_mode == "main_agent_only":
-        synthesis = await synthesize_with_main_agent(
-            findings,
-            task_config["main_agent_prompt"]
-        )
-
-    # Log synthesis
-    log_coordination_event("synthesis", task_id, {
-        "mode": synthesis_mode,
-        "findings_count": len(findings),
-        "synthesis_length": len(synthesis)
-    })
-```
-
-### Phase 5: Archive & Cleanup
-
-```python
-    # Archive completed task
-    coordination_handler.complete_task(request.identity_id)
-
-    # Log completion
-    log_coordination_event("complete", task_id, {
-        "agents_completed": [a for a, s in status.items() if s == "done"],
-        "agents_failed": [a for a, s in status.items() if s in ("error", "timeout")],
-        "total_time_ms": (time.time() - start_time) * 1000
-    })
-
-    return CoordinateResponse(
-        status="complete",
-        task_id=task_id,
-        synthesis=synthesis,
-        findings=findings,
-        ...
-    )
-```
+**Transition:** Agent proposes "Ready to design?" → User confirms → Phase 2
 
 ---
 
-## Main Agent Integration
+## Phase 2: Task Design
 
-The Main Agent needs a tool to trigger coordination. This is simpler than having the endpoint handle natural language.
+**Purpose:** Create concrete artifacts: templates, prompts, memory structures, metrics.
 
-### coordinate_task Tool
+**Main Agent Behavior:**
 
-```python
-def coordinate_task(
-    task_type: str,
-    context: str
-) -> Dict[str, Any]:
-    """
-    Trigger multi-agent coordination for complex tasks.
+1. **Resolve remaining ambiguities** (don't skip this):
+   - "How far back should email search go? 7 days? Since last meeting?"
+   - "Include tentative attendees or only confirmed?"
+   - "What format works best for the synthesis output?"
 
-    Args:
-        task_type: Type of coordination task (meeting_prep, project_status, weekly_prep)
-        context: JSON string with task-specific context gathered from conversation
+2. **Design each component, present in sections, validate each:**
 
-    Returns:
-        Dictionary with synthesis and findings from specialist agents.
-    """
-    import json
-    import requests
+   **Agent prompts:**
+   ```
+   "For Calendar, I'm thinking:
 
-    try:
-        context_dict = json.loads(context)
+   'Find the meeting matching {meeting_identifier}. Return:
+    - Title, date/time, location
+    - All participants with response status
+    - Any conflicts in the 30 min before/after
+    - Link to calendar event'
 
-        response = requests.post(
-            "http://pa-routing-handler:5201/v1/coordinate",
-            json={
-                "identity_id": get_current_identity_id(),
-                "task_type": task_type,
-                "context": context_dict
-            },
-            timeout=60
-        )
+   Does this cover what you need from Calendar?"
+   ```
 
-        return response.json()
+   **Synthesis template:**
+   ```
+   "Here's a template for the output:
 
-    except Exception as e:
-        return {"status": "error", "error_message": str(e)}
-```
+   **{meeting_title}** - {meeting_time}
 
-### Main Agent Persona Addition
+   **Participants:**
+   {participant_details}
 
-```
-## Multi-Agent Coordination
+   **Prep Materials:**
+   {document_findings}
 
-For complex tasks requiring multiple information sources (meeting prep, project status, weekly planning), you can coordinate specialist agents.
+   **Recent Context:**
+   {email_findings}
 
-**How to use:**
-1. Gather context conversationally - ask clarifying questions
-2. Once you have enough context, call coordinate_task() with:
-   - task_type: "meeting_prep", "project_status", or "weekly_prep"
-   - context: JSON with gathered details
+   **Availability Notes:**
+   {pulse_findings}
 
-**Example flow:**
-User: "Prep me for my next meeting"
-You: "Which meeting would you like to prep for? I see:
-     - Board Meeting (tomorrow 2pm)
-     - 1:1 with Sarah (tomorrow 4pm)"
-User: "Board meeting, I need to know about participants"
-You: *calls coordinate_task("meeting_prep", {"meeting": "Board Meeting", "focus": ["participants"]})*
-You: *delivers synthesized response*
-```
+   Does this format work?"
+   ```
+
+   **Success criteria:**
+   ```
+   "How should we measure if this task type is working well?
+
+   I'm thinking:
+   - Did you proceed to the meeting without follow-up questions?
+   - Were the participants accurate?
+   - Was relevant context surfaced?
+
+   Any other criteria we should track?"
+   ```
+
+3. **Compile into Task Design Document:**
+   - Agent prompts for each specialist
+   - Synthesis template and mode
+   - Memory block structure
+   - Metrics to capture
+   - Success criteria
+
+**Output:** Task Design Document (YAML file ready for creation)
+
+**Transition:** Agent proposes "Design complete. Create the artifacts?" → User confirms → Phase 3
 
 ---
 
-## Observability Layer
+## Phase 3: Task Creation
 
-### Logging Schema
+**Purpose:** Deploy the designed artifacts so the task type is executable.
 
-All coordination events logged to enable pattern discovery.
+**Main Agent Behavior:**
 
-```python
-@dataclass
-class CoordinationLogEntry:
-    timestamp: datetime
-    event_type: str  # start, agent_dispatch, agent_contributed, synthesis, complete, error
-    task_id: str
-    identity_id: str
-    task_type: str
+Once user confirms, agent **takes the wheel** and creates all artifacts without asking per-item:
 
-    # Event-specific data
-    data: Dict[str, Any]
+1. Write task design file to `docs/task-types/{task_name}.yaml`
+2. Register task type with coordination handler
+3. Create/update any needed memory blocks
+4. Set up logging for new metrics (if any)
+5. Optionally update specialist agent personas with task-specific guidance
 
-    # Metrics
-    elapsed_ms: Optional[int] = None
+**Reports back when complete:**
+```
+"Task type 'meeting_prep' is now active.
+
+Created:
+- docs/task-types/meeting_prep.yaml (design document)
+- Registered with coordination handler
+- Logging configured for: agent_contribution_rate, synthesis_quality, time_to_completion
+
+You can now use this by asking me to prep for a meeting.
+Want to try it?"
 ```
 
-### Events to Log
+**Output:** Deployable task type (lifecycle_stage: active)
 
-| Event | Data Captured | Analysis Purpose |
-|-------|---------------|------------------|
-| `start` | task_type, context provided | What tasks are requested |
-| `agent_dispatch` | agent, prompt used | Which agents get dispatched |
-| `agent_contributed` | agent, contribution length | Agent response quality |
-| `agent_timeout` | agent, elapsed_ms | Reliability issues |
-| `agent_error` | agent, error_message | Failure patterns |
-| `synthesis` | mode, input_length, output_length | Synthesis effectiveness |
-| `complete` | total_time_ms, agents_completed | End-to-end performance |
+**Transition:** Automatic on completion → Ready for Phase 4
 
-### Storage
+---
 
-For MVP, log to a dedicated table in Supabase:
+## Phase 4: Task Execution
 
+**Purpose:** Run the multi-agent coordination with gathered context.
+
+**Trigger:** User requests something that matches an active task type.
+
+**Main Agent Behavior:**
+
+1. **Recognize task type:**
+   ```
+   User: "Prep me for my meeting tomorrow"
+   Agent: (recognizes this as meeting_prep task type)
+   ```
+
+2. **Gather scenario-specific context conversationally:**
+   ```
+   "Which meeting? I see:
+    - Board Meeting (tomorrow 2pm)
+    - 1:1 with Sarah (tomorrow 4pm)
+    - Team standup (tomorrow 9am)"
+
+   User: "Board meeting"
+
+   "Any specific focus, or should I gather everything?"
+
+   User: "Everything, but especially participant context"
+   ```
+
+3. **Execute coordination** (takes the wheel):
+   - Call `/v1/coordinate` with gathered context
+   - Orchestrator dispatches agents, collects findings, synthesizes
+   - All events logged per design
+
+4. **Deliver result:**
+   ```
+   "**Board Meeting** - Tomorrow 2:00 PM
+
+   **Participants:**
+   - Alice Chen (confirmed, attending remotely) - flagged timeline concerns Thursday
+   - Bob Smith (confirmed) - his section is ready
+   - Carol Wu (pending response) - OOO Friday
+
+   **Prep Materials:**
+   - Q4 Budget Review deck (updated yesterday by Alice)
+   - Board Deck v3 (shared Monday, 2 action items pending)
+
+   **Recent Context:**
+   - Alice's Thursday email raised concerns about Q1 timeline
+   - Bob confirmed his deliverables in Monday's thread
+
+   Anything else you'd like to know about this meeting?"
+   ```
+
+**Output:** Synthesized response + execution logged
+
+**Transition:** After N executions → Phase 5 becomes relevant
+
+---
+
+## Phase 5: Task Refinement (Guided Meta-Refinement)
+
+**Purpose:** Analyze execution patterns and improve the task type.
+
+**Trigger:** After sufficient executions (e.g., 5+), or user asks "How is meeting_prep working?"
+
+**Main Agent Behavior:**
+
+Structures the review with high-level evaluation aims, then questions the aims themselves:
+
+```
+"We've run meeting_prep 5 times. Let me guide us through evaluation:
+
+**1. Goal Achievement**
+Did you get useful prep info?
+- 4/5 times you proceeded without follow-up questions ✓
+- 1 time you asked for more email context
+
+**2. Agent Contribution Quality**
+- Calendar: Useful every time (5/5) ✓
+- Document: Useful 3/5 (2 meetings had no related docs)
+- Email: Useful 4/5 (once pulled irrelevant threads)
+- Pulse: Useful 1/5 - mostly redundant with Calendar info
+
+**3. Process Efficiency**
+- Average 2 clarifying questions before execution
+- Most common: "which meeting?" (5/5) and "what focus?" (3/5)
+
+**4. What I'd Propose Changing**
+- Auto-detect "next meeting" if not specified
+- Remove Pulse from default agents (add only for important meetings)
+- Adjust Email prompt to focus on participants, not just meeting title
+- Make "all focus areas" the default
+
+**5. Meta Question: Are These the Right Criteria?**
+I'm measuring:
+- Contribution rate per agent
+- Follow-up questions needed
+- Time to completion
+
+Should we also track:
+- Synthesis length (too long? too short?)
+- Whether you edited the output before using it?
+- Which parts you actually referenced in the meeting?
+
+What resonates? What should we refine - the process, the metrics, or both?"
+```
+
+**After user input:**
+- Update task design document with approved changes
+- Commit changes to Git (version history preserved)
+- If patterns are very stable: propose UI hardening (Slack buttons, etc.)
+
+**Output:** Refined task design (lifecycle_stage: refined → hardened)
+
+---
+
+## Storage Architecture
+
+### Task Designs: Documents (Git-Versioned)
+
+**Location:** `docs/task-types/{task_name}.yaml`
+
+**Schema:**
+```yaml
+# docs/task-types/meeting_prep.yaml
+name: meeting_prep
+version: 1.2.0
+lifecycle_stage: refined  # draft | active | refined | hardened
+created: 2026-01-29
+last_refined: 2026-02-15
+
+# From brainstorming
+goal: "Gather relevant context before meetings"
+trigger: "User asks to prep for a specific meeting"
+success_criteria:
+  - "User proceeds to meeting without follow-up questions"
+  - "Participants and their context are accurate"
+  - "Relevant documents are surfaced"
+
+# Agent configuration
+agents:
+  calendar:
+    prompt_template: |
+      Find the meeting matching '{meeting_identifier}'. Return:
+      - Title, date/time, location
+      - All participants with response status
+      - Any conflicts in the 30 min before/after
+      - Link to calendar event
+    expected_contribution: "Event details, participant list, conflicts"
+    timeout_seconds: 10
+
+  document:
+    prompt_template: |
+      Search for documents related to '{meeting_title}' or
+      shared by/with participants: {participants}.
+      Return: title, last modified, key content summary.
+    expected_contribution: "Relevant docs, agendas, action items"
+    timeout_seconds: 15
+
+  email:
+    prompt_template: |
+      Find email threads from the last {lookback_days} days
+      involving participants: {participants}.
+      Focus on threads mentioning '{meeting_title}' or related topics.
+    expected_contribution: "Recent communications, concerns raised"
+    timeout_seconds: 15
+    default_lookback_days: 7
+
+  pulse:
+    enabled: false  # Disabled after refinement - redundant with calendar
+    prompt_template: "..."
+
+# Synthesis configuration
+synthesis:
+  mode: template_with_enhancement
+  template: |
+    **{meeting_title}** - {meeting_time}
+
+    **Participants:**
+    {participant_details}
+
+    **Prep Materials:**
+    {document_findings}
+
+    **Recent Context:**
+    {email_findings}
+  enhancement_prompt: |
+    Review these findings and highlight:
+    - Any concerns or blockers raised
+    - Action items that may come up
+    - Preparation priorities
+
+# Observability
+metrics:
+  - agent_contribution_rate
+  - follow_up_questions_needed
+  - time_to_completion
+  - synthesis_length
+
+# Refinement history
+refinement_log:
+  - date: 2026-02-01
+    change: "Removed Pulse agent - redundant with Calendar"
+    reason: "Only contributed useful info 1/5 executions"
+  - date: 2026-02-15
+    change: "Added auto-detect for 'next meeting'"
+    reason: "Users asked 'which meeting?' 100% of the time"
+```
+
+**Why documents:**
+- Human-readable, manually editable
+- Git versioning (diffs, blame, history, branches)
+- No infrastructure dependency
+- Proven pattern (superpowers, CLAUDE.md)
+
+### Execution Logs: Database (Queryable)
+
+**Location:** `pa_web.coordination_logs` (Supabase)
+
+**Schema:**
 ```sql
 CREATE TABLE pa_web.coordination_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -396,7 +444,8 @@ CREATE TABLE pa_web.coordination_logs (
     event_type TEXT NOT NULL,
     task_id TEXT NOT NULL,
     identity_id TEXT NOT NULL,
-    task_type TEXT NOT NULL,
+    task_type TEXT NOT NULL,  -- References docs/task-types/{task_type}.yaml
+    task_version TEXT,        -- Version from YAML at execution time
     data JSONB DEFAULT '{}'::jsonb,
     elapsed_ms INT
 );
@@ -406,40 +455,222 @@ CREATE INDEX idx_coordination_logs_type ON pa_web.coordination_logs(task_type);
 CREATE INDEX idx_coordination_logs_time ON pa_web.coordination_logs(timestamp);
 ```
 
-### Future Analysis Queries
+**Events logged:**
 
+| Event | Data Captured |
+|-------|---------------|
+| `start` | task_type, task_version, context_provided, questions_asked |
+| `agent_dispatch` | agent, prompt_used |
+| `agent_contributed` | agent, contribution_length, contribution_summary |
+| `agent_timeout` | agent, elapsed_ms |
+| `agent_error` | agent, error_message |
+| `synthesis` | mode, input_length, output_length |
+| `complete` | total_time_ms, agents_completed, agents_failed |
+| `user_feedback` | follow_up_requested, edits_made (if trackable) |
+
+**Refinement queries:**
 ```sql
--- Most common task types
-SELECT task_type, COUNT(*) FROM pa_web.coordination_logs
-WHERE event_type = 'complete'
-GROUP BY task_type;
-
--- Agent reliability
+-- Agent contribution rate by task type
 SELECT
+    task_type,
     data->>'agent' as agent,
-    COUNT(*) FILTER (WHERE event_type = 'agent_contributed') as successes,
-    COUNT(*) FILTER (WHERE event_type = 'agent_timeout') as timeouts,
-    COUNT(*) FILTER (WHERE event_type = 'agent_error') as errors
+    COUNT(*) FILTER (WHERE event_type = 'agent_contributed') as contributions,
+    COUNT(*) FILTER (WHERE event_type = 'agent_dispatch') as dispatches,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE event_type = 'agent_contributed') /
+          NULLIF(COUNT(*) FILTER (WHERE event_type = 'agent_dispatch'), 0), 1) as contribution_rate
 FROM pa_web.coordination_logs
-GROUP BY data->>'agent';
+WHERE task_type = 'meeting_prep'
+GROUP BY task_type, data->>'agent';
 
--- Average coordination time by task type
+-- Questions asked before execution
 SELECT
-    task_type,
-    AVG(elapsed_ms) as avg_ms,
-    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY elapsed_ms) as p95_ms
-FROM pa_web.coordination_logs
-WHERE event_type = 'complete'
-GROUP BY task_type;
-
--- Context patterns (what fields are usually provided)
-SELECT
-    task_type,
-    jsonb_object_keys(data->'context') as context_field,
+    data->>'questions_asked' as questions,
     COUNT(*) as frequency
 FROM pa_web.coordination_logs
-WHERE event_type = 'start'
-GROUP BY task_type, jsonb_object_keys(data->'context');
+WHERE event_type = 'start' AND task_type = 'meeting_prep'
+GROUP BY data->>'questions_asked'
+ORDER BY frequency DESC;
+
+-- Time to completion distribution
+SELECT
+    task_type,
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY elapsed_ms) as p50_ms,
+    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY elapsed_ms) as p95_ms,
+    AVG(elapsed_ms) as avg_ms
+FROM pa_web.coordination_logs
+WHERE event_type = 'complete'
+GROUP BY task_type;
+```
+
+---
+
+## Control Flow: Transitions
+
+### When Agent Takes the Wheel
+
+| Situation | Agent Behavior |
+|-----------|----------------|
+| Within brainstorming | Asks questions, doesn't pause between each |
+| End of brainstorming | "Task brief complete. Ready to design?" → **waits** |
+| Within design | Presents components, doesn't pause between each |
+| End of design | "Design complete. Create artifacts?" → **waits** |
+| User approved creation | Creates all artifacts, reports when done |
+| User triggers execution | Gathers context, executes, delivers result |
+| Ambiguity encountered | Pauses, asks clarifying question, then proceeds |
+| Refinement review | Presents structured analysis → **waits for input** |
+
+### Phase Transition Gates
+
+```
+Brainstorm → Design:  "Ready to design the specifics?"
+Design → Create:      "Design complete. Create the artifacts?"
+Create → Execute:     Automatic (task type now active)
+Execute → Refine:     After N executions, or user asks
+Refine → Hardened:    "This seems stable. Create a Slack shortcut?"
+```
+
+---
+
+## API Design
+
+### Endpoint: `POST /v1/coordinate`
+
+Called by Main Agent after gathering context.
+
+**Request:**
+```json
+{
+    "identity_id": "identity-123",
+    "task_type": "meeting_prep",
+    "task_version": "1.2.0",
+    "context": {
+        "meeting_identifier": "Board Meeting tomorrow 2pm",
+        "event_id": "event-abc123",
+        "focus_areas": ["participants", "prep_materials", "recent_context"],
+        "participants": ["alice@company.com", "bob@company.com"],
+        "lookback_days": 7
+    },
+    "questions_asked": ["which_meeting", "focus_areas"],
+    "conversation_id": "conv-456"
+}
+```
+
+**Response:**
+```json
+{
+    "status": "complete",
+    "task_id": "task-meeting-prep-20260129-143000",
+    "synthesis": "**Board Meeting** - Tomorrow 2:00 PM\n\n...",
+    "findings": {
+        "calendar": "[Calendar 14:30] Board Meeting, 2pm Jan 30, 3 participants",
+        "document": "[Document 14:31] Q4 Budget deck updated yesterday",
+        "email": "[Email 14:31] Alice flagged timeline concerns Thursday"
+    },
+    "agents_completed": ["calendar", "document", "email"],
+    "agents_skipped": ["pulse"],
+    "coordination_time_ms": 4500
+}
+```
+
+---
+
+## Main Agent Integration
+
+### Task Development Skill
+
+The Main Agent needs guidance for managing the task lifecycle. Add to persona:
+
+```
+## Multi-Agent Task Development
+
+You can develop, execute, and refine multi-agent coordination tasks.
+
+### Lifecycle Phases
+
+**1. Brainstorming** - When user wants help with something that could benefit from multiple specialists:
+- Survey which agents might help
+- Ask one question at a time to understand the goal
+- Explore 2-3 approaches with tradeoffs
+- Confirm understanding before designing
+- Transition: "Ready to design the specifics?"
+
+**2. Design** - Create the concrete artifacts:
+- Resolve remaining ambiguities (don't skip this!)
+- Design agent prompts, synthesis template, success criteria
+- Present each component, validate with user
+- Transition: "Design complete. Create the artifacts?"
+
+**3. Creation** - Deploy the task type:
+- Write task design to docs/task-types/{name}.yaml
+- Register with coordination handler
+- Take the wheel - create all artifacts, report when done
+
+**4. Execution** - Run coordination:
+- Recognize when user wants an active task type
+- Gather scenario-specific context conversationally
+- Call coordinate_task() with full context
+- Deliver synthesized result
+
+**5. Refinement** - Improve based on execution data:
+- After 5+ executions, offer to review
+- Structure the analysis with evaluation aims
+- Propose specific changes
+- Question whether the evaluation criteria are right
+- Update task design with approved changes
+
+### Key Behaviors
+- One question at a time during brainstorming
+- Don't skip clarifying questions in design
+- Take the wheel within phases once direction is set
+- Pause at phase boundaries for user confirmation
+- Structure refinement reviews, don't just dump data
+```
+
+### coordinate_task Tool
+
+```python
+def coordinate_task(
+    task_type: str,
+    context: str,
+    questions_asked: str = "[]"
+) -> Dict[str, Any]:
+    """
+    Execute multi-agent coordination for a defined task type.
+
+    Args:
+        task_type: Name of the task type (e.g., "meeting_prep")
+        context: JSON string with task-specific context gathered from conversation
+        questions_asked: JSON array of question IDs asked before execution
+
+    Returns:
+        Dictionary with synthesis, findings, and execution metadata.
+    """
+    import json
+    import requests
+    import traceback
+
+    try:
+        context_dict = json.loads(context)
+        questions = json.loads(questions_asked)
+
+        response = requests.post(
+            "http://pa-routing-handler:5201/v1/coordinate",
+            json={
+                "identity_id": get_current_identity_id(),
+                "task_type": task_type,
+                "context": context_dict,
+                "questions_asked": questions
+            },
+            timeout=60
+        )
+
+        return response.json()
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}"
+        }
 ```
 
 ---
@@ -450,23 +681,40 @@ GROUP BY task_type, jsonb_object_keys(data->'context');
 |---------|----------|
 | Agent times out | Mark as "timeout", continue with others, note in synthesis |
 | Agent errors | Mark as "error", continue with others, note in synthesis |
-| Agent doesn't contribute | Mark as "no_contribution", continue |
-| All agents fail | Return partial error response, log for analysis |
-| Partial success | Return available findings, note which agents failed |
-| Main Agent synthesis fails | Fall back to template-only or raw findings |
-| Coordination timeout | Return whatever was gathered, note incomplete |
+| Agent disabled in config | Skip, don't dispatch |
+| All agents fail | Return partial error, log for analysis |
+| Task type not found | Error response, suggest available types |
+| Design file invalid | Error on creation, report validation issues |
+| Synthesis fails | Fall back to template-only or raw findings |
 
 ---
 
 ## Implementation Tasks
 
-1. **Create `/v1/coordinate` endpoint** in routing handler
-2. **Implement orchestration flow** (dispatch, collect, synthesize)
-3. **Create `coordinate_task` tool** for Main Agent
-4. **Update Main Agent persona** with coordination instructions
-5. **Create logging infrastructure** (table + logging functions)
-6. **Add task type configurations** (meeting_prep first)
-7. **Integration test** with real agents
+### Phase 1: Infrastructure
+1. Create `docs/task-types/` directory
+2. Create coordination_logs table in Supabase
+3. Create logging utility functions
+
+### Phase 2: Coordination Endpoint
+4. Create `/v1/coordinate` endpoint
+5. Implement task type loading from YAML files
+6. Implement orchestration flow (dispatch, collect, synthesize)
+
+### Phase 3: Main Agent Integration
+7. Create `coordinate_task` tool
+8. Update Main Agent persona with task development skill
+9. Test brainstorm → execute flow manually
+
+### Phase 4: Observability
+10. Implement comprehensive logging
+11. Create refinement query helpers
+12. Test refinement analysis flow
+
+### Phase 5: First Task Type
+13. Develop `meeting_prep` through full lifecycle
+14. Execute 5+ times, run refinement
+15. Document learnings
 
 ---
 
@@ -474,23 +722,21 @@ GROUP BY task_type, jsonb_object_keys(data->'context');
 
 | Criterion | Verification |
 |-----------|--------------|
-| Main Agent can trigger coordination | Tool call works, agents dispatched |
-| Parallel dispatch works | 4 agents complete in <10s total (not 40s) |
-| Findings are gathered | `coordination_gathered` block populated |
-| Synthesis produces usable output | Response includes all agent contributions |
-| Logging captures events | Logs queryable for pattern analysis |
-| Errors handled gracefully | Partial failures don't crash coordination |
+| Lifecycle phases work | Can go from brainstorm → design → create → execute |
+| Task designs persist | YAML files created, loadable, Git-trackable |
+| Execution works | Agents dispatched, findings gathered, synthesis delivered |
+| Logging captures data | Events queryable for refinement analysis |
+| Refinement is guided | Agent structures review, proposes changes, questions criteria |
+| Semi-automatic flow | Agent drives within phases, pauses at gates |
 
 ---
 
-## Future Evolution (Post-Pattern Discovery)
+## Future Evolution
 
-Once logging reveals stable patterns:
+As task types mature through the lifecycle:
 
-1. **Structured UI shortcuts** - Slack buttons for common task types
-2. **Smart defaults** - Auto-detect meeting from calendar
-3. **Agent pruning** - Remove consistently unhelpful agents from task types
-4. **Prompt refinement** - Improve agent prompts based on contribution quality
-5. **Caching** - Cache coordination for repeated similar requests
-
-The observability layer enables all of these without upfront over-engineering.
+1. **Pattern Discovery** → Stable patterns emerge from execution logs
+2. **UI Hardening** → Slack buttons, web forms for common task types
+3. **Auto-Detection** → Infer context without asking (e.g., "next meeting")
+4. **Cross-Task Learning** → Patterns from one task type inform others
+5. **User-Defined Tasks** → Users create task types through conversation
