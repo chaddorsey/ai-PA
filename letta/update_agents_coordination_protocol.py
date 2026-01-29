@@ -120,9 +120,9 @@ def update_agent_persona(agent_name, agent_id):
     # Add coordination protocol
     new_persona = current_persona + COORDINATION_PROTOCOL
 
-    # Check length
-    if len(new_persona) > 5000:
-        print(f"  ERROR: New persona exceeds 5000 chars ({len(new_persona)})")
+    # Check length (Letta block limit is 8500 chars)
+    if len(new_persona) > 8500:
+        print(f"  ERROR: New persona exceeds 8500 chars ({len(new_persona)})")
         return False
 
     print(f"  Length: {len(current_persona)} -> {len(new_persona)} chars")
