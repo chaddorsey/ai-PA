@@ -160,6 +160,7 @@ class CoordinationOrchestrator:
             identity_id=request.identity_id,
             task_type=task_type,
             task_id=task_id,
+            agent_ids=agent_ids,
         )
 
         # Determine completion status from gathered findings
@@ -423,6 +424,7 @@ class CoordinationOrchestrator:
         identity_id: str,
         task_type: TaskType,
         task_id: str,
+        agent_ids: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
         """Wait for agent contributions by polling the gathered block.
 
@@ -433,6 +435,7 @@ class CoordinationOrchestrator:
             identity_id: User identity
             task_type: Task type definition with agent timeouts
             task_id: Current task identifier
+            agent_ids: Optional mapping of agent_name -> agent_id for block lookup
 
         Returns:
             Dict mapping agent name (lowercase) to their findings
@@ -449,6 +452,12 @@ class CoordinationOrchestrator:
 
         polling_interval = 1.0  # Check every second
 
+        # Use first available agent as reference for block lookups
+        # (agent-attached blocks aren't in global list)
+        reference_agent_id = None
+        if agent_ids:
+            reference_agent_id = next(iter(agent_ids.values()), None)
+
         while time.time() < deadline:
             # Check each agent for contributions
             for agent_name in enabled_agents:
@@ -456,7 +465,7 @@ class CoordinationOrchestrator:
                     continue
 
                 contributed = await self._handler.check_agent_contribution(
-                    identity_id, agent_name
+                    identity_id, agent_name, reference_agent_id
                 )
                 if contributed:
                     agents_found.add(agent_name)
@@ -480,7 +489,9 @@ class CoordinationOrchestrator:
             await asyncio.sleep(polling_interval)
 
         # Parse and return findings from gathered block
-        findings = await self._handler.get_gathered_findings(identity_id)
+        findings = await self._handler.get_gathered_findings(
+            identity_id, reference_agent_id
+        )
         return findings
 
     async def _synthesize(

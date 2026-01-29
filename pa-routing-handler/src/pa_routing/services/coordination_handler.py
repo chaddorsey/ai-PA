@@ -33,6 +33,42 @@ class CoordinationBlockHandler:
         self.base_url = letta_base_url.rstrip("/")
         self.timeout = httpx.Timeout(timeout)
 
+    async def get_block_from_agent(
+        self, agent_id: str, label: str
+    ) -> Optional[dict]:
+        """
+        Get block from a specific agent's memory by label.
+
+        Agent-attached blocks aren't in the global blocks list, so we must
+        query the agent's core-memory blocks directly.
+
+        Args:
+            agent_id: Agent ID to query blocks from
+            label: Block label to find
+
+        Returns:
+            Block dict with id, value, label, or None if not found
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/agents/{agent_id}/core-memory/blocks"
+                )
+                if response.status_code == 200:
+                    blocks = response.json()
+                    for block in blocks:
+                        if block.get("label") == label:
+                            return block
+                return None
+        except Exception as e:
+            logger.warning(
+                "block_get_from_agent_error",
+                agent_id=agent_id,
+                label=label,
+                error=str(e)
+            )
+            return None
+
     async def get_or_create_block(
         self,
         label: str,
@@ -160,15 +196,25 @@ class CoordinationBlockHandler:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/v1/blocks/",
-                    params={"label": label}
-                )
-
-                if response.status_code == 200:
-                    blocks = response.json()
-                    if blocks and len(blocks) > 0:
-                        return blocks[0]
+                # Letta has a 50 char limit on label query param
+                # For longer labels, fetch all blocks and filter client-side
+                if len(label) <= 50:
+                    response = await client.get(
+                        f"{self.base_url}/v1/blocks/",
+                        params={"label": label}
+                    )
+                    if response.status_code == 200:
+                        blocks = response.json()
+                        if blocks and len(blocks) > 0:
+                            return blocks[0]
+                else:
+                    # Long label - fetch all and filter
+                    response = await client.get(f"{self.base_url}/v1/blocks/")
+                    if response.status_code == 200:
+                        blocks = response.json()
+                        for block in blocks:
+                            if block.get("label") == label:
+                                return block
 
                 return None
 
@@ -355,6 +401,7 @@ Expected contributions:
         self,
         identity_id: str,
         agent_name: str,
+        reference_agent_id: Optional[str] = None,
     ) -> bool:
         """
         Check if agent has added findings to gathered block.
@@ -365,12 +412,18 @@ Expected contributions:
         Args:
             identity_id: User's identity ID
             agent_name: Agent name to check (calendar, email, etc.)
+            reference_agent_id: Optional agent ID to query blocks from
+                (needed because agent-attached blocks aren't in global list)
 
         Returns:
             True if agent has contributed, False otherwise
         """
-        # Get gathered block
-        gathered = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
+        # Get gathered block - use agent-specific lookup if reference provided
+        label = f"coordination_gathered_{identity_id}"
+        if reference_agent_id:
+            gathered = await self.get_block_from_agent(reference_agent_id, label)
+        else:
+            gathered = await self.get_block_by_label(label)
         if not gathered:
             return False
 
@@ -595,6 +648,7 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
     async def get_gathered_findings(
         self,
         identity_id: str,
+        reference_agent_id: Optional[str] = None,
     ) -> dict[str, str]:
         """
         Parse gathered block into agent-keyed findings dictionary.
@@ -604,11 +658,17 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
 
         Args:
             identity_id: User's identity ID
+            reference_agent_id: Optional agent ID to query blocks from
+                (needed because agent-attached blocks aren't in global list)
 
         Returns:
             Dict mapping agent name (lowercase) to their finding text
         """
-        gathered = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
+        label = f"coordination_gathered_{identity_id}"
+        if reference_agent_id:
+            gathered = await self.get_block_from_agent(reference_agent_id, label)
+        else:
+            gathered = await self.get_block_by_label(label)
         if not gathered:
             return {}
 
