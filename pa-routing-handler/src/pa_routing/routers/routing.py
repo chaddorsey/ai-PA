@@ -8,11 +8,11 @@ from typing import Optional
 
 import httpx
 import structlog
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from pa_routing.database import get_db_session
-from pa_routing.models.requests import AgentSelectRequest, RouteRequest
-from pa_routing.models.responses import AgentInfo, AgentListResponse, RouteResponse
+from pa_routing.models.requests import AgentSelectRequest, CoordinateRequest, RouteRequest
+from pa_routing.models.responses import AgentInfo, AgentListResponse, CoordinateResponse, RouteResponse
 from pa_routing.models.routing_decision import RoutingDecision
 from pa_routing.services.agent_selector import (
     AGENT_MAP,
@@ -46,6 +46,32 @@ MAIN_AGENT_ID = settings.default_agent_id or DEFAULT_AGENT_ID
 
 # Identity cache (simple in-memory cache for identities list)
 _identities_cache: Optional[list[dict]] = None
+
+# Coordination orchestrator (initialized in main.py)
+_task_type_loader = None
+_coordination_logger = None
+_orchestrator = None
+
+
+def init_coordination_orchestrator(supabase_client, letta_client, coordination_handler):
+    """Initialize coordination orchestrator with dependencies."""
+    global _task_type_loader, _coordination_logger, _orchestrator
+
+    from pa_routing.services.coordination_logger import CoordinationLogger
+    from pa_routing.services.coordination_orchestrator import CoordinationOrchestrator
+    from pa_routing.services.task_type_loader import TaskTypeLoader
+
+    # Use absolute path for task types directory
+    task_types_dir = os.path.join(os.path.dirname(__file__), "../../../docs/task-types")
+
+    _task_type_loader = TaskTypeLoader(task_types_dir)
+    _coordination_logger = CoordinationLogger(supabase_client)
+    _orchestrator = CoordinationOrchestrator(
+        task_type_loader=_task_type_loader,
+        coordination_handler=coordination_handler,
+        coordination_logger=_coordination_logger,
+        letta_client=letta_client
+    )
 
 
 async def _fetch_identities() -> list[dict]:
@@ -651,3 +677,22 @@ async def get_contextual_agent(session_id: str) -> dict:
         "agent_name": agent_name,
         "last_response_time": session_ctx.last_response_time.isoformat() if session_ctx.last_response_time else None,
     }
+
+
+# ========== Multi-Agent Coordination Endpoint ==========
+
+
+@router.post("/coordinate", response_model=CoordinateResponse)
+async def coordinate(request: CoordinateRequest) -> CoordinateResponse:
+    """Execute multi-agent coordination task.
+
+    This endpoint orchestrates multiple specialist agents to gather
+    information and synthesize a response for complex tasks.
+    """
+    if _orchestrator is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Coordination orchestrator not initialized"
+        )
+
+    return await _orchestrator.coordinate(request)

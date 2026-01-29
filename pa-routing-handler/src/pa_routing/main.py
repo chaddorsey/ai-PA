@@ -9,7 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pa_routing.database import close_db, init_db
 from pa_routing.routers import routing
 from pa_routing.services.session_store import session_store
-from pa_routing.routers.routing import set_supabase_client as set_routing_supabase_client
+from pa_routing.routers.routing import (
+    init_coordination_orchestrator,
+    set_supabase_client as set_routing_supabase_client,
+)
+from pa_routing.services.coordination_handler import CoordinationBlockHandler
 from pa_routing.settings import settings
 
 # Configure structured logging
@@ -42,17 +46,32 @@ async def lifespan(app: FastAPI):
         logger.warning("database_connection_failed", error=str(e))
 
     # Initialize Supabase for session persistence and conversation lookups
+    supabase_client = None
     if settings.supabase_url and settings.supabase_service_key:
         try:
             from supabase import create_client
-            supabase = create_client(settings.supabase_url, settings.supabase_service_key)
-            session_store.set_supabase_client(supabase)
-            set_routing_supabase_client(supabase)
+            supabase_client = create_client(settings.supabase_url, settings.supabase_service_key)
+            session_store.set_supabase_client(supabase_client)
+            set_routing_supabase_client(supabase_client)
             logger.info("session_store_initialized", persistence="supabase")
         except Exception as e:
             logger.warning("supabase_init_failed", error=str(e), persistence="memory_only")
     else:
         logger.info("session_store_initialized", persistence="memory_only")
+
+    # Initialize coordination orchestrator
+    try:
+        from letta import Letta
+        letta_client = Letta(base_url=settings.letta_base_url)
+        coordination_handler = CoordinationBlockHandler(settings.letta_base_url)
+        init_coordination_orchestrator(
+            supabase_client=supabase_client,
+            letta_client=letta_client,
+            coordination_handler=coordination_handler,
+        )
+        logger.info("coordination_orchestrator_initialized")
+    except Exception as e:
+        logger.warning("coordination_orchestrator_init_failed", error=str(e))
 
     yield
 
