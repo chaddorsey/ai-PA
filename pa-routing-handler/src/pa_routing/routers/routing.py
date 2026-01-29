@@ -696,3 +696,21 @@ async def coordinate(request: CoordinateRequest) -> CoordinateResponse:
         )
 
     return await _orchestrator.coordinate(request)
+
+
+@router.get("/coordinate/analysis")
+async def get_coordination_analysis(
+    task_type: str = Query(..., description="Task type to analyze"),
+    limit: int = Query(10, description="Number of executions to analyze")
+) -> dict:
+    """Get execution analysis for a task type.
+
+    Used by the analyze_task_executions tool for guided refinement.
+    """
+    if _coordination_logger is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Coordination logger not initialized"
+        )
+
+    return _coordination_logger.get_execution_summary(task_type, limit=limit)
