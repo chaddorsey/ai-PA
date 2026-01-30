@@ -44,11 +44,7 @@
         "usage_hint": "[prompt]",
         "should_escape": false
       }
-    ],
-    "assistant_view": {
-      "assistant_description": "This assistant bot can help schedule times and advise on ideal meeting scheduling options",
-      "suggested_prompts": []
-    }
+    ]
   },
   "oauth_config": {
     "scopes": {
@@ -71,7 +67,6 @@
         "im:write",
         "mpim:history",
         "reactions:read",
-        "assistant:write",
         "users:read",
         "users:read.email"
       ]
@@ -86,9 +81,7 @@
         "message.groups",
         "message.im",
         "message.mpim",
-        "function_executed",
-        "assistant_thread_started",
-        "assistant_thread_context_changed"
+        "function_executed"
       ]
     },
     "interactivity": {

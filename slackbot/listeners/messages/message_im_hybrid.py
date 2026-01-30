@@ -232,19 +232,25 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
     if event.get("channel_type") != "im" or event.get("subtype"):
         return
 
-    # Get basic event info immediately (fast, no API calls)
+    # Get basic event info
     channel_id = event.get("channel")
     user_id = event.get("user")
     text = (event.get("text") or "").strip()
-    assistant_thread_ts = event.get("thread_ts")  # Present only in Assistant threads
-    is_assistant_thread = assistant_thread_ts is not None
+    user_message_ts = event.get("ts")  # Used for setStatus loading animation
     streaming_enabled = _should_use_streaming(logger)
 
-    # NOTE: Do NOT call setStatus here - it triggers Slack's default "is typing..."
-    # behavior which shows full-width bubbles and typing indicator.
-    # The app will respond with a message directly when ready.
+    # Set initial status with loading_messages for animated indented bubbles
+    if channel_id and streaming_enabled and user_message_ts:
+        default_status = get_default_status()
+        _set_assistant_status(
+            client,
+            logger,
+            channel_id,
+            user_message_ts,
+            status=default_status["status"],
+            loading_messages=default_status["loading_messages"],
+        )
 
-    # Now do the slower checks
     # Ignore messages sent BY the bot itself (to prevent echo loops)
     sender_user_id = user_id
     if sender_user_id:
@@ -310,9 +316,19 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
             logger.error(f"📨 Event received: type={event_type}, keys={list(event.keys())}")
             
             if event_type == "tool_call":
-                # Log tool calls but don't update status - setStatus triggers bubbles
+                # Update status with tool-specific loading messages
                 tool_name = event.get("tool_name", "")
                 logger.error(f"🔧 TOOL CALL EVENT: {tool_name}")
+                if streaming_enabled and user_message_ts and tool_name:
+                    tool_status = get_status_for_tool(tool_name)
+                    _set_assistant_status(
+                        client,
+                        logger,
+                        working_channel,
+                        user_message_ts,
+                        status=tool_status["status"],
+                        loading_messages=tool_status["loading_messages"],
+                    )
             elif event_type == "text":
                 # Accumulate text
                 text_chunks.append(event.get("content", ""))
@@ -407,16 +423,12 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                         }
                         full_blocks = [intro_block] + proposal_blocks
 
-                        # Build post kwargs - include thread_ts for Assistant threads
-                        proposal_kwargs = {
-                            "channel": working_channel,
-                            "text": INTRO_TEXT,  # Fallback for notifications
-                            "blocks": full_blocks,
-                        }
-                        if is_assistant_thread and assistant_thread_ts:
-                            proposal_kwargs["thread_ts"] = assistant_thread_ts
-
-                        client.chat_postMessage(**proposal_kwargs)
+                        # Post proposals as regular DM message
+                        client.chat_postMessage(
+                            channel=working_channel,
+                            text=INTRO_TEXT,  # Fallback for notifications
+                            blocks=full_blocks,
+                        )
                         proposals_posted = True
                         logger.error(f"✅ PROPOSALS POSTED: session={session_id}")
 
@@ -432,43 +444,29 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         if not proposals_posted:
             final_chunks = list(_chunk_text(final_text)) or [""]
 
-            # Build post kwargs - include thread_ts for Assistant threads to keep
-            # response in the same thread (Chat tab), not as new message (History tab)
-            post_kwargs = {
-                "channel": working_channel,
-                "text": final_chunks[0],
-            }
-            if is_assistant_thread and assistant_thread_ts:
-                post_kwargs["thread_ts"] = assistant_thread_ts
-                logger.info(f"Posting reply in Assistant thread: {assistant_thread_ts}")
-
-            post_response = client.chat_postMessage(**post_kwargs)
+            # Post response as regular DM message
+            post_response = client.chat_postMessage(
+                channel=working_channel,
+                text=final_chunks[0],
+            )
             reply_ts = post_response.get("ts")
 
-            # Post any overflow chunks in the same thread
+            # Post any overflow chunks
             for extra_chunk in final_chunks[1:]:
-                overflow_kwargs = {
-                    "channel": working_channel,
-                    "text": extra_chunk,
-                }
-                if is_assistant_thread and assistant_thread_ts:
-                    overflow_kwargs["thread_ts"] = assistant_thread_ts
-                client.chat_postMessage(**overflow_kwargs)
-
-        # NOTE: Don't call setStatus to clear - Slack auto-clears when we post a reply
-        # Calling setStatus (even to clear) triggers the bubbles/typing indicator
-
-        # Set thread title if enabled (only for Assistant threads)
-        if streaming_enabled and is_assistant_thread:
-            try:
-                thread_title = (text or "Conversation")[:50]
-                client.assistant_threads_setTitle(
-                    channel_id=working_channel,
-                    thread_ts=assistant_thread_ts,
-                    title=thread_title,
+                client.chat_postMessage(
+                    channel=working_channel,
+                    text=extra_chunk,
                 )
-            except Exception as title_err:
-                logger.debug("Could not set thread title: %s", title_err)
+
+        # Clear the loading status now that response is complete
+        if streaming_enabled and user_message_ts:
+            _set_assistant_status(
+                client,
+                logger,
+                working_channel,
+                user_message_ts,
+                status="",  # Empty status clears the indicator
+            )
 
     except Exception as e:
         logger.exception(e)
@@ -478,7 +476,13 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
             client.chat_postMessage(channel=error_channel, text=f"Received an error from Bolty:\n{e}")
         except Exception:
             pass
-        # NOTE: Don't clear status on error - posting the error message auto-clears it
+        # Clear status on error as well
+        try:
+            if 'streaming_enabled' in locals() and streaming_enabled and 'user_message_ts' in locals() and user_message_ts:
+                err_channel = working_channel if 'working_channel' in locals() else channel_id
+                _set_assistant_status(client, logger, err_channel, user_message_ts, status="")
+        except Exception:
+            pass
 
 
 def _truncate(message: str) -> str:
