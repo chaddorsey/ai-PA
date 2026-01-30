@@ -740,3 +740,297 @@ As task types mature through the lifecycle:
 3. **Auto-Detection** → Infer context without asking (e.g., "next meeting")
 4. **Cross-Task Learning** → Patterns from one task type inform others
 5. **User-Defined Tasks** → Users create task types through conversation
+
+---
+
+## Phase 6: Interactive Design Harness (Proposed)
+
+> **Status:** Proposed for future implementation
+> **Inspiration:** superpowers skills (brainstorming, writing-plans, executing-plans)
+> **Goal:** Structured, multi-phase workflow for designing and refining coordinations
+
+### Overview
+
+Currently, the workflow for creating or refining coordination task types is manual:
+1. Edit YAML file in `docs/task-types/`
+2. Test via curl or `/mprep` slash command
+3. Check logs and coordination results
+4. Iterate
+
+A **coordination-designer skill** would provide guided, multi-phase support similar to how superpowers guides software development.
+
+### Proposed Phases
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│              COORDINATION DESIGNER SKILL                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐    │
+│  │ DISCOVER │   │ DESIGN   │   │ TEST     │   │ REFINE   │    │
+│  │          │──▶│          │──▶│          │──▶│          │──┐ │
+│  └──────────┘   └──────────┘   └──────────┘   └──────────┘  │ │
+│       ▲                                             │        │ │
+│       └─────────────────────────────────────────────┘        │ │
+│                      (iterate)                               │ │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Phase 1: Discovery
+
+**Purpose:** Understand what the coordination should accomplish.
+
+**Actions:**
+- Ask what problem the user is trying to solve
+- Identify which agents are needed (calendar, email, pulse, document, etc.)
+- Clarify success criteria
+- Review existing coordinations for patterns to reuse
+
+**Output:** Task Brief with goal, trigger, agents, and success criteria
+
+**Transition:** "Ready to design the agent prompts and synthesis?" → User confirms
+
+#### Phase 2: Agent Design
+
+**Purpose:** Create prompts and configuration for each participating agent.
+
+**Actions:**
+- For each agent, design the prompt template:
+  - What information should the agent look up?
+  - What format should findings be in?
+  - What's the character limit?
+  - What's the timeout?
+- Ensure `memory_insert` pattern is properly structured:
+  ```
+  CRITICAL - You MUST complete this task by calling memory_insert:
+  memory_insert("coordination_gathered_{identity_id}", "[AgentName HH:MM] Your summary here")
+  ```
+- Design fallback messages for "no results found" scenarios
+
+**Output:** Agent configurations with prompt templates
+
+**Transition:** "Ready to design the synthesis template?" → User confirms
+
+#### Phase 3: Synthesis Design
+
+**Purpose:** Define how agent findings are combined into the final response.
+
+**Actions:**
+- Choose synthesis mode: `template_only`, `template_with_enhancement`, or `llm_synthesis`
+- Design the template that combines `{agent_findings}` placeholders
+- If using enhancement, design the enhancement prompt
+- Consider what additional analysis should be added
+
+**Output:** Complete synthesis configuration
+
+**Transition:** "Design complete. Ready to test?" → User confirms
+
+#### Phase 4: Testing
+
+**Purpose:** Validate the coordination against real scenarios.
+
+**Actions:**
+- Generate 2-3 test scenarios (e.g., "board meeting", "1:1 with Sarah", "team standup")
+- Run coordination against each test case
+- Capture metrics:
+  - Agent contribution rate (did all agents write findings?)
+  - Completion time
+  - Synthesis quality (subjective)
+- Identify what worked and what failed
+
+**Output:** Test results with pass/fail per scenario
+
+**Transition:** If issues found → Phase 5; If all pass → "Coordination ready for use"
+
+#### Phase 5: Refinement
+
+**Purpose:** Improve based on test results and execution data.
+
+**Actions:**
+- Analyze what worked and what failed
+- Propose specific changes:
+  - Adjust prompt wording
+  - Change timeouts
+  - Modify synthesis template
+  - Enable/disable agents
+- Log refinements in the YAML `refinement_log` section
+- Re-run affected test scenarios
+
+**Output:** Updated task type definition with documented changes
+
+**Transition:** Re-test → Iterate until stable
+
+### Skill File Structure
+
+```
+plugins/coordination-designer/
+├── skill.yaml                    # Skill metadata
+├── phases/
+│   ├── discovery.md              # Phase 1 instructions
+│   ├── agent-design.md           # Phase 2 instructions
+│   ├── synthesis-design.md       # Phase 3 instructions
+│   ├── testing.md                # Phase 4 instructions
+│   └── refinement.md             # Phase 5 instructions
+├── templates/
+│   ├── task-type-template.yaml   # Starter template
+│   └── agent-prompt-template.md  # Prompt design guide
+└── queries/
+    └── analysis-queries.sql      # Refinement analysis queries
+```
+
+### Integration Points
+
+| Integration | Description |
+|-------------|-------------|
+| `docs/task-types/*.yaml` | Output location for designed task types |
+| `pa_web.coordination_logs` | Data source for refinement analysis |
+| `/v1/coordinate` | Execution endpoint for testing |
+| `/mprep` slash commands | Quick testing via web UI |
+| Supabase SQL | Refinement queries for metrics |
+
+### Example Session
+
+```
+User: I want to create a coordination for daily standup prep
+
+Claude: I'm using the coordination-designer skill to help you create this.
+
+**Phase 1: Discovery**
+
+What's the goal of this coordination?
+- Gather context before standup? (what you worked on, blockers, plans)
+- Summarize team activity? (what others did, team blockers)
+- Both?
+
+User: Gather my own context - what I worked on yesterday, any blockers
+
+Claude: Got it. Which agents might help?
+
+Available:
+- Calendar: meetings, events, time spent
+- Email: communications, threads
+- Pulse: Slack messages, team activity
+- Task: OmniFocus tasks, completions
+
+For standup prep, I'd suggest Calendar + Task, optionally Pulse.
+
+User: Calendar and Task sounds right
+
+Claude: What makes a successful standup prep?
+- You can answer "what did you work on?" without checking notes
+- You know your blockers
+- You have a plan for today
+
+User: Exactly
+
+Claude: **Task Brief:**
+- **Goal:** Gather context for daily standup
+- **Trigger:** User asks for standup prep
+- **Agents:** Calendar, Task
+- **Success:** Can answer standup questions without checking notes
+
+Ready to design the agent prompts and synthesis?
+
+User: Yes
+
+Claude: **Phase 2: Agent Design**
+
+**Calendar Agent:**
+```yaml
+prompt_template: |
+  COORDINATION TASK: Summarize yesterday's calendar for standup.
+
+  Look for:
+  - Meetings attended (with who, duration)
+  - Time blocks for focused work
+  - Any meetings that ran over or were skipped
+
+  Keep summary under 150 characters.
+
+  CRITICAL - You MUST complete by calling memory_insert:
+  memory_insert("coordination_gathered_{identity_id}", "[Calendar HH:MM] Your summary")
+timeout_seconds: 30
+```
+
+Does this cover what you need from Calendar?
+
+User: Add "highlight any meetings that might have follow-up items"
+
+Claude: Updated. Now Task Agent:
+```yaml
+prompt_template: |
+  COORDINATION TASK: Summarize task activity for standup.
+
+  Look for:
+  - Tasks completed yesterday
+  - Tasks in progress
+  - Any blocked or overdue tasks
+
+  Keep summary under 150 characters.
+
+  CRITICAL - You MUST complete by calling memory_insert:
+  memory_insert("coordination_gathered_{identity_id}", "[Task HH:MM] Your summary")
+timeout_seconds: 30
+```
+
+User: Perfect
+
+Claude: **Phase 3: Synthesis Design**
+
+Template:
+```yaml
+synthesis:
+  mode: template_only
+  template: |
+    **Standup Prep**
+
+    **Yesterday:**
+    {calendar_findings}
+    {task_findings}
+
+    **Blockers:** [Review above for any mentioned]
+    **Today:** [Based on task queue]
+```
+
+Or should we add LLM enhancement to consolidate and highlight blockers?
+
+User: Add enhancement
+
+Claude: **Phase 4: Testing**
+
+Ready to test. I'll run 3 scenarios:
+1. Normal day with meetings and tasks
+2. Light day with few activities
+3. Day with blockers/overdue items
+
+[Runs coordination...]
+
+Results:
+- Scenario 1: ✅ Both agents contributed (Calendar 14:30, Task 14:31)
+- Scenario 2: ✅ Both agents contributed (shorter findings)
+- Scenario 3: ✅ Task agent flagged overdue item
+
+All tests pass. Coordination saved to `docs/task-types/standup_prep.yaml`
+
+Would you like to add a slash command for this? (e.g., `/standup`)
+```
+
+### Implementation Priority
+
+This skill is proposed for future implementation after the core coordination system is stable. Prerequisites:
+
+1. ✅ Core coordination orchestrator working
+2. ✅ Task type YAML loading and validation
+3. ✅ Coordination logging to Supabase
+4. ⏳ 3+ task types in active use (currently 1: meeting_prep)
+5. ⏳ Refinement queries validated with real data
+
+### Success Criteria
+
+| Criterion | Verification |
+|-----------|--------------|
+| Guided workflow | User can create coordination through conversation, not YAML editing |
+| Phase transitions | Clear gates between phases with user confirmation |
+| Testing built-in | Automatic test scenario generation and execution |
+| Refinement data-driven | Uses coordination logs to suggest improvements |
+| Reusable patterns | Can suggest prompts/configs from existing task types |

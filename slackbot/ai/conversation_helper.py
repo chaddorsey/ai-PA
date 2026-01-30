@@ -30,7 +30,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 # Default scheduler agent - configurable via env var
-DEFAULT_SCHEDULER_AGENT_ID = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+DEFAULT_SCHEDULER_AGENT_ID = "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d"
 SCHEDULER_AGENT_ID = os.getenv("LETTA_SCHEDULER_AGENT_ID", DEFAULT_SCHEDULER_AGENT_ID)
 
 

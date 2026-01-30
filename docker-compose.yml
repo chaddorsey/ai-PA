@@ -684,7 +684,7 @@ services:
       LETTA_BASE_URL: "http://letta:8283"
       LETTA_AGENT_ID: ${LETTA_AGENT_ID}
       # Scheduler agent for multi-user conversations (configurable)
-      LETTA_SCHEDULER_AGENT_ID: ${LETTA_SCHEDULER_AGENT_ID:-agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218}
+      LETTA_SCHEDULER_AGENT_ID: ${LETTA_SCHEDULER_AGENT_ID:-agent-892a2d58-b9f6-4baf-84f3-c431fe46487d}
       # Supabase for conversation tracking
       SUPABASE_URL: "http://supabase-rest:3000"
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}

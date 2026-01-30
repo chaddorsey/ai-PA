@@ -1,5 +1,6 @@
 """PA Routing Handler - FastAPI application."""
 
+import logging
 from contextlib import asynccontextmanager
 
 import structlog
@@ -15,6 +16,9 @@ from pa_routing.routers.routing import (
 )
 from pa_routing.services.coordination_handler import CoordinationBlockHandler
 from pa_routing.settings import settings
+
+# Configure Python logging level
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
 # Configure structured logging
 structlog.configure(

@@ -24,7 +24,7 @@ class TestSharedBlockCoordination:
     async def test_create_and_attach_blocks_to_agent(self, handler):
         """Can create blocks and attach them to a real agent."""
         # Use calendar agent for testing
-        agent_id = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+        agent_id = "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d"
         identity_id = "test-integration"
 
         # Create task block
@@ -48,7 +48,7 @@ class TestSharedBlockCoordination:
         """Can start a coordinated task and attach blocks to agents."""
         identity_id = "test-coord-integration"
         agent_ids = {
-            "calendar": "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218",
+            "calendar": "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d",
         }
 
         # Start coordinated task
@@ -123,7 +123,7 @@ class TestCoordinationProtocol:
         """Calendar agent should have coordination protocol in persona."""
         import httpx
 
-        agent_id = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+        agent_id = "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d"
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(

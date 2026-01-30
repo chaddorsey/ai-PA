@@ -19,7 +19,7 @@ The calendar tools should be registered and attached to your agent. You can test
 Check if tools are attached to your agent (replace with your agent ID):
 
 ```bash
-export LETTA_AGENT_ID=agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218
+export LETTA_AGENT_ID=agent-892a2d58-b9f6-4baf-84f3-c431fe46487d
 python3 letta/register_calendar_tools.py
 ```
 

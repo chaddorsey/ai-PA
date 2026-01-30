@@ -20,7 +20,7 @@ from typing import Any, Dict, Optional
 
 logger = structlog.get_logger()
 
-SCHEDULER_AGENT_ID = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+SCHEDULER_AGENT_ID = "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d"
 AGENT_NAME = "meeting_scheduler"
 
 

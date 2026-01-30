@@ -14,7 +14,7 @@ import urllib.error
 
 LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 
-PULSE_AGENT_ID = "agent-6eb765bf-7268-4f6d-a380-c527c9c53000"
+PULSE_AGENT_ID = "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8"
 
 # REFS instruction - multi-domain format with type field
 REFS_INSTRUCTION = """

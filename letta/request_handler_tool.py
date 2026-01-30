@@ -36,8 +36,8 @@ def delegate_to_specialist(domain: str, request: str) -> str:
         # Validate domain
         agent_map = {
             "task": "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
-            "calendar": "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218",
-            "pulse": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000"
+            "calendar": "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d",
+            "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8"
         }
         
         if domain not in agent_map:

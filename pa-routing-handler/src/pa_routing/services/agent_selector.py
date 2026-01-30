@@ -30,11 +30,11 @@ class RoutingResult:
 # Agent mapping - verified against Letta instance
 AGENT_MAP = {
     "task": "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
-    "calendar": "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218",
-    "slack": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",  # Pulse handles Slack
-    "documents": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",  # Pulse handles Docs
-    "jira": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",  # Pulse handles Jira
-    "pulse": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",
+    "calendar": "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d",
+    "slack": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Slack
+    "documents": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Docs
+    "jira": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Jira
+    "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
     "email": "agent-b4928949-8012-4436-a3c7-a9e510785147",  # WIP
     "main": "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a",  # Main/default agent
 }
@@ -56,8 +56,8 @@ AGENT_NAMES = {
 # Reverse mapping: agent_id -> agent_name (for explicit agent selection)
 AGENT_ID_TO_NAME = {
     "agent-dd15479e-6543-400e-8463-b2a48b13cd4a": "Task Agent",
-    "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218": "Calendar Agent",
-    "agent-6eb765bf-7268-4f6d-a380-c527c9c53000": "Pulse Agent",
+    "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d": "Calendar Agent",
+    "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8": "Pulse Agent",
     "agent-b4928949-8012-4436-a3c7-a9e510785147": "Email Agent",
     "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a": "Main Agent",
 }

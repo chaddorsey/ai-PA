@@ -10,7 +10,7 @@ import json
 import urllib.request
 
 LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-AGENT_ID = os.getenv("LETTA_AGENT_ID", "agent-6eb765bf-7268-4f6d-a380-c527c9c53000")
+AGENT_ID = os.getenv("LETTA_AGENT_ID", "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8")
 
 
 def http_get(url):

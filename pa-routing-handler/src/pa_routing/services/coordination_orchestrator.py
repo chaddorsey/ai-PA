@@ -29,10 +29,10 @@ logger = structlog.get_logger()
 
 # Agent ID mapping (from Letta)
 AGENT_IDS = {
-    "calendar": "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218",
+    "calendar": "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d",
     "task": "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
     "email": "agent-b4928949-8012-4436-a3c7-a9e510785147",
-    "pulse": "agent-6eb765bf-7268-4f6d-a380-c527c9c53000",
+    "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
     "main": "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a",
 }
 
@@ -241,7 +241,11 @@ class CoordinationOrchestrator:
         task_type: TaskType,
         context: Dict[str, Any],
     ) -> Dict[str, Dict[str, Any]]:
-        """Dispatch all enabled agents in parallel.
+        """Dispatch all enabled agents with staggered starts.
+
+        Agents are dispatched with a small delay between each to prevent
+        overwhelming Letta's single-worker server with simultaneous requests.
+        Once started, all agents run concurrently.
 
         Args:
             task_id: Current task identifier
@@ -256,23 +260,38 @@ class CoordinationOrchestrator:
         agent_names = list(enabled_agents.keys())
         tasks = []
 
+        # Stagger delay between agent dispatches (ms)
+        # Prevents 502 errors from Letta's single-worker server
+        # 2000ms provides ample separation for single-worker processing
+        # Combined with retry logic (3 retries, exponential backoff) for resilience
+        stagger_delay_ms = 2000
+
         # Enrich context with identity_id for block label substitution
         enriched_context = {**context, "identity_id": identity_id}
 
-        for agent_name, agent_config in enabled_agents.items():
+        async def dispatch_with_delay(
+            agent_name: str,
+            agent_config: Any,
+            delay_ms: int,
+        ) -> Optional[Dict[str, Any]]:
+            """Dispatch agent after specified delay."""
+            if delay_ms > 0:
+                await asyncio.sleep(delay_ms / 1000.0)
             prompt = self._build_agent_prompt(agent_config, enriched_context)
-            tasks.append(
-                self._dispatch_to_agent(
-                    agent_name=agent_name,
-                    prompt=prompt,
-                    identity_id=identity_id,
-                    task_id=task_id,
-                    task_type=task_type.name,
-                    timeout=agent_config.timeout_seconds,
-                )
+            return await self._dispatch_to_agent(
+                agent_name=agent_name,
+                prompt=prompt,
+                identity_id=identity_id,
+                task_id=task_id,
+                task_type=task_type.name,
+                timeout=agent_config.timeout_seconds,
             )
 
-        # Run all dispatches concurrently
+        for i, (agent_name, agent_config) in enumerate(enabled_agents.items()):
+            delay = i * stagger_delay_ms
+            tasks.append(dispatch_with_delay(agent_name, agent_config, delay))
+
+        # Run all dispatches concurrently (each starts after its stagger delay)
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Build results dict mapping agent name to result
@@ -386,38 +405,83 @@ class CoordinationOrchestrator:
         agent_id: str,
         message: str,
         identity_id: str,
+        max_retries: int = 5,
     ) -> Optional[str]:
-        """Send message to Letta agent via HTTP.
+        """Send message to Letta agent via HTTP with retry logic.
+
+        Implements exponential backoff for 502 Bad Gateway errors,
+        which occur when Letta's single-worker server is busy.
 
         Args:
             agent_id: Letta agent identifier
             message: Message to send
             identity_id: User identity (for context)
+            max_retries: Maximum retry attempts for 502 errors
 
         Returns:
             Assistant message response or None
         """
-        try:
-            url = f"{self._letta_url}/v1/agents/{agent_id}/messages"
-            payload = {
-                "messages": [{"role": "user", "content": message}],
-            }
+        url = f"{self._letta_url}/v1/agents/{agent_id}/messages"
+        payload = {
+            "messages": [{"role": "user", "content": message}],
+        }
 
-            async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
+        last_error = None
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+                    response = await client.post(url, json=payload)
 
-            # Extract assistant message from response
-            for msg in data.get("messages", []):
-                if msg.get("message_type") == "assistant_message":
-                    return msg.get("content")
+                    # Check for 502 Bad Gateway - retry with backoff
+                    if response.status_code == 502:
+                        if attempt < max_retries:
+                            backoff_seconds = 2 ** attempt  # 1, 2, 4 seconds
+                            logger.warning(
+                                "letta_502_retry",
+                                agent_id=agent_id,
+                                attempt=attempt + 1,
+                                backoff_seconds=backoff_seconds,
+                            )
+                            await asyncio.sleep(backoff_seconds)
+                            continue
+                        else:
+                            logger.error(
+                                "letta_502_exhausted",
+                                agent_id=agent_id,
+                                max_retries=max_retries,
+                            )
+                            raise httpx.HTTPStatusError(
+                                f"502 Bad Gateway after {max_retries} retries",
+                                request=response.request,
+                                response=response,
+                            )
 
-            return None
+                    response.raise_for_status()
+                    data = response.json()
 
-        except Exception as e:
-            logger.error("letta_send_failed", agent_id=agent_id, error=str(e))
-            return None
+                # Extract assistant message from response
+                for msg in data.get("messages", []):
+                    if msg.get("message_type") == "assistant_message":
+                        return msg.get("content")
+
+                return None
+
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code != 502:
+                    # Non-502 error, don't retry
+                    logger.error("letta_send_failed", agent_id=agent_id, error=str(e))
+                    raise
+
+            except Exception as e:
+                last_error = e
+                logger.error("letta_send_failed", agent_id=agent_id, error=str(e))
+                raise
+
+        # Should not reach here, but handle gracefully
+        if last_error:
+            raise last_error
+        return None
 
     async def _wait_for_contributions(
         self,

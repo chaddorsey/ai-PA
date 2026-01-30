@@ -7,7 +7,7 @@ so they can communicate with each other.
 
 Agents:
 - Main orchestration agent: agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a
-- Scheduling agent: agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218
+- Scheduling agent: agent-892a2d58-b9f6-4baf-84f3-c431fe46487d
 """
 
 import os
@@ -40,7 +40,7 @@ LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 
 # Agent IDs to attach the tool to
 MAIN_ORCHESTRATION_AGENT_ID = "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a"
-SCHEDULING_AGENT_ID = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+SCHEDULING_AGENT_ID = "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d"
 
 AGENT_IDS = [
     ("Main Orchestration Agent", MAIN_ORCHESTRATION_AGENT_ID),

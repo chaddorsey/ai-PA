@@ -349,6 +349,199 @@ def record_feedback():
     return jsonify({"status": "ok", "feedback_type": feedback_type})
 
 
+@app.route("/api/coordinate", methods=["POST"])
+def coordinate():
+    """Execute multi-agent coordination task.
+
+    Proxies to the routing handler's coordination endpoint.
+    Useful for tasks like meeting prep that gather info from multiple agents.
+
+    Request body:
+    - task_type: str (e.g., "meeting_prep")
+    - context: dict (e.g., {"meeting_identifier": "board meeting"})
+    - identity_id: str (optional, defaults to system default)
+    - session_id: str (optional, for conversation tracking)
+    """
+    data = request.get_json(force=True, silent=True) or {}
+
+    task_type = data.get("task_type")
+    context = data.get("context", {})
+    identity_id = data.get("identity_id")
+    session_id = data.get("session_id")
+
+    if not task_type:
+        return jsonify({"error": "task_type is required"}), 400
+
+    if not context:
+        return jsonify({"error": "context is required"}), 400
+
+    logger.info(
+        "coordinate_request",
+        task_type=task_type,
+        context_keys=list(context.keys()),
+        session_id=session_id,
+    )
+
+    try:
+        # Call the routing handler's coordination endpoint
+        # Use a longer timeout since coordination involves multiple agents
+        with httpx.Client(timeout=180.0) as coord_client:
+            coord_response = coord_client.post(
+                f"{ROUTING_HANDLER_URL}/v1/coordinate",
+                json={
+                    "task_type": task_type,
+                    "context": context,
+                    "identity_id": identity_id or "default",
+                },
+            )
+            coord_response.raise_for_status()
+            result = coord_response.json()
+
+        logger.info(
+            "coordinate_complete",
+            task_type=task_type,
+            status=result.get("status"),
+            agents_completed=result.get("agents_completed"),
+            coordination_time_ms=result.get("coordination_time_ms"),
+        )
+
+        # Optionally save to conversation history if session provided
+        if session_id and result.get("synthesis"):
+            # Save as a system message with the coordination result
+            save_conversation_message(
+                session_id=session_id,
+                role="assistant",
+                message=result["synthesis"],
+                agent_name="Coordination",
+            )
+
+        return jsonify(result)
+
+    except httpx.HTTPStatusError as e:
+        logger.error("coordinate_http_error", status_code=e.response.status_code)
+        return jsonify({
+            "status": "error",
+            "error_message": f"Coordination failed: HTTP {e.response.status_code}",
+        }), e.response.status_code
+
+    except Exception as e:
+        logger.error("coordinate_error", error=str(e))
+        return jsonify({
+            "status": "error",
+            "error_message": f"Coordination failed: {str(e)}",
+        }), 500
+
+
+# Coordination slash commands: command -> (task_type, context_key)
+COORDINATION_COMMANDS = {
+    "mprep": ("meeting_prep", "meeting_identifier"),
+}
+
+# Pattern to match coordination slash commands: /command argument
+COORD_SLASH_PATTERN = re.compile(r"^/(\w+)\s+(.+)$", re.DOTALL)
+
+
+def stream_coordination(
+    task_type: str,
+    context: dict,
+    session_id: str,
+    original_message: str,
+) -> Response:
+    """Stream coordination results as SSE events.
+
+    Args:
+        task_type: Coordination task type (e.g., "meeting_prep")
+        context: Context dict for the task
+        session_id: Session ID for conversation tracking
+        original_message: Original user message for history
+    """
+
+    def generate() -> Generator[str, None, None]:
+        try:
+            # Notify frontend we're coordinating
+            yield f"data: {json.dumps({'type': 'routing', 'agent_id': 'coordination', 'agent_name': 'Meeting Prep', 'request_id': None})}\n\n"
+            yield f"data: {json.dumps({'type': 'tool_call', 'tool': 'coordination_start'})}\n\n"
+
+            logger.info(
+                "coordination_stream_start",
+                task_type=task_type,
+                session_id=session_id,
+            )
+
+            # Save user message
+            save_conversation_message(
+                session_id=session_id,
+                role="user",
+                message=original_message,
+                agent_name="Coordination",
+            )
+
+            # Call coordination API
+            with httpx.Client(timeout=180.0) as client:
+                response = client.post(
+                    f"{ROUTING_HANDLER_URL}/v1/coordinate",
+                    json={
+                        "task_type": task_type,
+                        "context": context,
+                        "identity_id": "default",
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            logger.info(
+                "coordination_stream_complete",
+                task_type=task_type,
+                status=result.get("status"),
+                agents_completed=result.get("agents_completed"),
+                agents_failed=result.get("agents_failed"),
+                coordination_time_ms=result.get("coordination_time_ms"),
+            )
+
+            # Stream the synthesis as text
+            synthesis = result.get("synthesis", "")
+            if synthesis:
+                yield f"data: {json.dumps({'type': 'text', 'content': synthesis})}\n\n"
+
+                # Save to conversation history
+                save_conversation_message(
+                    session_id=session_id,
+                    role="assistant",
+                    message=synthesis,
+                    agent_name="Coordination",
+                )
+
+            # Send completion metadata
+            agents_completed = result.get("agents_completed", [])
+            agents_failed = result.get("agents_failed", [])
+            if agents_failed:
+                status_msg = f"\n\n---\n*Agents: {', '.join(agents_completed)} completed"
+                if agents_failed:
+                    status_msg += f"; {', '.join(agents_failed)} failed"
+                status_msg += "*"
+                yield f"data: {json.dumps({'type': 'text', 'content': status_msg})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except httpx.HTTPStatusError as e:
+            logger.error("coordination_stream_http_error", status_code=e.response.status_code)
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Coordination failed: HTTP {e.response.status_code}'})}\n\n"
+
+        except Exception as e:
+            logger.error("coordination_stream_error", error=str(e))
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.route("/stream", methods=["POST"])
 def stream():
     """
@@ -356,6 +549,9 @@ def stream():
 
     Receives a message, routes it to the appropriate agent,
     and streams the response back via Server-Sent Events.
+
+    Supports coordination slash commands:
+    - /mprep <meeting description> - Multi-agent meeting prep
     """
     data = request.get_json(force=True, silent=True) or {}
     message = data.get("message", "")
@@ -372,6 +568,28 @@ def stream():
 
     if not session_id:
         return jsonify({"error": "Session ID is required"}), 400
+
+    # Check for coordination slash commands (e.g., /mprep board meeting)
+    coord_match = COORD_SLASH_PATTERN.match(message.strip())
+    if coord_match:
+        command = coord_match.group(1).lower()
+        argument = coord_match.group(2).strip()
+
+        if command in COORDINATION_COMMANDS:
+            task_type, context_key = COORDINATION_COMMANDS[command]
+            logger.info(
+                "coordination_slash_command",
+                command=command,
+                task_type=task_type,
+                argument=argument,
+                session_id=session_id,
+            )
+            return stream_coordination(
+                task_type=task_type,
+                context={context_key: argument},
+                session_id=session_id,
+                original_message=message,
+            )
 
     logger.info(
         "stream_request",

@@ -52,7 +52,7 @@ This script will:
 
 **Agents configured:**
 - Main Orchestration Agent: `agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a`
-- Scheduling Agent: `agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218`
+- Scheduling Agent: `agent-892a2d58-b9f6-4baf-84f3-c431fe46487d`
 
 ### Step 3: Attach Tool to Agents
 

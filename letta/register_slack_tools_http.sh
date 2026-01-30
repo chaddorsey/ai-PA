@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Register Slack Analytics Tools with Letta via HTTP API
-# Usage: ./register_slack_tools_http.sh agent-6eb765bf-7268-4f6d-a380-c527c9c53000
+# Usage: ./register_slack_tools_http.sh agent-2ed14ef4-6289-453a-ae27-290b6ed196b8
 #
 
 LETTA_BASE="${LETTA_BASE_URL:-http://localhost:8283}"

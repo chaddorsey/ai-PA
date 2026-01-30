@@ -23,7 +23,7 @@ class LettaAPIStreaming:
     _DEFAULT_TIMEOUT: RequestTimeout = (5.0, 120.0)
 
     # Default scheduler agent ID - can be overridden via LETTA_SCHEDULER_AGENT_ID env var
-    _DEFAULT_SCHEDULER_AGENT_ID = "agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218"
+    _DEFAULT_SCHEDULER_AGENT_ID = "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d"
 
     def __init__(
         self,

@@ -4,22 +4,22 @@
 // Usage: /calendar What's on my schedule? → routes to Calendar Agent
 const SLASH_COMMAND_MAP = {
     // Direct agent mappings
-    'calendar': 'agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218',
-    'cal': 'agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218',
+    'calendar': 'agent-892a2d58-b9f6-4baf-84f3-c431fe46487d',
+    'cal': 'agent-892a2d58-b9f6-4baf-84f3-c431fe46487d',
     'task': 'agent-dd15479e-6543-400e-8463-b2a48b13cd4a',
     'tasks': 'agent-dd15479e-6543-400e-8463-b2a48b13cd4a',
     'omnifocus': 'agent-dd15479e-6543-400e-8463-b2a48b13cd4a',
     'main': 'agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a',
-    'pulse': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
+    'pulse': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
     'email': 'agent-b4928949-8012-4436-a3c7-a9e510785147',
 
     // Domain aliases that route to Pulse Agent
-    'slack': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
-    'jira': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
-    'docs': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
-    'documents': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
-    'google-docs': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
-    'drive': 'agent-6eb765bf-7268-4f6d-a380-c527c9c53000',
+    'slack': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
+    'jira': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
+    'docs': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
+    'documents': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
+    'google-docs': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
+    'drive': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
 };
 
 // Slash command to friendly agent name (for display)

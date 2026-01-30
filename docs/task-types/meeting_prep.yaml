@@ -21,22 +21,28 @@ agents:
     prompt_template: |
       COORDINATION TASK: Find the UPCOMING meeting matching '{meeting_identifier}'.
 
-      IMPORTANT: Focus on meetings happening TODAY or in the near future, not past events.
+      Focus on meetings happening TODAY or in the near future, not past events.
       If multiple meetings match, choose the soonest upcoming one.
 
-      Look up:
-      - Meeting title, date, time, and location
+      Look up and include:
+      - Meeting title, date, time (formatted like "2:00 PM Jan 30"), and location
       - All participants with their response status (accepted/tentative/declined)
       - Any scheduling conflicts in the 30 minutes before or after
-      - Link to the calendar event if available
+      - Video conference link (Zoom, Meet, Teams URL) if present
+      - Any attachments on the calendar event
+      - URLs mentioned in the event description
 
-      IMPORTANT: After finding information, use memory_insert to record your findings:
+      Format: Include meeting time clearly at the start, then participants, then any links/attachments.
+      Keep summary under 200 characters.
+
+      CRITICAL - You MUST complete this task by calling memory_insert:
       memory_insert("coordination_gathered_{identity_id}", "[Calendar HH:MM] Your summary here")
 
-      Keep summary under 100 characters.
-      Example: [Calendar 14:30] Board Meeting, 2pm Jan 30, Room A, 5 participants
+      Example: [Calendar 14:30] Board Meeting @ 2pm Jan 30 | Room A + Zoom: https://zoom.us/j/123 | 5 participants (all accepted) | Attached: Q4_agenda.pdf
+
+      If you found no matching meeting, still call memory_insert with: [Calendar HH:MM] No upcoming meeting found matching '{meeting_identifier}'
     timeout_seconds: 60
-    expected_contribution: "Event details, participant list, conflicts"
+    expected_contribution: "Event details with time, participant list, video links, attachments"
 
   document:
     enabled: false  # Document agent not yet created
@@ -58,61 +64,70 @@ agents:
 
   email:
     prompt_template: |
-      COORDINATION TASK: Find email threads from the last {lookback_days} days
-      involving these participants: {participants}.
+      COORDINATION TASK: Search for email threads from the last 7 days mentioning '{meeting_identifier}' or '{meeting_title}'.
 
       Focus on:
-      - Threads mentioning '{meeting_title}' or related topics
+      - Threads mentioning the meeting topic or related keywords
       - Recent communications that provide context
       - Any concerns, questions, or action items raised
 
-      IMPORTANT: After finding information, use memory_insert to record your findings:
+      Keep summary under 100 characters.
+
+      CRITICAL - You MUST complete this task by calling memory_insert:
       memory_insert("coordination_gathered_{identity_id}", "[Email HH:MM] Your summary here")
 
-      Keep summary under 100 characters.
       Example: [Email 14:31] 3 threads found: budget concerns, venue confirmed, agenda draft
-    timeout_seconds: 60
+
+      If no relevant threads found, still call memory_insert with: [Email HH:MM] No recent email threads found mentioning '{meeting_title}'
+    timeout_seconds: 120
     expected_contribution: "Recent communications, concerns raised"
-    default_lookback_days: 7
 
   pulse:
     enabled: true
     prompt_template: |
-      COORDINATION TASK: Check availability and status for: {participants}.
+      COORDINATION TASK: Search Slack for meeting prep context related to '{meeting_identifier}'.
 
-      Look for:
-      - Who is OOO or has limited availability
-      - Any status updates relevant to the meeting
-      - Working hours or timezone considerations
+      Search for:
+      1. Messages mentioning '{meeting_identifier}' or related topics
+      2. Messages in channels where the meeting or topic was discussed
+      3. Any DMs or threads that reference the meeting
 
-      IMPORTANT: After finding information, use memory_insert to record your findings:
+      Focus on finding:
+      - Prep tasks or action items mentioned ("need to prepare", "bring", "review before")
+      - Concerns or blockers raised about the meeting
+      - URLs shared that relate to the meeting (docs, slides, links)
+      - Availability/OOO status mentioned
+
+      Format: List prep tasks first, then URLs, then availability notes.
+      Keep summary under 250 characters.
+
+      CRITICAL - You MUST complete this task by calling memory_insert:
       memory_insert("coordination_gathered_{identity_id}", "[Pulse HH:MM] Your summary here")
 
-      Keep summary under 100 characters.
-      Example: [Pulse 14:32] Bob OOO tomorrow, Alice working remote Wed
-    timeout_seconds: 30
-    expected_contribution: "Availability, OOO status"
+      Example: [Pulse 14:32] Prep: Bob needs budget numbers, Alice reviewing slides | Links: docs.google.com/slides/abc | Status: Bob OOO Fri
+
+      If no relevant Slack messages found, still call memory_insert with: [Pulse HH:MM] No Slack messages found mentioning '{meeting_identifier}'
+    timeout_seconds: 45
+    expected_contribution: "Slack context, prep tasks, shared URLs, availability"
 
 synthesis:
   mode: template_with_enhancement
   template: |
-    **{meeting_title}** - {meeting_time}
+    **{meeting_title}**
 
-    **Participants:**
+    **Event Details:**
     {calendar_findings}
 
-    **Prep Materials:**
-    {document_findings}
-
-    **Recent Context:**
+    **Recent Context (Email):**
     {email_findings}
 
-    **Availability Notes:**
+    **Slack Context & Prep Tasks:**
     {pulse_findings}
   enhancement_prompt: |
     Review these meeting prep findings and add:
+    - Consolidated list of any URLs/links found (video conf, docs, slides)
     - Any concerns or blockers that should be addressed
-    - Suggested preparation priorities
+    - Suggested preparation priorities based on prep tasks mentioned
     - Questions to consider raising in the meeting
 
     Keep additions brief and actionable.
@@ -123,4 +138,12 @@ metrics:
   - time_to_completion
   - synthesis_length
 
-refinement_log: []
+refinement_log:
+  - date: 2026-01-29
+    changes:
+      - "Calendar agent: Added extraction of video links, attachments, and description URLs"
+      - "Calendar agent: Increased char limit 100→200 to accommodate URLs"
+      - "Pulse agent: Expanded from availability-only to Slack search for prep tasks and shared URLs"
+      - "Pulse agent: Increased char limit 100→250, timeout 30s→45s"
+      - "Synthesis: Removed unused document_findings section, added link consolidation to enhancement"
+    rationale: "Initial testing showed agents working but synthesis incomplete. Extended scope to capture meeting-related context from Slack and calendar attachments."
