@@ -224,6 +224,9 @@ deployment/backups-tmpsave/*
 #Data and resources
 data-resources/*
 letta/upload_log.txt
+
+# Granola archival state files (track import progress)
+letta/.granola_*_state.json
 omnifocus-mcp-letta/dist/server-mcp-official-8124.js
 
 #Slack MCP reference files
