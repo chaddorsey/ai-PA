@@ -8,12 +8,12 @@ from slack_sdk import WebClient
 
 def _handle_assistant_thread_started(event: dict, client: WebClient, logger: Logger):
     """Handle when user opens the AI assistant container.
-    
+
     According to Slack docs, this is the first impression moment where we can:
     1. Set a loading status if we need time to generate prompts
     2. Send suggested prompts to help the user get started
     """
-    logger.info(f"Assistant thread started: {event}")
+    logger.error(f"🎯 ASSISTANT_THREAD_STARTED EVENT: {event}")
     
     channel_id = event.get("assistant_thread", {}).get("channel_id")
     thread_ts = event.get("assistant_thread", {}).get("thread_ts")
