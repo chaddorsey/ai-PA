@@ -71,6 +71,16 @@ MCP_SERVERS = {
             "Accept": "application/json, text/event-stream",
             "Authorization": f"Bearer {os.getenv('ATLASSIAN_ROVO_TOKEN', '')}"
         }
+    },
+    "granola-tools": {
+        "server_name": "granola-tools",
+        "type": "sse",
+        "server_url": "http://host.docker.internal:8089/sse",
+        "auth_header": None,
+        "auth_token": None,
+        "custom_headers": {
+            "Content-Type": "application/json"
+        }
     }
 }
 
