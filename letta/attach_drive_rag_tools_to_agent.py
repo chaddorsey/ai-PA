@@ -35,7 +35,7 @@ def attach_tools(agent_id: str):
     tool_map = {t.name: t for t in all_tools}
 
     # Get current agent tools
-    agent = client.agents.get(agent_id)
+    agent = client.agents.retrieve(agent_id=agent_id)
     current_tool_ids = [t.id for t in agent.tools] if agent.tools else []
 
     attached = []

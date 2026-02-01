@@ -92,7 +92,7 @@ class SearchResponse(BaseModel):
 
     query: str
     results: list[SearchResult]
-    total_chunks_searched: int
+    total_results: int
 
 
 class IngestFolderRequest(BaseModel):

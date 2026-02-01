@@ -349,7 +349,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       # Google OAuth credentials
       - GOOGLE_CREDENTIALS_PATH=/app/credentials
-      - GOOGLE_TOKEN_PATH=/app/credentials/token.json
+      - GOOGLE_TOKEN_PATH=/app/credentials/drive-docs-token.json
       # Embedding configuration
       - EMBEDDING_MODEL=text-embedding-ada-002
       - EMBEDDING_BATCH_SIZE=100

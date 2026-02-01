@@ -334,7 +334,14 @@ class Database:
             if not row.get("embedding"):
                 continue
 
-            chunk_vec = np.array(row["embedding"])
+            # Parse embedding - may be string (from PostgREST) or list
+            embedding_data = row["embedding"]
+            if isinstance(embedding_data, str):
+                # Parse string representation "[0.1,0.2,...]"
+                import json
+                embedding_data = json.loads(embedding_data)
+
+            chunk_vec = np.array(embedding_data)
             chunk_norm = np.linalg.norm(chunk_vec)
 
             if query_norm == 0 or chunk_norm == 0:

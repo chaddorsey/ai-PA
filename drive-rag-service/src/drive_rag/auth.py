@@ -43,8 +43,8 @@ def get_credentials(
     settings = get_settings()
 
     creds_dir = Path(credentials_path or settings.google_credentials_path)
-    token_file = Path(token_path or settings.google_token_path or creds_dir / "token.json")
-    creds_file = creds_dir / "credentials.json"
+    token_file = Path(token_path or settings.google_token_path or creds_dir / "drive-docs-token.json")
+    creds_file = creds_dir / "gcp-oauth.calendar.desktop.json"
 
     creds = None
 
@@ -182,6 +182,26 @@ class GoogleClient:
             Full document JSON including body content
         """
         return self.docs.documents().get(documentId=document_id).execute()
+
+    def export_document_as_text(self, file_id: str) -> str:
+        """Export a Google Doc as plain text using Drive API.
+
+        This is a fallback when the Docs API is not available.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            Plain text content of the document
+        """
+        content = self.drive.files().export(
+            fileId=file_id,
+            mimeType="text/plain"
+        ).execute()
+
+        if isinstance(content, bytes):
+            return content.decode("utf-8")
+        return content
 
     def list_files_in_folder(
         self,

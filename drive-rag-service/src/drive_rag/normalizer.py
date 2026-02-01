@@ -278,3 +278,78 @@ def normalize_docs_document(
         normalized_hash=normalized_hash,
         blocks=blocks,
     )
+
+
+def normalize_plain_text_document(
+    file_id: str,
+    revision_id: str,
+    plain_text: str,
+) -> NormalizedSnapshot:
+    """Create a normalized snapshot from plain text export.
+
+    This is a fallback when the Docs API is not available.
+    Uses paragraph-based chunking without structural information.
+
+    Args:
+        file_id: Google Drive file ID
+        revision_id: Document revision ID
+        plain_text: Plain text content from Drive export
+
+    Returns:
+        NormalizedSnapshot with normalized text and paragraph blocks
+    """
+    # Decode if bytes
+    if isinstance(plain_text, bytes):
+        plain_text = plain_text.decode("utf-8")
+
+    # Normalize the text
+    normalized_text = normalize_global_text(normalize_text(plain_text))
+
+    # Split into paragraphs (double newlines or significant single newlines)
+    paragraphs = re.split(r"\n{2,}", normalized_text)
+
+    blocks: list[StructureBlock] = []
+    cursor = 0
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+
+        char_start = normalized_text.find(para, cursor)
+        if char_start == -1:
+            char_start = cursor
+        char_end = char_start + len(para)
+        cursor = char_end
+
+        text_hash = sha256_hex(para)
+        block_id = sha256_hex(f"paragraph::{text_hash}")
+
+        blocks.append(
+            StructureBlock(
+                block_id=block_id,
+                type="paragraph",
+                outline_path=[],
+                text_hash=text_hash,
+                char_start=char_start,
+                char_end=char_end,
+                text=para,
+            )
+        )
+
+    normalized_hash = sha256_hex(normalized_text)
+
+    logger.info(
+        "normalized_plain_text_document",
+        file_id=file_id,
+        revision_id=revision_id,
+        blocks_count=len(blocks),
+        text_length=len(normalized_text),
+        content_hash=normalized_hash[:16],
+    )
+
+    return NormalizedSnapshot(
+        normalized_text=normalized_text,
+        normalized_hash=normalized_hash,
+        blocks=blocks,
+    )

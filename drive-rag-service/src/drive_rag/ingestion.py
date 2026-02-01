@@ -25,7 +25,7 @@ from drive_rag.models import (
     IngestionResult,
     IngestFolderResponse,
 )
-from drive_rag.normalizer import normalize_docs_document
+from drive_rag.normalizer import normalize_docs_document, normalize_plain_text_document
 
 logger = structlog.get_logger()
 
@@ -93,12 +93,21 @@ async def ingest_document(
                     reason="Revision unchanged",
                 )
 
-        # 3. Fetch document content from Docs API
+        # 3. Fetch document content - try Docs API first, fall back to Drive export
         logger.info("fetching_content", file_id=file_id, title=title)
-        doc = google.get_document(file_id)
-
-        # 4. Normalize to stable text with structure
-        snapshot = normalize_docs_document(file_id, head_revision_id, doc)
+        try:
+            doc = google.get_document(file_id)
+            # 4. Normalize to stable text with structure (Docs API)
+            snapshot = normalize_docs_document(file_id, head_revision_id, doc)
+        except Exception as docs_error:
+            # Fall back to plain text export via Drive API
+            logger.warning(
+                "docs_api_failed_using_fallback",
+                file_id=file_id,
+                error=str(docs_error),
+            )
+            plain_text = google.export_document_as_text(file_id)
+            snapshot = normalize_plain_text_document(file_id, head_revision_id, plain_text)
 
         # Check content hash for deeper comparison
         if not force and existing_state:
