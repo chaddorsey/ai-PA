@@ -8,6 +8,7 @@ This module handles:
 
 import hashlib
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -21,6 +22,9 @@ GRAPHITI_BASE_URL = os.environ.get("GRAPHITI_BASE_URL", "http://graphiti-mcp-ser
 
 # Group ID for Drive RAG documents in Graphiti
 DRIVE_RAG_GROUP_ID = os.environ.get("DRIVE_RAG_GROUP_ID", "drive-rag-documents")
+
+# UUID namespace for Drive RAG episodes (generated once, fixed)
+DRIVE_RAG_UUID_NAMESPACE = uuid.UUID("9c8b5f3a-7d4e-4a2c-b1e9-6f8d0c3a5b7e")
 
 
 class GraphitiClient:
@@ -253,9 +257,11 @@ async def extract_entities_from_document(
     """
     client = get_graphiti_client()
 
-    # Generate a stable episode UUID based on file_id and content hash
+    # Generate a stable, valid UUID based on file_id and content hash
+    # Using uuid5 ensures the same file+content always generates the same UUID
     content_hash = hashlib.sha256(content.encode()).hexdigest()[:16]
-    episode_uuid = f"drive-{file_id}-{content_hash}"
+    uuid_input = f"{file_id}-{content_hash}"
+    episode_uuid = str(uuid.uuid5(DRIVE_RAG_UUID_NAMESPACE, uuid_input))
 
     # Build source description
     source_parts = [f"Google Drive document: {title}"]
@@ -277,26 +283,30 @@ async def extract_entities_from_document(
     enriched_content = "\n".join(metadata_lines) + "\n\n---\n\n" + content
 
     try:
+        # Note: We don't pass a custom UUID because Graphiti expects any provided
+        # UUID to reference an existing episode (for updates). Instead, we let
+        # Graphiti generate its own UUID and track the file_id via source_description.
         result = await client.add_episode(
             name=title,
             content=enriched_content,
             source_description=source_description,
             group_id=DRIVE_RAG_GROUP_ID,
             source_type="text",
-            uuid=episode_uuid,
+            # uuid parameter intentionally omitted - let Graphiti generate one
         )
 
         logger.info(
             "document_entities_extracted",
             file_id=file_id,
             title=title,
-            episode_uuid=episode_uuid,
+            # Note: episode_uuid is our reference ID, not the actual Graphiti UUID
+            reference_id=episode_uuid,
         )
 
         return {
             "status": "ok",
             "file_id": file_id,
-            "episode_uuid": episode_uuid,
+            "reference_id": episode_uuid,  # For our tracking, not Graphiti's UUID
             "result": result,
         }
 

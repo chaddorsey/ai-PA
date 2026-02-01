@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import the original Graphiti MCP server components
 from graphiti_mcp_server import (
-    mcp, 
+    mcp,
     initialize_graphiti,
     GRAPHITI_MCP_INSTRUCTIONS,
     logger,
@@ -35,8 +35,13 @@ from graphiti_mcp_server import (
     delete_episode,
     get_entity_edge,
     get_episodes,
-    clear_graph
+    clear_graph,
+    GraphitiConfig,
 )
+
+# Import config and set it from environment BEFORE initialize_graphiti is called
+import graphiti_mcp_server
+graphiti_mcp_server.config = GraphitiConfig.from_env()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
