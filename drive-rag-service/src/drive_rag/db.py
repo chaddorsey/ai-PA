@@ -4,6 +4,8 @@ This module handles all database operations:
 - Document state tracking (coordination catalog)
 - Chunk storage with embeddings
 - Vector similarity search
+- Folder cache for hierarchy traversal
+- Revision tracking for edit attribution
 """
 
 from datetime import datetime
@@ -12,10 +14,30 @@ from typing import Any, Optional
 import httpx
 import structlog
 
-from drive_rag.models import ChunkRecord, DocumentState, SearchResult
+from drive_rag.models import ChunkRecord, DocumentState, FolderCache, DocumentRevision, SearchResult
 from drive_rag.settings import get_settings
 
 logger = structlog.get_logger()
+
+
+def _serialize_datetime(dt: Optional[datetime]) -> Optional[str]:
+    """Convert datetime to ISO format string for database storage."""
+    return dt.isoformat() if dt else None
+
+
+def _deserialize_datetime(value: Any) -> Optional[datetime]:
+    """Convert ISO format string from database to datetime."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        # Handle ISO format with optional timezone
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    return None
 
 
 class Database:
@@ -84,15 +106,64 @@ class Database:
             return None
 
         row = data[0]
+        return self._row_to_document_state(row)
+
+    def _row_to_document_state(self, row: dict[str, Any]) -> DocumentState:
+        """Convert a database row to a DocumentState object.
+
+        Args:
+            row: Database row dictionary
+
+        Returns:
+            DocumentState object with all fields populated
+        """
         return DocumentState(
             drive_file_id=row["drive_file_id"],
             title=row["title"],
             mime_type=row.get("mime_type"),
+            # Revision tracking
             last_seen_revision_id=row.get("last_seen_revision_id"),
             last_indexed_revision_id=row.get("last_indexed_revision_id"),
-            last_indexed_at=row.get("last_indexed_at"),
+            last_indexed_at=_deserialize_datetime(row.get("last_indexed_at")),
             content_hash=row.get("content_hash"),
+            # Timestamps from Drive API
+            created_time=_deserialize_datetime(row.get("created_time")),
+            modified_time=_deserialize_datetime(row.get("modified_time")),
+            viewed_by_me_time=_deserialize_datetime(row.get("viewed_by_me_time")),
+            shared_with_me_time=_deserialize_datetime(row.get("shared_with_me_time")),
+            # Ownership/Users
             owner_email=row.get("owner_email"),
+            owner_name=row.get("owner_name"),
+            owner_permission_id=row.get("owner_permission_id"),
+            last_modifier_email=row.get("last_modifier_email"),
+            last_modifier_name=row.get("last_modifier_name"),
+            sharing_user_email=row.get("sharing_user_email"),
+            sharing_user_name=row.get("sharing_user_name"),
+            # Folder hierarchy
+            parent_folder_ids=row.get("parent_folder_ids") or [],
+            folder_path=row.get("folder_path") or [],
+            folder_path_ids=row.get("folder_path_ids") or [],
+            # Sharing/Permissions
+            shared=row.get("shared", False),
+            sharing_domains=row.get("sharing_domains") or [],
+            has_external_access=row.get("has_external_access", False),
+            is_shared_drive=row.get("is_shared_drive", False),
+            # Links
+            web_view_link=row.get("web_view_link"),
+            # File properties
+            file_size_bytes=row.get("file_size_bytes"),
+            description=row.get("description"),
+            starred=row.get("starred", False),
+            trashed=row.get("trashed", False),
+            # Capabilities
+            can_edit=row.get("can_edit", False),
+            can_share=row.get("can_share", False),
+            can_read_revisions=row.get("can_read_revisions", False),
+            # Graphiti entity analysis
+            collaborator_emails=row.get("collaborator_emails") or [],
+            # Ingestion metadata
+            first_indexed_at=_deserialize_datetime(row.get("first_indexed_at")),
+            index_version=row.get("index_version", 1),
         )
 
     def upsert_document_state(self, state: DocumentState) -> None:
@@ -102,16 +173,54 @@ class Database:
             state: Document state to upsert
         """
         data = {
+            # Core identifiers
             "drive_file_id": state.drive_file_id,
             "title": state.title,
             "mime_type": state.mime_type,
+            # Revision tracking
             "last_seen_revision_id": state.last_seen_revision_id,
             "last_indexed_revision_id": state.last_indexed_revision_id,
-            "last_indexed_at": (
-                state.last_indexed_at.isoformat() if state.last_indexed_at else None
-            ),
+            "last_indexed_at": _serialize_datetime(state.last_indexed_at),
             "content_hash": state.content_hash,
+            # Timestamps from Drive API
+            "created_time": _serialize_datetime(state.created_time),
+            "modified_time": _serialize_datetime(state.modified_time),
+            "viewed_by_me_time": _serialize_datetime(state.viewed_by_me_time),
+            "shared_with_me_time": _serialize_datetime(state.shared_with_me_time),
+            # Ownership/Users
             "owner_email": state.owner_email,
+            "owner_name": state.owner_name,
+            "owner_permission_id": state.owner_permission_id,
+            "last_modifier_email": state.last_modifier_email,
+            "last_modifier_name": state.last_modifier_name,
+            "sharing_user_email": state.sharing_user_email,
+            "sharing_user_name": state.sharing_user_name,
+            # Folder hierarchy
+            "parent_folder_ids": state.parent_folder_ids if state.parent_folder_ids else None,
+            "folder_path": state.folder_path if state.folder_path else None,
+            "folder_path_ids": state.folder_path_ids if state.folder_path_ids else None,
+            # Sharing/Permissions
+            "shared": state.shared,
+            "sharing_domains": state.sharing_domains if state.sharing_domains else None,
+            "has_external_access": state.has_external_access,
+            "is_shared_drive": state.is_shared_drive,
+            # Links
+            "web_view_link": state.web_view_link,
+            # File properties
+            "file_size_bytes": state.file_size_bytes,
+            "description": state.description,
+            "starred": state.starred,
+            "trashed": state.trashed,
+            # Capabilities
+            "can_edit": state.can_edit,
+            "can_share": state.can_share,
+            "can_read_revisions": state.can_read_revisions,
+            # Graphiti entity analysis
+            "collaborator_emails": state.collaborator_emails if state.collaborator_emails else None,
+            # Ingestion metadata
+            "first_indexed_at": _serialize_datetime(state.first_indexed_at),
+            "index_version": state.index_version,
+            # System timestamp
             "updated_at": datetime.utcnow().isoformat(),
         }
 
@@ -424,16 +533,159 @@ class Database:
         self._check_response(response, "get_indexed_documents")
 
         data = response.json()
+        return [self._row_to_document_state(row) for row in (data or [])]
+
+    # =====================
+    # Folder Cache Operations
+    # =====================
+
+    def get_folder_cache(self, folder_id: str) -> Optional[FolderCache]:
+        """Get cached folder metadata.
+
+        Args:
+            folder_id: Google Drive folder ID
+
+        Returns:
+            FolderCache if found and not stale, None otherwise
+        """
+        response = self.client.get(
+            self._url("folder_cache"),
+            params={
+                "folder_id": f"eq.{folder_id}",
+                "select": "*",
+                "stale_after": f"gte.{datetime.utcnow().isoformat()}",
+            },
+        )
+        self._check_response(response, "get_folder_cache")
+
+        data = response.json()
+        if not data:
+            return None
+
+        row = data[0]
+        return FolderCache(
+            folder_id=row["folder_id"],
+            name=row["name"],
+            parent_folder_ids=row.get("parent_folder_ids") or [],
+            folder_path=row.get("folder_path") or [],
+            folder_path_ids=row.get("folder_path_ids") or [],
+            depth=row.get("depth", 0),
+            created_time=_deserialize_datetime(row.get("created_time")),
+            modified_time=_deserialize_datetime(row.get("modified_time")),
+            owner_email=row.get("owner_email"),
+            owner_name=row.get("owner_name"),
+            shared=row.get("shared", False),
+            cached_at=_deserialize_datetime(row.get("cached_at")),
+            stale_after=_deserialize_datetime(row.get("stale_after")),
+        )
+
+    def upsert_folder_cache(self, folder: FolderCache) -> None:
+        """Insert or update folder cache entry.
+
+        Args:
+            folder: Folder cache data to upsert
+        """
+        data = {
+            "folder_id": folder.folder_id,
+            "name": folder.name,
+            "parent_folder_ids": folder.parent_folder_ids if folder.parent_folder_ids else None,
+            "folder_path": folder.folder_path if folder.folder_path else None,
+            "folder_path_ids": folder.folder_path_ids if folder.folder_path_ids else None,
+            "depth": folder.depth,
+            "created_time": _serialize_datetime(folder.created_time),
+            "modified_time": _serialize_datetime(folder.modified_time),
+            "owner_email": folder.owner_email,
+            "owner_name": folder.owner_name,
+            "shared": folder.shared,
+            "cached_at": datetime.utcnow().isoformat(),
+            "stale_after": _serialize_datetime(folder.stale_after),
+        }
+
+        response = self.client.post(
+            self._url("folder_cache"),
+            json=data,
+            headers={
+                **self.client.headers,
+                "Prefer": "resolution=merge-duplicates,return=representation",
+            },
+        )
+        self._check_response(response, "upsert_folder_cache")
+
+        logger.debug("upserted_folder_cache", folder_id=folder.folder_id)
+
+    # =====================
+    # Revision Tracking Operations
+    # =====================
+
+    def upsert_document_revision(self, revision: DocumentRevision) -> None:
+        """Insert or update a document revision record.
+
+        Args:
+            revision: Revision data to upsert
+        """
+        data = {
+            "drive_file_id": revision.drive_file_id,
+            "revision_id": revision.revision_id,
+            "modified_time": _serialize_datetime(revision.modified_time),
+            "modifier_email": revision.modifier_email,
+            "modifier_name": revision.modifier_name,
+            "modifier_permission_id": revision.modifier_permission_id,
+            "keep_forever": revision.keep_forever,
+            "published": revision.published,
+            "content_hash": revision.content_hash,
+            "has_snapshot": revision.has_snapshot,
+            "snapshot_uri": revision.snapshot_uri,
+        }
+
+        response = self.client.post(
+            self._url("document_revisions"),
+            json=data,
+            headers={
+                **self.client.headers,
+                "Prefer": "resolution=merge-duplicates,return=representation",
+            },
+        )
+        self._check_response(response, "upsert_document_revision")
+
+        logger.debug(
+            "upserted_document_revision",
+            file_id=revision.drive_file_id,
+            revision_id=revision.revision_id,
+        )
+
+    def get_document_revisions(self, file_id: str) -> list[DocumentRevision]:
+        """Get all revisions for a document.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            List of revision records ordered by modified_time desc
+        """
+        response = self.client.get(
+            self._url("document_revisions"),
+            params={
+                "drive_file_id": f"eq.{file_id}",
+                "select": "*",
+                "order": "modified_time.desc",
+            },
+        )
+        self._check_response(response, "get_document_revisions")
+
+        data = response.json()
         return [
-            DocumentState(
+            DocumentRevision(
                 drive_file_id=row["drive_file_id"],
-                title=row["title"],
-                mime_type=row.get("mime_type"),
-                last_seen_revision_id=row.get("last_seen_revision_id"),
-                last_indexed_revision_id=row.get("last_indexed_revision_id"),
-                last_indexed_at=row.get("last_indexed_at"),
+                revision_id=row["revision_id"],
+                modified_time=_deserialize_datetime(row.get("modified_time")),
+                modifier_email=row.get("modifier_email"),
+                modifier_name=row.get("modifier_name"),
+                modifier_permission_id=row.get("modifier_permission_id"),
+                keep_forever=row.get("keep_forever", False),
+                published=row.get("published", False),
                 content_hash=row.get("content_hash"),
-                owner_email=row.get("owner_email"),
+                has_snapshot=row.get("has_snapshot", False),
+                snapshot_uri=row.get("snapshot_uri"),
             )
             for row in (data or [])
         ]

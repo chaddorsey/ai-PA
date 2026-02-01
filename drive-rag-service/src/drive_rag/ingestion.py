@@ -25,12 +25,130 @@ from drive_rag.models import (
     IngestionResult,
     IngestFolderResponse,
 )
-from drive_rag.normalizer import normalize_docs_document, normalize_plain_text_document
+from drive_rag.normalizer import (
+    normalize_docs_document,
+    normalize_plain_text_document,
+    normalize_spreadsheet_csv,
+    normalize_presentation_text,
+    normalize_pdf_document,
+)
 
 logger = structlog.get_logger()
 
-# MIME type for Google Docs
+# MIME types for Google Workspace files
 GOOGLE_DOCS_MIME_TYPE = "application/vnd.google-apps.document"
+GOOGLE_SHEETS_MIME_TYPE = "application/vnd.google-apps.spreadsheet"
+GOOGLE_SLIDES_MIME_TYPE = "application/vnd.google-apps.presentation"
+
+# MIME type for PDF files
+PDF_MIME_TYPE = "application/pdf"
+
+# All supported MIME types for ingestion
+SUPPORTED_MIME_TYPES = [
+    GOOGLE_DOCS_MIME_TYPE,
+    GOOGLE_SHEETS_MIME_TYPE,
+    GOOGLE_SLIDES_MIME_TYPE,
+    PDF_MIME_TYPE,
+]
+
+
+def _parse_drive_timestamp(value: Optional[str]) -> Optional[datetime]:
+    """Parse a Drive API timestamp string to datetime.
+
+    Args:
+        value: ISO format timestamp string from Drive API
+
+    Returns:
+        datetime object or None if parsing fails
+    """
+    if not value:
+        return None
+    try:
+        # Drive API returns RFC 3339 timestamps
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _build_document_state(
+    file_id: str,
+    title: str,
+    mime_type: str,
+    head_revision_id: str,
+    content_hash: str,
+    file_meta: dict,
+    owner_email: Optional[str],
+    owner_name: Optional[str],
+    last_modifier_email: Optional[str],
+    last_modifier_name: Optional[str],
+    sharing_user_email: Optional[str],
+    sharing_user_name: Optional[str],
+    parent_folder_ids: list[str],
+    folder_path: list[str],
+    folder_path_ids: list[str],
+    sharing_domains: list[str],
+    has_external_access: bool,
+    can_edit: bool,
+    can_share: bool,
+    can_read_revisions: bool,
+    file_size_bytes: Optional[int],
+    last_indexed_revision_id: Optional[str] = None,
+    last_indexed_at: Optional[datetime] = None,
+    first_indexed_at: Optional[datetime] = None,
+) -> DocumentState:
+    """Build a comprehensive DocumentState from file metadata.
+
+    This helper constructs a DocumentState with all metadata fields
+    extracted from the Drive API response.
+    """
+    return DocumentState(
+        drive_file_id=file_id,
+        title=title,
+        mime_type=mime_type,
+        # Revision tracking
+        last_seen_revision_id=head_revision_id,
+        last_indexed_revision_id=last_indexed_revision_id,
+        last_indexed_at=last_indexed_at,
+        content_hash=content_hash,
+        # Timestamps from Drive API
+        created_time=_parse_drive_timestamp(file_meta.get("createdTime")),
+        modified_time=_parse_drive_timestamp(file_meta.get("modifiedTime")),
+        viewed_by_me_time=_parse_drive_timestamp(file_meta.get("viewedByMeTime")),
+        shared_with_me_time=_parse_drive_timestamp(file_meta.get("sharedWithMeTime")),
+        # Ownership/Users
+        owner_email=owner_email,
+        owner_name=owner_name,
+        owner_permission_id=None,  # Would require permissions.list call
+        last_modifier_email=last_modifier_email,
+        last_modifier_name=last_modifier_name,
+        sharing_user_email=sharing_user_email,
+        sharing_user_name=sharing_user_name,
+        # Folder hierarchy
+        parent_folder_ids=parent_folder_ids,
+        folder_path=folder_path,
+        folder_path_ids=folder_path_ids,
+        # Sharing/Permissions
+        shared=file_meta.get("shared", False),
+        sharing_domains=sharing_domains,
+        has_external_access=has_external_access,
+        is_shared_drive=False,  # Would need to check driveId field
+        # Links
+        web_view_link=file_meta.get("webViewLink"),
+        # File properties
+        file_size_bytes=file_size_bytes,
+        description=file_meta.get("description"),
+        starred=file_meta.get("starred", False),
+        trashed=file_meta.get("trashed", False),
+        # Capabilities
+        can_edit=can_edit,
+        can_share=can_share,
+        can_read_revisions=can_read_revisions,
+        # Graphiti entity analysis (populated later during entity extraction)
+        collaborator_emails=[],
+        # Ingestion metadata
+        first_indexed_at=first_indexed_at,
+        index_version=1,
+    )
 
 
 async def ingest_document(
@@ -57,23 +175,70 @@ async def ingest_document(
     embed = embedder or get_embedder()
 
     try:
-        # 1. Fetch file metadata from Drive
+        # 1. Fetch extended file metadata from Drive
         logger.info("fetching_metadata", file_id=file_id)
-        file_meta = google.get_file_metadata(file_id)
+        file_meta = google.get_file_metadata_extended(file_id)
 
         title = file_meta.get("name", "Untitled")
         mime_type = file_meta.get("mimeType", "")
         head_revision_id = file_meta.get("headRevisionId", "")
-        owner_email = None
-        if file_meta.get("owners"):
-            owner_email = file_meta["owners"][0].get("emailAddress")
 
-        # Verify it's a Google Doc
-        if mime_type != GOOGLE_DOCS_MIME_TYPE:
+        # Extract owner information
+        owner_email = None
+        owner_name = None
+        if file_meta.get("owners"):
+            owner = file_meta["owners"][0]
+            owner_email = owner.get("emailAddress")
+            owner_name = owner.get("displayName")
+
+        # Extract last modifier information
+        last_modifier_email = None
+        last_modifier_name = None
+        if file_meta.get("lastModifyingUser"):
+            modifier = file_meta["lastModifyingUser"]
+            last_modifier_email = modifier.get("emailAddress")
+            last_modifier_name = modifier.get("displayName")
+
+        # Extract sharing user information
+        sharing_user_email = None
+        sharing_user_name = None
+        if file_meta.get("sharingUser"):
+            sharer = file_meta["sharingUser"]
+            sharing_user_email = sharer.get("emailAddress")
+            sharing_user_name = sharer.get("displayName")
+
+        # Extract capabilities
+        capabilities = file_meta.get("capabilities", {})
+        can_edit = capabilities.get("canEdit", False)
+        can_share = capabilities.get("canShare", False)
+        can_read_revisions = capabilities.get("canReadRevisions", False)
+
+        # Build folder path
+        parent_folder_ids = file_meta.get("parents", [])
+        folder_path, folder_path_ids = [], []
+        if parent_folder_ids:
+            try:
+                folder_path, folder_path_ids = google.build_folder_path(parent_folder_ids[0])
+            except Exception as path_error:
+                logger.warning("folder_path_build_failed", file_id=file_id, error=str(path_error))
+
+        # Extract sharing domains
+        sharing_domains, has_external_access = google.extract_sharing_domains(file_meta)
+
+        # Parse file size (may be None for Google Workspace files)
+        file_size_bytes = None
+        if file_meta.get("size"):
+            try:
+                file_size_bytes = int(file_meta["size"])
+            except (ValueError, TypeError):
+                pass
+
+        # Verify it's a supported file type
+        if mime_type not in SUPPORTED_MIME_TYPES:
             return IngestionResult(
                 status="skipped",
                 drive_file_id=file_id,
-                reason=f"Not a Google Doc (mime: {mime_type})",
+                reason=f"Unsupported file type (mime: {mime_type})",
             )
 
         # 2. Check if changed
@@ -93,36 +258,69 @@ async def ingest_document(
                     reason="Revision unchanged",
                 )
 
-        # 3. Fetch document content - try Docs API first, fall back to Drive export
-        logger.info("fetching_content", file_id=file_id, title=title)
-        try:
-            doc = google.get_document(file_id)
-            # 4. Normalize to stable text with structure (Docs API)
-            snapshot = normalize_docs_document(file_id, head_revision_id, doc)
-        except Exception as docs_error:
-            # Fall back to plain text export via Drive API
-            logger.warning(
-                "docs_api_failed_using_fallback",
-                file_id=file_id,
-                error=str(docs_error),
-            )
-            plain_text = google.export_document_as_text(file_id)
-            snapshot = normalize_plain_text_document(file_id, head_revision_id, plain_text)
+        # 3. Fetch and normalize content based on file type
+        logger.info("fetching_content", file_id=file_id, title=title, mime_type=mime_type)
+
+        if mime_type == GOOGLE_DOCS_MIME_TYPE:
+            # Google Docs - try Docs API first, fall back to Drive export
+            try:
+                doc = google.get_document(file_id)
+                snapshot = normalize_docs_document(file_id, head_revision_id, doc)
+            except Exception as docs_error:
+                logger.warning(
+                    "docs_api_failed_using_fallback",
+                    file_id=file_id,
+                    error=str(docs_error),
+                )
+                plain_text = google.export_document_as_text(file_id)
+                snapshot = normalize_plain_text_document(file_id, head_revision_id, plain_text)
+
+        elif mime_type == GOOGLE_SHEETS_MIME_TYPE:
+            # Google Sheets - export as CSV
+            csv_content = google.export_spreadsheet_as_csv(file_id)
+            snapshot = normalize_spreadsheet_csv(file_id, head_revision_id, csv_content)
+
+        elif mime_type == GOOGLE_SLIDES_MIME_TYPE:
+            # Google Slides - export as plain text
+            text_content = google.export_presentation_as_text(file_id)
+            snapshot = normalize_presentation_text(file_id, head_revision_id, text_content)
+
+        elif mime_type == PDF_MIME_TYPE:
+            # PDF files - download and extract text
+            pdf_content = google.download_file_content(file_id)
+            snapshot = normalize_pdf_document(file_id, head_revision_id, pdf_content)
 
         # Check content hash for deeper comparison
         if not force and existing_state:
             if existing_state.content_hash == snapshot.normalized_hash:
                 # Update revision tracking but skip re-indexing
                 database.upsert_document_state(
-                    DocumentState(
-                        drive_file_id=file_id,
+                    _build_document_state(
+                        file_id=file_id,
                         title=title,
                         mime_type=mime_type,
-                        last_seen_revision_id=head_revision_id,
+                        head_revision_id=head_revision_id,
+                        content_hash=snapshot.normalized_hash,
+                        file_meta=file_meta,
+                        owner_email=owner_email,
+                        owner_name=owner_name,
+                        last_modifier_email=last_modifier_email,
+                        last_modifier_name=last_modifier_name,
+                        sharing_user_email=sharing_user_email,
+                        sharing_user_name=sharing_user_name,
+                        parent_folder_ids=parent_folder_ids,
+                        folder_path=folder_path,
+                        folder_path_ids=folder_path_ids,
+                        sharing_domains=sharing_domains,
+                        has_external_access=has_external_access,
+                        can_edit=can_edit,
+                        can_share=can_share,
+                        can_read_revisions=can_read_revisions,
+                        file_size_bytes=file_size_bytes,
+                        # Preserve existing indexed times
                         last_indexed_revision_id=existing_state.last_indexed_revision_id,
                         last_indexed_at=existing_state.last_indexed_at,
-                        content_hash=snapshot.normalized_hash,
-                        owner_email=owner_email,
+                        first_indexed_at=existing_state.first_indexed_at,
                     )
                 )
 
@@ -179,17 +377,36 @@ async def ingest_document(
         if to_delete:
             database.delete_chunks([c.chunk_id for c in to_delete])
 
-        # Update document state
+        # Update document state with full metadata
+        now = datetime.utcnow()
+        first_indexed_at = existing_state.first_indexed_at if existing_state else now
+
         database.upsert_document_state(
-            DocumentState(
-                drive_file_id=file_id,
+            _build_document_state(
+                file_id=file_id,
                 title=title,
                 mime_type=mime_type,
-                last_seen_revision_id=head_revision_id,
-                last_indexed_revision_id=head_revision_id,
-                last_indexed_at=datetime.utcnow(),
+                head_revision_id=head_revision_id,
                 content_hash=snapshot.normalized_hash,
+                file_meta=file_meta,
                 owner_email=owner_email,
+                owner_name=owner_name,
+                last_modifier_email=last_modifier_email,
+                last_modifier_name=last_modifier_name,
+                sharing_user_email=sharing_user_email,
+                sharing_user_name=sharing_user_name,
+                parent_folder_ids=parent_folder_ids,
+                folder_path=folder_path,
+                folder_path_ids=folder_path_ids,
+                sharing_domains=sharing_domains,
+                has_external_access=has_external_access,
+                can_edit=can_edit,
+                can_share=can_share,
+                can_read_revisions=can_read_revisions,
+                file_size_bytes=file_size_bytes,
+                last_indexed_revision_id=head_revision_id,
+                last_indexed_at=now,
+                first_indexed_at=first_indexed_at,
             )
         )
 
@@ -243,17 +460,20 @@ async def ingest_folder(
 
     logger.info("listing_folder", folder_id=folder_id)
 
-    # List Google Docs in folder
-    files = google.list_files_in_folder(folder_id, mime_type=GOOGLE_DOCS_MIME_TYPE)
+    # List all supported file types in folder
+    all_files = []
+    for mime_type in SUPPORTED_MIME_TYPES:
+        files = google.list_files_in_folder(folder_id, mime_type=mime_type)
+        all_files.extend(files)
 
-    logger.info("found_documents", folder_id=folder_id, count=len(files))
+    logger.info("found_documents", folder_id=folder_id, count=len(all_files))
 
     results: list[IngestionResult] = []
     processed = 0
     skipped = 0
     failed = 0
 
-    for file in files:
+    for file in all_files:
         file_id = file["id"]
         result = await ingest_document(
             file_id=file_id,

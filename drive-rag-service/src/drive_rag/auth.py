@@ -24,6 +24,8 @@ logger = structlog.get_logger()
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/documents.readonly",
+    # Activity API for view/edit tracking (optional - will gracefully degrade if not granted)
+    "https://www.googleapis.com/auth/drive.activity.readonly",
 ]
 
 
@@ -203,6 +205,47 @@ class GoogleClient:
             return content.decode("utf-8")
         return content
 
+    def export_spreadsheet_as_csv(self, file_id: str) -> str:
+        """Export a Google Sheet as CSV using Drive API.
+
+        Only exports the first sheet. For multi-sheet spreadsheets,
+        consider using the Sheets API for more control.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            CSV content of the spreadsheet
+        """
+        content = self.drive.files().export(
+            fileId=file_id,
+            mimeType="text/csv"
+        ).execute()
+
+        if isinstance(content, bytes):
+            return content.decode("utf-8")
+        return content
+
+    def export_presentation_as_text(self, file_id: str) -> str:
+        """Export a Google Slides presentation as plain text.
+
+        Exports slide content and speaker notes as text.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            Plain text content of the presentation
+        """
+        content = self.drive.files().export(
+            fileId=file_id,
+            mimeType="text/plain"
+        ).execute()
+
+        if isinstance(content, bytes):
+            return content.decode("utf-8")
+        return content
+
     def list_files_in_folder(
         self,
         folder_id: str,
@@ -245,6 +288,160 @@ class GoogleClient:
                 break
 
         return files
+
+    def get_file_metadata_extended(self, file_id: str) -> dict:
+        """Get extended file metadata including all fields for comprehensive tracking.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            Extended file metadata dict
+        """
+        fields = ",".join([
+            "id", "name", "mimeType", "description",
+            "createdTime", "modifiedTime", "viewedByMeTime", "sharedWithMeTime",
+            "version", "headRevisionId",
+            "owners", "lastModifyingUser", "sharingUser",
+            "parents", "shared",
+            "webViewLink", "webContentLink",
+            "size", "starred", "trashed",
+            "capabilities",
+        ])
+
+        return (
+            self.drive.files()
+            .get(fileId=file_id, fields=fields)
+            .execute()
+        )
+
+    def get_folder_metadata(self, folder_id: str) -> dict:
+        """Get folder metadata for hierarchy building.
+
+        Args:
+            folder_id: Google Drive folder ID
+
+        Returns:
+            Folder metadata dict
+        """
+        fields = "id,name,mimeType,parents,createdTime,modifiedTime,owners,shared"
+
+        return (
+            self.drive.files()
+            .get(fileId=folder_id, fields=fields)
+            .execute()
+        )
+
+    def build_folder_path(self, file_id: str, max_depth: int = 20) -> tuple[list[str], list[str]]:
+        """Build the full folder path from root to the given file/folder.
+
+        Args:
+            file_id: Google Drive file or folder ID
+            max_depth: Maximum depth to traverse (prevents infinite loops)
+
+        Returns:
+            Tuple of (folder_path_names, folder_path_ids) from root to parent
+        """
+        path_names: list[str] = []
+        path_ids: list[str] = []
+        current_id = file_id
+
+        for _ in range(max_depth):
+            try:
+                meta = self.drive.files().get(
+                    fileId=current_id,
+                    fields="id,name,parents,mimeType"
+                ).execute()
+
+                # Only add to path if it's a folder (not the file itself on first iteration)
+                if meta.get("mimeType") == "application/vnd.google-apps.folder":
+                    path_names.insert(0, meta["name"])
+                    path_ids.insert(0, meta["id"])
+
+                parents = meta.get("parents", [])
+                if not parents:
+                    break
+                current_id = parents[0]
+
+            except Exception as e:
+                logger.warning("folder_path_traversal_error", file_id=current_id, error=str(e))
+                break
+
+        return path_names, path_ids
+
+    def download_file_content(self, file_id: str) -> bytes:
+        """Download file content as bytes.
+
+        This is used for binary files like PDFs that need to be downloaded
+        rather than exported.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            File content as bytes
+        """
+        from googleapiclient.http import MediaIoBaseDownload
+        import io
+
+        request = self.drive.files().get_media(fileId=file_id)
+        buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(buffer, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            if status:
+                logger.debug("download_progress", file_id=file_id, progress=int(status.progress() * 100))
+
+        buffer.seek(0)
+        return buffer.read()
+
+    def extract_sharing_domains(self, file_meta: dict) -> tuple[list[str], bool]:
+        """Extract sharing domains and external access flag from file metadata.
+
+        Note: Requires reading permissions which may not be available for all files.
+
+        Args:
+            file_meta: File metadata dict (should include owner info)
+
+        Returns:
+            Tuple of (domains_list, has_external_access)
+        """
+        domains = set()
+        has_external = False
+
+        # Extract owner domain
+        owners = file_meta.get("owners", [])
+        for owner in owners:
+            email = owner.get("emailAddress", "")
+            if "@" in email:
+                domain = email.split("@")[1]
+                domains.add(domain)
+
+        # Check last modifier domain
+        last_modifier = file_meta.get("lastModifyingUser", {})
+        email = last_modifier.get("emailAddress", "")
+        if "@" in email:
+            domain = email.split("@")[1]
+            domains.add(domain)
+
+        # Check sharing user domain
+        sharing_user = file_meta.get("sharingUser", {})
+        email = sharing_user.get("emailAddress", "")
+        if "@" in email:
+            domain = email.split("@")[1]
+            domains.add(domain)
+
+        # Determine if there's external access (any non-primary domain)
+        # Assuming concord.org is the primary domain
+        primary_domain = "concord.org"
+        for domain in domains:
+            if domain != primary_domain and domain != "gmail.com":  # gmail might be personal accounts
+                has_external = True
+                break
+
+        return list(domains), has_external
 
 
 # Module-level singleton

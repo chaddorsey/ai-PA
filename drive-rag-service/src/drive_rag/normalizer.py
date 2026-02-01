@@ -353,3 +353,249 @@ def normalize_plain_text_document(
         normalized_hash=normalized_hash,
         blocks=blocks,
     )
+
+
+def normalize_spreadsheet_csv(
+    file_id: str,
+    revision_id: str,
+    csv_content: str,
+) -> NormalizedSnapshot:
+    """Create a normalized snapshot from a spreadsheet CSV export.
+
+    Args:
+        file_id: Google Drive file ID
+        revision_id: Document revision ID
+        csv_content: CSV content from Drive export
+
+    Returns:
+        NormalizedSnapshot with normalized text and row blocks
+    """
+    import csv
+    from io import StringIO
+
+    # Decode if bytes
+    if isinstance(csv_content, bytes):
+        csv_content = csv_content.decode("utf-8")
+
+    # Parse CSV
+    reader = csv.reader(StringIO(csv_content))
+    rows = list(reader)
+
+    blocks: list[StructureBlock] = []
+    text_parts: list[str] = []
+    cursor = 0
+
+    for row_idx, row in enumerate(rows):
+        if not any(cell.strip() for cell in row):
+            continue  # Skip empty rows
+
+        # Format row as pipe-separated for readability
+        row_text = " | ".join(cell.strip() for cell in row if cell.strip())
+        if not row_text:
+            continue
+
+        normalized_row = normalize_text(row_text)
+
+        separator = "" if not text_parts else "\n"
+        char_start = cursor + len(separator)
+        text_chunk = separator + normalized_row
+        text_parts.append(text_chunk)
+        cursor += len(text_chunk)
+        char_end = cursor
+
+        text_hash = sha256_hex(normalized_row)
+        block_id = sha256_hex(f"row:{row_idx}:{text_hash}")
+
+        # First row is header, rest are data rows
+        block_type = "header_row" if row_idx == 0 else "data_row"
+
+        blocks.append(
+            StructureBlock(
+                block_id=block_id,
+                type=block_type,
+                outline_path=[],
+                text_hash=text_hash,
+                char_start=char_start,
+                char_end=char_end,
+                text=normalized_row,
+            )
+        )
+
+    full_text = "".join(text_parts)
+    normalized_text = normalize_global_text(full_text)
+    normalized_hash = sha256_hex(normalized_text)
+
+    logger.info(
+        "normalized_spreadsheet",
+        file_id=file_id,
+        revision_id=revision_id,
+        blocks_count=len(blocks),
+        text_length=len(normalized_text),
+        content_hash=normalized_hash[:16],
+    )
+
+    return NormalizedSnapshot(
+        normalized_text=normalized_text,
+        normalized_hash=normalized_hash,
+        blocks=blocks,
+    )
+
+
+def normalize_presentation_text(
+    file_id: str,
+    revision_id: str,
+    text_content: str,
+) -> NormalizedSnapshot:
+    """Create a normalized snapshot from a presentation text export.
+
+    Google Slides exports include slide content and speaker notes.
+    We treat each slide as a separate block.
+
+    Args:
+        file_id: Google Drive file ID
+        revision_id: Document revision ID
+        text_content: Plain text content from Drive export
+
+    Returns:
+        NormalizedSnapshot with normalized text and slide blocks
+    """
+    # Decode if bytes
+    if isinstance(text_content, bytes):
+        text_content = text_content.decode("utf-8")
+
+    # Normalize the text
+    normalized_text = normalize_global_text(normalize_text(text_content))
+
+    # Split by slide markers or double newlines
+    # Google Slides text export typically separates slides with blank lines
+    slides = re.split(r"\n{3,}", normalized_text)
+
+    blocks: list[StructureBlock] = []
+    cursor = 0
+
+    for slide_idx, slide in enumerate(slides):
+        slide = slide.strip()
+        if not slide:
+            continue
+
+        char_start = normalized_text.find(slide, cursor)
+        if char_start == -1:
+            char_start = cursor
+        char_end = char_start + len(slide)
+        cursor = char_end
+
+        text_hash = sha256_hex(slide)
+        block_id = sha256_hex(f"slide:{slide_idx}:{text_hash}")
+
+        blocks.append(
+            StructureBlock(
+                block_id=block_id,
+                type="slide",
+                outline_path=[f"Slide {slide_idx + 1}"],
+                text_hash=text_hash,
+                char_start=char_start,
+                char_end=char_end,
+                text=slide,
+            )
+        )
+
+    normalized_hash = sha256_hex(normalized_text)
+
+    logger.info(
+        "normalized_presentation",
+        file_id=file_id,
+        revision_id=revision_id,
+        blocks_count=len(blocks),
+        text_length=len(normalized_text),
+        content_hash=normalized_hash[:16],
+    )
+
+    return NormalizedSnapshot(
+        normalized_text=normalized_text,
+        normalized_hash=normalized_hash,
+        blocks=blocks,
+    )
+
+
+def normalize_pdf_document(
+    file_id: str,
+    revision_id: str,
+    pdf_content: bytes,
+) -> NormalizedSnapshot:
+    """Create a normalized snapshot from a PDF document.
+
+    Uses pypdf to extract text from each page of the PDF.
+    Each page becomes a separate block with outline_path indicating the page number.
+
+    Args:
+        file_id: Google Drive file ID
+        revision_id: Document revision ID
+        pdf_content: Raw PDF file content as bytes
+
+    Returns:
+        NormalizedSnapshot with normalized text and page blocks
+    """
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    # Read the PDF
+    reader = PdfReader(BytesIO(pdf_content))
+    num_pages = len(reader.pages)
+
+    blocks: list[StructureBlock] = []
+    text_parts: list[str] = []
+    cursor = 0
+
+    for page_idx, page in enumerate(reader.pages):
+        # Extract text from the page
+        page_text = page.extract_text() or ""
+        page_text = page_text.strip()
+
+        if not page_text:
+            continue
+
+        # Normalize the page text
+        normalized_page = normalize_text(page_text)
+
+        # Calculate character positions
+        separator = "" if not text_parts else "\n\n"
+        char_start = cursor + len(separator)
+        text_chunk = separator + normalized_page
+        text_parts.append(text_chunk)
+        cursor += len(text_chunk)
+        char_end = cursor
+
+        text_hash = sha256_hex(normalized_page)
+        block_id = sha256_hex(f"pdf_page:{page_idx}:{text_hash}")
+
+        blocks.append(
+            StructureBlock(
+                block_id=block_id,
+                type="pdf_page",
+                outline_path=[f"Page {page_idx + 1}"],
+                text_hash=text_hash,
+                char_start=char_start,
+                char_end=char_end,
+                text=normalized_page,
+            )
+        )
+
+    full_text = "".join(text_parts)
+    normalized_text = normalize_global_text(full_text)
+    normalized_hash = sha256_hex(normalized_text)
+
+    logger.info(
+        "normalized_pdf_document",
+        file_id=file_id,
+        revision_id=revision_id,
+        num_pages=num_pages,
+        blocks_count=len(blocks),
+        text_length=len(normalized_text),
+        content_hash=normalized_hash[:16],
+    )
+
+    return NormalizedSnapshot(
+        normalized_text=normalized_text,
+        normalized_hash=normalized_hash,
+        blocks=blocks,
+    )

@@ -19,6 +19,7 @@ pydantic = "^2.5.0"
 pydantic-settings = "^2.1.0"
 tenacity = "^8.2.0"
 numpy = "^1.26.0"
+pypdf = "^4.0.0"  # PDF text extraction
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

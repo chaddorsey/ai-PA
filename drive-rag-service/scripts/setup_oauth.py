@@ -18,10 +18,12 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# Scopes required for Drive and Docs access
+# Scopes required for Drive, Docs, and Activity API access
 SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/documents.readonly",
+    # Activity API for view/edit tracking (optional - will gracefully degrade if not granted)
+    "https://www.googleapis.com/auth/drive.activity.readonly",
 ]
 
 # Default paths
