@@ -38,7 +38,7 @@ services:
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
-      PGRST_DB_SCHEMA: public,pa_web
+      PGRST_DB_SCHEMA: public,pa_web,rag
       PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
       PGRST_DB_USE_LEGACY_GUCS: false
     ports:

@@ -3,7 +3,6 @@ name = "drive-rag-service"
 version = "0.1.0"
 description = "Google Drive document RAG service with pgvector"
 authors = ["Chad Dorsey"]
-readme = "README.md"
 packages = [{include = "drive_rag", from = "src"}]
 
 [tool.poetry.dependencies]
@@ -19,6 +18,7 @@ structlog = "^24.1.0"
 pydantic = "^2.5.0"
 pydantic-settings = "^2.1.0"
 tenacity = "^8.2.0"
+numpy = "^1.26.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

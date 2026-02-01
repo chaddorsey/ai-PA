@@ -1,4 +1,4 @@
-"""Supabase client for pgvector operations.
+"""HTTP client for PostgREST/pgvector operations.
 
 This module handles all database operations:
 - Document state tracking (coordination catalog)
@@ -9,8 +9,8 @@ This module handles all database operations:
 from datetime import datetime
 from typing import Any, Optional
 
+import httpx
 import structlog
-from supabase import Client, create_client
 
 from drive_rag.models import ChunkRecord, DocumentState, SearchResult
 from drive_rag.settings import get_settings
@@ -19,20 +19,46 @@ logger = structlog.get_logger()
 
 
 class Database:
-    """Supabase database client for RAG operations."""
+    """HTTP client for PostgREST RAG operations."""
 
     def __init__(self, url: Optional[str] = None, key: Optional[str] = None):
         """Initialize database connection.
 
         Args:
-            url: Supabase URL (defaults to settings)
-            key: Supabase service key (defaults to settings)
+            url: PostgREST URL (defaults to settings)
+            key: Service key for authentication (defaults to settings)
         """
         settings = get_settings()
-        self.client: Client = create_client(
-            url or settings.supabase_url,
-            key or settings.supabase_service_key,
+        self.base_url = (url or settings.supabase_url).rstrip("/")
+        self.service_key = key or settings.supabase_service_key
+        self.schema = "rag"
+
+        self.client = httpx.Client(
+            headers={
+                "apikey": self.service_key,
+                "Authorization": f"Bearer {self.service_key}",
+                "Content-Type": "application/json",
+                "Accept-Profile": self.schema,  # Use schema via header
+                "Content-Profile": self.schema,  # For write operations
+                "Prefer": "return=representation",
+            },
+            timeout=30.0,
         )
+
+    def _url(self, table: str) -> str:
+        """Build URL for a table (schema is set via header)."""
+        return f"{self.base_url}/{table}"
+
+    def _check_response(self, response: httpx.Response, operation: str) -> None:
+        """Check response and raise on error."""
+        if response.status_code >= 400:
+            logger.error(
+                "database_error",
+                operation=operation,
+                status=response.status_code,
+                body=response.text,
+            )
+            response.raise_for_status()
 
     # =====================
     # Document State Operations
@@ -47,17 +73,17 @@ class Database:
         Returns:
             DocumentState if found, None otherwise
         """
-        result = (
-            self.client.table("rag.document_state")
-            .select("*")
-            .eq("drive_file_id", file_id)
-            .execute()
+        response = self.client.get(
+            self._url("document_state"),
+            params={"drive_file_id": f"eq.{file_id}", "select": "*"},
         )
+        self._check_response(response, "get_document_state")
 
-        if not result.data:
+        data = response.json()
+        if not data:
             return None
 
-        row = result.data[0]
+        row = data[0]
         return DocumentState(
             drive_file_id=row["drive_file_id"],
             title=row["title"],
@@ -89,7 +115,15 @@ class Database:
             "updated_at": datetime.utcnow().isoformat(),
         }
 
-        self.client.table("rag.document_state").upsert(data).execute()
+        response = self.client.post(
+            self._url("document_state"),
+            json=data,
+            headers={
+                **self.client.headers,
+                "Prefer": "resolution=merge-duplicates,return=representation",
+            },
+        )
+        self._check_response(response, "upsert_document_state")
 
         logger.debug("upserted_document_state", file_id=state.drive_file_id)
 
@@ -106,17 +140,17 @@ class Database:
         Returns:
             List of chunk records (without embeddings to save bandwidth)
         """
-        result = (
-            self.client.table("rag.document_chunks")
-            .select(
-                "id, drive_file_id, revision_id, title, chunk_id, outline_path, "
-                "block_start_id, block_end_id, char_start, char_end, chunk_hash"
-            )
-            .eq("drive_file_id", file_id)
-            .execute()
+        response = self.client.get(
+            self._url("document_chunks"),
+            params={
+                "drive_file_id": f"eq.{file_id}",
+                "select": "id,drive_file_id,revision_id,title,chunk_id,outline_path,"
+                "block_start_id,block_end_id,char_start,char_end,chunk_hash",
+            },
         )
+        self._check_response(response, "get_chunks_by_file")
 
-        return result.data or []
+        return response.json() or []
 
     def upsert_chunks(
         self, chunks: list[ChunkRecord], embeddings: list[list[float]]
@@ -153,9 +187,15 @@ class Database:
         # Upsert in batches of 100
         for i in range(0, len(records), 100):
             batch = records[i : i + 100]
-            self.client.table("rag.document_chunks").upsert(
-                batch, on_conflict="drive_file_id,chunk_id"
-            ).execute()
+            response = self.client.post(
+                self._url("document_chunks"),
+                json=batch,
+                headers={
+                    **self.client.headers,
+                    "Prefer": "resolution=merge-duplicates,return=representation",
+                },
+            )
+            self._check_response(response, "upsert_chunks")
 
         logger.info("upserted_chunks", count=len(chunks))
 
@@ -171,9 +211,13 @@ class Database:
         # Delete in batches
         for i in range(0, len(chunk_ids), 100):
             batch = chunk_ids[i : i + 100]
-            self.client.table("rag.document_chunks").delete().in_(
-                "chunk_id", batch
-            ).execute()
+            # PostgREST uses in.() for arrays
+            ids_param = ",".join(f'"{cid}"' for cid in batch)
+            response = self.client.delete(
+                self._url("document_chunks"),
+                params={"chunk_id": f"in.({ids_param})"},
+            )
+            self._check_response(response, "delete_chunks")
 
         logger.info("deleted_chunks", count=len(chunk_ids))
 
@@ -186,14 +230,18 @@ class Database:
         Returns:
             Number of chunks deleted
         """
-        result = (
-            self.client.table("rag.document_chunks")
-            .delete()
-            .eq("drive_file_id", file_id)
-            .execute()
+        response = self.client.delete(
+            self._url("document_chunks"),
+            params={"drive_file_id": f"eq.{file_id}"},
+            headers={
+                **self.client.headers,
+                "Prefer": "return=representation",
+            },
         )
+        self._check_response(response, "delete_chunks_by_file")
 
-        count = len(result.data) if result.data else 0
+        data = response.json()
+        count = len(data) if data else 0
         logger.info("deleted_file_chunks", file_id=file_id, count=count)
         return count
 
@@ -217,51 +265,43 @@ class Database:
         Returns:
             List of search results ordered by similarity
         """
-        # Build the RPC call for vector similarity search
-        # Using cosine similarity via pgvector's <=> operator
-
-        # We need to use a raw SQL query via RPC for vector search
-        # First, let's check if we have an RPC function, otherwise use direct query
-
-        # For now, use a simple approach with the REST API
-        # This requires setting up a Postgres function or using raw SQL
-
-        # Fallback: fetch all and filter in Python (not ideal for large datasets)
-        # TODO: Create a proper Postgres function for vector search
-
-        # Using supabase-py's rpc for custom function
-        params = {
-            "query_embedding": query_embedding,
-            "match_count": limit,
-        }
-
-        if file_ids:
-            params["filter_file_ids"] = file_ids
-
+        # Try using the search RPC function if available
         try:
-            result = self.client.rpc("search_document_chunks", params).execute()
+            params = {
+                "query_embedding": query_embedding,
+                "match_count": limit,
+            }
+            if file_ids:
+                params["filter_file_ids"] = file_ids
 
-            if not result.data:
+            response = self.client.post(
+                f"{self.base_url}/rpc/search_document_chunks",
+                json=params,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    return [
+                        SearchResult(
+                            drive_file_id=row["drive_file_id"],
+                            title=row["title"],
+                            chunk_text=row["chunk_text"],
+                            outline_path=row.get("outline_path", []),
+                            similarity=row["similarity"],
+                        )
+                        for row in data
+                    ]
                 return []
-
-            return [
-                SearchResult(
-                    drive_file_id=row["drive_file_id"],
-                    title=row["title"],
-                    chunk_text=row["chunk_text"],
-                    outline_path=row.get("outline_path", []),
-                    similarity=row["similarity"],
-                )
-                for row in result.data
-            ]
         except Exception as e:
             logger.warning(
                 "vector_search_rpc_failed",
                 error=str(e),
                 fallback="python_filtering",
             )
-            # Fallback to Python-based filtering (slower but works)
-            return self._search_similar_fallback(query_embedding, limit, file_ids)
+
+        # Fallback to Python-based filtering (slower but works)
+        return self._search_similar_fallback(query_embedding, limit, file_ids)
 
     def _search_similar_fallback(
         self,
@@ -273,17 +313,16 @@ class Database:
         import numpy as np
 
         # Fetch chunks with embeddings
-        query = self.client.table("rag.document_chunks").select(
-            "drive_file_id, title, chunk_text, outline_path, embedding"
-        )
-
+        params = {"select": "drive_file_id,title,chunk_text,outline_path,embedding", "limit": "1000"}
         if file_ids:
-            query = query.in_("drive_file_id", file_ids)
+            ids_param = ",".join(f'"{fid}"' for fid in file_ids)
+            params["drive_file_id"] = f"in.({ids_param})"
 
-        # Limit to reasonable amount for in-memory processing
-        result = query.limit(1000).execute()
+        response = self.client.get(self._url("document_chunks"), params=params)
+        self._check_response(response, "search_similar_fallback")
 
-        if not result.data:
+        data = response.json()
+        if not data:
             return []
 
         # Calculate cosine similarities
@@ -291,7 +330,7 @@ class Database:
         query_norm = np.linalg.norm(query_vec)
 
         scored_results = []
-        for row in result.data:
+        for row in data:
             if not row.get("embedding"):
                 continue
 
@@ -330,13 +369,29 @@ class Database:
         Returns:
             Number of chunks
         """
-        query = self.client.table("rag.document_chunks").select("id", count="exact")
-
+        params = {"select": "id", "limit": "0"}
         if file_id:
-            query = query.eq("drive_file_id", file_id)
+            params["drive_file_id"] = f"eq.{file_id}"
 
-        result = query.execute()
-        return result.count or 0
+        # Use GET with Prefer: count=exact header (HEAD doesn't work with multi-schema)
+        response = self.client.get(
+            self._url("document_chunks"),
+            params=params,
+            headers={
+                **self.client.headers,
+                "Prefer": "count=exact",
+            },
+        )
+        self._check_response(response, "get_chunk_count")
+
+        # Count is in Content-Range header
+        content_range = response.headers.get("Content-Range", "")
+        if "/" in content_range:
+            try:
+                return int(content_range.split("/")[1])
+            except (ValueError, IndexError):
+                pass
+        return 0
 
     def get_indexed_documents(
         self, limit: int = 50, offset: int = 0
@@ -350,14 +405,18 @@ class Database:
         Returns:
             List of document states
         """
-        result = (
-            self.client.table("rag.document_state")
-            .select("*")
-            .order("last_indexed_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
+        response = self.client.get(
+            self._url("document_state"),
+            params={
+                "select": "*",
+                "order": "last_indexed_at.desc",
+                "limit": str(limit),
+                "offset": str(offset),
+            },
         )
+        self._check_response(response, "get_indexed_documents")
 
+        data = response.json()
         return [
             DocumentState(
                 drive_file_id=row["drive_file_id"],
@@ -369,7 +428,7 @@ class Database:
                 content_hash=row.get("content_hash"),
                 owner_email=row.get("owner_email"),
             )
-            for row in (result.data or [])
+            for row in (data or [])
         ]
 
 
