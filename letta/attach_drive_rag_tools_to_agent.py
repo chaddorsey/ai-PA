@@ -23,6 +23,9 @@ DRIVE_RAG_TOOLS = [
     "list_indexed_documents",
     "ingest_document",
     "get_index_stats",
+    "get_document_edits",
+    "get_document_changes",
+    "fetch_document_from_drive",
 ]
 
 

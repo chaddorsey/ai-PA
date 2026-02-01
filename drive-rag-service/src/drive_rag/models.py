@@ -254,3 +254,47 @@ class DocumentStatusResponse(BaseModel):
     revision_id: Optional[str] = None
     chunk_count: int = 0
     last_indexed_at: Optional[datetime] = None
+    owner_email: Optional[str] = None
+
+
+class EditRecord(BaseModel):
+    """A single edit/revision record."""
+
+    revision_id: str
+    modifier_email: Optional[str] = None
+    modifier_name: Optional[str] = None
+    modified_time: Optional[datetime] = None
+    has_snapshot: bool = False
+
+
+class DocumentEditsResponse(BaseModel):
+    """Response containing document edit history."""
+
+    drive_file_id: str
+    title: Optional[str] = None
+    edit_count: int
+    editors: list[str] = Field(default_factory=list)
+    edits: list[EditRecord] = Field(default_factory=list)
+
+
+class BlockChangeRecord(BaseModel):
+    """A single block-level change."""
+
+    change_type: str  # added, deleted, modified, moved
+    block_type: str
+    text_preview: str
+    section: Optional[str] = None
+
+
+class DocumentDiffResponse(BaseModel):
+    """Response containing diff between two document versions."""
+
+    drive_file_id: str
+    from_revision: Optional[str] = None
+    to_revision: Optional[str] = None
+    blocks_added: int = 0
+    blocks_deleted: int = 0
+    blocks_modified: int = 0
+    blocks_moved: int = 0
+    changes: list[BlockChangeRecord] = Field(default_factory=list)
+    summary: Optional[str] = None

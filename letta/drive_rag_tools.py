@@ -387,3 +387,258 @@ def get_index_stats() -> Dict[str, Any]:
             "status": "error",
             "error_message": f"{str(e)}\n{traceback.format_exc()}",
         }
+
+
+def get_document_edits(
+    file_id: str,
+    since: Optional[str] = None,
+    by_user: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get the edit history for a Google Doc.
+
+    Use this tool to see who has edited a document and when. This is useful
+    for understanding document collaboration, tracking changes, and seeing
+    edit patterns over time.
+
+    Args:
+        file_id: Google Drive file ID of the document to check.
+        since: Optional time filter. Use ISO date format (e.g., "2026-01-15") or
+               relative values like "yesterday", "last-week", or "last-month".
+               If not provided, returns all available edit history.
+        by_user: Optional filter by user email. Returns only edits by users
+                 whose email contains this string (case-insensitive).
+
+    Returns:
+        Dictionary with edit history including editor names, timestamps,
+        and total edit count.
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # Build query parameters
+        params = {}
+        if since:
+            params["since"] = since
+        if by_user:
+            params["by_user"] = by_user
+
+        # Make request
+        response = requests.get(
+            f"{base_url}/v1/edits/{file_id}",
+            params=params,
+            timeout=30,
+        )
+
+        if response.status_code == 404:
+            return {
+                "status": "error",
+                "error_message": f"Document {file_id} not found or has no edit history",
+            }
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to get edits: {response.text}",
+            }
+
+        data = response.json()
+
+        # Format edits for readability
+        edits = []
+        for edit in data.get("edits", []):
+            edit_entry = {
+                "revision_id": edit.get("revision_id"),
+                "editor": edit.get("modifier_name") or edit.get("modifier_email") or "Unknown",
+                "email": edit.get("modifier_email"),
+                "time": edit.get("modified_time"),
+            }
+            edits.append(edit_entry)
+
+        return {
+            "status": "ok",
+            "file_id": file_id,
+            "title": data.get("title"),
+            "edit_count": data.get("edit_count", 0),
+            "editors": data.get("editors", []),
+            "edits": edits,
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }
+
+
+def fetch_document_from_drive(
+    file_id_or_url: str,
+) -> Dict[str, Any]:
+    """
+    Fetch the current content of a document directly from Google Drive.
+
+    Unlike search_documents or get_document_content which return indexed/chunked
+    content, this tool fetches the live, current version of a document directly
+    from Google Drive. Use this when you need the complete, up-to-date content
+    of a specific document.
+
+    Args:
+        file_id_or_url: Google Drive file ID or full URL to the document.
+                        Accepts URLs like:
+                        - https://docs.google.com/document/d/FILE_ID/edit
+                        - https://drive.google.com/file/d/FILE_ID/view
+                        - Or just the file ID directly
+
+    Returns:
+        Dictionary with document title, full content, and metadata.
+        For Google Docs, Sheets, and Slides, returns the text content.
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # URL encode the file_id_or_url for the path
+        import urllib.parse
+        encoded_path = urllib.parse.quote(file_id_or_url, safe="")
+
+        # Make request
+        response = requests.get(
+            f"{base_url}/v1/fetch/{encoded_path}",
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to fetch document: {response.text}",
+            }
+
+        data = response.json()
+
+        if data.get("status") == "error":
+            return {
+                "status": "error",
+                "error_message": data.get("error", "Unknown error"),
+            }
+
+        # Format response
+        content = data.get("content", "")
+        if content and len(content) > 50000:
+            # Truncate very long content with a note
+            content = content[:50000] + "\n\n[Content truncated - document is very long]"
+
+        return {
+            "status": "ok",
+            "file_id": data.get("file_id"),
+            "title": data.get("title"),
+            "mime_type": data.get("mime_type"),
+            "content": content,
+            "content_length": data.get("content_length", 0),
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }
+
+
+def get_document_changes(
+    file_id: str,
+    from_revision: Optional[str] = None,
+    to_revision: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get a summary of changes between two versions of a document.
+
+    Use this tool to see what content was added, deleted, or modified
+    between document versions. This is useful for reviewing edits,
+    understanding what changed, and tracking content evolution.
+
+    Args:
+        file_id: Google Drive file ID of the document to compare.
+        from_revision: Optional base revision ID to compare from. If not
+                       provided, uses the oldest available snapshot.
+        to_revision: Optional target revision ID to compare to. If not
+                     provided, uses the latest available snapshot.
+
+    Returns:
+        Dictionary with change summary including blocks added, deleted,
+        modified, and detailed change descriptions.
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # Build query parameters
+        params = {}
+        if from_revision:
+            params["from_revision"] = from_revision
+        if to_revision:
+            params["to_revision"] = to_revision
+
+        # Make request
+        response = requests.get(
+            f"{base_url}/v1/diff/{file_id}",
+            params=params,
+            timeout=60,
+        )
+
+        if response.status_code == 404:
+            return {
+                "status": "error",
+                "error_message": f"Document {file_id} not found or has no snapshots for comparison",
+            }
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to get diff: {response.text}",
+            }
+
+        data = response.json()
+
+        # Format changes for readability
+        changes = []
+        for change in data.get("changes", []):
+            change_entry = {
+                "type": change.get("change_type"),
+                "block_type": change.get("block_type"),
+                "section": change.get("section"),
+                "preview": change.get("text_preview"),
+            }
+            changes.append(change_entry)
+
+        return {
+            "status": "ok",
+            "file_id": file_id,
+            "from_revision": data.get("from_revision"),
+            "to_revision": data.get("to_revision"),
+            "summary": {
+                "blocks_added": data.get("blocks_added", 0),
+                "blocks_deleted": data.get("blocks_deleted", 0),
+                "blocks_modified": data.get("blocks_modified", 0),
+                "blocks_moved": data.get("blocks_moved", 0),
+            },
+            "change_summary": data.get("summary"),
+            "changes": changes,
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }

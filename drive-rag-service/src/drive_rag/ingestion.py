@@ -21,10 +21,13 @@ from drive_rag.db import get_db, Database
 from drive_rag.embedder import get_embedder, Embedder
 from drive_rag.models import (
     ChunkRecord,
+    DocumentRevision,
+    DocumentSnapshot,
     DocumentState,
     IngestionResult,
     IngestFolderResponse,
 )
+from drive_rag.snapshots import save_snapshot
 from drive_rag.normalizer import (
     normalize_docs_document,
     normalize_plain_text_document,
@@ -331,6 +334,50 @@ async def ingest_document(
                     reason="Content hash unchanged",
                 )
 
+        # 4. Save snapshot for edit tracking (Phase 2)
+        try:
+            # Check if we already have a snapshot for this revision
+            existing_snapshot = database.get_snapshot_metadata(file_id, head_revision_id)
+            if not existing_snapshot:
+                snapshot_meta = save_snapshot(
+                    file_id=file_id,
+                    revision_id=head_revision_id,
+                    snapshot=snapshot,
+                    modifier_email=last_modifier_email,
+                    modifier_name=last_modifier_name,
+                    modified_time=_parse_drive_timestamp(file_meta.get("modifiedTime")),
+                )
+
+                # Store snapshot metadata in database
+                database.upsert_snapshot_metadata(
+                    DocumentSnapshot(
+                        drive_file_id=file_id,
+                        revision_id=head_revision_id,
+                        content_hash=snapshot_meta["content_hash"],
+                        normalized_text_length=snapshot_meta["normalized_text_length"],
+                        blocks_count=snapshot_meta["blocks_count"],
+                        compressed_size_bytes=snapshot_meta["compressed_size_bytes"],
+                        snapshot_path=snapshot_meta["snapshot_path"],
+                        modifier_email=snapshot_meta["modifier_email"],
+                        modifier_name=snapshot_meta["modifier_name"],
+                        modified_time=snapshot_meta["modified_time"],
+                    )
+                )
+
+                logger.info(
+                    "snapshot_saved",
+                    file_id=file_id,
+                    revision_id=head_revision_id[:16] if head_revision_id else "",
+                    path=snapshot_meta["snapshot_path"],
+                )
+        except Exception as snapshot_error:
+            # Don't fail ingestion if snapshot saving fails
+            logger.warning(
+                "snapshot_save_failed",
+                file_id=file_id,
+                error=str(snapshot_error),
+            )
+
         # 5. Chunk the normalized text
         new_chunks = chunk_from_normalized(
             file_id=file_id,
@@ -409,6 +456,38 @@ async def ingest_document(
                 first_indexed_at=first_indexed_at,
             )
         )
+
+        # 9. Store revision history (if we can read revisions)
+        if can_read_revisions:
+            try:
+                revisions = google.list_revisions(file_id)
+                for rev in revisions:
+                    rev_modifier = rev.get("lastModifyingUser", {})
+                    database.upsert_document_revision(
+                        DocumentRevision(
+                            drive_file_id=file_id,
+                            revision_id=rev.get("id", ""),
+                            modified_time=_parse_drive_timestamp(rev.get("modifiedTime")),
+                            modifier_email=rev_modifier.get("emailAddress"),
+                            modifier_name=rev_modifier.get("displayName"),
+                            # Check if we have a snapshot for this revision
+                            has_snapshot=database.get_snapshot_metadata(
+                                file_id, rev.get("id", "")
+                            ) is not None,
+                        )
+                    )
+                logger.info(
+                    "revisions_stored",
+                    file_id=file_id,
+                    count=len(revisions),
+                )
+            except Exception as rev_error:
+                # Don't fail ingestion if revision tracking fails
+                logger.warning(
+                    "revision_tracking_failed",
+                    file_id=file_id,
+                    error=str(rev_error),
+                )
 
         logger.info(
             "ingestion_complete",
