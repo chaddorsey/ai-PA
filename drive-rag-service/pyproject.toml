@@ -1,0 +1,40 @@
+[tool.poetry]
+name = "drive-rag-service"
+version = "0.1.0"
+description = "Google Drive document RAG service with pgvector"
+authors = ["Chad Dorsey"]
+readme = "README.md"
+packages = [{include = "drive_rag", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+google-api-python-client = "^2.100.0"
+google-auth-oauthlib = "^1.2.0"
+google-auth-httplib2 = "^0.2.0"
+supabase = "^2.0.0"
+openai = "^1.10.0"
+structlog = "^24.1.0"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+tenacity = "^8.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.0"
+ruff = "^0.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

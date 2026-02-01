@@ -330,6 +330,54 @@ services:
       - "security.internal-only=true"
       - "security.no-external-access=true"
 
+  # --- Drive RAG Service ---
+  drive-rag-service:
+    build:
+      context: ./drive-rag-service
+      dockerfile: Dockerfile
+    container_name: drive-rag-service
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      # Supabase connection
+      - SUPABASE_URL=http://supabase-rest:3000
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      # OpenAI for embeddings
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Google OAuth credentials
+      - GOOGLE_CREDENTIALS_PATH=/app/credentials
+      - GOOGLE_TOKEN_PATH=/app/credentials/token.json
+      # Embedding configuration
+      - EMBEDDING_MODEL=text-embedding-ada-002
+      - EMBEDDING_BATCH_SIZE=100
+      - EMBEDDING_DIMENSIONS=1536
+      # Chunking configuration
+      - MAX_CHUNK_CHARS=6000
+      - MIN_CHUNK_CHARS=1200
+    volumes:
+      - ~/.gmail-mcp:/app/credentials:ro
+    ports:
+      - "8095:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=drive-rag-service"
+      - "component=rag"
+      - "network=pa-internal"
+      - "security.internal-only=true"
+
   scheduler-service:
     build:
       context: ./scheduler-service
@@ -571,6 +619,8 @@ services:
       MY_EMAIL: "${MY_EMAIL:-cdorsey@concord.org}"
       # Atlassian Rovo MCP Server token
       ATLASSIAN_ROVO_TOKEN: "${ATLASSIAN_ROVO_TOKEN:-70121-cecc6a6e-e07f-440f-bcef-0e1b8d0fe274:qe97rgirCzv2J2Zm:aVN_aZh27EoEo4TfjaoTTNs9HEcqQeZp}"
+      # Drive RAG service URL for document search tools
+      DRIVE_RAG_SERVICE_URL: "http://drive-rag-service:8000"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 

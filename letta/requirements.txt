@@ -15,3 +15,4 @@ clingo>=5.6.0
 dspy-ai>=2.4.0
 pydantic>=2.0.0
 httpx>=0.25.0  # For MCP calendar event retrieval
+requests>=2.31.0  # For Drive RAG tools
