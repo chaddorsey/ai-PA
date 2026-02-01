@@ -163,6 +163,33 @@ class DocumentRevision(BaseModel):
     snapshot_uri: Optional[str] = None
 
 
+class DocumentSnapshot(BaseModel):
+    """Metadata for a stored document snapshot (Phase 2).
+
+    The actual content is stored on filesystem; this model tracks metadata.
+    """
+
+    drive_file_id: str
+    revision_id: str
+
+    # Content metadata
+    content_hash: str
+    normalized_text_length: int
+    blocks_count: int
+    compressed_size_bytes: Optional[int] = None
+
+    # Filesystem location (relative path from base)
+    snapshot_path: str
+
+    # Attribution
+    modifier_email: Optional[str] = None
+    modifier_name: Optional[str] = None
+    modified_time: Optional[datetime] = None
+
+    # Tracking
+    created_at: Optional[datetime] = None
+
+
 class IngestionResult(BaseModel):
     """Result of ingesting a document."""
 

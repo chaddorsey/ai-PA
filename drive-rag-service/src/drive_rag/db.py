@@ -14,7 +14,14 @@ from typing import Any, Optional
 import httpx
 import structlog
 
-from drive_rag.models import ChunkRecord, DocumentState, FolderCache, DocumentRevision, SearchResult
+from drive_rag.models import (
+    ChunkRecord,
+    DocumentState,
+    FolderCache,
+    DocumentRevision,
+    DocumentSnapshot,
+    SearchResult,
+)
 from drive_rag.settings import get_settings
 
 logger = structlog.get_logger()
@@ -689,6 +696,145 @@ class Database:
             )
             for row in (data or [])
         ]
+
+    # =====================
+    # Snapshot Operations
+    # =====================
+
+    def upsert_snapshot_metadata(self, snapshot: DocumentSnapshot) -> None:
+        """Insert or update snapshot metadata.
+
+        Args:
+            snapshot: Snapshot metadata to upsert
+        """
+        data = {
+            "drive_file_id": snapshot.drive_file_id,
+            "revision_id": snapshot.revision_id,
+            "content_hash": snapshot.content_hash,
+            "normalized_text_length": snapshot.normalized_text_length,
+            "blocks_count": snapshot.blocks_count,
+            "compressed_size_bytes": snapshot.compressed_size_bytes,
+            "snapshot_path": snapshot.snapshot_path,
+            "modifier_email": snapshot.modifier_email,
+            "modifier_name": snapshot.modifier_name,
+            "modified_time": _serialize_datetime(snapshot.modified_time),
+        }
+
+        response = self.client.post(
+            self._url("document_snapshots"),
+            json=data,
+            headers={
+                **self.client.headers,
+                "Prefer": "resolution=merge-duplicates,return=representation",
+            },
+        )
+        self._check_response(response, "upsert_snapshot_metadata")
+
+        logger.debug(
+            "upserted_snapshot_metadata",
+            file_id=snapshot.drive_file_id,
+            revision_id=snapshot.revision_id,
+        )
+
+    def get_snapshot_metadata(
+        self, file_id: str, revision_id: str
+    ) -> Optional[DocumentSnapshot]:
+        """Get snapshot metadata for a specific revision.
+
+        Args:
+            file_id: Google Drive file ID
+            revision_id: Document revision ID
+
+        Returns:
+            DocumentSnapshot if found, None otherwise
+        """
+        response = self.client.get(
+            self._url("document_snapshots"),
+            params={
+                "drive_file_id": f"eq.{file_id}",
+                "revision_id": f"eq.{revision_id}",
+                "select": "*",
+            },
+        )
+        self._check_response(response, "get_snapshot_metadata")
+
+        data = response.json()
+        if not data:
+            return None
+
+        row = data[0]
+        return DocumentSnapshot(
+            drive_file_id=row["drive_file_id"],
+            revision_id=row["revision_id"],
+            content_hash=row["content_hash"],
+            normalized_text_length=row["normalized_text_length"],
+            blocks_count=row["blocks_count"],
+            compressed_size_bytes=row.get("compressed_size_bytes"),
+            snapshot_path=row["snapshot_path"],
+            modifier_email=row.get("modifier_email"),
+            modifier_name=row.get("modifier_name"),
+            modified_time=_deserialize_datetime(row.get("modified_time")),
+            created_at=_deserialize_datetime(row.get("created_at")),
+        )
+
+    def get_snapshots_for_file(self, file_id: str) -> list[DocumentSnapshot]:
+        """Get all snapshots for a document.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            List of snapshot metadata ordered by modified_time desc
+        """
+        response = self.client.get(
+            self._url("document_snapshots"),
+            params={
+                "drive_file_id": f"eq.{file_id}",
+                "select": "*",
+                "order": "modified_time.desc",
+            },
+        )
+        self._check_response(response, "get_snapshots_for_file")
+
+        data = response.json()
+        return [
+            DocumentSnapshot(
+                drive_file_id=row["drive_file_id"],
+                revision_id=row["revision_id"],
+                content_hash=row["content_hash"],
+                normalized_text_length=row["normalized_text_length"],
+                blocks_count=row["blocks_count"],
+                compressed_size_bytes=row.get("compressed_size_bytes"),
+                snapshot_path=row["snapshot_path"],
+                modifier_email=row.get("modifier_email"),
+                modifier_name=row.get("modifier_name"),
+                modified_time=_deserialize_datetime(row.get("modified_time")),
+                created_at=_deserialize_datetime(row.get("created_at")),
+            )
+            for row in (data or [])
+        ]
+
+    def delete_snapshot_metadata(self, file_id: str, revision_id: str) -> None:
+        """Delete snapshot metadata record.
+
+        Args:
+            file_id: Google Drive file ID
+            revision_id: Document revision ID
+        """
+        response = self.client.delete(
+            self._url("document_snapshots"),
+            params={
+                "drive_file_id": f"eq.{file_id}",
+                "revision_id": f"eq.{revision_id}",
+            },
+        )
+        self._check_response(response, "delete_snapshot_metadata")
+
+        logger.debug(
+            "deleted_snapshot_metadata",
+            file_id=file_id,
+            revision_id=revision_id,
+        )
 
 
 # Module-level singleton
