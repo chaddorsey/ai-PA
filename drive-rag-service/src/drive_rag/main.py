@@ -764,6 +764,40 @@ async def get_entities_for_document(file_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/v1/entities/consolidation")
+async def analyze_entity_consolidation(
+    similarity_threshold: float = Query(0.6, ge=0.0, le=1.0, description="Minimum similarity to flag as duplicate"),
+    max_entities: int = Query(500, ge=10, le=2000, description="Maximum entities to analyze"),
+):
+    """Analyze entities for potential duplicates and consolidation opportunities.
+
+    This scans the knowledge graph for similar entities that may need to be
+    merged, such as:
+    - "NSF" and "National Science Foundation"
+    - "Nathan Kimball" and "N. Kimball"
+    - "UIUC" and "University of Illinois"
+
+    Args:
+        similarity_threshold: Minimum similarity score (0-1) to flag as potential duplicate
+        max_entities: Maximum number of entities to analyze
+
+    Returns:
+        Consolidation report with clusters, recommendations, and statistics
+    """
+    from drive_rag.consolidation import analyze_entity_clusters, format_consolidation_report
+
+    try:
+        report = await analyze_entity_clusters(
+            similarity_threshold=similarity_threshold,
+            max_entities=max_entities,
+        )
+        return format_consolidation_report(report)
+
+    except Exception as e:
+        logger.exception("entity_consolidation_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
 

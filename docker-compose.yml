@@ -255,6 +255,8 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=demodemo
       - GRAPHITI_TELEMETRY_ENABLED=false
+      - GRAPHITI_USE_CUSTOM_ENTITIES=true
+      - GRAPHITI_ENTITY_TYPE_SET=research
       - SEMAPHORE_LIMIT=10
       - RESET_NEO4J=true
       - HOST=0.0.0.0

@@ -40,6 +40,64 @@ from graphiti_core.utils.maintenance.graph_data_operations import clear_data
 
 load_dotenv()
 
+# Try to import research entity types, define inline if import fails
+try:
+    # Add current directory to path for local imports
+    _current_dir = os.path.dirname(os.path.abspath(__file__))
+    if _current_dir not in sys.path:
+        sys.path.insert(0, _current_dir)
+    from research_entities import RESEARCH_ENTITY_TYPES
+except ImportError:
+    # Define research entity types inline as fallback
+    # NOTE: Graphiti handles the entity 'name' separately - these types define additional attributes
+    class ResearchProject(BaseModel):
+        """A funded research project, grant, or initiative.
+        Look for project names, acronyms, grant titles, and award numbers.
+        Create edges connecting projects to PIs, Co-PIs, and organizations."""
+        funding_program: str | None = Field(None, description="Funding program (DRK-12, ITEST, AISL, etc.)")
+        funder: str | None = Field(None, description="Funding agency (NSF, Department of Education, etc.)")
+        description: str = Field(..., description="Brief description of the project's goals and activities")
+
+    class ResearchOrganization(BaseModel):
+        """An institution, company, nonprofit, or government agency.
+        Look for universities, nonprofits, research labs, and agencies."""
+        org_type: str | None = Field(None, description="Type: University, Nonprofit, Research Lab, Agency, Company")
+        description: str = Field(..., description="Brief description of the organization's role")
+
+    class ResearchPerson(BaseModel):
+        """A person mentioned in research documents.
+        Look for names with roles: PI, Co-PI, Researcher, Developer, F&A, Program Officer."""
+        role: str | None = Field(None, description="Role: PI, Co-PI, Researcher, Software Developer, F&A, Program Officer")
+        affiliation: str | None = Field(None, description="Organization affiliation")
+        description: str = Field(..., description="Brief description of the person's role and contributions")
+
+    class ResearchSoftware(BaseModel):
+        """Software, tools, platforms, or technology.
+        Look for software names, platforms, educational tools, and development frameworks."""
+        software_type: str | None = Field(None, description="Type: Educational Tool, Platform, Analysis Tool, Framework")
+        description: str = Field(..., description="Brief description of what the software does")
+
+    class ResearchFundingProgram(BaseModel):
+        """A funding program within a funding agency (DRK-12, ITEST, AISL, ECR).
+        Connect programs to their parent agencies and the projects they fund."""
+        funder: str | None = Field(None, description="Parent funding agency (NSF, DOE, etc.)")
+        description: str = Field(..., description="Brief description of the program's focus")
+
+    class ResearchFunder(BaseModel):
+        """A funding agency, foundation, or grant-making organization.
+        Examples: NSF, NIH, Department of Education, Spencer Foundation."""
+        acronym: str | None = Field(None, description="Common acronym (NSF, NIH, DOE, IES)")
+        description: str = Field(..., description="Brief description of the funder")
+
+    RESEARCH_ENTITY_TYPES: dict[str, type[BaseModel]] = {
+        "Project": ResearchProject,
+        "Organization": ResearchOrganization,
+        "Person": ResearchPerson,
+        "Software": ResearchSoftware,
+        "FundingProgram": ResearchFundingProgram,
+        "Funder": ResearchFunder,
+    }
+
 
 DEFAULT_LLM_MODEL = 'gpt-4.1-mini'
 SMALL_LLM_MODEL = 'gpt-4.1-nano'
@@ -124,11 +182,24 @@ class Procedure(BaseModel):
     )
 
 
-ENTITY_TYPES: dict[str, BaseModel] = {
+# Default entity types (general purpose)
+DEFAULT_ENTITY_TYPES: dict[str, BaseModel] = {
     'Requirement': Requirement,  # type: ignore
     'Preference': Preference,  # type: ignore
     'Procedure': Procedure,  # type: ignore
 }
+
+# Entity type set selection via environment variable
+# Options: 'default', 'research', 'all' (combines both)
+ENTITY_TYPE_SET = os.environ.get('GRAPHITI_ENTITY_TYPE_SET', 'research')
+
+if ENTITY_TYPE_SET == 'research':
+    ENTITY_TYPES: dict[str, BaseModel] = RESEARCH_ENTITY_TYPES  # type: ignore
+elif ENTITY_TYPE_SET == 'all':
+    # Combine both default and research entity types
+    ENTITY_TYPES: dict[str, BaseModel] = {**DEFAULT_ENTITY_TYPES, **RESEARCH_ENTITY_TYPES}  # type: ignore
+else:
+    ENTITY_TYPES: dict[str, BaseModel] = DEFAULT_ENTITY_TYPES  # type: ignore
 
 
 # Type definitions for API responses
@@ -489,6 +560,8 @@ class GraphitiConfig(BaseModel):
             llm=GraphitiLLMConfig.from_env(),
             embedder=GraphitiEmbedderConfig.from_env(),
             neo4j=Neo4jConfig.from_env(),
+            use_custom_entities=os.environ.get('GRAPHITI_USE_CUSTOM_ENTITIES', 'true').lower() == 'true',
+            group_id=os.environ.get('GRAPHITI_DEFAULT_GROUP_ID'),
         )
 
     @classmethod
@@ -622,6 +695,9 @@ async def initialize_graphiti():
         logger.info(
             f'Custom entity extraction: {"enabled" if config.use_custom_entities else "disabled"}'
         )
+        if config.use_custom_entities:
+            logger.info(f'Entity type set: {ENTITY_TYPE_SET}')
+            logger.info(f'Available entity types: {list(ENTITY_TYPES.keys())}')
         logger.info(f'Using concurrency limit: {SEMAPHORE_LIMIT}')
 
     except Exception as e:

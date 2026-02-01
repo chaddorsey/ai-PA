@@ -31,6 +31,7 @@ from drive_rag_tools import (
     find_related_documents,
     explore_document_entities,
     extract_document_entities,
+    analyze_entity_consolidation,
 )
 
 LETTA_BASE_URL = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
@@ -52,6 +53,7 @@ def register_tools():
         (find_related_documents, ["drive-rag", "entities", "search"]),
         (explore_document_entities, ["drive-rag", "entities", "explore"]),
         (extract_document_entities, ["drive-rag", "entities", "extract"]),
+        (analyze_entity_consolidation, ["drive-rag", "entities", "consolidation"]),
     ]
 
     registered = []

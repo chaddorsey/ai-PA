@@ -29,6 +29,7 @@ DRIVE_RAG_TOOLS = [
     "find_related_documents",
     "explore_document_entities",
     "extract_document_entities",
+    "analyze_entity_consolidation",
 ]
 
 
