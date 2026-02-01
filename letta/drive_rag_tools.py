@@ -280,6 +280,7 @@ def list_indexed_documents(
 def ingest_document(
     file_id: str,
     force: Optional[bool] = None,
+    extract_entities: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Ingest a Google Doc into the RAG system.
@@ -293,6 +294,8 @@ def ingest_document(
         file_id: Google Drive file ID of the document to ingest.
         force: Force re-indexing even if the document hasn't changed
                (default False).
+        extract_entities: Extract entities to knowledge graph for cross-document
+                          queries (default: uses service config).
 
     Returns:
         Dictionary with ingestion status, chunks added/updated/deleted,
@@ -310,10 +313,15 @@ def ingest_document(
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 
+        # Build params
+        params = {"force": force}
+        if extract_entities is not None:
+            params["extract_entities"] = extract_entities
+
         # Make ingestion request
         response = requests.post(
             f"{base_url}/v1/ingest/{file_id}",
-            params={"force": force},
+            params=params,
             timeout=120,  # Longer timeout for ingestion
         )
 
@@ -635,6 +643,207 @@ def get_document_changes(
             },
             "change_summary": data.get("summary"),
             "changes": changes,
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }
+
+
+def find_related_documents(
+    entity_query: str,
+    max_results: Optional[int] = None,
+) -> Dict[str, Any]:
+    """
+    Find all documents mentioning an entity, person, project, or topic.
+
+    Use this tool to discover which documents contain information about
+    a specific entity. This searches the knowledge graph built from
+    document content to find entities and their relationships.
+
+    Args:
+        entity_query: The entity, person, project, or topic to search for.
+                      Examples: "William Finzer", "CODAP project", "assessment research"
+        max_results: Maximum number of results to return (default: 20).
+
+    Returns:
+        Dictionary with entities matching the query, their relationships,
+        and the documents they appear in.
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # Set default
+        if max_results is None:
+            max_results = 20
+
+        # Make request
+        response = requests.post(
+            f"{base_url}/v1/entities/search",
+            params={"query": entity_query, "max_results": max_results},
+            timeout=60,
+        )
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to search entities: {response.text}",
+            }
+
+        data = response.json()
+
+        if data.get("status") == "error":
+            return {
+                "status": "error",
+                "error_message": data.get("error", "Unknown error"),
+            }
+
+        # Format response for readability
+        entities = data.get("entities", {})
+        relationships = data.get("relationships", {})
+
+        return {
+            "status": "ok",
+            "query": entity_query,
+            "entities": entities,
+            "relationships": relationships,
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }
+
+
+def explore_document_entities(
+    file_id: str,
+) -> Dict[str, Any]:
+    """
+    Show all entities and relationships extracted from a document.
+
+    Use this tool to understand what entities (people, organizations,
+    projects, topics) were identified in a document and how they
+    relate to each other.
+
+    Args:
+        file_id: Google Drive file ID of the document to explore.
+
+    Returns:
+        Dictionary with entities found in the document and their
+        relationships to other entities.
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # Make request
+        response = requests.get(
+            f"{base_url}/v1/entities/document/{file_id}",
+            timeout=60,
+        )
+
+        if response.status_code == 404:
+            return {
+                "status": "error",
+                "error_message": f"Document {file_id} not found or has no extracted entities",
+            }
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to get document entities: {response.text}",
+            }
+
+        data = response.json()
+
+        if data.get("status") == "error":
+            return {
+                "status": "error",
+                "error_message": data.get("error", "Unknown error"),
+            }
+
+        return {
+            "status": "ok",
+            "file_id": file_id,
+            "entities": data.get("entities", {}),
+            "relationships": data.get("relationships", {}),
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }
+
+
+def extract_document_entities(
+    file_id: str,
+) -> Dict[str, Any]:
+    """
+    Extract entities from a document and add them to the knowledge graph.
+
+    Use this tool to trigger entity extraction for a specific document.
+    This will identify people, organizations, projects, and topics
+    mentioned in the document and add them to the knowledge graph
+    for cross-document queries.
+
+    Args:
+        file_id: Google Drive file ID of the document to process.
+
+    Returns:
+        Dictionary with extraction status and episode UUID.
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # Make request
+        response = requests.post(
+            f"{base_url}/v1/entities/extract/{file_id}",
+            timeout=120,  # Entity extraction can take time
+        )
+
+        if response.status_code == 400:
+            return {
+                "status": "error",
+                "error_message": f"Cannot extract entities: {response.json().get('detail', response.text)}",
+            }
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to extract entities: {response.text}",
+            }
+
+        data = response.json()
+
+        if data.get("status") == "error":
+            return {
+                "status": "error",
+                "error_message": data.get("error", "Unknown error"),
+            }
+
+        return {
+            "status": "ok",
+            "file_id": file_id,
+            "episode_uuid": data.get("episode_uuid"),
+            "message": "Entity extraction queued. Entities will be available shortly.",
         }
 
     except Exception as e:

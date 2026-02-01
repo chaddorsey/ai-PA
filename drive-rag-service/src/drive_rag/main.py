@@ -85,20 +85,22 @@ async def health_check():
 async def ingest_single_document(
     file_id: str,
     force: bool = Query(False, description="Force re-indexing even if unchanged"),
+    extract_entities: Optional[bool] = Query(None, description="Extract entities to knowledge graph"),
 ):
     """Ingest a single Google Doc into the RAG system.
 
     Args:
         file_id: Google Drive file ID
         force: Force re-indexing even if document hasn't changed
+        extract_entities: Extract entities to knowledge graph (defaults to ENABLE_ENTITY_EXTRACTION env var)
 
     Returns:
         IngestionResult with status and statistics
     """
-    logger.info("ingest_request", file_id=file_id, force=force)
+    logger.info("ingest_request", file_id=file_id, force=force, extract_entities=extract_entities)
 
     try:
-        result = await ingest_document(file_id=file_id, force=force)
+        result = await ingest_document(file_id=file_id, force=force, extract_entities=extract_entities)
         return result
     except Exception as e:
         logger.exception("ingest_failed", file_id=file_id, error=str(e))
@@ -641,6 +643,125 @@ async def get_document_diff(
         changes=changes,
         summary=diff.summary,
     )
+
+
+# =====================
+# Entity Extraction Endpoints (Knowledge Graph)
+# =====================
+
+
+@app.post("/v1/entities/extract/{file_id}")
+async def extract_document_entities(
+    file_id: str,
+):
+    """Extract entities from a document and add to knowledge graph.
+
+    This triggers entity extraction using Graphiti, which identifies
+    people, organizations, projects, and relationships mentioned
+    in the document.
+
+    Args:
+        file_id: Google Drive file ID
+
+    Returns:
+        Extraction result with episode UUID
+    """
+    from drive_rag.auth import get_google_client
+    from drive_rag.entities import extract_entities_from_document
+
+    try:
+        google = get_google_client()
+
+        # Get file metadata
+        metadata = google.get_file_metadata(file_id)
+        title = metadata.get("name", "Untitled")
+        mime_type = metadata.get("mimeType", "")
+        owner = metadata.get("owners", [{}])[0]
+        owner_email = owner.get("emailAddress")
+        modified_time = metadata.get("modifiedTime")
+
+        # Get document content
+        if mime_type == "application/vnd.google-apps.document":
+            content = google.export_document_as_text(file_id)
+        elif mime_type == "application/vnd.google-apps.spreadsheet":
+            content = google.export_spreadsheet_as_csv(file_id)
+        elif mime_type == "application/vnd.google-apps.presentation":
+            content = google.export_presentation_as_text(file_id)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type for entity extraction: {mime_type}"
+            )
+
+        # Extract entities
+        result = await extract_entities_from_document(
+            file_id=file_id,
+            title=title,
+            content=content,
+            mime_type=mime_type,
+            owner_email=owner_email,
+            modified_time=datetime.fromisoformat(modified_time.replace("Z", "+00:00")) if modified_time else None,
+        )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("entity_extraction_failed", file_id=file_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/entities/search")
+async def search_entities(
+    query: str = Query(..., description="Entity or topic to search for"),
+    max_results: int = Query(20, ge=1, le=100, description="Maximum results"),
+):
+    """Search for entities across all indexed documents.
+
+    This searches the knowledge graph for entities (people, organizations,
+    projects, etc.) and their relationships.
+
+    Args:
+        query: Natural language query for entities
+        max_results: Maximum number of results
+
+    Returns:
+        Entities and relationships matching the query
+    """
+    from drive_rag.entities import find_documents_by_entity
+
+    try:
+        result = await find_documents_by_entity(
+            entity_query=query,
+            max_results=max_results,
+        )
+        return result
+
+    except Exception as e:
+        logger.exception("entity_search_failed", query=query, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/entities/document/{file_id}")
+async def get_entities_for_document(file_id: str):
+    """Get all entities extracted from a specific document.
+
+    Args:
+        file_id: Google Drive file ID
+
+    Returns:
+        Entities and relationships from the document
+    """
+    from drive_rag.entities import get_document_entities
+
+    try:
+        result = await get_document_entities(file_id)
+        return result
+
+    except Exception as e:
+        logger.exception("get_document_entities_failed", file_id=file_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

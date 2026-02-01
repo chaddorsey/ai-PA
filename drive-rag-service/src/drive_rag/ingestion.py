@@ -160,6 +160,7 @@ async def ingest_document(
     db: Optional[Database] = None,
     embedder: Optional[Embedder] = None,
     force: bool = False,
+    extract_entities: Optional[bool] = None,
 ) -> IngestionResult:
     """Ingest a single Google Doc into the RAG system.
 
@@ -169,6 +170,7 @@ async def ingest_document(
         db: Database client (defaults to global)
         embedder: Embedding client (defaults to global)
         force: Force re-indexing even if unchanged
+        extract_entities: Extract entities to knowledge graph (defaults to ENABLE_ENTITY_EXTRACTION env var)
 
     Returns:
         IngestionResult with status and statistics
@@ -487,6 +489,44 @@ async def ingest_document(
                     "revision_tracking_failed",
                     file_id=file_id,
                     error=str(rev_error),
+                )
+
+        # 10. Optional entity extraction to knowledge graph
+        # Check environment variable if not explicitly set
+        if extract_entities is None:
+            extract_entities = os.environ.get("ENABLE_ENTITY_EXTRACTION", "false").lower() == "true"
+
+        if extract_entities:
+            try:
+                from drive_rag.entities import extract_entities_from_document
+
+                entity_result = await extract_entities_from_document(
+                    file_id=file_id,
+                    title=title,
+                    content=snapshot.normalized_text,
+                    mime_type=mime_type,
+                    owner_email=owner_email,
+                    modified_time=_parse_drive_timestamp(file_meta.get("modifiedTime")),
+                )
+
+                if entity_result.get("status") == "ok":
+                    logger.info(
+                        "entity_extraction_complete",
+                        file_id=file_id,
+                        episode_uuid=entity_result.get("episode_uuid"),
+                    )
+                else:
+                    logger.warning(
+                        "entity_extraction_failed",
+                        file_id=file_id,
+                        error=entity_result.get("error"),
+                    )
+            except Exception as entity_error:
+                # Don't fail ingestion if entity extraction fails
+                logger.warning(
+                    "entity_extraction_error",
+                    file_id=file_id,
+                    error=str(entity_error),
                 )
 
         logger.info(

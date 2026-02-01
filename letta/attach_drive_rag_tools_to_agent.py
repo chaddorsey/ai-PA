@@ -26,6 +26,9 @@ DRIVE_RAG_TOOLS = [
     "get_document_edits",
     "get_document_changes",
     "fetch_document_from_drive",
+    "find_related_documents",
+    "explore_document_entities",
+    "extract_document_entities",
 ]
 
 
