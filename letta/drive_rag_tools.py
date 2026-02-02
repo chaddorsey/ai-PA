@@ -2,6 +2,10 @@
 
 These tools allow Letta agents to search and retrieve content from
 indexed Google Drive documents via the drive-rag-service API.
+
+NOTE: Letta extracts function bodies to run them in isolation.
+All helper logic MUST be inlined in each function - no module-level
+helpers or nested def statements are accessible at runtime.
 """
 
 from typing import Dict, Any, Optional
@@ -33,6 +37,7 @@ def search_documents(
         matching text snippets, similarity scores, and file IDs.
     """
     import os
+    import re
     import traceback
     import requests
 
@@ -43,10 +48,25 @@ def search_documents(
         if limit > 50:
             limit = 50
 
-        # Parse file_ids if provided
+        # Parse file_ids if provided (can be URLs or IDs)
+        # Inline URL→ID extraction since Letta can't access module-level helpers
         file_id_list = None
         if file_ids:
-            file_id_list = [fid.strip() for fid in file_ids.split(",") if fid.strip()]
+            file_id_list = []
+            for fid in file_ids.split(","):
+                fid = fid.strip()
+                if not fid:
+                    continue
+                # Extract file ID from URL patterns
+                match = re.search(r"/d/([a-zA-Z0-9_-]+)", fid)
+                if match:
+                    file_id_list.append(match.group(1))
+                else:
+                    match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", fid)
+                    if match:
+                        file_id_list.append(match.group(1))
+                    else:
+                        file_id_list.append(fid)  # Assume already a file ID
 
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
@@ -111,7 +131,8 @@ def get_document_content(
     can filter to specific headings/sections within the document.
 
     Args:
-        file_id: Google Drive file ID of the document to retrieve.
+        file_id: Google Drive file ID or URL of the document to retrieve.
+                 Accepts URLs like https://docs.google.com/document/d/FILE_ID/edit
         sections: Optional comma-separated list of section headings
                   to retrieve (e.g., "Summary,Conclusion"). If not
                   provided, returns all chunks from the document.
@@ -120,10 +141,21 @@ def get_document_content(
         Dictionary with document title, content chunks, and metadata.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 
@@ -291,7 +323,8 @@ def ingest_document(
     force=True is specified.
 
     Args:
-        file_id: Google Drive file ID of the document to ingest.
+        file_id: Google Drive file ID or URL of the document to ingest.
+                 Accepts URLs like https://docs.google.com/document/d/FILE_ID/edit
         force: Force re-indexing even if the document hasn't changed
                (default False).
         extract_entities: Extract entities to knowledge graph for cross-document
@@ -302,10 +335,21 @@ def ingest_document(
         and any error messages.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Default values
         if force is None:
             force = False
@@ -410,7 +454,8 @@ def get_document_edits(
     edit patterns over time.
 
     Args:
-        file_id: Google Drive file ID of the document to check.
+        file_id: Google Drive file ID or URL of the document to check.
+                 Accepts URLs like https://docs.google.com/document/d/FILE_ID/edit
         since: Optional time filter. Use ISO date format (e.g., "2026-01-15") or
                relative values like "yesterday", "last-week", or "last-month".
                If not provided, returns all available edit history.
@@ -422,10 +467,21 @@ def get_document_edits(
         and total edit count.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 
@@ -507,20 +563,27 @@ def fetch_document_from_drive(
         For Google Docs, Sheets, and Slides, returns the text content.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id_or_url.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 
-        # URL encode the file_id_or_url for the path
-        import urllib.parse
-        encoded_path = urllib.parse.quote(file_id_or_url, safe="")
-
         # Make request
         response = requests.get(
-            f"{base_url}/v1/fetch/{encoded_path}",
+            f"{base_url}/v1/fetch/{file_id}",
             timeout=60,
         )
 
@@ -573,7 +636,8 @@ def get_document_changes(
     understanding what changed, and tracking content evolution.
 
     Args:
-        file_id: Google Drive file ID of the document to compare.
+        file_id: Google Drive file ID or URL of the document to compare.
+                 Accepts URLs like https://docs.google.com/document/d/FILE_ID/edit
         from_revision: Optional base revision ID to compare from. If not
                        provided, uses the oldest available snapshot.
         to_revision: Optional target revision ID to compare to. If not
@@ -584,10 +648,21 @@ def get_document_changes(
         modified, and detailed change descriptions.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 
@@ -734,17 +809,29 @@ def explore_document_entities(
     relate to each other.
 
     Args:
-        file_id: Google Drive file ID of the document to explore.
+        file_id: Google Drive file ID or URL of the document to explore.
+                 Accepts URLs like https://docs.google.com/document/d/FILE_ID/edit
 
     Returns:
         Dictionary with entities found in the document and their
         relationships to other entities.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 
@@ -800,16 +887,28 @@ def extract_document_entities(
     for cross-document queries.
 
     Args:
-        file_id: Google Drive file ID of the document to process.
+        file_id: Google Drive file ID or URL of the document to process.
+                 Accepts URLs like https://docs.google.com/document/d/FILE_ID/edit
 
     Returns:
         Dictionary with extraction status and episode UUID.
     """
     import os
+    import re
     import traceback
     import requests
 
     try:
+        # Parse URL to file ID if needed (inline - Letta can't access module-level helpers)
+        file_id = file_id.strip()
+        match = re.search(r"/d/([a-zA-Z0-9_-]+)", file_id)
+        if match:
+            file_id = match.group(1)
+        else:
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", file_id)
+            if match:
+                file_id = match.group(1)
+
         # Get service URL from environment or use default
         base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
 

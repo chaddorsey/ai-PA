@@ -81,7 +81,7 @@ async def health_check():
 # =====================
 
 
-@app.post("/v1/ingest/{file_id}", response_model=IngestionResult)
+@app.post("/v1/ingest/{file_id:path}", response_model=IngestionResult)
 async def ingest_single_document(
     file_id: str,
     force: bool = Query(False, description="Force re-indexing even if unchanged"),
@@ -90,13 +90,15 @@ async def ingest_single_document(
     """Ingest a single Google Doc into the RAG system.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL (e.g., https://docs.google.com/document/d/FILE_ID/edit)
         force: Force re-indexing even if document hasn't changed
         extract_entities: Extract entities to knowledge graph (defaults to ENABLE_ENTITY_EXTRACTION env var)
 
     Returns:
         IngestionResult with status and statistics
     """
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
     logger.info("ingest_request", file_id=file_id, force=force, extract_entities=extract_entities)
 
     try:
@@ -136,16 +138,18 @@ async def ingest_folder_documents(
 # =====================
 
 
-@app.get("/v1/status/{file_id}", response_model=DocumentStatusResponse)
+@app.get("/v1/status/{file_id:path}", response_model=DocumentStatusResponse)
 async def get_document_status(file_id: str):
     """Get indexing status for a document.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL
 
     Returns:
         DocumentStatusResponse with indexing status and metadata
     """
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
     db = get_db()
 
     state = db.get_document_state(file_id)
@@ -259,16 +263,18 @@ async def search_documents(request: SearchRequest):
 # =====================
 
 
-@app.delete("/v1/documents/{file_id}")
+@app.delete("/v1/documents/{file_id:path}")
 async def delete_document(file_id: str):
     """Delete a document and all its chunks from the index.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL
 
     Returns:
         Deletion status
     """
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
     db = get_db()
 
     # Check if document exists
@@ -451,7 +457,7 @@ async def fetch_document_content(
 # =====================
 
 
-@app.get("/v1/edits/{file_id}", response_model=DocumentEditsResponse)
+@app.get("/v1/edits/{file_id:path}", response_model=DocumentEditsResponse)
 async def get_document_edits(
     file_id: str,
     since: Optional[str] = Query(None, description="Filter edits since date (ISO format or relative like 'yesterday')"),
@@ -461,7 +467,7 @@ async def get_document_edits(
     """Get edit history for a document.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL
         since: Optional time filter (ISO date or relative like "yesterday", "last-week")
         by_user: Optional filter by user email
         limit: Maximum number of edits to return
@@ -471,6 +477,8 @@ async def get_document_edits(
     """
     from datetime import datetime, timedelta
 
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
     db = get_db()
 
     # Get document state for title
@@ -540,7 +548,7 @@ async def get_document_edits(
     )
 
 
-@app.get("/v1/diff/{file_id}", response_model=DocumentDiffResponse)
+@app.get("/v1/diff/{file_id:path}", response_model=DocumentDiffResponse)
 async def get_document_diff(
     file_id: str,
     from_revision: Optional[str] = Query(None, description="Base revision ID (defaults to oldest snapshot)"),
@@ -549,7 +557,7 @@ async def get_document_diff(
     """Get diff between two document versions.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL
         from_revision: Base revision ID (optional, defaults to oldest)
         to_revision: Target revision ID (optional, defaults to latest)
 
@@ -559,6 +567,8 @@ async def get_document_diff(
     from drive_rag.differ import diff_snapshots, ChangeType
     from drive_rag.snapshots import load_snapshot_from_path
 
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
     db = get_db()
 
     # Get snapshots for this file
@@ -650,7 +660,7 @@ async def get_document_diff(
 # =====================
 
 
-@app.post("/v1/entities/extract/{file_id}")
+@app.post("/v1/entities/extract/{file_id:path}")
 async def extract_document_entities(
     file_id: str,
 ):
@@ -661,13 +671,16 @@ async def extract_document_entities(
     in the document.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL
 
     Returns:
         Extraction result with episode UUID
     """
     from drive_rag.auth import get_google_client
     from drive_rag.entities import extract_entities_from_document
+
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
 
     try:
         google = get_google_client()
@@ -743,17 +756,20 @@ async def search_entities(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/v1/entities/document/{file_id}")
+@app.get("/v1/entities/document/{file_id:path}")
 async def get_entities_for_document(file_id: str):
     """Get all entities extracted from a specific document.
 
     Args:
-        file_id: Google Drive file ID
+        file_id: Google Drive file ID or URL
 
     Returns:
         Entities and relationships from the document
     """
     from drive_rag.entities import get_document_entities
+
+    # Parse URL to file ID if needed
+    file_id = parse_drive_url(file_id)
 
     try:
         result = await get_document_entities(file_id)
