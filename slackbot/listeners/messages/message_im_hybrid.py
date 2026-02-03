@@ -310,11 +310,12 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         # Get full response from Letta with event detection
         streamer = LettaAPIStreaming(logger=logger, conversation_id=conversation_id)
         text_chunks = []
-        
+        tool_return_content = ""  # Capture tool returns for proposal detection
+
         for event in streamer.chat_stream_with_events(system_prompt, user_prompt):
             event_type = event.get("type")
             logger.error(f"📨 Event received: type={event_type}, keys={list(event.keys())}")
-            
+
             if event_type == "tool_call":
                 # Update status with tool-specific loading messages
                 tool_name = event.get("tool_name", "")
@@ -329,6 +330,12 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                         status=tool_status["status"],
                         loading_messages=tool_status["loading_messages"],
                     )
+            elif event_type == "tool_return":
+                # Capture tool return content for proposal detection
+                content = event.get("content", "")
+                if content:
+                    tool_return_content += content
+                    logger.error(f"🔧 TOOL RETURN captured: {len(content)} chars")
             elif event_type == "text":
                 # Accumulate text
                 text_chunks.append(event.get("content", ""))
@@ -336,11 +343,13 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         final_text = (streamer.last_message or "".join(text_chunks)).strip()
 
         # Check if response contains scheduling proposals
+        # Check both assistant text AND tool returns (verbatim content may be in tool return)
+        combined_content = final_text + "\n" + tool_return_content
         proposals_posted = False
-        has_best_options = "## Best Options" in final_text
-        has_conflict_options = "## If We Can Move" in final_text
-        has_verbatim = "[VERBATIM_USER_OUTPUT]" in final_text
-        logger.error(f"🔍 PROPOSAL DETECTION: has_best_options={has_best_options}, has_conflict={has_conflict_options}, has_verbatim={has_verbatim}, text_len={len(final_text)}")
+        has_best_options = "## Best Options" in combined_content
+        has_conflict_options = "## If We Can Move" in combined_content
+        has_verbatim = "[VERBATIM_USER_OUTPUT]" in combined_content
+        logger.error(f"🔍 PROPOSAL DETECTION: has_best_options={has_best_options}, has_conflict={has_conflict_options}, has_verbatim={has_verbatim}, text_len={len(final_text)}, tool_return_len={len(tool_return_content)}")
 
         if has_best_options or has_conflict_options or has_verbatim:
             try:
@@ -353,7 +362,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 session_id = f"sess_{uuid_module.uuid4().hex[:12]}"
                 logger.error(f"🔍 PROPOSAL PARSING: session_id={session_id}")
 
-                # Extract participants from orchestrator output
+                # Extract participants from orchestrator output (check both text and tool returns)
                 # Format: [PARTICIPANTS:email1@domain.com,email2@domain.com]
                 # Format: [PARTICIPANT_NAMES:email1@domain.com=Name1,email2@domain.com=Name2]
                 import re as re_module
@@ -362,7 +371,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 participant_names = {}  # email -> display name
 
                 # First, try to get resolved names from PARTICIPANT_NAMES tag (from identity service)
-                names_match = re_module.search(r'\[PARTICIPANT_NAMES:([^\]]+)\]', final_text)
+                names_match = re_module.search(r'\[PARTICIPANT_NAMES:([^\]]+)\]', combined_content)
                 if names_match:
                     # Parse email=name pairs
                     for pair in names_match.group(1).split(','):
@@ -374,7 +383,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                                 participant_names[email] = name
 
                 # Extract participant emails from PARTICIPANTS tag
-                participants_match = re_module.search(r'\[PARTICIPANTS:([^\]]+)\]', final_text)
+                participants_match = re_module.search(r'\[PARTICIPANTS:([^\]]+)\]', combined_content)
                 if participants_match:
                     participants = [p.strip() for p in participants_match.group(1).split(',') if p.strip()]
                     # For any participants without resolved names, fall back to email prefix
@@ -390,9 +399,9 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                     participant_names=participant_names,
                 )
 
-                # Parse proposals from the response
+                # Parse proposals from combined content (includes tool return with verbatim output)
                 proposal_set = parse_orchestrator_proposals(
-                    output=final_text,
+                    output=combined_content,
                     session_id=session_id,
                     user_id=user_id,
                     participants=participants,

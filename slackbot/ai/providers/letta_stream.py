@@ -162,6 +162,12 @@ class LettaAPIStreaming:
                     yield tool_event
                     continue
 
+                # Check for tool returns (contains verbatim output for proposals)
+                tool_return_event = self._extract_tool_return(payload)
+                if tool_return_event:
+                    yield tool_return_event
+                    continue
+
                 # Extract text segments (already clean from assistant_message)
                 segments = self._extract_segments(payload)
                 if not segments:
@@ -237,6 +243,29 @@ class LettaAPIStreaming:
                 "tool_name": payload.get("function_name", payload.get("name", "")),
                 "arguments": payload.get("function_args", {}),
             }
+
+        return None
+
+    def _extract_tool_return(self, payload: object) -> Optional[StreamEvent]:
+        """Extract tool return information from SSE payload.
+
+        Tool returns contain verbatim output for scheduling proposals that
+        needs to be captured for proposal detection.
+        """
+        if not isinstance(payload, dict):
+            return None
+
+        # Check for tool_return_message type (Letta's format)
+        if payload.get("message_type") == "tool_return_message":
+            tool_return = payload.get("tool_return", "")
+            tool_name = payload.get("name", "")
+            if tool_return:
+                self.logger.info(f"🔧 Tool return detected: {tool_name} ({len(tool_return)} chars)")
+                return {
+                    "type": "tool_return",
+                    "tool_name": tool_name,
+                    "content": tool_return,
+                }
 
         return None
 
