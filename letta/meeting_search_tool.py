@@ -331,8 +331,9 @@ def get_meeting_details(
         agent_id = os.environ.get("GRANOLA_AGENT_ID", "agent-398b4f6c-6afa-493f-8063-897c6b171a0d")
 
         # Search for passages with this meeting ID
+        # Use high limit to scan all passages (meetings may be stored at any position)
         url = f"{letta_base_url}/v1/agents/{agent_id}/archival-memory"
-        response = requests.get(url, params={"limit": 100}, timeout=30)
+        response = requests.get(url, params={"limit": 2000}, timeout=30)
         response.raise_for_status()
 
         passages = response.json()
