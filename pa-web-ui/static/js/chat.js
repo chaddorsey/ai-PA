@@ -16,10 +16,15 @@ const SLASH_COMMAND_MAP = {
     // Domain aliases that route to Pulse Agent
     'slack': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
     'jira': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
-    'docs': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
-    'documents': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
-    'google-docs': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
-    'drive': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
+
+    // Documents Agent - Drive docs and meeting transcripts
+    'docs': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
+    'doc': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
+    'documents': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
+    'google-docs': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
+    'drive': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
+    'meetings': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
+    'transcripts': 'agent-398b4f6c-6afa-493f-8063-897c6b171a0d',
 };
 
 // Slash command to friendly agent name (for display)
@@ -34,10 +39,13 @@ const SLASH_COMMAND_NAMES = {
     'email': 'Email Agent',
     'slack': 'Pulse Agent',
     'jira': 'Pulse Agent',
-    'docs': 'Pulse Agent',
-    'documents': 'Pulse Agent',
-    'google-docs': 'Pulse Agent',
-    'drive': 'Pulse Agent',
+    'docs': 'Documents Agent',
+    'doc': 'Documents Agent',
+    'documents': 'Documents Agent',
+    'google-docs': 'Documents Agent',
+    'drive': 'Documents Agent',
+    'meetings': 'Documents Agent',
+    'transcripts': 'Documents Agent',
 };
 
 // Tool name to friendly status message mapping
@@ -71,6 +79,15 @@ const TOOL_STATUS_MAP = {
     // Document tools
     'search_documents': 'Searching documents...',
     'get_document': 'Fetching document...',
+    'get_document_content': 'Reading document...',
+    'fetch_document_from_drive': 'Fetching from Google Drive...',
+    'ingest_document': 'Indexing document...',
+    'get_document_edits': 'Checking edit history...',
+    'get_document_changes': 'Comparing versions...',
+    'find_related_documents': 'Finding related documents...',
+    'explore_document_entities': 'Exploring entities...',
+    'extract_document_entities': 'Extracting entities...',
+    'search_meeting_transcripts': 'Searching transcripts...',
 
     // Web/general tools
     'web_search': 'Searching the web...',

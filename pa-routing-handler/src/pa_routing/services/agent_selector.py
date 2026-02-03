@@ -32,7 +32,7 @@ AGENT_MAP = {
     "task": "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
     "calendar": "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d",
     "slack": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Slack
-    "documents": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Docs
+    "documents": "agent-398b4f6c-6afa-493f-8063-897c6b171a0d",  # Docs & Transcripts Agent
     "jira": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Jira
     "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
     "email": "agent-b4928949-8012-4436-a3c7-a9e510785147",  # WIP
@@ -46,7 +46,7 @@ AGENT_NAMES = {
     "task": "Task Agent",
     "calendar": "Calendar Agent",
     "slack": "Pulse Agent",  # Pulse handles Slack
-    "documents": "Pulse Agent",  # Pulse handles Docs
+    "documents": "Documents Agent",  # Docs & Transcripts
     "jira": "Pulse Agent",  # Pulse handles Jira
     "pulse": "Pulse Agent",
     "email": "Email Agent",
@@ -58,6 +58,7 @@ AGENT_ID_TO_NAME = {
     "agent-dd15479e-6543-400e-8463-b2a48b13cd4a": "Task Agent",
     "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d": "Calendar Agent",
     "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8": "Pulse Agent",
+    "agent-398b4f6c-6afa-493f-8063-897c6b171a0d": "Documents Agent",
     "agent-b4928949-8012-4436-a3c7-a9e510785147": "Email Agent",
     "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a": "Main Agent",
 }
@@ -103,6 +104,12 @@ DOMAIN_KEYWORDS = {
         r"\bfile\b",
         r"\bfiles\b",
         r"\bfolder\b",
+        r"\btranscript\b",
+        r"\btranscripts\b",
+        r"\bmeeting\s*notes\b",
+        r"\bgranola\b",
+        r"\bproposal\b",
+        r"\bproposals\b",
     ],
     "pulse": [
         r"\bpulse\b",
@@ -150,6 +157,10 @@ ACTION_KEYWORDS = {
         r"\bdraft\b",
         r"\bedit\b",
         r"\bupdate\s*doc\b",
+        r"\bsearch\s*(for\s*)?doc\b",
+        r"\bfind\s*(the\s*)?doc\b",
+        r"\blook\s*up\b",
+        r"\bindex\b",
     ],
 }
 

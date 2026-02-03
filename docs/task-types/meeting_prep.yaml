@@ -45,22 +45,33 @@ agents:
     expected_contribution: "Event details with time, participant list, video links, attachments"
 
   document:
-    enabled: false  # Document agent not yet created
+    enabled: true
+    agent_id: "agent-398b4f6c-6afa-493f-8063-897c6b171a0d"
     prompt_template: |
-      COORDINATION TASK: Search for documents related to '{meeting_title}'
-      or shared by/with these participants: {participants}.
+      COORDINATION TASK: Find documents and meeting transcripts related to '{meeting_title}'
+      or involving these participants: {participants}.
+
+      Use your search tools to find:
+      1. Use search_documents to find Google Drive docs matching the meeting topic
+      2. Use search_meeting_transcripts to find past meeting transcripts with similar topics or participants
 
       Look for:
       - Meeting agendas or prep materials
-      - Recent shared documents
-      - Action items from previous related meetings
+      - Previous meeting notes or transcripts with these participants
+      - Action items from related past meetings
+      - Shared documents mentioned in prior discussions
 
-      IMPORTANT: After finding information, use memory_insert to record your findings:
+      Format: List document titles with brief relevance notes, then any action items found.
+      Keep summary under 150 characters.
+
+      CRITICAL - You MUST complete this task by calling memory_insert:
       memory_insert("coordination_gathered_{identity_id}", "[Document HH:MM] Your summary here")
 
-      Keep summary under 100 characters.
-    timeout_seconds: 45
-    expected_contribution: "Relevant docs, agendas, action items"
+      Example: [Document 14:31] Found: Q4 Planning Agenda (shared yesterday), Last 1:1 transcript (action: review budget) | 2 related docs
+
+      If no relevant documents found, still call memory_insert with: [Document HH:MM] No documents found related to '{meeting_title}'
+    timeout_seconds: 60
+    expected_contribution: "Relevant docs, transcripts, agendas, action items from past meetings"
 
   email:
     prompt_template: |
@@ -118,6 +129,9 @@ synthesis:
     **Event Details:**
     {calendar_findings}
 
+    **Related Documents & Transcripts:**
+    {document_findings}
+
     **Recent Context (Email):**
     {email_findings}
 
@@ -126,6 +140,7 @@ synthesis:
   enhancement_prompt: |
     Review these meeting prep findings and add:
     - Consolidated list of any URLs/links found (video conf, docs, slides)
+    - Key action items from past meetings that may be relevant
     - Any concerns or blockers that should be addressed
     - Suggested preparation priorities based on prep tasks mentioned
     - Questions to consider raising in the meeting
@@ -139,6 +154,13 @@ metrics:
   - synthesis_length
 
 refinement_log:
+  - date: 2026-02-01
+    changes:
+      - "Document agent: Enabled with agent-398b4f6c-6afa-493f-8063-897c6b171a0d (Docs & Transcripts)"
+      - "Document agent: Updated prompt to use search_documents and search_meeting_transcripts tools"
+      - "Document agent: Increased char limit 100→150, timeout 45s→60s"
+      - "Synthesis: Re-added document_findings section for document/transcript context"
+    rationale: "Documents agent (with Granola transcripts + Drive RAG) now available and integrated."
   - date: 2026-01-29
     changes:
       - "Calendar agent: Added extraction of video links, attachments, and description URLs"
