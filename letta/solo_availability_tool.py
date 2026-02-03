@@ -177,13 +177,20 @@ def find_my_availability(
                 user_id=user_id,
                 context_json=json.dumps(context)
             )
-        except ImportError:
+        except ImportError as import_err:
             # Fallback: call via API (would need agent with tool attached)
             return {
                 "status": "error",
-                "error_message": "Scheduling orchestrator not available. Please ensure orchestrate_scheduling is properly installed.",
+                "error_message": f"Scheduling orchestrator not available: {str(import_err)}",
                 "available_slots": []
             }
+
+        # Debug: log raw result from orchestrate_scheduling
+        debug_info = {
+            "orchestrator_status": result.get("status"),
+            "orchestrator_proposals_count": len(result.get("proposals", [])),
+            "orchestrator_error": result.get("error_message"),
+        }
 
         # Process results into simpler format
         if result.get("status") == "ok":
@@ -191,9 +198,9 @@ def find_my_availability(
 
             available_slots = []
             for prop in proposals[:max_results]:
-                # Parse proposal time
-                start_str = prop.get("start_time") or prop.get("start")
-                end_str = prop.get("end_time") or prop.get("end")
+                # Parse proposal time - orchestrator uses start_utc/end_utc
+                start_str = prop.get("start_utc") or prop.get("start_time") or prop.get("start")
+                end_str = prop.get("end_utc") or prop.get("end_time") or prop.get("end")
 
                 if not start_str:
                     continue
@@ -249,9 +256,18 @@ def find_my_availability(
                     "search_range": {
                         "from": from_date.strftime("%Y-%m-%d"),
                         "to": to_date.strftime("%Y-%m-%d")
-                    }
+                    },
+                    "debug": debug_info
                 }
             else:
+                # Add first few proposals for debugging - capture ALL fields
+                raw_proposals = result.get("proposals", [])[:2]
+                debug_info["raw_proposals_sample"] = [
+                    {k: str(v)[:100] for k, v in p.items()} if isinstance(p, dict) else str(p)[:200]
+                    for p in raw_proposals
+                ] if raw_proposals else []
+                debug_info["proposal_keys"] = list(raw_proposals[0].keys()) if raw_proposals and isinstance(raw_proposals[0], dict) else []
+
                 return {
                     "status": "no_availability",
                     "available_slots": [],
@@ -259,7 +275,8 @@ def find_my_availability(
                     "search_range": {
                         "from": from_date.strftime("%Y-%m-%d"),
                         "to": to_date.strftime("%Y-%m-%d")
-                    }
+                    },
+                    "debug": debug_info
                 }
 
         elif result.get("status") == "unsat":
@@ -271,13 +288,15 @@ def find_my_availability(
                     "from": from_date.strftime("%Y-%m-%d"),
                     "to": to_date.strftime("%Y-%m-%d")
                 },
-                "suggestions": result.get("relaxations", [])
+                "suggestions": result.get("relaxations", []),
+                "debug": debug_info
             }
         else:
             return {
                 "status": "error",
                 "error_message": result.get("error_message", "Scheduling check failed"),
-                "available_slots": []
+                "available_slots": [],
+                "debug": debug_info
             }
 
     except Exception as e:
