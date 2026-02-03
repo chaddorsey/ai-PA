@@ -74,8 +74,67 @@ def load_state() -> dict:
     return {
         'imported_ids': [],
         'last_check': None,
-        'last_cache_mtime': None
+        'last_cache_mtime': None,
+        'last_verified': None
     }
+
+
+def verify_state_against_archival() -> set:
+    """
+    Verify state file matches actual archival memory.
+
+    Returns the set of meeting IDs that are actually in archival.
+    If state is out of sync, it will be corrected.
+    """
+    import requests
+
+    try:
+        letta_base_url = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
+
+        # Fetch all passages from archival
+        response = requests.get(
+            f"{letta_base_url}/v1/agents/{AGENT_ID}/archival-memory",
+            params={"limit": 3000},
+            timeout=60
+        )
+        response.raise_for_status()
+        passages = response.json()
+
+        # Extract meeting IDs actually in archival
+        actual_ids = set()
+        for p in passages:
+            for t in p.get('tags', []):
+                if t.startswith('id:'):
+                    actual_ids.add(t[3:])
+
+        # Load current state
+        state = load_state()
+        state_ids = set(state.get('imported_ids', []))
+
+        # Check for discrepancy
+        missing_from_archival = state_ids - actual_ids
+
+        if missing_from_archival:
+            logger.warning(
+                f"State/archival mismatch: {len(missing_from_archival)} IDs in state but not in archival. "
+                f"Correcting state to match archival ({len(actual_ids)} meetings)."
+            )
+            # Correct the state
+            state['imported_ids'] = list(actual_ids)
+            state['last_verified'] = datetime.utcnow().isoformat()
+            save_state(state)
+        else:
+            logger.info(f"State verified: {len(actual_ids)} meetings in archival match state")
+            # Update last_verified timestamp
+            state['last_verified'] = datetime.utcnow().isoformat()
+            save_state(state)
+
+        return actual_ids
+
+    except Exception as e:
+        logger.error(f"Failed to verify state against archival: {e}")
+        # Return empty set to trigger full check
+        return set()
 
 
 def save_state(state: dict):
@@ -183,7 +242,7 @@ def check_for_new_meetings(imported_ids: Set[str], dry_run: bool = False) -> tup
     return success_count, error_count
 
 
-def run_once(dry_run: bool = False) -> bool:
+def run_once(dry_run: bool = False, force_verify: bool = False) -> bool:
     """Run a single check for new meetings."""
     logger.info("=" * 50)
     logger.info("Granola Watcher - Single Run")
@@ -192,6 +251,21 @@ def run_once(dry_run: bool = False) -> bool:
     state = load_state()
     imported_ids = set(state.get('imported_ids', []))
     last_mtime = state.get('last_cache_mtime')
+    last_verified = state.get('last_verified')
+
+    # Verify state against archival once per day (or if forced, or never verified)
+    should_verify = force_verify or last_verified is None
+    if not should_verify and last_verified:
+        try:
+            last_verified_dt = datetime.fromisoformat(last_verified)
+            hours_since_verify = (datetime.utcnow() - last_verified_dt).total_seconds() / 3600
+            should_verify = hours_since_verify >= 24
+        except:
+            should_verify = True
+
+    if should_verify and not dry_run:
+        logger.info("Verifying state against archival memory...")
+        imported_ids = verify_state_against_archival()
 
     logger.info(f"Previously imported: {len(imported_ids)} meetings")
 
@@ -240,16 +314,23 @@ def main():
     parser.add_argument('--daemon', action='store_true', help='Run continuously')
     parser.add_argument('--interval', type=int, default=300, help='Check interval in seconds (default: 300)')
     parser.add_argument('--reset', action='store_true', help='Reset watcher state')
+    parser.add_argument('--verify', action='store_true', help='Force verify state against archival memory')
     args = parser.parse_args()
 
     if args.reset:
         state = {
             'imported_ids': [],
             'last_check': None,
-            'last_cache_mtime': None
+            'last_cache_mtime': None,
+            'last_verified': None
         }
         save_state(state)
         logger.info("Watcher state reset")
+        return
+
+    if args.verify:
+        logger.info("Forcing state verification against archival memory...")
+        verify_state_against_archival()
         return
 
     if args.daemon:
