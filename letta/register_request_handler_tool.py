@@ -59,7 +59,7 @@ def main():
             print(f"  ✓ Registered: {tool_name}")
             tool_id = created_tool.id if hasattr(created_tool, 'id') else (created_tool.get('id') if isinstance(created_tool, dict) else 'N/A')
             print(f"    Tool ID: {tool_id}")
-            print(f"    Description: Route requests to specialist agents (task, calendar, pulse)")
+            print(f"    Description: Route requests to specialist agents (task, calendar, pulse, documents, email)")
             
             # Attach tool to agent if agent ID is provided
             if AGENT_ID:
@@ -96,15 +96,17 @@ def main():
             print("  Name: delegate_to_specialist")
             print("  Purpose: Route requests to specialist agents for delegation")
             print("  Inputs:")
-            print("    - domain: The domain to route to ('task', 'calendar', or 'pulse')")
+            print("    - domain: The domain to route to")
             print("    - request: The request message to send to the specialist agent")
             print("  Outputs:")
             print("    - String response from the specialist agent")
             print("    - Error message if routing failed")
             print("\nSupported Domains:")
-            print("  - task: agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
-            print("  - calendar: agent-892a2d58-b9f6-4baf-84f3-c431fe46487d")
-            print("  - pulse: agent-2ed14ef4-6289-453a-ae27-290b6ed196b8")
+            print("  - task: Tasks Agent (OmniFocus) - agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
+            print("  - calendar: Calendar Agent - agent-892a2d58-b9f6-4baf-84f3-c431fe46487d")
+            print("  - pulse: Pulse Agent (Slack, analytics) - agent-2ed14ef4-6289-453a-ae27-290b6ed196b8")
+            print("  - documents/docs: Documents Agent (Drive, transcripts) - agent-398b4f6c-6afa-493f-8063-897c6b171a0d")
+            print("  - email: Email Agent - agent-b4928949-8012-4436-a3c7-a9e510785147")
             
             return 0
             

@@ -1,9 +1,16 @@
 """
 Request Handler Tool for Routing to Subagents
 
-This tool routes requests to specialist agents (task, calendar, pulse) and returns
-their responses. It acts as a proxy that the main agent can use to delegate
-requests to domain-specific subagents.
+This tool routes requests to specialist agents and returns their responses.
+It acts as a proxy that the main agent can use to delegate requests to
+domain-specific subagents.
+
+Supported domains:
+- task: OmniFocus task search and management
+- calendar: Calendar searches and event scheduling
+- pulse: Slack message searches and system analytics
+- documents: Google Drive documents and meeting transcripts
+- email: Email message searches
 """
 
 from typing import Dict, Any
@@ -12,15 +19,18 @@ from typing import Dict, Any
 def delegate_to_specialist(domain: str, request: str) -> str:
     """
     Route request to specialist agent and return the response.
-    
+
     This tool sends a request to a specialized agent based on the domain
     and returns the agent's response. The main agent handles routing decisions
     and uses this tool to ferry requests to the appropriate specialist.
-    
+
     Args:
-        domain: The domain to route to. Must be one of: 'task', 'calendar', 'pulse'
-        request: The specific request message to send to the specialist agent
-    
+        domain: The domain to route to. Must be one of: 'task', 'calendar',
+                'pulse', 'documents' (or 'docs'), 'email'. Each domain routes
+                to a specialist agent with specific capabilities.
+        request: The specific request message to send to the specialist agent.
+                Include enough context for the specialist to fulfill the request.
+
     Returns:
         String containing the response from the specialist agent, or an error message
         if routing failed.
@@ -30,16 +40,27 @@ def delegate_to_specialist(domain: str, request: str) -> str:
     import traceback
     import requests
     import json
-    
+
     # Wrap entire function in try-except
     try:
-        # Validate domain
+        # Agent mapping - all specialist agents
         agent_map = {
+            # Task Agent - OmniFocus task search and management
             "task": "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
+            # Calendar Agent - calendar searches, scheduling, event management
             "calendar": "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d",
-            "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8"
+            # Pulse Agent - Slack message searches, system analytics
+            "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
+            # Documents Agent - Google Drive docs, meeting transcripts
+            "documents": "agent-398b4f6c-6afa-493f-8063-897c6b171a0d",
+            "docs": "agent-398b4f6c-6afa-493f-8063-897c6b171a0d",  # alias
+            # Email Agent - email message searches
+            "email": "agent-b4928949-8012-4436-a3c7-a9e510785147",
         }
-        
+
+        # Normalize domain to lowercase
+        domain = domain.lower().strip()
+
         if domain not in agent_map:
             return f"Unknown domain: {domain}. Options: {list(agent_map.keys())}"
         
