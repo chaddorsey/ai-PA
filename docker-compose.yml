@@ -623,6 +623,8 @@ services:
       ATLASSIAN_ROVO_TOKEN: "${ATLASSIAN_ROVO_TOKEN:-70121-cecc6a6e-e07f-440f-bcef-0e1b8d0fe274:qe97rgirCzv2J2Zm:aVN_aZh27EoEo4TfjaoTTNs9HEcqQeZp}"
       # Drive RAG service URL for document search tools
       DRIVE_RAG_SERVICE_URL: "http://drive-rag-service:8000"
+      # Exa.ai API key for web search tools
+      EXA_API_KEY: "${EXA_API_KEY:-}"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 
