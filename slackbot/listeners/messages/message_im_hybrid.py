@@ -334,6 +334,17 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 # Capture tool return content for proposal detection
                 content = event.get("content", "")
                 if content:
+                    # Extract verbatim_user_output from stringified dict if present
+                    # Tool returns look like: {'verbatim_user_output': '...actual content...'}
+                    if "'verbatim_user_output':" in content or '"verbatim_user_output":' in content:
+                        try:
+                            import ast
+                            parsed = ast.literal_eval(content)
+                            if isinstance(parsed, dict) and 'verbatim_user_output' in parsed:
+                                content = parsed['verbatim_user_output']
+                                logger.error(f"🔧 TOOL RETURN: Extracted verbatim_user_output ({len(content)} chars)")
+                        except (ValueError, SyntaxError) as e:
+                            logger.warning(f"🔧 TOOL RETURN: Could not parse as dict, using raw: {e}")
                     tool_return_content += content
                     logger.error(f"🔧 TOOL RETURN captured: {len(content)} chars")
             elif event_type == "text":
