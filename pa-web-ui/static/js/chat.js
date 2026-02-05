@@ -575,32 +575,138 @@ class ChatUI {
         }
     }
 
+    /**
+     * Ensure the thinking accordion exists in the response content area
+     */
+    ensureThinkingAccordion(card) {
+        // Find the appropriate response container
+        const activeResponse = card.querySelector('.thread-followup-response.active-exchange');
+        const initialResponse = card.querySelector(':scope > .thread-response');
+        const responseEl = activeResponse || initialResponse;
+
+        if (!responseEl) return null;
+
+        // Make sure response element is visible (it starts hidden)
+        responseEl.style.display = 'block';
+
+        // Hide the status indicator since we're starting to show content
+        const activeStatus = card.querySelector('.thread-status.active-exchange');
+        const initialStatus = card.querySelector(':scope > .thread-status');
+        const statusEl = activeStatus || initialStatus;
+        if (statusEl) statusEl.style.display = 'none';
+
+        const contentEl = responseEl.querySelector('.response-content');
+        if (!contentEl) return null;
+
+        // Check if accordion already exists
+        let accordion = contentEl.querySelector('.thinking-accordion');
+        if (!accordion) {
+            accordion = document.createElement('div');
+            accordion.className = 'thinking-accordion';
+            accordion.innerHTML = `
+                <div class="thinking-accordion-header">
+                    <span class="thinking-accordion-icon">💭</span>
+                    <span>Agent Thinking</span>
+                    <span class="thinking-accordion-toggle">▼</span>
+                </div>
+                <div class="thinking-accordion-content"></div>
+            `;
+            // Insert at the beginning of response content
+            contentEl.insertBefore(accordion, contentEl.firstChild);
+
+            // Add click handler to toggle
+            const header = accordion.querySelector('.thinking-accordion-header');
+            header.addEventListener('click', () => {
+                accordion.classList.toggle('expanded');
+            });
+        }
+
+        return accordion;
+    }
+
+    /**
+     * Update the thinking accordion content
+     */
+    updateThinkingContent(card, thinkingContent) {
+        if (!thinkingContent) return;
+
+        const accordion = this.ensureThinkingAccordion(card);
+        if (accordion) {
+            const contentEl = accordion.querySelector('.thinking-accordion-content');
+            if (contentEl) {
+                contentEl.innerHTML = this.renderMarkdown(thinkingContent);
+            }
+        }
+    }
+
     updateThreadCardResponse(card, agentName, content) {
+        console.log('[DOM] updateThreadCardResponse called', { agentName, contentLength: content?.length });
+
         // Check for active follow-up exchange first
         const activeStatus = card.querySelector('.thread-status.active-exchange');
         const activeResponse = card.querySelector('.thread-followup-response.active-exchange');
         const timestamp = this.formatTimestamp();
 
+        console.log('[DOM] Element search results:', {
+            hasActiveStatus: !!activeStatus,
+            hasActiveResponse: !!activeResponse,
+        });
+
         if (activeStatus && activeResponse) {
             // This is a follow-up response - no agent name needed
+            console.log('[DOM] Using FOLLOW-UP response path');
             activeStatus.style.display = 'none';
             activeResponse.style.display = 'block';
-            activeResponse.querySelector('.response-content').innerHTML = this.renderMarkdown(content);
+            // Use response-text div to preserve thinking accordion
+            const contentEl = activeResponse.querySelector('.response-content');
+            console.log('[DOM] Follow-up contentEl found:', !!contentEl);
+            let responseTextEl = contentEl.querySelector('.response-text');
+            if (!responseTextEl) {
+                responseTextEl = document.createElement('div');
+                responseTextEl.className = 'response-text';
+                contentEl.appendChild(responseTextEl);
+                console.log('[DOM] Created new response-text div');
+            }
+            const renderedContent = this.renderMarkdown(content);
+            console.log('[DOM] Setting innerHTML, length:', renderedContent?.length);
+            responseTextEl.innerHTML = renderedContent;
             const timestampEl = activeResponse.querySelector('.response-timestamp');
             if (timestampEl) timestampEl.textContent = timestamp;
         } else {
             // Initial response - use direct child selectors to avoid matching follow-up elements
+            console.log('[DOM] Using INITIAL response path');
             const initialStatus = card.querySelector(':scope > .thread-status');
             const initialResponse = card.querySelector(':scope > .thread-response');
+
+            console.log('[DOM] Initial element search:', {
+                hasInitialStatus: !!initialStatus,
+                hasInitialResponse: !!initialResponse,
+            });
 
             if (initialStatus) initialStatus.style.display = 'none';
             if (initialResponse) {
                 initialResponse.style.display = 'block';
+                console.log('[DOM] Set initialResponse display to block');
                 const agentNameEl = initialResponse.querySelector('.agent-name');
                 if (agentNameEl) agentNameEl.textContent = agentName;
-                initialResponse.querySelector('.response-content').innerHTML = this.renderMarkdown(content);
+                // Use response-text div to preserve thinking accordion
+                const contentEl = initialResponse.querySelector('.response-content');
+                console.log('[DOM] Initial contentEl found:', !!contentEl);
+                let responseTextEl = contentEl.querySelector('.response-text');
+                if (!responseTextEl) {
+                    responseTextEl = document.createElement('div');
+                    responseTextEl.className = 'response-text';
+                    contentEl.appendChild(responseTextEl);
+                    console.log('[DOM] Created new response-text div for initial');
+                }
+                const renderedContent = this.renderMarkdown(content);
+                console.log('[DOM] Setting innerHTML for initial, length:', renderedContent?.length);
+                responseTextEl.innerHTML = renderedContent;
+                console.log('[DOM] innerHTML SET. responseTextEl.innerHTML length:', responseTextEl.innerHTML?.length);
                 const timestampEl = initialResponse.querySelector('.response-timestamp');
                 if (timestampEl) timestampEl.textContent = timestamp;
+            } else {
+                console.error('[DOM] *** NO initialResponse ELEMENT FOUND ***');
             }
         }
     }
@@ -822,23 +928,41 @@ class ChatUI {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let content = '';
+        let thinkingContent = '';  // Track agent thinking separately
         let agentName = '';
         let agentId = '';
         let requestId = null;
         let hasReceivedContent = false;
         let toolCallsMade = [];  // Track tool calls for completion message
+        let sseBuffer = '';  // Buffer for handling split SSE messages
 
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+                console.log('[SSE] Stream reader done');
+                break;
+            }
 
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
+            const chunk = decoder.decode(value, { stream: true });
+            console.debug('[SSE] Received chunk:', chunk.length, 'bytes, preview:', chunk.substring(0, 100));
+
+            // Add to buffer and process complete lines
+            sseBuffer += chunk;
+            const lines = sseBuffer.split('\n');
+
+            // Keep the last line in buffer if it's incomplete (doesn't end with \n)
+            // Complete SSE messages end with \n\n, so a complete line ends with empty string after split
+            if (!chunk.endsWith('\n')) {
+                sseBuffer = lines.pop();  // Keep incomplete line in buffer
+            } else {
+                sseBuffer = '';
+            }
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     try {
                         const event = JSON.parse(line.slice(6));
+                        console.log('[SSE] Parsed event type:', event.type);
 
                         if (event.type === 'routing') {
                             agentName = event.agent_name;
@@ -875,9 +999,24 @@ class ChatUI {
                                 const statusText = TOOL_STATUS_MAP[toolName] || `Running ${toolName}...`;
                                 this.updateThreadCardStatus(threadCard, statusText);
                             }
+                        } else if (event.type === 'thinking') {
+                            // Agent thinking/reasoning content - display in collapsible accordion
+                            thinkingContent += event.content;
+                            console.debug('[SSE] Received thinking event:', {
+                                contentLength: event.content?.length,
+                                totalThinkingLength: thinkingContent.length,
+                                agentName
+                            });
+                            this.updateThinkingContent(threadCard, thinkingContent);
                         } else if (event.type === 'text') {
                             hasReceivedContent = true;
                             content += event.content;
+                            console.log('[SSE] *** TEXT EVENT RECEIVED ***', {
+                                contentLength: event.content?.length,
+                                totalLength: content.length,
+                                preview: event.content?.substring(0, 100),
+                                agentName
+                            });
                             this.updateThreadCardResponse(threadCard, agentName, content);
 
                             // Update thread response

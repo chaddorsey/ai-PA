@@ -629,3 +629,66 @@ header h1 {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-secondary);
 }
+
+/* Thinking Accordion - collapsible agent reasoning display */
+.thinking-accordion {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--bg-tertiary);
+}
+
+.thinking-accordion-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    transition: background-color 0.15s;
+}
+
+.thinking-accordion-header:hover {
+    background-color: var(--border);
+}
+
+.thinking-accordion-icon {
+    font-size: 0.9rem;
+}
+
+.thinking-accordion-toggle {
+    margin-left: auto;
+    font-size: 0.7rem;
+    transition: transform 0.2s;
+}
+
+.thinking-accordion.expanded .thinking-accordion-toggle {
+    transform: rotate(180deg);
+}
+
+.thinking-accordion-content {
+    display: none;
+    padding: 0.75rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background-color: var(--bg-secondary);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.thinking-accordion.expanded .thinking-accordion-content {
+    display: block;
+}
+
+.thinking-accordion-content p {
+    margin: 0 0 0.5rem 0;
+}
+
+.thinking-accordion-content p:last-child {
+    margin-bottom: 0;
+}

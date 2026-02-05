@@ -15,15 +15,55 @@ import httpx
 SUMMARY_PATTERN = re.compile(r"\s*SUMMARY:.*$", re.MULTILINE)
 REFS_PATTERN = re.compile(r"\s*REFS:\s*\{.*\}$", re.MULTILINE)
 
+# Common phrases that start user-facing responses (after inner monologue)
+USER_FACING_STARTERS = [
+    "Here is ", "Here's ", "I found ", "I've found ", "I located ",
+    "The ", "Your ", "Based on ", "According to ", "Looking at ",
+    "Let me ", "I'll ", "I can ", "I see ", "I notice ",
+    "There are ", "There is ", "This is ", "That ",
+    "Yes", "No", "Sure", "Absolutely", "Unfortunately",
+    "---",  # Markdown separator often starts formatted content
+]
+
 
 def clean_response_for_user(text: str) -> str:
-    """Strip SUMMARY and REFS lines from user-facing response."""
+    """Strip SUMMARY, REFS, and Inner monologue sections from user-facing response."""
     if not text:
         return text
-    cleaned = SUMMARY_PATTERN.sub("", text)
+
+    cleaned = text
+
+    # Handle "Inner monologue:" sections - find where actual content starts
+    if cleaned.startswith("Inner monologue:"):
+        # Try to find where user-facing content begins
+        best_pos = -1
+        for starter in USER_FACING_STARTERS:
+            pos = cleaned.find(starter)
+            if pos > 0 and (best_pos == -1 or pos < best_pos):
+                best_pos = pos
+
+        if best_pos > 0:
+            # Found user-facing content - extract it
+            cleaned = cleaned[best_pos:]
+        else:
+            # Fallback: look for double newline followed by non-internal text
+            # Try splitting on common internal markers and take last section
+            parts = re.split(r'\n\n(?=(?!Inner monologue:|Action plan:|Proceeding to))', cleaned)
+            if len(parts) > 1:
+                # Take the last substantial part
+                for part in reversed(parts):
+                    stripped = part.strip()
+                    if stripped and not stripped.startswith(("Inner monologue:", "Action plan:", "Proceeding to")):
+                        cleaned = stripped
+                        break
+
+    # Strip SUMMARY and REFS lines
+    cleaned = SUMMARY_PATTERN.sub("", cleaned)
     cleaned = REFS_PATTERN.sub("", cleaned)
+
     # Clean up extra blank lines
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
     return cleaned.strip()
 import structlog
 from flask import Flask, Response, jsonify, render_template, request
@@ -840,17 +880,59 @@ def stream():
                                     "report_refs_captured",
                                     refs_data=report_refs_data[:200] if report_refs_data else None,
                                 )
+                            # Note: send_message is deprecated in letta_v1_agent
+                            # User-facing content comes via assistant_message directly
                             yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name})}\n\n"
 
                         elif msg_type == "assistant_message":
+                            # Per Letta docs: assistant_message IS the user-facing response
+                            # Yield immediately - no need for fallback logic
+                            # Debug: log all event_data keys to understand structure
+                            logger.info(
+                                "assistant_message_structure",
+                                keys=list(event_data.keys()),
+                                has_internal_monologue="internal_monologue" in event_data,
+                                has_inner_thoughts="inner_thoughts" in event_data,
+                            )
                             content = event_data.get("content", "")
                             if content:
-                                # Store raw content for server-side processing
+                                # Store for server-side processing (DB saves, /complete endpoint)
                                 assistant_response_parts.append(content)
-                                # Clean SUMMARY/REFS lines before sending to user
+                                # Yield to frontend immediately
                                 cleaned_content = clean_response_for_user(content)
                                 if cleaned_content:
-                                    yield f"data: {json.dumps({'type': 'text', 'content': cleaned_content})}\n\n"
+                                    sse_data = f"data: {json.dumps({'type': 'text', 'content': cleaned_content})}\n\n"
+                                    logger.info(
+                                        "yielding_assistant_message",
+                                        agent_id=selected_agent_id,
+                                        content_length=len(cleaned_content),
+                                        sse_preview=sse_data[:150],  # Show start of SSE data
+                                        content_start=cleaned_content[:100],  # Show start of content
+                                    )
+                                    yield sse_data
+                                    logger.debug(
+                                        "yield_completed",
+                                        agent_id=selected_agent_id,
+                                    )
+                                else:
+                                    logger.warning(
+                                        "cleaned_content_empty",
+                                        agent_id=selected_agent_id,
+                                        raw_content_length=len(content),
+                                        raw_content_start=content[:200],
+                                    )
+
+                        elif msg_type == "user_message":
+                            # Letta memory compaction or system alert - log but don't display
+                            logger.debug(
+                                "letta_system_message",
+                                agent_id=selected_agent_id,
+                                content_preview=str(event_data.get("content", ""))[:100],
+                            )
+
+                        elif msg_type in ("stop_reason", "usage_statistics", "ping"):
+                            # Expected Letta stream events - no action needed
+                            pass
 
                         elif msg_type == "reasoning_message":
                             # Agent is thinking - send a ping to keep connection alive
