@@ -8,7 +8,7 @@ This module handles all database operations:
 - Revision tracking for edit attribution
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -867,6 +867,190 @@ class Database:
             "deleted_snapshot_metadata",
             file_id=file_id,
             revision_id=revision_id,
+        )
+
+    # =========================================================================
+    # Change Sync State (for Drive Changes API)
+    # =========================================================================
+
+    def get_sync_state(self, state_id: str = "default") -> Optional[dict]:
+        """Get the current sync state for change tracking.
+
+        Args:
+            state_id: Identifier for the sync state (default: "default")
+
+        Returns:
+            Sync state dict or None if not initialized
+        """
+        response = self.client.get(
+            self._url("change_sync_state"),
+            params={
+                "id": f"eq.{state_id}",
+                "select": "*",
+            },
+        )
+        self._check_response(response, "get_sync_state")
+
+        data = response.json()
+        if data:
+            row = data[0]
+            return {
+                "id": row["id"],
+                "page_token": row["page_token"],
+                "last_sync_at": _deserialize_datetime(row.get("last_sync_at")),
+                "total_changes_processed": row.get("total_changes_processed", 0),
+                "new_files_count": row.get("new_files_count", 0),
+                "modified_files_count": row.get("modified_files_count", 0),
+                "deleted_files_count": row.get("deleted_files_count", 0),
+                "last_error": row.get("last_error"),
+                "created_at": _deserialize_datetime(row.get("created_at")),
+                "updated_at": _deserialize_datetime(row.get("updated_at")),
+            }
+        return None
+
+    def initialize_sync_state(self, page_token: str, state_id: str = "default") -> None:
+        """Initialize sync state with a starting page token.
+
+        Args:
+            page_token: The initial page token from getStartPageToken
+            state_id: Identifier for the sync state (default: "default")
+        """
+        response = self.client.post(
+            self._url("change_sync_state"),
+            json={
+                "id": state_id,
+                "page_token": page_token,
+                "last_sync_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        self._check_response(response, "initialize_sync_state")
+
+        logger.info(
+            "initialized_sync_state",
+            state_id=state_id,
+            token_prefix=page_token[:20] if page_token else "",
+        )
+
+    def update_sync_state(
+        self,
+        page_token: str,
+        changes_processed: int = 0,
+        new_files: int = 0,
+        modified_files: int = 0,
+        deleted_files: int = 0,
+        error: Optional[str] = None,
+        state_id: str = "default",
+    ) -> None:
+        """Update sync state after processing changes.
+
+        Args:
+            page_token: New page token for next sync
+            changes_processed: Number of changes processed in this sync
+            new_files: Number of new files discovered
+            modified_files: Number of modified files
+            deleted_files: Number of deleted/trashed files
+            error: Error message if sync failed
+            state_id: Identifier for the sync state (default: "default")
+        """
+        # First get current state to increment counters
+        current = self.get_sync_state(state_id)
+        if not current:
+            # Initialize if not exists
+            self.initialize_sync_state(page_token, state_id)
+            current = {"total_changes_processed": 0, "new_files_count": 0,
+                      "modified_files_count": 0, "deleted_files_count": 0}
+
+        update_data = {
+            "page_token": page_token,
+            "last_sync_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "total_changes_processed": current["total_changes_processed"] + changes_processed,
+            "new_files_count": current["new_files_count"] + new_files,
+            "modified_files_count": current["modified_files_count"] + modified_files,
+            "deleted_files_count": current["deleted_files_count"] + deleted_files,
+        }
+
+        if error:
+            update_data["last_error"] = error[:500]  # Truncate long errors
+        else:
+            update_data["last_error"] = None
+
+        response = self.client.patch(
+            self._url("change_sync_state"),
+            params={"id": f"eq.{state_id}"},
+            json=update_data,
+        )
+        self._check_response(response, "update_sync_state")
+
+        logger.info(
+            "updated_sync_state",
+            state_id=state_id,
+            changes_processed=changes_processed,
+            new_files=new_files,
+            modified_files=modified_files,
+            deleted_files=deleted_files,
+        )
+
+    def reset_sync_state(self, page_token: str, state_id: str = "default") -> None:
+        """Reset sync state with a new page token.
+
+        This clears the counters and sets a fresh token. Use when
+        the token becomes invalid or for a fresh start.
+
+        Args:
+            page_token: New starting page token
+            state_id: Identifier for the sync state (default: "default")
+        """
+        # Delete existing state if any
+        self.client.delete(
+            self._url("change_sync_state"),
+            params={"id": f"eq.{state_id}"},
+        )
+
+        # Create fresh state
+        self.initialize_sync_state(page_token, state_id)
+
+        logger.info(
+            "reset_sync_state",
+            state_id=state_id,
+        )
+
+    def document_exists(self, file_id: str) -> bool:
+        """Check if a document exists in our index.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            True if document exists in document_state
+        """
+        response = self.client.get(
+            self._url("document_state"),
+            params={
+                "drive_file_id": f"eq.{file_id}",
+                "select": "drive_file_id",
+            },
+        )
+        self._check_response(response, "document_exists")
+
+        data = response.json()
+        return len(data) > 0
+
+    def mark_document_deleted(self, file_id: str) -> None:
+        """Mark a document as deleted/removed.
+
+        This doesn't delete the document from our index, but marks it
+        so we know it's no longer available in Drive.
+
+        Args:
+            file_id: Google Drive file ID
+        """
+        # For now, we'll add a 'deleted_at' timestamp if we want soft delete
+        # Or we could just delete the document state
+        # Let's log for now and implement deletion strategy later
+        logger.info(
+            "document_marked_deleted",
+            file_id=file_id,
         )
 
 

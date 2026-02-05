@@ -21,6 +21,7 @@ from drive_rag.models import (
     BlockChangeRecord,
     ChangedDocumentRecord,
     ChangedDocumentsResponse,
+    ChangesSyncResponse,
     DocumentDiffResponse,
     DocumentEditsResponse,
     DocumentStatusResponse,
@@ -33,6 +34,7 @@ from drive_rag.models import (
     SearchRequest,
     SearchResponse,
     SearchResult,
+    SyncStatusResponse,
 )
 
 logger = structlog.get_logger()
@@ -1044,6 +1046,99 @@ async def cleanup_old_snapshots(
 
     except Exception as e:
         logger.exception("cleanup_snapshots_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# Drive Changes API Sync
+# =====================
+
+
+@app.post("/v1/sync/changes", response_model=ChangesSyncResponse)
+async def sync_changes(
+    dry_run: bool = Query(False, description="Preview what would be processed without actually ingesting"),
+    reset_token: bool = Query(False, description="Reset the sync token and start fresh"),
+    max_changes: int = Query(10000, ge=100, le=100000, description="Maximum changes to process"),
+):
+    """Sync changes using the Drive Changes API.
+
+    This is the preferred method for detecting document changes. Instead of
+    polling each document individually, it uses Google Drive's Changes API
+    to efficiently get all changes since the last sync.
+
+    Benefits:
+    - Detects NEW files automatically (not just modifications)
+    - Detects deleted/trashed files
+    - Much more efficient than per-document polling
+    - Single API call returns all changes
+
+    On first call (or after reset_token=True), initializes the sync token
+    and returns immediately. Subsequent calls will process actual changes.
+
+    Args:
+        dry_run: If True, report what would happen without actually ingesting
+        reset_token: If True, reset the sync token (useful if token becomes invalid)
+        max_changes: Maximum changes to process in one sync (default 10000)
+
+    Returns:
+        ChangesSyncResponse with sync statistics
+    """
+    from drive_rag.change_monitor import sync_changes_api
+
+    logger.info(
+        "sync_changes_request",
+        dry_run=dry_run,
+        reset_token=reset_token,
+        max_changes=max_changes,
+    )
+
+    try:
+        result = await sync_changes_api(
+            dry_run=dry_run,
+            reset_token=reset_token,
+            max_changes=max_changes,
+        )
+
+        result_dict = result.to_dict()
+
+        return ChangesSyncResponse(
+            changes_processed=result_dict["changes_processed"],
+            new_files=result_dict["new_files"],
+            modified_files=result_dict["modified_files"],
+            deleted_files=result_dict["deleted_files"],
+            skipped_unsupported=result_dict["skipped_unsupported"],
+            skipped_folders=result_dict["skipped_folders"],
+            ingested=result_dict["ingested"],
+            error_count=result_dict["error_count"],
+            errors=result_dict["errors"],
+            sync_duration_seconds=result_dict["sync_duration_seconds"],
+            dry_run=result_dict["dry_run"],
+            token_initialized=result_dict["token_initialized"],
+        )
+
+    except Exception as e:
+        logger.exception("sync_changes_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/sync/status", response_model=SyncStatusResponse)
+async def get_sync_status():
+    """Get the current status of change sync.
+
+    Returns information about the sync state including:
+    - Whether sync is initialized
+    - When the last sync occurred
+    - Cumulative counts of changes processed
+
+    Use this to monitor sync health and verify it's running.
+    """
+    from drive_rag.change_monitor import get_sync_status as get_status
+
+    try:
+        status = await get_status()
+        return SyncStatusResponse(**status)
+    except Exception as e:
+        logger.exception("get_sync_status_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

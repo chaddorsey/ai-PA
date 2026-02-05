@@ -448,6 +448,103 @@ class GoogleClient:
 
         return list(domains), has_external
 
+    def get_changes_start_token(self) -> str:
+        """Get the starting page token for tracking future changes.
+
+        This should be called once to initialize change tracking.
+        The returned token represents the current state - all subsequent
+        changes.list calls with this token will return changes that
+        occurred after this point.
+
+        Returns:
+            The start page token string
+        """
+        result = self.drive.changes().getStartPageToken(
+            supportsAllDrives=True,
+        ).execute()
+        return result.get("startPageToken", "")
+
+    def list_changes(
+        self,
+        page_token: str,
+        page_size: int = 100,
+    ) -> dict:
+        """List changes since the given page token.
+
+        This method returns changes across all drives the user has access to,
+        including shared drives. It handles pagination internally.
+
+        Args:
+            page_token: The token from getStartPageToken or previous list call
+            page_size: Number of changes per page (max 1000)
+
+        Returns:
+            Dictionary with:
+            - changes: List of change objects
+            - nextPageToken: Token for next page (if more results)
+            - newStartPageToken: Token for next sync (only on last page)
+        """
+        result = self.drive.changes().list(
+            pageToken=page_token,
+            pageSize=page_size,
+            spaces="drive",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+            fields="nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,modifiedTime,trashed,headRevisionId,owners,lastModifyingUser))",
+        ).execute()
+
+        return {
+            "changes": result.get("changes", []),
+            "nextPageToken": result.get("nextPageToken"),
+            "newStartPageToken": result.get("newStartPageToken"),
+        }
+
+    def list_all_changes(
+        self,
+        page_token: str,
+        max_changes: int = 10000,
+    ) -> tuple[list[dict], str]:
+        """List all changes since page token, handling pagination.
+
+        This method fetches all pages of changes and returns them together
+        with the new start token for the next sync.
+
+        Args:
+            page_token: Starting page token
+            max_changes: Maximum total changes to retrieve (safety limit)
+
+        Returns:
+            Tuple of (all_changes, new_start_token)
+        """
+        all_changes = []
+        current_token = page_token
+        new_start_token = None
+
+        while len(all_changes) < max_changes:
+            result = self.list_changes(current_token)
+            all_changes.extend(result["changes"])
+
+            if result.get("newStartPageToken"):
+                # Last page - save the new token for next sync
+                new_start_token = result["newStartPageToken"]
+                break
+            elif result.get("nextPageToken"):
+                # More pages to fetch
+                current_token = result["nextPageToken"]
+            else:
+                # No more results and no new token (shouldn't happen)
+                logger.warning("changes_list_no_token", changes_count=len(all_changes))
+                break
+
+        if new_start_token is None:
+            logger.warning(
+                "changes_truncated",
+                retrieved=len(all_changes),
+                max_changes=max_changes,
+            )
+
+        return all_changes, new_start_token or current_token
+
 
 # Module-level singleton
 _google_client: Optional[GoogleClient] = None

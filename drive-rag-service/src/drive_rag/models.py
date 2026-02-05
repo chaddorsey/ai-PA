@@ -361,3 +361,34 @@ class RetentionResponse(BaseModel):
     error_count: int = 0
     errors: list[str] = Field(default_factory=list)
     breakdown: Optional[RetentionBreakdown] = None
+
+
+class ChangesSyncResponse(BaseModel):
+    """Response from Drive Changes API sync."""
+
+    changes_processed: int = 0
+    new_files: int = 0
+    modified_files: int = 0
+    deleted_files: int = 0
+    skipped_unsupported: int = 0
+    skipped_folders: int = 0
+    ingested: int = 0
+    error_count: int = 0
+    errors: list[str] = Field(default_factory=list)
+    sync_duration_seconds: float = 0.0
+    dry_run: bool = False
+    token_initialized: bool = False
+
+
+class SyncStatusResponse(BaseModel):
+    """Response with current sync status."""
+
+    initialized: bool = False
+    last_sync_at: Optional[str] = None
+    total_changes_processed: int = 0
+    new_files_count: int = 0
+    modified_files_count: int = 0
+    deleted_files_count: int = 0
+    last_error: Optional[str] = None
+    token_prefix: Optional[str] = None
+    message: Optional[str] = None
