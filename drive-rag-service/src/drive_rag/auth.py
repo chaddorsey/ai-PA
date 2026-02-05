@@ -151,6 +151,7 @@ class GoogleClient:
             .get(
                 fileId=file_id,
                 fields="id,name,mimeType,modifiedTime,version,headRevisionId,owners,md5Checksum",
+                supportsAllDrives=True,
             )
             .execute()
         )
@@ -172,6 +173,7 @@ class GoogleClient:
             )
             .execute()
         )
+        # Note: revisions.list does not support supportsAllDrives parameter
         return result.get("revisions", [])
 
     def get_document(self, document_id: str) -> dict:
@@ -198,7 +200,7 @@ class GoogleClient:
         """
         content = self.drive.files().export(
             fileId=file_id,
-            mimeType="text/plain"
+            mimeType="text/plain",
         ).execute()
 
         if isinstance(content, bytes):
@@ -219,7 +221,7 @@ class GoogleClient:
         """
         content = self.drive.files().export(
             fileId=file_id,
-            mimeType="text/csv"
+            mimeType="text/csv",
         ).execute()
 
         if isinstance(content, bytes):
@@ -239,7 +241,7 @@ class GoogleClient:
         """
         content = self.drive.files().export(
             fileId=file_id,
-            mimeType="text/plain"
+            mimeType="text/plain",
         ).execute()
 
         if isinstance(content, bytes):
@@ -277,6 +279,8 @@ class GoogleClient:
                     fields="nextPageToken,files(id,name,mimeType,modifiedTime,owners)",
                     pageSize=page_size,
                     pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
                 )
                 .execute()
             )
@@ -311,7 +315,7 @@ class GoogleClient:
 
         return (
             self.drive.files()
-            .get(fileId=file_id, fields=fields)
+            .get(fileId=file_id, fields=fields, supportsAllDrives=True)
             .execute()
         )
 
@@ -328,7 +332,7 @@ class GoogleClient:
 
         return (
             self.drive.files()
-            .get(fileId=folder_id, fields=fields)
+            .get(fileId=folder_id, fields=fields, supportsAllDrives=True)
             .execute()
         )
 
@@ -350,7 +354,8 @@ class GoogleClient:
             try:
                 meta = self.drive.files().get(
                     fileId=current_id,
-                    fields="id,name,parents,mimeType"
+                    fields="id,name,parents,mimeType",
+                    supportsAllDrives=True,
                 ).execute()
 
                 # Only add to path if it's a folder (not the file itself on first iteration)
@@ -384,7 +389,7 @@ class GoogleClient:
         from googleapiclient.http import MediaIoBaseDownload
         import io
 
-        request = self.drive.files().get_media(fileId=file_id)
+        request = self.drive.files().get_media(fileId=file_id, supportsAllDrives=True)
         buffer = io.BytesIO()
         downloader = MediaIoBaseDownload(buffer, request)
 

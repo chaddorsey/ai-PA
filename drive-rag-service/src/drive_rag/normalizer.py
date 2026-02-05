@@ -31,11 +31,15 @@ def sha256_hex(text: str) -> str:
 def normalize_text(text: str) -> str:
     """Normalize a block of text for stable comparison.
 
+    - Strip null bytes (PostgreSQL text columns reject these)
     - Unicode NFC normalization
     - Unified newlines
     - Collapse multiple spaces
     - Trim trailing whitespace per line
     """
+    # Strip null bytes - PostgreSQL text columns reject \x00
+    text = text.replace("\x00", "")
+
     # Unicode normalize (NFC)
     nfc = unicodedata.normalize("NFC", text)
 

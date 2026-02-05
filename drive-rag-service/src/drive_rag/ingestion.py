@@ -10,6 +10,7 @@ This module orchestrates the document ingestion pipeline:
 7. Store in Supabase with pgvector
 """
 
+import os
 from datetime import datetime
 from typing import Optional
 
