@@ -1150,23 +1150,24 @@ def search_slack_messages(
     min_reactions: Optional[int] = None,
     min_reply_count: Optional[int] = None,
     only_thread_parents: Optional[bool] = False,
-    has_reactions: Optional[bool] = False
+    has_reactions: Optional[bool] = False,
+    is_dm: Optional[bool] = False
 ) -> Dict[str, Any]:
     """
     Search for messages across the entire Slack workspace.
-    
+
     When query is omitted or empty, returns recent messages across workspace.
     Supports filtering by user(s) and/or channel(s) using Slack's query syntax.
-    
+
     Query Syntax: "term1 term2" (AND), "term1 OR term2", "NOT term", '"exact phrase"', "prefix*" (wildcard), "@username" (mentions).
-    
+
     @-Mentions: Use "@username" in query to find messages mentioning a user. Combine with filters as needed.
-    
-    Automatic Handling: OR queries with user/channel filters are automatically split into separate 
+
+    Automatic Handling: OR queries with user/channel filters are automatically split into separate
     searches and combined (Slack API treats OR as AND when filters present).
-    
+
     Known Limitation: Prefix wildcards "*term" match literal, not wildcard. Use "term*" instead.
-    
+
     Args:
         query: Search query string. Supports @username for mentions. Default: None.
         user: User ID(s) or username(s) (e.g., "sue" or "sue,dan"). Use usernames for efficiency. Default: None.
@@ -1180,6 +1181,7 @@ def search_slack_messages(
         min_reply_count: Filter messages with at least N replies. Default: None.
         only_thread_parents: Return only messages that have replies. Default: False.
         has_reactions: Return only messages with reactions. Default: False.
+        is_dm: Search only in direct messages. Default: False. Use with user filter for specific DM conversations.
     
     Returns:
         Dictionary with status, data (messages array and metadata), and error_message if applicable.
@@ -1214,7 +1216,9 @@ def search_slack_messages(
             only_thread_parents = False
         if has_reactions is None:
             has_reactions = False
-        
+        if is_dm is None:
+            is_dm = False
+
         # Limit max
         if count > 100:
             count = 100
@@ -1311,18 +1315,24 @@ def search_slack_messages(
                 }
             
             # Build channel filters (resolve IDs to names - Slack search requires channel names, not IDs)
+            # DM channels need special handling - use "dm:username" syntax instead of "in:channel"
             channel_filters = []
             channel_id_to_name_cache = {}
-            
-            # First pass: resolve channel IDs to names
-            channel_ids_to_resolve = []
+            dm_channel_to_username_cache = {}  # For DM channels: channel_id -> username
+
+            # First pass: separate DM channels from regular channels
+            regular_channel_ids = []
+            dm_channel_ids = []
             for ch in channel_list:
                 channel_name = ch.lstrip("#")
-                if channel_name.startswith(("C", "G", "D", "mpdm-")):
-                    channel_ids_to_resolve.append(channel_name)
-            
-            # Resolve channel IDs to names
-            if channel_ids_to_resolve:
+                if channel_name.startswith("D"):
+                    # DM channel - needs special handling
+                    dm_channel_ids.append(channel_name)
+                elif channel_name.startswith(("C", "G", "mpdm-")):
+                    regular_channel_ids.append(channel_name)
+
+            # Resolve regular channel IDs to names
+            if regular_channel_ids:
                 try:
                     url = "https://slack.com/api/conversations.list"
                     params = {"limit": "1000", "exclude_archived": "false"}
@@ -1337,11 +1347,11 @@ def search_slack_messages(
                             for ch_item in channel_data.get("channels", []):
                                 ch_id = ch_item.get("id")
                                 ch_name = ch_item.get("name", "")
-                                if ch_id in channel_ids_to_resolve and ch_name:
+                                if ch_id in regular_channel_ids and ch_name:
                                     channel_id_to_name_cache[ch_id] = ch_name
-                    
+
                     # Also try conversations.info for each ID individually (in case it's a private channel not in list)
-                    for ch_id in channel_ids_to_resolve:
+                    for ch_id in regular_channel_ids:
                         if ch_id not in channel_id_to_name_cache:
                             try:
                                 info_url = "https://slack.com/api/conversations.info"
@@ -1362,16 +1372,67 @@ def search_slack_messages(
                                 pass
                 except Exception:
                     pass
-            
+
+            # Resolve DM channel IDs to usernames (for dm:username syntax)
+            if dm_channel_ids:
+                # First get user info for resolving user IDs to usernames
+                user_id_to_name = {}
+                try:
+                    url = "https://slack.com/api/users.list"
+                    params = {"limit": "1000"}
+                    query_string = urllib.parse.urlencode(params)
+                    req = urllib.request.Request(
+                        f"{url}?{query_string}",
+                        headers={"Authorization": f"Bearer {TOKEN}"}
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as ur:
+                        user_data = json.loads(ur.read().decode('utf-8'))
+                        if user_data.get("ok"):
+                            for user_item in user_data.get("members", []):
+                                user_id_to_name[user_item.get("id")] = user_item.get("name", "")
+                except Exception:
+                    pass
+
+                # Get user ID for each DM channel
+                for dm_id in dm_channel_ids:
+                    try:
+                        info_url = "https://slack.com/api/conversations.info"
+                        info_params = {"channel": dm_id}
+                        info_query = urllib.parse.urlencode(info_params)
+                        info_req = urllib.request.Request(
+                            f"{info_url}?{info_query}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(info_req, timeout=30) as ir:
+                            info_data = json.loads(ir.read().decode('utf-8'))
+                            if info_data.get("ok"):
+                                ch_info = info_data.get("channel", {})
+                                # DM channels have a "user" field with the other user's ID
+                                dm_user_id = ch_info.get("user", "")
+                                if dm_user_id and dm_user_id in user_id_to_name:
+                                    dm_channel_to_username_cache[dm_id] = user_id_to_name[dm_user_id]
+                                elif dm_user_id:
+                                    # Fallback: use user ID if we can't resolve to name
+                                    dm_channel_to_username_cache[dm_id] = dm_user_id
+                    except Exception:
+                        pass
+
             # Build filters using channel names (Slack search requires names, not IDs)
             for ch in channel_list:
                 channel_name = ch.lstrip("#")
-                if channel_name.startswith(("C", "G", "D", "mpdm-")):
-                    # It's a channel ID - use resolved name if available
+                if channel_name.startswith("D"):
+                    # DM channel - use dm:username syntax
+                    if channel_name in dm_channel_to_username_cache:
+                        channel_filters.append(f"dm:{dm_channel_to_username_cache[channel_name]}")
+                    else:
+                        # Fallback: use is:dm (searches all DMs, less specific)
+                        channel_filters.append("is:dm")
+                elif channel_name.startswith(("C", "G", "mpdm-")):
+                    # Regular channel - use in:channel_name syntax
                     if channel_name in channel_id_to_name_cache:
                         channel_filters.append(f"in:{channel_id_to_name_cache[channel_name]}")
                     else:
-                        # Fallback: try using ID anyway (might work for some cases, but not recommended)
+                        # Fallback: try using ID anyway (might work for some cases)
                         channel_filters.append(f"in:{channel_name}")
                 else:
                     # It's already a channel name - use directly
@@ -1384,7 +1445,11 @@ def search_slack_messages(
                 # Use "in:chan1 OR in:chan2" instead of "(in:chan1 OR in:chan2)"
                 channel_query = " OR ".join(channel_filters)
                 search_query_parts.insert(0, channel_query)
-        
+
+        # Add is:dm filter if requested (search only in direct messages)
+        if is_dm:
+            search_query_parts.insert(0, "is:dm")
+
         # Add date filters using Slack's native syntax (more accurate than post-filtering)
         if start_date:
             # Convert to YYYY-MM-DD format for after: syntax
