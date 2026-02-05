@@ -814,6 +814,39 @@ class Database:
             for row in (data or [])
         ]
 
+    def get_all_snapshots(self) -> list[DocumentSnapshot]:
+        """Get all snapshot metadata for retention processing.
+
+        Returns:
+            List of all DocumentSnapshot records
+        """
+        response = self.client.get(
+            self._url("document_snapshots"),
+            params={
+                "select": "*",
+                "order": "modified_time.desc",
+            },
+        )
+        self._check_response(response, "get_all_snapshots")
+
+        data = response.json()
+        return [
+            DocumentSnapshot(
+                drive_file_id=row["drive_file_id"],
+                revision_id=row["revision_id"],
+                content_hash=row["content_hash"],
+                normalized_text_length=row["normalized_text_length"],
+                blocks_count=row["blocks_count"],
+                compressed_size_bytes=row.get("compressed_size_bytes"),
+                snapshot_path=row["snapshot_path"],
+                modifier_email=row.get("modifier_email"),
+                modifier_name=row.get("modifier_name"),
+                modified_time=_deserialize_datetime(row.get("modified_time")),
+                created_at=_deserialize_datetime(row.get("created_at")),
+            )
+            for row in (data or [])
+        ]
+
     def delete_snapshot_metadata(self, file_id: str, revision_id: str) -> None:
         """Delete snapshot metadata record.
 

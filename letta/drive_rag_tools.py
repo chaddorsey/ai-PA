@@ -1017,3 +1017,99 @@ def analyze_entity_consolidation(
             "status": "error",
             "error_message": f"{str(e)}\n{traceback.format_exc()}",
         }
+
+
+def get_recently_changed_documents(
+    since: Optional[str] = None,
+    limit: Optional[int] = None,
+    owner_email: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Get a list of documents that have been changed recently.
+
+    This tool returns documents that were modified after a given time.
+    Use this to answer questions like "what documents changed in the
+    last 24 hours?" or "show me files edited since yesterday."
+
+    The tool returns basic metadata about changed documents. To see
+    the actual changes (what was added/removed), use get_document_changes()
+    on specific documents.
+
+    Args:
+        since: Time filter for changes. Use one of:
+               - "yesterday" (last 24 hours)
+               - "last-week" (last 7 days)
+               - "last-month" (last 30 days)
+               - ISO date string (e.g., "2026-01-15")
+               Default is "yesterday" if not specified.
+        limit: Maximum number of documents to return (default 20, max 200).
+        owner_email: Optional filter to only show documents owned by this email.
+
+    Returns:
+        Dictionary with:
+        - total_changed: Number of documents found
+        - since: The time cutoff used
+        - documents: List of changed documents with title, modifier, time
+    """
+    import os
+    import traceback
+    import requests
+
+    try:
+        # Default values
+        if limit is None:
+            limit = 20
+        if limit > 200:
+            limit = 200
+        if since is None:
+            since = "yesterday"
+
+        # Get service URL from environment or use default
+        base_url = os.environ.get("DRIVE_RAG_SERVICE_URL", "http://drive-rag-service:8000")
+
+        # Build query parameters
+        params = {
+            "since": since,
+            "limit": limit,
+        }
+        if owner_email:
+            params["owner_email"] = owner_email
+
+        # Make request
+        response = requests.get(
+            f"{base_url}/v1/documents/changed",
+            params=params,
+            timeout=30,
+        )
+
+        if response.status_code != 200:
+            return {
+                "status": "error",
+                "error_message": f"Failed to get changed documents: {response.text}",
+            }
+
+        data = response.json()
+
+        # Format documents for readability
+        documents = []
+        for doc in data.get("documents", []):
+            documents.append({
+                "file_id": doc.get("drive_file_id"),
+                "title": doc.get("title"),
+                "modified_time": doc.get("modified_time"),
+                "modifier": doc.get("modifier_name") or doc.get("modifier_email"),
+                "has_snapshot": doc.get("has_snapshot", False),
+            })
+
+        return {
+            "status": "ok",
+            "total_changed": data.get("total_changed", 0),
+            "since": data.get("since"),
+            "documents": documents,
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+        }

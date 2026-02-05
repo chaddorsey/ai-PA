@@ -19,6 +19,8 @@ from drive_rag.embedder import get_embedder
 from drive_rag.ingestion import ingest_document, ingest_folder
 from drive_rag.models import (
     BlockChangeRecord,
+    ChangedDocumentRecord,
+    ChangedDocumentsResponse,
     DocumentDiffResponse,
     DocumentEditsResponse,
     DocumentStatusResponse,
@@ -26,6 +28,8 @@ from drive_rag.models import (
     IngestFolderRequest,
     IngestFolderResponse,
     IngestionResult,
+    RetentionResponse,
+    ScanChangesResponse,
     SearchRequest,
     SearchResponse,
     SearchResult,
@@ -811,6 +815,235 @@ async def analyze_entity_consolidation(
 
     except Exception as e:
         logger.exception("entity_consolidation_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# Change Monitoring Endpoints
+# =====================
+
+
+@app.post("/v1/scan/changes", response_model=ScanChangesResponse)
+async def scan_for_document_changes(
+    priority: str = Query("high", description="Priority tier: high, medium, low, all"),
+    batch_size: int = Query(100, ge=10, le=500, description="Maximum documents to scan"),
+    dry_run: bool = Query(False, description="Preview what would change without re-indexing"),
+):
+    """Scan for documents that have changed in Google Drive.
+
+    This endpoint checks indexed documents against Google Drive to detect
+    changes, and triggers re-ingestion for documents that have been modified.
+
+    Priority tiers:
+    - high: Documents modified in last 24 hours (check frequently)
+    - medium: Documents modified 1-7 days ago
+    - low: Older documents (daily rotating sample)
+    - all: All documents (for full daily scan)
+
+    Args:
+        priority: Priority tier to scan
+        batch_size: Maximum documents to check in this scan
+        dry_run: If True, report changes but don't re-index
+
+    Returns:
+        ScanChangesResponse with scan statistics
+    """
+    from drive_rag.change_monitor import scan_for_changes, PRIORITY_HIGH, PRIORITY_MEDIUM, PRIORITY_LOW, PRIORITY_ALL
+
+    valid_priorities = [PRIORITY_HIGH, PRIORITY_MEDIUM, PRIORITY_LOW, PRIORITY_ALL]
+    if priority not in valid_priorities:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid priority '{priority}'. Must be one of: {valid_priorities}",
+        )
+
+    logger.info(
+        "scan_changes_request",
+        priority=priority,
+        batch_size=batch_size,
+        dry_run=dry_run,
+    )
+
+    try:
+        result = await scan_for_changes(
+            priority=priority,
+            batch_size=batch_size,
+            dry_run=dry_run,
+        )
+        return ScanChangesResponse(**result.to_dict())
+
+    except Exception as e:
+        logger.exception("scan_changes_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/documents/changed", response_model=ChangedDocumentsResponse)
+async def get_changed_documents(
+    since: Optional[str] = Query(None, description="ISO date or relative: yesterday, last-week, last-month"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum results"),
+    owner_email: Optional[str] = Query(None, description="Filter by document owner email"),
+):
+    """Get documents that have changed since a given time.
+
+    This endpoint queries the database for documents that were modified
+    after the specified time. Useful for agents to ask "what documents
+    changed in the last 24 hours?"
+
+    Args:
+        since: Time filter - ISO date (2026-01-15) or relative (yesterday, last-week, last-month)
+        limit: Maximum documents to return
+        owner_email: Optional filter by owner
+
+    Returns:
+        ChangedDocumentsResponse with list of changed documents
+    """
+    from datetime import timedelta
+
+    db = get_db()
+
+    # Parse the 'since' parameter
+    since_datetime = None
+    now = datetime.utcnow()
+
+    if since:
+        since_lower = since.lower()
+        if since_lower == "yesterday":
+            since_datetime = now - timedelta(days=1)
+        elif since_lower == "last-week":
+            since_datetime = now - timedelta(weeks=1)
+        elif since_lower == "last-month":
+            since_datetime = now - timedelta(days=30)
+        else:
+            # Try to parse as ISO date
+            try:
+                since_datetime = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid 'since' value: {since}. Use ISO date or: yesterday, last-week, last-month",
+                )
+    else:
+        # Default to last 24 hours
+        since_datetime = now - timedelta(days=1)
+
+    logger.info(
+        "get_changed_documents_request",
+        since=since_datetime.isoformat() if since_datetime else None,
+        limit=limit,
+        owner_email=owner_email,
+    )
+
+    try:
+        # Query documents modified after since_datetime
+        params = {
+            "select": "drive_file_id,title,modified_time,last_modifier_email,last_modifier_name",
+            "order": "modified_time.desc",
+            "limit": str(limit),
+            "modified_time": f"gte.{since_datetime.isoformat()}",
+        }
+
+        if owner_email:
+            params["owner_email"] = f"eq.{owner_email}"
+
+        response = db.client.get(db._url("document_state"), params=params)
+        db._check_response(response, "get_changed_documents")
+
+        data = response.json() or []
+
+        # Check which documents have snapshots
+        documents = []
+        for row in data:
+            file_id = row["drive_file_id"]
+            # Check for snapshot (simplified - just check if any snapshot exists)
+            has_snapshot = bool(db.get_snapshots_for_file(file_id))
+
+            documents.append(
+                ChangedDocumentRecord(
+                    drive_file_id=file_id,
+                    title=row.get("title", ""),
+                    modified_time=datetime.fromisoformat(row["modified_time"].replace("Z", "+00:00"))
+                    if row.get("modified_time")
+                    else None,
+                    modifier_email=row.get("last_modifier_email"),
+                    modifier_name=row.get("last_modifier_name"),
+                    has_snapshot=has_snapshot,
+                )
+            )
+
+        return ChangedDocumentsResponse(
+            total_changed=len(documents),
+            since=since_datetime,
+            documents=documents,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("get_changed_documents_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# Admin Endpoints
+# =====================
+
+
+@app.post("/v1/admin/cleanup/snapshots", response_model=RetentionResponse)
+async def cleanup_old_snapshots(
+    dry_run: bool = Query(True, description="Preview what would be deleted without actually deleting"),
+    tier1_days: int = Query(7, ge=1, le=30, description="Days to keep ALL snapshots (full retention)"),
+    tier2_days: int = Query(90, ge=7, le=365, description="Days to keep DAILY snapshots"),
+):
+    """Apply retention policy to snapshot storage.
+
+    This endpoint cleans up old snapshots based on tiered retention:
+    - Tier 1 (0 to tier1_days): Keep ALL snapshots
+    - Tier 2 (tier1_days to tier2_days): Keep ONE snapshot per day per document
+    - Tier 3 (older than tier2_days): Keep ONE snapshot per document total
+
+    IMPORTANT: No snapshots are deleted entirely - we always keep at least
+    one persistent copy per document.
+
+    Args:
+        dry_run: If True (default), preview what would be deleted without deleting
+        tier1_days: Days for full retention (default 7)
+        tier2_days: Days for daily retention (default 90)
+
+    Returns:
+        RetentionResponse with cleanup statistics
+    """
+    from drive_rag.retention import apply_retention_policy
+
+    logger.info(
+        "cleanup_snapshots_request",
+        dry_run=dry_run,
+        tier1_days=tier1_days,
+        tier2_days=tier2_days,
+    )
+
+    try:
+        result = apply_retention_policy(
+            dry_run=dry_run,
+            tier1_days=tier1_days,
+            tier2_days=tier2_days,
+        )
+
+        result_dict = result.to_dict()
+
+        return RetentionResponse(
+            snapshots_analyzed=result_dict["snapshots_analyzed"],
+            snapshots_kept=result_dict["snapshots_kept"],
+            snapshots_deleted=result_dict["snapshots_deleted"],
+            space_freed_bytes=result_dict["space_freed_bytes"],
+            space_freed_mb=result_dict["space_freed_mb"],
+            dry_run=result_dict["dry_run"],
+            error_count=result_dict["error_count"],
+            errors=result_dict["errors"],
+            breakdown=result_dict.get("breakdown"),
+        )
+
+    except Exception as e:
+        logger.exception("cleanup_snapshots_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

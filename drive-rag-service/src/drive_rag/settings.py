@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 20
     embedding_requests_per_minute: int = 3000
 
+    # Change monitoring
+    change_scan_batch_size: int = 100
+    change_scan_high_priority_hours: int = 24
+    change_scan_medium_priority_days: int = 7
+
+    # Snapshot retention policy
+    snapshot_full_retention_days: int = 7
+    snapshot_daily_retention_days: int = 90
+
 
 @lru_cache
 def get_settings() -> Settings:

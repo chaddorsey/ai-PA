@@ -298,3 +298,66 @@ class DocumentDiffResponse(BaseModel):
     blocks_moved: int = 0
     changes: list[BlockChangeRecord] = Field(default_factory=list)
     summary: Optional[str] = None
+
+
+class ScanChangesResponse(BaseModel):
+    """Response from change monitoring scan."""
+
+    priority: str
+    documents_scanned: int = 0
+    documents_changed: int = 0
+    documents_reindexed: int = 0
+    documents_skipped: int = 0
+    errors: list[str] = Field(default_factory=list)
+    error_count: int = 0
+    scan_duration_seconds: float = 0.0
+    dry_run: bool = False
+
+
+class ChangedDocumentRecord(BaseModel):
+    """A document that was recently changed."""
+
+    drive_file_id: str
+    title: str
+    modified_time: Optional[datetime] = None
+    modifier_email: Optional[str] = None
+    modifier_name: Optional[str] = None
+    has_snapshot: bool = False
+
+
+class ChangedDocumentsResponse(BaseModel):
+    """Response containing list of recently changed documents."""
+
+    total_changed: int
+    since: Optional[datetime] = None
+    documents: list[ChangedDocumentRecord] = Field(default_factory=list)
+
+
+class RetentionBreakdownTier(BaseModel):
+    """Breakdown for a single retention tier."""
+
+    days: str
+    kept: int
+    deleted: Optional[int] = None
+
+
+class RetentionBreakdown(BaseModel):
+    """Breakdown of retention by tier."""
+
+    tier1_full_retention: RetentionBreakdownTier
+    tier2_daily_retention: RetentionBreakdownTier
+    tier3_archive: RetentionBreakdownTier
+
+
+class RetentionResponse(BaseModel):
+    """Response from snapshot retention cleanup."""
+
+    snapshots_analyzed: int = 0
+    snapshots_kept: int = 0
+    snapshots_deleted: int = 0
+    space_freed_bytes: int = 0
+    space_freed_mb: float = 0.0
+    dry_run: bool = True
+    error_count: int = 0
+    errors: list[str] = Field(default_factory=list)
+    breakdown: Optional[RetentionBreakdown] = None
