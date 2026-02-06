@@ -497,8 +497,8 @@ def get_calendar_events(
     calendar_id: str,
     time_min: str,
     time_max: str,
-    max_results: Optional[int] = None,
-    single_events: Optional[bool] = None,
+    max_results: Optional[str] = None,
+    single_events: Optional[str] = None,
     order_by: Optional[str] = None,
     attendee_emails: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -517,8 +517,8 @@ def get_calendar_events(
         time_max: RFC3339 datetime string with timezone for end of query range (required).
             MUST include timezone suffix. Examples: "2026-01-28T00:00:00Z" (UTC) or
             "2026-01-28T00:00:00-05:00" (EST). If timezone is omitted, UTC (Z) is assumed.
-        max_results: Maximum number of events to return (default: 100)
-        single_events: Expand recurring events (default: True)
+        max_results: Maximum number of events to return as string (default: "100")
+        single_events: Expand recurring events as string "true" or "false" (default: "true")
         order_by: "startTime" or "updated" (default: "startTime")
         attendee_emails: Comma-separated list of attendee email addresses to filter by.
             Returns events where at least one of the specified attendees is present.
@@ -544,12 +544,32 @@ def get_calendar_events(
     from googleapiclient.errors import HttpError
     
     try:
-        # Set defaults
-        if max_results is None:
+        # Convert string parameters (workaround for Letta Optional[int]/Optional[bool] handling)
+        # max_results: str -> int
+        if max_results is None or max_results == "" or max_results == "None":
             max_results = 100
-        if single_events is None:
+        elif isinstance(max_results, int):
+            pass  # Already int
+        elif isinstance(max_results, str):
+            try:
+                max_results = int(max_results)
+            except ValueError:
+                max_results = 100
+        else:
+            max_results = 100
+
+        # single_events: str -> bool
+        if single_events is None or single_events == "" or single_events == "None":
             single_events = True
-        if order_by is None:
+        elif isinstance(single_events, bool):
+            pass  # Already bool
+        elif isinstance(single_events, str):
+            single_events = single_events.lower() in ("true", "1", "yes")
+        else:
+            single_events = True
+
+        # order_by: already str
+        if order_by is None or order_by == "" or order_by == "None":
             order_by = "startTime"
         
         # Validation (inline - no helper functions)
