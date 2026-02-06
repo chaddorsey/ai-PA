@@ -770,7 +770,16 @@ def get_calendar_events(
             })
 
         # Filter by attendee emails if specified
-        if attendee_emails and attendee_emails.strip():
+        # Handle None, empty string, or "None" string (Letta parameter passing)
+        should_filter = (
+            attendee_emails is not None and
+            attendee_emails != "" and
+            attendee_emails != "None" and
+            isinstance(attendee_emails, str) and
+            attendee_emails.strip()
+        )
+
+        if should_filter:
             # Parse comma-separated emails (inline - no helper function)
             filter_emails = [email.strip().lower() for email in attendee_emails.split(',') if email.strip()]
 
