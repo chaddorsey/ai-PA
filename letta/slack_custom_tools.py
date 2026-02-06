@@ -1147,11 +1147,11 @@ def search_slack_messages(
     count: Optional[int] = 20,
     sort: Optional[str] = "score",
     sort_by: Optional[str] = None,
-    min_reactions: Optional[int] = None,
-    min_reply_count: Optional[int] = None,
-    only_thread_parents: Optional[bool] = False,
-    has_reactions: Optional[bool] = False,
-    is_dm: Optional[bool] = False
+    min_reactions: Optional[str] = None,
+    min_reply_count: Optional[str] = None,
+    only_thread_parents: Optional[str] = None,
+    has_reactions: Optional[str] = None,
+    is_dm: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Search for messages across the entire Slack workspace.
@@ -1207,17 +1207,57 @@ def search_slack_messages(
                 "error_message": "SLACK_MCP_XOXP_TOKEN not set in environment"
             }
         
-        # Set defaults
+        # Set defaults and handle type conversions (Letta passes null as string "None" or actual None)
         if count is None:
             count = 20
         if sort is None:
             sort = "score"
-        if only_thread_parents is None:
+
+        # Convert string bool params (workaround for Letta Optional[bool] null handling)
+        # Inline conversion - no nested def allowed by Letta
+        if only_thread_parents is None or only_thread_parents == "":
             only_thread_parents = False
-        if has_reactions is None:
+        elif isinstance(only_thread_parents, bool):
+            pass  # Already bool
+        elif isinstance(only_thread_parents, str):
+            only_thread_parents = only_thread_parents.lower() in ("true", "1", "yes")
+        else:
+            only_thread_parents = False
+
+        if has_reactions is None or has_reactions == "":
             has_reactions = False
-        if is_dm is None:
+        elif isinstance(has_reactions, bool):
+            pass  # Already bool
+        elif isinstance(has_reactions, str):
+            has_reactions = has_reactions.lower() in ("true", "1", "yes")
+        else:
+            has_reactions = False
+
+        if is_dm is None or is_dm == "":
             is_dm = False
+        elif isinstance(is_dm, bool):
+            pass  # Already bool
+        elif isinstance(is_dm, str):
+            is_dm = is_dm.lower() in ("true", "1", "yes")
+        else:
+            is_dm = False
+
+        # Convert string int params (workaround for Letta Optional[int] null handling)
+        if min_reactions is None or min_reactions == "":
+            min_reactions = None
+        else:
+            try:
+                min_reactions = int(min_reactions)
+            except (ValueError, TypeError):
+                min_reactions = None
+
+        if min_reply_count is None or min_reply_count == "":
+            min_reply_count = None
+        else:
+            try:
+                min_reply_count = int(min_reply_count)
+            except (ValueError, TypeError):
+                min_reply_count = None
 
         # Limit max
         if count > 100:
@@ -1225,11 +1265,11 @@ def search_slack_messages(
         
         # Build search query with user/channel filters (inline logic)
         search_query_parts = []
-        
-        # Use "*" as fallback for empty queries (Slack returns internal_error for empty)
-        effective_query = query if query else "*"
-        search_query_parts.append(effective_query)
-        
+
+        # NOTE: We'll add the query text AFTER building filters
+        # Only use "*" fallback if there are NO filters at all
+        # (The "*" can interfere with filter-only searches)
+
         # Handle user filter (support multiple users with OR syntax) - inline
         if user:
             if isinstance(user, str):
@@ -1477,7 +1517,18 @@ def search_slack_messages(
                 search_query_parts.append(f"before:{end_dt_plus_one.strftime('%Y-%m-%d')}")
             except Exception:
                 pass
-        
+
+        # Now add the query text (after filters are built)
+        # Only use "*" fallback if there are NO filters at all
+        has_filters = bool(search_query_parts)  # True if we have any from:/in:/is:dm/after:/before: filters
+        if query:
+            # User provided a query - add it
+            search_query_parts.append(query)
+        elif not has_filters:
+            # No query AND no filters - need "*" to avoid Slack API error
+            search_query_parts.append("*")
+        # else: we have filters but no query - that's fine, filters alone work
+
         # Combine query parts
         final_query = " ".join(search_query_parts) if search_query_parts else ""
         
