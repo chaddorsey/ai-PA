@@ -499,13 +499,15 @@ def get_calendar_events(
     time_max: str,
     max_results: Optional[int] = None,
     single_events: Optional[bool] = None,
-    order_by: Optional[str] = None
+    order_by: Optional[str] = None,
+    attendee_emails: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Retrieve calendar events within a date range.
 
     Gets all events from the specified calendar that fall within the given
-    time range, with options for result limits and sorting.
+    time range, with options for result limits and sorting. Optionally filter
+    by attendee email addresses.
 
     Args:
         calendar_id: Calendar ID (email address) or "primary"
@@ -518,6 +520,9 @@ def get_calendar_events(
         max_results: Maximum number of events to return (default: 100)
         single_events: Expand recurring events (default: True)
         order_by: "startTime" or "updated" (default: "startTime")
+        attendee_emails: Comma-separated list of attendee email addresses to filter by.
+            Returns events where at least one of the specified attendees is present.
+            Example: "person1@example.com,person2@example.com"
 
     Returns:
         Dictionary with keys:
@@ -743,7 +748,28 @@ def get_calendar_events(
                 "updated": evt.get("updated", ""),
                 "transparent": is_transparent  # True = free/available, False = busy/blocking
             })
-        
+
+        # Filter by attendee emails if specified
+        if attendee_emails and attendee_emails.strip():
+            # Parse comma-separated emails (inline - no helper function)
+            filter_emails = [email.strip().lower() for email in attendee_emails.split(',') if email.strip()]
+
+            if filter_emails:
+                filtered_events = []
+                for event in events:
+                    attendees = event.get("attendees", [])
+                    # Check if any of the filter emails match any attendee
+                    event_attendee_emails = [
+                        att.get("email", "").lower()
+                        for att in attendees
+                        if isinstance(att, dict) and att.get("email")
+                    ]
+                    # Include event if any filter email matches any attendee
+                    if any(filter_email in event_attendee_emails for filter_email in filter_emails):
+                        filtered_events.append(event)
+
+                events = filtered_events
+
         return {
             "status": "ok",
             "events": events,
