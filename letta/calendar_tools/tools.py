@@ -517,7 +517,7 @@ def get_calendar_events(
         time_max: RFC3339 datetime string with timezone for end of query range (required).
             MUST include timezone suffix. Examples: "2026-01-28T00:00:00Z" (UTC) or
             "2026-01-28T00:00:00-05:00" (EST). If timezone is omitted, UTC (Z) is assumed.
-        max_results: Maximum number of events to return as string (default: "100")
+        max_results: Maximum number of events to return as string (default: "250")
         single_events: Expand recurring events as string "true" or "false" (default: "true")
         order_by: "startTime" or "updated" (default: "startTime")
         attendee_emails: Comma-separated list of attendee email addresses to filter by.
@@ -547,16 +547,16 @@ def get_calendar_events(
         # Convert string parameters (workaround for Letta Optional[int]/Optional[bool] handling)
         # max_results: str -> int
         if max_results is None or max_results == "" or max_results == "None":
-            max_results = 100
+            max_results = 250
         elif isinstance(max_results, int):
             pass  # Already int
         elif isinstance(max_results, str):
             try:
                 max_results = int(max_results)
             except ValueError:
-                max_results = 100
+                max_results = 250
         else:
-            max_results = 100
+            max_results = 250
 
         # single_events: str -> bool
         if single_events is None or single_events == "" or single_events == "None":
