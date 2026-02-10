@@ -1000,6 +1000,7 @@ def stream():
                         ("response_content", raw_response),
                         ("user_message", message),  # For Pattern 3 archival passage
                         ("report_refs_json", report_refs_data or ""),  # Structured refs from tool call
+                        ("identity_id", identity_id),  # For session context keying
                     ]
                     # Add each tool call as a separate param for FastAPI list handling
                     for tool in tool_calls_made:
