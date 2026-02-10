@@ -1714,12 +1714,16 @@ class OmniFocusSimplifiedMCPServer {
         }
         case "taskQuery": {
           const {
-            detailLevel: dl,
-            sortOrder: so,
             query,
             scope,
+            scopeId,
             searchScope,
-            filters = {},
+            dueBefore,
+            dueAfter,
+            flagged,
+            available,
+            detailLevel: dl,
+            sortOrder: so,
           } = args;
           detailLevel = getDetailLevel(dl);
           sortOrder = getSortOrder(so);
@@ -1728,20 +1732,23 @@ class OmniFocusSimplifiedMCPServer {
             command = "searchTasks";
             commandArgs = {
               query,
-              ...(typeof scope === "string" ? { scope } : {}),
-              ...(typeof filters === "object" && filters !== null
-                ? filters
-                : {}),
+              ...(typeof scope === "string" && scope ? { scope } : {}),
+              ...(typeof scopeId === "string" && scopeId ? { scopeId } : {}),
+              ...(typeof searchScope === "string" && searchScope ? { searchScope } : {}),
+              ...(typeof dueBefore === "string" && dueBefore ? { dueBefore } : {}),
+              ...(typeof dueAfter === "string" && dueAfter ? { dueAfter } : {}),
+              ...(typeof flagged === "boolean" ? { flagged } : {}),
+              ...(typeof available === "boolean" ? { available } : {}),
             };
-            if (searchScope) {
-              commandArgs.searchScope = searchScope;
-            }
           } else {
             command = "queryTasks";
             commandArgs = {
-              ...(typeof filters === "object" && filters !== null
-                ? filters
-                : {}),
+              ...(typeof scope === "string" && scope ? { scope } : {}),
+              ...(typeof scopeId === "string" && scopeId ? { scopeId } : {}),
+              ...(typeof dueBefore === "string" && dueBefore ? { dueBefore } : {}),
+              ...(typeof dueAfter === "string" && dueAfter ? { dueAfter } : {}),
+              ...(typeof flagged === "boolean" ? { flagged } : {}),
+              ...(typeof available === "boolean" ? { available } : {}),
             };
           }
           break;
