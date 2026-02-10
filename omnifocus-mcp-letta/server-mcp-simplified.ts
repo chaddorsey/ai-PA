@@ -1518,11 +1518,12 @@ class OmniFocusSimplifiedMCPServer {
               commandArgs = { taskId, name, note, flagged, completed, dropped, dueDate, deferDate, estimatedMinutes, projectId, tagIds };
               sortOrder = "default";
               break;
-            case "complete":
-              command = "completeTask";
-              commandArgs = { taskId };
-              sortOrder = "default";
-              break;
+            case "complete": {
+              // Use performCompletion for proper error handling and meaningful response
+              const resolvedTaskId = requireString(taskId, "taskId");
+              const completionResult = await performCompletion(resolvedTaskId, "task");
+              return asJsonText(completionResult);
+            }
             case "delete":
               command = "deleteTask";
               commandArgs = { taskId };
