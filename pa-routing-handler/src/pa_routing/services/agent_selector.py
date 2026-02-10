@@ -1,12 +1,16 @@
 """Tiered agent selector for routing messages to appropriate agents.
 
-Routing priority:
+Routing priority (conversational-first design):
 1. Explicit agent_id (confidence: 1.0)
-2. Domain keywords - explicit product/service names (confidence: 0.9)
-3. Action keywords - verbs suggesting intent (confidence: 0.7)
-3.5. Contextual follow-up - route to last responding agent (confidence: 0.75)
-4. [Phase 1.5] Semantic embedding match (confidence: 0.6-0.8)
-5. Default fallback (confidence: 0.5)
+2. Contextual follow-up - route to last responding agent (confidence: 0.85)
+3. Domain keywords - explicit product/service names with scoring (confidence: 0.8)
+4. Action keywords - verbs suggesting intent (confidence: 0.7)
+5. [Phase 1.5] Semantic embedding match (confidence: 0.6-0.8)
+6. Default fallback (confidence: 0.5)
+
+Design rationale: Conversational continuity takes precedence over keyword matching.
+When actively conversing with an agent, follow-ups stay with that agent unless
+explicitly switching topics or using a slash command.
 """
 
 import re
@@ -164,13 +168,13 @@ ACTION_KEYWORDS = {
     ],
 }
 
-# Confidence levels for each tier
+# Confidence levels for each tier (conversational-first design)
 CONFIDENCE_EXPLICIT = 1.0
-CONFIDENCE_DOMAIN = 0.9
-CONFIDENCE_ACTION = 0.7
-CONFIDENCE_CONTEXT = 0.75  # Tier 3.5: contextual follow-up
-CONFIDENCE_SEMANTIC = 0.65  # Phase 1.5
-CONFIDENCE_DEFAULT = 0.5
+CONFIDENCE_CONTEXT = 0.85  # Tier 2: contextual follow-up (elevated)
+CONFIDENCE_DOMAIN = 0.8  # Tier 3: domain keywords with scoring
+CONFIDENCE_ACTION = 0.7  # Tier 4: action keywords
+CONFIDENCE_SEMANTIC = 0.65  # Tier 5: semantic embedding (Phase 1.5)
+CONFIDENCE_DEFAULT = 0.5  # Tier 6: default fallback
 
 # Contextual follow-up detection
 MAX_FOLLOWUP_WORDS = 20  # Messages longer than this are unlikely follow-ups
@@ -309,7 +313,17 @@ class TieredAgentSelector:
         explicit_agent_id: Optional[str] = None,
         context: Optional[ContextInfo] = None,
     ) -> RoutingResult:
-        """Internal routing implementation."""
+        """
+        Internal routing implementation (conversational-first design).
+
+        Priority order optimizes for conversational continuity:
+        1. Explicit commands (slash commands, direct agent selection)
+        2. Contextual follow-ups (stay with current conversation)
+        3. Domain keywords (specific product/service mentions with scoring)
+        4. Action keywords (general intent verbs)
+        5. Semantic matching (embedding similarity)
+        6. Default fallback
+        """
 
         # Tier 1: Explicit agent selection (confidence: 1.0)
         if explicit_agent_id:
@@ -321,29 +335,8 @@ class TieredAgentSelector:
                 tier=1,
             )
 
-        # Tier 2: Domain keyword match (confidence: 0.9)
-        domain_match = self._match_keywords(message, self._domain_patterns)
-        if domain_match:
-            return RoutingResult(
-                agent_id=AGENT_MAP.get(domain_match, self.default_agent_id),
-                agent_name=AGENT_NAMES.get(domain_match, domain_match),
-                reason=f"Domain keyword: {domain_match}",
-                confidence=CONFIDENCE_DOMAIN,
-                tier=2,
-            )
-
-        # Tier 3: Action keyword match (confidence: 0.7)
-        action_match = self._match_keywords(message, self._action_patterns)
-        if action_match:
-            return RoutingResult(
-                agent_id=AGENT_MAP.get(action_match, self.default_agent_id),
-                agent_name=AGENT_NAMES.get(action_match, action_match),
-                reason=f"Action keyword: {action_match}",
-                confidence=CONFIDENCE_ACTION,
-                tier=3,
-            )
-
-        # Tier 3.5: Contextual follow-up (confidence: 0.75)
+        # Tier 2: Contextual follow-up (confidence: 0.85)
+        # Elevated to tier 2 for conversational continuity
         # Route to last responding agent if message looks like a follow-up
         if context and context.last_agent_id:
             if self._is_conversational_followup(message):
@@ -352,10 +345,33 @@ class TieredAgentSelector:
                     agent_name=context.last_agent_name or "Previous Agent",
                     reason="Contextual follow-up to previous response",
                     confidence=CONFIDENCE_CONTEXT,
-                    tier=4,  # Using 4 since we can't have 3.5 as int
+                    tier=2,
                 )
 
-        # Tier 4: Semantic embedding fallback (Phase 1.5)
+        # Tier 3: Domain keyword match with scoring (confidence: 0.8)
+        # Uses frequency scoring to resolve conflicts when multiple domains match
+        domain_match = self._match_keywords_with_scoring(message, self._domain_patterns)
+        if domain_match:
+            return RoutingResult(
+                agent_id=AGENT_MAP.get(domain_match, self.default_agent_id),
+                agent_name=AGENT_NAMES.get(domain_match, domain_match),
+                reason=f"Domain keyword: {domain_match}",
+                confidence=CONFIDENCE_DOMAIN,
+                tier=3,
+            )
+
+        # Tier 4: Action keyword match (confidence: 0.7)
+        action_match = self._match_keywords(message, self._action_patterns)
+        if action_match:
+            return RoutingResult(
+                agent_id=AGENT_MAP.get(action_match, self.default_agent_id),
+                agent_name=AGENT_NAMES.get(action_match, action_match),
+                reason=f"Action keyword: {action_match}",
+                confidence=CONFIDENCE_ACTION,
+                tier=4,
+            )
+
+        # Tier 5: Semantic embedding fallback (Phase 1.5)
         if self.semantic_router:
             semantic_result = self.semantic_router.route(message)
             if semantic_result and semantic_result.confidence >= 0.6:
@@ -371,7 +387,7 @@ class TieredAgentSelector:
                     tier=5,
                 )
 
-        # Tier 5: Default fallback (confidence: 0.5)
+        # Tier 6: Default fallback (confidence: 0.5)
         return RoutingResult(
             agent_id=self.default_agent_id,
             agent_name="Main Agent",
@@ -390,3 +406,41 @@ class TieredAgentSelector:
                 if pattern.search(message):
                     return domain
         return None
+
+    def _match_keywords_with_scoring(self, message: str, pattern_dict: dict) -> Optional[str]:
+        """
+        Match message against keyword patterns with frequency scoring.
+
+        When multiple domains match, scores them by:
+        - Number of distinct keyword patterns matched
+        - Total occurrences of matched keywords
+
+        Returns the highest scoring domain or None if no matches.
+
+        Example: "Let's complete more tasks. Can you mark the meeting time tasks completed?"
+        - "task"/"tasks" domain: 2 patterns matched, 3 occurrences → score: 5
+        - "meeting" domain: 1 pattern matched, 1 occurrence → score: 2
+        Result: Returns "task" domain
+        """
+        domain_scores = {}
+
+        for domain, patterns in pattern_dict.items():
+            patterns_matched = 0
+            total_occurrences = 0
+
+            for pattern in patterns:
+                matches = pattern.findall(message)
+                if matches:
+                    patterns_matched += 1
+                    total_occurrences += len(matches)
+
+            if patterns_matched > 0:
+                # Score = patterns matched + total occurrences
+                # This weights both diversity of keywords and frequency
+                domain_scores[domain] = patterns_matched + total_occurrences
+
+        if not domain_scores:
+            return None
+
+        # Return domain with highest score
+        return max(domain_scores, key=domain_scores.get)

@@ -295,12 +295,12 @@ async def route_message(request: RouteRequest) -> RouteResponse:
     # Calculate processing time
     processing_time_ms = int((time.perf_counter() - start_time) * 1000)
 
-    # Determine routing method from tier
+    # Determine routing method from tier (conversational-first design)
     tier_methods = {
         1: "explicit",
-        2: "domain_keyword",
-        3: "action_keyword",
-        4: "contextual",
+        2: "contextual",  # Elevated for conversational continuity
+        3: "domain_keyword",  # With frequency scoring
+        4: "action_keyword",
         5: "semantic",
         6: "default",
     }
