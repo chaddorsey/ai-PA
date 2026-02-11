@@ -598,6 +598,7 @@ services:
       - ~/.gmail-mcp:/root/.gmail-mcp  # Mount OAuth credentials directory
     networks: [pa-internal]
     environment:
+      PYTHONPATH: "/app/tools/letta"
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
       LETTA_PG_URI: "postgresql://letta:letta_dev_password@supabase-db:5432/letta"
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
