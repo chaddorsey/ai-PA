@@ -111,26 +111,30 @@ def add_extracted_tasks(task_description: str) -> Dict[str, Any]:
         extracted_tasks_block_id = extracted_tasks_block.get('id')
         current_value = extracted_tasks_block.get('value', '')
 
-        # Check if agent's section already exists
+        # Find this agent's section in the block
         import re
         section_header = f"=== {agent_name} ({AGENT_ID}) ==="
+
+        # Pattern to find section header + content up to next section or end
         section_pattern = re.compile(
-            rf'({re.escape(section_header)})',
+            rf'({re.escape(section_header)})(.*?)(?=(===\s+.+?\s+\(agent-[a-f0-9-]+\)\s+===)|$)',
             re.DOTALL
         )
 
-        section_exists = section_pattern.search(current_value) is not None
+        section_match = section_pattern.search(current_value)
+        task_line = f"[{timestamp_str}] {task_description}\n\n"
 
-        # Format the entry
-        if section_exists:
-            # Section exists - just append the task line (no new header)
-            entry = f"[{timestamp_str}] {task_description}\n"
+        if section_match:
+            # Section exists - insert task at end of this agent's section
+            insert_pos = section_match.end()
+            before = current_value[:insert_pos]
+            after = current_value[insert_pos:]
+            if before and not before.endswith('\n'):
+                before += '\n'
+            new_value = before + task_line + after
         else:
-            # Section doesn't exist - create header + task
-            entry = f"\n{section_header}\n[{timestamp_str}] {task_description}\n"
-
-        # Append to current block value
-        new_value = current_value + entry
+            # Section doesn't exist - append new section with header + task
+            new_value = current_value + f"\n{section_header}\n{task_line}"
 
         # Update block via PATCH endpoint
         update_url = f"{LETTA_BASE}/v1/blocks/{extracted_tasks_block_id}"
