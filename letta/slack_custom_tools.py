@@ -1142,6 +1142,7 @@ def search_slack_messages(
     query: Optional[str] = None,
     user: Optional[str] = None,
     channel: Optional[str] = None,
+    saved_only: Optional[bool] = False,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     count: Optional[int] = 20,
@@ -1154,8 +1155,9 @@ def search_slack_messages(
     is_dm: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Search for messages across the entire Slack workspace.
+    Search for messages across the entire Slack workspace, or retrieve saved/bookmarked items.
 
+    When saved_only=True, returns items you've saved for later (starred/bookmarked).
     When query is omitted or empty, returns recent messages across workspace.
     Supports filtering by user(s) and/or channel(s) using Slack's query syntax.
 
@@ -1169,9 +1171,10 @@ def search_slack_messages(
     Known Limitation: Prefix wildcards "*term" match literal, not wildcard. Use "term*" instead.
 
     Args:
-        query: Search query string. Supports @username for mentions. Default: None.
+        query: Search query string. Supports @username for mentions. When saved_only=True, filters saved items by query. Default: None.
         user: User ID(s) or username(s) (e.g., "sue" or "sue,dan"). Use usernames for efficiency. Default: None.
         channel: Channel ID(s) or name(s) (e.g., "#random" or "#general,#random"). Use names for efficiency. Default: None.
+        saved_only: When True, returns only saved/bookmarked items instead of searching all messages. Default: False.
         start_date: Start date in YYYY-MM-DD format or ISO 8601 datetime. Default: None.
         end_date: End date in YYYY-MM-DD format or ISO 8601 datetime. Default: None.
         count: Maximum number of messages to return. Default: 20, max: 100.
@@ -1182,7 +1185,7 @@ def search_slack_messages(
         only_thread_parents: Return only messages that have replies. Default: False.
         has_reactions: Return only messages with reactions. Default: False.
         is_dm: Search only in direct messages. Default: False. Use with user filter for specific DM conversations.
-    
+
     Returns:
         Dictionary with status, data (messages array and metadata), and error_message if applicable.
     """
@@ -1262,377 +1265,556 @@ def search_slack_messages(
         # Limit max
         if count > 100:
             count = 100
-        
-        # Build search query with user/channel filters (inline logic)
-        search_query_parts = []
 
-        # NOTE: We'll add the query text AFTER building filters
-        # Only use "*" fallback if there are NO filters at all
-        # (The "*" can interfere with filter-only searches)
-
-        # Handle user filter (support multiple users with OR syntax) - inline
-        if user:
-            if isinstance(user, str):
-                # Single user or comma-separated
-                if ',' in user:
-                    user_list = [u.strip() for u in user.split(',')]
-                else:
-                    user_list = [user]
-            elif isinstance(user, list):
-                # Support list for backward compatibility (though Letta schema only allows str)
-                user_list = user
-            else:
-                return {
-                    "status": "error",
-                    "data": {},
-                    "error_message": f"user parameter must be string or list, got {type(user)}"
-                }
-            
-            # Build user filters (use OR syntax for multiple)
-            # Resolve user IDs to usernames for search queries (Slack search works better with usernames)
-            user_filters = []
-            user_cache_for_search = {}
-            
-            # First pass: collect all user IDs that need resolution
-            user_ids_to_resolve = []
-            for u in user_list:
-                if u.startswith("U"):
-                    user_ids_to_resolve.append(u)
-            
-            # Resolve user IDs to usernames
-            if user_ids_to_resolve:
-                try:
-                    url = "https://slack.com/api/users.list"
-                    params = {"limit": "1000"}
-                    query_string = urllib.parse.urlencode(params)
-                    req = urllib.request.Request(
-                        f"{url}?{query_string}",
-                        headers={"Authorization": f"Bearer {TOKEN}"}
-                    )
-                    with urllib.request.urlopen(req, timeout=30) as ur:
-                        user_data = json.loads(ur.read().decode('utf-8'))
-                        if user_data.get("ok"):
-                            for user_item in user_data.get("members", []):
-                                user_id = user_item.get("id")
-                                if user_id in user_ids_to_resolve:
-                                    user_cache_for_search[user_id] = user_item.get("name", "")
-                except Exception:
-                    pass
-            
-            # Build filters using usernames when available, otherwise use the provided value
-            for u in user_list:
-                if u.startswith("U") and u in user_cache_for_search:
-                    # Use resolved username
-                    user_filters.append(f"from:{user_cache_for_search[u]}")
-                else:
-                    # Use as-is (username or unresolved ID)
-                    user_filters.append(f"from:{u}")
-            
-            if len(user_filters) == 1:
-                search_query_parts.insert(0, user_filters[0])
-            else:
-                # Slack search API doesn't support parentheses around OR clauses
-                # Use "from:user1 OR from:user2" instead of "(from:user1 OR from:user2)"
-                user_query = " OR ".join(user_filters)
-                search_query_parts.insert(0, user_query)
-        
-        # Handle channel filter (support multiple channels with OR syntax) - inline
-        if channel:
-            if isinstance(channel, str):
-                # Single channel or comma-separated
-                if ',' in channel:
-                    channel_list = [ch.strip() for ch in channel.split(',')]
-                else:
-                    channel_list = [channel]
-            elif isinstance(channel, list):
-                # Support list for backward compatibility (though Letta schema only allows str)
-                channel_list = channel
-            else:
-                return {
-                    "status": "error",
-                    "data": {},
-                    "error_message": f"channel parameter must be string or list, got {type(channel)}"
-                }
-            
-            # Build channel filters (resolve IDs to names - Slack search requires channel names, not IDs)
-            # DM channels need special handling - use "dm:username" syntax instead of "in:channel"
-            channel_filters = []
-            channel_id_to_name_cache = {}
-            dm_channel_to_username_cache = {}  # For DM channels: channel_id -> username
-
-            # First pass: separate DM channels from regular channels
-            regular_channel_ids = []
-            dm_channel_ids = []
-            for ch in channel_list:
-                channel_name = ch.lstrip("#")
-                if channel_name.startswith("D"):
-                    # DM channel - needs special handling
-                    dm_channel_ids.append(channel_name)
-                elif channel_name.startswith(("C", "G", "mpdm-")):
-                    regular_channel_ids.append(channel_name)
-
-            # Resolve regular channel IDs to names
-            if regular_channel_ids:
-                try:
-                    url = "https://slack.com/api/conversations.list"
-                    params = {"limit": "1000", "exclude_archived": "false"}
-                    query_string = urllib.parse.urlencode(params)
-                    req = urllib.request.Request(
-                        f"{url}?{query_string}",
-                        headers={"Authorization": f"Bearer {TOKEN}"}
-                    )
-                    with urllib.request.urlopen(req, timeout=30) as cr:
-                        channel_data = json.loads(cr.read().decode('utf-8'))
-                        if channel_data.get("ok"):
-                            for ch_item in channel_data.get("channels", []):
-                                ch_id = ch_item.get("id")
-                                ch_name = ch_item.get("name", "")
-                                if ch_id in regular_channel_ids and ch_name:
-                                    channel_id_to_name_cache[ch_id] = ch_name
-
-                    # Also try conversations.info for each ID individually (in case it's a private channel not in list)
-                    for ch_id in regular_channel_ids:
-                        if ch_id not in channel_id_to_name_cache:
-                            try:
-                                info_url = "https://slack.com/api/conversations.info"
-                                info_params = {"channel": ch_id}
-                                info_query = urllib.parse.urlencode(info_params)
-                                info_req = urllib.request.Request(
-                                    f"{info_url}?{info_query}",
-                                    headers={"Authorization": f"Bearer {TOKEN}"}
-                                )
-                                with urllib.request.urlopen(info_req, timeout=30) as ir:
-                                    info_data = json.loads(ir.read().decode('utf-8'))
-                                    if info_data.get("ok"):
-                                        ch_info = info_data.get("channel", {})
-                                        ch_name = ch_info.get("name", "")
-                                        if ch_name:
-                                            channel_id_to_name_cache[ch_id] = ch_name
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-            # Resolve DM channel IDs to usernames (for dm:username syntax)
-            if dm_channel_ids:
-                # First get user info for resolving user IDs to usernames
-                user_id_to_name = {}
-                try:
-                    url = "https://slack.com/api/users.list"
-                    params = {"limit": "1000"}
-                    query_string = urllib.parse.urlencode(params)
-                    req = urllib.request.Request(
-                        f"{url}?{query_string}",
-                        headers={"Authorization": f"Bearer {TOKEN}"}
-                    )
-                    with urllib.request.urlopen(req, timeout=30) as ur:
-                        user_data = json.loads(ur.read().decode('utf-8'))
-                        if user_data.get("ok"):
-                            for user_item in user_data.get("members", []):
-                                user_id_to_name[user_item.get("id")] = user_item.get("name", "")
-                except Exception:
-                    pass
-
-                # Get user ID for each DM channel
-                for dm_id in dm_channel_ids:
-                    try:
-                        info_url = "https://slack.com/api/conversations.info"
-                        info_params = {"channel": dm_id}
-                        info_query = urllib.parse.urlencode(info_params)
-                        info_req = urllib.request.Request(
-                            f"{info_url}?{info_query}",
-                            headers={"Authorization": f"Bearer {TOKEN}"}
-                        )
-                        with urllib.request.urlopen(info_req, timeout=30) as ir:
-                            info_data = json.loads(ir.read().decode('utf-8'))
-                            if info_data.get("ok"):
-                                ch_info = info_data.get("channel", {})
-                                # DM channels have a "user" field with the other user's ID
-                                dm_user_id = ch_info.get("user", "")
-                                if dm_user_id and dm_user_id in user_id_to_name:
-                                    dm_channel_to_username_cache[dm_id] = user_id_to_name[dm_user_id]
-                                elif dm_user_id:
-                                    # Fallback: use user ID if we can't resolve to name
-                                    dm_channel_to_username_cache[dm_id] = dm_user_id
-                    except Exception:
-                        pass
-
-            # Build filters using channel names (Slack search requires names, not IDs)
-            for ch in channel_list:
-                channel_name = ch.lstrip("#")
-                if channel_name.startswith("D"):
-                    # DM channel - use dm:username syntax
-                    if channel_name in dm_channel_to_username_cache:
-                        channel_filters.append(f"dm:{dm_channel_to_username_cache[channel_name]}")
-                    else:
-                        # Fallback: use is:dm (searches all DMs, less specific)
-                        channel_filters.append("is:dm")
-                elif channel_name.startswith(("C", "G", "mpdm-")):
-                    # Regular channel - use in:channel_name syntax
-                    if channel_name in channel_id_to_name_cache:
-                        channel_filters.append(f"in:{channel_id_to_name_cache[channel_name]}")
-                    else:
-                        # Fallback: try using ID anyway (might work for some cases)
-                        channel_filters.append(f"in:{channel_name}")
-                else:
-                    # It's already a channel name - use directly
-                    channel_filters.append(f"in:{channel_name}")
-            
-            if len(channel_filters) == 1:
-                search_query_parts.insert(0, channel_filters[0])
-            else:
-                # Slack search API doesn't support parentheses around OR clauses
-                # Use "in:chan1 OR in:chan2" instead of "(in:chan1 OR in:chan2)"
-                channel_query = " OR ".join(channel_filters)
-                search_query_parts.insert(0, channel_query)
-
-        # Add is:dm filter if requested (search only in direct messages)
-        if is_dm:
-            search_query_parts.insert(0, "is:dm")
-
-        # Add date filters using Slack's native syntax (more accurate than post-filtering)
-        if start_date:
-            # Convert to YYYY-MM-DD format for after: syntax
-            try:
-                if 'T' in start_date:
-                    date_part = start_date.split('T')[0]
-                else:
-                    date_part = start_date
-                search_query_parts.append(f"after:{date_part}")
-            except Exception:
-                pass
-        
-        if end_date:
-            # Convert to YYYY-MM-DD format for before: syntax
-            # Add 1 day because before: is exclusive
-            try:
-                if 'T' in end_date:
-                    date_part = end_date.split('T')[0]
-                else:
-                    date_part = end_date
-                # Parse and add 1 day for inclusive end date
-                from datetime import timedelta
-                end_dt_temp = datetime.strptime(date_part, "%Y-%m-%d")
-                end_dt_plus_one = end_dt_temp + timedelta(days=1)
-                search_query_parts.append(f"before:{end_dt_plus_one.strftime('%Y-%m-%d')}")
-            except Exception:
-                pass
-
-        # Now add the query text (after filters are built)
-        # Only use "*" fallback if there are NO filters at all
-        has_filters = bool(search_query_parts)  # True if we have any from:/in:/is:dm/after:/before: filters
-        if query:
-            # User provided a query - add it
-            search_query_parts.append(query)
-        elif not has_filters:
-            # No query AND no filters - need "*" to avoid Slack API error
-            search_query_parts.append("*")
-        # else: we have filters but no query - that's fine, filters alone work
-
-        # Combine query parts
-        final_query = " ".join(search_query_parts) if search_query_parts else ""
-        
-        # Check if we need to split OR query (workaround for Slack API limitation)
-        # Slack treats "OR" as "AND" when from: or in: filters are present.
-        # We split OR queries into separate searches and combine results.
-        or_pattern = re.compile(r'\s+OR\s+', re.IGNORECASE)
-        
-        # Check if OR is outside quotes (inline - no nested def allowed by Letta)
-        has_unquoted_or = False
-        if query:
-            in_quote = False
-            cleaned_query = []
-            for char in query:
-                if char == '"':
-                    in_quote = not in_quote
-                elif not in_quote:
-                    cleaned_query.append(char)
-            has_unquoted_or = bool(or_pattern.search(''.join(cleaned_query)))
-        
-        # Split if: query has unquoted OR AND any filter is present
-        needs_or_split = query and has_unquoted_or and (user or channel)
-        
-        if needs_or_split:
-            # Split query into separate terms and search each
-            or_terms = [term.strip() for term in or_pattern.split(query)]
-            all_matches = []
-            all_total = 0
-            seen_message_ids = set()
-            
-            for or_term in or_terms:
-                # Build query for this single term (reuse the already-built filters)
-                # Extract the filter parts from search_query_parts (user and channel filters)
-                term_query_parts = []
-                for part in search_query_parts:
-                    if part == query:
-                        term_query_parts.append(or_term)
-                    else:
-                        term_query_parts.append(part)
-                term_final_query = " ".join(term_query_parts) if term_query_parts else or_term
-                
-                # Make API call for this term
-                try:
-                    term_url = "https://slack.com/api/search.messages"
-                    term_params = {
-                        "query": term_final_query,
-                        "count": str(count),
-                        "sort": sort
-                    }
-                    term_query_string = urllib.parse.urlencode(term_params)
-                    term_req = urllib.request.Request(
-                        f"{term_url}?{term_query_string}",
-                        headers={"Authorization": f"Bearer {TOKEN}"}
-                    )
-                    with urllib.request.urlopen(term_req, timeout=30) as tr:
-                        term_data = json.loads(tr.read().decode('utf-8'))
-                        if term_data.get("ok"):
-                            term_matches = term_data.get("messages", {}).get("matches", [])
-                            term_total = term_data.get("messages", {}).get("total", 0)
-                            all_total += term_total
-                            
-                            # Deduplicate by channel_id + ts
-                            for match in term_matches:
-                                match_id = f"{match.get('channel', {}).get('id', '')}_{match.get('ts', '')}"
-                                if match_id not in seen_message_ids:
-                                    seen_message_ids.add(match_id)
-                                    all_matches.append(match)
-                except Exception:
-                    pass
-            
-            # Use combined results
-            matches = all_matches
-            total = len(all_matches)  # Use deduplicated count
-            pagination = {"total_count": total, "page": 1, "per_page": count}
-            final_query = f"{query} (split into {len(or_terms)} searches)"
+        # Handle saved_only parameter conversion (same pattern as other booleans)
+        if saved_only is None or saved_only == "":
+            saved_only = False
+        elif isinstance(saved_only, bool):
+            pass  # Already bool
+        elif isinstance(saved_only, str):
+            saved_only = saved_only.lower() in ("true", "1", "yes")
         else:
-            # Normal path: single API call
-            # Build API request
-            url = "https://slack.com/api/search.messages"
-            params = {
-                "query": final_query,
-                "count": str(count),
-                "sort": sort
-            }
-            
-            query_string = urllib.parse.urlencode(params)
-            req = urllib.request.Request(
-                f"{url}?{query_string}",
-                headers={"Authorization": f"Bearer {TOKEN}"}
-            )
-            
-            with urllib.request.urlopen(req, timeout=30) as r:
-                data = json.loads(r.read().decode('utf-8'))
-                
-                if not data.get("ok"):
+            saved_only = False
+
+        # SAVED ITEMS PATH: Use stars.list API instead of search.messages
+        if saved_only:
+            try:
+                url = "https://slack.com/api/stars.list"
+                params = {"count": str(count)}
+
+                query_string = urllib.parse.urlencode(params)
+                req = urllib.request.Request(
+                    f"{url}?{query_string}",
+                    headers={"Authorization": f"Bearer {TOKEN}"}
+                )
+
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+
+                    if not data.get("ok"):
+                        return {
+                            "status": "error",
+                            "data": {},
+                            "error_message": data.get("error", "Unknown Slack API error")
+                        }
+
+                    items = data.get("items", [])
+
+                    # Build channel ID to name cache for saved items
+                    channel_ids_in_saved = set()
+                    for item in items:
+                        if item.get("type") == "message":
+                            ch_id = item.get("channel", "")
+                            if ch_id:
+                                channel_ids_in_saved.add(ch_id)
+
+                    # Fetch channel info for all channels in saved items
+                    saved_channel_cache = {}
+                    if channel_ids_in_saved:
+                        try:
+                            ch_url = "https://slack.com/api/conversations.list"
+                            ch_params = {"limit": "1000", "exclude_archived": "false"}
+                            ch_query = urllib.parse.urlencode(ch_params)
+                            ch_req = urllib.request.Request(
+                                f"{ch_url}?{ch_query}",
+                                headers={"Authorization": f"Bearer {TOKEN}"}
+                            )
+                            with urllib.request.urlopen(ch_req, timeout=30) as chr:
+                                ch_data = json.loads(chr.read().decode('utf-8'))
+                                if ch_data.get("ok"):
+                                    for ch_item in ch_data.get("channels", []):
+                                        ch_id = ch_item.get("id")
+                                        if ch_id in channel_ids_in_saved:
+                                            saved_channel_cache[ch_id] = ch_item.get("name", "")
+
+                            # Also try individual lookups for any missing (private channels, DMs)
+                            for ch_id in channel_ids_in_saved:
+                                if ch_id not in saved_channel_cache:
+                                    try:
+                                        info_url = "https://slack.com/api/conversations.info"
+                                        info_params = {"channel": ch_id}
+                                        info_query = urllib.parse.urlencode(info_params)
+                                        info_req = urllib.request.Request(
+                                            f"{info_url}?{info_query}",
+                                            headers={"Authorization": f"Bearer {TOKEN}"}
+                                        )
+                                        with urllib.request.urlopen(info_req, timeout=30) as ir:
+                                            info_data = json.loads(ir.read().decode('utf-8'))
+                                            if info_data.get("ok"):
+                                                ch_info = info_data.get("channel", {})
+                                                saved_channel_cache[ch_id] = ch_info.get("name", "") or ch_id
+                                    except Exception:
+                                        saved_channel_cache[ch_id] = ch_id  # Fallback to ID
+                        except Exception:
+                            pass
+
+                    # Transform stars.list format to match search.messages format
+                    # stars.list returns {type: "message", message: {...}, channel: "C123"}
+                    # search.messages returns matches array with message data at top level
+                    matches = []
+                    for item in items:
+                        if item.get("type") == "message":
+                            msg = item.get("message", {})
+                            ch_id = item.get("channel", "")
+                            # Add channel info to message (stars.list has it at item level)
+                            msg["channel"] = {
+                                "id": ch_id,
+                                "name": saved_channel_cache.get(ch_id, ch_id)
+                            }
+                            matches.append(msg)
+
+                    # Apply client-side filtering for saved items (query, user, channel)
+                    # The common processing path handles dates/reactions/replies
+                    filtered_matches = []
+
+                    # Parse filter values
+                    user_list = []
+                    if user:
+                        if isinstance(user, str):
+                            user_list = [u.strip() for u in user.split(',')] if ',' in user else [user]
+                        elif isinstance(user, list):
+                            user_list = user
+
+                    channel_list = []
+                    if channel:
+                        if isinstance(channel, str):
+                            channel_list = [ch.strip().lstrip('#') for ch in channel.split(',')] if ',' in channel else [channel.lstrip('#')]
+                        elif isinstance(channel, list):
+                            channel_list = [ch.lstrip('#') for ch in channel]
+
+                    # Filter matches
+                    for match in matches:
+                        # Filter by user if specified
+                        if user_list:
+                            msg_user = match.get("user", "")
+                            user_match = any(
+                                (u.startswith("U") and msg_user == u) or  # Match by ID
+                                (not u.startswith("U") and msg_user == u)  # Username would need resolution, skip for now
+                                for u in user_list
+                            )
+                            if not user_match:
+                                continue
+
+                        # Filter by channel if specified
+                        if channel_list:
+                            msg_channel_id = match.get("channel", {}).get("id", "")
+                            msg_channel_name = match.get("channel", {}).get("name", "")
+                            channel_match = any(
+                                msg_channel_id == ch or msg_channel_name == ch
+                                for ch in channel_list
+                            )
+                            if not channel_match:
+                                continue
+
+                        # Filter by query if specified (simple text match)
+                        if query:
+                            msg_text = match.get("text", "").lower()
+                            # Simple AND logic: all terms must appear
+                            query_terms = query.lower().split()
+                            query_match = all(term in msg_text for term in query_terms)
+                            if not query_match:
+                                continue
+
+                        filtered_matches.append(match)
+
+                    # Update matches with filtered results
+                    matches = filtered_matches
+
+                    # Set total and pagination for consistency with search path
+                    total = len(matches)
+                    pagination = {"total_count": total, "page": 1, "per_page": count}
+
+                    # Build final_query string
+                    filter_parts = []
+                    if query:
+                        filter_parts.append(f"query='{query}'")
+                    if user:
+                        filter_parts.append(f"user={user}")
+                    if channel:
+                        filter_parts.append(f"channel={channel}")
+                    filter_str = ", ".join(filter_parts) if filter_parts else "all"
+                    final_query = f"saved items ({filter_str}, count={len(matches)})"
+
+                    # Continue to common processing path below
+                    # (matches, total, pagination, final_query are now set)
+
+            except Exception as e_stars:
+                return {
+                    "status": "error",
+                    "data": {},
+                    "error_message": f"Error fetching saved items: {str(e_stars)}"
+                }
+        else:
+            # NORMAL SEARCH PATH: Build search query with user/channel filters (inline logic)
+            search_query_parts = []
+
+            # NOTE: We'll add the query text AFTER building filters
+            # Only use "*" fallback if there are NO filters at all
+            # (The "*" can interfere with filter-only searches)
+
+            # Handle user filter (support multiple users with OR syntax) - inline
+            if user:
+                if isinstance(user, str):
+                    # Single user or comma-separated
+                    if ',' in user:
+                        user_list = [u.strip() for u in user.split(',')]
+                    else:
+                        user_list = [user]
+                elif isinstance(user, list):
+                    # Support list for backward compatibility (though Letta schema only allows str)
+                    user_list = user
+                else:
                     return {
                         "status": "error",
                         "data": {},
-                        "error_message": data.get("error", "Unknown Slack API error")
+                        "error_message": f"user parameter must be string or list, got {type(user)}"
                     }
+            
+                # Build user filters (use OR syntax for multiple)
+                # Resolve user IDs to usernames for search queries (Slack search works better with usernames)
+                user_filters = []
+                user_cache_for_search = {}
+            
+                # First pass: collect all user IDs that need resolution
+                user_ids_to_resolve = []
+                for u in user_list:
+                    if u.startswith("U"):
+                        user_ids_to_resolve.append(u)
+            
+                # Resolve user IDs to usernames
+                if user_ids_to_resolve:
+                    try:
+                        url = "https://slack.com/api/users.list"
+                        params = {"limit": "1000"}
+                        query_string = urllib.parse.urlencode(params)
+                        req = urllib.request.Request(
+                            f"{url}?{query_string}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(req, timeout=30) as ur:
+                            user_data = json.loads(ur.read().decode('utf-8'))
+                            if user_data.get("ok"):
+                                for user_item in user_data.get("members", []):
+                                    user_id = user_item.get("id")
+                                    if user_id in user_ids_to_resolve:
+                                        user_cache_for_search[user_id] = user_item.get("name", "")
+                    except Exception:
+                        pass
+            
+                # Build filters using usernames when available, otherwise use the provided value
+                for u in user_list:
+                    if u.startswith("U") and u in user_cache_for_search:
+                        # Use resolved username
+                        user_filters.append(f"from:{user_cache_for_search[u]}")
+                    else:
+                        # Use as-is (username or unresolved ID)
+                        user_filters.append(f"from:{u}")
+            
+                if len(user_filters) == 1:
+                    search_query_parts.insert(0, user_filters[0])
+                else:
+                    # Slack search API doesn't support parentheses around OR clauses
+                    # Use "from:user1 OR from:user2" instead of "(from:user1 OR from:user2)"
+                    user_query = " OR ".join(user_filters)
+                    search_query_parts.insert(0, user_query)
+        
+            # Handle channel filter (support multiple channels with OR syntax) - inline
+            if channel:
+                if isinstance(channel, str):
+                    # Single channel or comma-separated
+                    if ',' in channel:
+                        channel_list = [ch.strip() for ch in channel.split(',')]
+                    else:
+                        channel_list = [channel]
+                elif isinstance(channel, list):
+                    # Support list for backward compatibility (though Letta schema only allows str)
+                    channel_list = channel
+                else:
+                    return {
+                        "status": "error",
+                        "data": {},
+                        "error_message": f"channel parameter must be string or list, got {type(channel)}"
+                    }
+            
+                # Build channel filters (resolve IDs to names - Slack search requires channel names, not IDs)
+                # DM channels need special handling - use "dm:username" syntax instead of "in:channel"
+                channel_filters = []
+                channel_id_to_name_cache = {}
+                dm_channel_to_username_cache = {}  # For DM channels: channel_id -> username
+
+                # First pass: separate DM channels from regular channels
+                regular_channel_ids = []
+                dm_channel_ids = []
+                for ch in channel_list:
+                    channel_name = ch.lstrip("#")
+                    if channel_name.startswith("D"):
+                        # DM channel - needs special handling
+                        dm_channel_ids.append(channel_name)
+                    elif channel_name.startswith(("C", "G", "mpdm-")):
+                        regular_channel_ids.append(channel_name)
+
+                # Resolve regular channel IDs to names
+                if regular_channel_ids:
+                    try:
+                        url = "https://slack.com/api/conversations.list"
+                        params = {"limit": "1000", "exclude_archived": "false"}
+                        query_string = urllib.parse.urlencode(params)
+                        req = urllib.request.Request(
+                            f"{url}?{query_string}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(req, timeout=30) as cr:
+                            channel_data = json.loads(cr.read().decode('utf-8'))
+                            if channel_data.get("ok"):
+                                for ch_item in channel_data.get("channels", []):
+                                    ch_id = ch_item.get("id")
+                                    ch_name = ch_item.get("name", "")
+                                    if ch_id in regular_channel_ids and ch_name:
+                                        channel_id_to_name_cache[ch_id] = ch_name
+
+                        # Also try conversations.info for each ID individually (in case it's a private channel not in list)
+                        for ch_id in regular_channel_ids:
+                            if ch_id not in channel_id_to_name_cache:
+                                try:
+                                    info_url = "https://slack.com/api/conversations.info"
+                                    info_params = {"channel": ch_id}
+                                    info_query = urllib.parse.urlencode(info_params)
+                                    info_req = urllib.request.Request(
+                                        f"{info_url}?{info_query}",
+                                        headers={"Authorization": f"Bearer {TOKEN}"}
+                                    )
+                                    with urllib.request.urlopen(info_req, timeout=30) as ir:
+                                        info_data = json.loads(ir.read().decode('utf-8'))
+                                        if info_data.get("ok"):
+                                            ch_info = info_data.get("channel", {})
+                                            ch_name = ch_info.get("name", "")
+                                            if ch_name:
+                                                channel_id_to_name_cache[ch_id] = ch_name
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+
+                # Resolve DM channel IDs to usernames (for dm:username syntax)
+                if dm_channel_ids:
+                    # First get user info for resolving user IDs to usernames
+                    user_id_to_name = {}
+                    try:
+                        url = "https://slack.com/api/users.list"
+                        params = {"limit": "1000"}
+                        query_string = urllib.parse.urlencode(params)
+                        req = urllib.request.Request(
+                            f"{url}?{query_string}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(req, timeout=30) as ur:
+                            user_data = json.loads(ur.read().decode('utf-8'))
+                            if user_data.get("ok"):
+                                for user_item in user_data.get("members", []):
+                                    user_id_to_name[user_item.get("id")] = user_item.get("name", "")
+                    except Exception:
+                        pass
+
+                    # Get user ID for each DM channel
+                    for dm_id in dm_channel_ids:
+                        try:
+                            info_url = "https://slack.com/api/conversations.info"
+                            info_params = {"channel": dm_id}
+                            info_query = urllib.parse.urlencode(info_params)
+                            info_req = urllib.request.Request(
+                                f"{info_url}?{info_query}",
+                                headers={"Authorization": f"Bearer {TOKEN}"}
+                            )
+                            with urllib.request.urlopen(info_req, timeout=30) as ir:
+                                info_data = json.loads(ir.read().decode('utf-8'))
+                                if info_data.get("ok"):
+                                    ch_info = info_data.get("channel", {})
+                                    # DM channels have a "user" field with the other user's ID
+                                    dm_user_id = ch_info.get("user", "")
+                                    if dm_user_id and dm_user_id in user_id_to_name:
+                                        dm_channel_to_username_cache[dm_id] = user_id_to_name[dm_user_id]
+                                    elif dm_user_id:
+                                        # Fallback: use user ID if we can't resolve to name
+                                        dm_channel_to_username_cache[dm_id] = dm_user_id
+                        except Exception:
+                            pass
+
+                # Build filters using channel names (Slack search requires names, not IDs)
+                for ch in channel_list:
+                    channel_name = ch.lstrip("#")
+                    if channel_name.startswith("D"):
+                        # DM channel - use dm:username syntax
+                        if channel_name in dm_channel_to_username_cache:
+                            channel_filters.append(f"dm:{dm_channel_to_username_cache[channel_name]}")
+                        else:
+                            # Fallback: use is:dm (searches all DMs, less specific)
+                            channel_filters.append("is:dm")
+                    elif channel_name.startswith(("C", "G", "mpdm-")):
+                        # Regular channel - use in:channel_name syntax
+                        if channel_name in channel_id_to_name_cache:
+                            channel_filters.append(f"in:{channel_id_to_name_cache[channel_name]}")
+                        else:
+                            # Fallback: try using ID anyway (might work for some cases)
+                            channel_filters.append(f"in:{channel_name}")
+                    else:
+                        # It's already a channel name - use directly
+                        channel_filters.append(f"in:{channel_name}")
+            
+                if len(channel_filters) == 1:
+                    search_query_parts.insert(0, channel_filters[0])
+                else:
+                    # Slack search API doesn't support parentheses around OR clauses
+                    # Use "in:chan1 OR in:chan2" instead of "(in:chan1 OR in:chan2)"
+                    channel_query = " OR ".join(channel_filters)
+                    search_query_parts.insert(0, channel_query)
+
+            # Add is:dm filter if requested (search only in direct messages)
+            if is_dm:
+                search_query_parts.insert(0, "is:dm")
+
+            # Add date filters using Slack's native syntax (more accurate than post-filtering)
+            if start_date:
+                # Convert to YYYY-MM-DD format for after: syntax
+                try:
+                    if 'T' in start_date:
+                        date_part = start_date.split('T')[0]
+                    else:
+                        date_part = start_date
+                    search_query_parts.append(f"after:{date_part}")
+                except Exception:
+                    pass
+        
+            if end_date:
+                # Convert to YYYY-MM-DD format for before: syntax
+                # Add 1 day because before: is exclusive
+                try:
+                    if 'T' in end_date:
+                        date_part = end_date.split('T')[0]
+                    else:
+                        date_part = end_date
+                    # Parse and add 1 day for inclusive end date
+                    from datetime import timedelta
+                    end_dt_temp = datetime.strptime(date_part, "%Y-%m-%d")
+                    end_dt_plus_one = end_dt_temp + timedelta(days=1)
+                    search_query_parts.append(f"before:{end_dt_plus_one.strftime('%Y-%m-%d')}")
+                except Exception:
+                    pass
+
+            # Now add the query text (after filters are built)
+            # Only use "*" fallback if there are NO filters at all
+            has_filters = bool(search_query_parts)  # True if we have any from:/in:/is:dm/after:/before: filters
+            if query:
+                # User provided a query - add it
+                search_query_parts.append(query)
+            elif not has_filters:
+                # No query AND no filters - need "*" to avoid Slack API error
+                search_query_parts.append("*")
+            # else: we have filters but no query - that's fine, filters alone work
+
+            # Combine query parts
+            final_query = " ".join(search_query_parts) if search_query_parts else ""
+        
+            # Check if we need to split OR query (workaround for Slack API limitation)
+            # Slack treats "OR" as "AND" when from: or in: filters are present.
+            # We split OR queries into separate searches and combine results.
+            or_pattern = re.compile(r'\s+OR\s+', re.IGNORECASE)
+        
+            # Check if OR is outside quotes (inline - no nested def allowed by Letta)
+            has_unquoted_or = False
+            if query:
+                in_quote = False
+                cleaned_query = []
+                for char in query:
+                    if char == '"':
+                        in_quote = not in_quote
+                    elif not in_quote:
+                        cleaned_query.append(char)
+                has_unquoted_or = bool(or_pattern.search(''.join(cleaned_query)))
+        
+            # Split if: query has unquoted OR AND any filter is present
+            needs_or_split = query and has_unquoted_or and (user or channel)
+        
+            if needs_or_split:
+                # Split query into separate terms and search each
+                or_terms = [term.strip() for term in or_pattern.split(query)]
+                all_matches = []
+                all_total = 0
+                seen_message_ids = set()
+            
+                for or_term in or_terms:
+                    # Build query for this single term (reuse the already-built filters)
+                    # Extract the filter parts from search_query_parts (user and channel filters)
+                    term_query_parts = []
+                    for part in search_query_parts:
+                        if part == query:
+                            term_query_parts.append(or_term)
+                        else:
+                            term_query_parts.append(part)
+                    term_final_query = " ".join(term_query_parts) if term_query_parts else or_term
                 
-                matches = data.get("messages", {}).get("matches", [])
-                total = data.get("messages", {}).get("total", 0)
-                pagination = data.get("messages", {}).get("pagination", {})
+                    # Make API call for this term
+                    try:
+                        term_url = "https://slack.com/api/search.messages"
+                        term_params = {
+                            "query": term_final_query,
+                            "count": str(count),
+                            "sort": sort
+                        }
+                        term_query_string = urllib.parse.urlencode(term_params)
+                        term_req = urllib.request.Request(
+                            f"{term_url}?{term_query_string}",
+                            headers={"Authorization": f"Bearer {TOKEN}"}
+                        )
+                        with urllib.request.urlopen(term_req, timeout=30) as tr:
+                            term_data = json.loads(tr.read().decode('utf-8'))
+                            if term_data.get("ok"):
+                                term_matches = term_data.get("messages", {}).get("matches", [])
+                                term_total = term_data.get("messages", {}).get("total", 0)
+                                all_total += term_total
+                            
+                                # Deduplicate by channel_id + ts
+                                for match in term_matches:
+                                    match_id = f"{match.get('channel', {}).get('id', '')}_{match.get('ts', '')}"
+                                    if match_id not in seen_message_ids:
+                                        seen_message_ids.add(match_id)
+                                        all_matches.append(match)
+                    except Exception:
+                        pass
+            
+                # Use combined results
+                matches = all_matches
+                total = len(all_matches)  # Use deduplicated count
+                pagination = {"total_count": total, "page": 1, "per_page": count}
+                final_query = f"{query} (split into {len(or_terms)} searches)"
+            else:
+                # Normal path: single API call
+                # Build API request
+                url = "https://slack.com/api/search.messages"
+                params = {
+                    "query": final_query,
+                    "count": str(count),
+                    "sort": sort
+                }
+            
+                query_string = urllib.parse.urlencode(params)
+                req = urllib.request.Request(
+                    f"{url}?{query_string}",
+                    headers={"Authorization": f"Bearer {TOKEN}"}
+                )
+            
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                
+                    if not data.get("ok"):
+                        return {
+                            "status": "error",
+                            "data": {},
+                            "error_message": data.get("error", "Unknown Slack API error")
+                        }
+                
+                    matches = data.get("messages", {}).get("matches", [])
+                    total = data.get("messages", {}).get("total", 0)
+                    pagination = data.get("messages", {}).get("pagination", {})
         
         # Continue processing (both paths have set matches, total, pagination)
         # User cache for efficient lookups
