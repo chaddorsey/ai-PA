@@ -127,16 +127,9 @@ def send_to_tasks_callback(body: dict, ack: Ack, client: WebClient, logger: Logg
 
     try:
         info = _extract_message_info(body, logger)
-        preview = info["text"][:100] + ("..." if len(info["text"]) > 100 else "")
+        logger.info(f"send_to_tasks triggered: channel={info['channel_id']}, text={info['text'][:50]}")
 
-        # Immediate ephemeral confirmation
-        client.chat_postEphemeral(
-            channel=info["channel_id"],
-            user=info["triggering_user_id"],
-            text=f"Queued for tasks: _{preview}_",
-        )
-
-        # Append to memory block in background thread
+        # Queue the task first (most important part)
         entry = _build_queue_entry(info)
         thread = threading.Thread(
             target=_append_to_queue,
@@ -144,6 +137,18 @@ def send_to_tasks_callback(body: dict, ack: Ack, client: WebClient, logger: Logg
             daemon=True,
         )
         thread.start()
+
+        # Try ephemeral confirmation (may fail in DMs/private channels)
+        preview = info["text"][:100] + ("..." if len(info["text"]) > 100 else "")
+        try:
+            client.chat_postEphemeral(
+                channel=info["channel_id"],
+                user=info["triggering_user_id"],
+                text=f"Queued for tasks: _{preview}_",
+            )
+        except Exception:
+            # Ephemeral failed (channel_not_found in DMs) — not critical
+            logger.info(f"Ephemeral confirmation skipped for channel {info['channel_id']}")
 
     except Exception as e:
         logger.error(f"send_to_tasks shortcut failed: {e}", exc_info=True)
