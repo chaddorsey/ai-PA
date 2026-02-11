@@ -113,6 +113,8 @@ def _build_queue_entry(info: dict, notes: str = "") -> dict:
         "channel_id": info["channel_id"],
         "text": info["text"],
         "link": info["permalink"],
+        "source_ref_id": f"{info['channel_id']}:{info['message_ts']}",
+        "message_ts": info["message_ts"],
     }
     if info.get("files"):
         entry["files"] = info["files"]
@@ -170,6 +172,7 @@ def send_to_tasks_modal_callback(body: dict, ack: Ack, client: WebClient, logger
             "channel_name": info["channel_name"],
             "permalink": info["permalink"],
             "triggering_user_id": info["triggering_user_id"],
+            "message_ts": info["message_ts"],
             "files": info["files"],
         })
 
@@ -229,6 +232,7 @@ def send_to_tasks_view_callback(ack: Ack, body: dict, view: dict, client: WebCli
             "channel_id": metadata.get("channel_id", ""),
             "channel_name": metadata.get("channel_name", ""),
             "permalink": metadata.get("permalink", ""),
+            "message_ts": metadata.get("message_ts", ""),
             "files": metadata.get("files", []),
         }
 
