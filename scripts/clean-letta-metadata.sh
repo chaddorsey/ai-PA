@@ -1,16 +1,15 @@
 #!/bin/bash
-# Clean macOS metadata files from Letta directory to prevent startup issues
-# These files (._* and .DS_Store) are created by macOS but can corrupt Letta's sandbox venv
+# Clean macOS metadata files from entire ai-PA project tree
+# These files (._* and .DS_Store) cause backup tar failures and corrupt Letta's sandbox venv
+# Runs hourly via launchd agent com.ai-pa.letta-cleanup
 
-LETTA_DIR="/Volumes/main-drive/ai-PA/letta"
+PROJECT_DIR="/Volumes/main-drive/ai-PA"
 
-# Only run if directory exists
-if [ -d "$LETTA_DIR" ]; then
-    # Remove AppleDouble files (._*)
-    find "$LETTA_DIR" -name "._*" -type f -delete 2>/dev/null
+# Only run if directory exists (volume may not be mounted)
+if [ -d "$PROJECT_DIR" ]; then
+    # Remove AppleDouble files (._*) and .DS_Store from entire project
+    count=$(find "$PROJECT_DIR" -name "._*" -type f -delete -print 2>/dev/null | wc -l | tr -d ' ')
+    count_ds=$(find "$PROJECT_DIR" -name ".DS_Store" -type f -delete -print 2>/dev/null | wc -l | tr -d ' ')
 
-    # Remove .DS_Store files
-    find "$LETTA_DIR" -name ".DS_Store" -type f -delete 2>/dev/null
-
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Cleaned macOS metadata from $LETTA_DIR"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Cleaned ${count} ._* and ${count_ds} .DS_Store files from $PROJECT_DIR"
 fi

@@ -3,7 +3,7 @@
 # PA Ecosystem Backup Script
 # Comprehensive backup system for all PA ecosystem components
 
-set -euo pipefail
+set -uo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -281,9 +281,9 @@ backup_config() {
     else
         # Special handling for deployment/ directory to exclude backups subfolder
         if [[ "$(basename "$config_dir")" == "deployment" ]]; then
-            tar czf "$backup_file" --exclude="backups" -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
+            tar czf "$backup_file" --exclude="backups" --exclude='._*' --exclude='.DS_Store' -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
         else
-            tar czf "$backup_file" -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
+            tar czf "$backup_file" --exclude='._*' --exclude='.DS_Store' -C "$(dirname "$config_dir")" "$(basename "$config_dir")"
         fi
         log_success "Configuration $config_dir backed up to $backup_file"
     fi
@@ -321,6 +321,7 @@ backup_host_data() {
         
         if [[ -n "$auto_madden_files" ]]; then
             tar czf "$backup_dir/auto-madden-data_$TIMESTAMP.tar.gz" \
+                --exclude='._*' --exclude='.DS_Store' \
                 -C "$PROJECT_ROOT" \
                 $auto_madden_files \
                 2>/dev/null || log_warning "Some Auto-Madden data files could not be backed up"
@@ -336,6 +337,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/auto-madden/credentials" ]]; then
         log "Backing up Auto-Madden credentials (browser states)..."
         tar czf "$backup_dir/auto-madden-credentials_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             auto-madden/credentials \
             2>/dev/null || log_warning "Auto-Madden credentials backup had issues"
@@ -348,6 +350,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/auto-madden/nfl-pro-scraper/credentials" ]]; then
         log "Backing up NFL Pro Scraper credentials..."
         tar czf "$backup_dir/nfl-pro-scraper-credentials_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             auto-madden/nfl-pro-scraper/credentials \
             2>/dev/null || log_warning "NFL Pro Scraper credentials backup had issues"
@@ -360,6 +363,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/auto-madden/nfl-pro-scraper/data" ]]; then
         log "Backing up NFL Pro Scraper data..."
         tar czf "$backup_dir/nfl-pro-scraper-data_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             auto-madden/nfl-pro-scraper/data \
             2>/dev/null || log_warning "NFL Pro Scraper data backup had issues"
@@ -372,6 +376,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/sports-and-media-tools/credentials" ]]; then
         log "Backing up Sports & Media credentials (streaming service OAuth)..."
         tar czf "$backup_dir/sports-media-credentials_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             sports-and-media-tools/credentials \
             2>/dev/null || log_warning "Sports & Media credentials backup had issues"
@@ -384,6 +389,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/sports-and-media-tools/data" ]]; then
         log "Backing up Sports & Media data..."
         tar czf "$backup_dir/sports-media-data_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             sports-and-media-tools/data \
             2>/dev/null || log_warning "Sports & Media data backup had issues"
@@ -396,6 +402,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/letta_filesystem_repo" ]]; then
         log "Backing up Letta filesystem repository..."
         tar czf "$backup_dir/letta-filesystem-repo_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             letta_filesystem_repo \
             2>/dev/null || log_warning "Letta filesystem repo backup had issues"
@@ -424,6 +431,7 @@ backup_host_data() {
     if [[ -d "$PROJECT_ROOT/sports-and-media-tools/watch-history-service/credentials" ]]; then
         log "Backing up Watch History Service credentials..."
         tar czf "$backup_dir/watch-history-credentials_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
             -C "$PROJECT_ROOT" \
             sports-and-media-tools/watch-history-service/credentials \
             2>/dev/null || log_warning "Watch History credentials backup had issues"
@@ -731,17 +739,19 @@ main() {
     
     # Backup configuration files
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "config" ]]; then
-        backup_config ".env" "$BACKUP_PATH/configs/env_$TIMESTAMP.tar.gz"
-        backup_config "docker-compose.yml" "$BACKUP_PATH/configs/docker-compose_$TIMESTAMP.tar.gz"
-        backup_config "deployment/" "$BACKUP_PATH/configs/deployment_$TIMESTAMP.tar.gz"
-        backup_config "docs/" "$BACKUP_PATH/configs/docs_$TIMESTAMP.tar.gz"
+        backup_config ".env" "$BACKUP_PATH/configs/env_$TIMESTAMP.tar.gz" || log_warning "Config backup failed for .env, continuing..."
+        backup_config "docker-compose.yml" "$BACKUP_PATH/configs/docker-compose_$TIMESTAMP.tar.gz" || log_warning "Config backup failed for docker-compose.yml, continuing..."
+        backup_config "deployment/" "$BACKUP_PATH/configs/deployment_$TIMESTAMP.tar.gz" || log_warning "Config backup failed for deployment/, continuing..."
+        backup_config "docs/" "$BACKUP_PATH/configs/docs_$TIMESTAMP.tar.gz" || log_warning "Config backup failed for docs/, continuing..."
     fi
-    
+
     # Backup service configurations
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "services" ]]; then
         # Backup Letta agents and memory via API
-        backup_letta_exports "$BACKUP_PATH/letta_exports"
-        
+        if ! backup_letta_exports "$BACKUP_PATH/letta_exports"; then
+            log_warning "Letta exports failed, continuing with remaining backups..."
+        fi
+
         # Backup n8n workflows
         if is_service_running "n8n"; then
             docker-compose exec -T n8n n8n export:workflow --backup --output=/tmp/n8n_backup.json 2>/dev/null || true
