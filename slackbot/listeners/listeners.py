@@ -9,6 +9,7 @@ from listeners.events.assistant_thread_started import register as reg_assistant_
 from listeners.events.assistant_thread_context_changed import register as reg_assistant_context
 # from listeners.events.message_reaction import register as reg_reaction
 from listeners.messages.message_im_hybrid import register as reg_dm
+from listeners.shortcuts import register as reg_shortcuts
 from listeners.views.proposal_confirm import register as reg_proposal_confirm
 from listeners.workflows.summarize_function import register as reg_wf
 
@@ -23,5 +24,6 @@ def register_listeners(app: App):
     reg_assistant_context(app)
     # reg_reaction(app)
     reg_dm(app)
+    reg_shortcuts(app)
     reg_proposal_confirm(app)
     reg_wf(app)

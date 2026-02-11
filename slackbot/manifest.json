@@ -20,6 +20,18 @@
     },
     "shortcuts": [
       {
+        "name": "Send to Tasks",
+        "type": "message",
+        "callback_id": "send_to_tasks",
+        "description": "Queue this message as a task for your AI assistant"
+      },
+      {
+        "name": "Send to Tasks...",
+        "type": "message",
+        "callback_id": "send_to_tasks_modal",
+        "description": "Queue this message as a task with notes"
+      },
+      {
         "name": "Run sample shortcut",
         "type": "global",
         "callback_id": "sample_shortcut_id",
