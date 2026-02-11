@@ -326,10 +326,9 @@ def get_slack_messages(
     import json
     import urllib.request
     import urllib.parse
-    from datetime import datetime
+    from datetime import datetime, timezone
     import re
-    import pytz
-    
+
     # Wrap entire function in try-except
     try:
         # Get token
@@ -388,11 +387,11 @@ def get_slack_messages(
                 if 'T' in start_date or start_date.endswith('Z'):
                     dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                     if dt.tzinfo is None:
-                        dt = pytz.UTC.localize(dt)
+                        dt = dt.replace(tzinfo=timezone.utc)
                     oldest_ts = dt.timestamp()
                 else:
                     dt = datetime.strptime(start_date, "%Y-%m-%d")
-                    dt = pytz.UTC.localize(dt)
+                    dt = dt.replace(tzinfo=timezone.utc)
                     oldest_ts = dt.timestamp()
             except Exception:
                 pass
@@ -402,11 +401,11 @@ def get_slack_messages(
                 if 'T' in end_date or end_date.endswith('Z'):
                     dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                     if dt.tzinfo is None:
-                        dt = pytz.UTC.localize(dt)
+                        dt = dt.replace(tzinfo=timezone.utc)
                     latest_ts = dt.timestamp()
                 else:
                     dt = datetime.strptime(end_date, "%Y-%m-%d")
-                    dt = pytz.UTC.localize(dt)
+                    dt = dt.replace(tzinfo=timezone.utc)
                     # End of day
                     dt = dt.replace(hour=23, minute=59, second=59)
                     latest_ts = dt.timestamp()
@@ -1195,10 +1194,9 @@ def search_slack_messages(
     import json
     import urllib.request
     import urllib.parse
-    from datetime import datetime
+    from datetime import datetime, timezone
     import re
-    import pytz
-    
+
     # Wrap entire function in try-except
     try:
         # Get token
@@ -1829,7 +1827,7 @@ def search_slack_messages(
                     start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                 else:
                     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-                    start_dt = pytz.UTC.localize(start_dt)
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
             except Exception:
                 pass
         
@@ -1839,7 +1837,7 @@ def search_slack_messages(
                     end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
                 else:
                     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-                    end_dt = pytz.UTC.localize(end_dt)
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
                     end_dt = end_dt.replace(hour=23, minute=59, second=59)
             except Exception:
                 pass
@@ -1881,7 +1879,7 @@ def search_slack_messages(
             if start_dt or end_dt:
                 try:
                     msg_dt = datetime.fromtimestamp(float(ts))
-                    msg_dt = pytz.UTC.localize(msg_dt)
+                    msg_dt = msg_dt.replace(tzinfo=timezone.utc)
                     if start_dt and msg_dt < start_dt:
                         continue
                     if end_dt and msg_dt > end_dt:
