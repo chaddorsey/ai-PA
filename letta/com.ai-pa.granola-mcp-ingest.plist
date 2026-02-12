@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.granola-mcp-ingest</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Volumes/main-drive/ai-PA/letta/granola_mcp_to_archival.py</string>
+        <string>--range</string>
+        <string>last_30_days</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Volumes/main-drive/ai-PA/letta/logs/granola_mcp_ingest.stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Volumes/main-drive/ai-PA/letta/logs/granola_mcp_ingest.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LETTA_BASE_URL</key>
+        <string>http://localhost:8283</string>
+        <key>GRANOLA_AGENT_ID</key>
+        <string>agent-398b4f6c-6afa-493f-8063-897c6b171a0d</string>
+        <key>GRANOLA_MCP_URL</key>
+        <string>http://localhost:8089/mcp</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Volumes/main-drive/ai-PA/letta</string>
+</dict>
+</plist>
