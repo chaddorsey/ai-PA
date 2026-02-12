@@ -382,6 +382,80 @@ def fetch_transcript(meeting_id: str) -> str:
     return parse_transcript(text)
 
 
+def ingest_meeting_by_id(
+    meeting_id: str,
+    dry_run: bool = False,
+    force: bool = False,
+) -> bool:
+    """Ingest a single meeting by ID. Callable from external hooks.
+
+    Args:
+        meeting_id: Granola meeting UUID.
+        dry_run: If True, parse and format but don't insert.
+        force: If True, re-import even if already in state.
+
+    Returns:
+        True if the meeting was successfully ingested (or already existed).
+    """
+    state = load_state()
+    imported_ids = set(state.get("imported_ids", []))
+
+    if meeting_id in imported_ids and not force:
+        logger.info(f"Meeting {meeting_id} already imported (use --force to re-import)")
+        return True
+
+    logger.info(f"Fetching meeting {meeting_id}...")
+
+    # Get detail (title, summary, participants)
+    summary, participants = fetch_meeting_detail(meeting_id)
+
+    # Build a meeting dict from the detail response
+    meeting = {
+        "id": meeting_id,
+        "title": "Untitled Meeting",
+        "date": "",
+        "participants": participants,
+    }
+
+    # Try to get title/date from the detail XML
+    text = mcp_tool("get_meetings", {"meeting_ids": [meeting_id]})
+    if text:
+        title_match = re.search(r'title="([^"]+)"', text)
+        date_match = re.search(r'date="([^"]+)"', text)
+        if title_match:
+            meeting["title"] = title_match.group(1)
+        if date_match:
+            meeting["date"] = date_match.group(1)
+
+    transcript_text = fetch_transcript(meeting_id)
+    if not transcript_text:
+        logger.warning(f"No transcript for {meeting_id}")
+        return False
+
+    tags = generate_tags(meeting)
+    content = format_content(meeting, summary, transcript_text)
+    tag_line = f"**Tags:** {', '.join(tags)}\n\n"
+    full_content = tag_line + content
+
+    meeting_title = meeting.get("title", "Untitled Meeting")
+    chunks = chunk_content(full_content, meeting_id, tags, meeting_title)
+
+    for cidx, (chunk_text, chunk_tags) in enumerate(chunks, 1):
+        if not insert_to_archival(chunk_text, chunk_tags, dry_run=dry_run):
+            logger.error(f"Failed chunk {cidx}/{len(chunks)}")
+            return False
+
+    if not dry_run:
+        imported_ids.add(meeting_id)
+        state["imported_ids"] = list(imported_ids)
+        save_state(state)
+
+    nchunks = len(chunks)
+    size = len(full_content)
+    logger.info(f"Ingested: {meeting['title'][:60]} ({size} chars, {nchunks} chunks)")
+    return True
+
+
 def ingest_meetings(
     meetings: list[dict],
     imported_ids: set,
@@ -472,9 +546,17 @@ def main():
     )
     parser.add_argument("--since", help="Custom range start (ISO date, implies --range custom)")
     parser.add_argument("--until", help="Custom range end (ISO date, implies --range custom)")
+    parser.add_argument("--meeting-id", help="Import a single meeting by UUID (on-demand)")
+    parser.add_argument("--force", action="store_true", help="Re-import even if already in state")
     parser.add_argument("--status", action="store_true", help="Show state and exit")
     parser.add_argument("--reset", action="store_true", help="Reset import state")
     args = parser.parse_args()
+
+    # On-demand single-meeting import
+    if args.meeting_id:
+        logger.info(f"On-demand import: {args.meeting_id}")
+        ok = ingest_meeting_by_id(args.meeting_id, dry_run=args.dry_run, force=args.force)
+        sys.exit(0 if ok else 1)
 
     if args.status:
         state = load_state()
