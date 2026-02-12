@@ -74,12 +74,13 @@ MCP_SERVERS = {
     },
     "granola-tools": {
         "server_name": "granola-tools",
-        "type": "sse",
-        "server_url": "http://host.docker.internal:8089/sse",
+        "type": "streamable_http",
+        "server_url": "http://host.docker.internal:8089/mcp",
         "auth_header": None,
         "auth_token": None,
         "custom_headers": {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream"
         }
     }
 }

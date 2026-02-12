@@ -25,6 +25,8 @@ service-account-*.json
 google-credentials.json
 api-keys.txt
 slack_auth_state.json
+.granola-tokens.json
+.granola-client.json
 
 # Database & Volume Data
 /data/
