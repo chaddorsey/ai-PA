@@ -192,6 +192,13 @@ def find_my_availability(
             "orchestrator_error": result.get("error_message"),
         }
 
+        # Extract verbatim_user_output from orchestrator for interactive UI
+        verbatim = result.get("verbatim_user_output") or ""
+        if not verbatim:
+            user_display = result.get("user_display")
+            if isinstance(user_display, dict):
+                verbatim = user_display.get("verbatim_user_output", "")
+
         # Process results into simpler format
         if result.get("status") == "ok":
             proposals = result.get("proposals", [])
@@ -249,7 +256,7 @@ def find_my_availability(
                 if conflict_count > 0:
                     summary_parts.append(f"{conflict_count} requiring override of blocking time")
 
-                return {
+                ret = {
                     "status": "ok",
                     "available_slots": available_slots,
                     "summary": ". ".join(summary_parts) + ".",
@@ -259,6 +266,9 @@ def find_my_availability(
                     },
                     "debug": debug_info
                 }
+                if verbatim:
+                    ret["verbatim_user_output"] = verbatim
+                return ret
             else:
                 # Add first few proposals for debugging - capture ALL fields
                 raw_proposals = result.get("proposals", [])[:2]
@@ -268,7 +278,7 @@ def find_my_availability(
                 ] if raw_proposals else []
                 debug_info["proposal_keys"] = list(raw_proposals[0].keys()) if raw_proposals and isinstance(raw_proposals[0], dict) else []
 
-                return {
+                ret = {
                     "status": "no_availability",
                     "available_slots": [],
                     "summary": f"No {duration_minutes}-minute slots found in the requested time period.",
@@ -278,9 +288,12 @@ def find_my_availability(
                     },
                     "debug": debug_info
                 }
+                if verbatim:
+                    ret["verbatim_user_output"] = verbatim
+                return ret
 
         elif result.get("status") == "unsat":
-            return {
+            ret = {
                 "status": "no_availability",
                 "available_slots": [],
                 "summary": "Your calendar is fully booked during the requested time period.",
@@ -291,6 +304,9 @@ def find_my_availability(
                 "suggestions": result.get("relaxations", []),
                 "debug": debug_info
             }
+            if verbatim:
+                ret["verbatim_user_output"] = verbatim
+            return ret
         else:
             return {
                 "status": "error",

@@ -334,17 +334,25 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 # Capture tool return content for proposal detection
                 content = event.get("content", "")
                 if content:
-                    # Extract verbatim_user_output from stringified dict if present
-                    # Tool returns look like: {'verbatim_user_output': '...actual content...'}
+                    # Extract verbatim_user_output from tool return dict
+                    # Tool returns are JSON strings: {"verbatim_user_output": "...", "status": "ok", ...}
                     if "'verbatim_user_output':" in content or '"verbatim_user_output":' in content:
                         try:
-                            import ast
-                            parsed = ast.literal_eval(content)
+                            import json as json_module
+                            parsed = json_module.loads(content)
                             if isinstance(parsed, dict) and 'verbatim_user_output' in parsed:
                                 content = parsed['verbatim_user_output']
                                 logger.error(f"🔧 TOOL RETURN: Extracted verbatim_user_output ({len(content)} chars)")
-                        except (ValueError, SyntaxError) as e:
-                            logger.warning(f"🔧 TOOL RETURN: Could not parse as dict, using raw: {e}")
+                        except (json_module.JSONDecodeError, TypeError) as e:
+                            # Fallback: try ast.literal_eval for Python dict format
+                            try:
+                                import ast
+                                parsed = ast.literal_eval(content)
+                                if isinstance(parsed, dict) and 'verbatim_user_output' in parsed:
+                                    content = parsed['verbatim_user_output']
+                                    logger.error(f"🔧 TOOL RETURN: Extracted verbatim_user_output via ast ({len(content)} chars)")
+                            except (ValueError, SyntaxError):
+                                logger.error(f"🔧 TOOL RETURN: Could not parse as dict ({len(content)} chars), using raw")
                     tool_return_content += content
                     logger.error(f"🔧 TOOL RETURN captured: {len(content)} chars")
             elif event_type == "text":
