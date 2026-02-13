@@ -83,7 +83,7 @@ else
     cd "$PROJECT_ROOT"
 
     # Core services to check
-    CORE_SERVICES="letta supabase-db supabase-rest n8n slackbot scheduler-service"
+    CORE_SERVICES="letta supabase-db supabase-rest n8n slackbot scheduler-service pa-routing-handler pa-web-ui"
     OPTIONAL_SERVICES="neo4j graphiti-mcp-server gmail-mcp-server omnifocus-mcp-server scheduler-mcp"
 
     if $AUTO_START; then
@@ -117,10 +117,10 @@ else
     echo -e "${BOLD}=== Letta ===${NC}"
     # -------------------------------------------------------------------
 
-    LETTA_HEALTH=$(curl -s --max-time 5 http://localhost:8283/v1/health 2>&1)
-    if echo "$LETTA_HEALTH" | grep -q "ok\|healthy\|200" 2>/dev/null; then
+    LETTA_HEALTH=$(curl -sL --max-time 5 http://localhost:8283/v1/health/ 2>&1)
+    if echo "$LETTA_HEALTH" | grep -q "ok\|healthy" 2>/dev/null; then
         ok "Letta API (http://localhost:8283)"
-    elif curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:8283/v1/health 2>/dev/null | grep -q "200"; then
+    elif curl -sL --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:8283/v1/health/ 2>/dev/null | grep -q "200"; then
         ok "Letta API (http://localhost:8283)"
     else
         fail "Letta API not responding"
@@ -165,7 +165,7 @@ for line in sys.stdin:
     }
 
     check_mcp_proxy "Granola supergateway" 8089 "granola-mcp"
-    check_mcp_proxy "Atlassian supergateway" 9999 "atlassian-mcp-server"
+    check_mcp_proxy "Atlassian supergateway" 8091 "atlassian-mcp-server"
 
     # -------------------------------------------------------------------
     echo ""
@@ -177,7 +177,7 @@ fi
 if $_check_launchd; then
     AGENTS=(
         "com.ai-pa.supergateway-granola|Granola MCP proxy (port 8089)"
-        "com.ai-pa.supergateway-atlassian|Atlassian MCP proxy (port 9999)"
+        "com.ai-pa.supergateway-atlassian|Atlassian MCP proxy (port 8091)"
         "com.ai-pa.granola-mcp-ingest|Granola MCP archival ingestion (15m)"
         "com.ai-pa.granola-watcher|Granola cache watcher (5m)"
         "com.ai-pa.granola-export|Granola export"

@@ -19,7 +19,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_FILE="/tmp/supergateway-atlassian.log"
 PID_FILE="/tmp/supergateway-atlassian.pid"
-PORT=9999
+PORT=8091
 MCP_URL="https://mcp.atlassian.com/v1/mcp"
 TOKEN_FILE="$HOME/.atlassian-rovo-token.txt"
 
