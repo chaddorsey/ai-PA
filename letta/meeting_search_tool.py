@@ -202,18 +202,20 @@ def search_meetings_smart(
                 if not any(t in passage_tags for t in tags):
                     continue
 
-            # Check date range if specified
-            if start_datetime or end_datetime:
-                created_at = passage.get("created_at", "")
-                if created_at:
-                    passage_date = created_at[:10]  # Extract YYYY-MM-DD
-                    if start_datetime and passage_date < start_datetime:
-                        continue
-                    if end_datetime and passage_date > end_datetime:
-                        continue
-
             # Extract meeting info from passage text
             text = passage.get("text", "")
+
+            # Check date range against the actual meeting date (from passage text),
+            # NOT created_at (which is the archival ingestion timestamp)
+            if start_datetime or end_datetime:
+                date_check = re.search(r"\*\*Date:\*\* (\d{4}-\d{2}-\d{2})", text)
+                passage_date = date_check.group(1) if date_check else ""
+                if not passage_date:
+                    continue
+                if start_datetime and passage_date < start_datetime:
+                    continue
+                if end_datetime and passage_date > end_datetime:
+                    continue
 
             # Parse title
             title_match = re.search(r"## Meeting: (.+?)(\n|$)", text)
