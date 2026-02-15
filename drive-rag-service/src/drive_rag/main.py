@@ -719,6 +719,12 @@ async def get_document_diff(
             detail=f"Failed to load baseline snapshot: {str(e)}",
         )
 
+    if from_data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Baseline snapshot file missing for revision {from_snapshot.revision_id}. The document needs to be re-ingested to regenerate snapshots.",
+        )
+
     # Resolve target (to) data
     to_revision_id = None
     if is_live:
@@ -786,6 +792,13 @@ async def get_document_diff(
                 status_code=500,
                 detail=f"Failed to load target snapshot: {str(e)}",
             )
+
+        if to_data is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Target snapshot file missing for revision {to_snapshot.revision_id}. The document needs to be re-ingested to regenerate snapshots.",
+            )
+
         to_revision_id = to_snapshot.revision_id
 
     # Compute diff
