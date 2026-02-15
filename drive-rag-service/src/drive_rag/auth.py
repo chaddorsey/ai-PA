@@ -111,7 +111,7 @@ def get_docs_service(creds: Optional[Credentials] = None) -> Resource:
 
 
 class GoogleClient:
-    """Unified client for Google Drive and Docs APIs."""
+    """Unified client for Google Drive, Docs, and Sheets APIs."""
 
     def __init__(self, credentials_path: Optional[str] = None):
         """Initialize the Google client.
@@ -122,6 +122,7 @@ class GoogleClient:
         self.creds = get_credentials(credentials_path)
         self._drive: Optional[Resource] = None
         self._docs: Optional[Resource] = None
+        self._sheets: Optional[Resource] = None
 
     @property
     def drive(self) -> Resource:
@@ -136,6 +137,14 @@ class GoogleClient:
         if self._docs is None:
             self._docs = get_docs_service(self.creds)
         return self._docs
+
+    @property
+    def sheets(self) -> Resource:
+        """Get Sheets API service (lazy initialization)."""
+        if self._sheets is None:
+            from googleapiclient.discovery import build
+            self._sheets = build("sheets", "v4", credentials=self.creds)
+        return self._sheets
 
     def get_file_metadata(self, file_id: str) -> dict:
         """Get file metadata from Drive.
@@ -227,6 +236,41 @@ class GoogleClient:
         if isinstance(content, bytes):
             return content.decode("utf-8")
         return content
+
+    def get_all_sheets_as_csv(self, file_id: str) -> list[dict]:
+        """Get all sheets from a spreadsheet as CSV via Sheets API.
+
+        Args:
+            file_id: Google Drive file ID of a spreadsheet
+
+        Returns:
+            List of dicts with 'sheet_name' and 'csv' keys
+        """
+        import csv
+        import io
+
+        # Get spreadsheet metadata for sheet names
+        spreadsheet = self.sheets.spreadsheets().get(
+            spreadsheetId=file_id, fields="sheets.properties"
+        ).execute()
+
+        sheets_data = []
+        for sheet in spreadsheet.get("sheets", []):
+            props = sheet["properties"]
+            sheet_name = props["title"]
+            # Fetch all values from this sheet
+            result = self.sheets.spreadsheets().values().get(
+                spreadsheetId=file_id,
+                range=f"'{sheet_name}'",
+            ).execute()
+            rows = result.get("values", [])
+            # Convert rows to CSV string
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerows(rows)
+            sheets_data.append({"sheet_name": sheet_name, "csv": buf.getvalue()})
+
+        return sheets_data
 
     def export_presentation_as_text(self, file_id: str) -> str:
         """Export a Google Slides presentation as plain text.

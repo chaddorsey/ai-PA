@@ -412,23 +412,32 @@ async def fetch_document_content(
                 content = google.export_document_as_text(file_id)
 
         elif mime_type == "application/vnd.google-apps.spreadsheet":
-            # Google Sheets
-            content = google.export_spreadsheet_as_csv(file_id)
+            # Google Sheets — fetch all sheets via Sheets API
+            try:
+                all_sheets = google.get_all_sheets_as_csv(file_id)
+                if len(all_sheets) == 1:
+                    content = all_sheets[0]["csv"]
+                else:
+                    parts = []
+                    for sheet in all_sheets:
+                        parts.append(f"=== Sheet: {sheet['sheet_name']} ===")
+                        parts.append(sheet["csv"])
+                    content = "\n\n".join(parts)
+            except Exception:
+                # Fallback to single-sheet CSV export
+                content = google.export_spreadsheet_as_csv(file_id)
 
         elif mime_type == "application/vnd.google-apps.presentation":
             # Google Slides
             content = google.export_presentation_as_text(file_id)
 
         elif mime_type == "application/pdf":
-            # PDF - can't export text easily, return metadata only
-            return {
-                "status": "ok",
-                "file_id": file_id,
-                "title": title,
-                "mime_type": mime_type,
-                "content": None,
-                "note": "PDF files cannot be fetched as text. Use ingest_document to index them first.",
-            }
+            # PDF - download bytes and extract text via pypdf
+            from drive_rag.normalizer import normalize_pdf_document
+
+            pdf_bytes = google.download_file_content(file_id)
+            snapshot = normalize_pdf_document(file_id, "live", pdf_bytes)
+            content = snapshot.normalized_text
 
         else:
             # Try generic text export for other types
@@ -443,7 +452,12 @@ async def fetch_document_content(
                     "error": f"Unsupported file type: {mime_type}",
                 }
 
-        return {
+        # Check if document is indexed for semantic search
+        db = get_db()
+        doc_state = db.get_document_state(file_id)
+        indexed = doc_state is not None and doc_state.last_indexed_at is not None
+
+        response = {
             "status": "ok",
             "file_id": file_id,
             "title": title,
@@ -451,6 +465,13 @@ async def fetch_document_content(
             "content": content,
             "content_length": len(content) if content else 0,
         }
+        if not indexed:
+            response["not_indexed"] = True
+            response["index_note"] = (
+                "This document is not indexed for semantic search. "
+                "Use ingest_document to enable search."
+            )
+        return response
 
     except Exception as e:
         logger.exception("fetch_document_failed", file_id=file_id, error=str(e))

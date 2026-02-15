@@ -614,7 +614,7 @@ def fetch_document_from_drive(
             # Truncate very long content with a note
             content = content[:50000] + "\n\n[Content truncated - document is very long]"
 
-        return {
+        result = {
             "status": "ok",
             "file_id": data.get("file_id"),
             "title": data.get("title"),
@@ -622,6 +622,10 @@ def fetch_document_from_drive(
             "content": content,
             "content_length": data.get("content_length", 0),
         }
+        if data.get("not_indexed"):
+            result["not_indexed"] = True
+            result["index_note"] = data.get("index_note", "")
+        return result
 
     except Exception as e:
         return {
