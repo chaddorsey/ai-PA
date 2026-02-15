@@ -106,6 +106,13 @@ async function subscribePush() {
     const keyResp = await fetch('/api/push/vapid-key');
     const keyData = await keyResp.json();
 
+    // Unsubscribe existing subscription if any (handles VAPID key changes)
+    const existingSub = await reg.pushManager.getSubscription();
+    if (existingSub) {
+      await existingSub.unsubscribe();
+      console.log('Unsubscribed stale push subscription');
+    }
+
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(keyData.public_key)

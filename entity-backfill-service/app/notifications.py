@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -12,7 +13,7 @@ from app.checkpoint import CheckpointDB
 
 logger = logging.getLogger(__name__)
 
-VAPID_CLAIMS_EMAIL = "mailto:admin@localhost"
+VAPID_CLAIMS_EMAIL = os.environ.get("VAPID_CLAIMS_EMAIL", "mailto:backfill@example.com")
 
 
 class NotificationManager:
@@ -29,18 +30,28 @@ class NotificationManager:
             await self._save_vapid_keys(self._vapid_keys)
 
     def _generate_vapid_keys(self) -> dict:
-        vapid = Vapid()
-        vapid.generate_keys()
-        pk_bytes = vapid.public_key.public_bytes(
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        public_key = private_key.public_key()
+
+        # Public key: uncompressed point, base64url no padding
+        pk_bytes = public_key.public_bytes(
             Encoding.X962, PublicFormat.UncompressedPoint
         )
         public_key_b64 = (
             base64.urlsafe_b64encode(pk_bytes).rstrip(b"=").decode("utf-8")
         )
-        private_pem = vapid.private_pem().decode("utf-8")
+
+        # Private key: raw 32-byte D value, base64url no padding
+        raw_d = private_key.private_numbers().private_value.to_bytes(32, "big")
+        private_key_b64 = (
+            base64.urlsafe_b64encode(raw_d).rstrip(b"=").decode("utf-8")
+        )
+
         return {
             "public_key": public_key_b64,
-            "private_key": private_pem,
+            "private_key": private_key_b64,
         }
 
     async def _load_vapid_keys(self) -> Optional[dict]:
