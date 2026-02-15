@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -18,6 +19,12 @@ ERROR_RATE_THRESHOLD = 0.10
 SERVICE_RETRY_INTERVAL = 30
 PAUSE_REMINDER_INTERVAL = 300  # 5 minutes
 NEO4J_CACHE_TTL = 60
+
+SUPABASE_REST_URL = os.environ.get("SUPABASE_REST_URL", "http://supabase-rest:3000")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
+NEO4J_HTTP_URL = os.environ.get("NEO4J_HTTP_URL", "http://neo4j:7474")
+NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "demodemo")
 
 
 class BackfillRunner:
@@ -53,20 +60,35 @@ class BackfillRunner:
         self._neo4j_stats_at: float = 0
 
     async def load_queue_from_supabase(self) -> int:
-        """Fetch document IDs from Supabase and load into checkpoint DB."""
-        import subprocess
-        result = subprocess.run(
-            [
-                "docker", "exec", "supabase-db", "psql",
-                "-U", "postgres", "-d", "postgres", "-t", "-A", "-c",
-                "SELECT drive_file_id FROM rag.document_state ORDER BY modified_time DESC;",
-            ],
-            capture_output=True, text=True, timeout=60,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to query Supabase: {result.stderr}")
+        """Fetch document IDs from Supabase PostgREST API and load into checkpoint DB."""
+        headers = {
+            "apikey": SUPABASE_SERVICE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            "Accept-Profile": "rag",
+        }
+        file_ids = []
+        offset = 0
+        page_size = 1000
 
-        file_ids = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+        while True:
+            url = (
+                f"{SUPABASE_REST_URL}/document_state"
+                f"?select=drive_file_id"
+                f"&order=modified_time.desc"
+                f"&offset={offset}&limit={page_size}"
+            )
+            resp = await self._client.get(url, headers=headers)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Supabase query failed ({resp.status_code}): {resp.text[:200]}")
+
+            rows = resp.json()
+            if not rows:
+                break
+            file_ids.extend(row["drive_file_id"] for row in rows)
+            offset += page_size
+            if len(rows) < page_size:
+                break
+
         await self.db.load_documents(file_ids)
         return len(file_ids)
 
@@ -212,35 +234,43 @@ class BackfillRunner:
             return self._neo4j_stats
 
         try:
-            import subprocess
-            result = subprocess.run(
-                [
-                    "docker", "exec", "graphiti-neo4j", "cypher-shell",
-                    "-u", "neo4j", "-p", "demodemo",
-                    "MATCH (n) RETURN labels(n)[0] as type, count(n) as cnt ORDER BY cnt DESC;",
-                ],
-                capture_output=True, text=True, timeout=10,
-            )
+            import base64
+            auth = base64.b64encode(f"{NEO4J_USER}:{NEO4J_PASSWORD}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {auth}",
+                "Content-Type": "application/json",
+            }
             stats = {}
-            if result.returncode == 0:
-                for line in result.stdout.strip().split("\n")[1:]:  # skip header
-                    parts = line.split(",")
-                    if len(parts) == 2:
-                        label = parts[0].strip().strip('"')
-                        count = int(parts[1].strip())
-                        stats[label] = count
 
-            rel_result = subprocess.run(
-                [
-                    "docker", "exec", "graphiti-neo4j", "cypher-shell",
-                    "-u", "neo4j", "-p", "demodemo",
-                    "MATCH ()-[r]->() RETURN count(r) as cnt;",
-                ],
-                capture_output=True, text=True, timeout=10,
+            # Entity counts by type
+            resp = await self._client.post(
+                f"{NEO4J_HTTP_URL}/db/neo4j/tx/commit",
+                headers=headers,
+                json={"statements": [{"statement": "MATCH (n) RETURN labels(n)[0] as type, count(n) as cnt ORDER BY cnt DESC"}]},
+                timeout=10.0,
             )
-            if rel_result.returncode == 0:
-                for line in rel_result.stdout.strip().split("\n")[1:]:
-                    stats["relationships"] = int(line.strip())
+            if resp.status_code == 200:
+                data = resp.json()
+                for result in data.get("results", []):
+                    for row in result.get("data", []):
+                        vals = row.get("row", [])
+                        if len(vals) == 2 and vals[0]:
+                            stats[vals[0]] = vals[1]
+
+            # Relationship count
+            resp = await self._client.post(
+                f"{NEO4J_HTTP_URL}/db/neo4j/tx/commit",
+                headers=headers,
+                json={"statements": [{"statement": "MATCH ()-[r]->() RETURN count(r) as cnt"}]},
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for result in data.get("results", []):
+                    for row in result.get("data", []):
+                        vals = row.get("row", [])
+                        if vals:
+                            stats["relationships"] = vals[0]
 
             self._neo4j_stats = stats
             self._neo4j_stats_at = now
