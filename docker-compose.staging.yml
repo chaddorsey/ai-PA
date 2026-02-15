@@ -215,7 +215,6 @@ services:
       - NEO4J_PASSWORD=demodemo
       - GRAPHITI_TELEMETRY_ENABLED=false
       - SEMAPHORE_LIMIT=10
-      - RESET_NEO4J=true
       - HOST=0.0.0.0
       - PORT=8082
     healthcheck:

@@ -258,7 +258,6 @@ services:
       - GRAPHITI_USE_CUSTOM_ENTITIES=true
       - GRAPHITI_ENTITY_TYPE_SET=research
       - SEMAPHORE_LIMIT=10
-      - RESET_NEO4J=true
       - HOST=0.0.0.0
       - PORT=8000
     healthcheck:
@@ -359,6 +358,9 @@ services:
       # Chunking configuration
       - MAX_CHUNK_CHARS=6000
       - MIN_CHUNK_CHARS=1200
+      # Entity extraction via Graphiti (adds entities to Neo4j knowledge graph)
+      - ENABLE_ENTITY_EXTRACTION=true
+      - GRAPHITI_BASE_URL=http://graphiti-mcp-server:8000
     volumes:
       - ~/.gmail-mcp:/app/credentials
     ports:
