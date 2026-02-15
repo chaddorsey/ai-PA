@@ -142,18 +142,33 @@ class BackfillRunner:
                 self._check_error_rate()
 
                 counts = await self.db.get_counts()
+                processed = counts["success"] + counts["skipped"] + counts["error"]
                 await self._emit_event("progress", {
+                    "state": self.state,
                     **counts,
+                    "processed": processed,
                     "last_file_id": file_id,
                     "last_result": result,
                     "rate": self.get_rate(),
+                    "eta_seconds": self.get_eta_seconds(counts["pending"]),
                     "elapsed": time.time() - self._started_at if self._started_at else 0,
+                    "cost_estimate": self.get_cost_estimate(processed),
                 })
 
             # Pause requested
             self.state = "paused"
             await self.db.set_runner_state("paused")
-            await self._emit_event("paused", await self.db.get_counts())
+            counts = await self.db.get_counts()
+            processed = counts["success"] + counts["skipped"] + counts["error"]
+            await self._emit_event("paused", {
+                "state": self.state,
+                **counts,
+                "processed": processed,
+                "rate": self.get_rate(),
+                "eta_seconds": self.get_eta_seconds(counts["pending"]),
+                "elapsed": time.time() - self._started_at if self._started_at else 0,
+                "cost_estimate": self.get_cost_estimate(processed),
+            })
 
         except Exception as e:
             logger.error(f"Runner loop error: {e}", exc_info=True)
