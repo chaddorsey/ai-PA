@@ -79,10 +79,10 @@ class CheckpointDB:
             await cur.execute(
                 """SELECT
                     COUNT(*) as total,
-                    SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
-                    SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) as success,
-                    SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) as skipped,
-                    SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) as error
+                    COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END), 0) as pending,
+                    COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END), 0) as success,
+                    COALESCE(SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END), 0) as skipped,
+                    COALESCE(SUM(CASE WHEN status='error' THEN 1 ELSE 0 END), 0) as error
                 FROM documents"""
             )
             row = await cur.fetchone()
