@@ -878,6 +878,13 @@ async def extract_document_entities(
             content = google.export_spreadsheet_as_csv(file_id)
         elif mime_type == "application/vnd.google-apps.presentation":
             content = google.export_presentation_as_text(file_id)
+        elif mime_type == "application/pdf":
+            from drive_rag.normalizer import normalize_pdf_document
+            pdf_bytes = google.download_file_content(file_id)
+            snapshot = normalize_pdf_document(file_id, "extract", pdf_bytes)
+            content = snapshot.normalized_text
+        elif mime_type in ("text/plain", "text/markdown"):
+            content = google.download_file_content(file_id).decode("utf-8", errors="replace")
         else:
             raise HTTPException(
                 status_code=400,
