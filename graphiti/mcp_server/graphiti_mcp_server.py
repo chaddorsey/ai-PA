@@ -59,9 +59,9 @@ except ImportError:
         description: str = Field(..., description="Brief description of the project's goals and activities")
 
     class ResearchOrganization(BaseModel):
-        """An institution, company, nonprofit, or government agency.
-        Look for universities, nonprofits, research labs, and agencies."""
-        org_type: str | None = Field(None, description="Type: University, Nonprofit, Research Lab, Agency, Company")
+        """An institution, company, nonprofit, government agency, or funding body.
+        Look for universities, nonprofits, research labs, agencies, and funding organizations."""
+        org_type: str | None = Field(None, description="Type: University, Nonprofit, Research Lab, Government Agency, Company, Funding Agency, Foundation")
         description: str = Field(..., description="Brief description of the organization's role")
 
     class ResearchPerson(BaseModel):
@@ -77,25 +77,11 @@ except ImportError:
         software_type: str | None = Field(None, description="Type: Educational Tool, Platform, Analysis Tool, Framework")
         description: str = Field(..., description="Brief description of what the software does")
 
-    class ResearchFundingProgram(BaseModel):
-        """A funding program within a funding agency (DRK-12, ITEST, AISL, ECR).
-        Connect programs to their parent agencies and the projects they fund."""
-        funder: str | None = Field(None, description="Parent funding agency (NSF, DOE, etc.)")
-        description: str = Field(..., description="Brief description of the program's focus")
-
-    class ResearchFunder(BaseModel):
-        """A funding agency, foundation, or grant-making organization.
-        Examples: NSF, NIH, Department of Education, Spencer Foundation."""
-        acronym: str | None = Field(None, description="Common acronym (NSF, NIH, DOE, IES)")
-        description: str = Field(..., description="Brief description of the funder")
-
     RESEARCH_ENTITY_TYPES: dict[str, type[BaseModel]] = {
         "Project": ResearchProject,
         "Organization": ResearchOrganization,
         "Person": ResearchPerson,
         "Software": ResearchSoftware,
-        "FundingProgram": ResearchFundingProgram,
-        "Funder": ResearchFunder,
     }
 
 

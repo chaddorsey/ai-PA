@@ -40,7 +40,7 @@ class Project(BaseModel):
 
 
 class Organization(BaseModel):
-    """An institution, company, nonprofit, or government agency.
+    """An institution, company, nonprofit, government agency, or funding body.
 
     Instructions for identifying and extracting organizations:
     1. Look for university names (full or abbreviated: UIUC, MIT, Stanford)
@@ -48,14 +48,16 @@ class Organization(BaseModel):
     3. Recognize government agencies (NSF, NIH, Department of Education)
     4. Find companies or corporate partners
     5. Note research labs or centers within larger institutions
-    6. Capture the organization type when evident (University, Nonprofit, Agency)
-    7. Preserve common abbreviations alongside full names
-    8. Create edges connecting organizations to people who work there
+    6. Identify funding agencies and foundations (NSF, Spencer Foundation, Gates Foundation)
+    7. Capture the organization type when evident
+    8. Preserve common abbreviations alongside full names
+    9. Create edges connecting organizations to people who work there
+    10. Create edges connecting funding organizations to projects they fund
     """
 
     org_type: str | None = Field(
         None,
-        description="Type: 'University', 'Nonprofit', 'Research Lab', 'Government Agency', 'Company'",
+        description="Type: 'University', 'Nonprofit', 'Research Lab', 'Government Agency', 'Company', 'Funding Agency', 'Foundation'",
     )
     description: str = Field(
         ...,
@@ -122,73 +124,17 @@ class Software(BaseModel):
     )
 
 
-class FundingProgram(BaseModel):
-    """A funding program or initiative within a funding agency.
-
-    Instructions for identifying and extracting funding programs:
-    1. Look for program acronyms: DRK-12, ITEST, AISL, ECR, CAREER
-    2. Full program names when given (Discovery Research K-12)
-    3. Connect programs to their parent funding agency
-    4. Note program focus areas or priorities if mentioned
-    5. Identify solicitation numbers when referenced
-    6. Create edges connecting funding programs to projects they fund
-
-    Common NSF Programs:
-    - DRK-12 (Discovery Research PreK-12)
-    - ITEST (Innovative Technology Experiences for Students and Teachers)
-    - AISL (Advancing Informal STEM Learning)
-    - ECR (EHR Core Research)
-    - CAREER (Faculty Early Career Development)
-    - CSforAll (Computer Science for All)
-    """
-
-    funder: str | None = Field(
-        None,
-        description="Parent funding agency (e.g., 'NSF', 'Department of Education')",
-    )
-    description: str = Field(
-        ...,
-        description="Brief description of the program's focus and priorities.",
-    )
-
-
-class Funder(BaseModel):
-    """A funding agency, foundation, or grant-making organization.
-
-    Instructions for identifying and extracting funders:
-    1. Look for agency names: National Science Foundation, NIH, DOE
-    2. Identify common acronyms: NSF, NIH, DOE, IES, Spencer
-    3. Recognize private foundations (Spencer Foundation, Gates Foundation)
-    4. Note specific divisions or directorates when mentioned
-    5. Capture program officers associated with the agency
-    6. Create edges connecting funders to their funding programs and projects
-
-    Common Funders:
-    - NSF (National Science Foundation)
-    - NIH (National Institutes of Health)
-    - Department of Education / IES (Institute of Education Sciences)
-    - Spencer Foundation
-    - Gates Foundation
-    - Hewlett Foundation
-    """
-
-    acronym: str | None = Field(
-        None,
-        description="Common acronym (e.g., 'NSF', 'NIH', 'DOE')",
-    )
-    description: str = Field(
-        ...,
-        description="Brief description of the funder and their focus areas.",
-    )
-
-
 # Dictionary mapping entity type names to their Pydantic models
 # This is used by Graphiti's entity extraction system
+#
+# Note: FundingProgram and Funder were removed (2026-02-15) and merged into
+# Organization with org_type='Funding Agency'/'Foundation'. The pilot showed
+# 0 FundingProgram and 1 Funder across 9 docs — too sparse to justify separate
+# types. Funding info is also captured on Project (funding_program, funder fields).
+# If needed later, these types can be re-added for a targeted re-extraction.
 RESEARCH_ENTITY_TYPES: dict[str, type[BaseModel]] = {
     "Project": Project,
     "Organization": Organization,
     "Person": Person,
     "Software": Software,
-    "FundingProgram": FundingProgram,
-    "Funder": Funder,
 }
