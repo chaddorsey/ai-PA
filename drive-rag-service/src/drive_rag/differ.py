@@ -44,6 +44,16 @@ class BlockChange:
     new_char_start: Optional[int] = None
     new_char_end: Optional[int] = None
 
+    @property
+    def text_preview(self) -> str:
+        """Preview of the changed text (new for adds/modifications, old for deletions)."""
+        return self.new_text or self.old_text or ""
+
+    @property
+    def section(self) -> Optional[str]:
+        """Section path as a readable string."""
+        return " > ".join(self.outline_path) if self.outline_path else None
+
 
 @dataclass
 class SnapshotDiff:
@@ -67,6 +77,7 @@ class SnapshotDiff:
     blocks_added: int = 0
     blocks_deleted: int = 0
     blocks_modified: int = 0
+    blocks_moved: int = 0
     chars_added: int = 0
     chars_deleted: int = 0
 
@@ -90,6 +101,11 @@ class SnapshotDiff:
         if self.blocks_modified > 0:
             parts.append(f"~{self.blocks_modified} modified")
         return ", ".join(parts) if parts else "no changes"
+
+    @property
+    def summary(self) -> str:
+        """Alias for change_summary (used by API response)."""
+        return self.change_summary
 
 
 def diff_snapshots(

@@ -445,6 +445,7 @@ def get_document_edits(
     file_id: str,
     since: Optional[str] = None,
     by_user: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Get the edit history for a Google Doc.
@@ -461,6 +462,10 @@ def get_document_edits(
                If not provided, returns all available edit history.
         by_user: Optional filter by user email. Returns only edits by users
                  whose email contains this string (case-insensitive).
+        source: Where to get revision data from. "live" (default) fetches the
+                full revision history directly from Google Drive API, which
+                includes all revisions even between syncs. "stored" returns
+                only revisions captured during ingestion.
 
     Returns:
         Dictionary with edit history including editor names, timestamps,
@@ -491,6 +496,8 @@ def get_document_edits(
             params["since"] = since
         if by_user:
             params["by_user"] = by_user
+        if source:
+            params["source"] = source
 
         # Make request
         response = requests.get(
@@ -627,6 +634,7 @@ def get_document_changes(
     file_id: str,
     from_revision: Optional[str] = None,
     to_revision: Optional[str] = None,
+    live: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Get a summary of changes between two versions of a document.
@@ -642,6 +650,9 @@ def get_document_changes(
                        provided, uses the oldest available snapshot.
         to_revision: Optional target revision ID to compare to. If not
                      provided, uses the latest available snapshot.
+        live: If True, compare the latest stored snapshot against the current
+              live document content from Google Drive. Shows what has changed
+              since the last sync. Overrides from_revision and to_revision.
 
     Returns:
         Dictionary with change summary including blocks added, deleted,
@@ -668,10 +679,14 @@ def get_document_changes(
 
         # Build query parameters
         params = {}
-        if from_revision:
-            params["from_revision"] = from_revision
-        if to_revision:
-            params["to_revision"] = to_revision
+        if live:
+            params["from_revision"] = "latest"
+            params["to_revision"] = "live"
+        else:
+            if from_revision:
+                params["from_revision"] = from_revision
+            if to_revision:
+                params["to_revision"] = to_revision
 
         # Make request
         response = requests.get(

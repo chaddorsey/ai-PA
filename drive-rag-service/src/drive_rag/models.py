@@ -300,20 +300,6 @@ class DocumentDiffResponse(BaseModel):
     summary: Optional[str] = None
 
 
-class ScanChangesResponse(BaseModel):
-    """Response from change monitoring scan."""
-
-    priority: str
-    documents_scanned: int = 0
-    documents_changed: int = 0
-    documents_reindexed: int = 0
-    documents_skipped: int = 0
-    errors: list[str] = Field(default_factory=list)
-    error_count: int = 0
-    scan_duration_seconds: float = 0.0
-    dry_run: bool = False
-
-
 class ChangedDocumentRecord(BaseModel):
     """A document that was recently changed."""
 

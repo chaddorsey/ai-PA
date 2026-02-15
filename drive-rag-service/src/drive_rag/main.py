@@ -30,7 +30,6 @@ from drive_rag.models import (
     IngestFolderResponse,
     IngestionResult,
     RetentionResponse,
-    ScanChangesResponse,
     SearchRequest,
     SearchResponse,
     SearchResult,
@@ -466,14 +465,20 @@ async def fetch_document_content(
 @app.get("/v1/edits/{file_id:path}", response_model=DocumentEditsResponse)
 async def get_document_edits(
     file_id: str,
+    source: str = Query("live", description="Data source: 'live' (Drive API) or 'stored' (database)"),
     since: Optional[str] = Query(None, description="Filter edits since date (ISO format or relative like 'yesterday')"),
     by_user: Optional[str] = Query(None, description="Filter edits by user email"),
     limit: int = Query(50, ge=1, le=100, description="Maximum results"),
 ):
     """Get edit history for a document.
 
+    Use source=live (default) to fetch revision history directly from the
+    Google Drive API for up-to-date results. Use source=stored to query
+    cached revisions from the database (faster but may miss recent edits).
+
     Args:
         file_id: Google Drive file ID or URL
+        source: Data source - 'live' (Drive API, default) or 'stored' (database)
         since: Optional time filter (ISO date or relative like "yesterday", "last-week")
         by_user: Optional filter by user email
         limit: Maximum number of edits to return
@@ -486,14 +491,6 @@ async def get_document_edits(
     # Parse URL to file ID if needed
     file_id = parse_drive_url(file_id)
     db = get_db()
-
-    # Get document state for title
-    state = db.get_document_state(file_id)
-    if not state:
-        raise HTTPException(status_code=404, detail=f"Document {file_id} not found")
-
-    # Get all revisions
-    revisions = db.get_document_revisions(file_id)
 
     # Parse since filter
     since_dt = None
@@ -512,28 +509,101 @@ async def get_document_edits(
             except ValueError:
                 pass
 
-    # Filter revisions
+    if source == "live":
+        # Fetch revisions directly from Google Drive API
+        from drive_rag.auth import get_google_client
+
+        try:
+            google = get_google_client()
+            metadata = google.get_file_metadata(file_id)
+            title = metadata.get("name", "Untitled")
+
+            revisions_data = google.list_revisions(file_id)
+
+            edits = []
+            editors = set()
+            for rev in revisions_data:
+                modifier = rev.get("lastModifyingUser", {})
+                email = modifier.get("emailAddress")
+                name = modifier.get("displayName")
+                modified_time_str = rev.get("modifiedTime")
+
+                modified_time = None
+                if modified_time_str:
+                    modified_time = datetime.fromisoformat(
+                        modified_time_str.replace("Z", "+00:00")
+                    )
+
+                # Apply time filter
+                if since_dt and modified_time:
+                    if modified_time.replace(tzinfo=None) < since_dt:
+                        continue
+
+                # Apply user filter
+                if by_user and email:
+                    if by_user.lower() not in email.lower():
+                        continue
+
+                # Check if we have a stored snapshot for this revision
+                has_snap = db.get_snapshot_metadata(file_id, rev.get("id", "")) is not None
+
+                edits.append(
+                    EditRecord(
+                        revision_id=rev.get("id", ""),
+                        modifier_email=email,
+                        modifier_name=name,
+                        modified_time=modified_time,
+                        has_snapshot=has_snap,
+                    )
+                )
+                if email:
+                    editors.add(email)
+
+            # Sort by time descending, apply limit
+            edits.sort(
+                key=lambda e: e.modified_time or datetime.min, reverse=True
+            )
+            edits = edits[:limit]
+
+            return DocumentEditsResponse(
+                drive_file_id=file_id,
+                title=title,
+                edit_count=len(edits),
+                editors=sorted(list(editors)),
+                edits=edits,
+            )
+
+        except Exception as e:
+            # Fall back to stored data on failure
+            logger.warning(
+                "live_edits_fallback",
+                file_id=file_id,
+                error=str(e),
+            )
+            # Fall through to stored logic below
+
+    # Stored source (database) — also used as fallback when live fails
+    state = db.get_document_state(file_id)
+    if not state:
+        raise HTTPException(status_code=404, detail=f"Document {file_id} not found")
+
+    revisions = db.get_document_revisions(file_id)
+
     filtered = []
     editors = set()
     for rev in revisions:
-        # Time filter
         if since_dt and rev.modified_time:
             if rev.modified_time.replace(tzinfo=None) < since_dt:
                 continue
-
-        # User filter
         if by_user and rev.modifier_email:
             if by_user.lower() not in rev.modifier_email.lower():
                 continue
-
         filtered.append(rev)
         if rev.modifier_email:
             editors.add(rev.modifier_email)
 
-    # Apply limit
     filtered = filtered[:limit]
 
-    # Convert to response format
     edits = [
         EditRecord(
             revision_id=rev.revision_id,
@@ -557,43 +627,56 @@ async def get_document_edits(
 @app.get("/v1/diff/{file_id:path}", response_model=DocumentDiffResponse)
 async def get_document_diff(
     file_id: str,
-    from_revision: Optional[str] = Query(None, description="Base revision ID (defaults to oldest snapshot)"),
-    to_revision: Optional[str] = Query(None, description="Target revision ID (defaults to latest snapshot)"),
+    from_revision: Optional[str] = Query(
+        None,
+        description="Base revision ID, or 'latest' for most recent snapshot (defaults to oldest)",
+    ),
+    to_revision: Optional[str] = Query(
+        None,
+        description="Target revision ID, or 'live' for current document content (defaults to latest snapshot)",
+    ),
 ):
     """Get diff between two document versions.
 
+    Supports live comparison: use to_revision=live to compare against the
+    current document content fetched directly from Google Drive.
+    Use from_revision=latest to always use the most recent stored snapshot.
+
     Args:
         file_id: Google Drive file ID or URL
-        from_revision: Base revision ID (optional, defaults to oldest)
-        to_revision: Target revision ID (optional, defaults to latest)
+        from_revision: Base revision ID, 'latest', or None (defaults to oldest)
+        to_revision: Target revision ID, 'live', or None (defaults to latest snapshot)
 
     Returns:
         DocumentDiffResponse with block-level changes
     """
-    from drive_rag.differ import diff_snapshots, ChangeType
+    from drive_rag.differ import diff_snapshots
     from drive_rag.snapshots import load_snapshot_from_path
 
     # Parse URL to file ID if needed
     file_id = parse_drive_url(file_id)
     db = get_db()
 
-    # Get snapshots for this file
+    is_live = to_revision and to_revision.lower() == "live"
+    is_from_latest = from_revision and from_revision.lower() == "latest"
+
+    # Get snapshots for this file (needed for baseline)
     snapshots = db.get_snapshots_for_file(file_id)
 
     if not snapshots:
         raise HTTPException(
             status_code=404,
-            detail=f"No snapshots found for document {file_id}"
+            detail=f"No snapshots found for document {file_id}. Ingest the document first.",
         )
 
     # Sort by modified time (oldest first)
     snapshots.sort(key=lambda s: s.modified_time or datetime.min)
 
-    # Find from/to snapshots
+    # Resolve baseline (from) snapshot
     from_snapshot = None
-    to_snapshot = None
-
-    if from_revision:
+    if is_from_latest:
+        from_snapshot = snapshots[-1]  # Most recent
+    elif from_revision:
         for s in snapshots:
             if s.revision_id == from_revision:
                 from_snapshot = s
@@ -601,33 +684,88 @@ async def get_document_diff(
         if not from_snapshot:
             raise HTTPException(
                 status_code=404,
-                detail=f"Snapshot for revision {from_revision} not found"
+                detail=f"Snapshot for revision {from_revision} not found",
             )
     else:
         from_snapshot = snapshots[0]  # Oldest
 
-    if to_revision:
-        for s in snapshots:
-            if s.revision_id == to_revision:
-                to_snapshot = s
-                break
-        if not to_snapshot:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Snapshot for revision {to_revision} not found"
-            )
-    else:
-        to_snapshot = snapshots[-1]  # Latest
-
-    # Load snapshot data
+    # Load baseline snapshot
     try:
         from_data = load_snapshot_from_path(from_snapshot.snapshot_path)
-        to_data = load_snapshot_from_path(to_snapshot.snapshot_path)
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to load snapshots: {str(e)}"
+            detail=f"Failed to load baseline snapshot: {str(e)}",
         )
+
+    # Resolve target (to) data
+    to_revision_id = None
+    if is_live:
+        # Fetch live content from Google Drive and normalize
+        from drive_rag.auth import get_google_client
+        from drive_rag.normalizer import (
+            normalize_docs_document,
+            normalize_plain_text_document,
+            normalize_spreadsheet_csv,
+            normalize_presentation_text,
+        )
+
+        try:
+            google = get_google_client()
+            metadata = google.get_file_metadata(file_id)
+            mime_type = metadata.get("mimeType", "")
+
+            if mime_type == "application/vnd.google-apps.document":
+                try:
+                    doc = google.get_document(file_id)
+                    to_data = normalize_docs_document(file_id, "live", doc)
+                except Exception:
+                    text = google.export_document_as_text(file_id)
+                    to_data = normalize_plain_text_document(file_id, "live", text)
+            elif mime_type == "application/vnd.google-apps.spreadsheet":
+                csv_content = google.export_spreadsheet_as_csv(file_id)
+                to_data = normalize_spreadsheet_csv(file_id, "live", csv_content)
+            elif mime_type == "application/vnd.google-apps.presentation":
+                text = google.export_presentation_as_text(file_id)
+                to_data = normalize_presentation_text(file_id, "live", text)
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Live diff not supported for MIME type: {mime_type}",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch live content: {str(e)}",
+            )
+
+        to_revision_id = "live"
+    else:
+        # Load target from stored snapshot
+        to_snapshot = None
+        if to_revision:
+            for s in snapshots:
+                if s.revision_id == to_revision:
+                    to_snapshot = s
+                    break
+            if not to_snapshot:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Snapshot for revision {to_revision} not found",
+                )
+        else:
+            to_snapshot = snapshots[-1]  # Latest
+
+        try:
+            to_data = load_snapshot_from_path(to_snapshot.snapshot_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to load target snapshot: {str(e)}",
+            )
+        to_revision_id = to_snapshot.revision_id
 
     # Compute diff
     diff = diff_snapshots(from_data, to_data)
@@ -651,7 +789,7 @@ async def get_document_diff(
     return DocumentDiffResponse(
         drive_file_id=file_id,
         from_revision=from_snapshot.revision_id,
-        to_revision=to_snapshot.revision_id,
+        to_revision=to_revision_id,
         blocks_added=diff.blocks_added,
         blocks_deleted=diff.blocks_deleted,
         blocks_modified=diff.blocks_modified,
@@ -823,60 +961,6 @@ async def analyze_entity_consolidation(
 # =====================
 # Change Monitoring Endpoints
 # =====================
-
-
-@app.post("/v1/scan/changes", response_model=ScanChangesResponse)
-async def scan_for_document_changes(
-    priority: str = Query("high", description="Priority tier: high, medium, low, all"),
-    batch_size: int = Query(100, ge=10, le=500, description="Maximum documents to scan"),
-    dry_run: bool = Query(False, description="Preview what would change without re-indexing"),
-):
-    """Scan for documents that have changed in Google Drive.
-
-    This endpoint checks indexed documents against Google Drive to detect
-    changes, and triggers re-ingestion for documents that have been modified.
-
-    Priority tiers:
-    - high: Documents modified in last 24 hours (check frequently)
-    - medium: Documents modified 1-7 days ago
-    - low: Older documents (daily rotating sample)
-    - all: All documents (for full daily scan)
-
-    Args:
-        priority: Priority tier to scan
-        batch_size: Maximum documents to check in this scan
-        dry_run: If True, report changes but don't re-index
-
-    Returns:
-        ScanChangesResponse with scan statistics
-    """
-    from drive_rag.change_monitor import scan_for_changes, PRIORITY_HIGH, PRIORITY_MEDIUM, PRIORITY_LOW, PRIORITY_ALL
-
-    valid_priorities = [PRIORITY_HIGH, PRIORITY_MEDIUM, PRIORITY_LOW, PRIORITY_ALL]
-    if priority not in valid_priorities:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid priority '{priority}'. Must be one of: {valid_priorities}",
-        )
-
-    logger.info(
-        "scan_changes_request",
-        priority=priority,
-        batch_size=batch_size,
-        dry_run=dry_run,
-    )
-
-    try:
-        result = await scan_for_changes(
-            priority=priority,
-            batch_size=batch_size,
-            dry_run=dry_run,
-        )
-        return ScanChangesResponse(**result.to_dict())
-
-    except Exception as e:
-        logger.exception("scan_changes_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/v1/documents/changed", response_model=ChangedDocumentsResponse)
