@@ -22,7 +22,7 @@ logger = structlog.get_logger()
 
 # Scopes required for Drive and Docs access
 SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/documents.readonly",
     # Activity API for view/edit tracking (optional - will gracefully degrade if not granted)
     "https://www.googleapis.com/auth/drive.activity.readonly",

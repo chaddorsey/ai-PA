@@ -1821,6 +1821,210 @@ def get_document_comments(
         }, indent=2)
 
 
+def reply_to_document_comment(
+    file_id: str,
+    comment_id: str,
+    reply_text: str,
+) -> str:
+    """
+    Reply to a comment on a Google Drive document.
+
+    Posts a reply to an existing comment thread on a document, spreadsheet, or
+    presentation. Use get_document_comments first to find the comment_id to reply to.
+
+    Args:
+        file_id: Google Drive file ID or URL. Supports formats:
+                 - https://docs.google.com/document/d/FILE_ID/edit
+                 - https://drive.google.com/file/d/FILE_ID/view
+                 - Just the FILE_ID directly
+        comment_id: The ID of the comment to reply to (from get_document_comments output)
+        reply_text: The text content of the reply
+
+    Returns:
+        str: JSON string with reply details including reply_id and created_time
+    """
+    import os
+    import re
+    import json
+    from pathlib import Path
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    TOKEN_PATH = os.getenv(
+        "GMAIL_CREDENTIALS_PATH",
+        str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+    )
+    SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+    try:
+        # Extract file ID from URL
+        parsed_id = None
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', file_id)
+        if match:
+            parsed_id = match.group(1)
+        if not parsed_id:
+            match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', file_id)
+            if match:
+                parsed_id = match.group(1)
+        if not parsed_id:
+            if re.match(r'^[a-zA-Z0-9_-]+$', file_id):
+                parsed_id = file_id
+        if not parsed_id:
+            return json.dumps({"error": "Could not extract file ID from input", "input": file_id})
+
+        # Load credentials
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception:
+                pass
+
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    with open(TOKEN_PATH, "w") as token:
+                        token.write(creds.to_json())
+                except Exception:
+                    creds = None
+
+        if not creds:
+            return json.dumps({"error": "OAuth credentials not available", "token_path": TOKEN_PATH})
+
+        service = build("drive", "v3", credentials=creds)
+
+        # Create the reply
+        reply = service.replies().create(
+            fileId=parsed_id,
+            commentId=comment_id,
+            fields="id,author(displayName,emailAddress),content,createdTime",
+            body={"content": reply_text},
+        ).execute()
+
+        author = reply.get("author", {})
+        return json.dumps({
+            "status": "ok",
+            "file_id": parsed_id,
+            "comment_id": comment_id,
+            "reply_id": reply.get("id"),
+            "author": author.get("displayName", ""),
+            "content": reply.get("content", ""),
+            "created_time": reply.get("createdTime", ""),
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({
+            "error": f"Drive API error: {e.resp.status}",
+            "message": str(e),
+            "file_id": file_id,
+            "comment_id": comment_id,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Error replying to comment: {str(e)}"}, indent=2)
+
+
+def resolve_document_comment(
+    file_id: str,
+    comment_id: str,
+) -> str:
+    """
+    Resolve (close) a comment on a Google Drive document.
+
+    Marks a comment thread as resolved. Use get_document_comments first to find
+    the comment_id. Typically used after replying to a comment to close the thread.
+
+    Args:
+        file_id: Google Drive file ID or URL. Supports formats:
+                 - https://docs.google.com/document/d/FILE_ID/edit
+                 - https://drive.google.com/file/d/FILE_ID/view
+                 - Just the FILE_ID directly
+        comment_id: The ID of the comment to resolve (from get_document_comments output)
+
+    Returns:
+        str: JSON string confirming the comment was resolved
+    """
+    import os
+    import re
+    import json
+    from pathlib import Path
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    TOKEN_PATH = os.getenv(
+        "GMAIL_CREDENTIALS_PATH",
+        str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+    )
+    SCOPES = ["https://www.googleapis.com/auth/drive"]
+
+    try:
+        # Extract file ID from URL
+        parsed_id = None
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', file_id)
+        if match:
+            parsed_id = match.group(1)
+        if not parsed_id:
+            match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', file_id)
+            if match:
+                parsed_id = match.group(1)
+        if not parsed_id:
+            if re.match(r'^[a-zA-Z0-9_-]+$', file_id):
+                parsed_id = file_id
+        if not parsed_id:
+            return json.dumps({"error": "Could not extract file ID from input", "input": file_id})
+
+        # Load credentials
+        creds = None
+        if os.path.exists(TOKEN_PATH):
+            try:
+                creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+            except Exception:
+                pass
+
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                    with open(TOKEN_PATH, "w") as token:
+                        token.write(creds.to_json())
+                except Exception:
+                    creds = None
+
+        if not creds:
+            return json.dumps({"error": "OAuth credentials not available", "token_path": TOKEN_PATH})
+
+        service = build("drive", "v3", credentials=creds)
+
+        # Resolve the comment
+        result = service.comments().update(
+            fileId=parsed_id,
+            commentId=comment_id,
+            fields="id,resolved",
+            body={"resolved": True},
+        ).execute()
+
+        return json.dumps({
+            "status": "ok",
+            "file_id": parsed_id,
+            "comment_id": comment_id,
+            "resolved": result.get("resolved", True),
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({
+            "error": f"Drive API error: {e.resp.status}",
+            "message": str(e),
+            "file_id": file_id,
+            "comment_id": comment_id,
+        }, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Error resolving comment: {str(e)}"}, indent=2)
+
+
 def search_drive_activity(
     user: Optional[str] = None,
     owner: Optional[str] = None,
