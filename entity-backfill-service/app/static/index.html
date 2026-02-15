@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Entity Backfill Monitor</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="manifest" href="/manifest.json">
+</head>
+<body>
+  <h1>Entity Backfill Monitor
+    <button class="notify-btn" id="notifyBtn" onclick="subscribePush()">Enable notifications</button>
+  </h1>
+
+  <div class="card">
+    <h2>Status</h2>
+    <span class="status-badge status-idle" id="statusBadge">idle</span>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div style="text-align:center;font-size:0.875rem;margin-bottom:0.5rem" id="progressText">0 / 0 docs</div>
+    <div class="counts">
+      <span class="ok" id="cntOk">0 ok</span>
+      <span class="skip" id="cntSkip">0 skip</span>
+      <span class="err" id="cntErr">0 err</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Performance</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-value" id="rate">-</div><div class="stat-label">docs/sec</div></div>
+      <div class="stat"><div class="stat-value" id="eta">-</div><div class="stat-label">ETA</div></div>
+      <div class="stat"><div class="stat-value" id="elapsed">-</div><div class="stat-label">Elapsed</div></div>
+      <div class="stat"><div class="stat-value" id="cost">$0</div><div class="stat-label">Est. cost</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="controls">
+      <button class="btn btn-primary" id="btnStart" onclick="apiPost('start')">Start</button>
+      <button class="btn" id="btnPause" onclick="apiPost('pause')" disabled>Pause</button>
+      <button class="btn" id="btnResume" onclick="apiPost('resume')" disabled>Resume</button>
+      <button class="btn" id="btnRetry" onclick="apiPost('retry-errors')">Retry Errors</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Recent Errors <span id="errCount"></span></h2>
+    <div class="error-list" id="errorList"><em style="color:var(--text-dim)">None</em></div>
+  </div>
+
+  <div class="card">
+    <h2>Knowledge Graph</h2>
+    <dl class="neo4j-stats" id="neo4jStats"><dd style="color:var(--text-dim)">Loading...</dd></dl>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
