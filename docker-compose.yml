@@ -1266,6 +1266,36 @@ services:
       - "network=pa-internal"
       - "external-access=true"
 
+  # --- Entity Extraction Backfill ---
+  entity-backfill-service:
+    build: ./entity-backfill-service
+    container_name: entity-backfill-service
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      drive-rag-service:
+        condition: service_healthy
+    ports:
+      - "5140:8000"
+    volumes:
+      - entity-backfill-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=entity-backfill-service"
+      - "component=batch-processing"
+      - "network=pa-internal"
+
 
 volumes:
   supabase_db:
@@ -1288,6 +1318,7 @@ volumes:
   schedules-direct-data:
   content-database-data:
   watch-history-credentials:
+  entity-backfill-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring
