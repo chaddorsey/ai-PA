@@ -1,15 +1,5 @@
 {
   "mcpServers": {
-    "gmail-tools": {
-      "command": "http",
-      "args": ["http://gmail-mcp-server:8080/mcp"],
-      "env": {
-        "MCP_SERVER_NAME": "gmail-tools",
-        "MCP_SERVER_VERSION": "1.1.11",
-        "MCP_TRANSPORT": "streamable-http"
-      },
-      "disabled": false
-    },
     "slack-tools": {
       "command": "http",
       "args": ["http://localhost:3001/sse"],

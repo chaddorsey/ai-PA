@@ -208,7 +208,6 @@ MCP servers are registered in `/letta/letta_mcp_config.json`. All use HTTP trans
 
 | MCP Server | Endpoint | Purpose |
 |------------|----------|---------|
-| gmail-tools | `http://gmail-mcp-server:8080/mcp` | Gmail API (OAuth) |
 | slack-tools | `http://localhost:3001/sse` | Slack integration |
 | graphiti-tools | `http://graphiti-mcp-server:8000/mcp` | Knowledge graph (Neo4j) |
 | rag-tools | `http://rag-mcp-server:8082/mcp` | Vector database |
@@ -382,7 +381,6 @@ Environment variables are defined in `.env` (gitignored). Key categories:
 ### MCP Servers
 | Service | Port | Purpose |
 |---------|------|---------|
-| gmail-mcp-server | 8084 | Gmail API integration |
 | omnifocus-mcp-server | 8888 | OmniFocus (AppleScript bridge) |
 | scheduler-mcp | 8088 | Scheduling tools |
 | slack-mcp-server | 3001 | Slack integration |

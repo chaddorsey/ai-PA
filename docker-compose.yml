@@ -554,7 +554,6 @@ services:
     restart: unless-stopped
     networks: [pa-internal]
     depends_on:
-      - gmail-mcp-server
       - graphiti-mcp-server
       - rag-mcp-server
       - calendly-mcp-server
@@ -789,52 +788,10 @@ services:
       - "component=external-access"
       - "network=pa-internal"
 
-  gmail-mcp-server:
-    build:
-      context: ./gmail-mcp
-      dockerfile: Dockerfile
-    container_name: gmail-mcp-server
-    restart: unless-stopped
-    networks: [pa-internal]
-    ports:
-      - "8084:8080"  # Expose for Letta Desktop access
-    volumes:
-      - gmail-mcp-data:/app/data
-      - ./gmail-mcp/gcp-oauth.keys.json:/app/config/gcp-oauth.keys.json:ro
-    environment:
-      # Common MCP variables
-      - MCP_SERVER_NAME=gmail-tools
-      - MCP_SERVER_VERSION=1.1.11
-      - MCP_SERVER_DESCRIPTION=Gmail integration tools
-      - MCP_SERVER_HOST=0.0.0.0
-      - MCP_SERVER_PORT=8080
-      - MCP_SERVER_PATH=/mcp
-      - MCP_LOG_LEVEL=INFO
-      - MCP_LOG_FORMAT=json
-      - MCP_HEALTH_CHECK_PATH=/health
-      
-      # Gmail-specific variables
-      - GMAIL_OAUTH_PATH=/app/config/gcp-oauth.keys.json
-      - GMAIL_CREDENTIALS_PATH=/app/data/credentials.json
-      - PORT=8080
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        labels: "service,component,network"
-    labels:
-      - "service=gmail-mcp-server"
-      - "component=mcp-server"
-      - "network=pa-internal"
-      - "mcp-transport=http"
-      - "mcp-version=1.1.11"
+  # gmail-mcp-server: DECOMMISSIONED 2026-02-15
+  # Replaced by custom Letta tools in letta/gmail_tools.py
+  # Gmail API access now via direct OAuth in Letta sandbox
+  # Source kept in gmail-mcp/ for reference
       - "security.internal-only=true"
       - "security.no-external-access=true"
 
@@ -1316,7 +1273,6 @@ volumes:
   channels_cache:
   slackbot_state:
   slackbot_logs:
-  gmail-mcp-data:
   rag-mcp-data:
   portainer_data:
   sports-service-data:
