@@ -212,10 +212,17 @@ def format_content(meeting_id: str, meeting_meta: dict, documents: dict,
         if names:
             lines.append(f"**Participants:** {', '.join(names)}")
 
-    # Get document for enhanced notes fallback
+    # Get document for notes
     doc = documents.get(meeting_id, {})
 
-    # Get enhanced notes from document panels (primary) or document (fallback)
+    # User's own notes (typed during meeting)
+    my_notes = doc.get('notes_markdown', '') or doc.get('notes_plain', '')
+    if my_notes and my_notes.strip():
+        lines.append("")
+        lines.append("### My Notes")
+        lines.append(my_notes.strip())
+
+    # AI-generated summary from document panels (primary) or document (fallback)
     enhanced_notes = get_summary_from_panels(meeting_id, document_panels)
     if not enhanced_notes:
         enhanced_notes = doc.get('enhancedNotes', '')

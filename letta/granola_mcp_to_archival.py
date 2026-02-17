@@ -297,7 +297,8 @@ def generate_tags(meeting: dict) -> list[str]:
     return list(set(tags))
 
 
-def format_content(meeting: dict, summary: str, transcript_text: str) -> str:
+def format_content(meeting: dict, summary: str, transcript_text: str,
+                    private_notes: str = "") -> str:
     """Format meeting into markdown — same layout as cache-based ingestion."""
     lines = []
 
@@ -314,6 +315,11 @@ def format_content(meeting: dict, summary: str, transcript_text: str) -> str:
     names = [p["name"] for p in meeting.get("participants", []) if p.get("name")]
     if names:
         lines.append(f"**Participants:** {', '.join(names)}")
+
+    if private_notes and private_notes.strip():
+        lines.append("")
+        lines.append("### My Notes")
+        lines.append(private_notes.strip())
 
     if summary:
         lines.append("")
@@ -364,14 +370,14 @@ def fetch_meeting_list(time_range: str, custom_start: str = "", custom_end: str 
     return parse_list_meetings(text)
 
 
-def fetch_meeting_detail(meeting_id: str) -> tuple[str, list[dict]]:
-    """Call get_meetings for one meeting. Returns (summary, participants)."""
+def fetch_meeting_detail(meeting_id: str) -> tuple[str, str, list[dict]]:
+    """Call get_meetings for one meeting. Returns (summary, private_notes, participants)."""
     text = mcp_tool("get_meetings", {"meeting_ids": [meeting_id]})
     if not text:
-        return "", []
+        return "", "", []
 
     detail = parse_get_meetings(text)
-    return detail["summary"], detail["participants"]
+    return detail["summary"], detail["private_notes"], detail["participants"]
 
 
 def fetch_transcript(meeting_id: str) -> str:
@@ -406,8 +412,8 @@ def ingest_meeting_by_id(
 
     logger.info(f"Fetching meeting {meeting_id}...")
 
-    # Get detail (title, summary, participants)
-    summary, participants = fetch_meeting_detail(meeting_id)
+    # Get detail (title, summary, private_notes, participants)
+    summary, private_notes, participants = fetch_meeting_detail(meeting_id)
 
     # Build a meeting dict from the detail response
     meeting = {
@@ -433,7 +439,8 @@ def ingest_meeting_by_id(
         return False
 
     tags = generate_tags(meeting)
-    content = format_content(meeting, summary, transcript_text)
+    content = format_content(meeting, summary, transcript_text,
+                             private_notes=private_notes)
     tag_line = f"**Tags:** {', '.join(tags)}\n\n"
     full_content = tag_line + content
 
@@ -482,7 +489,7 @@ def ingest_meetings(
         logger.info(f"[{i}/{len(new_meetings)}] {title}")
 
         # Fetch detailed data
-        summary, detail_participants = fetch_meeting_detail(mid)
+        summary, private_notes, detail_participants = fetch_meeting_detail(mid)
 
         # Merge participants — detail may have more info
         if detail_participants:
@@ -497,7 +504,8 @@ def ingest_meetings(
         tags = generate_tags(meeting)
 
         # Format content
-        content = format_content(meeting, summary, transcript_text)
+        content = format_content(meeting, summary, transcript_text,
+                                 private_notes=private_notes)
         tag_line = f"**Tags:** {', '.join(tags)}\n\n"
         full_content = tag_line + content
 
