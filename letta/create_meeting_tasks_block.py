@@ -27,6 +27,7 @@ This returns a scan package with marker_extractions and scannable_content.
 
 ### Step 2: Review & Merge
 Review the scan package:
+- marker_extractions.decisions: items marked D: or Decision: = explicit decisions (rare)
 - marker_extractions.my_tasks: items marked [ ] or [] = personal tasks for Chad
 - marker_extractions.their_tasks: items marked [;] = others action items
 - marker_extractions.pointers: items marked > = expand using transcript excerpts
@@ -37,13 +38,28 @@ Semantic scan each scannable_content item for additional action items not captur
 Merge: markers are authoritative anchors. Semantic discoveries augment or add new items.
 Confidence: markers > user notes > AI summary > linked docs > transcript.
 
+DECISIONS ARE RARE. Only include if explicitly marked with D: or Decision: in notes,
+or if the meeting context makes a clear group decision (e.g. "we agreed to X").
+Progress updates, status items, and observations are NOT decisions. Most meetings
+will have zero decisions. When in doubt, omit.
+
+### Step 2b: Attach Deadlines
+Each action item may have a deadline_hint (from notes or transcript).
+- If deadline_source is "notes": high confidence — include "by <date>" in the action text.
+- If deadline_source is "transcript": medium confidence — include if context supports it.
+- If no hint but you can infer a deadline from meeting context (e.g. "let's get this done
+  this week"): include with medium+ confidence only.
+- Format: "Chad to send message to Michelle W by Wednesday, 2/18"
+- Resolve day names to actual dates using meeting_date as reference.
+- When in doubt, omit the deadline — better to leave it off than guess wrong.
+
 ### Step 3: Draft Email
 Call prepare_meeting_followup with ALL merged items:
 - meeting_id, meeting_title, meeting_date: from scan package
 - participants: comma-separated "Name <email>" entries (resolve emails from important_people)
-- decisions: pipe-separated key decisions (from AI summary)
-- my_actions: pipe-separated personal tasks ([ ] markers + semantic)
-- their_actions: pipe-separated "Name: action" entries ([;] markers + semantic)
+- decisions: pipe-separated key decisions ONLY if high-confidence (D: markers or clear group agreement)
+- my_actions: pipe-separated personal tasks with deadlines inline ([ ] markers + semantic)
+- their_actions: pipe-separated "Name: action by date" entries ([;] markers + semantic)
 
 CRITICAL: You MUST call prepare_meeting_followup after reviewing the scan.
 Do NOT just summarize results as text. The user expects a Gmail draft.

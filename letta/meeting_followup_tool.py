@@ -35,9 +35,10 @@ def prepare_meeting_followup(
         meeting_date: Meeting date as YYYY-MM-DD string.
         participants: Comma-separated participant entries, each as "Name <email>"
             (e.g. "Rebecca Ellis <rellis@concord.org>, Amy Pallant <apallant@concord.org>").
-        decisions: Pipe-separated list of key decisions made
-            (e.g. "Decision one|Decision two, with detail").
-            Omit if no decisions identified.
+        decisions: Pipe-separated list of key decisions made. Decisions are rare
+            and must be high-confidence: explicitly marked with "D:" or "Decision:" in
+            user notes, or clearly stated as a decision in meeting context. Progress
+            updates and status items are NOT decisions. Omit if none identified.
         my_actions: Pipe-separated list of personal action items
             (e.g. "Send budget to finance|Review one-pager by Friday").
             Omit if no personal actions identified.
@@ -108,37 +109,66 @@ def prepare_meeting_followup(
                 their_action_map[who] = []
             their_action_map[who].append(action)
 
-        # ── Format email body ──
-        lines = [f"Hi all,", "", f"Here's a summary of our {meeting_title} ({meeting_date}):"]
+        # ── Format email body as HTML ──
+        # Build participant first-name greeting
+        first_names = [p["name"].split()[0] for p in participant_list if p["name"]]
+        if len(first_names) == 1:
+            greeting_names = first_names[0]
+        elif len(first_names) == 2:
+            greeting_names = f"{first_names[0]} and {first_names[1]}"
+        elif first_names:
+            greeting_names = ", ".join(first_names[:-1]) + f", and {first_names[-1]}"
+        else:
+            greeting_names = "all"
 
-        if decision_list:
-            lines.append("")
-            lines.append("DECISIONS")
-            for d in decision_list:
-                lines.append(f"- {d}")
+        html_parts = []
+        html_parts.append(f"<p>{greeting_names},</p>")
+        html_parts.append(
+            "<p>I&#39;ve summarized below the decisions and next actions "
+            "I captured. Please let me know if your notes differ from mine.</p>"
+        )
+        html_parts.append("<p>--Chad</p>")
+        html_parts.append("<p>=====</p>")
+        html_parts.append("<p><b>Decisions / Next Actions</b></p>")
 
-        lines.append("")
-        lines.append("NEXT ACTIONS")
+        # Build decision bullet items (italic "Decision" prefix)
+        decision_items = []
+        for d in decision_list:
+            cap_d = d[0].upper() + d[1:] if d else d
+            decision_items.append(f"<li><i>Decision</i> &#8211; {cap_d}</li>")
 
-        if my_action_list:
-            lines.append("")
-            lines.append("Chad:")
-            for a in my_action_list:
-                lines.append(f"- {a}")
+        # Build action bullet items ("Name to verb..." format)
+        action_items = []
+        for a in my_action_list:
+            if not a:
+                continue
+            a_lower = a.lower()
+            if a_lower.startswith("chad to ") or a_lower.startswith("chad: "):
+                action_items.append(f"<li>{a}</li>")
+            else:
+                action_items.append(f"<li>Chad to {a[0].lower()}{a[1:]}</li>")
 
         for who, actions in sorted(their_action_map.items()):
-            lines.append("")
-            lines.append(f"{who}:")
             for a in actions:
-                lines.append(f"- {a}")
+                if not a:
+                    continue
+                a_lower = a.lower()
+                if a_lower.startswith(f"{who.lower()} to "):
+                    action_items.append(f"<li>{a}</li>")
+                else:
+                    action_items.append(f"<li>{who} to {a[0].lower()}{a[1:]}</li>")
 
-        lines.append("")
-        lines.append("Let me know if I missed anything.")
-        lines.append("")
-        lines.append("Best,")
-        lines.append("Chad")
+        # Assemble bullet lists with blank line between decisions and actions
+        if decision_items and action_items:
+            html_parts.append("<ul>" + "".join(decision_items) + "</ul>")
+            html_parts.append("<br>")
+            html_parts.append("<ul>" + "".join(action_items) + "</ul>")
+        elif decision_items:
+            html_parts.append("<ul>" + "".join(decision_items) + "</ul>")
+        elif action_items:
+            html_parts.append("<ul>" + "".join(action_items) + "</ul>")
 
-        body_text = "\n".join(lines)
+        body_html = "".join(html_parts)
 
         # ── Create Gmail draft ──
         CREDS_DIR = "/root/.gmail-mcp"
@@ -167,9 +197,10 @@ def prepare_meeting_followup(
 
         gmail = build("gmail", "v1", credentials=creds)
 
-        message = MIMEText(body_text, "plain")
+        message = MIMEText(body_html, "html")
         message["To"] = ", ".join(emails_list)
-        message["Subject"] = f"Re: {meeting_title} -- D/NA"
+        subject = f"{meeting_title} - meeting summary"
+        message["Subject"] = subject
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
         draft = gmail.users().drafts().create(
@@ -231,7 +262,7 @@ def prepare_meeting_followup(
             "thread_id": draft_message.get("threadId", ""),
             "tasks_queued": tasks_queued,
             "email_to": ", ".join(emails_list),
-            "email_subject": f"Re: {meeting_title} -- D/NA",
+            "email_subject": subject,
         }
 
     except Exception as e:

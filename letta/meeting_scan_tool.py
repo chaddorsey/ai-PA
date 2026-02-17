@@ -135,11 +135,13 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
 
         # ── Parse markers from private_notes ──
         MARKER_RE = re.compile(
-            r"^\s*(?:[-*]\s*)?(\[;\]|\[\s?\]|>)\s+(.+)$", re.MULTILINE
+            r"^\s*(?:[-*]\s*)?(\[;\]|\[\s?\]|>|D:|Decision:)\s+(.+)$",
+            re.MULTILINE,
         )
         my_tasks = []
         their_tasks = []
         pointers = []
+        decisions = []
 
         if private_notes:
             for line_num, line in enumerate(private_notes.split("\n"), 1):
@@ -156,6 +158,65 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                     their_tasks.append(item)
                 elif marker == ">":
                     pointers.append(item)
+                elif marker in ("D:", "Decision:"):
+                    decisions.append(item)
+
+        # ── Scan for deadline hints on each action item ──
+        # Patterns: "by Friday", "by EOD Tuesday", "by March 15", "by 3/18",
+        # "this week", "next week", "tomorrow", "end of week", etc.
+        DEADLINE_INLINE_RE = re.compile(
+            r"\b(?:by|before|until|due|no later than)\s+"
+            r"(?:EOD\s+|end of day\s+|COB\s+)?"
+            r"("
+            r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
+            r"(?:\s+\d{1,2}/\d{1,2}(?:/\d{2,4})?)?"
+            r"|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*"
+            r"\s+\d{1,2}(?:,?\s+\d{4})?"
+            r"|\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+            r"|tomorrow|end of (?:week|day|month)"
+            r"|next (?:Monday|Tuesday|Wednesday|Thursday|Friday|week)"
+            r")",
+            re.IGNORECASE,
+        )
+        DEADLINE_WINDOW = 800
+        DEADLINE_STEP = 200
+
+        all_action_items = my_tasks + their_tasks
+        for item in all_action_items:
+            # First check the item text itself
+            inline_match = DEADLINE_INLINE_RE.search(item["text"])
+            if inline_match:
+                item["deadline_hint"] = inline_match.group(0).strip()
+                item["deadline_source"] = "notes"
+                continue
+
+            # Then search transcript near this action item's keywords
+            if not transcript_text:
+                continue
+            keywords = set(
+                w.lower()
+                for w in re.findall(r"\w{4,}", item["text"])
+            )
+            if not keywords:
+                continue
+            best_start = 0
+            best_score = 0
+            for start in range(
+                0, max(1, len(transcript_text) - DEADLINE_WINDOW), DEADLINE_STEP
+            ):
+                window = transcript_text[start : start + DEADLINE_WINDOW].lower()
+                score = sum(1 for kw in keywords if kw in window)
+                if score > best_score:
+                    best_score = score
+                    best_start = start
+            if best_score >= 2:
+                nearby = transcript_text[
+                    best_start : best_start + DEADLINE_WINDOW
+                ]
+                deadline_match = DEADLINE_INLINE_RE.search(nearby)
+                if deadline_match:
+                    item["deadline_hint"] = deadline_match.group(0).strip()
+                    item["deadline_source"] = "transcript"
 
         # ── Extract URLs from private_notes ──
         URL_RE = re.compile(r"https?://[^\s<>\"]+")
@@ -255,6 +316,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 "my_tasks": my_tasks,
                 "their_tasks": their_tasks,
                 "pointers": pointers,
+                "decisions": decisions,
             },
             "scannable_content": scannable_content,
             "has_user_notes": bool(private_notes),
