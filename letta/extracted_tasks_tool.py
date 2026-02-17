@@ -20,22 +20,30 @@ def add_extracted_tasks(
     location: str,
     location_id: str,
     source_timestamp: str,
-    project: Optional[str] = None
+    project: Optional[str] = None,
+    due_date: Optional[str] = None,
+    defer_date: Optional[str] = None,
+    priority: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Extract a task and archive its source reference in one atomic operation.
 
     This tool does two things:
     1. Adds the task to the shared extracted_tasks memory block (concurrent-safe).
-    2. Inserts a structured source reference passage into archival memory.
+    2. Inserts a structured source reference passage into the shared
+       extracted_tasks_archive (visible to all agents with the archive attached).
 
     The ref_id (8-char hex) links the two together.
+
+    Only capture metadata that is explicitly stated or clearly evident in the
+    source material. Do NOT infer or fabricate dates, priorities, or project
+    associations that are not present in the source.
 
     Args:
         task_description: Concise verb-led task title
             (e.g., "Review agenda items highlighted in yellow on worksheet").
         source_type: Source type shorthand. One of: "slack", "google-docs",
-            "meeting", "email".
+            "meeting", "email", "google-docs-comment".
         source_context: Human-readable origin description
             (e.g., "Direct message from Danielle Kehoe").
         reference_id: Deterministic canonical unique identifier for the source.
@@ -43,7 +51,8 @@ def add_extracted_tasks(
             slack = "slack-{channel_id}-{ts}",
             google-docs = "gdocs-{document_id}",
             meeting = "meeting-{meeting_id}",
-            email = "email-{message_id}".
+            email = "email-{message_id}",
+            google-docs-comment = "gdocs-comment-{document_id}-{comment_id}".
         source_text: Verbatim relevant text from the source. Do NOT summarize.
         from_person: Person name or ID who originated the task
             (e.g., "Danielle Kehoe (U09B5JUK2TY)").
@@ -55,6 +64,15 @@ def add_extracted_tasks(
             in ISO 8601 format (e.g., "2026-02-11T06:37:00Z").
         project: Optional project name for tagging. Only provide if clearly
             relevant (e.g., "grants", "codap"). Adds a 4th tag.
+        due_date: Optional due date in ISO 8601 format. Only provide when
+            explicitly stated in source (e.g., "by Friday", "due March 1").
+            Do NOT infer deadlines that are not clearly indicated.
+        defer_date: Optional defer/start date in ISO 8601 format. Only provide
+            when explicitly stated (e.g., "start Monday", "after the meeting").
+        priority: Optional priority level. One of: "high", "normal", "low".
+            Only provide when urgency is clearly indicated in the source
+            (e.g., "ASAP", "urgent", "when you get a chance"). Do NOT default
+            to any value — omit if not evident.
 
     Returns:
         Dictionary with keys:
@@ -92,7 +110,7 @@ def add_extracted_tasks(
             }
 
         # Validate source_type
-        valid_source_types = {"slack", "google-docs", "meeting", "email"}
+        valid_source_types = {"slack", "google-docs", "google-docs-comment", "meeting", "email"}
         if source_type not in valid_source_types:
             return {
                 "status": "error",
@@ -102,6 +120,19 @@ def add_extracted_tasks(
                 "ref_id": "",
                 "archival_passage_id": "",
                 "error_message": f"Invalid source_type '{source_type}'. Must be one of: {', '.join(sorted(valid_source_types))}"
+            }
+
+        # Validate priority if provided
+        valid_priorities = {"high", "normal", "low"}
+        if priority and priority not in valid_priorities:
+            return {
+                "status": "error",
+                "message": "",
+                "agent_name": "",
+                "timestamp": "",
+                "ref_id": "",
+                "archival_passage_id": "",
+                "error_message": f"Invalid priority '{priority}'. Must be one of: {', '.join(sorted(valid_priorities))}"
             }
 
         # Get agent name
@@ -210,10 +241,27 @@ def add_extracted_tasks(
 
         # ── Step 2: Insert archival source reference passage ──
 
+        # Build TASK METADATA section (only include fields that were provided)
+        metadata_lines = []
+        if due_date:
+            metadata_lines.append(f"- Due: {due_date}")
+        if defer_date:
+            metadata_lines.append(f"- Defer: {defer_date}")
+        if priority:
+            metadata_lines.append(f"- Priority: {priority}")
+
+        metadata_section = ""
+        if metadata_lines:
+            metadata_section = (
+                "\nTASK METADATA\n"
+                + "\n".join(metadata_lines)
+                + "\n"
+            )
+
         passage_text = (
             f"TASK: {task_description}\n"
             f"REF_ID: {ref_id}\n"
-            f"\n"
+            f"{metadata_section}\n"
             f"SOURCE REFERENCE\n"
             f"- Type: {source_type}\n"
             f"- Context: {source_context}\n"
@@ -247,7 +295,9 @@ def add_extracted_tasks(
         if project:
             tags.append(f"project:{project}")
 
-        archival_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory"
+        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
+        archival_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
+        tags.append(f"agent:{AGENT_ID}")
         archival_data = {"text": passage_text, "tags": tags}
         archival_payload = json.dumps(archival_data).encode('utf-8')
         archival_req = urllib.request.Request(
@@ -261,11 +311,7 @@ def add_extracted_tasks(
         try:
             with urllib.request.urlopen(archival_req, timeout=30) as response:
                 archival_resp = json.loads(response.read().decode('utf-8'))
-                # Response is a list of passages
-                if archival_resp and isinstance(archival_resp, list):
-                    archival_passage_id = archival_resp[0].get('id', '')
-                elif isinstance(archival_resp, dict):
-                    archival_passage_id = archival_resp.get('id', '')
+                archival_passage_id = archival_resp.get('id', '')
         except urllib.error.HTTPError as http_err:
             error_body = http_err.read().decode('utf-8')
             return {

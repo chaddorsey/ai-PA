@@ -16,7 +16,6 @@ def update_extracted_task(
     task_description: Optional[str] = None,
     source_context: Optional[str] = None,
     source_text: Optional[str] = None,
-    agent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Update the content of an existing extracted task and its archival passage.
@@ -25,6 +24,10 @@ def update_extracted_task(
     additional context, or updated source text. Only the provided fields are
     changed; all others are preserved. An Updated timestamp is added automatically.
 
+    Passages are stored in the shared extracted_tasks_archive, so any agent
+    with the archive attached can update any task regardless of which agent
+    originally extracted it.
+
     Args:
         ref_id: The 8-character hex reference ID of the task to update.
         task_description: Updated concise verb-led task title. Only provide if
@@ -32,8 +35,6 @@ def update_extracted_task(
         source_context: Updated human-readable origin description.
         source_text: Additional or corrected verbatim source text. This REPLACES
             the existing source text entirely.
-        agent_id: Agent whose archival memory contains the passage. Defaults to
-            the calling agent. Provide this for cross-agent updates.
 
     Returns:
         Dictionary with status, ref_id, and update confirmation.
@@ -49,11 +50,8 @@ def update_extracted_task(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        target_agent = agent_id or os.getenv("LETTA_AGENT_ID")
+        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
         calling_agent = os.getenv("LETTA_AGENT_ID")
-
-        if not target_agent:
-            return {"status": "error", "ref_id": ref_id, "error_message": "No agent_id provided and LETTA_AGENT_ID not set"}
 
         if not any([task_description, source_context, source_text]):
             return {"status": "error", "ref_id": ref_id, "error_message": "At least one of task_description, source_context, or source_text must be provided"}
@@ -62,14 +60,16 @@ def update_extracted_task(
         now = datetime.now(tz)
         iso_timestamp = now.isoformat()
 
-        # ── Find archival passage by ref_id ──
-        scan_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory?limit=500"
-        scan_req = urllib.request.Request(scan_url, method='GET')
-        with urllib.request.urlopen(scan_req, timeout=30) as resp:
-            passages = json.loads(resp.read().decode('utf-8'))
+        # ── Find archival passage by ref_id in shared archive ──
+        search_url = f"{LETTA_BASE}/v1/passages/search"
+        search_data = json.dumps({"query": f"REF_ID: {ref_id}", "archive_id": ARCHIVE_ID, "limit": 10}).encode('utf-8')
+        search_req = urllib.request.Request(search_url, data=search_data, headers={"Content-Type": "application/json"}, method='POST')
+        with urllib.request.urlopen(search_req, timeout=30) as resp:
+            search_results = json.loads(resp.read().decode('utf-8'))
 
         target_passage = None
-        for p in passages:
+        for result in search_results:
+            p = result.get('passage', {})
             if f"REF_ID: {ref_id}" in p.get('text', ''):
                 target_passage = p
                 break
@@ -102,16 +102,16 @@ def update_extracted_task(
         )
 
         # ── Delete old passage, insert updated one ──
-        del_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory/{passage_id}"
+        del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}/"
         del_req = urllib.request.Request(del_url, method='DELETE')
         urllib.request.urlopen(del_req, timeout=10)
 
-        ins_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory"
+        ins_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
         ins_data = json.dumps({"text": new_text, "tags": old_tags}).encode('utf-8')
         ins_req = urllib.request.Request(ins_url, data=ins_data, headers={"Content-Type": "application/json"}, method='POST')
         with urllib.request.urlopen(ins_req, timeout=30) as resp:
             ins_resp = json.loads(resp.read().decode('utf-8'))
-            new_passage_id = ins_resp[0]['id'] if isinstance(ins_resp, list) else ins_resp.get('id', '')
+            new_passage_id = ins_resp.get('id', '')
 
         # ── Update extracted_tasks block if task_description changed ──
         if task_description and calling_agent:
@@ -160,13 +160,13 @@ def transition_extracted_task(
     ref_id: str,
     action: str,
     omnifocus_task_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Change the status of an extracted task: confirm, reject, or complete.
 
-    This updates the archival source reference passage and removes the task
-    from the extracted_tasks memory block (since it is no longer pending review).
+    This updates the archival source reference passage in the shared
+    extracted_tasks_archive and removes the task from the extracted_tasks
+    memory block (since it is no longer pending review).
 
     Actions:
     - confirm: Task accepted, OmniFocus task created. Requires omnifocus_task_id.
@@ -177,8 +177,6 @@ def transition_extracted_task(
         ref_id: The 8-character hex reference ID of the task.
         action: One of "confirm", "reject", or "complete".
         omnifocus_task_id: The OmniFocus task ID. Required when action is "confirm".
-        agent_id: Agent whose archival memory contains the passage. Defaults to
-            the calling agent. Provide this for cross-agent updates.
 
     Returns:
         Dictionary with status, ref_id, action taken, and updated passage ID.
@@ -194,11 +192,8 @@ def transition_extracted_task(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        target_agent = agent_id or os.getenv("LETTA_AGENT_ID")
+        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
         calling_agent = os.getenv("LETTA_AGENT_ID")
-
-        if not target_agent:
-            return {"status": "error", "ref_id": ref_id, "action": action, "error_message": "No agent_id provided and LETTA_AGENT_ID not set"}
 
         valid_actions = {"confirm", "reject", "complete"}
         if action not in valid_actions:
@@ -211,14 +206,16 @@ def transition_extracted_task(
         now = datetime.now(tz)
         iso_timestamp = now.isoformat()
 
-        # ── Find archival passage by ref_id ──
-        scan_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory?limit=500"
-        scan_req = urllib.request.Request(scan_url, method='GET')
-        with urllib.request.urlopen(scan_req, timeout=30) as resp:
-            passages = json.loads(resp.read().decode('utf-8'))
+        # ── Find archival passage by ref_id in shared archive ──
+        search_url = f"{LETTA_BASE}/v1/passages/search"
+        search_data = json.dumps({"query": f"REF_ID: {ref_id}", "archive_id": ARCHIVE_ID, "limit": 10}).encode('utf-8')
+        search_req = urllib.request.Request(search_url, data=search_data, headers={"Content-Type": "application/json"}, method='POST')
+        with urllib.request.urlopen(search_req, timeout=30) as resp:
+            search_results = json.loads(resp.read().decode('utf-8'))
 
         target_passage = None
-        for p in passages:
+        for result in search_results:
+            p = result.get('passage', {})
             if f"REF_ID: {ref_id}" in p.get('text', ''):
                 target_passage = p
                 break
@@ -289,16 +286,16 @@ def transition_extracted_task(
             old_tags.append('status:completed')
 
         # ── Delete old passage, insert updated one ──
-        del_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory/{passage_id}"
+        del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}/"
         del_req = urllib.request.Request(del_url, method='DELETE')
         urllib.request.urlopen(del_req, timeout=10)
 
-        ins_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory"
+        ins_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
         ins_data = json.dumps({"text": new_text, "tags": old_tags}).encode('utf-8')
         ins_req = urllib.request.Request(ins_url, data=ins_data, headers={"Content-Type": "application/json"}, method='POST')
         with urllib.request.urlopen(ins_req, timeout=30) as resp:
             ins_resp = json.loads(resp.read().decode('utf-8'))
-            new_passage_id = ins_resp[0]['id'] if isinstance(ins_resp, list) else ins_resp.get('id', '')
+            new_passage_id = ins_resp.get('id', '')
 
         # ── Remove from extracted_tasks block ──
         if calling_agent:
@@ -342,13 +339,13 @@ def merge_extracted_tasks(
     ref_ids: str,
     merged_task_description: str,
     project: Optional[str] = None,
-    agent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Merge multiple extracted tasks into a single new task.
 
     Creates a new merged archival passage linking to the originals, and marks
     each original passage as [MERGED] with a pointer to the new merged task.
+    All passages are in the shared extracted_tasks_archive.
 
     The merged task becomes the active record for subsequent confirm/complete
     transitions. Original passages retain their full source data, reachable
@@ -359,8 +356,6 @@ def merge_extracted_tasks(
             (e.g., "a1b2c3d4,e5f6g7h8").
         merged_task_description: Concise verb-led title for the new merged task.
         project: Optional project name for tagging the merged record.
-        agent_id: Agent whose archival memory contains the passages. Defaults to
-            the calling agent. Provide this for cross-agent merges.
 
     Returns:
         Dictionary with status, new ref_id, merged passage ID, and count of
@@ -378,11 +373,8 @@ def merge_extracted_tasks(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        target_agent = agent_id or os.getenv("LETTA_AGENT_ID")
+        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
         calling_agent = os.getenv("LETTA_AGENT_ID")
-
-        if not target_agent:
-            return {"status": "error", "ref_ids": ref_ids, "error_message": "No agent_id provided and LETTA_AGENT_ID not set"}
 
         # Parse ref_ids
         id_list = [rid.strip() for rid in ref_ids.split(',') if rid.strip()]
@@ -395,18 +387,17 @@ def merge_extracted_tasks(
         year_month = now.strftime("%Y-%m")
         new_ref_id = uuid.uuid4().hex[:8]
 
-        # ── Scan archival memory for all passages ──
-        scan_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory?limit=500"
-        scan_req = urllib.request.Request(scan_url, method='GET')
-        with urllib.request.urlopen(scan_req, timeout=30) as resp:
-            passages = json.loads(resp.read().decode('utf-8'))
-
-        # Find passages for each ref_id
+        # ── Search shared archive for each ref_id ──
         found = {}
-        for p in passages:
-            text = p.get('text', '')
-            for rid in id_list:
-                if f"REF_ID: {rid}" in text:
+        for rid in id_list:
+            search_url = f"{LETTA_BASE}/v1/passages/search"
+            search_data = json.dumps({"query": f"REF_ID: {rid}", "archive_id": ARCHIVE_ID, "limit": 5}).encode('utf-8')
+            search_req = urllib.request.Request(search_url, data=search_data, headers={"Content-Type": "application/json"}, method='POST')
+            with urllib.request.urlopen(search_req, timeout=30) as resp:
+                search_results = json.loads(resp.read().decode('utf-8'))
+            for result in search_results:
+                p = result.get('passage', {})
+                if f"REF_ID: {rid}" in p.get('text', ''):
                     found[rid] = p
                     break
 
@@ -450,11 +441,11 @@ def merge_extracted_tasks(
             new_tags.append('status:merged')
 
             # Delete old, insert updated
-            del_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory/{pid}"
+            del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{pid}/"
             del_req = urllib.request.Request(del_url, method='DELETE')
             urllib.request.urlopen(del_req, timeout=10)
 
-            ins_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory"
+            ins_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
             ins_data = json.dumps({"text": new_text, "tags": new_tags}).encode('utf-8')
             ins_req = urllib.request.Request(ins_url, data=ins_data, headers={"Content-Type": "application/json"}, method='POST')
             urllib.request.urlopen(ins_req, timeout=30)
@@ -479,12 +470,12 @@ def merge_extracted_tasks(
         if project:
             merged_tags.append(f"project:{project}")
 
-        ins_url = f"{LETTA_BASE}/v1/agents/{target_agent}/archival-memory"
+        ins_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
         ins_data = json.dumps({"text": merged_text, "tags": merged_tags}).encode('utf-8')
         ins_req = urllib.request.Request(ins_url, data=ins_data, headers={"Content-Type": "application/json"}, method='POST')
         with urllib.request.urlopen(ins_req, timeout=30) as resp:
             ins_resp = json.loads(resp.read().decode('utf-8'))
-            merged_passage_id = ins_resp[0]['id'] if isinstance(ins_resp, list) else ins_resp.get('id', '')
+            merged_passage_id = ins_resp.get('id', '')
 
         # ── Remove merged entries from extracted_tasks block ──
         if calling_agent:
