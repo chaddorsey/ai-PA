@@ -318,13 +318,13 @@ async def get_index_stats():
     db = get_db()
 
     total_chunks = db.get_chunk_count()
-    documents = db.get_indexed_documents(limit=1000)
+    total_documents = db.get_document_count()
 
     return {
-        "total_documents": len(documents),
+        "total_documents": total_documents,
         "total_chunks": total_chunks,
         "avg_chunks_per_document": (
-            total_chunks / len(documents) if documents else 0
+            total_chunks / total_documents if total_documents else 0
         ),
     }
 

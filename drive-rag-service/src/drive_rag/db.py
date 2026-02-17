@@ -516,6 +516,34 @@ class Database:
                 pass
         return 0
 
+    def get_document_count(self) -> int:
+        """Get count of indexed documents.
+
+        Returns:
+            Number of documents in document_state
+        """
+        params = {"select": "drive_file_id", "limit": "0"}
+
+        # Use GET with Prefer: count=exact header
+        response = self.client.get(
+            self._url("document_state"),
+            params=params,
+            headers={
+                **self.client.headers,
+                "Prefer": "count=exact",
+            },
+        )
+        self._check_response(response, "get_document_count")
+
+        # Count is in Content-Range header
+        content_range = response.headers.get("Content-Range", "")
+        if "/" in content_range:
+            try:
+                return int(content_range.split("/")[1])
+            except (ValueError, IndexError):
+                pass
+        return 0
+
     def get_indexed_documents(
         self, limit: int = 50, offset: int = 0
     ) -> list[DocumentState]:
@@ -1051,6 +1079,172 @@ class Database:
         logger.info(
             "document_marked_deleted",
             file_id=file_id,
+        )
+
+    # =========================================================================
+    # Staleness Sweep Operations
+    # =========================================================================
+
+    def get_sweep_candidates(self, tier: str, limit: int = 500) -> list[dict[str, Any]]:
+        """Get documents in a staleness tier, ordered by least-recently checked.
+
+        Args:
+            tier: Staleness tier (hot, warm, cool, cold)
+            limit: Maximum number of candidates to return
+
+        Returns:
+            List of dicts with drive_file_id and modified_time
+        """
+        response = self.client.get(
+            self._url("document_state"),
+            params={
+                "staleness_tier": f"eq.{tier}",
+                "select": "drive_file_id,modified_time",
+                "order": "last_checked_at.asc.nullsfirst",
+                "limit": str(limit),
+            },
+        )
+        self._check_response(response, "get_sweep_candidates")
+
+        return response.json() or []
+
+    def update_staleness_check(
+        self,
+        file_id: str,
+        new_tier: str,
+        check_count: int,
+        last_activity_at: Optional[str] = None,
+    ) -> None:
+        """Update staleness tracking after checking a document.
+
+        Args:
+            file_id: Google Drive file ID
+            new_tier: New staleness tier (hot, warm, cool, cold)
+            check_count: Updated cumulative check count
+            last_activity_at: ISO timestamp of last detected activity (optional)
+        """
+        data: dict[str, Any] = {
+            "staleness_tier": new_tier,
+            "last_checked_at": datetime.now(timezone.utc).isoformat(),
+            "check_count": check_count,
+        }
+        if last_activity_at is not None:
+            data["last_activity_at"] = last_activity_at
+
+        response = self.client.patch(
+            self._url("document_state"),
+            params={"drive_file_id": f"eq.{file_id}"},
+            json=data,
+        )
+        self._check_response(response, "update_staleness_check")
+
+        logger.debug(
+            "updated_staleness_check",
+            file_id=file_id,
+            new_tier=new_tier,
+            check_count=check_count,
+        )
+
+    def get_staleness_stats(self) -> dict[str, Any]:
+        """Get staleness tier distribution statistics.
+
+        Returns:
+            Dict with tiers (hot/warm/cool/cold counts), total, never_checked
+        """
+        tiers = {}
+        total = 0
+        tier_names = ["hot", "warm", "cool", "cold"]
+
+        for tier in tier_names:
+            response = self.client.get(
+                self._url("document_state"),
+                params={
+                    "staleness_tier": f"eq.{tier}",
+                    "select": "drive_file_id",
+                    "limit": "0",
+                },
+                headers={
+                    **self.client.headers,
+                    "Prefer": "count=exact",
+                },
+            )
+            self._check_response(response, f"get_staleness_stats_{tier}")
+
+            content_range = response.headers.get("Content-Range", "")
+            count = 0
+            if "/" in content_range:
+                try:
+                    count = int(content_range.split("/")[1])
+                except (ValueError, IndexError):
+                    pass
+            tiers[tier] = count
+            total += count
+
+        # Count documents never checked
+        response = self.client.get(
+            self._url("document_state"),
+            params={
+                "last_checked_at": "is.null",
+                "select": "drive_file_id",
+                "limit": "0",
+            },
+            headers={
+                **self.client.headers,
+                "Prefer": "count=exact",
+            },
+        )
+        self._check_response(response, "get_staleness_stats_never_checked")
+
+        never_checked = 0
+        content_range = response.headers.get("Content-Range", "")
+        if "/" in content_range:
+            try:
+                never_checked = int(content_range.split("/")[1])
+            except (ValueError, IndexError):
+                pass
+
+        return {
+            "tiers": tiers,
+            "total": total,
+            "never_checked": never_checked,
+        }
+
+    def bulk_promote_tier(self, file_ids: list[str], tier: str) -> None:
+        """Promote multiple documents to a staleness tier (e.g. after edits).
+
+        Resets check_count to 0 and sets last_activity_at to now.
+        Logs warnings for individual failures instead of raising.
+
+        Args:
+            file_ids: List of Google Drive file IDs to promote
+            tier: Target staleness tier (typically "hot")
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        for file_id in file_ids:
+            try:
+                response = self.client.patch(
+                    self._url("document_state"),
+                    params={"drive_file_id": f"eq.{file_id}"},
+                    json={
+                        "staleness_tier": tier,
+                        "last_activity_at": now,
+                        "check_count": 0,
+                    },
+                )
+                self._check_response(response, "bulk_promote_tier")
+            except Exception as e:
+                logger.warning(
+                    "bulk_promote_tier_failed",
+                    file_id=file_id,
+                    tier=tier,
+                    error=str(e),
+                )
+
+        logger.info(
+            "bulk_promote_tier_complete",
+            count=len(file_ids),
+            tier=tier,
         )
 
 
