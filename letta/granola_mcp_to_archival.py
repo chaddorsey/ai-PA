@@ -71,6 +71,38 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Post-ingestion agent notification
+# ---------------------------------------------------------------------------
+
+def notify_agent_new_meeting(meeting_id: str, meeting_title: str):
+    """Send a message to the Granola agent to trigger post-meeting processing."""
+    import urllib.request as _urllib_req
+    import json as _json
+
+    letta_base = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
+    url = f"{letta_base}/v1/agents/{AGENT_ID}/messages"
+    payload = _json.dumps({
+        "role": "user",
+        "content": (
+            f'New meeting archived: "{meeting_title}" (meeting_id: {meeting_id}). '
+            f"Run post-meeting processing: call scan_meeting_notes with this meeting_id, "
+            f"review the scan package for additional action items, expand any pointers, "
+            f"then call prepare_meeting_followup with merged results."
+        ),
+    }).encode("utf-8")
+    req = _urllib_req.Request(
+        url, data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        _urllib_req.urlopen(req, timeout=60)
+        logger.info(f"  Notified agent for post-meeting processing")
+    except Exception as e:
+        logger.warning(f"  Agent notification failed (non-fatal): {e}")
+
+
+# ---------------------------------------------------------------------------
 # MCP JSON-RPC helpers
 # ---------------------------------------------------------------------------
 
@@ -460,6 +492,11 @@ def ingest_meeting_by_id(
     nchunks = len(chunks)
     size = len(full_content)
     logger.info(f"Ingested: {meeting['title'][:60]} ({size} chars, {nchunks} chunks)")
+
+    # Trigger post-meeting processing
+    if not dry_run:
+        notify_agent_new_meeting(meeting_id, meeting.get("title", "Untitled Meeting"))
+
     return True
 
 
@@ -531,6 +568,10 @@ def ingest_meetings(
                 logger.info(f"  Inserted ({size} chars, {nchunks} chunks)")
             else:
                 logger.info(f"  Inserted ({size} chars)")
+
+            # Trigger post-meeting processing
+            if not dry_run:
+                notify_agent_new_meeting(mid, title)
         else:
             errors += 1
 
