@@ -81,14 +81,14 @@ def notify_agent_new_meeting(meeting_id: str, meeting_title: str):
 
     letta_base = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
     url = f"{letta_base}/v1/agents/{AGENT_ID}/messages"
+    message_content = (
+        f'New meeting archived: "{meeting_title}" (meeting_id: {meeting_id}). '
+        f"Run post-meeting processing: call scan_meeting_notes with this meeting_id, "
+        f"review the scan package for additional action items, expand any pointers, "
+        f"then call prepare_meeting_followup with merged results."
+    )
     payload = _json.dumps({
-        "role": "user",
-        "content": (
-            f'New meeting archived: "{meeting_title}" (meeting_id: {meeting_id}). '
-            f"Run post-meeting processing: call scan_meeting_notes with this meeting_id, "
-            f"review the scan package for additional action items, expand any pointers, "
-            f"then call prepare_meeting_followup with merged results."
-        ),
+        "messages": [{"role": "user", "content": message_content}],
     }).encode("utf-8")
     req = _urllib_req.Request(
         url, data=payload,

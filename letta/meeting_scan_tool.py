@@ -46,16 +46,18 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             return {"status": "error", "error_message": "LETTA_AGENT_ID not set"}
 
         # ── Fetch archival passages for this meeting ──
+        # Use text substring search on the list endpoint — the passage text
+        # contains **ID:** {meeting_id} so this reliably finds all chunks.
         encoded_id = urllib.parse.quote(meeting_id, safe="")
         search_url = (
             f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory"
-            f"?query={encoded_id}&limit=30"
+            f"?search={encoded_id}&limit=30"
         )
         req = urllib.request.Request(search_url, method="GET")
         with urllib.request.urlopen(req, timeout=30) as resp:
             all_passages = json.loads(resp.read().decode("utf-8"))
 
-        # Filter to passages tagged with this meeting's id
+        # Filter to passages tagged with this meeting's id (belt + suspenders)
         meeting_passages = []
         for p in all_passages:
             tags = p.get("tags", [])
