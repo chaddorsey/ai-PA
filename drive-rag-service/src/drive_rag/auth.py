@@ -123,6 +123,7 @@ class GoogleClient:
         self._drive: Optional[Resource] = None
         self._docs: Optional[Resource] = None
         self._sheets: Optional[Resource] = None
+        self._activity: Optional[Resource] = None
 
     @property
     def drive(self) -> Resource:
@@ -145,6 +146,13 @@ class GoogleClient:
             from googleapiclient.discovery import build
             self._sheets = build("sheets", "v4", credentials=self.creds)
         return self._sheets
+
+    @property
+    def activity(self) -> Resource:
+        """Get Drive Activity API service (lazy initialization)."""
+        if self._activity is None:
+            self._activity = build("driveactivity", "v2", credentials=self.creds)
+        return self._activity
 
     def get_file_metadata(self, file_id: str) -> dict:
         """Get file metadata from Drive.
