@@ -38,7 +38,7 @@ services:
     environment:
       PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       PGRST_DB_ANON_ROLE: anon
-      PGRST_DB_SCHEMA: public,pa_web,rag
+      PGRST_DB_SCHEMA: public,pa_web,rag,analytics
       PGRST_JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters-long
       PGRST_DB_USE_LEGACY_GUCS: false
     ports:
@@ -597,6 +597,7 @@ services:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
       - ./letta:/app/tools/letta  # Mount letta directory for tool execution (different path to avoid conflicts)
       - ~/.gmail-mcp:/root/.gmail-mcp  # Mount OAuth credentials directory
+      - ./analytics:/app/tools/analytics  # Mount analytics directory for briefing output
     networks: [pa-internal]
     environment:
       PYTHONPATH: "/app/tools/letta"
@@ -627,6 +628,9 @@ services:
       DRIVE_RAG_SERVICE_URL: "http://drive-rag-service:8000"
       # Exa.ai API key for web search tools
       EXA_API_KEY: "${EXA_API_KEY:-}"
+      # PostgREST access for analytics snapshot persistence
+      SUPABASE_REST_URL: "http://supabase-rest:3000"
+      SUPABASE_SERVICE_KEY: "${SUPABASE_SERVICE_KEY}"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 
