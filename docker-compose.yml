@@ -792,8 +792,44 @@ services:
   # Replaced by custom Letta tools in letta/gmail_tools.py
   # Gmail API access now via direct OAuth in Letta sandbox
   # Source kept in gmail-mcp/ for reference
-      - "security.internal-only=true"
-      - "security.no-external-access=true"
+
+  gmail-watch-service:
+    build:
+      context: ./gmail-watch-service
+      dockerfile: Dockerfile
+    container_name: gmail-watch-service
+    restart: unless-stopped
+    networks:
+      - pa-internal
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      - GMAIL_CREDENTIALS_PATH=/app/credentials/credentials.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - PUBSUB_SUBSCRIPTION=gmail-watch-pull
+      - LETTA_BASE_URL=http://letta:8283
+      - LETTA_AGENT_ID=${EMAIL_AGENT_ID}
+      - PULL_INTERVAL_SECONDS=30
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./gmail-watch-service/credentials:/app/credentials:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=gmail-watch-service"
+      - "component=gmail-watch"
+      - "network=pa-internal"
 
   omnifocus-mcp-server:
     build:
