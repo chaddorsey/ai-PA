@@ -87,12 +87,19 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
         # --- Compute averages, deltas, and standout detection ---
         METRICS_TO_COMPARE = [
             ("drive_total_activities", "Drive activities"),
-            ("drive_edits", "Drive edits"),
             ("drive_unique_users", "Drive users"),
+            ("drive_unique_documents", "Drive documents"),
+            ("drive_edits", "Drive edits"),
+            ("drive_views", "Drive views"),
+            ("drive_creates", "Drive creates"),
+            ("drive_shares", "Drive shares"),
+            ("drive_comments", "Drive comments"),
             ("email_total_sent", "Emails sent"),
             ("email_total_received", "Emails received"),
             ("email_total_activity", "Email total"),
+            ("email_user_count", "Email users"),
             ("slack_total_messages", "Slack messages"),
+            ("slack_channels_active", "Slack channels"),
             ("slack_members_active", "Slack members"),
         ]
 
@@ -153,46 +160,110 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             except Exception:
                 vibe_text = ""
 
+        # --- Lambdas for formatting (no nested def — Letta constraint) ---
+        fmt_metric = lambda mk, lb: (
+            None if not comparisons.get(mk) or not comparisons[mk]["today"] else
+            "- {}: {} ({} {}% vs avg){}".format(
+                lb, comparisons[mk]["today"],
+                "\u25b2" if comparisons[mk]["pct_vs_30"] > 0 else "\u25bc" if comparisons[mk]["pct_vs_30"] < 0 else "\u2014",
+                abs(comparisons[mk]["pct_vs_30"]),
+                " \u2014 **standout**" if comparisons[mk]["is_standout"] else ""
+            )
+        )
+        get_top = lambda cat: [i for i in top_items if i.get("category") == cat]
+
         # --- Format the briefing ---
         lines = [f"**Daily Analytics \u2014 {day_name}, {display_date}** (vs. 30-day avg)\n"]
 
-        # Drive section
+        # ===== DRIVE SECTION =====
         if today_snap.get("drive_total_activities"):
             lines.append("**Drive Activity**")
+
+            # Summary line
+            act_comp = comparisons.get("drive_total_activities")
+            act_trend = ""
+            if act_comp and act_comp["pct_vs_30"] != 0:
+                arrow = "\u25b2" if act_comp["pct_vs_30"] > 0 else "\u25bc"
+                act_trend = f" ({arrow} {abs(act_comp['pct_vs_30'])}% vs avg)"
             lines.append(
                 f"- {today_snap['drive_total_activities']} activities across "
                 f"{today_snap.get('drive_unique_documents', '?')} documents by "
-                f"{today_snap.get('drive_unique_users', '?')} users"
+                f"{today_snap.get('drive_unique_users', '?')} users{act_trend}"
             )
 
-            for metric in ["drive_edits", "drive_views", "drive_shares", "drive_comments"]:
-                comp = comparisons.get(metric)
-                if comp and comp["today"]:
-                    arrow = "\u25b2" if comp["pct_vs_30"] > 0 else "\u25bc" if comp["pct_vs_30"] < 0 else "\u2014"
-                    standout_tag = " \u2014 **standout**" if comp["is_standout"] else ""
-                    label_short = metric.replace("drive_", "").capitalize()
-                    lines.append(
-                        f"- {label_short}: {comp['today']} "
-                        f"({arrow} {abs(comp['pct_vs_30'])}% vs avg){standout_tag}"
-                    )
+            # Activity breakdown with trends
+            for metric_key, label in [
+                ("drive_edits", "Edits"),
+                ("drive_views", "Views"),
+                ("drive_creates", "Creates"),
+                ("drive_shares", "Shares"),
+                ("drive_comments", "Comments"),
+            ]:
+                line = fmt_metric(metric_key, label)
+                if line:
+                    lines.append(line)
 
             # Top edited document
-            edited_items = [i for i in top_items if i.get("category") == "most_edited"]
-            if edited_items:
-                top = edited_items[0]
+            edited = get_top("most_edited")
+            if edited:
+                top = edited[0]
                 lines.append(
                     f"- Most edited: \"{top.get('item_title', '?')}\" "
                     f"({top.get('count', 0)} edits, owned by {top.get('item_owner', '?')})"
                 )
 
+            # Top viewed document (if different from most edited)
+            viewed = get_top("most_viewed")
+            if viewed:
+                top = viewed[0]
+                lines.append(
+                    f"- Most viewed: \"{top.get('item_title', '?')}\" "
+                    f"({top.get('count', 0)} views, owned by {top.get('item_owner', '?')})"
+                )
+
+            # Top shared document
+            shared = get_top("most_shared")
+            if shared:
+                top = shared[0]
+                lines.append(
+                    f"- Most shared: \"{top.get('item_title', '?')}\" "
+                    f"({top.get('count', 0)} shares, owned by {top.get('item_owner', '?')})"
+                )
+
+            # Top commented document
+            commented = get_top("most_commented")
+            if commented:
+                top = commented[0]
+                lines.append(
+                    f"- Most commented: \"{top.get('item_title', '?')}\" "
+                    f"({top.get('count', 0)} comments, owned by {top.get('item_owner', '?')})"
+                )
+
+            # Most active users (skip blank emails — org-level aggregates)
+            active_users = [u for u in get_top("most_active_users") if u.get("item_title", "").strip()]
+            if active_users:
+                user_strs = []
+                for u in active_users[:3]:
+                    email = u.get("item_title", "")
+                    short = email.split("@")[0] + "@" if "@" in email else email
+                    user_strs.append(f"{short} ({u.get('count', 0)})")
+                if user_strs:
+                    lines.append(f"- Most active: {', '.join(user_strs)}")
+
             lines.append("")
 
-        # Email section
-        if today_snap.get("email_total_activity"):
+        # ===== EMAIL SECTION =====
+        email_activity = today_snap.get("email_total_activity") or 0
+        email_received = today_snap.get("email_total_received") or 0
+        if email_activity or email_received:
             lines.append("**Email**")
             sent = today_snap.get("email_total_sent", 0)
             received = today_snap.get("email_total_received", 0)
             ratio = today_snap.get("email_ratio", 0)
+            user_count = today_snap.get("email_user_count", 0)
+            total = sent + received
+
+            # Main send/receive line with trend
             comp = comparisons.get("email_total_activity")
             range_note = ""
             if comp:
@@ -202,10 +273,31 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
                 else:
                     range_note = " \u2014 typical"
             lines.append(f"- {sent} sent / {received} received (ratio: {ratio}){range_note}")
-            lines.append(f"- Total activity: {sent + received} (within normal range)" if not (comp and comp["is_standout"]) else f"- Total activity: {sent + received}")
+
+            # Activity per user (derived metric)
+            if user_count and user_count > 0:
+                per_user = round(total / user_count, 1)
+                lines.append(f"- {total} total activity across {user_count} users ({per_user}/user)")
+            else:
+                lines.append(f"- Total activity: {total}")
+
+            # Sent trend (if we have history)
+            sent_comp = comparisons.get("email_total_sent")
+            if sent_comp and sent_comp["avg_30"] > 0 and sent_comp["pct_vs_30"] != 0:
+                arrow = "\u25b2" if sent_comp["pct_vs_30"] > 0 else "\u25bc"
+                standout = " \u2014 **standout**" if sent_comp["is_standout"] else ""
+                lines.append(f"- Sent: {arrow} {abs(sent_comp['pct_vs_30'])}% vs avg{standout}")
+
+            # Received trend (if we have history)
+            recv_comp = comparisons.get("email_total_received")
+            if recv_comp and recv_comp["avg_30"] > 0 and recv_comp["pct_vs_30"] != 0:
+                arrow = "\u25b2" if recv_comp["pct_vs_30"] > 0 else "\u25bc"
+                standout = " \u2014 **standout**" if recv_comp["is_standout"] else ""
+                lines.append(f"- Received: {arrow} {abs(recv_comp['pct_vs_30'])}% vs avg{standout}")
+
             lines.append("")
 
-        # Slack section
+        # ===== SLACK SECTION =====
         slack_covers = today_snap.get("slack_covers_date", "")
         if today_snap.get("slack_total_messages"):
             slack_display = ""
@@ -216,30 +308,39 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
                 except ValueError:
                     slack_display = f" (covering {slack_covers})"
             lines.append(f"**Slack**{slack_display}")
+
+            # Summary with trend
+            msg_comp = comparisons.get("slack_total_messages")
+            msg_trend = ""
+            if msg_comp and msg_comp["pct_vs_30"] != 0:
+                arrow = "\u25b2" if msg_comp["pct_vs_30"] > 0 else "\u25bc"
+                msg_trend = f" ({arrow} {abs(msg_comp['pct_vs_30'])}% vs avg)"
             lines.append(
                 f"- {today_snap['slack_total_messages']} messages across "
                 f"{today_snap.get('slack_channels_active', '?')} channels by "
-                f"{today_snap.get('slack_members_active', '?')} members"
+                f"{today_snap.get('slack_members_active', '?')} members{msg_trend}"
             )
 
-            slack_channels = [i for i in top_items if i.get("category") == "top_channels"]
+            # Top channels
+            slack_channels = get_top("top_channels")
             if slack_channels:
                 top_list = ", ".join(
                     f"{ch.get('item_title', '?')} ({ch.get('count', 0)} msgs)"
-                    for ch in slack_channels[:3]
+                    for ch in slack_channels[:5]
                 )
                 lines.append(f"- Top: {top_list}")
 
+            # Members active trend
             comp = comparisons.get("slack_members_active")
             if comp and comp["is_standout"]:
                 arrow = "\u25b2" if comp["pct_vs_30"] > 0 else "\u25bc"
                 lines.append(
                     f"- Members active: {comp['today']} "
-                    f"({arrow} {abs(comp['pct_vs_30'])}% vs avg)"
+                    f"({arrow} {abs(comp['pct_vs_30'])}% vs avg) \u2014 **standout**"
                 )
             lines.append("")
 
-        # Vibe check section (from archival memory)
+        # ===== SLACK VIBE CHECK SECTION =====
         if vibe_text:
             MAX_VIBE_LENGTH = 500
             lines.append("**Slack Vibe Check**")
@@ -248,7 +349,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             lines.append(vibe_text)
             lines.append("")
 
-        # Standout summary
+        # ===== STANDOUT SUMMARY =====
         standouts = [c for c in comparisons.values() if c["is_standout"]]
         if standouts:
             notable = "; ".join(

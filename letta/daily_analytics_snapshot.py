@@ -128,11 +128,14 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
                 if ratio == 0 and total_received > 0:
                     ratio = round(total_sent / total_received, 2)
 
+                user_count = email_result.get("data", {}).get("user_count", 0)
+
                 snapshot["email"] = {
                     "total_sent": total_sent,
                     "total_received": total_received,
                     "ratio": ratio,
                     "total_activity": total_activity,
+                    "user_count": user_count,
                     "covers_date": date_str,
                 }
             else:
@@ -249,6 +252,7 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
                     "email_total_received": email.get("total_received"),
                     "email_ratio": email.get("ratio"),
                     "email_total_activity": email.get("total_activity"),
+                    "email_user_count": email.get("user_count"),
                     "slack_covers_date": slack.get("covers_date"),
                     "slack_total_messages": slack.get("total_messages_posted"),
                     "slack_channels_active": slack.get("channels_active"),
@@ -291,6 +295,19 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
                             "count": item.get("count", 0),
                             "metadata": {"link": item.get("link", ""), "is_accessible": item.get("is_accessible", True)},
                         })
+
+                for rank, user in enumerate(drive.get("top_active_users", [])[:5], 1):
+                    top_items.append({
+                        "snapshot_date": date_str,
+                        "domain": "drive",
+                        "category": "most_active_users",
+                        "rank": rank,
+                        "item_title": user.get("email", ""),
+                        "item_id": "",
+                        "item_owner": "",
+                        "count": user.get("activity_count", 0),
+                        "metadata": {},
+                    })
 
                 for rank, ch in enumerate(slack.get("top_channels", [])[:5], 1):
                     top_items.append({
