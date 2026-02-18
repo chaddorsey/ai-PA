@@ -12,6 +12,7 @@ from typing import Optional
 import structlog
 
 from drive_rag.auth import GoogleClient, get_google_client
+from drive_rag.change_monitor import SUPPORTED_MIME_TYPES
 from drive_rag.db import Database, get_db
 
 logger = structlog.get_logger()
@@ -25,6 +26,7 @@ class ActivityPollResult:
     indexed_files_affected: int = 0
     files_promoted: int = 0
     ingestion_triggered: int = 0
+    new_files_discovered: int = 0
     errors: list[str] = field(default_factory=list)
     poll_duration_seconds: float = 0.0
 
@@ -120,14 +122,37 @@ async def poll_activity(
             activity_file_ids.update(_extract_file_ids_from_activity(activity))
 
         # Cross-reference with indexed documents
-        indexed_affected = []
+        indexed_file_ids = set()
         for file_id in activity_file_ids:
             if database.document_exists(file_id):
-                indexed_affected.append(file_id)
+                indexed_file_ids.add(file_id)
 
+        indexed_affected = list(indexed_file_ids)
         result.indexed_files_affected = len(indexed_affected)
 
-        if not indexed_affected:
+        # Discover new files from activity (not yet indexed)
+        unknown_file_ids = activity_file_ids - indexed_file_ids
+        new_discovered = []
+        for file_id in unknown_file_ids:
+            try:
+                meta = google.drive.files().get(
+                    fileId=file_id,
+                    fields="id,mimeType,trashed",
+                    supportsAllDrives=True,
+                ).execute()
+                if meta.get("trashed"):
+                    continue
+                if meta.get("mimeType") in SUPPORTED_MIME_TYPES:
+                    new_discovered.append(file_id)
+            except Exception:
+                continue  # File inaccessible or deleted
+
+        result.new_files_discovered = len(new_discovered)
+
+        if new_discovered:
+            logger.info("activity_new_files_discovered", count=len(new_discovered))
+
+        if not indexed_affected and not new_discovered:
             result.poll_duration_seconds = time.monotonic() - start
             return result
 
@@ -183,6 +208,21 @@ async def poll_activity(
                 error_msg = f"Ingest failed for {file_id}: {str(e)}"
                 result.errors.append(error_msg)
                 logger.warning("activity_ingest_failed", file_id=file_id, error=str(e))
+
+        # Ingest newly discovered files
+        for file_id in new_discovered:
+            try:
+                await ingest_document(
+                    file_id=file_id,
+                    google_client=google,
+                    db=database,
+                    force=False,
+                )
+                result.ingestion_triggered += 1
+            except Exception as e:
+                error_msg = f"New file ingest failed for {file_id}: {str(e)}"
+                result.errors.append(error_msg)
+                logger.warning("activity_new_file_ingest_failed", file_id=file_id, error=str(e))
 
     except Exception as e:
         result.errors.append(f"Activity poll error: {str(e)}")

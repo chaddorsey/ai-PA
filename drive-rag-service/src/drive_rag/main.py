@@ -1276,6 +1276,7 @@ async def trigger_activity_poll(
             "indexed_files_affected": result.indexed_files_affected,
             "files_promoted": result.files_promoted,
             "ingestion_triggered": result.ingestion_triggered,
+            "new_files_discovered": result.new_files_discovered,
             "errors": result.errors,
             "poll_duration_seconds": round(result.poll_duration_seconds, 2),
         }
@@ -1318,6 +1319,38 @@ async def trigger_metadata_sweep(
         }
     except Exception as e:
         logger.exception("metadata_sweep_failed", tier=tier, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================
+# File Discovery Endpoints
+# =====================
+
+
+@app.post("/v1/discovery/scan")
+async def trigger_discovery_scan(
+    since_hours: int = Query(24, ge=1, le=168, description="Look-back window in hours"),
+):
+    """Scan for newly-shared files not yet in the index.
+
+    Queries Drive API for files recently shared with the authenticated user
+    and ingests any supported file types not already indexed.
+    """
+    from drive_rag.discovery import discover_shared_files
+
+    try:
+        result = await discover_shared_files(since_hours=since_hours)
+        return {
+            "status": "ok",
+            "files_found": result.files_found,
+            "already_indexed": result.already_indexed,
+            "new_files": result.new_files,
+            "ingested": result.ingested,
+            "errors": result.errors,
+            "scan_duration_seconds": round(result.scan_duration_seconds, 2),
+        }
+    except Exception as e:
+        logger.exception("discovery_scan_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
