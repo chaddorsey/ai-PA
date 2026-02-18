@@ -152,6 +152,9 @@ checkpoints/
 \#*#
 # Letta tool execution temporary files
 letta/tmp*.py
+# Working scratch files
+.tmp-work/
+backfill-dashboard.png
 
 # OS Generated
 .DS_Store

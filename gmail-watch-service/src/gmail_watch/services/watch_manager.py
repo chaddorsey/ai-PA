@@ -16,6 +16,7 @@ from gmail_watch.services.agent_notifier import AgentNotifier
 from gmail_watch.services.gmail_client import GmailClient
 from gmail_watch.services.pubsub_puller import PubSubPuller
 from gmail_watch.services.registry import ThreadRegistry
+from gmail_watch.services.task_queue_writer import TaskQueueWriter
 from gmail_watch.settings import settings
 from gmail_watch.utils.interval_parser import extract_interval_from_address, format_interval
 
@@ -47,6 +48,7 @@ class WatchManager:
         self._session = session
         self._registry: Optional[ThreadRegistry] = None
         self._notifier: Optional[AgentNotifier] = None
+        self._task_queue_writer: Optional[TaskQueueWriter] = None
 
     @property
     def registry(self) -> ThreadRegistry:
@@ -61,6 +63,13 @@ class WatchManager:
         if self._notifier is None:
             self._notifier = AgentNotifier()
         return self._notifier
+
+    @property
+    def task_queue_writer(self) -> TaskQueueWriter:
+        """Lazy-load task queue writer."""
+        if self._task_queue_writer is None:
+            self._task_queue_writer = TaskQueueWriter()
+        return self._task_queue_writer
 
     async def _get_sync_state(self) -> Optional[SyncState]:
         """Get the current sync state from database.
@@ -477,6 +486,223 @@ class WatchManager:
                 "overdue_count": 0,
                 "notified_count": 0,
             }
+
+    async def process_task_queue(self) -> dict[str, Any]:
+        """Process emails with TaskQueue label and write to Letta memory block.
+
+        Searches for messages with the TaskQueue Gmail label, extracts task
+        information (detecting forwards with user notes), writes entries to
+        the queued_tasks_from_email Letta memory block, and removes the label.
+
+        Returns:
+            Dictionary with processing results.
+        """
+        import structlog
+
+        log = structlog.get_logger()
+
+        if not settings.task_queue_enabled:
+            return {"status": "disabled", "processed": 0}
+
+        try:
+            # Find TaskQueue label
+            label_id = self._gmail_client.get_label_id_by_name(
+                settings.task_queue_label_name
+            )
+            if not label_id:
+                return {"status": "ok", "processed": 0, "message": "TaskQueue label not found"}
+
+            # List messages with TaskQueue label
+            messages = self._gmail_client.list_messages_by_label(label_id, max_results=10)
+            if not messages:
+                return {"status": "ok", "processed": 0}
+
+            processed = []
+            errors = []
+
+            for msg_ref in messages:
+                msg_id = msg_ref["id"]
+                try:
+                    # Fetch full message
+                    message = self._gmail_client.get_message(msg_id, format="full")
+
+                    # Extract headers
+                    headers = {}
+                    for h in message.get("payload", {}).get("headers", []):
+                        headers[h["name"].lower()] = h["value"]
+
+                    subject = headers.get("subject", "")
+                    from_address = headers.get("from", "")
+                    date = headers.get("date", "")
+                    snippet = message.get("snippet", "")
+                    thread_id = message.get("threadId", "")
+                    original_message_id = msg_id
+                    original_thread_id = thread_id
+                    trigger = "TaskQueue"
+                    notes = None
+                    forwarded_message_id = None
+
+                    # Extract body and check for forward
+                    body = self._extract_body(message)
+                    fwd_result = TaskQueueWriter.parse_forward(body)
+
+                    if fwd_result["is_forward"]:
+                        trigger = "forwarded"
+                        notes = fwd_result.get("notes")
+                        forwarded_message_id = msg_id
+
+                        # Use forwarded message headers
+                        if fwd_result.get("from"):
+                            from_address = fwd_result["from"]
+                        if fwd_result.get("subject"):
+                            subject = fwd_result["subject"]
+                        if fwd_result.get("date"):
+                            date = fwd_result["date"]
+                        if fwd_result.get("snippet"):
+                            snippet = fwd_result["snippet"]
+
+                        # Resolve original message via Gmail search
+                        from_match = self._EMAIL_PATTERN.search(from_address)
+                        from_email = from_match.group(0) if from_match else ""
+
+                        if from_email and subject:
+                            clean_subject = subject.replace('"', '\\"')
+                            query = f'from:{from_email} subject:"{clean_subject}"'
+                            try:
+                                search_results = self._gmail_client.search_messages(query)
+                                for sr in search_results:
+                                    if sr["id"] != msg_id:
+                                        original_message_id = sr["id"]
+                                        original_thread_id = sr.get(
+                                            "threadId", original_thread_id
+                                        )
+                                        break
+                            except Exception:
+                                pass  # Keep forwarded message ID as fallback
+
+                    # Check for task markers in notes
+                    marker_entries = (
+                        TaskQueueWriter.parse_markers(notes) if notes else []
+                    )
+
+                    if marker_entries:
+                        # Multi-task: one queue entry per marker
+                        entry_defs = [
+                            {
+                                "marker_type": me["marker_type"],
+                                "task_hint": me["task_hint"],
+                                "context": me["context"],
+                            }
+                            for me in marker_entries
+                        ]
+                    else:
+                        # Single task: use notes as-is
+                        entry_defs = [
+                            {
+                                "marker_type": None,
+                                "task_hint": None,
+                                "context": None,
+                            }
+                        ]
+
+                    msg_had_error = False
+                    for entry_def in entry_defs:
+                        entry = self.task_queue_writer.format_queue_entry(
+                            message_id=original_message_id,
+                            thread_id=original_thread_id,
+                            subject=subject,
+                            from_address=from_address,
+                            date=date,
+                            snippet=snippet,
+                            trigger=trigger,
+                            notes=notes if not entry_def["marker_type"] else None,
+                            forwarded_message_id=forwarded_message_id,
+                            marker_type=entry_def["marker_type"],
+                            task_hint=entry_def["task_hint"],
+                            context=entry_def["context"],
+                        )
+
+                        write_result = await self.task_queue_writer.write_to_block(
+                            entry
+                        )
+
+                        if write_result.get("status") != "ok":
+                            errors.append({
+                                "message_id": msg_id,
+                                "error": write_result.get("error", "write failed"),
+                                "task_hint": entry_def.get("task_hint"),
+                            })
+                            msg_had_error = True
+                            continue
+
+                        processed.append({
+                            "message_id": original_message_id,
+                            "subject": subject,
+                            "from": from_address,
+                            "has_notes": bool(notes),
+                            "is_forward": fwd_result.get("is_forward", False),
+                            "marker_type": entry_def["marker_type"],
+                            "task_hint": entry_def["task_hint"],
+                        })
+
+                        log.info(
+                            "task_queued",
+                            subject=subject,
+                            from_address=from_address,
+                            trigger=trigger,
+                            marker_type=entry_def["marker_type"],
+                            task_hint=entry_def.get("task_hint"),
+                        )
+
+                    if not msg_had_error:
+                        # Remove TaskQueue label only if all entries wrote OK
+                        self._gmail_client.remove_label(msg_id, label_id)
+
+                    # Log notification
+                    await self._log_notification(
+                        thread_id=original_thread_id,
+                        notification_type="task_queued",
+                        message_id=original_message_id,
+                        extra_data={
+                            "subject": subject,
+                            "from": from_address,
+                            "trigger": trigger,
+                            "has_notes": bool(notes),
+                            "marker_count": len(marker_entries),
+                        },
+                    )
+
+                except Exception as msg_err:
+                    log.error(
+                        "task_queue_message_error",
+                        message_id=msg_id,
+                        error=str(msg_err),
+                    )
+                    errors.append({"message_id": msg_id, "error": str(msg_err)})
+
+            # Notify agent to process queue entries
+            if processed:
+                try:
+                    await self.notifier.notify_task_queued(processed)
+                except Exception as notify_err:
+                    log.error("task_queue_notify_error", error=str(notify_err))
+
+            result = {
+                "status": "ok",
+                "processed": len(processed),
+                "details": processed,
+            }
+            if errors:
+                result["errors"] = errors
+            return result
+
+        except Exception as e:
+            log.error("task_queue_processing_error", error=str(e))
+            try:
+                await self._record_error(f"process_task_queue: {e}")
+            except Exception:
+                pass
+            return {"status": "error", "error": str(e), "processed": 0}
 
     # Forward detection patterns (same as email_task_queue_tool.py)
     _FORWARD_DELIMITER = re.compile(r"-{5,}\s*Forwarded message\s*-{5,}")

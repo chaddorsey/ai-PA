@@ -91,6 +91,14 @@ class WatchScheduler:
                             replies_found=result["replies_found"],
                         )
 
+                    # Process task queue
+                    tq_result = await manager.process_task_queue()
+                    if tq_result.get("processed", 0) > 0:
+                        logger.info(
+                            "Task queue processed",
+                            processed=tq_result["processed"],
+                        )
+
                     # Check follow-up deadlines (every N cycles)
                     cycle_count += 1
                     if cycle_count >= followup_check_cycles:

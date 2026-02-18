@@ -180,6 +180,50 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
 
         return await self._send_to_agent(message)
 
+    async def notify_task_queued(
+        self,
+        entries: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Notify Email Agent that new task queue entries are ready for extraction.
+
+        Args:
+            entries: List of dicts with message_id, subject, from, has_notes,
+                     is_forward, marker_type, task_hint.
+        """
+        if not entries:
+            return {"status": "ok", "message": "no entries"}
+
+        lines = ["[Gmail Watch] New email tasks queued for extraction\n"]
+        for entry in entries:
+            from_addr = entry.get("from", "unknown")
+            marker_type = entry.get("marker_type")
+            task_hint = entry.get("task_hint")
+
+            if marker_type and task_hint:
+                tag = (
+                    "explicit task"
+                    if marker_type == "explicit"
+                    else "pointer — expand from email"
+                )
+                lines.append(f"- **{task_hint}** from {from_addr} ({tag})")
+            else:
+                subject = entry.get("subject", "(no subject)")
+                has_notes = entry.get("has_notes", False)
+                notes_tag = " (with notes)" if has_notes else ""
+                lines.append(f"- **{subject}** from {from_addr}{notes_tag}")
+
+        lines.append(
+            "\nProcess queued_tasks_from_email entries using "
+            "task_extraction_process_email rules. "
+            'For "explicit" marker entries, the task_hint IS the task description. '
+            'For "pointer" marker entries, read the full email and expand the hint '
+            "into a complete task. "
+            "Remove each entry from the block after extraction."
+        )
+
+        message = "\n".join(lines)
+        return await self._send_to_agent(message)
+
     async def _send_to_agent(self, message: str) -> dict[str, Any]:
         """Send a message to the Letta agent."""
         url = f"{self.letta_base_url}/v1/agents/{self.agent_id}/messages"

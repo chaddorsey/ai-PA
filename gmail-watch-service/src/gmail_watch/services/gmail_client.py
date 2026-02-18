@@ -132,6 +132,26 @@ class GmailClient:
             userId="me", id=message_id, body={"removeLabelIds": [label_id]},
         ).execute()
 
+    def get_label_id_by_name(self, label_name: str) -> Optional[str]:
+        """Get the ID of a Gmail label by name.
+
+        Returns None if label doesn't exist.
+        """
+        results = self.service.users().labels().list(userId="me").execute()
+        for label in results.get("labels", []):
+            if label["name"] == label_name:
+                return label["id"]
+        return None
+
+    def list_messages_by_label(
+        self, label_id: str, max_results: int = 10
+    ) -> list[dict[str, Any]]:
+        """List messages with a specific label."""
+        response = self.service.users().messages().list(
+            userId="me", labelIds=[label_id], maxResults=max_results,
+        ).execute()
+        return response.get("messages", [])
+
     def get_thread(self, thread_id: str, format: str = "metadata") -> dict[str, Any]:
         """Get a thread by ID."""
         return self.service.users().threads().get(

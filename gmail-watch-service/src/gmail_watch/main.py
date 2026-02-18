@@ -74,6 +74,15 @@ def create_app() -> FastAPI:
         result = await manager.initialize_watch()
         return result
 
+    @app.post("/v1/admin/process-task-queue")
+    async def process_task_queue(
+        session: AsyncSession = Depends(get_session),
+    ) -> dict:
+        """Manually trigger task queue processing."""
+        manager = WatchManager(session=session)
+        result = await manager.process_task_queue()
+        return result
+
     app.include_router(mcp_router)
 
     return app

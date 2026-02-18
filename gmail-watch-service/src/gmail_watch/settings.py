@@ -88,6 +88,28 @@ class Settings(BaseSettings):
         description="Default follow-up interval in seconds (3 days = 259200)",
     )
 
+    # Task queue settings
+    task_queue_enabled: bool = Field(
+        default=False,
+        alias="TASK_QUEUE_ENABLED",
+        description="Enable automatic task queue processing",
+    )
+    task_queue_label_name: str = Field(
+        default="TaskQueue",
+        alias="TASK_QUEUE_LABEL_NAME",
+        description="Gmail label name for task queue messages",
+    )
+    task_queue_block_id: Optional[str] = Field(
+        default=None,
+        alias="TASK_QUEUE_BLOCK_ID",
+        description="Letta memory block ID for queued_tasks_from_email",
+    )
+    task_queue_bcc_address: str = Field(
+        default="cdorsey+tasks",
+        alias="TASK_QUEUE_BCC_ADDRESS",
+        description="Plus-address prefix for task queue (without domain)",
+    )
+
 
 def get_settings() -> Settings:
     """Get the application settings instance."""
