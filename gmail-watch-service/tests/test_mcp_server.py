@@ -295,7 +295,9 @@ class TestCallToolGetWatchStatus:
         mock_thread.reply_received_at = None
         mock_thread.created_at = MagicMock()
         mock_thread.created_at.isoformat.return_value = "2026-02-01T00:00:00"
-        mock_thread.followup_days = 3
+        mock_thread.followup_seconds = 259200
+        mock_thread.source = "manual"
+        mock_thread.bcc_address = None
         mock_thread.followup_due_at = None
         mock_thread.followup_notified = False
         mock_thread.message_count = 1
@@ -634,7 +636,7 @@ class TestToolDefinitions:
         assert "thread_id" in watch_tool["inputSchema"]["properties"]
         assert "subject" in watch_tool["inputSchema"]["properties"]
         assert "recipients" in watch_tool["inputSchema"]["properties"]
-        assert "followup_days" in watch_tool["inputSchema"]["properties"]
+        assert "followup_interval" in watch_tool["inputSchema"]["properties"]
         assert "context" in watch_tool["inputSchema"]["properties"]
 
     def test_unwatch_thread_schema(self):

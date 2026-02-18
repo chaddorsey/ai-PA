@@ -206,7 +206,7 @@ async def test_notify_watch_started_sends_acknowledgment(mock_httpx):
     thread.thread_id = "thread_123"
     thread.subject = "Proposal for Review"
     thread.original_recipients = ["client@company.com"]
-    thread.followup_days = 3
+    thread.followup_seconds = 259200
     thread.followup_due_at = datetime(2026, 1, 31, tzinfo=timezone.utc)
 
     mock_response = MagicMock()
@@ -233,7 +233,7 @@ async def test_notify_watch_started_includes_followup_info(mock_httpx):
     thread.thread_id = "thread_123"
     thread.subject = "Proposal for Review"
     thread.original_recipients = ["client@company.com"]
-    thread.followup_days = 3
+    thread.followup_seconds = 259200
     thread.followup_due_at = datetime(2026, 1, 31, tzinfo=timezone.utc)
 
     mock_response = MagicMock()
@@ -248,7 +248,7 @@ async def test_notify_watch_started_includes_followup_info(mock_httpx):
     payload = call_args[1]["json"]
     message_content = payload["messages"][0]["content"]
 
-    assert "3 days" in message_content
+    assert "3d" in message_content
     assert "Jan 31" in message_content
 
 
@@ -264,7 +264,7 @@ async def test_notify_watch_started_without_followup(mock_httpx):
     thread.thread_id = "thread_123"
     thread.subject = "Quick Question"
     thread.original_recipients = ["someone@example.com"]
-    thread.followup_days = None
+    thread.followup_seconds = None
     thread.followup_due_at = None
 
     mock_response = MagicMock()

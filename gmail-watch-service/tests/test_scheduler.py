@@ -160,6 +160,7 @@ class TestWatchSchedulerRunLoop:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
 
                     # Run for a brief moment then stop
                     async def stop_after_delay():
@@ -190,6 +191,7 @@ class TestWatchSchedulerRunLoop:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
 
                     async def stop_after_iterations():
                         await asyncio.sleep(0.05)
@@ -218,6 +220,7 @@ class TestWatchSchedulerRunLoop:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
 
                     async def stop_after_iterations():
                         await asyncio.sleep(0.05)
@@ -249,6 +252,7 @@ class TestWatchSchedulerRunLoop:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
 
                     async def stop_after_iterations():
                         await asyncio.sleep(0.05)
@@ -294,6 +298,7 @@ class TestWatchSchedulerErrorHandling:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
 
                     async def stop_after_iterations():
                         await asyncio.sleep(0.1)
@@ -323,6 +328,7 @@ class TestWatchSchedulerErrorHandling:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
                     with patch("gmail_watch.scheduler.logger") as mock_logger:
                         async def stop_quickly():
                             await asyncio.sleep(0.03)
@@ -363,6 +369,7 @@ class TestWatchSchedulerLogging:
             with patch("gmail_watch.scheduler.INITIAL_DELAY_SECONDS", 0):
                 with patch("gmail_watch.scheduler.settings") as mock_settings:
                     mock_settings.pull_interval_seconds = 0.01
+                    mock_settings.followup_check_interval = 300
                     with patch("gmail_watch.scheduler.logger") as mock_logger:
                         async def stop_quickly():
                             await asyncio.sleep(0.03)

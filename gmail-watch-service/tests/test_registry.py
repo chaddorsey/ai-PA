@@ -131,8 +131,9 @@ async def test_list_watched_returns_active_threads(mock_session):
     mock_thread.reply_received = False
     mock_thread.created_at = MagicMock()
     mock_thread.created_at.isoformat.return_value = "2026-02-01T00:00:00"
-    mock_thread.followup_days = None
+    mock_thread.followup_seconds = None
     mock_thread.followup_due_at = None
+    mock_thread.source = "manual"
 
     mock_result = mock_session.execute.return_value
     mock_result.scalars.return_value.all.return_value = [mock_thread]
@@ -156,9 +157,11 @@ async def test_get_watch_status_returns_details(mock_session):
     mock_thread.reply_received_at = None
     mock_thread.created_at = MagicMock()
     mock_thread.created_at.isoformat.return_value = "2026-02-01T00:00:00"
-    mock_thread.followup_days = 3
+    mock_thread.followup_seconds = 259200
     mock_thread.followup_due_at = None
     mock_thread.followup_notified = False
+    mock_thread.source = "manual"
+    mock_thread.bcc_address = None
     mock_thread.message_count = 1
     mock_thread.extra_data = None
 
@@ -170,7 +173,7 @@ async def test_get_watch_status_returns_details(mock_session):
     assert result["status"] == "ok"
     assert result["thread_id"] == "thread_abc123"
     assert result["subject"] == "Test Subject"
-    assert result["followup_days"] == 3
+    assert result["followup_interval"] == "3d"
 
 
 @pytest.mark.asyncio
