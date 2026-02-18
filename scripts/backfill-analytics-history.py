@@ -73,7 +73,7 @@ def collect_for_date(date_str):
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=300) as resp:
             data = json.loads(resp.read().decode("utf-8"))
 
         messages = data if isinstance(data, list) else data.get("messages", [])
@@ -132,7 +132,7 @@ def main():
     print(f"Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
     print(f"Workdays to process: {len(workdays)}")
     print(f"Delay between calls: {args.delay}s")
-    print(f"Estimated time: ~{len(workdays) * (args.delay + 15) // 60} minutes")
+    print(f"Estimated time: ~{len(workdays) * (args.delay + 75) // 60} minutes")
     print(f"Letta agent: {PULSE_MONITOR_ID}")
     print()
 

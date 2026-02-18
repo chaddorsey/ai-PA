@@ -80,9 +80,12 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
         with urllib.request.urlopen(hist_req, timeout=15) as resp:
             history = json.loads(resp.read().decode("utf-8"))
 
-        # Split into 7-day and 30-day windows (history is already descending, excludes today)
-        recent_7 = history[:7]
-        recent_30 = history[:30]
+        # Calendar-day windows (workdays only, bounded by calendar days)
+        # 7 calendar days = 5 workdays, 28 calendar days = 20 workdays (exact weeks)
+        seven_days_ago = (target - timedelta(days=7)).strftime("%Y-%m-%d")
+        twenty_eight_days_ago = (target - timedelta(days=28)).strftime("%Y-%m-%d")
+        recent_7 = [h for h in history if h["snapshot_date"] > seven_days_ago]
+        recent_28 = [h for h in history if h["snapshot_date"] > twenty_eight_days_ago]
 
         # --- Compute averages, deltas, and standout detection ---
         METRICS_TO_COMPARE = [
@@ -109,27 +112,29 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             if today_val is None:
                 continue
 
-            vals_30 = [h.get(metric, 0) for h in recent_30 if h.get(metric) is not None]
+            vals_28 = [h.get(metric, 0) for h in recent_28 if h.get(metric) is not None]
             vals_7 = [h.get(metric, 0) for h in recent_7 if h.get(metric) is not None]
 
-            avg_30 = sum(vals_30) / len(vals_30) if vals_30 else 0
+            avg_28 = sum(vals_28) / len(vals_28) if vals_28 else 0
             avg_7 = sum(vals_7) / len(vals_7) if vals_7 else 0
 
-            # Standard deviation for standout detection
-            stddev_30 = 0.0
-            if len(vals_30) > 1 and avg_30 > 0:
-                variance = sum((v - avg_30) ** 2 for v in vals_30) / len(vals_30)
-                stddev_30 = math.sqrt(variance)
+            # Standard deviation for standout detection (28-day window)
+            stddev_28 = 0.0
+            if len(vals_28) > 1 and avg_28 > 0:
+                variance = sum((v - avg_28) ** 2 for v in vals_28) / len(vals_28)
+                stddev_28 = math.sqrt(variance)
 
-            pct_vs_30 = round((today_val - avg_30) / avg_30 * 100) if avg_30 > 0 else 0
-            is_standout = abs(today_val - avg_30) > stddev_30 and stddev_30 > 0
+            pct_vs_28 = round((today_val - avg_28) / avg_28 * 100) if avg_28 > 0 else 0
+            pct_vs_7 = round((today_val - avg_7) / avg_7 * 100) if avg_7 > 0 else 0
+            is_standout = abs(today_val - avg_28) > stddev_28 and stddev_28 > 0
 
             comparisons[metric] = {
                 "label": label,
                 "today": today_val,
                 "avg_7": round(avg_7, 1),
-                "avg_30": round(avg_30, 1),
-                "pct_vs_30": pct_vs_30,
+                "avg_28": round(avg_28, 1),
+                "pct_vs_7": pct_vs_7,
+                "pct_vs_28": pct_vs_28,
                 "is_standout": is_standout,
             }
 
@@ -161,19 +166,31 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
                 vibe_text = ""
 
         # --- Lambdas for formatting (no nested def — Letta constraint) ---
+        fmt_pct = lambda p: "{} {}%".format(
+            "\u25b2" if p > 0 else "\u25bc" if p < 0 else "\u2014", abs(p)
+        )
         fmt_metric = lambda mk, lb: (
             None if not comparisons.get(mk) or not comparisons[mk]["today"] else
-            "- {}: {} ({} {}% vs avg){}".format(
+            "- {}: {} ({}){}".format(
                 lb, comparisons[mk]["today"],
-                "\u25b2" if comparisons[mk]["pct_vs_30"] > 0 else "\u25bc" if comparisons[mk]["pct_vs_30"] < 0 else "\u2014",
-                abs(comparisons[mk]["pct_vs_30"]),
+                ", ".join(filter(None, [
+                    "7d: " + fmt_pct(comparisons[mk]["pct_vs_7"]) if comparisons[mk]["avg_7"] > 0 else None,
+                    "28d: " + fmt_pct(comparisons[mk]["pct_vs_28"]) if comparisons[mk]["avg_28"] > 0 else None,
+                ])) or "no history",
                 " \u2014 **standout**" if comparisons[mk]["is_standout"] else ""
             )
         )
         get_top = lambda cat: [i for i in top_items if i.get("category") == cat]
+        fmt_dual_trend = lambda comp: (
+            "" if not comp else
+            " ({})".format(", ".join(filter(None, [
+                "7d: " + fmt_pct(comp["pct_vs_7"]) if comp["avg_7"] > 0 else None,
+                "28d: " + fmt_pct(comp["pct_vs_28"]) if comp["avg_28"] > 0 else None,
+            ]))) if (comp.get("avg_7", 0) > 0 or comp.get("avg_28", 0) > 0) else ""
+        )
 
         # --- Format the briefing ---
-        lines = [f"**Daily Analytics \u2014 {day_name}, {display_date}** (vs. 30-day avg)\n"]
+        lines = [f"**Daily Analytics \u2014 {day_name}, {display_date}** (vs. 7d & 28d avg)\n"]
 
         # ===== DRIVE SECTION =====
         if today_snap.get("drive_total_activities"):
@@ -181,10 +198,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
 
             # Summary line
             act_comp = comparisons.get("drive_total_activities")
-            act_trend = ""
-            if act_comp and act_comp["pct_vs_30"] != 0:
-                arrow = "\u25b2" if act_comp["pct_vs_30"] > 0 else "\u25bc"
-                act_trend = f" ({arrow} {abs(act_comp['pct_vs_30'])}% vs avg)"
+            act_trend = fmt_dual_trend(act_comp)
             lines.append(
                 f"- {today_snap['drive_total_activities']} activities across "
                 f"{today_snap.get('drive_unique_documents', '?')} documents by "
@@ -265,13 +279,11 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
 
             # Main send/receive line with trend
             comp = comparisons.get("email_total_activity")
-            range_note = ""
-            if comp:
-                if comp["is_standout"]:
-                    arrow = "\u25b2" if comp["pct_vs_30"] > 0 else "\u25bc"
-                    range_note = f" ({arrow} {abs(comp['pct_vs_30'])}% vs avg) \u2014 **standout**"
-                else:
-                    range_note = " \u2014 typical"
+            range_note = fmt_dual_trend(comp)
+            if comp and comp["is_standout"]:
+                range_note += " \u2014 **standout**"
+            elif comp and not range_note:
+                range_note = " \u2014 typical"
             lines.append(f"- {sent} sent / {received} received (ratio: {ratio}){range_note}")
 
             # Note when sent=0 due to API lag
@@ -287,17 +299,17 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
 
             # Sent trend (if we have history)
             sent_comp = comparisons.get("email_total_sent")
-            if sent_comp and sent_comp["avg_30"] > 0 and sent_comp["pct_vs_30"] != 0:
-                arrow = "\u25b2" if sent_comp["pct_vs_30"] > 0 else "\u25bc"
-                standout = " \u2014 **standout**" if sent_comp["is_standout"] else ""
-                lines.append(f"- Sent: {arrow} {abs(sent_comp['pct_vs_30'])}% vs avg{standout}")
+            sent_trend = fmt_dual_trend(sent_comp)
+            if sent_trend:
+                standout = " \u2014 **standout**" if sent_comp and sent_comp["is_standout"] else ""
+                lines.append(f"- Sent{sent_trend}{standout}")
 
             # Received trend (if we have history)
             recv_comp = comparisons.get("email_total_received")
-            if recv_comp and recv_comp["avg_30"] > 0 and recv_comp["pct_vs_30"] != 0:
-                arrow = "\u25b2" if recv_comp["pct_vs_30"] > 0 else "\u25bc"
-                standout = " \u2014 **standout**" if recv_comp["is_standout"] else ""
-                lines.append(f"- Received: {arrow} {abs(recv_comp['pct_vs_30'])}% vs avg{standout}")
+            recv_trend = fmt_dual_trend(recv_comp)
+            if recv_trend:
+                standout = " \u2014 **standout**" if recv_comp and recv_comp["is_standout"] else ""
+                lines.append(f"- Received{recv_trend}{standout}")
 
             # Quartile workload distribution (when available and >= 12 active users)
             MIN_USERS_FOR_QUARTILE = 12
@@ -350,10 +362,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
 
             # Summary with trend
             msg_comp = comparisons.get("slack_total_messages")
-            msg_trend = ""
-            if msg_comp and msg_comp["pct_vs_30"] != 0:
-                arrow = "\u25b2" if msg_comp["pct_vs_30"] > 0 else "\u25bc"
-                msg_trend = f" ({arrow} {abs(msg_comp['pct_vs_30'])}% vs avg)"
+            msg_trend = fmt_dual_trend(msg_comp)
             lines.append(
                 f"- {today_snap['slack_total_messages']} messages across "
                 f"{today_snap.get('slack_channels_active', '?')} channels by "
@@ -372,11 +381,8 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             # Members active trend
             comp = comparisons.get("slack_members_active")
             if comp and comp["is_standout"]:
-                arrow = "\u25b2" if comp["pct_vs_30"] > 0 else "\u25bc"
-                lines.append(
-                    f"- Members active: {comp['today']} "
-                    f"({arrow} {abs(comp['pct_vs_30'])}% vs avg) \u2014 **standout**"
-                )
+                members_trend = fmt_dual_trend(comp)
+                lines.append(f"- Members active: {comp['today']}{members_trend} \u2014 **standout**")
             lines.append("")
 
         # ===== SLACK VIBE CHECK SECTION =====
@@ -392,7 +398,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
         standouts = [c for c in comparisons.values() if c["is_standout"]]
         if standouts:
             notable = "; ".join(
-                f"{s['label']} {'up' if s['pct_vs_30'] > 0 else 'down'} {abs(s['pct_vs_30'])}%"
+                f"{s['label']} {'up' if s['pct_vs_28'] > 0 else 'down'} {abs(s['pct_vs_28'])}% (28d)"
                 for s in standouts
             )
             lines.append(f"**Notable:** {notable}")
@@ -460,7 +466,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             "markdown_written": md_written,
             "markdown_path": md_path,
             "block_written": block_written,
-            "snapshots_compared": len(recent_30),
+            "snapshots_compared": len(recent_28),
             "standouts": len(standouts),
         }
 
