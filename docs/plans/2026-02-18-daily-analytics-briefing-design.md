@@ -226,13 +226,13 @@ The agent receives the snapshot JSON and comparison data, then:
 
 | Job | Cron | Purpose |
 |-----|------|---------|
-| Slack CSV export trigger | `0 4 * * 1-5` (4 AM ET) | Trigger export for 3 days ago (Slack delay) |
-| `collect_analytics_snapshot` | `30 4 * * 1-5` (4:30 AM ET, Mon-Fri) | Capture previous workday's quantitative metrics |
-| `collect_analytics_snapshot` (weekend) | `30 4 * * 1` (4:30 AM Monday) | Also capture Sat+Sun if any activity |
-| Slack vibe-check heartbeat | `0 5 * * 1-5` (5 AM ET) | Send Pulse Monitor the "generate vibe check" message |
-| Compose briefing | `0 7 * * 1-5` (7 AM ET) | Pulse Monitor assembles final briefing from snapshot + vibe check |
+| Slack CSV export trigger | `0 2 * * 1-5` (2 AM ET) | Trigger export for 3 days ago (Slack delay) |
+| `collect_analytics_snapshot` | `30 2 * * 1-5` (2:30 AM ET, Mon-Fri) | Capture previous workday's quantitative metrics |
+| `collect_analytics_snapshot` (weekend) | `30 2 * * 1` (2:30 AM Monday) | Also capture Sat+Sun if any activity |
+| Slack vibe-check heartbeat | `0 3 * * 1-5` (3 AM ET) | Send Pulse Monitor the "generate vibe check" message |
+| Compose briefing | `0 6 * * 1-5` (6 AM ET) | Pulse Monitor assembles final briefing from snapshot + vibe check |
 
-**Sequence rationale:** Slack CSV export triggers first (4 AM), then quantitative snapshot captures at 4:30 AM (after CSV has ~30 min to generate). Slack vibe check starts at 5 AM (LLM-intensive, may take 30-60 min). By 7 AM, all components are ready and the final briefing is composed and written to memory block + markdown archive. The user sees it when they start their day.
+**Sequence rationale:** Slack CSV export triggers first (2 AM), then quantitative snapshot captures at 2:30 AM (after CSV has ~30 min to generate). Slack vibe check starts at 3 AM (LLM-intensive, has up to 3 hours to complete piecemeal). By 6 AM, all components are ready and the final briefing is composed and written to memory block + markdown archive. Ready before the user's day starts.
 
 ## Weekend Handling
 
@@ -319,7 +319,7 @@ The Slack vibe-check runs daily during off-hours (late night or early morning). 
 - A **scheduler heartbeat** that sends the Pulse Monitor a message like: *"Generate the daily Slack vibe check for yesterday across the top channels. Write results to the analytics briefing memory block and to the markdown archive."*
 - The agent's `slack_pulse_reporting_process` memory block already documents this workflow
 - If the workflow is interrupted (agent timeout, error), the scheduler can retry on the next heartbeat
-- Off-hours timing (e.g., `0 5 * * 1-5` — 5 AM ET weekdays) avoids competing with user interactions
+- Off-hours timing (`0 3 * * 1-5` — 3 AM ET weekdays) avoids competing with user interactions and gives up to 3 hours to complete before the 6 AM briefing assembly
 
 ### Output: Memory Block + Markdown Archive
 
