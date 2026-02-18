@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gmail_watch.models import WatchedThread
+from gmail_watch.utils.interval_parser import parse_interval, format_interval
 
 
 class ThreadRegistry:
@@ -22,8 +23,11 @@ class ThreadRegistry:
         thread_id: str,
         subject: Optional[str] = None,
         recipients: Optional[list[str]] = None,
-        followup_days: Optional[int] = None,
+        followup_interval: Optional[str] = None,
         context: Optional[str] = None,
+        source: str = "manual",
+        bcc_address: Optional[str] = None,
+        followup_due_at_override: Optional[datetime] = None,
     ) -> dict[str, Any]:
         """Register a thread for watching.
 
@@ -31,8 +35,11 @@ class ThreadRegistry:
             thread_id: Gmail thread ID to watch.
             subject: Email subject line (optional).
             recipients: List of original recipients (optional).
-            followup_days: Days until followup reminder (optional).
+            followup_interval: Interval string like '3d', '12h', '1w' (optional).
             context: Additional context about why watching (optional).
+            source: How the watch was created ('manual', 'bcc', etc.).
+            bcc_address: BCC address that triggered the watch (optional).
+            followup_due_at_override: Explicit due-at time (optional).
 
         Returns:
             Dictionary with status and thread information.
@@ -60,18 +67,26 @@ class ThreadRegistry:
                 "message": "Thread watch reactivated",
             }
 
-        # Calculate followup_due_at if followup_days provided
+        # Calculate followup timing
+        followup_seconds = None
         followup_due_at = None
-        if followup_days:
-            followup_due_at = datetime.now(timezone.utc) + timedelta(days=followup_days)
+        if followup_interval:
+            followup_seconds = parse_interval(followup_interval)
+            if followup_due_at_override:
+                followup_due_at = followup_due_at_override
+            else:
+                followup_due_at = datetime.now(timezone.utc) + timedelta(
+                    seconds=followup_seconds
+                )
 
-        # Create new watch
         thread = WatchedThread(
             thread_id=thread_id,
             subject=subject,
             original_recipients=recipients,
-            followup_days=followup_days,
+            followup_seconds=followup_seconds,
             followup_due_at=followup_due_at,
+            source=source,
+            bcc_address=bcc_address,
             extra_data={"context": context} if context else None,
         )
         self.session.add(thread)
@@ -81,6 +96,7 @@ class ThreadRegistry:
             "status": "ok",
             "thread_id": thread_id,
             "message": "Thread is now being watched",
+            "followup_interval": format_interval(followup_seconds) if followup_seconds else None,
             "followup_due_at": followup_due_at.isoformat() if followup_due_at else None,
         }
 
@@ -149,10 +165,15 @@ class ThreadRegistry:
                     "is_active": t.is_active,
                     "reply_received": t.reply_received,
                     "created_at": t.created_at.isoformat() if t.created_at else None,
-                    "followup_days": t.followup_days,
+                    "followup_interval": (
+                        format_interval(t.followup_seconds)
+                        if t.followup_seconds
+                        else None
+                    ),
                     "followup_due_at": (
                         t.followup_due_at.isoformat() if t.followup_due_at else None
                     ),
+                    "source": t.source,
                 }
                 for t in threads
             ],
@@ -188,11 +209,17 @@ class ThreadRegistry:
             "created_at": (
                 thread.created_at.isoformat() if thread.created_at else None
             ),
-            "followup_days": thread.followup_days,
+            "followup_interval": (
+                format_interval(thread.followup_seconds)
+                if thread.followup_seconds
+                else None
+            ),
             "followup_due_at": (
                 thread.followup_due_at.isoformat() if thread.followup_due_at else None
             ),
             "followup_notified": thread.followup_notified,
+            "source": thread.source,
+            "bcc_address": thread.bcc_address,
             "message_count": thread.message_count,
             "extra_data": thread.extra_data,
         }

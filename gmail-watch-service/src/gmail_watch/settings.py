@@ -69,6 +69,25 @@ class Settings(BaseSettings):
         description="Interval in seconds between Pub/Sub pull operations",
     )
 
+    # Follow-up scanner settings
+    followup_check_interval: int = Field(
+        default=300,
+        alias="FOLLOWUP_CHECK_INTERVAL",
+        description="Interval in seconds between follow-up deadline checks",
+    )
+
+    # BCC auto-watch settings
+    bcc_watch_address: str = Field(
+        default="cdorsey+watch",
+        alias="BCC_WATCH_ADDRESS",
+        description="Plus-address prefix for BCC-triggered watches (without domain)",
+    )
+    default_followup_seconds: int = Field(
+        default=259200,
+        alias="DEFAULT_FOLLOWUP_SECONDS",
+        description="Default follow-up interval in seconds (3 days = 259200)",
+    )
+
 
 def get_settings() -> Settings:
     """Get the application settings instance."""

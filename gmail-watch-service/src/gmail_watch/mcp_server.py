@@ -23,8 +23,8 @@ class WatchThreadRequest(BaseModel):
     recipients: str | None = Field(
         None, description="Original recipients (comma-separated)"
     )
-    followup_days: int | None = Field(
-        None, description="Days to wait before follow-up reminder"
+    followup_interval: str | None = Field(
+        None, description="Follow-up interval like '3d', '12h', '1w'"
     )
     context: str | None = Field(
         None, description="Additional context about this thread"
@@ -77,9 +77,9 @@ TOOLS = [
                     "type": "string",
                     "description": "Original recipients (comma-separated)",
                 },
-                "followup_days": {
-                    "type": "integer",
-                    "description": "Days to wait before follow-up reminder",
+                "followup_interval": {
+                    "type": "string",
+                    "description": "Follow-up interval like '3d' (3 days), '12h' (12 hours), '1w' (1 week)",
                 },
                 "context": {
                     "type": "string",
@@ -173,7 +173,7 @@ async def call_tool(
                     thread_id=thread_id,
                     subject=arguments.get("subject"),
                     recipients=recipients,
-                    followup_days=arguments.get("followup_days"),
+                    followup_interval=arguments.get("followup_interval"),
                     context=arguments.get("context"),
                 )
 

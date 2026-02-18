@@ -813,6 +813,9 @@ services:
       - LETTA_BASE_URL=http://letta:8283
       - LETTA_AGENT_ID=${EMAIL_AGENT_ID}
       - PULL_INTERVAL_SECONDS=30
+      - FOLLOWUP_CHECK_INTERVAL=300
+      - BCC_WATCH_ADDRESS=cdorsey+watch
+      - DEFAULT_FOLLOWUP_SECONDS=259200
       - LOG_LEVEL=INFO
     volumes:
       - ./gmail-watch-service/credentials:/app/credentials:ro

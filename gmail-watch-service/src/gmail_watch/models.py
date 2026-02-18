@@ -55,8 +55,12 @@ class WatchedThread(MappedAsDataclass, Base, kw_only=True):
 
     # Watch configuration
     watch_type: Mapped[str] = mapped_column(String(50), default="standard")
-    followup_days: Mapped[Optional[int]] = mapped_column(
+    followup_seconds: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, default=None
+    )
+    source: Mapped[str] = mapped_column(String(50), default="manual")
+    bcc_address: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, default=None
     )
     followup_due_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
