@@ -4,9 +4,10 @@ Create scheduler jobs for the daily analytics briefing pipeline.
 
 Pipeline (all times ET, cron in UTC):
   1. 2:00 AM ET (07:00 UTC) Mon-Fri: Trigger Slack CSV export
-  2. 2:30 AM ET (07:30 UTC) Mon-Fri: Collect quantitative snapshot
+  2. 2:30 AM ET (07:30 UTC) Mon-Fri: Collect quantitative snapshot (T+1)
   3. 3:00 AM ET (08:00 UTC) Mon-Fri: Slack vibe-check heartbeat
-  4. 6:00 AM ET (11:00 UTC) Mon-Fri: Compose morning briefing
+  4. 4:00 AM ET (09:00 UTC) Mon-Fri: Re-collect snapshot (T+2, 48h) for late-arriving sent data
+  5. 6:00 AM ET (11:00 UTC) Mon-Fri: Compose morning briefing
 
 Usage:
   python scripts/create-analytics-pipeline-jobs.py
@@ -74,6 +75,31 @@ JOBS = [
                     "When all channels are done, write a combined summary to archival memory with "
                     "the same tag. Do NOT rely on conversation context to preserve these — the "
                     "compose step will read them from archival memory."
+                ),
+            },
+        }],
+    },
+    {
+        "title": "Daily Analytics: Snapshot Re-collection (T+2)",
+        "description": "Re-collect all analytics (Drive, Email, Slack) for 2 days ago. Google Admin Reports API lags up to 48h for Drive activity and email sent events. Slack CSV may also cover a more relevant date by T+2. DB upsert overwrites initial T+1 snapshot with complete data.",
+        "created_by": "system",
+        "category": "analytics_pipeline",
+        "schedule": {
+            "type": "cron",
+            "expression": {"cron": "0 9 * * 1-5"},
+        },
+        "actions": [{
+            "action_type": "agent_message",
+            "config": {
+                "agent_id": PULSE_MONITOR_ID,
+                "message": (
+                    "Re-collect the analytics snapshot for the date 2 calendar days before today. "
+                    "Calculate today's date minus 2 days, format as YYYY-MM-DD, then call "
+                    "collect_analytics_snapshot(date='YYYY-MM-DD') with that date. "
+                    "This re-collection captures late-arriving data across all sources: email sent "
+                    "events and Drive activity (Google Admin Reports API lags up to 48h), plus "
+                    "potentially a more current Slack CSV. The database uses upsert, so the row "
+                    "will be updated with more complete data. Report the updated totals."
                 ),
             },
         }],

@@ -138,6 +138,19 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
                     "user_count": user_count,
                     "covers_date": date_str,
                 }
+
+                # Quartile distribution (pinned by activity) — always collect for historical record
+                try:
+                    quartile_result = get_email_analytics(
+                        start_datetime=start_dt,
+                        end_datetime=end_dt,
+                        mode="quartile",
+                        quartile_pin_metric="activity",
+                    )
+                    if quartile_result.get("status") == "ok":
+                        snapshot["email"]["quartiles"] = quartile_result.get("data", {}).get("quartiles", {})
+                except Exception:
+                    pass  # Quartile is optional enrichment
             else:
                 snapshot["errors"].append(
                     f"Email: {email_result.get('error_message', email_result.get('error', 'unknown'))}"
@@ -253,6 +266,7 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
                     "email_ratio": email.get("ratio"),
                     "email_total_activity": email.get("total_activity"),
                     "email_user_count": email.get("user_count"),
+                    "email_quartiles": email.get("quartiles"),
                     "slack_covers_date": slack.get("covers_date"),
                     "slack_total_messages": slack.get("total_messages_posted"),
                     "slack_channels_active": slack.get("channels_active"),

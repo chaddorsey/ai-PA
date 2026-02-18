@@ -274,6 +274,10 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
                     range_note = " \u2014 typical"
             lines.append(f"- {sent} sent / {received} received (ratio: {ratio}){range_note}")
 
+            # Note when sent=0 due to API lag
+            if sent == 0 and received > 0:
+                lines.append("  *(sent data may lag 24\u201348h in Admin Reports API)*")
+
             # Activity per user (derived metric)
             if user_count and user_count > 0:
                 per_user = round(total / user_count, 1)
@@ -294,6 +298,41 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
                 arrow = "\u25b2" if recv_comp["pct_vs_30"] > 0 else "\u25bc"
                 standout = " \u2014 **standout**" if recv_comp["is_standout"] else ""
                 lines.append(f"- Received: {arrow} {abs(recv_comp['pct_vs_30'])}% vs avg{standout}")
+
+            # Quartile workload distribution (when available and >= 12 active users)
+            MIN_USERS_FOR_QUARTILE = 12
+            quartiles = today_snap.get("email_quartiles")
+            if quartiles and user_count and user_count >= MIN_USERS_FOR_QUARTILE:
+                lines.append(f"- **Workload distribution** ({user_count} users, by total activity):")
+                q_total_activity = sum(
+                    quartiles.get(f"Q{i}", {}).get("activity", {}).get("count", 0) for i in range(1, 5)
+                )
+                for qi in range(1, 5):
+                    qk = f"Q{qi}"
+                    q = quartiles.get(qk, {})
+                    q_users = q.get("user_count", 0)
+                    q_act = q.get("activity", {})
+                    q_avg = q_act.get("avg", 0)
+                    q_count = q_act.get("count", 0)
+                    q_sent_avg = q.get("sent", {}).get("avg", 0)
+                    q_recv_avg = q.get("received", {}).get("avg", 0)
+                    q_ratio = q.get("ratio", {}).get("avg", 0)
+                    pct = round(q_count / q_total_activity * 100) if q_total_activity > 0 else 0
+                    # Build detail string
+                    detail_parts = [f"avg {q_avg}/user", f"{pct}% of volume"]
+                    if q_sent_avg > 0 or q_recv_avg > 0:
+                        detail_parts.append(f"s/r {q_sent_avg}/{q_recv_avg}")
+                    if q_ratio > 0:
+                        detail_parts.append(f"ratio {q_ratio}")
+                    lines.append(f"  Q{qi} ({q_users} users): {', '.join(detail_parts)}")
+                # Summary spread line
+                q1_avg = quartiles.get("Q1", {}).get("activity", {}).get("avg", 0)
+                q4_avg = quartiles.get("Q4", {}).get("activity", {}).get("avg", 0)
+                if q1_avg > 0 and q4_avg > 0:
+                    spread = round(q1_avg / q4_avg, 1)
+                    lines.append(f"  Spread: {spread}x between top and bottom quartile")
+                elif q1_avg > 0 and q4_avg == 0:
+                    lines.append("  Spread: bottom quartile inactive")
 
             lines.append("")
 

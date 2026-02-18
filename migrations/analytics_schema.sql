@@ -27,6 +27,7 @@ CREATE TABLE analytics.daily_snapshots (
   email_ratio                FLOAT,
   email_total_activity       INT,
   email_user_count           INT,
+  email_quartiles            JSONB,
 
   -- Slack (CSV export — point-in-time, non-recoverable)
   slack_covers_date          DATE,
