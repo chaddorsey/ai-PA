@@ -226,11 +226,13 @@ The agent receives the snapshot JSON and comparison data, then:
 
 | Job | Cron | Purpose |
 |-----|------|---------|
-| `collect_analytics_snapshot` | `0 8 * * 1-5` (8 AM ET, Mon-Fri) | Capture previous workday's metrics |
-| `collect_analytics_snapshot` (weekend) | `0 8 * * 1` (8 AM Monday) | Also capture Sat+Sun if any activity |
-| Slack CSV export trigger | `0 7 * * 1-5` (7 AM ET) | Trigger export for 3 days ago (Slack delay) |
+| Slack CSV export trigger | `0 4 * * 1-5` (4 AM ET) | Trigger export for 3 days ago (Slack delay) |
+| `collect_analytics_snapshot` | `30 4 * * 1-5` (4:30 AM ET, Mon-Fri) | Capture previous workday's quantitative metrics |
+| `collect_analytics_snapshot` (weekend) | `30 4 * * 1` (4:30 AM Monday) | Also capture Sat+Sun if any activity |
+| Slack vibe-check heartbeat | `0 5 * * 1-5` (5 AM ET) | Send Pulse Monitor the "generate vibe check" message |
+| Compose briefing | `0 7 * * 1-5` (7 AM ET) | Pulse Monitor assembles final briefing from snapshot + vibe check |
 
-The 8 AM collection time ensures the previous day's data has fully propagated through Google's Admin Reports pipeline (which can have a few hours of lag).
+**Sequence rationale:** Slack CSV export triggers first (4 AM), then quantitative snapshot captures at 4:30 AM (after CSV has ~30 min to generate). Slack vibe check starts at 5 AM (LLM-intensive, may take 30-60 min). By 7 AM, all components are ready and the final briefing is composed and written to memory block + markdown archive. The user sees it when they start their day.
 
 ## Weekend Handling
 
@@ -260,22 +262,22 @@ Since both Admin Reports APIs retain 180 days of data, we can backfill approxima
 
 ## Implementation Phases
 
-### Phase 1: MVP (This Design)
-- New `collect_analytics_snapshot` Letta tool combining existing APIs
-- `daily_snapshots` + `daily_top_items` tables in Supabase
-- Scheduler cron job for daily collection
-- Basic trend comparison (7-day and 30-day averages)
-- Agent instructions for formatting the briefing
+### Phase 1: MVP
+- Database schema (`daily_snapshots`, `daily_top_items`)
+- `collect_analytics_snapshot` Letta tool (quantitative: Drive + Email + Slack CSV)
+- Scheduler jobs for the 4-step pipeline (CSV trigger → snapshot → vibe check → compose)
+- Pulse Monitor memory block with briefing format instructions
+- Markdown archive output (`analytics/briefings/YYYY-MM-DD.md`)
+- Basic trend comparison (7-day and 30-day workday averages)
 
-### Phase 2: Backfill + Enrichment
-- Historical backfill script (180 days of Drive + Email)
+### Phase 2: Backfill + Baselines
+- Historical backfill script (180 days of Drive + Email Admin Reports data)
 - Standout detection with standard deviation flagging
-- Slack qualitative integration (Pulse Monitor vibe summary)
+- Tune vibe-check channel selection (top-N from analytics vs. curated list)
 
 ### Phase 3: Dashboard (Future)
-- Web UI for browsing historical snapshots
-- Trend charts (drive activity over time, email volume, etc.)
-- Alerting for anomalies
+- Web UI for browsing historical snapshots and trend charts
+- Anomaly alerting via Slack DM
 
 ## Files to Create/Modify
 
@@ -284,8 +286,10 @@ Since both Admin Reports APIs retain 180 days of data, we can backfill approxima
 | `letta/daily_analytics_snapshot.py` | Create | New Letta tool: `collect_analytics_snapshot()` |
 | `letta/register_daily_analytics.py` | Create | Registration script for the tool |
 | `migrations/analytics_schema.sql` | Create | Database schema for snapshots |
-| Agent memory block | Update | Add briefing format instructions |
-| Scheduler job | Create | Daily 8 AM cron via scheduler-service API |
+| `analytics/briefings/` | Create dir | Markdown archive for rendered briefings |
+| Pulse Monitor memory blocks | Update | Add `daily_analytics_briefing` block + briefing format instructions |
+| Scheduler jobs (x4) | Create | Slack CSV trigger, snapshot, vibe-check heartbeat, compose briefing |
+| `scripts/backfill_analytics.py` | Create | Backfill 180 days of Drive + Email historical data |
 
 ## Existing Tools Reused (Not Modified)
 
@@ -302,10 +306,27 @@ Since both Admin Reports APIs retain 180 days of data, we can backfill approxima
 - Supabase PostgreSQL (already running)
 - Scheduler-service (already running, cron jobs now properly loading)
 
-## Open Questions
+## Design Decisions
 
-1. **Which agent runs this?** Options: extend the daily briefing agent, extend the Pulse Monitor, or create a dedicated analytics agent. Recommendation: extend the daily briefing agent since it already runs on schedule and could incorporate this into the existing calendar briefing.
+### Owning Agent: Pulse Monitor
 
-2. **Slack qualitative frequency?** The Pulse Monitor's vibe-check workflow is LLM-intensive. Daily may be excessive. Could be workday-only or on-demand.
+The Pulse Monitor agent owns this capability. It already has Slack search/summary tools, the `slack_pulse_reporting_process` workflow, and organizational awareness as its core mission. The daily briefing agent remains focused on calendar/schedule.
 
-3. **Alerting channel?** Should standout stats be pushed to a Slack DM, or just stored for the next time the user asks for a briefing?
+### Slack Qualitative: Off-Hours, Piecemeal
+
+The Slack vibe-check runs daily during off-hours (late night or early morning). Since the Pulse Monitor summarizes channels sequentially (each requiring tool calls), this may span multiple tool invocations. The workflow needs:
+
+- A **scheduler heartbeat** that sends the Pulse Monitor a message like: *"Generate the daily Slack vibe check for yesterday across the top channels. Write results to the analytics briefing memory block and to the markdown archive."*
+- The agent's `slack_pulse_reporting_process` memory block already documents this workflow
+- If the workflow is interrupted (agent timeout, error), the scheduler can retry on the next heartbeat
+- Off-hours timing (e.g., `0 5 * * 1-5` — 5 AM ET weekdays) avoids competing with user interactions
+
+### Output: Memory Block + Markdown Archive
+
+Briefings are written to **two locations**:
+
+1. **Active memory block** (`daily_analytics_briefing`) — contains the most recent briefing only, so the agent can reference it conversationally. This keeps context load bounded: each briefing replaces the previous one. (~500-800 tokens typical.)
+
+2. **Markdown file archive** — written to `analytics/briefings/YYYY-MM-DD.md` for permanent reference. These accumulate as a time series and are included in the regular backup. The agent can read historical files on demand (e.g., "compare today to last Monday").
+
+The **database** (`daily_snapshots` table) stores the raw structured data for programmatic trend comparison. The markdown files are the human-readable rendered version.
