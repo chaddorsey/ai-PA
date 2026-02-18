@@ -2,12 +2,15 @@
 """
 Create scheduler jobs for the daily analytics briefing pipeline.
 
-Pipeline (all times ET, cron in UTC):
-  1. 2:00 AM ET (07:00 UTC) Mon-Fri: Trigger Slack CSV export
-  2. 2:30 AM ET (07:30 UTC) Mon-Fri: Collect quantitative snapshot (T+1)
-  3. 3:00 AM ET (08:00 UTC) Mon-Fri: Slack vibe-check heartbeat
-  4. 4:00 AM ET (09:00 UTC) Mon-Fri: Re-collect snapshot (T+2, 48h) for late-arriving sent data
-  5. 6:00 AM ET (11:00 UTC) Mon-Fri: Compose morning briefing
+NOTE: Scheduler interprets cron expressions as America/New_York (ET),
+configured via SCHEDULER_TIMEZONE env var. All cron times below are ET.
+
+Pipeline (all times ET, Mon-Fri):
+  1. 2:00 AM ET: Trigger Slack CSV export
+  2. 2:30 AM ET: Collect quantitative snapshot (T+1)
+  3. 3:00 AM ET: Slack vibe-check heartbeat
+  4. 4:00 AM ET: Re-collect snapshot (T+2, 48h) for late-arriving data
+  5. 6:00 AM ET: Compose morning briefing
 
 Usage:
   python scripts/create-analytics-pipeline-jobs.py
@@ -28,7 +31,7 @@ JOBS = [
         "category": "analytics_pipeline",
         "schedule": {
             "type": "cron",
-            "expression": {"cron": "0 7 * * 1-5"},
+            "expression": {"cron": "0 2 * * 1-5"},
         },
         "actions": [{
             "action_type": "agent_message",
@@ -45,7 +48,7 @@ JOBS = [
         "category": "analytics_pipeline",
         "schedule": {
             "type": "cron",
-            "expression": {"cron": "30 7 * * 1-5"},
+            "expression": {"cron": "30 2 * * 1-5"},
         },
         "actions": [{
             "action_type": "agent_message",
@@ -62,7 +65,7 @@ JOBS = [
         "category": "analytics_pipeline",
         "schedule": {
             "type": "cron",
-            "expression": {"cron": "0 8 * * 1-5"},
+            "expression": {"cron": "0 3 * * 1-5"},
         },
         "actions": [{
             "action_type": "agent_message",
@@ -86,7 +89,7 @@ JOBS = [
         "category": "analytics_pipeline",
         "schedule": {
             "type": "cron",
-            "expression": {"cron": "0 9 * * 1-5"},
+            "expression": {"cron": "0 4 * * 1-5"},
         },
         "actions": [{
             "action_type": "agent_message",
@@ -111,7 +114,7 @@ JOBS = [
         "category": "analytics_pipeline",
         "schedule": {
             "type": "cron",
-            "expression": {"cron": "0 11 * * 1-5"},
+            "expression": {"cron": "0 6 * * 1-5"},
         },
         "actions": [{
             "action_type": "agent_message",
