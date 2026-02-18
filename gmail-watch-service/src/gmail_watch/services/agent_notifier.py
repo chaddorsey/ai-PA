@@ -9,6 +9,7 @@ import httpx
 
 from gmail_watch.models import WatchedThread
 from gmail_watch.settings import settings
+from gmail_watch.utils.interval_parser import format_interval
 
 
 class AgentNotifier:
@@ -71,10 +72,11 @@ class AgentNotifier:
         recipients_str = ", ".join(thread.original_recipients or ["unknown"])
 
         followup_str = ""
-        if thread.followup_days and thread.followup_due_at:
+        if thread.followup_seconds and thread.followup_due_at:
+            interval_str = format_interval(thread.followup_seconds)
             due_date_str = thread.followup_due_at.strftime("%b %d")
             followup_str = (
-                f"\n**Follow-up deadline:** {thread.followup_days} days "
+                f"\n**Follow-up deadline:** {interval_str} "
                 f"(due {due_date_str})"
             )
 
@@ -103,12 +105,79 @@ I'll notify you when a reply is received."""
 
         return await self._send_to_agent(message)
 
+    def _format_followup_message(
+        self,
+        thread: WatchedThread,
+    ) -> str:
+        """Format notification message for an overdue follow-up."""
+        recipients_str = ", ".join(thread.original_recipients or ["unknown"])
+        interval_str = (
+            format_interval(thread.followup_seconds)
+            if thread.followup_seconds
+            else "unknown"
+        )
+
+        # Calculate how overdue
+        now = datetime.now(timezone.utc)
+        overdue_str = "now"
+        if thread.followup_due_at:
+            overdue_delta = now - thread.followup_due_at
+            overdue_hours = overdue_delta.total_seconds() / 3600
+            if overdue_hours >= 48:
+                overdue_str = f"{overdue_hours / 24:.0f} days ago"
+            elif overdue_hours >= 1:
+                overdue_str = f"{overdue_hours:.0f} hours ago"
+            else:
+                overdue_str = "just now"
+
+        message = f"""[Gmail Watch] Follow-up needed — no reply received
+
+**Subject:** {thread.subject or "(no subject)"}
+**Recipients:** {recipients_str}
+**Watch interval:** {interval_str}
+**Follow-up was due:** {overdue_str}
+**Messages in thread:** {thread.message_count}
+
+No reply has been received. Consider following up.
+Use read_email(thread_id="{thread.thread_id}") to review, or reply_to_email() to follow up."""
+
+        return message
+
+    async def notify_followup_needed(
+        self,
+        thread: WatchedThread,
+    ) -> dict[str, Any]:
+        """Send follow-up needed notification to Email Agent."""
+        message = self._format_followup_message(thread)
+        return await self._send_to_agent(message)
+
     async def notify_watch_started(
         self,
         thread: WatchedThread,
     ) -> dict[str, Any]:
         """Send watch started acknowledgment to Email Agent."""
         message = self._format_watch_started_message(thread)
+        return await self._send_to_agent(message)
+
+    async def notify_watch_started_simple(
+        self,
+        subject: str,
+        recipients: list[str],
+        interval_str: str,
+        followup_due_at: datetime,
+    ) -> dict[str, Any]:
+        """Send watch-started notification with simple params (for BCC auto-watch)."""
+        recipients_str = ", ".join(recipients) if recipients else "unknown"
+        due_date_str = followup_due_at.strftime("%b %d at %I:%M %p")
+
+        message = f"""[Gmail Watch] Auto-watching thread via BCC
+
+**Subject:** {subject or "(no subject)"}
+**Recipients:** {recipients_str}
+**Follow-up deadline:** {interval_str} (due {due_date_str})
+
+I'll notify you when a reply is received, or remind you if no reply arrives by the deadline."""
+
         return await self._send_to_agent(message)
 
     async def _send_to_agent(self, message: str) -> dict[str, Any]:

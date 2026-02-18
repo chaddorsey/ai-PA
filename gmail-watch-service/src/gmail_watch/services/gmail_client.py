@@ -119,6 +119,19 @@ class GmailClient:
             format=format,
         ).execute()
 
+    def search_messages(self, query: str, max_results: int = 5) -> list[dict[str, Any]]:
+        """Search Gmail messages by query."""
+        response = self.service.users().messages().list(
+            userId="me", q=query, maxResults=max_results
+        ).execute()
+        return response.get("messages", [])
+
+    def remove_label(self, message_id: str, label_id: str) -> None:
+        """Remove a label from a message."""
+        self.service.users().messages().modify(
+            userId="me", id=message_id, body={"removeLabelIds": [label_id]},
+        ).execute()
+
     def get_thread(self, thread_id: str, format: str = "metadata") -> dict[str, Any]:
         """Get a thread by ID."""
         return self.service.users().threads().get(

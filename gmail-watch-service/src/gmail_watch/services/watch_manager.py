@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import re
 import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -9,11 +11,13 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gmail_watch.models import Notification, SyncState
+from gmail_watch.models import Notification, SyncState, WatchedThread
 from gmail_watch.services.agent_notifier import AgentNotifier
 from gmail_watch.services.gmail_client import GmailClient
 from gmail_watch.services.pubsub_puller import PubSubPuller
 from gmail_watch.services.registry import ThreadRegistry
+from gmail_watch.settings import settings
+from gmail_watch.utils.interval_parser import extract_interval_from_address, format_interval
 
 # Default threshold for watch renewal (1 day before expiration)
 DEFAULT_RENEWAL_THRESHOLD_HOURS = 24
@@ -377,7 +381,15 @@ class WatchManager:
                         thread_id = message.get("threadId")
 
                         if thread_id not in watched_thread_ids:
-                            # Not a watched thread
+                            # Not a watched thread — try BCC auto-register
+                            auto_result = await self.try_auto_register(
+                                message_id=msg_id,
+                                thread_id=thread_id,
+                            )
+                            if auto_result and auto_result.get("status") == "ok":
+                                watched_thread_ids.add(
+                                    auto_result.get("thread_id", thread_id)
+                                )
                             continue
 
                         replies_found += 1
@@ -420,6 +432,249 @@ class WatchManager:
                 "status": "error",
                 "error": str(e),
             }
+
+    async def check_followups(self) -> dict[str, Any]:
+        """Check for threads with overdue follow-up deadlines."""
+        try:
+            now = datetime.now(timezone.utc)
+            stmt = select(WatchedThread).where(
+                WatchedThread.is_active == True,  # noqa: E712
+                WatchedThread.followup_seconds.isnot(None),
+                WatchedThread.followup_due_at < now,
+                WatchedThread.followup_notified == False,  # noqa: E712
+                WatchedThread.reply_received == False,  # noqa: E712
+            )
+            result = await self._session.execute(stmt)
+            overdue_threads = result.scalars().all()
+
+            notified_count = 0
+            for thread in overdue_threads:
+                notify_result = await self.notifier.notify_followup_needed(thread)
+                thread.followup_notified = True
+                await self._log_notification(
+                    thread_id=thread.thread_id,
+                    notification_type="followup_needed",
+                    agent_id=self.notifier.agent_id,
+                    extra_data={"followup_seconds": thread.followup_seconds},
+                )
+                if notify_result.get("status") == "ok":
+                    notified_count += 1
+
+            await self._session.commit()
+            return {
+                "status": "ok",
+                "overdue_count": len(overdue_threads),
+                "notified_count": notified_count,
+            }
+        except Exception as e:
+            try:
+                await self._record_error(f"check_followups: {e}")
+            except Exception:
+                pass
+            return {
+                "status": "error",
+                "error": str(e),
+                "overdue_count": 0,
+                "notified_count": 0,
+            }
+
+    # Forward detection patterns (same as email_task_queue_tool.py)
+    _FORWARD_DELIMITER = re.compile(r"-{5,}\s*Forwarded message\s*-{5,}")
+    _FORWARDED_HEADER = re.compile(r"^(From|Date|Subject|To):\s*(.+)$", re.MULTILINE)
+    _EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w.-]+")
+
+    async def try_auto_register(
+        self,
+        message_id: str,
+        thread_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """Try to auto-register a watch from BCC address detection.
+
+        Called when a Pub/Sub notification arrives for a thread NOT in the
+        registry. Fetches the message, checks for BCC watch address, and
+        registers the watch if found. For forwards, resolves the original
+        thread and uses the original send date as follow-up baseline.
+        """
+        try:
+            message = self._gmail_client.get_message(message_id, format="full")
+
+            # Extract all headers
+            headers = {}
+            for h in message.get("payload", {}).get("headers", []):
+                headers[h["name"].lower()] = h["value"]
+
+            # Check To, CC, BCC for watch address
+            bcc_prefix = settings.bcc_watch_address
+            matched_address = None
+            interval_seconds = None
+
+            for header_name in ("to", "cc", "bcc"):
+                value = headers.get(header_name, "")
+                for addr in self._EMAIL_PATTERN.findall(value):
+                    result = extract_interval_from_address(addr, bcc_prefix)
+                    if result is not None:
+                        matched_address = addr
+                        interval_seconds = result
+                        break
+                if matched_address:
+                    break
+
+            if not matched_address:
+                return None
+
+            subject = headers.get("subject", "")
+            interval_str = format_interval(interval_seconds)
+
+            is_forward = subject.lower().startswith("fwd:")
+            watch_thread_id = thread_id
+            followup_due_override = None
+            recipients = []
+
+            # Extract recipients from To header (excluding watch address)
+            to_header = headers.get("to", "")
+            for addr in self._EMAIL_PATTERN.findall(to_header):
+                if not addr.lower().startswith(bcc_prefix.lower()):
+                    recipients.append(addr)
+
+            if is_forward:
+                body = self._extract_body(message)
+                fwd_match = self._FORWARD_DELIMITER.search(body) if body else None
+
+                if fwd_match:
+                    below = body[fwd_match.end():]
+                    fwd_headers = {}
+                    for match in self._FORWARDED_HEADER.finditer(below[:500]):
+                        fwd_headers[match.group(1).lower()] = match.group(2).strip()
+
+                    # Use original subject
+                    original_subject = fwd_headers.get("subject", "")
+                    if not original_subject:
+                        original_subject = re.sub(
+                            r"^(Fwd:\s*)+", "", subject, flags=re.IGNORECASE
+                        ).strip()
+                    subject = original_subject
+
+                    # Parse original date for follow-up baseline
+                    original_date_str = fwd_headers.get("date", "")
+                    original_date = self._parse_date(original_date_str)
+                    if original_date and interval_seconds:
+                        followup_due_override = original_date + timedelta(
+                            seconds=interval_seconds
+                        )
+
+                    # Extract original sender
+                    original_from = fwd_headers.get("from", "")
+                    from_match = self._EMAIL_PATTERN.search(original_from)
+                    if from_match:
+                        recipients = [from_match.group(0)]
+
+                    # Resolve original thread via Gmail search
+                    if from_match and original_subject:
+                        clean_subject = original_subject.replace('"', '\\"')
+                        query = f'from:{from_match.group(0)} subject:"{clean_subject}"'
+                        try:
+                            search_results = self._gmail_client.search_messages(query)
+                            for sr in search_results:
+                                if sr["id"] != message_id:
+                                    watch_thread_id = sr.get(
+                                        "threadId", watch_thread_id
+                                    )
+                                    break
+                        except Exception:
+                            pass
+
+                    # Remove Watching label from forward if we resolved original
+                    if watch_thread_id != thread_id:
+                        try:
+                            label_id = self._gmail_client.get_watching_label_id()
+                            self._gmail_client.remove_label(message_id, label_id)
+                        except Exception:
+                            pass
+
+            # Register the watch
+            reg_result = await self.registry.watch_thread(
+                thread_id=watch_thread_id,
+                subject=subject,
+                recipients=recipients if recipients else None,
+                followup_interval=interval_str,
+                source="bcc",
+                bcc_address=matched_address,
+                followup_due_at_override=followup_due_override,
+            )
+
+            # Log
+            await self._log_notification(
+                thread_id=watch_thread_id,
+                notification_type="watch_auto_created",
+                message_id=message_id,
+                agent_id=self.notifier.agent_id,
+                extra_data={
+                    "bcc_address": matched_address,
+                    "interval": interval_str,
+                    "is_forward": is_forward,
+                },
+            )
+
+            # Notify agent
+            try:
+                await self.notifier.notify_watch_started_simple(
+                    subject=subject,
+                    recipients=recipients or [],
+                    interval_str=interval_str,
+                    followup_due_at=followup_due_override
+                    or (
+                        datetime.now(timezone.utc)
+                        + timedelta(seconds=interval_seconds)
+                    ),
+                )
+            except Exception:
+                pass  # Non-critical
+
+            return reg_result
+
+        except Exception as e:
+            import structlog
+
+            structlog.get_logger().error(
+                "auto_register_error", error=str(e), thread_id=thread_id
+            )
+            return None
+
+    def _extract_body(self, message: dict[str, Any]) -> str:
+        """Extract text body from Gmail message using MIME walk."""
+        plain_body = ""
+        html_body = ""
+        stack = [message.get("payload", {})]
+        while stack:
+            part = stack.pop()
+            mime_type = part.get("mimeType", "")
+            parts = part.get("parts", [])
+            if parts:
+                stack.extend(parts)
+                continue
+            body_data = part.get("body", {}).get("data", "")
+            if not body_data:
+                continue
+            decoded = base64.urlsafe_b64decode(body_data).decode(
+                "utf-8", errors="replace"
+            )
+            if mime_type == "text/plain" and not plain_body:
+                plain_body = decoded
+            elif mime_type == "text/html" and not html_body:
+                html_body = decoded
+        return plain_body if plain_body else html_body
+
+    @staticmethod
+    def _parse_date(date_str: str) -> Optional[datetime]:
+        """Parse email date header to datetime."""
+        if not date_str:
+            return None
+        from email.utils import parsedate_to_datetime
+
+        try:
+            return parsedate_to_datetime(date_str)
+        except Exception:
+            return None
 
     async def get_sync_status(self) -> dict[str, Any]:
         """Get current sync status for external callers.

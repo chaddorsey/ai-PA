@@ -65,6 +65,12 @@ class WatchScheduler:
             result = await manager.initialize_watch()
             logger.info("Initial watch setup", result=result)
 
+        followup_check_cycles = max(
+            1,
+            settings.followup_check_interval // settings.pull_interval_seconds,
+        )
+        cycle_count = 0
+
         while self._running:
             try:
                 async with session_maker() as session:
@@ -84,6 +90,18 @@ class WatchScheduler:
                             "Processed notifications",
                             replies_found=result["replies_found"],
                         )
+
+                    # Check follow-up deadlines (every N cycles)
+                    cycle_count += 1
+                    if cycle_count >= followup_check_cycles:
+                        cycle_count = 0
+                        followup_result = await manager.check_followups()
+                        if followup_result.get("overdue_count", 0) > 0:
+                            logger.info(
+                                "Follow-up check",
+                                overdue=followup_result["overdue_count"],
+                                notified=followup_result["notified_count"],
+                            )
 
             except Exception as e:
                 logger.error("Error in polling loop", error=str(e))
