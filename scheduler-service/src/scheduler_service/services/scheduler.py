@@ -54,15 +54,20 @@ class SchedulerService:
                 select(Job).where(Job.status == JobStatus.SCHEDULED.value)
             )
             jobs = result.scalars().all()
+            loaded = 0
             for job in jobs:
-                if job.next_run_at is not None:
-                    self._schedule_job(job)
-                else:
+                # Cron/interval jobs derive their trigger from the expression,
+                # so they don't need next_run_at to be pre-populated.
+                # Only skip one-off jobs with no next_run_at.
+                if job.next_run_at is None and job.schedule_type == ScheduleType.ONE_OFF.value:
                     logger.warning(
-                        "Job has no next_run_at; skipping scheduling",
+                        "One-off job has no next_run_at; skipping",
                         job_id=str(job.job_id),
                     )
-        logger.info("Loaded jobs into scheduler", count=len(jobs))
+                    continue
+                self._schedule_job(job)
+                loaded += 1
+        logger.info("Loaded jobs into scheduler", count=loaded, total=len(jobs))
 
     def _schedule_job(self, job: Job) -> None:
         trigger = self._create_trigger(job)
@@ -85,9 +90,6 @@ class SchedulerService:
         job_logger(str(job.job_id)).info("Scheduled job", trigger=str(trigger))
 
     def _create_trigger(self, job: Job):
-        if job.next_run_at is None and job.schedule_type != ScheduleType.ONE_OFF.value:
-            return None
-
         if job.schedule_type == ScheduleType.CRON.value:
             cron_expr = job.schedule_expression.get("cron")
             if not cron_expr:
@@ -216,11 +218,22 @@ class SchedulerService:
                 # For one-off jobs, mark as COMPLETED after execution
                 if job.schedule_type == ScheduleType.ONE_OFF.value:
                     job.status = JobStatus.COMPLETED.value
+                    job.next_run_at = None
                     job.updated_at = datetime.now(timezone.utc)
                     # Remove from scheduler since it won't run again
                     await scheduler_service.remove_job(job.job_id)
                     log.info("One-off job marked as completed")
-                
+                else:
+                    # Update next_run_at from APScheduler's computed next fire time
+                    aps_job = self.scheduler.get_job(str(job.job_id))
+                    if aps_job and aps_job.next_run_time:
+                        job.next_run_at = aps_job.next_run_time
+                    job.updated_at = datetime.now(timezone.utc)
+                    log.info(
+                        "Updated next_run_at",
+                        next_run_at=str(job.next_run_at),
+                    )
+
                 await session.commit()
                 record_execution("success" if execution.status == ExecutionStatus.SUCCEEDED.value else "failed")
 

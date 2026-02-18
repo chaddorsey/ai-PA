@@ -38,8 +38,8 @@ RUN playwright install-deps chromium
 
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 
-COPY slack-analytics-mcp-server/src/ ./src/
-COPY scripts/slack_analytics_with_dates.py /app/slack_analytics_with_dates.py
+COPY --chown=appuser:appuser slack-analytics-mcp-server/src/ ./src/
+COPY --chown=appuser:appuser scripts/slack_analytics_with_dates.py /app/slack_analytics_with_dates.py
 
 USER appuser
 RUN playwright install chromium

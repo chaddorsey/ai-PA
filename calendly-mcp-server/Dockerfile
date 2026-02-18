@@ -65,8 +65,8 @@ RUN playwright install-deps chromium
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Copy application source code
-COPY src/ ./src/
+# Copy application source code (--chown needed: host files may have 700 perms)
+COPY --chown=appuser:appuser src/ ./src/
 
 # Switch to non-root user
 USER appuser
