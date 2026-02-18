@@ -1233,6 +1233,94 @@ async def get_sync_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# =====================
+# Staleness Sweep Endpoints
+# =====================
+
+
+@app.get("/v1/staleness/status")
+async def get_staleness_status():
+    """Get staleness sweep status and tier distribution.
+
+    Returns tier counts, last check times, and sweep health metrics.
+    """
+    db = get_db()
+
+    try:
+        stats = db.get_staleness_stats()
+        return {
+            "status": "ok",
+            **stats,
+        }
+    except Exception as e:
+        logger.exception("staleness_status_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/staleness/poll")
+async def trigger_activity_poll(
+    since_minutes: int = Query(10, ge=1, le=60, description="Look-back window in minutes"),
+):
+    """Trigger an Activity API poll to detect recent changes.
+
+    This is the fast path — polls Drive Activity API v2 for edits/creates
+    across ALL files including shared-from-others.
+    """
+    from drive_rag.activity_client import poll_activity
+
+    try:
+        result = await poll_activity(since_minutes=since_minutes)
+        return {
+            "status": "ok",
+            "activities_fetched": result.activities_fetched,
+            "indexed_files_affected": result.indexed_files_affected,
+            "files_promoted": result.files_promoted,
+            "ingestion_triggered": result.ingestion_triggered,
+            "errors": result.errors,
+            "poll_duration_seconds": round(result.poll_duration_seconds, 2),
+        }
+    except Exception as e:
+        logger.exception("activity_poll_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/staleness/sweep/{tier}")
+async def trigger_metadata_sweep(
+    tier: str,
+    limit: int = Query(500, ge=1, le=5000, description="Max documents to check"),
+):
+    """Trigger a metadata sweep for a specific tier.
+
+    Batch-checks modifiedTime from Drive API against stored values.
+    Re-ingests stale documents and manages tier transitions.
+    """
+    from drive_rag.staleness import run_sweep
+
+    valid_tiers = ("hot", "warm", "cool", "cold")
+    if tier not in valid_tiers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid tier '{tier}'. Must be one of: {', '.join(valid_tiers)}",
+        )
+
+    try:
+        result = await run_sweep(tier=tier, limit=limit)
+        return {
+            "status": "ok",
+            "tier": result.tier,
+            "candidates_checked": result.candidates_checked,
+            "stale_found": result.stale_found,
+            "ingestion_triggered": result.ingestion_triggered,
+            "promotions": result.promotions,
+            "demotions": result.demotions,
+            "errors": result.errors,
+            "sweep_duration_seconds": round(result.sweep_duration_seconds, 2),
+        }
+    except Exception as e:
+        logger.exception("metadata_sweep_failed", tier=tier, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
 
