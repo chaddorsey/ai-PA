@@ -63,7 +63,7 @@ These metrics **cannot be regenerated** if not captured daily:
 
 ### Component 1: `collect_analytics_snapshot` Tool (Deterministic)
 
-A new Letta tool that gathers quantitative metrics from all three domains and returns structured JSON. This is the "capture" layer — runs daily, stores results.
+A new Letta tool that gathers quantitative metrics from all three domains, **persists the snapshot to the database as a side effect**, and returns structured JSON. This is the "capture" layer — runs daily, stores results durably before returning anything to the agent.
 
 **Inputs:**
 - `date` (optional, defaults to last workday) — YYYY-MM-DD
@@ -84,7 +84,10 @@ collect_analytics_snapshot(date="2026-02-17")
   │   └── analyze_slack_analytics(file_url) → channel stats
   │   └── NOTE: CSV covers 2-3 days ago due to Slack delay
   │
-  └── Returns: structured JSON snapshot
+  ├── PERSIST: write snapshot to analytics.daily_snapshots via PostgREST
+  │   └── Side effect — data is durable even if agent drops context
+  │
+  └── Returns: structured JSON snapshot (+ confirmation of DB write)
 ```
 
 **Output Schema:**
@@ -192,12 +195,16 @@ When generating the briefing, compare today's snapshot to running averages:
 
 Weekends are stored but excluded from workday averages. The briefing can note "Weekend activity was X% of typical workday" when relevant.
 
-### Component 4: Agent Instructions (Pulse Monitor / Daily Briefing Agent)
+### Component 4: `compose_daily_briefing` Tool + Agent Instructions
 
-The agent receives the snapshot JSON and comparison data, then:
-1. Formats a concise briefing highlighting standouts
-2. Optionally adds qualitative Slack vibe summary (using existing Pulse Monitor workflow)
-3. Writes to a memory block or sends via Slack DM
+The compose step is a **Letta tool** (`compose_daily_briefing`) that reads from durable stores, not conversation memory. The agent calls this tool, which:
+1. Reads the quantitative snapshot from `analytics.daily_snapshots` (PostgREST)
+2. Reads the Slack vibe-check summaries from archival memory (tagged `daily_vibe_check` + date)
+3. Computes trend comparisons (7-day, 30-day workday averages)
+4. Formats a concise briefing highlighting standouts
+5. Writes to the `daily_analytics_briefing` memory block (Letta API)
+6. Writes to `analytics/briefings/YYYY-MM-DD.md` (filesystem)
+7. Returns the briefing text to the agent
 
 **Example Briefing Output:**
 
@@ -230,7 +237,7 @@ The agent receives the snapshot JSON and comparison data, then:
 | `collect_analytics_snapshot` | `30 2 * * 1-5` (2:30 AM ET, Mon-Fri) | Capture previous workday's quantitative metrics |
 | `collect_analytics_snapshot` (weekend) | `30 2 * * 1` (2:30 AM Monday) | Also capture Sat+Sun if any activity |
 | Slack vibe-check heartbeat | `0 3 * * 1-5` (3 AM ET) | Send Pulse Monitor the "generate vibe check" message |
-| Compose briefing | `0 6 * * 1-5` (6 AM ET) | Pulse Monitor assembles final briefing from snapshot + vibe check |
+| Compose briefing | `0 6 * * 1-5` (6 AM ET) | Pulse Monitor calls `compose_daily_briefing()` — reads from DB + archival memory, writes block + markdown |
 
 **Sequence rationale:** Slack CSV export triggers first (2 AM), then quantitative snapshot captures at 2:30 AM (after CSV has ~30 min to generate). Slack vibe check starts at 3 AM (LLM-intensive, has up to 3 hours to complete piecemeal). By 6 AM, all components are ready and the final briefing is composed and written to memory block + markdown archive. Ready before the user's day starts.
 
@@ -283,8 +290,9 @@ Since both Admin Reports APIs retain 180 days of data, we can backfill approxima
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `letta/daily_analytics_snapshot.py` | Create | New Letta tool: `collect_analytics_snapshot()` |
-| `letta/register_daily_analytics.py` | Create | Registration script for the tool |
+| `letta/daily_analytics_snapshot.py` | Create | New Letta tool: `collect_analytics_snapshot()` (persists to DB as side effect) |
+| `letta/compose_daily_briefing.py` | Create | New Letta tool: `compose_daily_briefing()` (reads from DB + archival, writes block + markdown) |
+| `letta/register_daily_analytics.py` | Create | Registration script for both tools |
 | `migrations/analytics_schema.sql` | Create | Database schema for snapshots |
 | `analytics/briefings/` | Create dir | Markdown archive for rendered briefings |
 | Pulse Monitor memory blocks | Update | Add `daily_analytics_briefing` block + briefing format instructions |
@@ -316,7 +324,7 @@ The Pulse Monitor agent owns this capability. It already has Slack search/summar
 
 The Slack vibe-check runs daily during off-hours (late night or early morning). Since the Pulse Monitor summarizes channels sequentially (each requiring tool calls), this may span multiple tool invocations. The workflow needs:
 
-- A **scheduler heartbeat** that sends the Pulse Monitor a message like: *"Generate the daily Slack vibe check for yesterday across the top channels. Write results to the analytics briefing memory block and to the markdown archive."*
+- A **scheduler heartbeat** that sends the Pulse Monitor a message like: *"Generate the daily Slack vibe check for yesterday across the top channels. After summarizing each channel, write the summary to archival memory tagged `daily_vibe_check` with date `YYYY-MM-DD`. When all channels are done, write a combined summary to archival memory with the same tag. Do NOT rely on conversation context to preserve these — the compose step will read them from archival memory."*
 - The agent's `slack_pulse_reporting_process` memory block already documents this workflow
 - If the workflow is interrupted (agent timeout, error), the scheduler can retry on the next heartbeat
 - Off-hours timing (`0 3 * * 1-5` — 3 AM ET weekdays) avoids competing with user interactions and gives up to 3 hours to complete before the 6 AM briefing assembly
@@ -330,3 +338,47 @@ Briefings are written to **two locations**:
 2. **Markdown file archive** — written to `analytics/briefings/YYYY-MM-DD.md` for permanent reference. These accumulate as a time series and are included in the regular backup. The agent can read historical files on demand (e.g., "compare today to last Monday").
 
 The **database** (`daily_snapshots` table) stores the raw structured data for programmatic trend comparison. The markdown files are the human-readable rendered version.
+
+### Intermediate Output Persistence (Critical)
+
+**Problem:** The pipeline runs as 4 separate scheduler heartbeats, each sending an independent message to the Pulse Monitor agent. There is no guarantee the agent retains raw outputs from earlier steps when composing the final briefing. Conversation context may be summarized, truncated, or simply not referenced.
+
+**Principle:** Every pipeline step must persist its output to a durable store as a **side effect inside the tool itself**. The compose step reads exclusively from these stores — never from conversation memory.
+
+**Per-Step Persistence:**
+
+| Step | Tool / Action | Persists To | How |
+|------|---------------|-------------|-----|
+| 1. Slack CSV trigger | `trigger_slack_analytics_export` | Slack servers (external) | Existing behavior; CSV is generated server-side |
+| 2. Quantitative snapshot | `collect_analytics_snapshot` | `analytics.daily_snapshots` table (PostgREST) | Tool writes to DB as side effect before returning |
+| 3. Slack vibe check | Pulse Monitor workflow | Agent archival memory (tagged `daily_vibe_check`, `YYYY-MM-DD`) | Agent instructed to `archival_memory_insert` each channel summary with date tag |
+| 4. Compose briefing | `compose_daily_briefing` (new tool) | Memory block (`daily_analytics_briefing`) + Markdown file | Tool reads from DB + archival memory, writes both outputs |
+
+**Step 2 detail — `collect_analytics_snapshot` writes to DB:**
+The tool itself calls PostgREST to INSERT/UPSERT the snapshot row into `analytics.daily_snapshots` and top-N items into `analytics.daily_top_items`. This happens inside the tool body before the return statement. If the DB write fails, the tool returns an error — the agent doesn't need to handle persistence.
+
+**Step 3 detail — Slack vibe check writes to archival memory:**
+The Pulse Monitor's instructions for the vibe-check heartbeat must include: *"After summarizing each channel, write the summary to archival memory with the tag `daily_vibe_check` and the date `YYYY-MM-DD`. When all channels are done, write a final combined summary with the same tag."* This ensures the qualitative data survives independently of conversation context.
+
+**Step 4 detail — `compose_daily_briefing` reads from durable stores:**
+A new Letta tool that:
+1. Queries `analytics.daily_snapshots` for the target date (PostgREST GET)
+2. Queries the agent's archival memory for entries tagged `daily_vibe_check` + target date
+3. Queries the last 7 and 30 workday snapshots for trend comparison
+4. Computes deltas and flags standouts (>1 stddev from 30-day mean)
+5. Formats the briefing text
+6. Writes to the `daily_analytics_briefing` memory block (via Letta API)
+7. Writes to `analytics/briefings/YYYY-MM-DD.md` (via filesystem or API)
+8. Returns the briefing text to the agent for conversational reference
+
+**Why not bypass the agent entirely?** The quantitative snapshot (step 2) could theoretically run as a direct HTTP scheduler action to a dedicated analytics endpoint, skipping the agent. However, keeping it as an agent tool provides:
+- Unified error reporting (agent can surface failures conversationally)
+- The ability for the agent to retry or adjust parameters
+- A natural place to log "snapshot collected for date X" in the agent's message history for auditability
+The compose step (step 4) benefits from agent involvement for the same reasons, plus the agent can add ad-hoc commentary or context the tool can't.
+
+**Failure modes and recovery:**
+- If step 2 fails (DB write error): Agent receives error, can retry or alert user. No partial data in DB.
+- If step 3 fails mid-channel: Archival memory contains whatever channels completed. Compose step notes "Slack vibe check: partial (N of M channels)."
+- If step 4 fails (can't read DB): Agent receives error. Snapshot data is safe in DB for manual or retry compose.
+- If steps run out of order or overlap: `snapshot_date` is the primary key — UPSERT semantics prevent duplicates.
