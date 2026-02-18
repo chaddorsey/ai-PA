@@ -352,7 +352,24 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                                     content = parsed['verbatim_user_output']
                                     logger.error(f"🔧 TOOL RETURN: Extracted verbatim_user_output via ast ({len(content)} chars)")
                             except (ValueError, SyntaxError):
-                                logger.error(f"🔧 TOOL RETURN: Could not parse as dict ({len(content)} chars), using raw")
+                                logger.error(f"🔧 TOOL RETURN: Could not parse as dict ({len(content)} chars)")
+                                # Fallback: extract verbatim content via [VERBATIM_USER_OUTPUT] marker
+                                # Raw dict string has escaped newlines (\n as literal backslash+n)
+                                # which breaks multiline regex in the proposal parser
+                                marker = '[VERBATIM_USER_OUTPUT]'
+                                marker_idx = content.find(marker)
+                                if marker_idx >= 0:
+                                    extracted = content[marker_idx:]
+                                    # Unescape Python string repr sequences
+                                    extracted = (extracted
+                                        .replace('\\n', '\n')
+                                        .replace('\\t', '\t')
+                                        .replace("\\'", "'")
+                                        .replace('\\"', '"'))
+                                    content = extracted
+                                    logger.error(f"🔧 TOOL RETURN: Extracted verbatim via marker ({len(content)} chars)")
+                                else:
+                                    logger.error(f"🔧 TOOL RETURN: No verbatim marker found, using raw")
                     tool_return_content += content
                     logger.error(f"🔧 TOOL RETURN captured: {len(content)} chars")
             elif event_type == "text":
