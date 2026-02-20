@@ -930,6 +930,7 @@ class WatchManager:
                             surrounding_context=enriched.get(
                                 "surrounding_context"
                             ),
+                            urls=enriched.get("urls"),
                             notes=entry_def.get("notes"),
                             marker_type=entry_def["marker_type"],
                             task_hint=entry_def["task_hint"],

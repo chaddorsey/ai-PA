@@ -82,6 +82,7 @@ class DriveEnricher:
             - comment_text, comment_author, comment_author_email,
               quoted_passage, comment_date
             - surrounding_context
+            - urls: list of hyperlink URLs found in the document context
         """
         result: dict[str, Any] = {}
 
@@ -144,38 +145,52 @@ class DriveEnricher:
                     error=str(e),
                 )
 
-        # Surrounding context (best-effort)
+        # Surrounding context + URL extraction (best-effort)
         quoted = result.get("quoted_passage", "")
         doc_type = result.get("doc_type", "")
+        urls: list[str] = []
         if quoted and doc_type:
             try:
                 ctx = self._get_surrounding_context(
-                    doc_id, doc_type, quoted
+                    doc_id, doc_type, quoted, urls
                 )
                 if ctx:
                     result["surrounding_context"] = ctx
             except Exception:
                 pass
 
+        if urls:
+            result["urls"] = urls
+
         return result
 
     def _get_surrounding_context(
-        self, doc_id: str, doc_type: str, quoted: str
+        self,
+        doc_id: str,
+        doc_type: str,
+        quoted: str,
+        urls_out: list[str] | None = None,
     ) -> str:
         """Fetch surrounding context for a quoted passage."""
         if doc_type == "document":
-            return self._context_from_doc(doc_id, quoted)
+            return self._context_from_doc(doc_id, quoted, urls_out)
         if doc_type == "spreadsheet":
-            return self._context_from_sheet(doc_id, quoted)
+            return self._context_from_sheet(doc_id, quoted, urls_out)
         if doc_type == "presentation":
-            return self._context_from_slides(doc_id, quoted)
+            return self._context_from_slides(doc_id, quoted, urls_out)
         return ""
 
     @staticmethod
     def _extract_paragraph_text(
         paragraph: dict[str, Any],
+        urls_out: list[str] | None = None,
     ) -> tuple[str, str]:
         """Extract plain text and link-enriched text from a paragraph.
+
+        Args:
+            paragraph: Google Docs paragraph element.
+            urls_out: If provided, hyperlink URLs found in this paragraph
+                are appended to this list (for separate URL collection).
 
         Returns:
             Tuple of (plain_text, enriched_text). The enriched version
@@ -196,12 +211,19 @@ class DriveEnricher:
             plain_parts.append(content)
             if link_url and content.strip() and link_url != content.strip():
                 rich_parts.append(f"{content.rstrip()} ({link_url})")
+                if urls_out is not None and link_url not in urls_out:
+                    urls_out.append(link_url)
             else:
                 rich_parts.append(content)
 
         return "".join(plain_parts).strip(), "".join(rich_parts).strip()
 
-    def _context_from_doc(self, doc_id: str, quoted: str) -> str:
+    def _context_from_doc(
+        self,
+        doc_id: str,
+        quoted: str,
+        urls_out: list[str] | None = None,
+    ) -> str:
         docs_svc = build("docs", "v1", credentials=self._creds)
         doc_data = docs_svc.documents().get(documentId=doc_id).execute()
         body_content = doc_data.get("body", {}).get("content", [])
@@ -212,7 +234,9 @@ class DriveEnricher:
         for element in body_content:
             paragraph = element.get("paragraph", {})
             if paragraph:
-                plain, rich = self._extract_paragraph_text(paragraph)
+                plain, rich = self._extract_paragraph_text(
+                    paragraph, urls_out
+                )
                 if plain:
                     plain_paragraphs.append(plain)
                     rich_paragraphs.append(rich)
@@ -230,7 +254,12 @@ class DriveEnricher:
                 return "\n".join(parts)
         return ""
 
-    def _context_from_sheet(self, doc_id: str, quoted: str) -> str:
+    def _context_from_sheet(
+        self,
+        doc_id: str,
+        quoted: str,
+        urls_out: list[str] | None = None,
+    ) -> str:
         sheets_svc = build("sheets", "v4", credentials=self._creds)
         data = (
             sheets_svc.spreadsheets()
@@ -253,6 +282,8 @@ class DriveEnricher:
                         plain_vals.append(fv)
                         if link and fv and link != fv:
                             rich_vals.append(f"{fv} ({link})")
+                            if urls_out is not None and link not in urls_out:
+                                urls_out.append(link)
                         else:
                             rich_vals.append(fv)
                     if any(plain_vals):
@@ -265,7 +296,12 @@ class DriveEnricher:
                 return "\n".join(rich_rows[start:end])
         return ""
 
-    def _context_from_slides(self, doc_id: str, quoted: str) -> str:
+    def _context_from_slides(
+        self,
+        doc_id: str,
+        quoted: str,
+        urls_out: list[str] | None = None,
+    ) -> str:
         slides_svc = build("slides", "v1", credentials=self._creds)
         pres = (
             slides_svc.presentations()
@@ -297,6 +333,11 @@ class DriveEnricher:
                             rich_parts.append(
                                 f"{content.strip()} ({link_url})"
                             )
+                            if (
+                                urls_out is not None
+                                and link_url not in urls_out
+                            ):
+                                urls_out.append(link_url)
                         else:
                             rich_parts.append(content.strip())
             plain_text = "\n".join(plain_parts)
