@@ -110,6 +110,28 @@ class Settings(BaseSettings):
         description="Plus-address prefix for task queue (without domain)",
     )
 
+    # Drive comment task queue settings
+    drive_task_queue_enabled: bool = Field(
+        default=False,
+        alias="DRIVE_TASK_QUEUE_ENABLED",
+        description="Enable drive comment task queue processing",
+    )
+    drive_task_queue_label_name: str = Field(
+        default="DTaskQueue",
+        alias="DRIVE_TASK_QUEUE_LABEL_NAME",
+        description="Gmail label name for drive comment task queue messages",
+    )
+    drive_task_queue_block_id: Optional[str] = Field(
+        default=None,
+        alias="DRIVE_TASK_QUEUE_BLOCK_ID",
+        description="Letta memory block ID for queued_tasks_from_drive",
+    )
+    drive_task_queue_agent_id: Optional[str] = Field(
+        default=None,
+        alias="DRIVE_TASK_QUEUE_AGENT_ID",
+        description="Docs & Transcripts agent ID for drive task notifications",
+    )
+
 
 def get_settings() -> Settings:
     """Get the application settings instance."""
