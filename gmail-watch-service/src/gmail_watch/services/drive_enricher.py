@@ -228,29 +228,30 @@ class DriveEnricher:
         doc_data = docs_svc.documents().get(documentId=doc_id).execute()
         body_content = doc_data.get("body", {}).get("content", [])
 
-        # Build parallel plain/enriched paragraph lists
-        plain_paragraphs: list[str] = []
-        rich_paragraphs: list[str] = []
+        # First pass: build plain/rich text WITHOUT URL collection
+        entries: list[tuple[str, str, dict]] = []
         for element in body_content:
             paragraph = element.get("paragraph", {})
             if paragraph:
-                plain, rich = self._extract_paragraph_text(
-                    paragraph, urls_out
-                )
+                plain, rich = self._extract_paragraph_text(paragraph)
                 if plain:
-                    plain_paragraphs.append(plain)
-                    rich_paragraphs.append(rich)
+                    entries.append((plain, rich, paragraph))
 
-        for idx, p in enumerate(plain_paragraphs):
-            if quoted in p:
+        # Find quoted passage and build context window
+        for idx, (plain, rich, _) in enumerate(entries):
+            if quoted in plain:
                 start = max(0, idx - 3)
-                end = min(len(plain_paragraphs), idx + 4)
+                end = min(len(entries), idx + 4)
                 parts = []
                 for i in range(start, end):
-                    if quoted in plain_paragraphs[i]:
-                        parts.append(f">> {rich_paragraphs[i]} <<")
+                    p_plain, p_rich, p_elem = entries[i]
+                    # Collect URLs only from context window
+                    if urls_out is not None:
+                        self._extract_paragraph_text(p_elem, urls_out)
+                    if quoted in p_plain:
+                        parts.append(f">> {p_rich} <<")
                     else:
-                        parts.append(rich_paragraphs[i])
+                        parts.append(p_rich)
                 return "\n".join(parts)
         return ""
 
@@ -269,31 +270,40 @@ class DriveEnricher:
             )
             .execute()
         )
-        plain_rows: list[str] = []
-        rich_rows: list[str] = []
+        # First pass: build plain/rich rows WITHOUT URL collection
+        entries: list[tuple[str, str, list[tuple[str, str]]]] = []
         for sheet in data.get("sheets", []):
             for grid in sheet.get("data", []):
                 for row in grid.get("rowData", []):
                     plain_vals: list[str] = []
                     rich_vals: list[str] = []
+                    cell_links: list[tuple[str, str]] = []
                     for c in row.get("values", []):
                         fv = c.get("formattedValue", "")
                         link = c.get("hyperlink", "")
                         plain_vals.append(fv)
                         if link and fv and link != fv:
                             rich_vals.append(f"{fv} ({link})")
-                            if urls_out is not None and link not in urls_out:
-                                urls_out.append(link)
+                            cell_links.append((fv, link))
                         else:
                             rich_vals.append(fv)
                     if any(plain_vals):
-                        plain_rows.append(" | ".join(plain_vals))
-                        rich_rows.append(" | ".join(rich_vals))
-        for idx, row_text in enumerate(plain_rows):
-            if quoted in row_text:
+                        entries.append((
+                            " | ".join(plain_vals),
+                            " | ".join(rich_vals),
+                            cell_links,
+                        ))
+        # Find quoted row and collect URLs only from context window
+        for idx, (plain, rich, _) in enumerate(entries):
+            if quoted in plain:
                 start = max(0, idx - 2)
-                end = min(len(rich_rows), idx + 3)
-                return "\n".join(rich_rows[start:end])
+                end = min(len(entries), idx + 3)
+                if urls_out is not None:
+                    for i in range(start, end):
+                        for _, link in entries[i][2]:
+                            if link not in urls_out:
+                                urls_out.append(link)
+                return "\n".join(e[1] for e in entries[start:end])
         return ""
 
     def _context_from_slides(

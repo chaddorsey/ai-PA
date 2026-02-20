@@ -24,14 +24,18 @@ def add_extracted_tasks(
     due_date: Optional[str] = None,
     defer_date: Optional[str] = None,
     priority: Optional[str] = None,
+    related_urls: Optional[str] = None,
+    cleanup_block_id: Optional[str] = None,
+    cleanup_entry_identifier: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Extract a task and archive its source reference in one atomic operation.
 
-    This tool does two things:
+    This tool does three things:
     1. Adds the task to the shared extracted_tasks memory block (concurrent-safe).
     2. Inserts a structured source reference passage into the shared
        extracted_tasks_archive (visible to all agents with the archive attached).
+    3. Optionally removes the source queue entry from a block (atomic cleanup).
 
     The ref_id (8-char hex) links the two together.
 
@@ -73,6 +77,23 @@ def add_extracted_tasks(
             Only provide when urgency is clearly indicated in the source
             (e.g., "ASAP", "urgent", "when you get a chance"). Do NOT default
             to any value — omit if not evident.
+        related_urls: Optional comma-separated list of URLs relevant to the
+            task. Only include URLs that appear in the immediate source
+            context — not every URL in a document. Examples: links in a
+            quoted passage, URLs in a forwarded email, links in a Slack
+            message. Persisted as a RELATED URLS section in the archival
+            passage for future reference.
+        cleanup_block_id: Optional block ID of the source queue to clean up
+            after successful extraction. When provided with
+            cleanup_entry_identifier, the matching entry is removed from
+            the block atomically. Use this to prevent compaction from
+            swallowing queue cleanup. Pass the block ID of
+            queued_tasks_from_drive, queued_tasks_from_email, etc.
+        cleanup_entry_identifier: Optional unique string that identifies the
+            source entry to remove from the cleanup block. The tool splits
+            the block by "---" separators and removes the section containing
+            this string. For drive queue entries, use the comment_id. For
+            email queue entries, use the gmail_message_id.
 
     Returns:
         Dictionary with keys:
@@ -82,6 +103,7 @@ def add_extracted_tasks(
         - timestamp: ISO timestamp when task was extracted
         - ref_id: 8-character hex reference ID linking task to archival passage
         - archival_passage_id: ID of the created archival memory passage
+        - cleanup_result: "removed", "not_found", "skipped", or error detail
         - error_message: Detailed error message if status is "error"
     """
     import os
@@ -106,6 +128,7 @@ def add_extracted_tasks(
                 "timestamp": "",
                 "ref_id": "",
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": "LETTA_AGENT_ID environment variable not set"
             }
 
@@ -119,6 +142,7 @@ def add_extracted_tasks(
                 "timestamp": "",
                 "ref_id": "",
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": f"Invalid source_type '{source_type}'. Must be one of: {', '.join(sorted(valid_source_types))}"
             }
 
@@ -132,6 +156,7 @@ def add_extracted_tasks(
                 "timestamp": "",
                 "ref_id": "",
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": f"Invalid priority '{priority}'. Must be one of: {', '.join(sorted(valid_priorities))}"
             }
 
@@ -169,6 +194,7 @@ def add_extracted_tasks(
                 "timestamp": iso_timestamp,
                 "ref_id": ref_id,
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": f"Failed to retrieve memory blocks: {str(e)}"
             }
 
@@ -187,6 +213,7 @@ def add_extracted_tasks(
                 "timestamp": iso_timestamp,
                 "ref_id": ref_id,
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": "extracted_tasks block not found. Ensure block is attached to this agent."
             }
 
@@ -236,6 +263,7 @@ def add_extracted_tasks(
                 "timestamp": iso_timestamp,
                 "ref_id": ref_id,
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": f"HTTP {http_err.code}: Failed to update extracted_tasks block. {error_body[:200]}"
             }
 
@@ -258,6 +286,17 @@ def add_extracted_tasks(
                 + "\n"
             )
 
+        # Build RELATED URLS section (only if URLs provided)
+        urls_section = ""
+        if related_urls and related_urls.strip():
+            url_list = [u.strip() for u in related_urls.split(",") if u.strip()]
+            if url_list:
+                urls_section = (
+                    "\nRELATED URLS\n"
+                    + "\n".join(f"- {u}" for u in url_list)
+                    + "\n"
+                )
+
         passage_text = (
             f"TASK: {task_description}\n"
             f"REF_ID: {ref_id}\n"
@@ -272,7 +311,7 @@ def add_extracted_tasks(
             f"- From: {from_person}\n"
             f"- Location: {location}\n"
             f"- Location ID: {location_id}\n"
-            f"\n"
+            f"{urls_section}\n"
             f"TIMESTAMPS\n"
             f"- Source: {source_timestamp}\n"
             f"- Extracted: {iso_timestamp}\n"
@@ -321,8 +360,41 @@ def add_extracted_tasks(
                 "timestamp": iso_timestamp,
                 "ref_id": ref_id,
                 "archival_passage_id": "",
+                "cleanup_result": "skipped",
                 "error_message": f"HTTP {http_err.code}: Archival insert failed. {error_body[:200]}"
             }
+
+        # ── Step 3: Optional queue cleanup ──
+        cleanup_result = "skipped"
+        if cleanup_block_id and cleanup_entry_identifier:
+            try:
+                cleanup_url = f"{LETTA_BASE}/v1/blocks/{cleanup_block_id}"
+                cleanup_get_req = urllib.request.Request(cleanup_url, method="GET")
+                with urllib.request.urlopen(cleanup_get_req, timeout=10) as resp:
+                    cleanup_block_data = json.loads(resp.read().decode("utf-8"))
+                cleanup_value = cleanup_block_data.get("value", "")
+
+                parts = cleanup_value.split("---")
+                original_count = len(parts)
+                filtered = [p for p in parts if cleanup_entry_identifier not in p]
+
+                if len(filtered) < original_count:
+                    new_cleanup_value = "---".join(filtered).strip()
+                    if new_cleanup_value:
+                        new_cleanup_value += "\n---"
+                    cleanup_patch = json.dumps({"value": new_cleanup_value}).encode("utf-8")
+                    cleanup_patch_req = urllib.request.Request(
+                        cleanup_url,
+                        data=cleanup_patch,
+                        headers={"Content-Type": "application/json"},
+                        method="PATCH",
+                    )
+                    urllib.request.urlopen(cleanup_patch_req, timeout=10)
+                    cleanup_result = "removed"
+                else:
+                    cleanup_result = "not_found"
+            except Exception as ce:
+                cleanup_result = f"cleanup_error: {str(ce)}"
 
         return {
             "status": "ok",
@@ -330,7 +402,8 @@ def add_extracted_tasks(
             "agent_name": agent_name,
             "timestamp": iso_timestamp,
             "ref_id": ref_id,
-            "archival_passage_id": archival_passage_id
+            "archival_passage_id": archival_passage_id,
+            "cleanup_result": cleanup_result,
         }
 
     except Exception as e:
@@ -347,5 +420,6 @@ def add_extracted_tasks(
             "timestamp": error_timestamp,
             "ref_id": "",
             "archival_passage_id": "",
+            "cleanup_result": "skipped",
             "error_message": f"Error adding task: {str(e)}\n{traceback.format_exc()}"
         }

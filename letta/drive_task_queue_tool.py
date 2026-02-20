@@ -347,6 +347,9 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                     enriched_lines.append(f"context: {context}")
                 if notes and not marker_type:
                     enriched_lines.append(f"notes: {notes}")
+                raw_urls = fields.get("urls", "")
+                if raw_urls:
+                    enriched_lines.append(f"urls: {raw_urls}")
                 enriched_lines.append("trigger: docs-comment-action-item")
 
                 processed.append({
