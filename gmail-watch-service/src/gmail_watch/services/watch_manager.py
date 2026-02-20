@@ -16,6 +16,7 @@ from gmail_watch.services.agent_notifier import AgentNotifier
 from gmail_watch.services.gmail_client import GmailClient
 from gmail_watch.services.pubsub_puller import PubSubPuller
 from gmail_watch.services.registry import ThreadRegistry
+from gmail_watch.services.drive_task_queue_writer import DriveTaskQueueWriter
 from gmail_watch.services.task_queue_writer import TaskQueueWriter
 from gmail_watch.settings import settings
 from gmail_watch.utils.interval_parser import extract_interval_from_address, format_interval
@@ -49,6 +50,7 @@ class WatchManager:
         self._registry: Optional[ThreadRegistry] = None
         self._notifier: Optional[AgentNotifier] = None
         self._task_queue_writer: Optional[TaskQueueWriter] = None
+        self._drive_task_queue_writer: Optional[DriveTaskQueueWriter] = None
 
     @property
     def registry(self) -> ThreadRegistry:
@@ -70,6 +72,13 @@ class WatchManager:
         if self._task_queue_writer is None:
             self._task_queue_writer = TaskQueueWriter()
         return self._task_queue_writer
+
+    @property
+    def drive_task_queue_writer(self) -> DriveTaskQueueWriter:
+        """Lazy-load drive task queue writer."""
+        if self._drive_task_queue_writer is None:
+            self._drive_task_queue_writer = DriveTaskQueueWriter()
+        return self._drive_task_queue_writer
 
     async def _get_sync_state(self) -> Optional[SyncState]:
         """Get the current sync state from database.
@@ -700,6 +709,190 @@ class WatchManager:
             log.error("task_queue_processing_error", error=str(e))
             try:
                 await self._record_error(f"process_task_queue: {e}")
+            except Exception:
+                pass
+            return {"status": "error", "error": str(e), "processed": 0}
+
+    async def process_drive_task_queue(self) -> dict[str, Any]:
+        """Process emails with DTaskQueue label for drive comment tasks.
+
+        Searches for messages with the DTaskQueue Gmail label, extracts
+        doc_id/comment_id from the notification email, parses reply text
+        for task markers, writes entries to queued_tasks_from_drive block,
+        and removes the label.
+        """
+        import structlog
+
+        log = structlog.get_logger()
+
+        if not settings.drive_task_queue_enabled:
+            return {"status": "disabled", "processed": 0}
+
+        try:
+            label_id = self._gmail_client.get_label_id_by_name(
+                settings.drive_task_queue_label_name
+            )
+            if not label_id:
+                return {
+                    "status": "ok",
+                    "processed": 0,
+                    "message": "DTaskQueue label not found",
+                }
+
+            messages = self._gmail_client.list_messages_by_label(
+                label_id, max_results=10
+            )
+            if not messages:
+                return {"status": "ok", "processed": 0}
+
+            processed = []
+            errors = []
+
+            for msg_ref in messages:
+                msg_id = msg_ref["id"]
+                try:
+                    message = self._gmail_client.get_message(msg_id, format="full")
+
+                    headers = {}
+                    for h in message.get("payload", {}).get("headers", []):
+                        headers[h["name"].lower()] = h["value"]
+
+                    subject = headers.get("subject", "")
+                    from_address = headers.get("from", "")
+                    date = headers.get("date", "")
+
+                    body = self._extract_body(message)
+                    if not body:
+                        errors.append({"message_id": msg_id, "error": "empty body"})
+                        continue
+
+                    # Extract doc_id and comment_id from notification URL
+                    doc_id, comment_id = (
+                        DriveTaskQueueWriter.extract_doc_and_comment_ids(body)
+                    )
+                    if not doc_id:
+                        errors.append({
+                            "message_id": msg_id,
+                            "error": "no doc_id found in email body",
+                        })
+                        continue
+
+                    # Extract reply text and strip trigger address
+                    reply_text = DriveTaskQueueWriter.strip_trigger_address(body)
+
+                    # Parse for task markers (same [] / > conventions as email)
+                    marker_entries = TaskQueueWriter.parse_markers(reply_text)
+
+                    # Extract doc title from email subject
+                    doc_title = subject.replace("Comment on ", "").replace(
+                        "Re: Comment on ", ""
+                    ).strip(' "')
+
+                    triggered_by = from_address
+
+                    if marker_entries:
+                        entry_defs = [
+                            {
+                                "marker_type": me["marker_type"],
+                                "task_hint": me["task_hint"],
+                                "context": me["context"],
+                            }
+                            for me in marker_entries
+                        ]
+                    else:
+                        notes = reply_text.strip() if reply_text.strip() else None
+                        entry_defs = [{
+                            "marker_type": None,
+                            "task_hint": None,
+                            "context": None,
+                            "notes": notes,
+                        }]
+
+                    msg_had_error = False
+                    for entry_def in entry_defs:
+                        entry = self.drive_task_queue_writer.format_drive_queue_entry(
+                            comment_id=comment_id or "",
+                            doc_id=doc_id,
+                            doc_title=doc_title,
+                            doc_type="unknown",
+                            comment_author="",
+                            triggered_by=triggered_by,
+                            comment_date=date,
+                            comment_text="",
+                            quoted_passage="",
+                            gmail_message_id=msg_id,
+                            notes=entry_def.get("notes"),
+                            marker_type=entry_def["marker_type"],
+                            task_hint=entry_def["task_hint"],
+                            context=entry_def["context"],
+                        )
+
+                        write_result = await self.drive_task_queue_writer.write_to_block(
+                            entry
+                        )
+
+                        if write_result.get("status") != "ok":
+                            errors.append({
+                                "message_id": msg_id,
+                                "error": write_result.get("error", "write failed"),
+                            })
+                            msg_had_error = True
+                            continue
+
+                        processed.append({
+                            "comment_id": comment_id,
+                            "doc_id": doc_id,
+                            "doc_title": doc_title,
+                            "comment_text": "",
+                            "triggered_by": triggered_by,
+                            "marker_type": entry_def["marker_type"],
+                            "task_hint": entry_def.get("task_hint"),
+                        })
+
+                        log.info(
+                            "drive_task_queued",
+                            doc_title=doc_title,
+                            doc_id=doc_id,
+                            comment_id=comment_id,
+                            marker_type=entry_def["marker_type"],
+                        )
+
+                    if not msg_had_error:
+                        self._gmail_client.remove_label(msg_id, label_id)
+
+                except Exception as msg_err:
+                    log.error(
+                        "drive_task_queue_message_error",
+                        message_id=msg_id,
+                        error=str(msg_err),
+                    )
+                    errors.append({"message_id": msg_id, "error": str(msg_err)})
+
+            # Notify Docs & Transcripts agent
+            if processed and settings.drive_task_queue_agent_id:
+                try:
+                    await self.notifier.notify_drive_task_queued(
+                        entries=processed,
+                        agent_id=settings.drive_task_queue_agent_id,
+                    )
+                except Exception as notify_err:
+                    log.error(
+                        "drive_task_queue_notify_error", error=str(notify_err)
+                    )
+
+            result = {
+                "status": "ok",
+                "processed": len(processed),
+                "details": processed,
+            }
+            if errors:
+                result["errors"] = errors
+            return result
+
+        except Exception as e:
+            log.error("drive_task_queue_processing_error", error=str(e))
+            try:
+                await self._record_error(f"process_drive_task_queue: {e}")
             except Exception:
                 pass
             return {"status": "error", "error": str(e), "processed": 0}

@@ -224,6 +224,58 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         message = "\n".join(lines)
         return await self._send_to_agent(message)
 
+    async def notify_drive_task_queued(
+        self,
+        entries: list[dict[str, Any]],
+        agent_id: str,
+    ) -> dict[str, Any]:
+        """Notify Docs & Transcripts Agent that drive comment tasks are queued.
+
+        Args:
+            entries: List of dicts with comment_id, doc_title, comment_text,
+                     triggered_by, marker_type, task_hint.
+            agent_id: Target agent ID (Docs & Transcripts agent).
+        """
+        if not entries:
+            return {"status": "ok", "message": "no entries"}
+
+        lines = ["[Gmail Watch] New drive comment tasks queued for extraction\n"]
+        for entry in entries:
+            doc_title = entry.get("doc_title", "(untitled)")
+            marker_type = entry.get("marker_type")
+            task_hint = entry.get("task_hint")
+
+            if marker_type and task_hint:
+                tag = (
+                    "explicit task"
+                    if marker_type == "explicit"
+                    else "pointer — expand from comment context"
+                )
+                lines.append(f"- **{task_hint}** on {doc_title} ({tag})")
+            else:
+                comment_text = entry.get("comment_text", "")[:80]
+                lines.append(f"- Comment on **{doc_title}**: \"{comment_text}\"")
+
+        lines.append(
+            "\nProcess queued_tasks_from_drive entries using "
+            "process_drive_task_queue tool. "
+            'For "explicit" marker entries, the task_hint IS the task description. '
+            'For "pointer" marker entries, read the full comment and document context '
+            "to expand the hint into a complete task. "
+            "For entries without markers, compose a task from the comment text. "
+            "Remove each entry from the block after extraction."
+        )
+
+        message = "\n".join(lines)
+
+        # Temporarily target the Docs & Transcripts agent
+        original_agent_id = self.agent_id
+        self.agent_id = agent_id
+        try:
+            return await self._send_to_agent(message)
+        finally:
+            self.agent_id = original_agent_id
+
     async def _send_to_agent(self, message: str) -> dict[str, Any]:
         """Send a message to the Letta agent."""
         url = f"{self.letta_base_url}/v1/agents/{self.agent_id}/messages"
