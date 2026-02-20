@@ -176,7 +176,7 @@ class DriveTaskQueueWriter(TaskQueueWriter):
         ]
 
         # Foreign trigger annotation
-        if triggered_by != OWNER_EMAIL:
+        if triggered_by and triggered_by.lower() != OWNER_EMAIL.lower():
             lines.append(f"[FROM: {triggered_by}]")
 
         lines.extend(
