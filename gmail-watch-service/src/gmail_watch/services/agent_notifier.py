@@ -257,12 +257,14 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
                 lines.append(f"- Comment on **{doc_title}**: \"{comment_text}\"")
 
         lines.append(
-            "\nProcess queued_tasks_from_drive entries using "
-            "process_drive_task_queue tool. "
+            "\nEntries are enriched with Drive API data (comment text, "
+            "quoted passage, surrounding context). Extract tasks from the "
+            "queued_tasks_from_drive block using add_extracted_tasks. "
             'For "explicit" marker entries, the task_hint IS the task description. '
-            'For "pointer" marker entries, read the full comment and document context '
+            'For "pointer" marker entries, use the comment and document context '
             "to expand the hint into a complete task. "
-            "For entries without markers, compose a task from the comment text. "
+            "For entries without markers, compose a task from the comment text "
+            "and surrounding context. "
             "Remove each entry from the block after extraction."
         )
 

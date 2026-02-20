@@ -14,14 +14,15 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
     """
     Process queued drive comment tasks and extract them.
 
-    Reads the queued_tasks_from_drive memory block. For each entry:
-    1. Calls Drive API to get comment metadata (author, text, quoted passage)
-    2. Calls Drive API to get file metadata (type, title)
+    Reads the queued_tasks_from_drive memory block. For each raw entry:
+    1. Calls Drive API to get file metadata (type, title)
+    2. Calls Drive API to get comment metadata (author, text, quoted passage)
     3. Retrieves surrounding context based on document type
-    4. Calls add_extracted_tasks with full metadata
-    5. Removes the processed entry from the block
+    4. Replaces the raw entry in the block with an enriched version
 
-    Call this tool when notified of new drive comment task queue entries.
+    After this tool returns, review the [enriched] entries in the
+    queued_tasks_from_drive block and extract tasks using
+    add_extracted_tasks. Then remove the processed entries from the block.
 
     For entries with marker_type "explicit", the task_hint IS the task
     description - use it directly. For "pointer" markers, expand the hint
@@ -56,32 +57,21 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
         if max_entries > 20:
             max_entries = 20
 
-        # ── Google Auth ──
-        CREDS_DIR = "/root/.gmail-mcp"
-        with open(f"{CREDS_DIR}/gcp-oauth.keys.json") as f:
-            keys = json.load(f)
-            client_config = keys.get("installed") or keys.get("web")
-        with open(f"{CREDS_DIR}/credentials.json") as f:
-            tokens = json.load(f)
-        creds = Credentials(
-            token=tokens.get("access_token"),
-            refresh_token=tokens.get("refresh_token"),
-            token_uri=client_config["token_uri"],
-            client_id=client_config["client_id"],
-            client_secret=client_config["client_secret"],
-            scopes=[
-                "https://www.googleapis.com/auth/drive.readonly",
-                "https://www.googleapis.com/auth/documents.readonly",
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
-                "https://www.googleapis.com/auth/presentations.readonly",
-            ],
-        )
+        # ── Google Auth (Drive scopes via drive-docs-token.json) ──
+        TOKEN_FILE = "/root/.gmail-mcp/drive-docs-token.json"
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE)
         if not creds.valid:
             creds.refresh(Request())
-            tokens["access_token"] = creds.token
-            with open(f"{CREDS_DIR}/credentials.json", "w") as f:
-                json.dump(tokens, f, indent=2)
-
+            token_data = {
+                "token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "scopes": list(creds.scopes) if creds.scopes else [],
+            }
+            with open(TOKEN_FILE, "w") as f:
+                json.dump(token_data, f, indent=2)
         drive_service = build("drive", "v3", credentials=creds)
 
         # ── Get queue block ──
@@ -303,20 +293,6 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                     except Exception:
                         pass
 
-                # ── Build source text ──
-                source_parts = []
-                if comment_text:
-                    source_parts.append(f"Comment: {comment_text}")
-                if quoted_passage:
-                    source_parts.append(f"Quoted passage: {quoted_passage}")
-                if surrounding_context:
-                    source_parts.append(f"Surrounding context:\n{surrounding_context}")
-                if notes:
-                    source_parts.append(f"User notes: {notes}")
-                if context:
-                    source_parts.append(f"User context: {context}")
-                source_text = "\n\n".join(source_parts) if source_parts else "(no content)"
-
                 # ── Build doc link ──
                 type_slug = {
                     "document": "document",
@@ -327,20 +303,6 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                 if comment_id:
                     doc_link += f"?disco={comment_id}"
 
-                # ── Compose task description ──
-                if marker_type == "explicit" and task_hint:
-                    task_description = task_hint
-                elif marker_type == "pointer" and task_hint:
-                    task_description = f"{task_hint} (from comment on {doc_title})"
-                elif comment_text:
-                    task_description = f"Review comment: {comment_text[:100]}"
-                else:
-                    task_description = f"Review comment on {doc_title}"
-
-                # Foreign trigger annotation
-                if triggered_by and triggered_by.lower() != OWNER_EMAIL.lower():
-                    task_description = f"[FROM: {triggered_by}] {task_description}"
-
                 # ── Determine from_person ──
                 from_person = comment_author
                 if comment_author_email:
@@ -348,32 +310,51 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                 if not from_person:
                     from_person = triggered_by
 
-                # ── Build reference_id ──
-                reference_id = f"gdrive-comment-{doc_id}"
-                if comment_id:
-                    reference_id += f"-{comment_id}"
-
-                # ── Build extraction message ──
-                extract_msg = (
-                    f"Extract this task using add_extracted_tasks:\n"
-                    f"- task_description: {task_description}\n"
-                    f"- source_type: google-drive-comment\n"
-                    f"- source_context: Comment on {doc_title} ({doc_type})\n"
-                    f"- reference_id: {reference_id}\n"
-                    f"- source_text: {source_text[:2000]}\n"
-                    f"- from_person: {from_person}\n"
-                    f"- location: {doc_title} — {doc_link}\n"
-                    f"- location_id: {doc_id}\n"
-                    f"- source_timestamp: {comment_date}\n"
-                )
+                # ── Build enriched entry for block ──
+                tz = pytz.timezone("America/New_York")
+                from datetime import datetime
+                enrich_ts = datetime.now(tz).strftime("%Y-%m-%d %H:%M")
+                enriched_lines = [
+                    (
+                        f"[enriched: {enrich_ts}] "
+                        f"comment_id: {comment_id} "
+                        f"| doc_id: {doc_id}"
+                    ),
+                    f"doc_title: {doc_title}",
+                    f"doc_type: {doc_type}",
+                    f"doc_link: {doc_link}",
+                    f"comment_author: {from_person}",
+                ]
+                if triggered_by:
+                    enriched_lines.append(f"triggered_by: {triggered_by}")
+                if triggered_by and triggered_by.lower() != OWNER_EMAIL.lower():
+                    enriched_lines.append(f"[FROM: {triggered_by}]")
+                if comment_date:
+                    enriched_lines.append(f"comment_date: {comment_date}")
+                if comment_text:
+                    enriched_lines.append(f"comment_text: {comment_text[:300]}")
+                if quoted_passage:
+                    enriched_lines.append(f"quoted_passage: {quoted_passage[:200]}")
+                if surrounding_context:
+                    enriched_lines.append(
+                        f"surrounding_context: {surrounding_context[:500]}"
+                    )
+                if marker_type:
+                    enriched_lines.append(f"marker_type: {marker_type}")
+                if task_hint:
+                    enriched_lines.append(f"task_hint: {task_hint}")
+                if context:
+                    enriched_lines.append(f"context: {context}")
+                if notes and not marker_type:
+                    enriched_lines.append(f"notes: {notes}")
+                enriched_lines.append("trigger: docs-comment-action-item")
 
                 processed.append({
                     "doc_id": doc_id,
                     "comment_id": comment_id,
                     "doc_title": doc_title,
-                    "task_description": task_description,
                     "marker_type": marker_type,
-                    "extract_message": extract_msg,
+                    "enriched_entry": "\n".join(enriched_lines),
                 })
 
             except Exception as entry_err:
@@ -382,7 +363,7 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                     "error": str(entry_err),
                 })
 
-        # ── Remove processed entries from block ──
+        # ── Replace raw entries with enriched versions in block ──
         if processed:
             block_url = f"{LETTA_BASE}/v1/blocks/{queue_block_id}"
             block_req = urllib.request.Request(block_url, method="GET")
@@ -390,31 +371,34 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                 block_data = json.loads(resp.read().decode("utf-8"))
             current_value = block_data.get("value", "")
 
-            remaining_parts = []
+            # Build lookup of enriched replacements
+            enriched_lookup = {}
+            for p in processed:
+                key = (p["doc_id"], p["comment_id"])
+                enriched_lookup[key] = p["enriched_entry"]
+
+            new_parts = []
             for part in current_value.split("---"):
                 part_stripped = part.strip()
                 if not part_stripped:
                     continue
-                was_processed = False
-                for p in processed:
+                replaced = False
+                for (did, cid), enriched in enriched_lookup.items():
                     if (
-                        p["doc_id"] in part_stripped
-                        and (not p["comment_id"] or p["comment_id"] in part_stripped)
+                        did in part_stripped
+                        and (not cid or cid in part_stripped)
+                        and "[enriched:" not in part_stripped
                     ):
-                        was_processed = True
+                        new_parts.append(enriched)
+                        replaced = True
                         break
-                if not was_processed:
-                    remaining_parts.append(part_stripped)
+                if not replaced:
+                    new_parts.append(part_stripped)
 
-            if remaining_parts:
-                new_value = "\n---\n".join(remaining_parts) + "\n---"
+            if new_parts:
+                new_value = "\n---\n".join(new_parts) + "\n---"
             else:
-                new_value = (
-                    "# Queued Tasks from Drive Comments\n\n"
-                    "Drive comment tasks queued by gmail-watch-service for extraction.\n"
-                    "Process each entry using process_drive_task_queue tool, "
-                    "then remove it.\n\n(empty)\n"
-                )
+                new_value = ""
 
             update_data = json.dumps({"value": new_value}).encode("utf-8")
             update_req = urllib.request.Request(
@@ -427,12 +411,11 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
 
         result = {
             "status": "ok",
-            "message": f"Processed {len(processed)} drive comment task(s).",
+            "message": f"Enriched {len(processed)} entry(s). Review enriched entries in queued_tasks_from_drive and extract tasks using add_extracted_tasks, then remove processed entries from the block.",
             "processed": len(processed),
             "details": [
                 {
                     "doc_title": p["doc_title"],
-                    "task_description": p["task_description"],
                     "marker_type": p["marker_type"],
                 }
                 for p in processed
@@ -440,12 +423,6 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
         }
         if errors:
             result["errors"] = errors
-
-        # Return extraction messages for the agent to act on
-        if processed:
-            result["extraction_messages"] = [
-                p["extract_message"] for p in processed
-            ]
 
         return result
 

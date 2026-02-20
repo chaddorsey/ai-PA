@@ -212,6 +212,7 @@ class DriveTaskQueueWriter(TaskQueueWriter):
         comment_text: str,
         gmail_message_id: str,
         quoted_passage: Optional[str] = None,
+        surrounding_context: Optional[str] = None,
         notes: Optional[str] = None,
         marker_type: Optional[str] = None,
         task_hint: Optional[str] = None,
@@ -230,6 +231,7 @@ class DriveTaskQueueWriter(TaskQueueWriter):
             comment_text: The comment text content.
             gmail_message_id: Gmail message ID of the notification email.
             quoted_passage: Text passage the comment is anchored to, if any.
+            surrounding_context: Document context around the quoted passage.
             notes: Free-form notes (shown only when no markers).
             marker_type: "explicit" for [] markers, "pointer" for > markers.
             task_hint: The marker text (without prefix).
@@ -272,7 +274,9 @@ class DriveTaskQueueWriter(TaskQueueWriter):
         )
 
         if quoted_passage:
-            lines.append(f"quoted_passage: {quoted_passage}")
+            lines.append(f"quoted_passage: {quoted_passage[:200]}")
+        if surrounding_context:
+            lines.append(f"surrounding_context: {surrounding_context[:500]}")
 
         # Marker fields vs notes (same pattern as TaskQueueWriter)
         if marker_type:

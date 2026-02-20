@@ -16,6 +16,7 @@ from gmail_watch.services.agent_notifier import AgentNotifier
 from gmail_watch.services.gmail_client import GmailClient
 from gmail_watch.services.pubsub_puller import PubSubPuller
 from gmail_watch.services.registry import ThreadRegistry
+from gmail_watch.services.drive_enricher import DriveEnricher
 from gmail_watch.services.drive_task_queue_writer import DriveTaskQueueWriter
 from gmail_watch.services.task_queue_writer import TaskQueueWriter
 from gmail_watch.settings import settings
@@ -51,6 +52,7 @@ class WatchManager:
         self._notifier: Optional[AgentNotifier] = None
         self._task_queue_writer: Optional[TaskQueueWriter] = None
         self._drive_task_queue_writer: Optional[DriveTaskQueueWriter] = None
+        self._drive_enricher: Optional[DriveEnricher] = None
 
     @property
     def registry(self) -> ThreadRegistry:
@@ -79,6 +81,13 @@ class WatchManager:
         if self._drive_task_queue_writer is None:
             self._drive_task_queue_writer = DriveTaskQueueWriter()
         return self._drive_task_queue_writer
+
+    @property
+    def drive_enricher(self) -> Optional[DriveEnricher]:
+        """Lazy-load Drive API enricher (None if no token configured)."""
+        if self._drive_enricher is None and settings.drive_token_path:
+            self._drive_enricher = DriveEnricher(settings.drive_token_path)
+        return self._drive_enricher
 
     async def _get_sync_state(self) -> Optional[SyncState]:
         """Get the current sync state from database.
@@ -739,6 +748,12 @@ class WatchManager:
                     "message": "DTaskQueue label not found",
                 }
 
+            # "Done" label prevents fallback query from re-processing
+            done_label_name = f"{settings.drive_task_queue_label_name}Done"
+            done_label_id = self._gmail_client.get_label_id_by_name(
+                done_label_name
+            )
+
             messages = self._gmail_client.list_messages_by_label(
                 label_id, max_results=10
             )
@@ -764,20 +779,23 @@ class WatchManager:
 
                     for msg_ref in query_results:
                         msg_id = msg_ref["id"]
-                        # Skip if already processed (ID appears in block
-                        # or was already labeled)
+                        # Skip if already in queue block
                         if msg_id in block_value:
                             continue
                         try:
                             msg_labels = self._gmail_client.get_message(
                                 msg_id, format="minimal"
                             ).get("labelIds", [])
-                            if label_id not in msg_labels:
-                                self._gmail_client.service.users().messages().modify(
-                                    userId="me",
-                                    id=msg_id,
-                                    body={"addLabelIds": [label_id]},
-                                ).execute()
+                            # Skip if already has pending or done label
+                            if label_id in msg_labels:
+                                continue
+                            if done_label_id and done_label_id in msg_labels:
+                                continue
+                            self._gmail_client.service.users().messages().modify(
+                                userId="me",
+                                id=msg_id,
+                                body={"addLabelIds": [label_id]},
+                            ).execute()
                         except Exception:
                             pass
 
@@ -862,18 +880,56 @@ class WatchManager:
                             "notes": notes,
                         }]
 
+                    # ── Drive API enrichment (best-effort) ──
+                    enriched: dict[str, Any] = {}
+                    if self.drive_enricher:
+                        try:
+                            enriched = self.drive_enricher.enrich(
+                                doc_id, comment_id
+                            )
+                        except Exception as enrich_err:
+                            log.warning(
+                                "drive_enrichment_failed",
+                                doc_id=doc_id,
+                                error=str(enrich_err),
+                            )
+
+                    # Override with enriched data when available
+                    if enriched.get("doc_title"):
+                        doc_title = enriched["doc_title"]
+                    enriched_doc_type = enriched.get("doc_type", "unknown")
+                    enriched_comment_text = enriched.get(
+                        "comment_text", comment_content
+                    )
+                    if enriched.get("comment_author"):
+                        author_name = enriched["comment_author"]
+                        author_email = enriched.get(
+                            "comment_author_email", ""
+                        )
+                        if author_email:
+                            comment_author = (
+                                f"{author_name} ({author_email})"
+                            )
+                        else:
+                            comment_author = author_name
+                    enriched_date = enriched.get("comment_date", date)
+
                     msg_had_error = False
                     for entry_def in entry_defs:
                         entry = self.drive_task_queue_writer.format_drive_queue_entry(
                             comment_id=comment_id or "",
                             doc_id=doc_id,
                             doc_title=doc_title,
-                            doc_type="unknown",
+                            doc_type=enriched_doc_type,
                             comment_author=comment_author,
                             triggered_by=triggered_by,
-                            comment_date=date,
-                            comment_text=comment_content,
+                            comment_date=enriched_date,
+                            comment_text=enriched_comment_text,
                             gmail_message_id=msg_id,
+                            quoted_passage=enriched.get("quoted_passage"),
+                            surrounding_context=enriched.get(
+                                "surrounding_context"
+                            ),
                             notes=entry_def.get("notes"),
                             marker_type=entry_def["marker_type"],
                             task_hint=entry_def["task_hint"],
@@ -911,7 +967,37 @@ class WatchManager:
                         )
 
                     if not msg_had_error:
-                        self._gmail_client.remove_label(msg_id, label_id)
+                        # Swap DTaskQueue → DTaskQueueDone to prevent
+                        # fallback query from re-processing
+                        modify_body: dict[str, Any] = {
+                            "removeLabelIds": [label_id],
+                        }
+                        if not done_label_id:
+                            # Auto-create done label on first use
+                            try:
+                                created = (
+                                    self._gmail_client.service.users()
+                                    .labels()
+                                    .create(
+                                        userId="me",
+                                        body={
+                                            "name": done_label_name,
+                                            "labelListVisibility": "labelHide",
+                                            "messageListVisibility": "hide",
+                                        },
+                                    )
+                                    .execute()
+                                )
+                                done_label_id = created["id"]
+                            except Exception:
+                                pass
+                        if done_label_id:
+                            modify_body["addLabelIds"] = [done_label_id]
+                        self._gmail_client.service.users().messages().modify(
+                            userId="me",
+                            id=msg_id,
+                            body=modify_body,
+                        ).execute()
 
                 except Exception as msg_err:
                     log.error(

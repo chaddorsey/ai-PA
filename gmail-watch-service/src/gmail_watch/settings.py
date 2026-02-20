@@ -131,6 +131,11 @@ class Settings(BaseSettings):
         alias="DRIVE_TASK_QUEUE_AGENT_ID",
         description="Docs & Transcripts agent ID for drive task notifications",
     )
+    drive_token_path: Optional[str] = Field(
+        default=None,
+        alias="DRIVE_TOKEN_PATH",
+        description="Path to Google Drive OAuth token (drive-docs-token.json)",
+    )
 
 
 def get_settings() -> Settings:
