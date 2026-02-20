@@ -88,6 +88,24 @@ class TaskQueueWriter:
 
         return "\n".join(lines)
 
+    async def read_block(self) -> str:
+        """Read the current block value.
+
+        Returns:
+            The block text content, or empty string on error.
+        """
+        if not self.block_id or not self.letta_base_url:
+            return ""
+
+        block_url = f"{self.letta_base_url}/v1/blocks/{self.block_id}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(block_url)
+                resp.raise_for_status()
+                return resp.json().get("value", "")
+        except Exception:
+            return ""
+
     async def write_to_block(self, entry_text: str) -> dict[str, Any]:
         """Append a queue entry to the Letta memory block.
 

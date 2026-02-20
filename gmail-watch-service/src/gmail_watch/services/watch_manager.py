@@ -742,6 +742,49 @@ class WatchManager:
             messages = self._gmail_client.list_messages_by_label(
                 label_id, max_results=10
             )
+
+            # Fallback: search by query for unlabeled notifications
+            # (Google Docs system notifications may bypass Gmail filters)
+            if not messages:
+                query_results = self._gmail_client.search_messages(
+                    "to:cdorsey+dtasks from:comments-noreply@docs.google.com "
+                    "newer_than:1d",
+                    max_results=10,
+                )
+                if query_results:
+                    # Read current block to check already-processed IDs
+                    block_value = ""
+                    if settings.drive_task_queue_block_id:
+                        try:
+                            block_value = (
+                                await self.drive_task_queue_writer.read_block()
+                            )
+                        except Exception:
+                            pass
+
+                    for msg_ref in query_results:
+                        msg_id = msg_ref["id"]
+                        # Skip if already processed (ID appears in block
+                        # or was already labeled)
+                        if msg_id in block_value:
+                            continue
+                        try:
+                            msg_labels = self._gmail_client.get_message(
+                                msg_id, format="minimal"
+                            ).get("labelIds", [])
+                            if label_id not in msg_labels:
+                                self._gmail_client.service.users().messages().modify(
+                                    userId="me",
+                                    id=msg_id,
+                                    body={"addLabelIds": [label_id]},
+                                ).execute()
+                        except Exception:
+                            pass
+
+                    messages = self._gmail_client.list_messages_by_label(
+                        label_id, max_results=10
+                    )
+
             if not messages:
                 return {"status": "ok", "processed": 0}
 
@@ -777,18 +820,25 @@ class WatchManager:
                         })
                         continue
 
-                    # Extract reply text and strip trigger address
-                    reply_text = DriveTaskQueueWriter.strip_trigger_address(body)
+                    # Parse notification body for author and comment text
+                    notif = DriveTaskQueueWriter.parse_notification_body(body)
 
-                    # Parse for task markers (same [] / > conventions as email)
-                    marker_entries = TaskQueueWriter.parse_markers(reply_text)
+                    # Use parsed comment text (clean, no boilerplate)
+                    comment_content = DriveTaskQueueWriter.strip_trigger_address(
+                        notif["comment_text"]
+                    )
+
+                    # Parse for task markers from comment text only
+                    marker_entries = TaskQueueWriter.parse_markers(comment_content)
 
                     # Extract doc title from email subject
                     doc_title = subject.replace("Comment on ", "").replace(
                         "Re: Comment on ", ""
                     ).strip(' "')
 
-                    triggered_by = from_address
+                    # Use real author email if available, fallback to From header
+                    triggered_by = notif["author_email"] or from_address
+                    comment_author = notif["author_name"]
 
                     if marker_entries:
                         entry_defs = [
@@ -800,7 +850,11 @@ class WatchManager:
                             for me in marker_entries
                         ]
                     else:
-                        notes = reply_text.strip() if reply_text.strip() else None
+                        notes = (
+                            comment_content.strip()
+                            if comment_content.strip()
+                            else None
+                        )
                         entry_defs = [{
                             "marker_type": None,
                             "task_hint": None,
@@ -815,11 +869,10 @@ class WatchManager:
                             doc_id=doc_id,
                             doc_title=doc_title,
                             doc_type="unknown",
-                            comment_author="",
+                            comment_author=comment_author,
                             triggered_by=triggered_by,
                             comment_date=date,
-                            comment_text="",
-                            quoted_passage="",
+                            comment_text=comment_content,
                             gmail_message_id=msg_id,
                             notes=entry_def.get("notes"),
                             marker_type=entry_def["marker_type"],
@@ -843,7 +896,7 @@ class WatchManager:
                             "comment_id": comment_id,
                             "doc_id": doc_id,
                             "doc_title": doc_title,
-                            "comment_text": "",
+                            "comment_text": comment_content,
                             "triggered_by": triggered_by,
                             "marker_type": entry_def["marker_type"],
                             "task_hint": entry_def.get("task_hint"),

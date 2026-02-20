@@ -23,6 +23,16 @@ OWNER_EMAIL = "cdorsey@concord.org"
 # Pattern matching any +dtasks trigger address (case insensitive)
 TRIGGER_ADDRESS_RE = re.compile(r"^.*\+dtasks@.*$", re.IGNORECASE)
 
+# Pattern to extract author name and email from notification opening line
+# e.g. "Chad Dorsey (cdorsey@concord.org) mentioned you in a comment"
+AUTHOR_RE = re.compile(
+    r"^(.+?)\s+\(([^)]+@[^)]+)\)\s+(?:mentioned you|replied to a comment)",
+)
+
+# Google Docs notification boilerplate markers
+COMMENT_SECTION_START_RE = re.compile(r"^\.\s*$", re.MULTILINE)
+COMMENT_SECTION_END_RE = re.compile(r"^Open\s*$", re.MULTILINE)
+
 # Pattern to extract doc_id and optional comment_id from Google Docs/Sheets/Slides URLs
 DOC_URL_RE = re.compile(
     r"https://docs\.google\.com/"
@@ -59,6 +69,81 @@ class DriveTaskQueueWriter(TaskQueueWriter):
             letta_base_url=letta_base_url,
             block_id=resolved_block_id,
         )
+
+    @staticmethod
+    def parse_notification_body(
+        body: Optional[str],
+    ) -> dict[str, str]:
+        """Parse a Google Docs comment notification email body.
+
+        Extracts the comment author, their email, and the actual comment
+        text from the notification boilerplate.
+
+        Google Docs notification format:
+            {Author} ({email}) mentioned you in a comment in the following document
+            {Doc Title}
+            ({url})
+            ...
+            {N} comment(s)
+
+            .
+            [{N} comment hidden]     (optional)
+
+            {Author Name}
+            {comment content lines...}
+
+            Open
+            ({url})
+            ...
+
+        Args:
+            body: The full notification email body text.
+
+        Returns:
+            Dict with keys: author_name, author_email, comment_text.
+            All values default to empty string if not found.
+        """
+        result = {"author_name": "", "author_email": "", "comment_text": ""}
+        if not body:
+            return result
+
+        # Extract author from first line
+        author_match = AUTHOR_RE.match(body.strip())
+        if author_match:
+            result["author_name"] = author_match.group(1).strip()
+            result["author_email"] = author_match.group(2).strip()
+
+        # Extract comment section between "." separator and "Open" link
+        dot_match = COMMENT_SECTION_START_RE.search(body)
+        open_match = COMMENT_SECTION_END_RE.search(body)
+
+        if dot_match and open_match and open_match.start() > dot_match.end():
+            raw_comment = body[dot_match.end():open_match.start()].strip()
+
+            # The first non-empty line after "." is usually the author name
+            # or "[N comment hidden]" — skip those
+            lines = raw_comment.split("\n")
+            comment_lines = []
+            skip_author_line = True
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    if skip_author_line and comment_lines:
+                        skip_author_line = False
+                    continue
+                # Skip "[N comment hidden]" lines
+                if re.match(r"^\[.*comment.*hidden\]$", stripped, re.IGNORECASE):
+                    continue
+                # Skip the author name line (first non-empty content line)
+                if skip_author_line and stripped == result["author_name"]:
+                    skip_author_line = False
+                    continue
+                skip_author_line = False
+                comment_lines.append(stripped)
+
+            result["comment_text"] = "\n".join(comment_lines)
+
+        return result
 
     @staticmethod
     def strip_trigger_address(text: Optional[str]) -> str:
