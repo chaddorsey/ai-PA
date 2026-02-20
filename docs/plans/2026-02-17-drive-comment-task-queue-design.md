@@ -28,6 +28,27 @@ When `+cdorsey+dtasks@concord.org` is added as an action item reply, Gmail recei
 
 This is enough to bootstrap enrichment via the Drive API.
 
+### Reply notes and markers
+
+The reply comment can include **note text and task markers** alongside the trigger address, using the same conventions as email forwards and meeting notes:
+
+```
+[] Review the timeline assumptions in this section
+> Check if budget numbers are still current
+Some context about why this matters
+
++cdorsey+dtasks@concord.org
+```
+
+Parsing rules (same as `TaskQueueWriter.parse_markers()`):
+- `[] task description` or `[ ] task description` — **explicit task** (the description IS the task)
+- `> hint text` — **pointer** (needs expansion from the comment/document context)
+- Unmarked lines (excluding the trigger address) — **shared context** attached to all markers
+
+If markers are present, one queue entry is created per marker (multi-task). If no markers, the reply text (minus trigger address) is captured as freeform notes.
+
+The trigger address line (`+cdorsey+dtasks@concord.org` or any `+dtasks` address) is stripped before parsing.
+
 ## Architecture
 
 ```
@@ -112,10 +133,13 @@ Add `process_drive_task_queue()` method modeled on existing `process_task_queue(
 - Searches for `DTaskQueue` label (not `TaskQueue`)
 - Parses notification email to extract `doc_id` and `comment_id` from the Google Docs link in the email body (pattern: `https://docs.google.com/document/d/{doc_id}/...`)
 - Extracts `triggered_by` from the email headers (who added the action item)
+- **Extracts reply text** from the notification email, strips the trigger address line, and parses for task markers using `TaskQueueWriter.parse_markers()` (same `[]`/`>` conventions as email forwards)
+- If markers found: creates one queue entry per marker with `marker_type`, `task_hint`, `context`
+- If no markers: creates single entry with reply text as `notes`
 - Writes to `queued_tasks_from_drive` block (not `queued_tasks_from_email`)
 - Uses dedicated `DriveTaskQueueWriter` (or extends `TaskQueueWriter`) for the drive-specific queue entry format
 
-**Queue entry format (text block):**
+**Queue entry format (text block) — no markers (single task):**
 
 ```
 [queued: 2026-02-19 15:30] comment_id: AAAABx123 | doc_id: 1abc2def
@@ -131,8 +155,36 @@ surrounding_context: |
   ...the board approved the revised scope on February 3.
   >> Phase 2 will begin in March and extend through June, <<
   with quarterly milestones reported to the steering committee...
+notes: Some context about why this matters
 gmail_message_id: 19c64abc12345678
 trigger: docs-comment-action-item
+---
+```
+
+**With markers (one entry per marker):**
+
+```
+[queued: 2026-02-19 15:30] comment_id: AAAABx123 | doc_id: 1abc2def
+doc_title: Q3 Strategy Planning
+doc_type: document
+doc_link: https://docs.google.com/document/d/1abc2def/edit?disco=AAAABx123
+comment_author: Jane Smith <jsmith@concord.org>
+triggered_by: cdorsey@concord.org
+comment_date: Wed, Feb 19, 2026 at 3:15 PM
+comment_text: We should revisit the timeline on this section
+quoted_passage: Phase 2 will begin in March
+marker_type: explicit
+task_hint: Review the timeline assumptions in this section
+context: Some context about why this matters
+gmail_message_id: 19c64abc12345678
+trigger: docs-comment-action-item
+---
+[queued: 2026-02-19 15:30] comment_id: AAAABx123 | doc_id: 1abc2def
+...
+marker_type: pointer
+task_hint: Check if budget numbers are still current
+context: Some context about why this matters
+...
 ---
 ```
 
@@ -162,7 +214,7 @@ A new Letta tool registered on the Docs & Transcripts Agent. This is the primary
 
 1. Reads the `queued_tasks_from_drive` memory block
 2. Parses each `---`-delimited entry
-3. For each entry:
+3. For each entry (handles both single-task and marker entries):
    - Calls `Drive API comments.get(fileId, commentId)` for full comment metadata (author, text, quotedFileContent, resolved status, replies)
    - Calls `Drive API files.get(fileId, fields="mimeType,name,webViewLink")` for document metadata
    - Retrieves surrounding context based on document type:
@@ -240,6 +292,10 @@ Boilerplate script to register the tool and attach it to the Docs & Transcripts 
 | `comment_text` | Drive API `comments.get` | Full comment text |
 | `quoted_passage` | Drive API `quotedFileContent.value` | Text the comment is anchored to |
 | `surrounding_context` | Docs/Sheets/Slides API | ~3 paragraphs around the quoted passage |
+| `notes` | Reply text (no markers) | Freeform notes from the reply (trigger address stripped) |
+| `marker_type` | Reply text parsing | `explicit` for `[]` markers, `pointer` for `>` markers |
+| `task_hint` | Reply text parsing | The marker text (task description or expansion hint) |
+| `context` | Reply text parsing | Non-marker lines from reply (shared across all markers) |
 | `gmail_message_id` | Gmail API | For audit trail / label removal |
 | `trigger` | Constant | `docs-comment-action-item` |
 
