@@ -110,7 +110,7 @@ def add_extracted_tasks(
             }
 
         # Validate source_type
-        valid_source_types = {"slack", "google-docs", "google-docs-comment", "meeting", "email"}
+        valid_source_types = {"slack", "google-docs", "google-docs-comment", "meeting", "email", "google-drive-comment"}
         if source_type not in valid_source_types:
             return {
                 "status": "error",
