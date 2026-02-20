@@ -171,32 +171,62 @@ class DriveEnricher:
             return self._context_from_slides(doc_id, quoted)
         return ""
 
+    @staticmethod
+    def _extract_paragraph_text(
+        paragraph: dict[str, Any],
+    ) -> tuple[str, str]:
+        """Extract plain text and link-enriched text from a paragraph.
+
+        Returns:
+            Tuple of (plain_text, enriched_text). The enriched version
+            appends hyperlink URLs inline when the display text differs
+            from the URL target.
+        """
+        plain_parts: list[str] = []
+        rich_parts: list[str] = []
+
+        for elem in paragraph.get("elements", []):
+            text_run = elem.get("textRun", {})
+            content = text_run.get("content", "")
+            link_url = (
+                text_run.get("textStyle", {})
+                .get("link", {})
+                .get("url", "")
+            )
+            plain_parts.append(content)
+            if link_url and content.strip() and link_url != content.strip():
+                rich_parts.append(f"{content.rstrip()} ({link_url})")
+            else:
+                rich_parts.append(content)
+
+        return "".join(plain_parts).strip(), "".join(rich_parts).strip()
+
     def _context_from_doc(self, doc_id: str, quoted: str) -> str:
         docs_svc = build("docs", "v1", credentials=self._creds)
         doc_data = docs_svc.documents().get(documentId=doc_id).execute()
         body_content = doc_data.get("body", {}).get("content", [])
 
-        paragraphs = []
+        # Build parallel plain/enriched paragraph lists
+        plain_paragraphs: list[str] = []
+        rich_paragraphs: list[str] = []
         for element in body_content:
             paragraph = element.get("paragraph", {})
             if paragraph:
-                para_text = "".join(
-                    tr.get("textRun", {}).get("content", "")
-                    for tr in paragraph.get("elements", [])
-                )
-                if para_text.strip():
-                    paragraphs.append(para_text.strip())
+                plain, rich = self._extract_paragraph_text(paragraph)
+                if plain:
+                    plain_paragraphs.append(plain)
+                    rich_paragraphs.append(rich)
 
-        for idx, p in enumerate(paragraphs):
+        for idx, p in enumerate(plain_paragraphs):
             if quoted in p:
                 start = max(0, idx - 3)
-                end = min(len(paragraphs), idx + 4)
+                end = min(len(plain_paragraphs), idx + 4)
                 parts = []
-                for cp in paragraphs[start:end]:
-                    if quoted in cp:
-                        parts.append(f">> {cp} <<")
+                for i in range(start, end):
+                    if quoted in plain_paragraphs[i]:
+                        parts.append(f">> {rich_paragraphs[i]} <<")
                     else:
-                        parts.append(cp)
+                        parts.append(rich_paragraphs[i])
                 return "\n".join(parts)
         return ""
 
@@ -206,25 +236,33 @@ class DriveEnricher:
             sheets_svc.spreadsheets()
             .get(
                 spreadsheetId=doc_id,
-                fields="sheets.data.rowData.values.formattedValue",
+                fields="sheets.data.rowData.values(formattedValue,hyperlink)",
             )
             .execute()
         )
-        rows = []
+        plain_rows: list[str] = []
+        rich_rows: list[str] = []
         for sheet in data.get("sheets", []):
             for grid in sheet.get("data", []):
                 for row in grid.get("rowData", []):
-                    vals = [
-                        c.get("formattedValue", "")
-                        for c in row.get("values", [])
-                    ]
-                    if any(vals):
-                        rows.append(" | ".join(vals))
-        for idx, row_text in enumerate(rows):
+                    plain_vals: list[str] = []
+                    rich_vals: list[str] = []
+                    for c in row.get("values", []):
+                        fv = c.get("formattedValue", "")
+                        link = c.get("hyperlink", "")
+                        plain_vals.append(fv)
+                        if link and fv and link != fv:
+                            rich_vals.append(f"{fv} ({link})")
+                        else:
+                            rich_vals.append(fv)
+                    if any(plain_vals):
+                        plain_rows.append(" | ".join(plain_vals))
+                        rich_rows.append(" | ".join(rich_vals))
+        for idx, row_text in enumerate(plain_rows):
             if quoted in row_text:
                 start = max(0, idx - 2)
-                end = min(len(rows), idx + 3)
-                return "\n".join(rows[start:end])
+                end = min(len(rich_rows), idx + 3)
+                return "\n".join(rich_rows[start:end])
         return ""
 
     def _context_from_slides(self, doc_id: str, quoted: str) -> str:
@@ -233,19 +271,35 @@ class DriveEnricher:
             slides_svc.presentations()
             .get(
                 presentationId=doc_id,
-                fields="slides.pageElements.shape.text.textElements.textRun.content",
+                fields=(
+                    "slides.pageElements.shape.text.textElements"
+                    ".textRun(content,style.link.url)"
+                ),
             )
             .execute()
         )
         for slide in pres.get("slides", []):
-            parts = []
+            plain_parts: list[str] = []
+            rich_parts: list[str] = []
             for elem in slide.get("pageElements", []):
                 shape = elem.get("shape", {})
                 for te in shape.get("text", {}).get("textElements", []):
-                    content = te.get("textRun", {}).get("content", "")
+                    text_run = te.get("textRun", {})
+                    content = text_run.get("content", "")
+                    link_url = (
+                        text_run.get("style", {})
+                        .get("link", {})
+                        .get("url", "")
+                    )
                     if content.strip():
-                        parts.append(content.strip())
-            slide_text = "\n".join(parts)
-            if quoted in slide_text:
-                return slide_text
+                        plain_parts.append(content.strip())
+                        if link_url and link_url != content.strip():
+                            rich_parts.append(
+                                f"{content.strip()} ({link_url})"
+                            )
+                        else:
+                            rich_parts.append(content.strip())
+            plain_text = "\n".join(plain_parts)
+            if quoted in plain_text:
+                return "\n".join(rich_parts)
         return ""
