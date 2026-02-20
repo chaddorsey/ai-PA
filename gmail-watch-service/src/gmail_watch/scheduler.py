@@ -99,6 +99,14 @@ class WatchScheduler:
                             processed=tq_result["processed"],
                         )
 
+                    # Process drive comment task queue
+                    dtq_result = await manager.process_drive_task_queue()
+                    if dtq_result.get("processed", 0) > 0:
+                        logger.info(
+                            "Drive task queue processed",
+                            processed=dtq_result["processed"],
+                        )
+
                     # Check follow-up deadlines (every N cycles)
                     cycle_count += 1
                     if cycle_count >= followup_check_cycles:

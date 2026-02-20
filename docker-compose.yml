@@ -824,6 +824,10 @@ services:
       - TASK_QUEUE_LABEL_NAME=TaskQueue
       - TASK_QUEUE_BLOCK_ID=block-e64dcb37-aae3-416f-8565-5f2a23f53325
       - TASK_QUEUE_BCC_ADDRESS=cdorsey+tasks
+      - DRIVE_TASK_QUEUE_ENABLED=false
+      - DRIVE_TASK_QUEUE_LABEL_NAME=DTaskQueue
+      - DRIVE_TASK_QUEUE_BLOCK_ID=
+      - DRIVE_TASK_QUEUE_AGENT_ID=agent-398b4f6c-6afa-493f-8063-897c6b171a0d
       - LOG_LEVEL=INFO
     volumes:
       - ./gmail-watch-service/credentials:/app/credentials:ro
