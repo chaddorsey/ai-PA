@@ -34,8 +34,11 @@ class ExportRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")  # Ignore extra fields like request_heartbeat
 
     analytics_type: Literal["channels", "members"] = "channels"
-    days_ago: int = Field(default=3, ge=0, le=60)
+    days_ago: int = Field(default=3, ge=0, le=365)
     date_range_days: int = Field(default=1, ge=1, le=30)
+    # Explicit dates override days_ago/date_range_days when provided
+    start_date: str | None = Field(default=None, description="Explicit start date YYYY-MM-DD")
+    end_date: str | None = Field(default=None, description="Explicit end date YYYY-MM-DD")
 
 
 @app.on_event("startup")
@@ -87,7 +90,10 @@ def _calculate_dates(days_ago: int, range_days: int) -> Tuple[str, str]:
 def _build_command(request: ExportRequest) -> Tuple[list[str], dict]:
     """Prepare the CLI arguments passed to the export script."""
 
-    start_date, end_date = _calculate_dates(request.days_ago, request.date_range_days)
+    if request.start_date and request.end_date:
+        start_date, end_date = request.start_date, request.end_date
+    else:
+        start_date, end_date = _calculate_dates(request.days_ago, request.date_range_days)
     cmd = [
         PYTHON_BIN,
         SCRIPT_PATH,

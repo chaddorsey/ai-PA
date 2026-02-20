@@ -90,8 +90,8 @@ async def trigger_export_with_dates(
                 # Validate it's valid JSON before using it
                 with open(auth_path, 'r') as f:
                     json.load(f)
-            print(f"✓ Loading saved authentication from {auth_path}")
-            context_options["storage_state"] = str(auth_path)
+                print(f"✓ Loading saved authentication from {auth_path}")
+                context_options["storage_state"] = str(auth_path)
             except (json.JSONDecodeError, ValueError) as e:
                 print(f"⚠ Auth file exists but is invalid JSON: {e}")
                 print("  Will proceed without saved authentication")
@@ -128,8 +128,8 @@ async def trigger_export_with_dates(
             print("\n⚠ Not logged in. Detected sign-in page.")
             print(f"  URL: {current_url}")
             results["errors"].append("Authentication required but cannot log in in headless mode. Please provide a valid auth file.")
-                await browser.close()
-                return results
+            await browser.close()
+            return results
         else:
             print("✓ Already authenticated")
         
@@ -176,9 +176,14 @@ async def trigger_export_with_dates(
         try:
             # Step 1: Click the date range dropdown
             print("  Step 1: Opening date range dropdown...")
-            date_dropdown_selector = f'div[data-qa="analytics_{analytics_type}-table-header-filter-button"]'
+            # Channels uses analytics_channels-table-header-filter-button
+            # Members uses data_table_header-filter-button
+            if analytics_type == "channels":
+                date_dropdown_selector = 'div[data-qa="analytics_channels-table-header-filter-button"]'
+            else:
+                date_dropdown_selector = 'div[data-qa="data_table_header-filter-button"]'
             date_dropdown = page.locator(date_dropdown_selector)
-            
+
             # Check if element exists before clicking
             count = await date_dropdown.count()
             if count == 0:
@@ -204,36 +209,31 @@ async def trigger_export_with_dates(
             await page.screenshot(path=str(screenshot_modal), full_page=True)
             print(f"  ✓ Modal screenshot: {screenshot_modal}")
             
-            # Step 3: Click start date on calendar picker
-            print(f"  Step 3: Clicking start date on calendar: {start_date}")
-            start_date_element = page.locator(f'div.c-date_range_picker_calendar__date[data-value="{start_date}"]')
-            
-            # Might need to navigate to the correct month first
-            # Try clicking the date
-            try:
-                await start_date_element.click(timeout=3000)
-                print(f"  ✓ Start date clicked: {start_date}")
-            except:
-                # Date might not be visible, try clicking next/prev month buttons
-                print(f"  → Date not visible, may need month navigation")
-                # For now, try waiting and clicking again
-                await page.wait_for_timeout(1000)
-                await start_date_element.click(timeout=5000)
-                print(f"  ✓ Start date clicked: {start_date}")
-            
+            # Step 3: Type start date into text input
+            print(f"  Step 3: Setting start date: {start_date}")
+            start_input = page.get_by_role("textbox", name="Start date")
+            await start_input.click(timeout=5000)
+            await start_input.fill("")
+            await start_input.type(start_date)
+            print(f"  ✓ Start date entered: {start_date}")
+
+            await page.wait_for_timeout(300)
+
+            # Step 4: Type end date into text input
+            print(f"  Step 4: Setting end date: {end_date}")
+            end_input = page.get_by_role("textbox", name="End date")
+            await end_input.click(timeout=5000)
+            await end_input.fill("")
+            await end_input.type(end_date)
+            print(f"  ✓ End date entered: {end_date}")
+
+            # Press Enter to validate the date range (enables the Save button)
+            await page.keyboard.press("Enter")
             await page.wait_for_timeout(500)
-            
-            # Step 4: Click end date on calendar picker
-            print(f"  Step 4: Clicking end date on calendar: {end_date}")
-            end_date_element = page.locator(f'div.c-date_range_picker_calendar__date[data-value="{end_date}"]')
-            await end_date_element.click(timeout=5000)
-            print(f"  ✓ End date clicked: {end_date}")
-            
-            await page.wait_for_timeout(500)
-            
+
             # Step 5: Click Save button
             print("  Step 5: Clicking Save button...")
-            save_button = page.locator('button[data-qa="date_ranger_picker_calendar_save_button"]')
+            save_button = page.get_by_role("button", name="Save")
             await save_button.click(timeout=5000)
             print("  ✓ Save button clicked")
             

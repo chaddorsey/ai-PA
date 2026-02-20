@@ -166,35 +166,35 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
             if slack_token:
                 # List recent Slack files to find the latest channels CSV
                 list_url = "https://slack.com/api/files.list"
-                params = urllib.parse.urlencode({
-                    "token": slack_token,
-                    "types": "snippets,docs",
-                    "count": "20",
-                })
+                params = urllib.parse.urlencode({"count": "20"})
                 req = urllib.request.Request(f"{list_url}?{params}")
                 req.add_header("Authorization", f"Bearer {slack_token}")
 
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     files_data = json.loads(resp.read().decode("utf-8"))
 
-                csv_file = None
+                channels_csv = None
+                members_csv = None
                 if files_data.get("ok"):
                     for f in files_data.get("files", []):
                         name = f.get("name", "").lower()
-                        if "channel" in name and name.endswith(".csv"):
-                            csv_file = f
+                        if name.endswith(".csv"):
+                            if "channel" in name and not channels_csv:
+                                channels_csv = f
+                            elif "member" in name and not members_csv:
+                                members_csv = f
+                        if channels_csv and members_csv:
                             break
 
-                if csv_file:
-                    file_url = csv_file.get("url_private_download", "")
+                if channels_csv:
+                    file_url = channels_csv.get("url_private_download", "")
                     csv_result_raw = analyze_slack_analytics(file_url, top_n=5)
                     csv_result = json.loads(csv_result_raw) if isinstance(csv_result_raw, str) else csv_result_raw
 
                     analysis = csv_result.get("analysis", {})
                     if analysis:
-                        # Extract date from filename if possible (e.g., channels-2026-02-14.csv)
-                        csv_name = csv_file.get("name", "")
-                        covers_date = date_str  # fallback
+                        csv_name = channels_csv.get("name", "")
+                        covers_date = date_str
                         date_match = re.search(r"(\d{4}-\d{2}-\d{2})", csv_name)
                         if date_match:
                             covers_date = date_match.group(1)
@@ -204,11 +204,20 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
                             for ch in analysis.get("top_by_messages_posted", [])
                         )
 
+                        members_active = 0
+                        if members_csv:
+                            mem_url = members_csv.get("url_private_download", "")
+                            mem_raw = analyze_slack_analytics(mem_url, top_n=5)
+                            mem_result = json.loads(mem_raw) if isinstance(mem_raw, str) else mem_raw
+                            mem_analysis = mem_result.get("analysis", {})
+                            if mem_analysis:
+                                members_active = mem_analysis.get("total_members", 0)
+
                         snapshot["slack"] = {
                             "covers_date": covers_date,
                             "total_messages_posted": total_messages,
                             "channels_active": analysis.get("total_channels", 0),
-                            "members_active": 0,  # Only available from members CSV
+                            "members_active": members_active,
                             "top_channels": [
                                 {
                                     "channel": ch.get("channel", ""),
