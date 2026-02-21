@@ -85,7 +85,9 @@ def notify_agent_new_meeting(meeting_id: str, meeting_title: str):
         f'New meeting archived: "{meeting_title}" (meeting_id: {meeting_id}). '
         f"Run post-meeting processing: call scan_meeting_notes with this meeting_id, "
         f"review the scan package for additional action items, expand any pointers, "
-        f"then call prepare_meeting_followup with merged results."
+        f"then call prepare_meeting_followup with merged results. "
+        f"Any task markers found have been queued to queued_tasks_from_meetings — "
+        f"process them after completing the scan review and followup email."
     )
     payload = _json.dumps({
         "messages": [{"role": "user", "content": message_content}],
