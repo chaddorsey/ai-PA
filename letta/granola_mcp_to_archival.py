@@ -525,54 +525,59 @@ def ingest_meetings(
         title = meeting.get("title", "Untitled")[:60]
         logger.info(f"[{i}/{len(new_meetings)}] {title}")
 
-        # Fetch detailed data
-        summary, private_notes, detail_participants = fetch_meeting_detail(mid)
+        try:
+            # Fetch detailed data
+            summary, private_notes, detail_participants = fetch_meeting_detail(mid)
 
-        # Merge participants — detail may have more info
-        if detail_participants:
-            meeting["participants"] = detail_participants
+            # Merge participants — detail may have more info
+            if detail_participants:
+                meeting["participants"] = detail_participants
 
-        transcript_text = fetch_transcript(mid)
-        if not transcript_text:
-            logger.warning(f"  No transcript for {mid}, skipping")
-            continue
+            transcript_text = fetch_transcript(mid)
+            if not transcript_text:
+                logger.warning(f"  No transcript for {mid}, skipping")
+                continue
 
-        # Generate tags
-        tags = generate_tags(meeting)
+            # Generate tags
+            tags = generate_tags(meeting)
 
-        # Format content
-        content = format_content(meeting, summary, transcript_text,
-                                 private_notes=private_notes)
-        tag_line = f"**Tags:** {', '.join(tags)}\n\n"
-        full_content = tag_line + content
+            # Format content
+            content = format_content(meeting, summary, transcript_text,
+                                     private_notes=private_notes)
+            tag_line = f"**Tags:** {', '.join(tags)}\n\n"
+            full_content = tag_line + content
 
-        # Chunk
-        meeting_title = meeting.get("title", "Untitled Meeting")
-        chunks = chunk_content(full_content, mid, tags, meeting_title)
+            # Chunk
+            meeting_title = meeting.get("title", "Untitled Meeting")
+            chunks = chunk_content(full_content, mid, tags, meeting_title)
 
-        # Insert
-        all_ok = True
-        for cidx, (chunk_text, chunk_tags) in enumerate(chunks, 1):
-            if not insert_to_archival(chunk_text, chunk_tags, dry_run=dry_run):
-                all_ok = False
-                logger.error(f"  Failed chunk {cidx}/{len(chunks)}")
-                break
+            # Insert
+            all_ok = True
+            for cidx, (chunk_text, chunk_tags) in enumerate(chunks, 1):
+                if not insert_to_archival(chunk_text, chunk_tags, dry_run=dry_run):
+                    all_ok = False
+                    logger.error(f"  Failed chunk {cidx}/{len(chunks)}")
+                    break
 
-        if all_ok:
-            success += 1
-            if not dry_run:
-                imported_ids.add(mid)
-            size = len(full_content)
-            nchunks = len(chunks)
-            if nchunks > 1:
-                logger.info(f"  Inserted ({size} chars, {nchunks} chunks)")
+            if all_ok:
+                success += 1
+                if not dry_run:
+                    imported_ids.add(mid)
+                size = len(full_content)
+                nchunks = len(chunks)
+                if nchunks > 1:
+                    logger.info(f"  Inserted ({size} chars, {nchunks} chunks)")
+                else:
+                    logger.info(f"  Inserted ({size} chars)")
+
+                # Trigger post-meeting processing
+                if not dry_run:
+                    notify_agent_new_meeting(mid, title)
             else:
-                logger.info(f"  Inserted ({size} chars)")
+                errors += 1
 
-            # Trigger post-meeting processing
-            if not dry_run:
-                notify_agent_new_meeting(mid, title)
-        else:
+        except Exception as e:
+            logger.error(f"  Error processing meeting {mid}: {e}")
             errors += 1
 
     return success, errors
