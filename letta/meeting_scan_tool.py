@@ -305,6 +305,82 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 }
             )
 
+        # ── Queue task candidates to durable memory block ──
+        QUEUE_BLOCK_ID = "block-809efd9b-e2ca-4d11-af89-9a1c7710716c"
+        QUEUE_BLOCK_LIMIT = 20000
+        queue_items = my_tasks + their_tasks
+        queued_count = 0
+
+        if queue_items:
+            import uuid as _uuid
+            from datetime import datetime as _dt
+
+            try:
+                # GET current block value
+                block_url = f"{LETTA_BASE}/v1/blocks/{QUEUE_BLOCK_ID}"
+                block_req = urllib.request.Request(block_url, method="GET")
+                with urllib.request.urlopen(block_req, timeout=10) as block_resp:
+                    block_data = json.loads(block_resp.read().decode("utf-8"))
+                current_value = block_data.get("value", "")
+
+                # Strip "(empty)" placeholder if present
+                if "(empty)" in current_value:
+                    current_value = current_value.replace("(empty)", "").strip()
+                    if not current_value:
+                        current_value = "# Queued Tasks from Meetings"
+
+                now_str = _dt.now().strftime("%Y-%m-%d %H:%M")
+                participants_str = ", ".join(participants) if participants else "unknown"
+                urls_str = ", ".join(doc_urls) if doc_urls else ""
+
+                new_entries = []
+                for item in queue_items:
+                    scan_id = _uuid.uuid4().hex[:8]
+                    marker_type = (
+                        "my_tasks" if item["marker"] in ("[]", "[ ]") else "their_tasks"
+                    )
+                    entry_lines = [
+                        f"[queued: {now_str}; scan_id: {scan_id}] meeting_id: {meeting_id}",
+                        f"title: {meeting_title}",
+                        f"date: {meeting_date}",
+                        f"participants: {participants_str}",
+                        f"granola_link: {granola_link}",
+                        f"marker_type: {marker_type}",
+                        f"task: {item['text']}",
+                    ]
+                    if item.get("deadline_hint"):
+                        entry_lines.append(f"deadline_hint: {item['deadline_hint']}")
+                        entry_lines.append(
+                            f"deadline_source: {item.get('deadline_source', 'unknown')}"
+                        )
+                    if urls_str:
+                        entry_lines.append(f"urls: {urls_str}")
+                    new_entries.append("\n".join(entry_lines))
+
+                # Build new block value — append entries separated by ---
+                entries_text = "\n---\n".join(new_entries) + "\n---"
+                if current_value.rstrip().endswith("---"):
+                    new_value = current_value.rstrip() + "\n" + entries_text
+                else:
+                    new_value = current_value.rstrip() + "\n" + entries_text
+
+                # Overflow guard
+                if len(new_value) > QUEUE_BLOCK_LIMIT:
+                    pass  # Skip queue write, log in return value
+                else:
+                    patch_data = json.dumps({"value": new_value}).encode("utf-8")
+                    patch_req = urllib.request.Request(
+                        block_url,
+                        data=patch_data,
+                        headers={"Content-Type": "application/json"},
+                        method="PATCH",
+                    )
+                    urllib.request.urlopen(patch_req, timeout=10)
+                    queued_count = len(new_entries)
+
+            except Exception as qe:
+                pass  # Queue write failure is non-fatal; scan package still returns
+
         return {
             "status": "ok",
             "meeting_id": meeting_id,
@@ -321,6 +397,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             "scannable_content": scannable_content,
             "has_user_notes": bool(private_notes),
             "doc_urls_found": doc_urls,
+            "queued_to_block": queued_count,
         }
 
     except Exception as e:
