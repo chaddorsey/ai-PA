@@ -308,7 +308,13 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
         # ── Queue task candidates to durable memory block ──
         QUEUE_BLOCK_ID = "block-809efd9b-e2ca-4d11-af89-9a1c7710716c"
         QUEUE_BLOCK_LIMIT = 20000
-        queue_items = my_tasks + their_tasks
+        # Deduplicate by task text (multi-chunk meetings can duplicate markers)
+        seen_texts = set()
+        queue_items = []
+        for item in my_tasks + their_tasks:
+            if item["text"] not in seen_texts:
+                seen_texts.add(item["text"])
+                queue_items.append(item)
         queued_count = 0
 
         if queue_items:
