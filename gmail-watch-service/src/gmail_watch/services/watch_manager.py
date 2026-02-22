@@ -20,7 +20,11 @@ from gmail_watch.services.drive_enricher import DriveEnricher
 from gmail_watch.services.drive_task_queue_writer import DriveTaskQueueWriter
 from gmail_watch.services.task_queue_writer import TaskQueueWriter
 from gmail_watch.settings import settings
-from gmail_watch.utils.interval_parser import extract_interval_from_address, format_interval
+from gmail_watch.utils.interval_parser import (
+    extract_interval_from_address,
+    extract_watch_params_from_address,
+    format_interval,
+)
 
 # Default threshold for watch renewal (1 day before expiration)
 DEFAULT_RENEWAL_THRESHOLD_HOURS = 24
@@ -216,12 +220,52 @@ class WatchManager:
 
         return None
 
+    def _extract_email_address(self, from_header: str) -> str:
+        """Extract bare email from a From header like 'Name <email@example.com>'."""
+        match = self._EMAIL_PATTERN.search(from_header)
+        return match.group(0).lower() if match else from_header.lower()
+
+    def _passes_sender_filter(
+        self, thread: WatchedThread, from_address: str
+    ) -> bool:
+        """Check if a reply sender passes the thread's sender filters.
+
+        Returns True if the reply should trigger a notification.
+        """
+        sender_email = self._extract_email_address(from_address)
+        own_email = settings.gmail_address.lower()
+
+        # Check ignore_own_replies
+        if thread.ignore_own_replies and sender_email == own_email:
+            return False
+
+        # Check external_only (skip replies from own domain)
+        if thread.external_only:
+            own_domain = own_email.split("@")[-1]
+            if sender_email.endswith(f"@{own_domain}"):
+                return False
+
+        # Check watch_for_senders (allowlist — if set, sender must match)
+        if thread.watch_for_senders:
+            for pattern in thread.watch_for_senders:
+                if pattern.startswith("@"):
+                    if sender_email.endswith(pattern.lower()):
+                        return True
+                else:
+                    if sender_email == pattern.lower():
+                        return True
+            return False
+
+        return True
+
     async def _handle_reply(
         self,
         message_id: str,
         thread_id: str,
     ) -> Optional[dict[str, Any]]:
         """Handle a reply in a watched thread.
+
+        Applies sender filtering before marking the reply and notifying.
 
         Args:
             message_id: Gmail message ID.
@@ -230,12 +274,39 @@ class WatchManager:
         Returns:
             Result dict if notification was sent, None otherwise.
         """
+        import structlog
+
+        log = structlog.get_logger()
+
         # Get message details
         message = self._gmail_client.get_message(message_id)
 
         # Extract headers
         from_address = self._extract_header(message, "From") or "unknown"
         preview = message.get("snippet", "")
+
+        # Look up the watched thread to check sender filters
+        stmt = select(WatchedThread).where(WatchedThread.thread_id == thread_id)
+        result = await self._session.execute(stmt)
+        watched = result.scalar_one_or_none()
+
+        if watched is None or not watched.is_active or watched.reply_received:
+            return None
+
+        # Apply sender filtering
+        if not self._passes_sender_filter(watched, from_address):
+            log.info(
+                "reply_filtered",
+                thread_id=thread_id,
+                from_address=from_address,
+                ignore_own=watched.ignore_own_replies,
+                external_only=watched.external_only,
+            )
+            # Update activity tracking but don't trigger notification
+            watched.message_count += 1
+            watched.last_activity_at = datetime.now(timezone.utc)
+            await self._session.commit()
+            return None
 
         # Mark reply in registry
         thread = await self.registry.mark_reply_received(
@@ -244,7 +315,6 @@ class WatchManager:
         )
 
         if thread is None:
-            # Thread not found or already replied
             return None
 
         # Notify agent
@@ -1066,14 +1136,16 @@ class WatchManager:
             bcc_prefix = settings.bcc_watch_address
             matched_address = None
             interval_seconds = None
+            external_only = False
 
             for header_name in ("to", "cc", "bcc"):
                 value = headers.get(header_name, "")
                 for addr in self._EMAIL_PATTERN.findall(value):
-                    result = extract_interval_from_address(addr, bcc_prefix)
-                    if result is not None:
+                    params = extract_watch_params_from_address(addr, bcc_prefix)
+                    if params is not None:
                         matched_address = addr
-                        interval_seconds = result
+                        interval_seconds = params["interval_seconds"]
+                        external_only = params["external_only"]
                         break
                 if matched_address:
                     break
@@ -1159,6 +1231,7 @@ class WatchManager:
                 source="bcc",
                 bcc_address=matched_address,
                 followup_due_at_override=followup_due_override,
+                external_only=external_only,
             )
 
             # Log
@@ -1234,6 +1307,66 @@ class WatchManager:
             return parsedate_to_datetime(date_str)
         except Exception:
             return None
+
+    async def fallback_scan(self) -> dict[str, Any]:
+        """Scan Gmail for unregistered watch addresses.
+
+        Catches forwards-to-watch-address that Gmail filters missed
+        (e.g., forwards that thread into existing conversations).
+        Searches for messages TO the watch address that lack the
+        Watching label and tries to auto-register them.
+
+        Returns:
+            Dictionary with scan results.
+        """
+        import structlog
+
+        log = structlog.get_logger()
+
+        try:
+            bcc_prefix = settings.bcc_watch_address
+            label_name = settings.watching_label_name
+            query = f"to:{bcc_prefix} -label:{label_name} newer_than:3d"
+
+            results = self._gmail_client.search_messages(query, max_results=20)
+            if not results:
+                return {"status": "ok", "scanned": 0, "registered": 0}
+
+            watched_ids = await self.registry.get_active_thread_ids()
+            registered = 0
+
+            for msg_ref in results:
+                msg_id = msg_ref["id"]
+                msg_thread_id = msg_ref.get("threadId", "")
+
+                if msg_thread_id in watched_ids:
+                    continue
+
+                auto_result = await self.try_auto_register(
+                    message_id=msg_id,
+                    thread_id=msg_thread_id,
+                )
+
+                if auto_result and auto_result.get("status") == "ok":
+                    registered += 1
+                    watched_ids.add(
+                        auto_result.get("thread_id", msg_thread_id)
+                    )
+                    log.info(
+                        "fallback_scan_registered",
+                        thread_id=auto_result.get("thread_id", msg_thread_id),
+                        message_id=msg_id,
+                    )
+
+            return {
+                "status": "ok",
+                "scanned": len(results),
+                "registered": registered,
+            }
+
+        except Exception as e:
+            log.error("fallback_scan_error", error=str(e))
+            return {"status": "error", "error": str(e), "scanned": 0, "registered": 0}
 
     async def get_sync_status(self) -> dict[str, Any]:
         """Get current sync status for external callers.

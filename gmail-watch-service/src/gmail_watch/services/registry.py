@@ -28,6 +28,9 @@ class ThreadRegistry:
         source: str = "manual",
         bcc_address: Optional[str] = None,
         followup_due_at_override: Optional[datetime] = None,
+        ignore_own_replies: bool = True,
+        external_only: bool = False,
+        watch_for_senders: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         """Register a thread for watching.
 
@@ -40,6 +43,9 @@ class ThreadRegistry:
             source: How the watch was created ('manual', 'bcc', etc.).
             bcc_address: BCC address that triggered the watch (optional).
             followup_due_at_override: Explicit due-at time (optional).
+            ignore_own_replies: Skip own replies (default True).
+            external_only: Only trigger on replies from outside own domain.
+            watch_for_senders: Specific email addresses or @domains to trigger on.
 
         Returns:
             Dictionary with status and thread information.
@@ -87,6 +93,9 @@ class ThreadRegistry:
             followup_due_at=followup_due_at,
             source=source,
             bcc_address=bcc_address,
+            ignore_own_replies=ignore_own_replies,
+            external_only=external_only,
+            watch_for_senders=watch_for_senders,
             extra_data={"context": context} if context else None,
         )
         self.session.add(thread)
@@ -174,6 +183,9 @@ class ThreadRegistry:
                         t.followup_due_at.isoformat() if t.followup_due_at else None
                     ),
                     "source": t.source,
+                    "ignore_own_replies": t.ignore_own_replies,
+                    "external_only": t.external_only,
+                    "watch_for_senders": t.watch_for_senders,
                 }
                 for t in threads
             ],
@@ -221,6 +233,9 @@ class ThreadRegistry:
             "source": thread.source,
             "bcc_address": thread.bcc_address,
             "message_count": thread.message_count,
+            "ignore_own_replies": thread.ignore_own_replies,
+            "external_only": thread.external_only,
+            "watch_for_senders": thread.watch_for_senders,
             "extra_data": thread.extra_data,
         }
 

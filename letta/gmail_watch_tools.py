@@ -13,6 +13,8 @@ def watch_gmail_thread(
     recipients: Optional[str] = None,
     followup_interval: Optional[str] = None,
     context: Optional[str] = None,
+    external_only: Optional[str] = None,
+    watch_for_senders: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Start monitoring a Gmail thread for replies. Use this after sending an
@@ -25,6 +27,8 @@ def watch_gmail_thread(
         recipients: Original recipients as comma-separated string
         followup_interval: Follow-up reminder interval like '3d' (3 days), '12h' (12 hours), '1w' (1 week). Default: 3 days if omitted.
         context: Additional context about why this thread is being watched
+        external_only: Set to "true" to only trigger on replies from outside the user's domain (e.g., non-concord.org)
+        watch_for_senders: Comma-separated list of email addresses or @domains to trigger on (e.g., "joel@glef.org,@glef.org")
 
     Returns:
         Dictionary with status and watch details.
@@ -44,6 +48,10 @@ def watch_gmail_thread(
             arguments["followup_interval"] = followup_interval
         if context is not None:
             arguments["context"] = context
+        if external_only is not None and external_only.lower() == "true":
+            arguments["external_only"] = True
+        if watch_for_senders is not None:
+            arguments["watch_for_senders"] = watch_for_senders
 
         payload = json.dumps({"name": "watch_thread", "arguments": arguments}).encode()
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})

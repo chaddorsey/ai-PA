@@ -29,6 +29,13 @@ class WatchThreadRequest(BaseModel):
     context: str | None = Field(
         None, description="Additional context about this thread"
     )
+    external_only: bool = Field(
+        False, description="Only trigger on replies from outside own domain"
+    )
+    watch_for_senders: str | None = Field(
+        None,
+        description="Comma-separated email addresses or @domains to trigger on",
+    )
 
 
 class UnwatchThreadRequest(BaseModel):
@@ -84,6 +91,14 @@ TOOLS = [
                 "context": {
                     "type": "string",
                     "description": "Additional context about this thread",
+                },
+                "external_only": {
+                    "type": "boolean",
+                    "description": "Only trigger on replies from outside own domain (e.g., non-concord.org)",
+                },
+                "watch_for_senders": {
+                    "type": "string",
+                    "description": "Comma-separated email addresses or @domains to trigger on",
                 },
             },
             "required": ["thread_id"],
@@ -169,12 +184,20 @@ async def call_tool(
                 if recipients:
                     recipients = [r.strip() for r in recipients.split(",")]
 
+                watch_for_senders = arguments.get("watch_for_senders")
+                if watch_for_senders and isinstance(watch_for_senders, str):
+                    watch_for_senders = [
+                        s.strip() for s in watch_for_senders.split(",")
+                    ]
+
                 result = await registry.watch_thread(
                     thread_id=thread_id,
                     subject=arguments.get("subject"),
                     recipients=recipients,
                     followup_interval=arguments.get("followup_interval"),
                     context=arguments.get("context"),
+                    external_only=arguments.get("external_only", False),
+                    watch_for_senders=watch_for_senders,
                 )
 
         elif tool_name == "unwatch_thread":

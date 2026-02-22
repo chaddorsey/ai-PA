@@ -91,6 +91,13 @@ class WatchedThread(MappedAsDataclass, Base, kw_only=True):
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
+    # Sender filtering
+    ignore_own_replies: Mapped[bool] = mapped_column(Boolean, default=True)
+    external_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    watch_for_senders: Mapped[Optional[list[str]]] = mapped_column(
+        ARRAY(String), nullable=True, default=None
+    )
+
     # Extensible metadata (named extra_data to avoid SQLAlchemy reserved 'metadata')
     extra_data: Mapped[Optional[dict[str, Any]]] = mapped_column(
         JSONB, nullable=True, default=None

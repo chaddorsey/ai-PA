@@ -69,6 +69,8 @@ class WatchScheduler:
             1,
             settings.followup_check_interval // settings.pull_interval_seconds,
         )
+        # Run fallback scan every ~5 minutes
+        fallback_scan_cycles = max(1, 300 // settings.pull_interval_seconds)
         cycle_count = 0
 
         while self._running:
@@ -117,6 +119,16 @@ class WatchScheduler:
                                 "Follow-up check",
                                 overdue=followup_result["overdue_count"],
                                 notified=followup_result["notified_count"],
+                            )
+
+                    # Fallback scan for unregistered watch addresses
+                    if cycle_count % fallback_scan_cycles == 0:
+                        scan_result = await manager.fallback_scan()
+                        if scan_result.get("registered", 0) > 0:
+                            logger.info(
+                                "Fallback scan",
+                                scanned=scan_result["scanned"],
+                                registered=scan_result["registered"],
                             )
 
             except Exception as e:

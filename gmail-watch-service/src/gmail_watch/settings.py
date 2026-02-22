@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     )
 
     # BCC auto-watch settings
+    gmail_address: str = Field(
+        default="cdorsey@concord.org",
+        alias="GMAIL_ADDRESS",
+        description="User's Gmail address for sender filtering (ignore_own_replies, external_only)",
+    )
     bcc_watch_address: str = Field(
         default="cdorsey+watch",
         alias="BCC_WATCH_ADDRESS",

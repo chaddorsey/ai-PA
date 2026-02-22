@@ -61,7 +61,7 @@ class GmailClient:
 
         body = {
             "topicName": topic_name,
-            "labelIds": [label_id],
+            "labelIds": [label_id, "INBOX"],
             "labelFilterBehavior": "include",
         }
 
@@ -88,8 +88,6 @@ class GmailClient:
         if history_types is None:
             history_types = ["messageAdded"]
 
-        label_id = self.get_watching_label_id()
-
         all_history: list[dict[str, Any]] = []
         page_token: Optional[str] = None
 
@@ -97,7 +95,7 @@ class GmailClient:
             response = self.service.users().history().list(
                 userId="me",
                 startHistoryId=start_history_id,
-                labelId=label_id,
+                labelId="INBOX",
                 historyTypes=history_types,
                 pageToken=page_token,
             ).execute()
