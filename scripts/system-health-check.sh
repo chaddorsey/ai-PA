@@ -39,6 +39,17 @@ fail() { echo -e "  ${RED}✗${NC} $1"; ((fail++)); }
 warn() { echo -e "  ${YELLOW}!${NC} $1"; ((warn++)); }
 
 # -----------------------------------------------------------------------
+echo -e "${BOLD}=== External Drive ===${NC}"
+# -----------------------------------------------------------------------
+
+if [ -d "/Volumes/main-drive/ai-PA" ]; then
+    ok "/Volumes/main-drive mounted"
+else
+    fail "/Volumes/main-drive NOT mounted — host services will fail"
+fi
+
+# -----------------------------------------------------------------------
+echo ""
 echo -e "${BOLD}=== Docker Desktop ===${NC}"
 # -----------------------------------------------------------------------
 
@@ -169,6 +180,25 @@ for line in sys.stdin:
 
     # -------------------------------------------------------------------
     echo ""
+    echo -e "${BOLD}=== Host Services ===${NC}"
+    # -------------------------------------------------------------------
+
+    # OmniFocus bridge (AppleScript bridge for Docker containers)
+    if curl -s --max-time 3 -X POST http://localhost:8889/execute \
+        -H "Content-Type: application/json" \
+        -d '{"command":"systemOperations","args":{"action":"status"}}' 2>/dev/null | grep -q "success"; then
+        ok "OmniFocus bridge (:8889)"
+    elif lsof -i :8889 >/dev/null 2>&1; then
+        warn "OmniFocus bridge (:8889) — port open but not responding"
+    else
+        fail "OmniFocus bridge (:8889) — not running"
+        if $AUTO_START; then
+            launchctl kickstart -kp "gui/$(id -u)/com.omnifocus.bridge" 2>/dev/null && warn "OmniFocus bridge — kickstarted" || fail "OmniFocus bridge — kickstart failed"
+        fi
+    fi
+
+    # -------------------------------------------------------------------
+    echo ""
     echo -e "${BOLD}=== LaunchAgents ===${NC}"
     _check_launchd=true
     # -------------------------------------------------------------------
@@ -176,9 +206,10 @@ fi
 
 if $_check_launchd; then
     AGENTS=(
+        "com.omnifocus.bridge|OmniFocus host bridge (port 8889)"
         "com.ai-pa.supergateway-granola|Granola MCP proxy (port 8089)"
         "com.ai-pa.supergateway-atlassian|Atlassian MCP proxy (port 8091)"
-        "com.ai-pa.granola-mcp-ingest|Granola MCP archival ingestion (15m)"
+        "com.ai-pa.granola-ingest-service|Granola ingest service (port 8090)"
         "com.ai-pa.granola-watcher|Granola cache watcher (5m)"
         "com.ai-pa.granola-export|Granola export"
         "com.ai-pa.letta-cleanup|macOS metadata cleanup (hourly)"

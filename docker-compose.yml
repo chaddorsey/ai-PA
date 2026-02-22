@@ -50,6 +50,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    restart: unless-stopped
 
   supabase-auth:
     image: supabase/gotrue:v2.177.0
@@ -77,6 +78,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    restart: unless-stopped
 
   supabase-realtime:
     image: supabase/realtime:v2.34.47
@@ -90,6 +92,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    restart: unless-stopped
 
   supabase-meta:
     image: supabase/postgres-meta:v0.91.0
@@ -637,7 +640,7 @@ services:
       # Do not attempt to use Ollama, LM Studio or OpenRouter chat models with Letta.
       # Letta is *very* picky and will only reliably work with the major cloud providers.
       # Embedding models will work fine, but only uncomment if you know what you're doing.
-    restart: on-failure
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8283/v1/health/"]
       interval: 5s
