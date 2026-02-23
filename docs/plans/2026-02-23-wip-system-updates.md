@@ -48,7 +48,32 @@ This document tracks in-flight system improvement projects that have been design
 
 ---
 
-## 3. OmniFocus Completion Sync (COMPLETED)
+## 3. Meeting Follow-up Email Pipeline (Compaction Fix)
+
+**Status:** Partially built — tools deployed, but agent drops the email draft step due to context compaction
+**Plan:** [2026-02-17-meeting-notes-processing-design.md](2026-02-17-meeting-notes-processing-design.md) / [2026-02-17-meeting-notes-processing-tasks.md](2026-02-17-meeting-notes-processing-tasks.md)
+**Risk:** Low (existing infrastructure, needs reliability fix)
+**Estimated effort:** 1-2 hours depending on approach
+
+**What's deployed and working:**
+- `scan_meeting_notes` tool — registered on Granola agent, called on every new meeting (13+ calls observed)
+- `prepare_meeting_followup` tool — registered, creates HTML D/NA Gmail draft
+- Post-ingestion trigger in `granola_mcp_to_archival.py` — fires on every new meeting
+- Agent system prompt + `meeting_processing_chain` memory block with full instructions
+- Granola import cron jobs (3 jobs covering business hours, off-hours, weekends)
+- Marker convention updated to `[c]` for Chad tasks (2026-02-23; Granola was swallowing `[ ]`)
+
+**The problem:** After `scan_meeting_notes` returns, Letta's context compaction fires (the scan result + meeting content is large), and the agent loses the instruction to call `prepare_meeting_followup`. It produces a text summary instead of creating the Gmail draft. Result: 16 scans, only 1 followup call (and that one had empty args).
+
+**Options under consideration:**
+- **Option B (cheapest):** Embed pre-computed followup call arguments directly in the scan tool's return value, so the agent sees "call prepare_meeting_followup with these exact args" in the data it's processing — tool returns survive compaction
+- **Option D (most robust):** Move the deterministic scan-to-draft pipeline outside the agent entirely (scheduler/script calls tools directly via API, no LLM needed); agent only involved for optional semantic augmentation
+
+**Also fixed (2026-02-23):** Marker regex bug — `\[\s?\]` only matched `[ ]`/`[]`, missing `[  ]`/`[   ]` variants users actually typed. Now uses `[c]` convention which avoids the Granola checkbox problem entirely.
+
+---
+
+## 4. OmniFocus Completion Sync (COMPLETED)
 
 **Status:** Implemented and deployed
 **Plan:** [2026-02-23-omnifocus-completion-sync-design.md](2026-02-23-omnifocus-completion-sync-design.md)
@@ -66,7 +91,8 @@ This is the foundation that items 1 and 2 build upon. Listed here for reference 
 
 The recommended order for tackling these projects:
 
-1. **Archive Embedding Migration** (item 1) — fixes infrastructure that other features depend on
-2. **Completion Feedback Loop** (item 2) — builds on the sync tool and benefits from working semantic search
+1. **Meeting Follow-up Pipeline fix** (item 3) — smallest scope, highest daily impact (every meeting triggers it)
+2. **Archive Embedding Migration** (item 1) — fixes infrastructure that other features depend on
+3. **Completion Feedback Loop** (item 2) — builds on the sync tool and benefits from working semantic search
 
-Both can be shelved and picked up independently. The feedback loop can proceed without the embedding migration (it uses substring search as a fallback), but semantic search would make the `prepare_completion_feedback` tool more robust.
+Items 1-3 can be shelved and picked up independently. The feedback loop can proceed without the embedding migration (it uses substring search as a fallback), but semantic search would make the `prepare_completion_feedback` tool more robust.
