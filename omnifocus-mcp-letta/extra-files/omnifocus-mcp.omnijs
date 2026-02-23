@@ -9555,6 +9555,25 @@
     };
   };
 
+  lib.checkTaskCompletionStatus = params => {
+    const ids = params.taskIds || [];
+    const results = {};
+    for (const taskId of ids) {
+      const t = flattenedTasks.find(x => bareId(x.id) === taskId);
+      if (t) {
+        results[taskId] = {
+          completed: t.completed,
+          dropped: !t.effectiveActive,
+          completionDate: t.completionDate ? toIsoOrNull(t.completionDate) : null,
+          name: t.name
+        };
+      } else {
+        results[taskId] = { notFound: true, completed: null, dropped: null, completionDate: null, name: null };
+      }
+    }
+    return results;
+  };
+
   lib.request = raw => {
     let msg;
     try { msg = JSON.parse(raw); }
