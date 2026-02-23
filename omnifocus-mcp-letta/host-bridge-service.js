@@ -43,28 +43,23 @@ const server = http.createServer((req, res) => {
     try {
       const { command, args } = JSON.parse(body);
       
-      // Create temporary files
-      const tmpJson = path.join(os.tmpdir(), `omnifocus-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.json`);
-      const tmpApple = path.join(os.tmpdir(), `omnifocus-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.applescript`);
-      
       const payload = JSON.stringify({
         method: command,
         params: args || {},
       });
 
-      fs.writeFileSync(tmpJson, payload, 'utf8');
+      // Base64-encode the JSON to avoid escaping issues.
+      // The old approach used AppleScript's `quoted form` to embed JSON
+      // in a JavaScript string literal, but that breaks on backslash
+      // escapes (\n, \t, \\) and single quotes — characters that are
+      // common in task notes. Base64 uses only A-Za-z0-9+/= which are
+      // safe in both AppleScript and JavaScript strings.
+      const b64 = Buffer.from(payload).toString('base64');
+      const tmpApple = path.join(os.tmpdir(), `omnifocus-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.applescript`);
 
-      // Build AppleScript wrapper
       const script = `
-set jsonPath to POSIX path of "${tmpJson}"
-set jsonData to read POSIX file jsonPath as «class utf8»
-set js to "const p = PlugIn.find(\\\"omnifocus-mcp\\\");\
- if(!p) throw new Error('Plugin not found');\
- const lib = p.library(\\\"omnifocus-mcp\\\");\
- JSON.stringify(lib.request(" & quoted form of jsonData & "))"
-
 tell application "OmniFocus"
-  set _res to evaluate javascript js
+  set _res to evaluate javascript "var C='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',s='${b64}',r='';for(var i=0;i<s.length;){var a=C.indexOf(s[i++]),b=C.indexOf(s[i++]),c=C.indexOf(s[i++]),d=C.indexOf(s[i++]);r+=String.fromCharCode((a<<2)|(b>>4));if(c>=0)r+=String.fromCharCode(((b&15)<<4)|(c>>2));if(d>=0)r+=String.fromCharCode(((c&3)<<6)|d)}var p=PlugIn.find('omnifocus-mcp');if(!p)throw new Error('Plugin not found');var lib=p.library('omnifocus-mcp');JSON.stringify(lib.request(r))"
 end tell
 return _res
 `;
@@ -74,21 +69,20 @@ return _res
       try {
         const raw = execSync(`/usr/bin/osascript "${tmpApple}"`, { encoding: 'utf8' });
         const result = JSON.parse(raw);
-        
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, result }));
       } catch (err) {
         console.error('🟥 OmniFocus call failed:', err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-          success: false, 
-          error: 'Bridge call failed', 
-          details: err.message 
+        res.end(JSON.stringify({
+          success: false,
+          error: 'Bridge call failed',
+          details: err.message
         }));
       } finally {
         // Cleanup
         try {
-          fs.unlinkSync(tmpJson);
           fs.unlinkSync(tmpApple);
         } catch (e) {
           // Ignore cleanup errors

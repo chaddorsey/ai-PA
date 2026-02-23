@@ -210,21 +210,14 @@ export async function callOmniFocus(params: { command: string; args?: any }) {
     params: params.args ?? {},
   });
 
-  const tmpJson = path.join(os.tmpdir(), `omnifocus-${Date.now()}.json`);
+  // Base64-encode to avoid escaping issues with quoted form.
+  // See host-bridge-service.js for full explanation.
+  const b64 = Buffer.from(payload).toString("base64");
   const tmpApple = path.join(os.tmpdir(), `omnifocus-${Date.now()}.applescript`);
-  fs.writeFileSync(tmpJson, payload, "utf8");
 
-  // Build a tiny AppleScript wrapper that pipes the JSON into the plugin.
   const script = `
-set jsonPath to POSIX path of "${tmpJson}"
-set jsonData to read POSIX file jsonPath as «class utf8»
-set js to "const p = PlugIn.find(\\\"omnifocus-mcp\\\");\
- if(!p) throw new Error('Plugin not found');\
- const lib = p.library(\\\"omnifocus-mcp\\\");\
- JSON.stringify(lib.request(" & quoted form of jsonData & "))"
-
 tell application "OmniFocus"
-  set _res to evaluate javascript js
+  set _res to evaluate javascript "var C='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',s='${b64}',r='';for(var i=0;i<s.length;){var a=C.indexOf(s[i++]),b=C.indexOf(s[i++]),c=C.indexOf(s[i++]),d=C.indexOf(s[i++]);r+=String.fromCharCode((a<<2)|(b>>4));if(c>=0)r+=String.fromCharCode(((b&15)<<4)|(c>>2));if(d>=0)r+=String.fromCharCode(((c&3)<<6)|d)}var p=PlugIn.find('omnifocus-mcp');if(!p)throw new Error('Plugin not found');var lib=p.library('omnifocus-mcp');JSON.stringify(lib.request(r))"
 end tell
 return _res
 `;
@@ -237,7 +230,6 @@ return _res
     console.error("🟥 OmniFocus call failed:", err);       // STDERR
     return { error: "Bridge call failed", details: String(err) };
   } finally {
-    fs.rmSync(tmpJson, { force: true });
     fs.rmSync(tmpApple, { force: true });
   }
 }

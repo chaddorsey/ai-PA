@@ -102,7 +102,7 @@ def update_extracted_task(
         )
 
         # ── Delete old passage, insert updated one ──
-        del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}/"
+        del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}"
         del_req = urllib.request.Request(del_url, method='DELETE')
         urllib.request.urlopen(del_req, timeout=10)
 
@@ -286,7 +286,7 @@ def transition_extracted_task(
             old_tags.append('status:completed')
 
         # ── Delete old passage, insert updated one ──
-        del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}/"
+        del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}"
         del_req = urllib.request.Request(del_url, method='DELETE')
         urllib.request.urlopen(del_req, timeout=10)
 
@@ -441,7 +441,7 @@ def merge_extracted_tasks(
             new_tags.append('status:merged')
 
             # Delete old, insert updated
-            del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{pid}/"
+            del_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{pid}"
             del_req = urllib.request.Request(del_url, method='DELETE')
             urllib.request.urlopen(del_req, timeout=10)
 

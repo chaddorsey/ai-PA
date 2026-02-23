@@ -1090,20 +1090,27 @@ function getSortOrder(value: unknown): SortOrder {
 }
 
 /**
- * Clean up args by removing empty strings, null, undefined values.
- * Also treats maxDepth: 0 as undefined (meaning unlimited).
+ * Clean up args by removing default/empty values.
  * This is needed because OpenAI strict mode requires all properties to be sent,
- * but OmniFocus may fail on empty string values.
+ * but OmniFocus may fail on empty values or read-only property assignments
+ * (e.g., `completed: false` triggers "property is read-only").
+ * Strip all "zero" defaults so only intentionally-set values reach the bridge.
  */
 function cleanArgs(args: Record<string, unknown>): Record<string, unknown> {
   const cleaned: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(args)) {
-    // Skip empty strings, null, undefined
     if (value === "" || value === null || value === undefined) continue;
-    // Skip maxDepth: 0 (treat as unlimited)
-    if (key === "maxDepth" && value === 0) continue;
-    // Skip empty arrays
+    if (value === false) continue;
+    if (value === 0) continue;
     if (Array.isArray(value) && value.length === 0) continue;
+    if (typeof value === "object" && !Array.isArray(value) && value !== null) {
+      // Recursively clean nested objects (e.g., filters)
+      const nested = cleanArgs(value as Record<string, unknown>);
+      if (Object.keys(nested).length > 0) {
+        cleaned[key] = nested;
+      }
+      continue;
+    }
     cleaned[key] = value;
   }
   return cleaned;
@@ -1213,6 +1220,11 @@ function removeHeavyFields(item: any) {
 
 function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
   if (!data) {
+    return data;
+  }
+
+  // Pass through error responses unfiltered so agents see what went wrong
+  if (typeof data === "object" && data !== null && "error" in data) {
     return data;
   }
 
@@ -1515,7 +1527,9 @@ class OmniFocusSimplifiedMCPServer {
               break;
             case "update":
               command = "updateTask";
-              commandArgs = { taskId, name, note, flagged, completed, dropped, dueDate, deferDate, estimatedMinutes, projectId, tagIds };
+              // completed is read-only (use "complete" action instead)
+              // projectId is read-only (use "move" action instead)
+              commandArgs = { taskId, name, note, flagged, dropped, dueDate, deferDate, estimatedMinutes, tagIds };
               sortOrder = "default";
               break;
             case "complete": {

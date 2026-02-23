@@ -12,14 +12,13 @@ from typing import Dict, Any, Optional
 
 def retrieve_task_info(
     ref_id: str,
-    search_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Look up an extracted task's source reference from the shared archive.
 
-    Searches the extracted_tasks_archive by ref_id (preferred) or free-text
-    query. This tool uses direct API calls to the shared archive, so it works
-    from any agent regardless of which archive is attached.
+    Searches the extracted_tasks_archive by ref_id. This tool uses direct
+    API calls to the shared archive, so it works from any agent regardless
+    of which archive is attached.
 
     Handles both regular tasks and merged tasks. For merged tasks (those with
     MERGED_IDS), automatically retrieves source details from each original
@@ -32,10 +31,6 @@ def retrieve_task_info(
         ref_id: The 8-character hex reference ID to look up. This is the
             primary lookup key and matches the ref_id in extracted_tasks
             block entries (e.g., "9257de13").
-        search_text: Optional additional search text to help find the passage
-            if ref_id semantic search doesn't return it. The passage text
-            is matched exactly after semantic retrieval, so providing the
-            task description here can improve recall.
 
     Returns:
         Dictionary with keys:
@@ -105,12 +100,10 @@ def retrieve_task_info(
 
         # ── Search for primary passage ──
         query = f"REF_ID: {ref_id}"
-        if search_text:
-            query = f"TASK: {search_text} REF_ID: {ref_id}"
 
         payload = json.dumps({
             "query": query,
-            "archive_ids": [ARCHIVE_ID],
+            "archive_id": ARCHIVE_ID,
             "limit": 20,
         }).encode("utf-8")
         req = urllib.request.Request(
@@ -168,7 +161,7 @@ def retrieve_task_info(
             for child_rid in merged_ids:
                 child_payload = json.dumps({
                     "query": f"REF_ID: {child_rid}",
-                    "archive_ids": [ARCHIVE_ID],
+                    "archive_id": ARCHIVE_ID,
                     "limit": 10,
                 }).encode("utf-8")
                 child_req = urllib.request.Request(
