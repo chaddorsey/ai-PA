@@ -22,20 +22,25 @@ Users type markers in Granola's private notes during meetings. Markers survive i
 
 | Marker | Meaning | Pipeline Destination |
 |--------|---------|---------------------|
-| `[ ]` or `[]` | My task | Task queue + D/NA email |
+| `[c]` | Chad's task (variants: `[ c ]`, `[c ]`, `[ c]`) | Task queue + D/NA email |
 | `[;]` | Someone else's task | D/NA email only |
 | `>` | Pointer needing expansion | Agent expands from transcript, feeds D/NA |
+| `D:` or `Decision:` | Explicit decision | D/NA email |
 | (unmarked) | Contextual note | Preserved, available for semantic scan |
+
+**Why `[c]` instead of `[ ]`?** Granola auto-converts `[ ]` into its own checkboxes, swallowing the intended marker text. `[c]` (for "Chad") survives Granola's processing and is unambiguous.
 
 ### Parsing Rules
 
-Regex: `^\s*(?:[-*]\s*)?(\[;\]|\[\s?\]|>)\s+(.+)$`
+Regex: `^\s*(?:[-*]\s*)?(\[;\]|\[\s*c\s*\]|>|D:|Decision:)\s+(.+)$` (case-insensitive)
 
 Handles:
-- `[;] Rebecca to create a list of tasks` — line start
-- `- [ ] Send budget to finance` — after bullet prefix
-- `* [;] task` — after asterisk bullet
+- `[c] Send budget to finance` — line start
+- `[ c ] Review one-pager by Friday` — with spaces
+- `- [c] Schedule follow-up` — after bullet prefix
+- `[;] Rebecca to create a list of tasks` — others' task
 - `> discuss pricing model` — pointer at line start
+- `D: Rose Zbiek confirmed as partner` — explicit decision
 
 ### D/NA Section Header
 

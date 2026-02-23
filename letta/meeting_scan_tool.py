@@ -134,9 +134,15 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             transcript_text = transcript_match.group(1).strip()
 
         # ── Parse markers from private_notes ──
+        # [c] or variants ([ c ], [c ], [ c]) = Chad's tasks
+        # [;] = someone else's task
+        # > = pointer needing expansion
+        # D: or Decision: = explicit decision
+        # Note: Granola auto-converts [ ] into its own checkboxes,
+        # so we use [c] for "Chad" tasks instead.
         MARKER_RE = re.compile(
-            r"^\s*(?:[-*]\s*)?(\[;\]|\[\s?\]|>|D:|Decision:)\s+(.+)$",
-            re.MULTILINE,
+            r"^\s*(?:[-*]\s*)?(\[;\]|\[\s*c\s*\]|>|D:|Decision:)\s+(.+)$",
+            re.MULTILINE | re.IGNORECASE,
         )
         my_tasks = []
         their_tasks = []
@@ -152,7 +158,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 text = m.group(2).strip()
                 item = {"marker": marker, "text": text, "line": line_num}
 
-                if marker in ("[]", "[ ]"):
+                if marker.lower().startswith("[") and "c" in marker.lower():
                     my_tasks.append(item)
                 elif marker == "[;]":
                     their_tasks.append(item)
