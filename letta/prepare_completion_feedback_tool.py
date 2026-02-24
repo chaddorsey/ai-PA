@@ -264,8 +264,8 @@ def prepare_completion_feedback(
             }
 
         elif source_type == "slack":
-            # Parse reference_id: slack-{channel_id}-{ts}
-            slack_match = re.match(r"slack-([A-Z0-9]+)-([\d.]+)$", reference_id)
+            # Parse reference_id: slack-{channel_id}-{ts} or slack-{channel_id}-{ts}-t{thread_ts}
+            slack_match = re.match(r"slack-([A-Z0-9]+)-([\d.]+?)(?:-t([\d.]+))?$", reference_id)
             if not slack_match:
                 return {
                     **EMPTY_RESULT, "status": "error", "ref_id": ref_id,
@@ -275,8 +275,24 @@ def prepare_completion_feedback(
                 }
 
             channel_id = slack_match.group(1)
-            thread_ts = slack_match.group(2)
+            message_ts = slack_match.group(2)
+            original_thread_ts = slack_match.group(3)  # None if standalone
+            # If message was in a thread, reply in that thread;
+            # otherwise reply to the message itself (creates new thread)
+            reply_thread_ts = original_thread_ts if original_thread_ts else message_ts
             first_name = from_person.split()[0] if from_person else "there"
+
+            # Extract source text from passage's SOURCE TEXT section
+            source_comment_text = ""
+            source_text_match = re.search(r"SOURCE TEXT\n(.*)", text, re.DOTALL)
+            if source_text_match:
+                source_comment_text = source_text_match.group(1).strip()
+
+            # Extract channel name from passage's Location field
+            document_title = ""
+            location_match = re.search(r"^- Location: (.+)$", text, re.MULTILINE)
+            if location_match:
+                document_title = location_match.group(1).strip()
 
             is_dropped = omnifocus_status == "dropped"
             if is_dropped:
@@ -294,14 +310,17 @@ def prepare_completion_feedback(
                 "reason": f"External request from {from_person} via Slack message",
                 "suggested_action": "threaded_reply",
                 "routing": {
-                    "tool": "send_message",
+                    "tool": "post_slack_channel_reply",
                     "args": {
                         "channel": channel_id,
-                        "thread_ts": thread_ts,
+                        "thread_ts": reply_thread_ts,
                     },
                 },
                 "draft_message": draft,
                 "resolve_after_reply": False,
+                "source_comment_text": source_comment_text,
+                "document_title": document_title,
+                "comment_thread": [],
                 "error_message": "",
             }
 

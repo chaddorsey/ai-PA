@@ -62,6 +62,7 @@
     "scopes": {
       "user": [
         "channels:history",
+        "chat:write",
         "identify",
         "im:history",
         "im:write"

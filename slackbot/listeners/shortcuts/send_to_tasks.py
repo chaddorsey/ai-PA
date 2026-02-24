@@ -87,6 +87,7 @@ def _extract_message_info(body: dict, logger: Logger) -> dict:
     channel_name = channel.get("name", channel_id)
     triggering_user_id = user.get("id", "")
     message_ts = message.get("ts", "")
+    thread_ts = message.get("thread_ts", "")
 
     # Build permalink
     permalink = ""
@@ -110,6 +111,7 @@ def _extract_message_info(body: dict, logger: Logger) -> dict:
         "channel_name": channel_name,
         "triggering_user_id": triggering_user_id,
         "message_ts": message_ts,
+        "thread_ts": thread_ts,
         "permalink": permalink,
         "files": files,
     }
@@ -127,6 +129,8 @@ def _build_queue_entry(info: dict, notes: str = "") -> dict:
         "source_ref_id": f"{info['channel_id']}:{info['message_ts']}",
         "message_ts": info["message_ts"],
     }
+    if info.get("thread_ts"):
+        entry["thread_ts"] = info["thread_ts"]
     if info.get("files"):
         entry["files"] = info["files"]
     if notes:
@@ -169,6 +173,12 @@ def _trigger_extraction(entry: dict, logger: Logger) -> None:
             f"Link: {link}",
             f"source_ref_id (for cleanup_entry_identifier): {source_ref}",
         ]
+        thread_ts = entry.get("thread_ts", "")
+        if thread_ts:
+            parts.append(
+                f"Thread TS (for reference_id, use format "
+                f"slack-{{channel}}-{{ts}}-t{{thread_ts}}): {thread_ts}"
+            )
         if notes:
             parts.append(f"User notes: {notes}")
         parts.append(
@@ -242,6 +252,7 @@ def send_to_tasks_modal_callback(body: dict, ack: Ack, client: WebClient, logger
             "permalink": info["permalink"],
             "triggering_user_id": info["triggering_user_id"],
             "message_ts": info["message_ts"],
+            "thread_ts": info["thread_ts"],
             "files": info["files"],
         })
 
@@ -302,6 +313,7 @@ def send_to_tasks_view_callback(ack: Ack, body: dict, view: dict, client: WebCli
             "channel_name": metadata.get("channel_name", ""),
             "permalink": metadata.get("permalink", ""),
             "message_ts": metadata.get("message_ts", ""),
+            "thread_ts": metadata.get("thread_ts", ""),
             "files": metadata.get("files", []),
         }
 

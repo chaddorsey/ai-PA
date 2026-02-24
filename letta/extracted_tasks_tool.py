@@ -52,7 +52,7 @@ def add_extracted_tasks(
             (e.g., "Direct message from Danielle Kehoe").
         reference_id: Deterministic canonical unique identifier for the source.
             Format depends on source_type:
-            slack = "slack-{channel_id}-{ts}",
+            slack = "slack-{channel_id}-{ts}" or "slack-{channel_id}-{ts}-t{thread_ts}" if message was in a thread,
             google-docs = "gdocs-{document_id}",
             meeting = "meeting-{meeting_id}",
             email = "email-{message_id}",
