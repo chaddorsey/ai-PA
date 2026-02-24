@@ -142,22 +142,25 @@ def draft_reply_to_email(
 
         # Fetch full body of the last message (snippet is truncated to ~200 chars)
         last_body_text = ""
+        last_body_html = ""
         if last_gmail_id:
             last_full = gmail.users().messages().get(
                 userId="me", id=last_gmail_id, format="full",
             ).execute()
             payload = last_full.get("payload", {})
 
-            # Extract plain text from MIME parts
+            # Extract both plain text and HTML from MIME parts
             parts_to_check = [payload]
             while parts_to_check:
                 part = parts_to_check.pop(0)
                 mime = part.get("mimeType", "")
-                if mime == "text/plain" and part.get("body", {}).get("data"):
-                    last_body_text = base64.urlsafe_b64decode(
-                        part["body"]["data"]
-                    ).decode("utf-8", errors="replace")
-                    break
+                body_data = part.get("body", {}).get("data")
+                if body_data:
+                    decoded = base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
+                    if mime == "text/plain" and not last_body_text:
+                        last_body_text = decoded
+                    elif mime == "text/html" and not last_body_html:
+                        last_body_html = decoded
                 if part.get("parts"):
                     parts_to_check.extend(part["parts"])
 
@@ -187,25 +190,38 @@ def draft_reply_to_email(
                 reply_cc = ", ".join(all_recipients)
 
         # Build body with quoted text from the last message
-        quote_source = last_body_text.strip() if last_body_text else ""
         reply_clean = reply_text.strip()
+        has_plain = bool(last_body_text.strip()) if last_body_text else False
+        has_html = bool(last_body_html.strip()) if last_body_html else False
 
-        if quote_source:
-            # Plain text version
-            quoted_lines = "\n".join(f"> {line}" for line in quote_source.split("\n"))
-            plain_body = f"{reply_clean}\n\nOn {last_date}, {last_from} wrote:\n{quoted_lines}"
+        if has_plain or has_html:
+            # Plain text version (for non-HTML clients)
+            if has_plain:
+                quoted_lines = "\n".join(f"> {line}" for line in last_body_text.strip().split("\n"))
+                plain_body = f"{reply_clean}\n\nOn {last_date}, {last_from} wrote:\n{quoted_lines}"
+            else:
+                plain_body = reply_clean
 
-            # HTML version — gmail_quote class triggers collapsible "..." in Gmail
+            # HTML version — embed original HTML body in gmail_quote blockquote
+            # Using the original HTML verbatim maximizes chance of Gmail's
+            # trimmed-content detection recognizing it as duplicate content
             reply_html = html_mod.escape(reply_clean).replace("\n", "<br>")
             attr_html = html_mod.escape(f"On {last_date}, {last_from} wrote:")
-            quote_html = html_mod.escape(quote_source).replace("\n", "<br>\n")
+
+            if has_html:
+                # Use original HTML directly — Gmail can match it against thread
+                quote_content = last_body_html.strip()
+            else:
+                # Fall back to escaped plain text
+                quote_content = html_mod.escape(last_body_text.strip()).replace("\n", "<br>\n")
+
             html_body = (
                 f'<div dir="ltr">{reply_html}</div><br>\n'
                 f'<div class="gmail_quote">'
                 f'<div dir="ltr" class="gmail_attr">{attr_html}<br></div>'
                 f'<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;'
                 f'border-left:1px solid rgb(204,204,204);padding-left:1ex">'
-                f'{quote_html}'
+                f'{quote_content}'
                 f'</blockquote></div>'
             )
 
