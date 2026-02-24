@@ -325,18 +325,133 @@ def prepare_completion_feedback(
             }
 
         elif source_type == "email":
+            # Only create draft replies for completed tasks, not dropped
+            if omnifocus_status == "dropped":
+                return {
+                    **EMPTY_RESULT, "status": "not_applicable", "ref_id": ref_id,
+                    "source_type": source_type, "from_person": from_person,
+                    "task_description": task_description,
+                    "reason": "Dropped tasks don't get email draft replies",
+                }
+
+            # Parse reference_id: email-{message_id}
+            email_match = re.match(r"email-(.+)$", reference_id)
+            if not email_match:
+                return {
+                    **EMPTY_RESULT, "status": "error", "ref_id": ref_id,
+                    "source_type": source_type, "from_person": from_person,
+                    "task_description": task_description,
+                    "error_message": f"Could not parse message_id from reference_id: {reference_id}",
+                }
+
+            email_message_id = email_match.group(1)
+            first_name = from_person.split()[0] if from_person else "there"
+
+            # ── Fetch email thread context from Gmail API ──
+            source_comment_text = ""
+            email_subject = ""
+            thread_messages = []
+            try:
+                from google.oauth2.credentials import Credentials
+                from google.auth.transport.requests import Request
+                from googleapiclient.discovery import build as gmail_build
+
+                GMAIL_CREDS_DIR = "/root/.gmail-mcp"
+
+                with open(f"{GMAIL_CREDS_DIR}/gcp-oauth.keys.json") as gf:
+                    gkeys = json.load(gf)
+                    gmail_client_config = gkeys.get("installed") or gkeys.get("web")
+
+                with open(f"{GMAIL_CREDS_DIR}/credentials.json") as gf:
+                    gmail_tokens = json.load(gf)
+
+                gmail_creds = Credentials(
+                    token=gmail_tokens.get("access_token"),
+                    refresh_token=gmail_tokens.get("refresh_token"),
+                    token_uri=gmail_client_config["token_uri"],
+                    client_id=gmail_client_config["client_id"],
+                    client_secret=gmail_client_config["client_secret"],
+                    scopes=["https://www.googleapis.com/auth/gmail.modify",
+                            "https://www.googleapis.com/auth/gmail.settings.basic"],
+                )
+
+                if not gmail_creds.valid:
+                    gmail_creds.refresh(Request())
+                    gmail_tokens["access_token"] = gmail_creds.token
+                    with open(f"{GMAIL_CREDS_DIR}/credentials.json", "w") as gf:
+                        json.dump(gmail_tokens, gf, indent=2)
+
+                gmail_svc = gmail_build("gmail", "v1", credentials=gmail_creds)
+
+                # Get original message for threadId and subject
+                original_msg = gmail_svc.users().messages().get(
+                    userId="me", id=email_message_id, format="metadata",
+                    metadataHeaders=["Subject", "From", "To", "Cc", "Date"],
+                ).execute()
+
+                orig_hdrs = original_msg.get("payload", {}).get("headers", [])
+                orig_hdr_map = {}
+                for h in orig_hdrs:
+                    orig_hdr_map[h["name"].lower()] = h["value"]
+
+                email_subject = orig_hdr_map.get("subject", "")
+                email_thread_id = original_msg.get("threadId", "")
+
+                # Get full thread for conversation context
+                if email_thread_id:
+                    thread_data = gmail_svc.users().threads().get(
+                        userId="me", id=email_thread_id, format="metadata",
+                        metadataHeaders=["Subject", "From", "To", "Date"],
+                    ).execute()
+
+                    for tmsg in thread_data.get("messages", []):
+                        tmsg_hdrs = tmsg.get("payload", {}).get("headers", [])
+                        tmsg_hdr_map = {}
+                        for h in tmsg_hdrs:
+                            tmsg_hdr_map[h["name"].lower()] = h["value"]
+                        thread_messages.append({
+                            "author": tmsg_hdr_map.get("from", ""),
+                            "text": tmsg.get("snippet", ""),
+                            "created_time": tmsg_hdr_map.get("date", ""),
+                        })
+            except Exception:
+                # Non-fatal: proceed without thread context
+                pass
+
+            # Extract source text from passage's SOURCE TEXT section
+            source_text_match = re.search(r"SOURCE TEXT\n(.*)", text, re.DOTALL)
+            if source_text_match:
+                source_comment_text = source_text_match.group(1).strip()
+
+            # Fall back to passage Location field for subject if Gmail API failed
+            if not email_subject:
+                location_match = re.search(r"^- Location: (.+)$", text, re.MULTILINE)
+                if location_match:
+                    email_subject = location_match.group(1).strip()
+
+            draft = f"Thanks, {first_name} \u2014 {task_description.lower()}. Done!"
+
             return {
                 "status": "ok",
                 "ref_id": ref_id,
                 "source_type": source_type,
                 "from_person": from_person,
                 "task_description": task_description,
-                "should_send_feedback": False,
-                "reason": "Email follow-ups should be manual. Consider sending a reply to the original thread.",
-                "suggested_action": "manual_followup",
-                "routing": {},
-                "draft_message": "",
+                "should_send_feedback": True,
+                "reason": f"External request from {from_person} via email",
+                "suggested_action": "draft_reply",
+                "routing": {
+                    "tool": "draft_reply_to_email",
+                    "args": {
+                        "message_id": email_message_id,
+                        "reply_all": True,
+                    },
+                },
+                "draft_message": draft,
                 "resolve_after_reply": False,
+                "source_comment_text": source_comment_text,
+                "document_title": email_subject,
+                "comment_thread": thread_messages,
                 "error_message": "",
             }
 
