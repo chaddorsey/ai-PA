@@ -51,7 +51,9 @@ def draft_reply_to_email(
     """
     import json
     import base64
+    import html as html_mod
     import traceback
+    from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
@@ -186,14 +188,32 @@ def draft_reply_to_email(
 
         # Build body with quoted text from the last message
         quote_source = last_body_text.strip() if last_body_text else ""
-        if quote_source:
-            quoted_lines = "\n".join(f"> {line}" for line in quote_source.split("\n"))
-            full_body = f"{reply_text.strip()}\n\nOn {last_date}, {last_from} wrote:\n{quoted_lines}"
-        else:
-            full_body = reply_text.strip()
+        reply_clean = reply_text.strip()
 
-        # Build MIME message (plain text only)
-        message = MIMEText(full_body, "plain")
+        if quote_source:
+            # Plain text version
+            quoted_lines = "\n".join(f"> {line}" for line in quote_source.split("\n"))
+            plain_body = f"{reply_clean}\n\nOn {last_date}, {last_from} wrote:\n{quoted_lines}"
+
+            # HTML version — gmail_quote class triggers collapsible "..." in Gmail
+            reply_html = html_mod.escape(reply_clean).replace("\n", "<br>")
+            attr_html = html_mod.escape(f"On {last_date}, {last_from} wrote:")
+            quote_html = html_mod.escape(quote_source).replace("\n", "<br>\n")
+            html_body = (
+                f'<div dir="ltr">{reply_html}</div><br>\n'
+                f'<div class="gmail_quote">'
+                f'<div dir="ltr" class="gmail_attr">{attr_html}<br></div>'
+                f'<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;'
+                f'border-left:1px solid rgb(204,204,204);padding-left:1ex">'
+                f'{quote_html}'
+                f'</blockquote></div>'
+            )
+
+            message = MIMEMultipart("alternative")
+            message.attach(MIMEText(plain_body, "plain"))
+            message.attach(MIMEText(html_body, "html"))
+        else:
+            message = MIMEText(reply_clean, "plain")
         message["To"] = reply_to
         message["Subject"] = reply_subject
 
