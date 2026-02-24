@@ -6,9 +6,9 @@ This document tracks in-flight system improvement projects that have been design
 
 ---
 
-## 1. Archive Embedding Configuration Migration
+## 1. Archive Embedding Configuration Migration (COMPLETED)
 
-**Status:** Planned — not started
+**Status:** Implemented and deployed — 7-day soak period until 2026-03-02
 **Plan:** [2026-02-23-archive-embedding-migration.md](2026-02-23-archive-embedding-migration.md)
 **Risk:** Medium (data involved, but phased approach with rollback)
 **Estimated effort:** 1-2 hours hands-on + 24-hour verification soak
@@ -25,26 +25,19 @@ This document tracks in-flight system improvement projects that have been design
 
 ---
 
-## 2. Completion Feedback Loop (Source Notification on Task Completion)
+## 2. Completion Feedback Loop (Source Notification on Task Completion) (COMPLETED)
 
-**Status:** Designed — not started
+**Status:** Implemented and deployed (Phase 1: all source types routed)
 **Plan:** [2026-02-23-completion-feedback-loop-design.md](2026-02-23-completion-feedback-loop-design.md)
-**Risk:** Low (additive feature, human-in-loop approval)
-**Estimated effort:** 2-3 hours for Phase 1 (Google Docs only)
 
-**Problem:** When extracted tasks are completed in OmniFocus, `sync_omnifocus_completions` updates the Letta archive — but the original requester (e.g., a colleague who left a Google Doc comment or sent a Slack message) has no visibility that the task was done.
+**What was built:**
+- `prepare_completion_feedback` tool — looks up completed passage, parses source type, returns routing info + draft message. Supports google-docs-comment (reply + resolve), slack (threaded reply), email (manual followup flag).
+- `sync_omnifocus_completions` updated — return details now include `source_type`, `from_person`, `has_external_origin` for each completed task.
+- `reply_to_document_comment` and `resolve_document_comment` tools attached to `tasks-agent-sleeptime` (Option A — direct attachment).
+- Agent persona block updated with Completion Feedback Loop instructions (human-in-loop approval required).
+- Tool IDs: `prepare_completion_feedback: tool-a462ba54-d411-454e-bc16-325943e6a6d3`, `sync_omnifocus_completions: tool-9ac0d26a-fa94-4ab2-9105-ab45cc9a3efb`.
 
-**Solution:** New `prepare_completion_feedback` tool that parses completed passage metadata, determines the feedback channel (Google Docs reply, Slack thread, email flag), drafts a message, and routes it for user approval before sending. Phased rollout:
-1. **Phase 1:** Google Doc comments only (reply + resolve)
-2. **Phase 2:** Slack messages (threaded reply)
-3. **Phase 3:** Email (flagging only, no auto-reply)
-
-**Key decisions:**
-- Human-in-loop for all feedback initially (agent presents draft via Slack DM, user approves/modifies/skips)
-- `sync_omnifocus_completions` gets minor modification to include `source_type`, `from_person`, `has_external_origin` in return details
-- `reply_to_document_comment` and `resolve_document_comment` tools attached to `tasks-agent-sleeptime` (or cross-agent delegation as fallback)
-
-**Depends on:** Archive embedding migration (optional but beneficial for semantic passage lookup)
+**Verification:** Tested reference_id parsing for all 3 source types (google-docs-comment, slack, email). Confirmed 4 active `confirmed` passages with external origins correctly detected. Agent will suggest feedback on next OmniFocus completion sync cycle.
 
 ---
 
@@ -104,11 +97,9 @@ This is the foundation that items 1 and 2 build upon. Listed here for reference 
 
 ## Execution Order
 
-Remaining work:
+All items complete. Remaining monitoring:
 
-1. **Archive Embedding Migration** (item 1) — fixes infrastructure that other features depend on
-2. **Completion Feedback Loop** (item 2) — builds on the sync tool and benefits from working semantic search
+- **Item 1 (Archive Embedding Migration):** 7-day soak period for DEPRECATED archives (delete after 2026-03-02)
+- **Item 3 (Meeting Follow-up Pipeline):** Awaiting production verification on next real meeting via Granola cron
 
-Items 1-2 can be shelved and picked up independently. The feedback loop can proceed without the embedding migration (it uses substring search as a fallback), but semantic search would make the `prepare_completion_feedback` tool more robust.
-
-**Completed:** Item 3 (meeting follow-up fix deployed, awaiting production verification), Item 4 (OmniFocus sync), Item 5 (Slack pipeline).
+**Completed:** All 5 items — Item 1 (archive embedding migration), Item 2 (completion feedback loop), Item 3 (meeting follow-up fix deployed), Item 4 (OmniFocus sync), Item 5 (Slack pipeline).

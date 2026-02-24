@@ -47,10 +47,7 @@ def sync_omnifocus_completions() -> Dict[str, Any]:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
         ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         BRIDGE_URL = "http://host.docker.internal:8889"
-        # The tasks-agent-sleeptime has the archive attached and supports
-        # substring search via its archival-memory endpoint. The archive
-        # itself has no embedding_config, so /v1/passages/search (semantic)
-        # returns empty. Using agent archival-memory ?search= instead.
+        # Use agent archival-memory substring search for reliable text matching.
         AGENT_ID = os.getenv("LETTA_AGENT_ID", "agent-62edcfac-2cc7-41a5-a3c2-d417da393397")
 
         tz = pytz.timezone("America/New_York")
@@ -80,6 +77,7 @@ def sync_omnifocus_completions() -> Dict[str, Any]:
             }
 
         # ── Step 2: Extract OmniFocus task IDs and ref_ids from passages ──
+        USER_NAME = "Chad Dorsey"  # Used to detect external origins
         task_map = {}
         for p in confirmed_passages:
             text = p.get("text", "")
@@ -89,11 +87,20 @@ def sync_omnifocus_completions() -> Dict[str, Any]:
                 of_id = task_id_match.group(1)
                 ref_id = ref_match.group(1)
                 if of_id != "pending":
+                    # Extract source metadata for feedback routing
+                    source_type_match = re.search(r"- Type: (.+)$", text, re.MULTILINE)
+                    from_person_match = re.search(r"- From: (.+)$", text, re.MULTILINE)
+                    source_type = source_type_match.group(1).strip() if source_type_match else ""
+                    from_person = from_person_match.group(1).strip() if from_person_match else ""
+
                     task_map[of_id] = {
                         "ref_id": ref_id,
                         "passage_id": p.get("id", ""),
                         "text": text,
                         "tags": p.get("tags", []),
+                        "source_type": source_type,
+                        "from_person": from_person,
+                        "has_external_origin": bool(from_person and USER_NAME not in from_person),
                     }
 
         if not task_map:
@@ -226,6 +233,9 @@ def sync_omnifocus_completions() -> Dict[str, Any]:
                 "action": action,
                 "task_name": status.get("name", ""),
                 "new_passage_id": new_passage_id,
+                "source_type": info.get("source_type", ""),
+                "from_person": info.get("from_person", ""),
+                "has_external_origin": info.get("has_external_origin", False),
             })
 
         return {
