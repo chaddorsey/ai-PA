@@ -393,6 +393,45 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             except Exception as qe:
                 pass  # Queue write failure is non-fatal; scan package still returns
 
+        # ── Pre-compute prepare_meeting_followup args ──
+        # Embedding these in the return ensures the agent sees them even
+        # after context compaction (tool returns survive compaction).
+        followup_my = []
+        for item in my_tasks:
+            action = item["text"]
+            if item.get("deadline_hint"):
+                action += f" ({item['deadline_hint']})"
+            followup_my.append(action)
+
+        followup_their = []
+        for item in their_tasks:
+            action = item["text"]
+            if item.get("deadline_hint"):
+                action += f" ({item['deadline_hint']})"
+            followup_their.append(action)
+
+        followup_decisions = [item["text"] for item in decisions]
+
+        next_action = {
+            "tool": "prepare_meeting_followup",
+            "pre_computed_args": {
+                "meeting_id": meeting_id,
+                "meeting_title": meeting_title,
+                "meeting_date": meeting_date,
+                "participants": ", ".join(participants),
+                "decisions": " | ".join(followup_decisions),
+                "my_actions": " | ".join(followup_my),
+                "their_actions": " | ".join(followup_their),
+            },
+            "instruction": (
+                "REQUIRED: Call prepare_meeting_followup with the pre_computed_args above. "
+                "You may augment my_actions or their_actions with additional items from "
+                "your semantic review before calling. For their_actions, prefix each item "
+                "with the assignee name (e.g., 'Rebecca: Create task list'). "
+                "If there are truly no actions or decisions, you may skip the call."
+            ),
+        }
+
         return {
             "status": "ok",
             "meeting_id": meeting_id,
@@ -410,6 +449,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             "has_user_notes": bool(private_notes),
             "doc_urls_found": doc_urls,
             "queued_to_block": queued_count,
+            "next_action": next_action,
         }
 
     except Exception as e:
