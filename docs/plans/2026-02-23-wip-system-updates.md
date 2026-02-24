@@ -50,10 +50,10 @@ This document tracks in-flight system improvement projects that have been design
 
 ## 3. Meeting Follow-up Email Pipeline (Compaction Fix)
 
-**Status:** Partially built — tools deployed, but agent drops the email draft step due to context compaction
+**Status:** Fix deployed (Option B) — awaiting production verification on next real meeting
 **Plan:** [2026-02-17-meeting-notes-processing-design.md](2026-02-17-meeting-notes-processing-design.md) / [2026-02-17-meeting-notes-processing-tasks.md](2026-02-17-meeting-notes-processing-tasks.md)
-**Risk:** Low (existing infrastructure, needs reliability fix)
-**Estimated effort:** 1-2 hours depending on approach
+**Risk:** Low
+**Estimated effort:** Done (verification remaining)
 
 **What's deployed and working:**
 - `scan_meeting_notes` tool — registered on Granola agent, called on every new meeting (13+ calls observed)
@@ -63,13 +63,13 @@ This document tracks in-flight system improvement projects that have been design
 - Granola import cron jobs (3 jobs covering business hours, off-hours, weekends)
 - Marker convention updated to `[c]` for Chad tasks (2026-02-23; Granola was swallowing `[ ]`)
 
-**The problem:** After `scan_meeting_notes` returns, Letta's context compaction fires (the scan result + meeting content is large), and the agent loses the instruction to call `prepare_meeting_followup`. It produces a text summary instead of creating the Gmail draft. Result: 16 scans, only 1 followup call (and that one had empty args).
+**The problem (now fixed):** After `scan_meeting_notes` returned, Letta's context compaction fired (the scan result + meeting content is large), and the agent lost the instruction to call `prepare_meeting_followup`. It produced a text summary instead of creating the Gmail draft. Result: 16 scans, only 1 followup call (and that one had empty args).
 
-**Options under consideration:**
-- **Option B (cheapest):** Embed pre-computed followup call arguments directly in the scan tool's return value, so the agent sees "call prepare_meeting_followup with these exact args" in the data it's processing — tool returns survive compaction
-- **Option D (most robust):** Move the deterministic scan-to-draft pipeline outside the agent entirely (scheduler/script calls tools directly via API, no LLM needed); agent only involved for optional semantic augmentation
+**Fix applied (2026-02-23):** Option B — `scan_meeting_notes` now returns a `next_action` block with pre-computed `prepare_meeting_followup` args embedded in the tool return. Tool returns survive compaction. Tested with zero-marker meetings and marker-rich meetings (Rebecca meeting with 4 `[;]` items — all correctly populated in pipe-separated format). The instruction tells the agent to call the tool with the pre-computed args, allowing semantic augmentation before calling.
 
 **Also fixed (2026-02-23):** Marker regex bug — `\[\s?\]` only matched `[ ]`/`[]`, missing `[  ]`/`[   ]` variants users actually typed. Now uses `[c]` convention which avoids the Granola checkbox problem entirely.
+
+**Verification:** Monitor the next real meeting archived via Granola cron. Check Gmail drafts and agent message history for `prepare_meeting_followup` calls.
 
 ---
 
@@ -87,39 +87,28 @@ This is the foundation that items 1 and 2 build upon. Listed here for reference 
 
 ---
 
-## 5. Slack Task Extraction Pipeline (Event-Driven Trigger)
+## 5. Slack Task Extraction Pipeline (Event-Driven Trigger) (COMPLETED)
 
-**Status:** Partially implemented — shortcut trigger code written, guidelines updated, needs deploy + remaining queue drain
-**Risk:** Low (additive change to existing infrastructure)
-**Estimated effort:** 30 min remaining (deploy slackbot, drain 6 backlogged items)
+**Status:** Implemented and deployed
+**Risk:** Low
 
-**What was already built:**
-- "Send to Tasks" Slack shortcuts (silent + modal with notes)
-- `queued_tasks_from_slack` memory block on Pulse Monitor agent
-- `task_extraction_process_slack` guidelines block with detailed extraction rules
-- `add_extracted_tasks` tool with atomic queue cleanup
-- Pulse agent has full Slack toolkit + Drive tools for context enrichment
+**What was built:**
+- **Event-driven trigger** in `send_to_tasks.py`: both shortcut callbacks (`send_to_tasks_callback` and `send_to_tasks_view_callback`) use `_queue_and_trigger` — writes to queue, then sends agent message (sequenced to prevent race condition)
+- **Context Enrichment Protocol** in guidelines block: agent fetches linked documents and surrounding Slack context
+- **Queue format**: `---` separators (consistent with other queues, required for atomic cleanup)
+- **Separator pile-up fix** in `add_extracted_tasks` cleanup logic: drops whitespace-only segments after removing matched entries
 
-**The gap:** No automated trigger between queue write and agent processing. 11 items accumulated without extraction (0 Slack-sourced tasks in the archive).
-
-**What was built (2026-02-23):**
-- **Event-driven trigger** in `send_to_tasks.py`: after writing to queue, sends a message to the Pulse agent with item context, triggering immediate extraction
-- **Context Enrichment Protocol** added to guidelines: agent fetches linked documents (`get_drive_file_info`) and searches Slack for surrounding context when message text is sparse or ambiguous
-- **Queue format fix**: changed from newline-separated JSON to `---` separators (consistent with other queues, required for atomic cleanup)
-- **Tested:** We News item (straightforward) and TechNexus item (bare URL requiring enrichment) both extracted successfully
-
-**Remaining:**
-- Deploy slackbot rebuild (`docker-compose up -d --build slackbot`)
-- Drain 6 remaining backlogged queue items via individual agent messages
+**Deployed (2026-02-23):** Slackbot rebuilt. All 6 backlogged queue items drained and extracted successfully (ref_ids: a9c30072, e380b050, f2bbf4c8, d900127f, 7d1e75b2, 508e121a). Queue block cleaned to empty. `add_extracted_tasks` tool scoped to 8 relevant agents (was incorrectly on all 25).
 
 ---
 
 ## Execution Order
 
-The recommended order for tackling these projects:
+Remaining work:
 
-1. **Meeting Follow-up Pipeline fix** (item 3) — smallest scope, highest daily impact (every meeting triggers it)
-2. **Archive Embedding Migration** (item 1) — fixes infrastructure that other features depend on
-3. **Completion Feedback Loop** (item 2) — builds on the sync tool and benefits from working semantic search
+1. **Archive Embedding Migration** (item 1) — fixes infrastructure that other features depend on
+2. **Completion Feedback Loop** (item 2) — builds on the sync tool and benefits from working semantic search
 
-Items 1-3 can be shelved and picked up independently. The feedback loop can proceed without the embedding migration (it uses substring search as a fallback), but semantic search would make the `prepare_completion_feedback` tool more robust.
+Items 1-2 can be shelved and picked up independently. The feedback loop can proceed without the embedding migration (it uses substring search as a fallback), but semantic search would make the `prepare_completion_feedback` tool more robust.
+
+**Completed:** Item 3 (meeting follow-up fix deployed, awaiting production verification), Item 4 (OmniFocus sync), Item 5 (Slack pipeline).

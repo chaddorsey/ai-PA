@@ -334,7 +334,7 @@ def add_extracted_tasks(
         if project:
             tags.append(f"project:{project}")
 
-        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
+        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         archival_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
         tags.append(f"agent:{AGENT_ID}")
         archival_data = {"text": passage_text, "tags": tags}

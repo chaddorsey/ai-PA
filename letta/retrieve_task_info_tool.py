@@ -67,7 +67,7 @@ def retrieve_task_info(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
+        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         SEARCH_URL = f"{LETTA_BASE}/v1/passages/search"
 
         # Field extraction patterns (used for both primary and child passages)

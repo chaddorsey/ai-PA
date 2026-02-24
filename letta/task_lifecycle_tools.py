@@ -50,7 +50,7 @@ def update_extracted_task(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
+        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         calling_agent = os.getenv("LETTA_AGENT_ID")
 
         if not any([task_description, source_context, source_text]):
@@ -192,7 +192,7 @@ def transition_extracted_task(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
+        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         calling_agent = os.getenv("LETTA_AGENT_ID")
 
         valid_actions = {"confirm", "reject", "complete"}
@@ -373,7 +373,7 @@ def merge_extracted_tasks(
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        ARCHIVE_ID = "archive-3f0530eb-82db-463a-a28b-f4752a95d7d5"
+        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         calling_agent = os.getenv("LETTA_AGENT_ID")
 
         # Parse ref_ids
