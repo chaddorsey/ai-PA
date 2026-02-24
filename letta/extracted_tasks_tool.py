@@ -379,6 +379,8 @@ def add_extracted_tasks(
                 filtered = [p for p in parts if cleanup_entry_identifier not in p]
 
                 if len(filtered) < original_count:
+                    # Drop whitespace-only segments to prevent separator pile-up
+                    filtered = [p for p in filtered if p.strip()]
                     new_cleanup_value = "---".join(filtered).strip()
                     if new_cleanup_value:
                         new_cleanup_value += "\n---"
