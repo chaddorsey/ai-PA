@@ -136,7 +136,28 @@ def draft_reply_to_email(
         last_message_id = last_header_map.get("message-id", "")
         last_references = last_header_map.get("references", "")
         last_date = last_header_map.get("date", "")
-        last_snippet = last_msg.get("snippet", "")
+        last_gmail_id = last_msg.get("id", "")
+
+        # Fetch full body of the last message (snippet is truncated to ~200 chars)
+        last_body_text = ""
+        if last_gmail_id:
+            last_full = gmail.users().messages().get(
+                userId="me", id=last_gmail_id, format="full",
+            ).execute()
+            payload = last_full.get("payload", {})
+
+            # Extract plain text from MIME parts
+            parts_to_check = [payload]
+            while parts_to_check:
+                part = parts_to_check.pop(0)
+                mime = part.get("mimeType", "")
+                if mime == "text/plain" and part.get("body", {}).get("data"):
+                    last_body_text = base64.urlsafe_b64decode(
+                        part["body"]["data"]
+                    ).decode("utf-8", errors="replace")
+                    break
+                if part.get("parts"):
+                    parts_to_check.extend(part["parts"])
 
         # Build reply subject
         reply_subject = orig_subject
@@ -164,10 +185,9 @@ def draft_reply_to_email(
                 reply_cc = ", ".join(all_recipients)
 
         # Build body with quoted text from the last message
-        quoted_lines = "\n".join(
-            f"> {line}" for line in last_snippet.split("\n")
-        ) if last_snippet else ""
-        if quoted_lines:
+        quote_source = last_body_text.strip() if last_body_text else ""
+        if quote_source:
+            quoted_lines = "\n".join(f"> {line}" for line in quote_source.split("\n"))
             full_body = f"{reply_text.strip()}\n\nOn {last_date}, {last_from} wrote:\n{quoted_lines}"
         else:
             full_body = reply_text.strip()
