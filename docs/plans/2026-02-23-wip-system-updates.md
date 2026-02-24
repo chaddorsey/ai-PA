@@ -95,11 +95,45 @@ This is the foundation that items 1 and 2 build upon. Listed here for reference 
 
 ---
 
+## 6. Agent Outbound Notifications (Slack Notify)
+
+**Status:** Implemented and deployed (Combined Stage 1+3: interactive Slack blocks)
+**Plan:** [2026-02-23-agent-outbound-notifications-design.md](2026-02-23-agent-outbound-notifications-design.md)
+
+**What was built:**
+- Slackbot `POST /api/notify` endpoint — receives notification from agent, renders Block Kit with Send Reply/Modify/Skip buttons, posts Slack DM, stores pending reply record in Supabase
+- Supabase `pending_agent_replies` table — maps thread_ts → originating agent for reply routing
+- Notification action handlers — `@app.action("notification_approve/modify/skip")` handlers route user responses back to originating agent
+- Modify modal — pre-filled with suggested reply text, user edits and submits
+- Thread-aware routing in DM handler — replies in notification threads route to originating agent (not default routing)
+- Letta `send_slack_dm` tool (`tool-ea101b75-64b5-408d-9bb0-efd00933c9db`) — attached to `tasks-agent-sleeptime`
+- Agent persona block updated with `send_slack_dm` instructions for completion feedback loop
+
+**Key files:**
+- `slackbot/health_check.py` — `/api/notify` POST handler
+- `slackbot/services/pending_replies.py` — Supabase CRUD for pending replies
+- `slackbot/adapters/notification_blocks.py` — Block Kit renderer
+- `slackbot/listeners/actions/notification_actions.py` — button action handlers
+- `slackbot/listeners/views/notification_modify.py` — modify modal handler
+- `slackbot/listeners/messages/message_im_hybrid.py` — thread-aware routing addition
+- `letta/send_slack_dm_tool.py` — Letta tool source
+
+**Verification:** Test notification posted to Slack DM with interactive buttons. Pending reply record created in Supabase and resolved correctly. Slackbot rebuilt and healthy.
+
+**Evolution path:** Stage 2 (multi-channel delivery via web-ui), Stage 4 (full outbound routing service).
+
+**Depends on:** Item 2 (Completion Feedback Loop) — already deployed.
+
+---
+
 ## Execution Order
 
-All items complete. Remaining monitoring:
+Items 1-6 complete.
+
+Remaining monitoring:
 
 - **Item 1 (Archive Embedding Migration):** 7-day soak period for DEPRECATED archives (delete after 2026-03-02)
 - **Item 3 (Meeting Follow-up Pipeline):** Awaiting production verification on next real meeting via Granola cron
+- **Item 6 (Outbound Notifications):** Awaiting production verification on next OmniFocus completion sync with external-origin task
 
-**Completed:** All 5 items — Item 1 (archive embedding migration), Item 2 (completion feedback loop), Item 3 (meeting follow-up fix deployed), Item 4 (OmniFocus sync), Item 5 (Slack pipeline).
+**Completed:** Items 1-6 — archive embedding migration, completion feedback loop, meeting follow-up fix, OmniFocus sync, Slack pipeline, agent outbound notifications.

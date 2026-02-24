@@ -269,6 +269,40 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         logger.error(f"❌ No channel_id found in DM event!")
         return
 
+    # ── Thread-aware routing for agent notifications ──
+    # If this message is a reply in a thread that matches a pending agent
+    # notification, route it to the originating agent instead of default routing.
+    thread_ts = event.get("thread_ts")
+    if thread_ts and text:
+        try:
+            from services.pending_replies import get_pending_reply_by_thread
+            pending = get_pending_reply_by_thread(thread_ts)
+            if pending:
+                logger.info(
+                    "Thread reply matches pending notification %s — routing to agent %s",
+                    pending["id"], pending["agent_id"],
+                )
+                from listeners.actions.notification_actions import _send_to_agent
+                from services.pending_replies import resolve_pending_reply
+                resolve_pending_reply(pending["id"])
+                _send_to_agent(
+                    agent_id=pending["agent_id"],
+                    message=(
+                        f"User replied to notification (ref_id {pending.get('reply_context', {}).get('ref_id', 'unknown')}): "
+                        f"\"{text}\"\n\n"
+                        f"Treat this as a custom reply for the completion feedback. "
+                        f"Use this text as the reply_text when calling the routing tool."
+                    ),
+                    user_id=user_id,
+                    channel_id=channel_id,
+                    thread_ts=thread_ts,
+                    client=client,
+                    logger=logger,
+                )
+                return
+        except Exception as thread_err:
+            logger.warning("Thread-aware routing check failed: %s", thread_err)
+
     # Debug: Log the actual channel and user IDs received
     logger.info(
         "DM Event - Channel ID: '%s', User ID: '%s', Channel Type: '%s'",

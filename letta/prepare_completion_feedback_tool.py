@@ -45,8 +45,11 @@ def prepare_completion_feedback(
         - reason: Why feedback should or should not be sent
         - suggested_action: Action type (e.g., "reply_and_resolve", "threaded_reply", "manual_followup")
         - routing: Dict with tool name and pre-parsed args for dispatching
-        - draft_message: Suggested feedback message text
+        - draft_message: Suggested feedback message text (fallback template)
         - resolve_after_reply: Whether to resolve the comment after replying
+        - source_comment_text: The original comment/message text that triggered the task
+        - document_title: The title of the source document (if applicable)
+        - comment_thread: List of existing replies on the comment thread
         - error_message: Error details if status is "error"
     """
     import os
@@ -60,7 +63,8 @@ def prepare_completion_feedback(
         "status": "", "ref_id": "", "source_type": "", "from_person": "",
         "task_description": "", "should_send_feedback": False, "reason": "",
         "suggested_action": "", "routing": {}, "draft_message": "",
-        "resolve_after_reply": False, "error_message": "",
+        "resolve_after_reply": False, "source_comment_text": "",
+        "document_title": "", "comment_thread": [], "error_message": "",
     }
 
     try:
@@ -167,6 +171,61 @@ def prepare_completion_feedback(
             # Extract person's first name for a natural message
             first_name = from_person.split()[0] if from_person else "there"
 
+            # ── Fetch the original comment from Google Drive API ──
+            # Best-effort: if this fails, we proceed with empty context
+            source_comment_text = ""
+            document_title = ""
+            comment_thread = []
+            try:
+                from pathlib import Path
+                from google.oauth2.credentials import Credentials
+                from google.auth.transport.requests import Request
+                from googleapiclient.discovery import build
+
+                TOKEN_PATH = os.getenv(
+                    "GMAIL_CREDENTIALS_PATH",
+                    str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
+                )
+                SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+
+                creds = None
+                if os.path.exists(TOKEN_PATH):
+                    creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                    with open(TOKEN_PATH, "w") as token:
+                        token.write(creds.to_json())
+
+                if creds and creds.valid:
+                    service = build("drive", "v3", credentials=creds)
+
+                    # Get document title
+                    file_info = service.files().get(
+                        fileId=file_id,
+                        fields="name",
+                        supportsAllDrives=True,
+                    ).execute()
+                    document_title = file_info.get("name", "")
+
+                    # Get the specific comment with replies
+                    comment_data = service.comments().get(
+                        fileId=file_id,
+                        commentId=comment_id,
+                        fields="content,author(displayName),createdTime,resolved,replies(content,author(displayName),createdTime)",
+                        includeDeleted=False,
+                    ).execute()
+
+                    source_comment_text = comment_data.get("content", "")
+                    for reply in comment_data.get("replies", []):
+                        comment_thread.append({
+                            "author": reply.get("author", {}).get("displayName", ""),
+                            "text": reply.get("content", ""),
+                            "created_time": reply.get("createdTime", ""),
+                        })
+            except Exception:
+                # Non-fatal: proceed without source context
+                pass
+
             is_dropped = omnifocus_status == "dropped"
             if is_dropped:
                 draft = f"This has been reviewed and won't be pursued at this time. Thanks for flagging it, {first_name}."
@@ -198,6 +257,9 @@ def prepare_completion_feedback(
                 },
                 "draft_message": draft,
                 "resolve_after_reply": True,
+                "source_comment_text": source_comment_text,
+                "document_title": document_title,
+                "comment_thread": comment_thread,
                 "error_message": "",
             }
 

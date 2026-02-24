@@ -594,6 +594,7 @@ services:
   # https://docs.letta.com/quickstart/docker
   letta:
     image: letta/letta:latest
+    entrypoint: ["/bin/bash", "/app/tools/letta/entrypoint-wrapper.sh"]
     ports:
       - "8283:8283"  # Letta web interface
     volumes:
@@ -634,6 +635,8 @@ services:
       # PostgREST access for analytics snapshot persistence
       SUPABASE_REST_URL: "http://supabase-rest:3000"
       SUPABASE_SERVICE_KEY: "${SUPABASE_SERVICE_KEY}"
+      # Slackbot notify endpoint for agent-initiated DMs
+      SLACKBOT_NOTIFY_URL: "http://slackbot:8081/api/notify"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 
@@ -751,6 +754,8 @@ services:
       # Supabase for conversation tracking
       SUPABASE_URL: "http://supabase-rest:3000"
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      # Owner Slack user ID for agent-initiated DM notifications
+      OWNER_SLACK_USER_ID: ${OWNER_SLACK_USER_ID}
       HEALTH_CHECK_PORT: "8081"
     ports:
       - "8083:8081"  # Health check port - external 8083, internal 8081
