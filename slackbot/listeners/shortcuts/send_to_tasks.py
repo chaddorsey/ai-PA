@@ -5,8 +5,9 @@ Two shortcuts:
   - send_to_tasks: Silent queue, ephemeral confirmation
   - send_to_tasks_modal: Opens modal for optional notes before queuing
 
-Messages are appended as JSON lines to the queued_tasks_from_slack
-memory block in Letta, for later processing by the Pulse agent.
+Messages are appended as JSON entries (separated by ---) to the
+queued_tasks_from_slack memory block in Letta, for processing by the
+Pulse agent.
 """
 import json
 import os
@@ -23,10 +24,17 @@ QUEUE_BLOCK_ID = os.getenv(
     "LETTA_TASK_QUEUE_BLOCK_ID",
     "block-033a720d-1f13-44a2-a5cb-b5edde418ea1",
 )
+PULSE_AGENT_ID = os.getenv(
+    "LETTA_PULSE_AGENT_ID",
+    "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
+)
 
 
 def _append_to_queue(entry: dict, logger: Logger) -> bool:
-    """Append a JSON-line entry to the queued_tasks_from_slack memory block.
+    """Append a JSON entry to the queued_tasks_from_slack memory block.
+
+    Uses --- separators between entries (consistent with other queue blocks,
+    required for atomic cleanup by add_extracted_tasks).
 
     Returns True on success, False on failure.
     """
@@ -40,14 +48,17 @@ def _append_to_queue(entry: dict, logger: Logger) -> bool:
         block = resp.json()
         current_value = block.get("value", "").strip()
 
-        # Build new JSON line
-        new_line = json.dumps(entry, ensure_ascii=False)
+        # Build new entry with --- separator
+        new_entry = json.dumps(entry, ensure_ascii=False)
 
-        # Append
+        # Append with --- separator
         if current_value:
-            updated = f"{current_value}\n{new_line}"
+            if current_value.endswith("---"):
+                updated = f"{current_value}\n{new_entry}\n---"
+            else:
+                updated = f"{current_value}\n---\n{new_entry}\n---"
         else:
-            updated = new_line
+            updated = f"{new_entry}\n---"
 
         # Write back
         resp = requests.patch(
@@ -123,6 +134,65 @@ def _build_queue_entry(info: dict, notes: str = "") -> dict:
     return entry
 
 
+def _queue_and_trigger(entry: dict, logger: Logger) -> None:
+    """Write to queue block, then trigger the Pulse agent.
+
+    Runs in a background thread. Sequenced so the queue entry exists
+    before the agent receives the extraction trigger.
+    """
+    if not _append_to_queue(entry, logger):
+        return  # Queue write failed — don't trigger without durable record
+
+    _trigger_extraction(entry, logger)
+
+
+def _trigger_extraction(entry: dict, logger: Logger) -> None:
+    """Send a message to the Pulse agent to extract the queued task.
+
+    Best-effort. If it fails, the entry stays in the queue for manual
+    or scheduled processing.
+    """
+    try:
+        text_preview = entry.get("text", "")[:200]
+        channel = entry.get("channel", "")
+        from_id = entry.get("from_id", "")
+        link = entry.get("link", "")
+        source_ref = entry.get("source_ref_id", "")
+        notes = entry.get("notes", "")
+
+        parts = [
+            "New task queued from Slack. Process this item from "
+            "queued_tasks_from_slack using add_extracted_tasks.",
+            f"Channel: {channel}",
+            f"From: {from_id}",
+            f"Text: {text_preview}",
+            f"Link: {link}",
+            f"source_ref_id (for cleanup_entry_identifier): {source_ref}",
+        ]
+        if notes:
+            parts.append(f"User notes: {notes}")
+        parts.append(
+            "Follow the task_extraction_process_slack guidelines "
+            "including the Context Enrichment Protocol. "
+            "Use cleanup_block_id=block-033a720d-1f13-44a2-a5cb-b5edde418ea1."
+        )
+        message = "\n".join(parts)
+
+        payload = json.dumps({
+            "messages": [{"role": "user", "content": message}]
+        })
+        resp = requests.post(
+            f"{LETTA_BASE_URL}/v1/agents/{PULSE_AGENT_ID}/messages/",
+            json=json.loads(payload),
+            timeout=120,
+        )
+        resp.raise_for_status()
+        logger.info(f"Triggered extraction for {source_ref}")
+
+    except Exception as e:
+        logger.error(f"Failed to trigger extraction: {e}", exc_info=True)
+
+
 def send_to_tasks_callback(body: dict, ack: Ack, client: WebClient, logger: Logger):
     """Silent send — queue message as task, show ephemeral confirmation."""
     ack()
@@ -131,14 +201,13 @@ def send_to_tasks_callback(body: dict, ack: Ack, client: WebClient, logger: Logg
         info = _extract_message_info(body, logger)
         logger.info(f"send_to_tasks triggered: channel={info['channel_id']}, text={info['text'][:50]}")
 
-        # Queue the task first (most important part)
+        # Queue the task and trigger extraction (sequenced in background)
         entry = _build_queue_entry(info)
-        thread = threading.Thread(
-            target=_append_to_queue,
+        threading.Thread(
+            target=_queue_and_trigger,
             args=(entry, logger),
             daemon=True,
-        )
-        thread.start()
+        ).start()
 
         # Try ephemeral confirmation (may fail in DMs/private channels)
         preview = info["text"][:100] + ("..." if len(info["text"]) > 100 else "")
@@ -238,13 +307,12 @@ def send_to_tasks_view_callback(ack: Ack, body: dict, view: dict, client: WebCli
 
         entry = _build_queue_entry(info, notes=notes)
 
-        # Append to memory block in background thread
-        thread = threading.Thread(
-            target=_append_to_queue,
+        # Queue the task and trigger extraction (sequenced in background)
+        threading.Thread(
+            target=_queue_and_trigger,
             args=(entry, logger),
             daemon=True,
-        )
-        thread.start()
+        ).start()
 
     except Exception as e:
         logger.error(f"send_to_tasks_view submission failed: {e}", exc_info=True)
