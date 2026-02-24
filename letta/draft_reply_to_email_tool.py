@@ -99,34 +99,52 @@ def draft_reply_to_email(
         gmail = build("gmail", "v1", credentials=creds)
         # --- End auth boilerplate ---
 
-        # Fetch original message for threading headers
+        # Fetch original message to get threadId
         original = gmail.users().messages().get(
             userId="me",
             id=message_id.strip(),
             format="metadata",
-            metadataHeaders=["Subject", "From", "To", "Cc", "Message-ID", "References"],
+            metadataHeaders=["Subject"],
         ).execute()
 
-        orig_headers = original.get("payload", {}).get("headers", [])
-        orig_header_map = {}
-        for h in orig_headers:
-            orig_header_map[h["name"].lower()] = h["value"]
-
-        orig_subject = orig_header_map.get("subject", "")
-        orig_from = orig_header_map.get("from", "")
-        orig_to = orig_header_map.get("to", "")
-        orig_cc = orig_header_map.get("cc", "")
-        orig_message_id = orig_header_map.get("message-id", "")
-        orig_references = orig_header_map.get("references", "")
         thread_id = original.get("threadId", "")
+        orig_hdrs = original.get("payload", {}).get("headers", [])
+        orig_subject = ""
+        for h in orig_hdrs:
+            if h["name"].lower() == "subject":
+                orig_subject = h["value"]
+
+        # Fetch full thread to find the most recent message
+        thread_data = gmail.users().threads().get(
+            userId="me",
+            id=thread_id,
+            format="metadata",
+            metadataHeaders=["Subject", "From", "To", "Cc", "Message-ID", "References", "Date"],
+        ).execute()
+
+        thread_msgs = thread_data.get("messages", [])
+        # Use the last message in the thread for reply context
+        last_msg = thread_msgs[-1] if thread_msgs else {}
+        last_headers = last_msg.get("payload", {}).get("headers", [])
+        last_header_map = {}
+        for h in last_headers:
+            last_header_map[h["name"].lower()] = h["value"]
+
+        last_from = last_header_map.get("from", "")
+        last_to = last_header_map.get("to", "")
+        last_cc = last_header_map.get("cc", "")
+        last_message_id = last_header_map.get("message-id", "")
+        last_references = last_header_map.get("references", "")
+        last_date = last_header_map.get("date", "")
+        last_snippet = last_msg.get("snippet", "")
 
         # Build reply subject
         reply_subject = orig_subject
         if not reply_subject.lower().startswith("re:"):
             reply_subject = f"Re: {reply_subject}"
 
-        # Determine recipients
-        reply_to = orig_from
+        # Determine recipients from the last message in the thread
+        reply_to = last_from
         reply_cc = ""
 
         if reply_all:
@@ -134,32 +152,41 @@ def draft_reply_to_email(
             profile = gmail.users().getProfile(userId="me").execute()
             my_email = profile.get("emailAddress", "").lower()
 
-            # Combine original To and Cc, excluding ourselves
+            # Combine last message's To and Cc, excluding ourselves
             all_recipients = []
-            for addr in (orig_to + "," + orig_cc).split(","):
+            for addr in (last_to + "," + last_cc).split(","):
                 addr = addr.strip()
                 if addr and my_email not in addr.lower():
                     all_recipients.append(addr)
 
-            # Original sender is the To, remaining go to Cc
+            # Last sender is the To, remaining go to Cc
             if all_recipients:
                 reply_cc = ", ".join(all_recipients)
 
+        # Build body with quoted text from the last message
+        quoted_lines = "\n".join(
+            f"> {line}" for line in last_snippet.split("\n")
+        ) if last_snippet else ""
+        if quoted_lines:
+            full_body = f"{reply_text.strip()}\n\nOn {last_date}, {last_from} wrote:\n{quoted_lines}"
+        else:
+            full_body = reply_text.strip()
+
         # Build MIME message (plain text only)
-        message = MIMEText(reply_text.strip(), "plain")
+        message = MIMEText(full_body, "plain")
         message["To"] = reply_to
         message["Subject"] = reply_subject
 
         if reply_cc:
             message["Cc"] = reply_cc
 
-        # Threading headers
-        if orig_message_id:
-            message["In-Reply-To"] = orig_message_id
-            if orig_references:
-                message["References"] = f"{orig_references} {orig_message_id}"
+        # Threading headers — reply to the last message in the thread
+        if last_message_id:
+            message["In-Reply-To"] = last_message_id
+            if last_references:
+                message["References"] = f"{last_references} {last_message_id}"
             else:
-                message["References"] = orig_message_id
+                message["References"] = last_message_id
 
         # Encode and create DRAFT (not send)
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
