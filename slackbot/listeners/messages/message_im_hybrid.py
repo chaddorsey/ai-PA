@@ -10,7 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from ai.providers.letta_stream import LettaAPIStreaming
-from ai.conversation_helper import get_conversation_for_user
+from ai.letta_conversation import get_or_create_letta_conversation
 from listeners.messages.status_messages import get_status_for_tool, get_default_status
 
 MAX_SLACK_MESSAGE_LENGTH = 3500  # Slack hard limit is 4000 characters; keep buffer for formatting
@@ -325,21 +325,23 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
             (f"DM so far:\n{conversation_context}\n\n") if conversation_context else ""
         ) + f"User <@{user_id}> says:\n{text or 'Hello'}"
 
-        system_prompt = "You are a helpful Slack bot. Be concise and helpful."
+        # No system prompt - the Letta agent already has its own system prompt.
+        # Adding a competing "You are a helpful Slack bot" here confuses the model
+        # and degrades multi-turn conversation quality.
+        system_prompt = None
 
         # Status already set above - no need to set again
 
-        # Get or create conversation for this user (enables per-user context isolation)
-        # Falls back to None (legacy agent-level messaging) if lookup/creation fails
+        # Get or create a Letta conversation for this Slack user.
+        # Uses Letta Conversations API directly — each user gets an isolated
+        # message history instead of sharing the agent's entire message buffer.
         conversation_id = None
         try:
-            conversation_id = get_conversation_for_user(user_id, logger=logger)
+            conversation_id = get_or_create_letta_conversation(user_id, logger=logger)
             if conversation_id:
-                logger.info(f"Using Letta conversation: {conversation_id} for user {user_id}")
-            else:
-                logger.info(f"Using legacy agent messaging for user {user_id} (no conversation)")
+                logger.error(f"Using Letta conversation: {conversation_id} for user {user_id}")
         except Exception as conv_err:
-            logger.warning(f"Conversation lookup failed, using legacy messaging: {conv_err}")
+            logger.error(f"Conversation lookup failed, using legacy messaging: {conv_err}")
 
         # Get full response from Letta with event detection
         streamer = LettaAPIStreaming(logger=logger, conversation_id=conversation_id)
