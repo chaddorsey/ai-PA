@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     http_retries: int = Field(default=2, alias="HTTP_RETRIES")
     http_retry_backoff: float = Field(default=1.0, alias="HTTP_RETRY_BACKOFF")
 
+    agent_message_timeout_seconds: float = Field(
+        default=300.0, alias="AGENT_MESSAGE_TIMEOUT_SECONDS"
+    )
+
     script_env_defaults: Dict[str, str] = Field(default_factory=dict)
 
     scheduler_db_password: SecretStr = Field(

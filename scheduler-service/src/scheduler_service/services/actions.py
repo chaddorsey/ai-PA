@@ -194,7 +194,8 @@ async def execute_agent_message_action(action_config: Dict[str, Any]) -> Dict[st
     # Letta API expects: {"messages": [{"role": "user"|"system", "content": "text"}]}
     started_at = datetime.utcnow()
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        timeout_seconds = action_config.get("timeout", settings.agent_message_timeout_seconds)
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(
                 url,
                 json={
