@@ -60,17 +60,17 @@ def update_extracted_task(
         now = datetime.now(tz)
         iso_timestamp = now.isoformat()
 
-        # ── Find archival passage by ref_id in shared archive ──
-        search_url = f"{LETTA_BASE}/v1/passages/search"
-        search_data = json.dumps({"query": f"REF_ID: {ref_id}", "archive_id": ARCHIVE_ID, "limit": 10}).encode('utf-8')
-        search_req = urllib.request.Request(search_url, data=search_data, headers={"Content-Type": "application/json"}, method='POST')
+        # ── Find archival passage by ref_id via agent archival memory ──
+        # Uses text substring search (?search=) which reliably matches ref_ids,
+        # unlike /v1/passages/search which uses unreliable semantic/vector search.
+        search_url = f"{LETTA_BASE}/v1/agents/{calling_agent}/archival-memory?search={ref_id}"
+        search_req = urllib.request.Request(search_url, method='GET')
         with urllib.request.urlopen(search_req, timeout=30) as resp:
             search_results = json.loads(resp.read().decode('utf-8'))
 
         target_passage = None
-        for result in search_results:
-            p = result.get('passage', {})
-            if f"REF_ID: {ref_id}" in p.get('text', ''):
+        for p in search_results:
+            if f"REF_ID: {ref_id}" in p.get('text', '') and p.get('archive_id') == ARCHIVE_ID:
                 target_passage = p
                 break
 
@@ -206,17 +206,17 @@ def transition_extracted_task(
         now = datetime.now(tz)
         iso_timestamp = now.isoformat()
 
-        # ── Find archival passage by ref_id in shared archive ──
-        search_url = f"{LETTA_BASE}/v1/passages/search"
-        search_data = json.dumps({"query": f"REF_ID: {ref_id}", "archive_id": ARCHIVE_ID, "limit": 10}).encode('utf-8')
-        search_req = urllib.request.Request(search_url, data=search_data, headers={"Content-Type": "application/json"}, method='POST')
+        # ── Find archival passage by ref_id via agent archival memory ──
+        # Uses text substring search (?search=) which reliably matches ref_ids,
+        # unlike /v1/passages/search which uses unreliable semantic/vector search.
+        search_url = f"{LETTA_BASE}/v1/agents/{calling_agent}/archival-memory?search={ref_id}"
+        search_req = urllib.request.Request(search_url, method='GET')
         with urllib.request.urlopen(search_req, timeout=30) as resp:
             search_results = json.loads(resp.read().decode('utf-8'))
 
         target_passage = None
-        for result in search_results:
-            p = result.get('passage', {})
-            if f"REF_ID: {ref_id}" in p.get('text', ''):
+        for p in search_results:
+            if f"REF_ID: {ref_id}" in p.get('text', '') and p.get('archive_id') == ARCHIVE_ID:
                 target_passage = p
                 break
 
@@ -387,17 +387,16 @@ def merge_extracted_tasks(
         year_month = now.strftime("%Y-%m")
         new_ref_id = uuid.uuid4().hex[:8]
 
-        # ── Search shared archive for each ref_id ──
+        # ── Search for each ref_id via agent archival memory ──
+        # Uses text substring search (?search=) which reliably matches ref_ids.
         found = {}
         for rid in id_list:
-            search_url = f"{LETTA_BASE}/v1/passages/search"
-            search_data = json.dumps({"query": f"REF_ID: {rid}", "archive_id": ARCHIVE_ID, "limit": 5}).encode('utf-8')
-            search_req = urllib.request.Request(search_url, data=search_data, headers={"Content-Type": "application/json"}, method='POST')
+            search_url = f"{LETTA_BASE}/v1/agents/{calling_agent}/archival-memory?search={rid}"
+            search_req = urllib.request.Request(search_url, method='GET')
             with urllib.request.urlopen(search_req, timeout=30) as resp:
                 search_results = json.loads(resp.read().decode('utf-8'))
-            for result in search_results:
-                p = result.get('passage', {})
-                if f"REF_ID: {rid}" in p.get('text', ''):
+            for p in search_results:
+                if f"REF_ID: {rid}" in p.get('text', '') and p.get('archive_id') == ARCHIVE_ID:
                     found[rid] = p
                     break
 

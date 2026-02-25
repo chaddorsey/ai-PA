@@ -70,7 +70,7 @@ def prepare_completion_feedback(
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
         ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
-        SEARCH_URL = f"{LETTA_BASE}/v1/passages/search"
+        AGENT_ID = os.getenv("LETTA_AGENT_ID")
         USER_NAME = "Chad Dorsey"
 
         if not ref_id or not ref_id.strip():
@@ -78,22 +78,16 @@ def prepare_completion_feedback(
 
         ref_id = ref_id.strip()
 
-        # ── Look up the passage ──
-        payload = json.dumps({
-            "query": f"REF_ID: {ref_id}",
-            "archive_id": ARCHIVE_ID,
-            "limit": 20,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            SEARCH_URL, data=payload,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
+        # ── Look up the passage via agent archival memory ──
+        # Uses text substring search (?search=) which reliably matches ref_ids,
+        # unlike /v1/passages/search which uses unreliable semantic/vector search.
+        search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory?search={ref_id}"
+        req = urllib.request.Request(search_url, method="GET")
         with urllib.request.urlopen(req, timeout=30) as resp:
             results = json.loads(resp.read().decode("utf-8"))
 
         target = None
-        for item in results:
-            p = item.get("passage", item)
+        for p in results:
             if f"REF_ID: {ref_id}" in p.get("text", "") and p.get("archive_id", "") == ARCHIVE_ID:
                 target = p
                 break

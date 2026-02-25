@@ -68,7 +68,7 @@ def retrieve_task_info(
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
         ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
-        SEARCH_URL = f"{LETTA_BASE}/v1/passages/search"
+        AGENT_ID = os.getenv("LETTA_AGENT_ID")
 
         # Field extraction patterns (used for both primary and child passages)
         FIELD_PATTERNS = [
@@ -98,24 +98,16 @@ def retrieve_task_info(
 
         ref_id = ref_id.strip()
 
-        # ── Search for primary passage ──
-        query = f"REF_ID: {ref_id}"
-
-        payload = json.dumps({
-            "query": query,
-            "archive_id": ARCHIVE_ID,
-            "limit": 20,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            SEARCH_URL, data=payload,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
+        # ── Search for primary passage via agent archival memory ──
+        # Uses text substring search (?search=) which reliably matches ref_ids,
+        # unlike /v1/passages/search which uses unreliable semantic/vector search.
+        search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory?search={ref_id}"
+        req = urllib.request.Request(search_url, method="GET")
         with urllib.request.urlopen(req, timeout=30) as resp:
             search_results = json.loads(resp.read().decode("utf-8"))
 
         target = None
-        for item in search_results:
-            p = item.get("passage", item)
+        for p in search_results:
             if f"REF_ID: {ref_id}" in p.get("text", "") and p.get("archive_id", "") == ARCHIVE_ID:
                 target = p
                 break
@@ -159,22 +151,14 @@ def retrieve_task_info(
 
             # Fetch source details from each child passage
             for child_rid in merged_ids:
-                child_payload = json.dumps({
-                    "query": f"REF_ID: {child_rid}",
-                    "archive_id": ARCHIVE_ID,
-                    "limit": 10,
-                }).encode("utf-8")
-                child_req = urllib.request.Request(
-                    SEARCH_URL, data=child_payload,
-                    headers={"Content-Type": "application/json"}, method="POST",
-                )
+                child_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory?search={child_rid}"
+                child_req = urllib.request.Request(child_url, method="GET")
 
                 child_passage = None
                 try:
                     with urllib.request.urlopen(child_req, timeout=30) as child_resp:
                         child_results = json.loads(child_resp.read().decode("utf-8"))
-                    for ci in child_results:
-                        cp = ci.get("passage", ci)
+                    for cp in child_results:
                         if f"REF_ID: {child_rid}" in cp.get("text", "") and cp.get("archive_id", "") == ARCHIVE_ID:
                             child_passage = cp
                             break
