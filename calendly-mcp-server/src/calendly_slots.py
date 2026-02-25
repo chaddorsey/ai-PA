@@ -302,7 +302,7 @@ async def slots_for_profile_or_event(url: str, tz: str, start: str, end: str,
 
 async def main_async(args):
     start = args.start or date.today().isoformat()
-    end   = args.end   or (date.fromisoformat(start) + timedelta(days=21)).isoformat()
+    end   = args.end   or (date.fromisoformat(start) + timedelta(days=60)).isoformat()
     out = await slots_for_profile_or_event(args.url, args.tz, start, end, args.sniff_wait, args.sleep)
 
     # Pretty print to stdout
@@ -339,7 +339,7 @@ def main():
     ap.add_argument("url", help="Profile URL (https://calendly.com/<owner>) or event URL (https://calendly.com/<owner>/<slug>)")
     ap.add_argument("--tz", default="America/New_York", help="IANA timezone for output (e.g., America/New_York)")
     ap.add_argument("--start", help="YYYY-MM-DD (default: today)")
-    ap.add_argument("--end", help="YYYY-MM-DD (default: start+21d)")
+    ap.add_argument("--end", help="YYYY-MM-DD (default: start+60d)")
     ap.add_argument("--sleep", type=float, default=0.35, help="Delay between per-day calls")
     ap.add_argument("--sniff-wait", type=float, default=6.0, help="Seconds to wait for XHRs while sniffing UUIDs")
     ap.add_argument("--out-json", help="Write full JSON output to this path")

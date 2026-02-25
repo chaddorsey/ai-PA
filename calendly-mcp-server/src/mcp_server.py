@@ -52,7 +52,7 @@ CALENDLY_TOOLS = [
                 },
                 "end": {
                     "type": "string",
-                    "description": "End date (YYYY-MM-DD). Defaults to start+21 days if omitted.",
+                    "description": "End date (YYYY-MM-DD). Defaults to start+60 days if omitted.",
                     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
                 }
             },
@@ -318,7 +318,7 @@ async def _handle_calendly_slots(arguments: Dict[str, Any]) -> Dict[str, Any]:
     
     end = arguments.get("end")
     if end is None:
-        end = (date.fromisoformat(start) + timedelta(days=21)).isoformat()
+        end = (date.fromisoformat(start) + timedelta(days=60)).isoformat()
     elif not isinstance(end, str):
         raise ValueError(
             f"Parameter 'end' must be a string in YYYY-MM-DD format, got {type(end).__name__}. "
