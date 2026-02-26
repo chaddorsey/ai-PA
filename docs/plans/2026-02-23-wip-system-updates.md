@@ -1,6 +1,6 @@
 # WIP System Updates Tracker
 
-**Last updated:** 2026-02-23
+**Last updated:** 2026-02-25
 
 This document tracks in-flight system improvement projects that have been designed but not yet fully implemented. Each entry links to its detailed plan document.
 
@@ -126,14 +126,115 @@ This is the foundation that items 1 and 2 build upon. Listed here for reference 
 
 ---
 
+## 7. Cross-Agent Awareness — Phase 1 (COMPLETED)
+
+**Status:** Implemented and deployed
+**Plan:** [Cross-Agent Awareness plan](../../.claude/plans/enchanted-pondering-thacker.md)
+
+**What was built:**
+- **Slackbot archival event writes** — fire-and-forget `threading.Thread` writes a summary of each Slack DM exchange to the main agent's archival memory. Tags: `memory:session`, `session:YYYY-MM-DD`, `agent:calendar-agent`, `source:slack`, `user:{id}`, `identity:{id}`.
+- **Core memory blocks** — `daily_awareness` (5000 chars, shared: main + sleeptime), `relationship_context` (5000 chars, shared), `consolidation_instructions` (3000 chars, sleeptime only). Sleeptime companion uses `memory_rethink` to consolidate archival passages into these blocks.
+- **`recall_activity` tool** — registered on main agent (`tool-50cc1a7f`). Searches archival memory for cross-interface activity by keyword, date range, and source filter. Uses text substring search (`?search=`) for reliability.
+- **Identity mapping** — `slackbot/ai/identity.py` resolves Slack user IDs to Letta identity IDs via the Identities API. `letta_conversation.py` rewritten: resolution order is cache → Supabase `user_conversations` → Letta labels (legacy) → create new. Stores identity_id in Supabase for cross-interface lookup. Archival writes include `identity:{id}` tag.
+
+**Key files:**
+- `slackbot/ai/identity.py` — Slack-to-Letta identity resolution
+- `slackbot/ai/letta_conversation.py` — identity-aware conversation management with Supabase tracking
+- `slackbot/listeners/messages/message_im_hybrid.py` — archival write + identity tag additions
+- `letta/awareness_tools/recall_activity.py` — Letta tool source
+- `letta/register_recall_activity_tool.py` — tool registration script
+- `scripts/create_awareness_blocks.py` — block creation + attachment script
+
+**Verification:** Slackbot rebuilt and healthy. Blocks attached to both agents. Tool registered and attached. Existing archival passages confirmed to have 4096-dim embeddings (auto-created by Letta on write). Both text and semantic search work.
+
+**Depends on:** Nothing. Foundation for items 8-10 below.
+
+---
+
+## 8. Cross-Interface Continuity — Layer 2: Shared Routing (NOT STARTED)
+
+**Status:** Outline only — not yet implemented
+**Depends on:** Item 7 (identity mapping, completed)
+**Risk:** Medium (changes message flow for Slack DMs)
+**Estimated effort:** 4-6 hours
+
+**Problem:** Slack DMs are hardcoded to the calendar agent (`agent-892a2d58`). pa-web uses a 6-tier dynamic routing system via `pa-routing-handler`. Slack users can't reach specialist agents (tasks, research, etc.) without this layer.
+
+**Approach:**
+1. Create a lightweight routing client in the slackbot that calls `pa-routing-handler`'s `/v1/route` endpoint (or a simplified version of it) to determine the target agent based on message content.
+2. Alternatively, extract the routing logic from `pa-routing-handler` into a shared library or expose it as an internal API that both pa-web and slackbot can call.
+3. The routing decision uses the resolved identity_id (from Layer 1) so the agent sees a consistent user across interfaces.
+4. Fallback: if routing service is unavailable, default to calendar agent (current behavior).
+
+**Key considerations:**
+- Routing handler currently runs as part of pa-web's backend. Would need to be accessible from slackbot's Docker network (already on `pa-internal`).
+- Slack's streaming response pattern differs from pa-web's SSE — may need adapter in slackbot.
+- Agent-specific conversation isolation must be maintained (one conversation per user per agent).
+
+---
+
+## 9. Cross-Interface Continuity — Layer 3: Conversation Continuity (NOT STARTED)
+
+**Status:** Outline only — not yet implemented
+**Depends on:** Items 7 + 8 (identity mapping + shared routing)
+**Risk:** Medium-High (affects conversation state across interfaces)
+**Estimated effort:** 3-4 hours
+
+**Problem:** Even with shared routing and identity mapping, a user starting a conversation on pa-web and continuing on Slack would get a fresh conversation context. The agent loses prior context from the other interface.
+
+**Approach:**
+1. Use `identity_id` as the primary key for conversation lookup instead of `(user_id, user_source)`. The `user_conversations` table already has `identity_id` column.
+2. When a Slack user sends a message, resolve their identity_id, then look up their most recent conversation for the target agent by identity_id (regardless of source interface).
+3. The conversation lookup becomes: cache → Supabase by identity_id + agent_id → create new.
+4. Both pa-web and slackbot write to the same `user_conversations` row for the same identity + agent.
+
+**Key considerations:**
+- Need to handle the case where a conversation was created by pa-web (different user_id format). The identity_id bridges this gap.
+- `user_conversations` table may need a schema change: add an index on `(identity_id, agent_id)` and allow the `UNIQUE` constraint to evolve.
+- Context window management: if conversations are shared, the combined message history may be longer than expected. May need a "last N messages" window.
+- Privacy: ensure that cross-interface sharing is opt-in or at least transparent to the user.
+
+---
+
+## 10. Cross-Agent Awareness — Phase 2: Weekly Rollups (NOT STARTED)
+
+**Status:** Outline only — not yet implemented
+**Depends on:** Item 7 (Phase 1 archival writes + sleeptime consolidation)
+**Risk:** Low (additive, no existing behavior changes)
+**Estimated effort:** 2-3 hours
+
+**Problem:** `daily_awareness` block gets overwritten each day by the sleeptime companion. After a few days, the agent has no memory of earlier activity patterns. Weekly rollups would provide a longer-term view.
+
+**Approach:**
+1. Add a `weekly_rollup` core memory block (shared: main + sleeptime, ~5000 chars).
+2. Update `consolidation_instructions` to include a weekly consolidation step: on Sundays (or every 7th wake-up), sleeptime reviews the past week's `daily_awareness` snapshots from archival and writes a weekly summary to the `weekly_rollup` block.
+3. Optionally write each daily awareness snapshot to archival (tagged `memory:daily-digest`, `digest:YYYY-MM-DD`) before overwriting, so the weekly rollup has material to work from.
+4. The weekly rollup focuses on: recurring themes, action item completion rates, communication patterns, relationship evolution.
+
+**Key considerations:**
+- Sleeptime wake frequency affects consolidation timing. May need a scheduler-driven trigger instead of relying on step-based waking.
+- Block size limits (5000 chars) constrain how much history can be preserved. May need to archive older weekly rollups too.
+- Consider a `monthly_rollup` block in the future if weekly proves valuable.
+
+---
+
 ## Execution Order
 
-Items 1-6 complete.
+Items 1-7 complete.
 
 Remaining monitoring:
 
 - **Item 1 (Archive Embedding Migration):** 7-day soak period for DEPRECATED archives (delete after 2026-03-02)
 - **Item 3 (Meeting Follow-up Pipeline):** Awaiting production verification on next real meeting via Granola cron
 - **Item 6 (Outbound Notifications):** Awaiting production verification on next OmniFocus completion sync with external-origin task
+- **Item 7 (Cross-Agent Awareness Phase 1):** Deployed. Monitor sleeptime consolidation of daily_awareness block and verify archival writes from Slack DMs.
 
-**Completed:** Items 1-6 — archive embedding migration, completion feedback loop, meeting follow-up fix, OmniFocus sync, Slack pipeline, agent outbound notifications.
+Future work (not yet started):
+
+- **Item 8 (Shared Routing):** Layer 2 of cross-interface continuity. Give Slack access to dynamic agent routing.
+- **Item 9 (Conversation Continuity):** Layer 3. Allow conversations to span interfaces via identity_id lookup.
+- **Item 10 (Weekly Rollups):** Phase 2 of cross-agent awareness. Longer-term activity memory.
+
+Suggested order: 8 → 9 → 10 (each builds on the previous).
+
+**Completed:** Items 1-7 — archive embedding migration, completion feedback loop, meeting follow-up fix, OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping.
