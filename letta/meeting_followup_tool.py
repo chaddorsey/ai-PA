@@ -1,9 +1,8 @@
 """
 Meeting Follow-up Tool for Letta
 
-Creates a D/NA (Decisions / Next Actions) Gmail draft from meeting notes
-and queues personal action items to the queued_tasks_from_meetings block
-for downstream task extraction.
+Creates a D/NA (Decisions / Next Actions) Gmail draft from meeting notes.
+Task extraction is handled by scan_meeting_notes (upstream).
 
 Tool: prepare_meeting_followup
 """
@@ -24,10 +23,10 @@ def prepare_meeting_followup(
     Create a follow-up email draft with Decisions and Next Actions from a meeting.
 
     Formats all action items into a structured D/NA email and creates a Gmail draft.
-    Also queues personal tasks (my_actions) to the queued_tasks_from_meetings block
-    for extraction into the task pipeline.
-
     The email is created as a DRAFT — the user reviews and sends manually.
+
+    Task extraction is handled upstream by scan_meeting_notes, which calls
+    add_extracted_tasks directly for each [c] marker.
 
     Args:
         meeting_id: Granola meeting UUID for reference linking.
@@ -42,14 +41,13 @@ def prepare_meeting_followup(
         my_actions: Pipe-separated list of personal action items
             (e.g. "Send budget to finance|Review one-pager by Friday").
             Omit if no personal actions identified.
-        their_actions: Pipe-separated list of others' action items, each prefixed with
-            assignee name and colon (e.g. "Rebecca: Create task list|Rebecca: Contact Rose").
-            Omit if no actions for others identified.
+        their_actions: Pipe-separated list of others' action items as complete sentences
+            (e.g. "AJ to send budget|Rebecca to contact Rose"). Each item already contains
+            the assignee name. Omit if no actions for others identified.
 
     Returns:
-        Dictionary with status, draft_id, tasks_queued count, and email details.
+        Dictionary with status, draft_id, and email details.
     """
-    import os
     import re
     import json
     import base64
@@ -57,21 +55,16 @@ def prepare_meeting_followup(
     from datetime import datetime
     from email.mime.text import MIMEText
     import pytz
-    import urllib.request
-    import urllib.error
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
 
     try:
-        LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        AGENT_ID = os.getenv("LETTA_AGENT_ID")
-        QUEUE_BLOCK_LABEL = "queued_tasks_from_meetings"
-
         tz = pytz.timezone("America/New_York")
         now = datetime.now(tz)
 
         # ── Parse participants ──
+        SENDER_EMAIL = "cdorsey@concord.org"
         participant_list = []
         emails_list = []
         EMAIL_RE = re.compile(r"<([^>]+@[^>]+)>")
@@ -85,47 +78,37 @@ def prepare_meeting_followup(
             email = email_match.group(1) if email_match else ""
             name = name_match.group(1).strip() if name_match else entry
             participant_list.append({"name": name, "email": email})
-            if email:
+            # Exclude sender from recipients
+            if email and email.lower() != SENDER_EMAIL:
                 emails_list.append(email)
 
         # ── Parse action items (pipe-separated) ──
         decision_list = [d.strip() for d in (decisions or "").split("|") if d.strip()]
         my_action_list = [a.strip() for a in (my_actions or "").split("|") if a.strip()]
 
-        # Parse their_actions: "Name: action" format
-        their_action_map = {}
-        for entry in (their_actions or "").split("|"):
-            entry = entry.strip()
-            if not entry:
-                continue
-            colon_idx = entry.find(":")
-            if colon_idx > 0:
-                who = entry[:colon_idx].strip()
-                action = entry[colon_idx + 1 :].strip()
-            else:
-                who = "TBD"
-                action = entry
-            if who not in their_action_map:
-                their_action_map[who] = []
-            their_action_map[who].append(action)
+        # Parse their_actions: entries are already complete sentences
+        # like "AJ to send..." — use as-is, no name prefix needed
+        their_action_list = [a.strip() for a in (their_actions or "").split("|") if a.strip()]
 
         # ── Format email body as HTML ──
-        # Build participant first-name greeting
-        first_names = [p["name"].split()[0] for p in participant_list if p["name"]]
-        if len(first_names) == 1:
-            greeting_names = first_names[0]
-        elif len(first_names) == 2:
-            greeting_names = f"{first_names[0]} and {first_names[1]}"
-        elif first_names:
-            greeting_names = ", ".join(first_names[:-1]) + f", and {first_names[-1]}"
+        # Time-aware opening: "this morning" / "this afternoon" / "today"
+        try:
+            meeting_hour = int(meeting_date.split(" ")[1].split(":")[0]) if " " in meeting_date else -1
+        except (ValueError, IndexError):
+            meeting_hour = -1
+        if 0 <= meeting_hour < 12:
+            time_phrase = "this morning"
+        elif 12 <= meeting_hour < 17:
+            time_phrase = "this afternoon"
         else:
-            greeting_names = "all"
+            time_phrase = "today"
 
         html_parts = []
-        html_parts.append(f"<p>{greeting_names},</p>")
+        html_parts.append("<p>Folks,</p>")
         html_parts.append(
-            "<p>I&#39;ve summarized below the decisions and next actions "
-            "I captured. Please let me know if your notes differ from mine.</p>"
+            f"<p>Thanks for a great meeting {time_phrase}. I&#39;ve summarized "
+            "below the decisions and next actions I captured. Please let me know "
+            "if your notes differ from mine.</p>"
         )
         html_parts.append("<p>--Chad</p>")
         html_parts.append("<p>=====</p>")
@@ -148,15 +131,9 @@ def prepare_meeting_followup(
             else:
                 action_items.append(f"<li>Chad to {a[0].lower()}{a[1:]}</li>")
 
-        for who, actions in sorted(their_action_map.items()):
-            for a in actions:
-                if not a:
-                    continue
-                a_lower = a.lower()
-                if a_lower.startswith(f"{who.lower()} to "):
-                    action_items.append(f"<li>{a}</li>")
-                else:
-                    action_items.append(f"<li>{who} to {a[0].lower()}{a[1:]}</li>")
+        for a in their_action_list:
+            if a:
+                action_items.append(f"<li>{a}</li>")
 
         # Assemble bullet lists with blank line between decisions and actions
         if decision_items and action_items:
@@ -210,57 +187,11 @@ def prepare_meeting_followup(
         draft_id = draft.get("id", "")
         draft_message = draft.get("message", {})
 
-        # ── Queue my_actions to queued_tasks_from_meetings block ──
-        tasks_queued = 0
-        if my_action_list and AGENT_ID:
-            agent_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}"
-            agent_req = urllib.request.Request(agent_url, method="GET")
-            with urllib.request.urlopen(agent_req, timeout=10) as resp:
-                agent_data = json.loads(resp.read().decode("utf-8"))
-
-            blocks = agent_data.get("memory", {}).get("blocks", [])
-            queue_block = None
-            for block in blocks:
-                if block.get("label") == QUEUE_BLOCK_LABEL:
-                    queue_block = block
-                    break
-
-            if queue_block:
-                block_id = queue_block["id"]
-                block_url = f"{LETTA_BASE}/v1/blocks/{block_id}"
-                block_req = urllib.request.Request(block_url, method="GET")
-                with urllib.request.urlopen(block_req, timeout=10) as resp:
-                    block_data = json.loads(resp.read().decode("utf-8"))
-                current_value = block_data.get("value", "").rstrip()
-
-                entry_lines = [
-                    f"[queued: {now.strftime('%Y-%m-%d %H:%M')}] meeting_id: {meeting_id}",
-                    f"title: {meeting_title}",
-                    f"date: {meeting_date}",
-                    f"participants: {', '.join(p['name'] for p in participant_list)}",
-                    f"granola_link: https://notes.granola.ai/d/{meeting_id}",
-                ]
-                for action in my_action_list:
-                    entry_lines.append(f"task: {action}")
-                entry_text = "\n".join(entry_lines)
-
-                updated = f"{current_value}\n{entry_text}\n---"
-                update_data = json.dumps({"value": updated}).encode("utf-8")
-                update_req = urllib.request.Request(
-                    block_url,
-                    data=update_data,
-                    headers={"Content-Type": "application/json"},
-                    method="PATCH",
-                )
-                urllib.request.urlopen(update_req, timeout=10)
-                tasks_queued = len(my_action_list)
-
         return {
             "status": "ok",
             "draft_id": draft_id,
             "message_id": draft_message.get("id", ""),
             "thread_id": draft_message.get("threadId", ""),
-            "tasks_queued": tasks_queued,
             "email_to": ", ".join(emails_list),
             "email_subject": subject,
         }

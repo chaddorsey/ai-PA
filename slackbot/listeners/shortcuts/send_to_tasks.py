@@ -184,6 +184,7 @@ def _trigger_extraction(entry: dict, logger: Logger) -> None:
         parts.append(
             "Follow the task_extraction_process_slack guidelines "
             "including the Context Enrichment Protocol. "
+            "Use origin='user-indicated' (this task was explicitly sent by the user). "
             "Use cleanup_block_id=block-033a720d-1f13-44a2-a5cb-b5edde418ea1."
         )
         message = "\n".join(parts)

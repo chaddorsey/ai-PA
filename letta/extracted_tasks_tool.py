@@ -25,6 +25,7 @@ def add_extracted_tasks(
     defer_date: Optional[str] = None,
     priority: Optional[str] = None,
     related_urls: Optional[str] = None,
+    origin: Optional[str] = None,
     cleanup_block_id: Optional[str] = None,
     cleanup_entry_identifier: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -83,6 +84,12 @@ def add_extracted_tasks(
             quoted passage, URLs in a forwarded email, links in a Slack
             message. Persisted as a RELATED URLS section in the archival
             passage for future reference.
+        origin: How this task was identified. One of:
+            "user-indicated" — User explicitly marked this as a task
+            ([c] marker, Slack shortcut, etc.)
+            "agent-identified" — Agent inferred this is a task from
+            context analysis.
+            Omit if not determinable.
         cleanup_block_id: Optional block ID of the source queue to clean up
             after successful extraction. When provided with
             cleanup_entry_identifier, the matching entry is removed from
@@ -160,6 +167,20 @@ def add_extracted_tasks(
                 "error_message": f"Invalid priority '{priority}'. Must be one of: {', '.join(sorted(valid_priorities))}"
             }
 
+        # Validate origin if provided
+        valid_origins = {"user-indicated", "agent-identified"}
+        if origin and origin not in valid_origins:
+            return {
+                "status": "error",
+                "message": "",
+                "agent_name": "",
+                "timestamp": "",
+                "ref_id": "",
+                "archival_passage_id": "",
+                "cleanup_result": "skipped",
+                "error_message": f"Invalid origin '{origin}'. Must be one of: {', '.join(sorted(valid_origins))}"
+            }
+
         # Get agent name
         agent_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}"
         agent_req = urllib.request.Request(agent_url, method='GET')
@@ -228,7 +249,8 @@ def add_extracted_tasks(
         )
 
         section_match = section_pattern.search(current_value)
-        task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}] {task_description}\n\n"
+        origin_part = f"; origin: {origin}" if origin else ""
+        task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}{origin_part}] {task_description}\n\n"
 
         if section_match:
             insert_pos = section_match.end()
@@ -297,9 +319,11 @@ def add_extracted_tasks(
                     + "\n"
                 )
 
+        origin_line = f"ORIGIN: {origin}\n" if origin else ""
         passage_text = (
             f"TASK: {task_description}\n"
             f"REF_ID: {ref_id}\n"
+            f"{origin_line}"
             f"{metadata_section}\n"
             f"SOURCE REFERENCE\n"
             f"- Type: {source_type}\n"
@@ -325,12 +349,14 @@ def add_extracted_tasks(
             f"{source_text}"
         )
 
-        # Build tags (exactly 3-4)
+        # Build tags (3-5)
         tags = [
             f"source:{source_type}",
             year_month,
             "status:extracted",
         ]
+        if origin:
+            tags.append(f"origin:{origin}")
         if project:
             tags.append(f"project:{project}")
 

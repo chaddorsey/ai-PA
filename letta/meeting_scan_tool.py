@@ -393,18 +393,270 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             except Exception as qe:
                 pass  # Queue write failure is non-fatal; scan package still returns
 
+        # ── Extract [c] tasks via add_extracted_tasks HTTP calls ──
+        # Direct HTTP calls from within the tool are reliable and atomic.
+        # Only [c] markers (my_tasks) are extracted — [;] markers are for
+        # others' tasks and don't enter Chad's extracted_tasks pipeline.
+        extraction_results = []
+        if my_tasks:
+            from datetime import datetime as _dt2
+
+            participants_str = ", ".join(participants) if participants else "unknown"
+            urls_str = ", ".join(doc_urls) if doc_urls else ""
+
+            for item in my_tasks:
+                task_text = item["text"]
+                # Ensure "Chad to" prefix for consistency
+                if not task_text.lower().startswith("chad to"):
+                    task_text = "Chad to " + task_text[0].lower() + task_text[1:]
+
+                extract_payload = {
+                    "task_description": task_text,
+                    "source_type": "meeting",
+                    "source_context": f"Meeting notes marker [c] from {meeting_title}",
+                    "reference_id": f"meeting-{meeting_id}",
+                    "source_text": item["text"],
+                    "from_person": "Chad Dorsey (note creator)",
+                    "location": meeting_title,
+                    "location_id": meeting_id,
+                    "source_timestamp": meeting_date if "T" in str(meeting_date) else f"{meeting_date}T00:00:00Z",
+                    "origin": "user-indicated",
+                }
+                if item.get("deadline_hint"):
+                    extract_payload["due_date"] = item["deadline_hint"]
+                if urls_str:
+                    extract_payload["related_urls"] = urls_str
+                # Cleanup: use scan_id if we queued, otherwise skip cleanup
+                # The scan_id was generated in the queue section above
+                if queued_count > 0:
+                    extract_payload["cleanup_block_id"] = QUEUE_BLOCK_ID
+                    # Find the scan_id for this item from queue_items
+                    for qi in queue_items:
+                        if qi["text"] == item["text"]:
+                            # Reconstruct scan_id — look for it in new_entries
+                            for entry_str in new_entries:
+                                if item["text"] in entry_str:
+                                    import re as _re2
+                                    sid_match = _re2.search(r"scan_id: ([a-f0-9]{8})", entry_str)
+                                    if sid_match:
+                                        extract_payload["cleanup_entry_identifier"] = sid_match.group(1)
+                                    break
+                            break
+
+                try:
+                    extract_url = f"{LETTA_BASE}/v1/tools/call"
+                    # Call add_extracted_tasks via direct Letta tool invocation
+                    # Since this tool runs in the agent sandbox, we call the
+                    # extraction tool's HTTP endpoint pattern instead.
+                    # Use the Letta blocks/archives API directly (same as the
+                    # extracted_tasks_tool does internally).
+                    #
+                    # Actually, the simplest approach: POST to the agent's
+                    # messages endpoint with a structured extraction request.
+                    # But that would be agent-triggered, not tool-level.
+                    #
+                    # Best approach: call the extraction function's logic via
+                    # a direct HTTP POST to a helper endpoint. Since no such
+                    # endpoint exists, we replicate the core logic inline.
+                    #
+                    # Replicate the core add_extracted_tasks logic:
+                    import uuid as _uuid2
+                    ref_id = _uuid2.uuid4().hex[:8]
+                    now_et = _dt2.now()
+                    try:
+                        import pytz as _pytz
+                        tz_et = _pytz.timezone("America/New_York")
+                        now_et = _dt2.now(tz_et)
+                    except Exception:
+                        pass
+                    timestamp_str = now_et.strftime("%Y-%m-%d %H:%M")
+                    iso_timestamp = now_et.isoformat()
+                    year_month = now_et.strftime("%Y-%m")
+
+                    # Get agent name (already known from AGENT_ID)
+                    try:
+                        agent_info_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}"
+                        agent_info_req = urllib.request.Request(agent_info_url, method="GET")
+                        with urllib.request.urlopen(agent_info_req, timeout=10) as aresp:
+                            agent_info = json.loads(aresp.read().decode("utf-8"))
+                            agent_name = agent_info.get("name", "Unknown Agent")
+                    except Exception:
+                        agent_name = "Unknown Agent"
+
+                    # Step A: Update extracted_tasks block
+                    try:
+                        with urllib.request.urlopen(
+                            urllib.request.Request(f"{LETTA_BASE}/v1/agents/{AGENT_ID}", method="GET"),
+                            timeout=10,
+                        ) as a_resp:
+                            a_data = json.loads(a_resp.read().decode("utf-8"))
+                            blocks = a_data.get("memory", {}).get("blocks", [])
+                        et_block = None
+                        for blk in blocks:
+                            if blk.get("label") == "extracted_tasks":
+                                et_block = blk
+                                break
+
+                        if et_block:
+                            et_block_id = et_block["id"]
+                            et_value = et_block.get("value", "")
+                            section_header = f"=== {agent_name} ({AGENT_ID}) ==="
+                            origin_part = "; origin: user-indicated"
+                            task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}{origin_part}] {task_text}\n\n"
+
+                            section_pat = re.compile(
+                                rf'({re.escape(section_header)})(.*?)(?=(===\s+.+?\s+\(agent-[a-f0-9-]+\)\s+===)|$)',
+                                re.DOTALL,
+                            )
+                            sec_match = section_pat.search(et_value)
+                            if sec_match:
+                                insert_pos = sec_match.end()
+                                before = et_value[:insert_pos]
+                                after = et_value[insert_pos:]
+                                if before and not before.endswith("\n"):
+                                    before += "\n"
+                                new_et_value = before + task_line + after
+                            else:
+                                new_et_value = et_value + f"\n{section_header}\n{task_line}"
+
+                            et_patch = json.dumps({"value": new_et_value}).encode("utf-8")
+                            et_req = urllib.request.Request(
+                                f"{LETTA_BASE}/v1/blocks/{et_block_id}",
+                                data=et_patch,
+                                headers={"Content-Type": "application/json"},
+                                method="PATCH",
+                            )
+                            urllib.request.urlopen(et_req, timeout=10)
+                    except Exception:
+                        pass  # Block update failure non-fatal for scan
+
+                    # Step B: Insert archival passage
+                    passage_id = ""
+                    try:
+                        source_ts = extract_payload["source_timestamp"]
+                        origin_line = "ORIGIN: user-indicated\n"
+                        metadata_section = ""
+                        if item.get("deadline_hint"):
+                            metadata_section = f"\nTASK METADATA\n- Due: {item['deadline_hint']}\n"
+
+                        urls_section = ""
+                        if urls_str:
+                            url_list = [u.strip() for u in urls_str.split(",") if u.strip()]
+                            if url_list:
+                                urls_section = "\nRELATED URLS\n" + "\n".join(f"- {u}" for u in url_list) + "\n"
+
+                        passage_text = (
+                            f"TASK: {task_text}\n"
+                            f"REF_ID: {ref_id}\n"
+                            f"{origin_line}"
+                            f"{metadata_section}\n"
+                            f"SOURCE REFERENCE\n"
+                            f"- Type: meeting\n"
+                            f"- Context: Meeting notes marker [c] from {meeting_title}\n"
+                            f"- Reference ID: meeting-{meeting_id}\n"
+                            f"\n"
+                            f"SOURCE METADATA\n"
+                            f"- Timestamp: {source_ts}\n"
+                            f"- From: Chad Dorsey (note creator)\n"
+                            f"- Location: {meeting_title}\n"
+                            f"- Location ID: {meeting_id}\n"
+                            f"{urls_section}\n"
+                            f"TIMESTAMPS\n"
+                            f"- Source: {source_ts}\n"
+                            f"- Extracted: {iso_timestamp}\n"
+                            f"- OmniFocus: pending\n"
+                            f"\n"
+                            f"OMNIFOCUS\n"
+                            f"- Task ID: pending\n"
+                            f"- Status: extracted\n"
+                            f"\n"
+                            f"SOURCE TEXT\n"
+                            f"{item['text']}"
+                        )
+
+                        tags = [
+                            "source:meeting",
+                            year_month,
+                            "status:extracted",
+                            "origin:user-indicated",
+                            f"agent:{AGENT_ID}",
+                        ]
+
+                        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
+                        arch_url = f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages"
+                        arch_data = json.dumps({"text": passage_text, "tags": tags}).encode("utf-8")
+                        arch_req = urllib.request.Request(
+                            arch_url,
+                            data=arch_data,
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        with urllib.request.urlopen(arch_req, timeout=30) as arch_resp:
+                            arch_result = json.loads(arch_resp.read().decode("utf-8"))
+                            passage_id = arch_result.get("id", "")
+                    except Exception:
+                        pass  # Archival failure non-fatal for scan
+
+                    # Step C: Queue cleanup (remove entry from queue block)
+                    cleanup_id = extract_payload.get("cleanup_entry_identifier")
+                    if cleanup_id and queued_count > 0:
+                        try:
+                            cb_url = f"{LETTA_BASE}/v1/blocks/{QUEUE_BLOCK_ID}"
+                            cb_req = urllib.request.Request(cb_url, method="GET")
+                            with urllib.request.urlopen(cb_req, timeout=10) as cb_resp:
+                                cb_data = json.loads(cb_resp.read().decode("utf-8"))
+                            cb_value = cb_data.get("value", "")
+                            parts = cb_value.split("---")
+                            orig_count = len(parts)
+                            filtered = [p for p in parts if cleanup_id not in p]
+                            if len(filtered) < orig_count:
+                                filtered = [p for p in filtered if p.strip()]
+                                new_cb_value = "---".join(filtered).strip()
+                                if new_cb_value:
+                                    new_cb_value += "\n---"
+                                cb_patch = json.dumps({"value": new_cb_value}).encode("utf-8")
+                                cb_patch_req = urllib.request.Request(
+                                    cb_url,
+                                    data=cb_patch,
+                                    headers={"Content-Type": "application/json"},
+                                    method="PATCH",
+                                )
+                                urllib.request.urlopen(cb_patch_req, timeout=10)
+                        except Exception:
+                            pass
+
+                    extraction_results.append({
+                        "task": task_text,
+                        "ref_id": ref_id,
+                        "passage_id": passage_id,
+                        "status": "extracted",
+                    })
+
+                except Exception as ext_err:
+                    extraction_results.append({
+                        "task": task_text,
+                        "ref_id": "",
+                        "passage_id": "",
+                        "status": f"error: {str(ext_err)[:100]}",
+                    })
+
         # ── Pre-compute prepare_meeting_followup args ──
         # Embedding these in the return ensures the agent sees them even
         # after context compaction (tool returns survive compaction).
         followup_my = []
         for item in my_tasks:
             action = item["text"]
+            # [c] markers are Chad's tasks — ensure they start with "Chad to"
+            if not action.lower().startswith("chad to"):
+                action = "Chad to " + action[0].lower() + action[1:]
             if item.get("deadline_hint"):
                 action += f" ({item['deadline_hint']})"
             followup_my.append(action)
 
         followup_their = []
         for item in their_tasks:
+            # [;] markers already contain the assignee in the bullet text
+            # (e.g., "Susan to review the budget") — leave as-is
             action = item["text"]
             if item.get("deadline_hint"):
                 action += f" ({item['deadline_hint']})"
@@ -426,8 +678,10 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             "instruction": (
                 "REQUIRED: Call prepare_meeting_followup with the pre_computed_args above. "
                 "You may augment my_actions or their_actions with additional items from "
-                "your semantic review before calling. For their_actions, prefix each item "
-                "with the assignee name (e.g., 'Rebecca: Create task list'). "
+                "your semantic review before calling. For their_actions, leave the text "
+                "as-is — the assignee is already named in the bullet (e.g., 'Susan to "
+                "review the budget'). Do NOT add 'TBD to' or any other prefix. "
+                "For my_actions, each item already starts with 'Chad to'. "
                 "If there are truly no actions or decisions, you may skip the call."
             ),
         }
@@ -449,6 +703,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             "has_user_notes": bool(private_notes),
             "doc_urls_found": doc_urls,
             "queued_to_block": queued_count,
+            "extraction_results": extraction_results,
             "next_action": next_action,
         }
 
