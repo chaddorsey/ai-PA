@@ -12,8 +12,8 @@ Endpoints:
     GET  /health     — Health check
 
 Usage:
-    python scripts/omnifocus_sync_service.py              # port 8091
-    python scripts/omnifocus_sync_service.py --port 8092  # custom port
+    python scripts/omnifocus_sync_service.py              # port 8092
+    python scripts/omnifocus_sync_service.py --port 8093  # custom port
 """
 
 import argparse
@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-DEFAULT_PORT = 8091
+DEFAULT_PORT = 8092
 STATE_DIR = Path.home() / ".omnifocus-sync"
 
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
