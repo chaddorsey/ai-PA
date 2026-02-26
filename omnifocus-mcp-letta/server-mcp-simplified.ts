@@ -328,6 +328,22 @@ const tools = [
           type: "boolean",
           description: "For update: set dropped status",
         },
+        plannedDate: {
+          type: "string",
+          description: "Planned date in ISO format — when you plan to work on this task (shows in OmniFocus Forecast)",
+        },
+        repetitionRule: {
+          type: "object",
+          properties: {
+            frequency: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"], description: "How often the task repeats" },
+            interval: { type: "number", description: "Repeat every N periods (default 1). E.g., interval=2 with frequency=weekly means every 2 weeks" },
+            daysOfWeek: { type: "array", items: { type: "string", enum: ["MO","TU","WE","TH","FR","SA","SU"] }, description: "For weekly: which days (e.g., [\"MO\",\"WE\",\"FR\"])" },
+            scheduleType: { type: "string", enum: ["Regularly", "FromCompletion"], description: "Regularly = fixed schedule, FromCompletion = N days after completing. Default: Regularly" },
+            anchorDate: { type: "string", enum: ["DueDate", "DeferDate", "PlannedDate"], description: "Which date anchors the repetition. Default: DueDate" },
+            catchUpAutomatically: { type: "boolean", description: "Skip past occurrences when completed late. Default: true" },
+          },
+          description: "Repetition/recurrence rule. Set to null to remove repetition. Examples: {frequency:'weekly'} for weekly, {frequency:'weekly', daysOfWeek:['MO','FR']} for Mon+Fri, {frequency:'monthly', interval:2} for every 2 months",
+        },
         // Move-specific fields
         targetProjectId: {
           type: "string",
@@ -372,7 +388,7 @@ const tools = [
           description: freshnessDescription,
         },
       },
-      required: ["action", "taskId", "name", "note", "projectId", "flagged", "dueDate", "deferDate", "estimatedMinutes", "tagIds", "completed", "dropped", "targetProjectId", "parentTaskId", "position", "filters", "detailLevel", "sortOrder"],
+      required: ["action", "taskId", "name", "note", "projectId", "flagged", "dueDate", "deferDate", "plannedDate", "estimatedMinutes", "tagIds", "completed", "dropped", "repetitionRule", "targetProjectId", "parentTaskId", "position", "filters", "detailLevel", "sortOrder"],
       additionalProperties: false,
     },
   },
@@ -1089,6 +1105,25 @@ function getSortOrder(value: unknown): SortOrder {
   return result.success ? result.data : "default";
 }
 
+const FREQ_MAP: Record<string, string> = { daily: "DAILY", weekly: "WEEKLY", monthly: "MONTHLY", yearly: "YEARLY" };
+
+function buildIcsRuleString(rule: any): string {
+  const parts = [`FREQ=${FREQ_MAP[rule.frequency]}`];
+  if (rule.interval && rule.interval > 1) parts.push(`INTERVAL=${rule.interval}`);
+  if (rule.daysOfWeek?.length) parts.push(`BYDAY=${rule.daysOfWeek.join(",")}`);
+  return parts.join(";");
+}
+
+function buildRepetitionRuleArgs(repetitionRule: any): any {
+  if (repetitionRule === null) return null;
+  return {
+    ruleString: buildIcsRuleString(repetitionRule),
+    scheduleType: repetitionRule.scheduleType ?? null,
+    anchorDate: repetitionRule.anchorDate ?? null,
+    catchUpAutomatically: repetitionRule.catchUpAutomatically ?? null,
+  };
+}
+
 /**
  * Clean up args by removing default/empty values.
  * This is needed because OpenAI strict mode requires all properties to be sent,
@@ -1202,6 +1237,10 @@ function createMinimalRecord(item: any) {
     minimal.effectivePlannedDate = item.effectivePlannedDate ?? null;
   }
 
+  if ("repetitionRule" in item) {
+    minimal.repetitionRule = item.repetitionRule ?? null;
+  }
+
   return minimal;
 }
 
@@ -1297,6 +1336,8 @@ function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
     "dueDate",
     "duration",
     "durationMinutes",
+    "plannedDate",
+    "effectivePlannedDate",
     "detailLevel",
     "result",
   ];
@@ -1321,7 +1362,7 @@ function filterResponseByDetailLevel(data: any, detailLevel: DetailLevel): any {
     "taskCount",
     "completed",
   ]);
-  const FULL_FIELDS = STANDARD_FIELDS.concat(["note", "tasks", "folderPath"]);
+  const FULL_FIELDS = STANDARD_FIELDS.concat(["note", "tasks", "folderPath", "repetitionRule"]);
 
   const clampToFields = (value: any, fields: string[]): any => {
     if (!value || typeof value !== "object") {
@@ -1494,10 +1535,12 @@ class OmniFocusSimplifiedMCPServer {
             flagged,
             dueDate,
             deferDate,
+            plannedDate,
             estimatedMinutes,
             tagIds,
             completed,
             dropped,
+            repetitionRule,
             targetProjectId,
             parentTaskId,
             position,
@@ -1522,14 +1565,20 @@ class OmniFocusSimplifiedMCPServer {
               break;
             case "create":
               command = "createTask";
-              commandArgs = { name, projectId, note, flagged, dueDate, deferDate, estimatedMinutes, tagIds };
+              commandArgs = {
+                name, projectId, note, flagged, dueDate, deferDate, plannedDate, estimatedMinutes, tagIds,
+                ...(repetitionRule !== undefined ? { repetitionRule: buildRepetitionRuleArgs(repetitionRule) } : {}),
+              };
               sortOrder = "default";
               break;
             case "update":
               command = "updateTask";
               // completed is read-only (use "complete" action instead)
               // projectId is read-only (use "move" action instead)
-              commandArgs = { taskId, name, note, flagged, dropped, dueDate, deferDate, estimatedMinutes, tagIds };
+              commandArgs = {
+                taskId, name, note, flagged, dropped, dueDate, deferDate, plannedDate, estimatedMinutes, tagIds,
+                ...(repetitionRule !== undefined ? { repetitionRule: buildRepetitionRuleArgs(repetitionRule) } : {}),
+              };
               sortOrder = "default";
               break;
             case "complete": {
@@ -2201,7 +2250,12 @@ class OmniFocusSimplifiedMCPServer {
           throw new Error(`Unknown tool: ${toolName}`);
       }
 
-      const rawResult = await callOmniFocus({ command, args: cleanArgs(commandArgs) });
+      const cleanedArgs = cleanArgs(commandArgs);
+      // Preserve explicit null for repetitionRule (cleanArgs strips nulls, but null means "clear")
+      if (commandArgs.repetitionRule === null) {
+        cleanedArgs.repetitionRule = null;
+      }
+      const rawResult = await callOmniFocus({ command, args: cleanedArgs });
 
       let parsedResult = rawResult;
       if (typeof rawResult === "string") {

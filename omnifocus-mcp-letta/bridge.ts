@@ -159,6 +159,13 @@ export interface PlannedDates {
   effectivePlannedDate: string | null;
 }
 
+export interface RepetitionRuleInfo {
+  ruleString: string;
+  scheduleType: string | null;
+  anchorDate: string | null;
+  catchUpAutomatically: boolean;
+}
+
 export interface TaskInfo extends PlannedDates, TimestampedEntity {
   taskId: string;
   taskName: string;
@@ -172,6 +179,7 @@ export interface TaskInfo extends PlannedDates, TimestampedEntity {
   contexts: string[];
   completed: boolean;
   dropped: boolean;
+  repetitionRule: RepetitionRuleInfo | null;
 }
 
 /**

@@ -704,6 +704,12 @@
       contexts:  t.tags.map(x => bareId(x.id)),
       completed: t.completed,
       dropped:   !t.effectiveActive,
+      repetitionRule: t.repetitionRule ? {
+        ruleString: t.repetitionRule.ruleString,
+        scheduleType: t.repetitionRule.scheduleType ? String(t.repetitionRule.scheduleType).replace(/.*: (\w+)\]$/, '$1') : null,
+        anchorDate: t.repetitionRule.anchorDateKey ? String(t.repetitionRule.anchorDateKey).replace(/.*: (\w+)\]$/, '$1') : null,
+        catchUpAutomatically: t.repetitionRule.catchUpAutomatically || false
+      } : null,
       added:     timestamps.added,
       modified:  timestamps.modified
     };
@@ -1269,11 +1275,23 @@
     if (params.estimatedMinutes !== undefined) t.estimatedMinutes = params.estimatedMinutes;
     if (params.deferDate)             t.deferDate = new Date(params.deferDate);
     if (params.dueDate)               t.dueDate   = new Date(params.dueDate);
+    if (params.plannedDate)           t.plannedDate = new Date(params.plannedDate);
     tags.forEach(tag => t.addTag(tag));
-    
+
+    if (params.repetitionRule) {
+      var rr = params.repetitionRule;
+      t.repetitionRule = new Task.RepetitionRule(
+        rr.ruleString,
+        null,
+        rr.scheduleType ? Task.RepetitionScheduleType[rr.scheduleType] : null,
+        rr.anchorDate   ? Task.AnchorDateKey[rr.anchorDate]            : null,
+        rr.catchUpAutomatically != null ? rr.catchUpAutomatically      : null
+      );
+    }
+
     // Invalidate cache after mutation
     queryCache.clear();
-    
+
     return serializeTask(t);
   };
 
@@ -1288,7 +1306,25 @@
     if (params.dropped   !== undefined) t.active    = !params.dropped; // dropped = !active
     if (params.deferDate               ) t.deferDate = new Date(params.deferDate);
     if (params.dueDate                 ) t.dueDate   = new Date(params.dueDate);
+    if (params.plannedDate !== undefined) {
+      t.plannedDate = params.plannedDate ? new Date(params.plannedDate) : null;
+    }
     if (params.estimatedMinutes !== undefined) t.estimatedMinutes = params.estimatedMinutes;
+
+    if (params.hasOwnProperty('repetitionRule')) {
+      if (params.repetitionRule === null) {
+        t.repetitionRule = null;
+      } else {
+        var rr = params.repetitionRule;
+        t.repetitionRule = new Task.RepetitionRule(
+          rr.ruleString,
+          null,
+          rr.scheduleType ? Task.RepetitionScheduleType[rr.scheduleType] : null,
+          rr.anchorDate   ? Task.AnchorDateKey[rr.anchorDate]            : null,
+          rr.catchUpAutomatically != null ? rr.catchUpAutomatically      : null
+        );
+      }
+    }
 
     if (params.projectId) {
       const proj = flattenedProjects.find(p => bareId(p.id) === params.projectId);
