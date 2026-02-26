@@ -62,26 +62,53 @@ def recall_activity(
             days_back = 30
 
         letta_base_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-        agent_id = os.getenv(
-            "LETTA_AGENT_ID",
-            "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a",
-        )
+        # Always search the MAIN agent's archival memory, regardless of
+        # which agent is calling this tool. LETTA_AGENT_ID is set by
+        # the sandbox to the calling agent's ID, so we cannot use it here.
+        MAIN_AGENT_ID = "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a"
+        agent_id = MAIN_AGENT_ID
 
-        # Use text substring search (?search=) which is reliable
-        encoded_query = urllib.parse.quote(query, safe="")
-        search_url = (
-            f"{letta_base_url}/v1/agents/{agent_id}"
-            f"/archival-memory?search={encoded_query}&limit=50"
-        )
+        # Session passages have known text prefixes. When the query is a
+        # tag-like value (memory:session, source:slack, etc.) search for
+        # text patterns that actually appear in passage content instead,
+        # because Letta's ?search= only matches passage text, not tags.
+        text_search_terms = []
+        tag_query = query.lower().strip()
+        if tag_query in ("memory:session", "session", "cross-interface", "activity"):
+            # Session passages start with "[Slack DM]" or "User asked"
+            text_search_terms = ["[Slack DM]", "User asked"]
+        elif tag_query.startswith("source:"):
+            src = tag_query.split(":", 1)[1]
+            if src == "slack":
+                text_search_terms = ["[Slack DM]"]
+            elif src == "pa-web":
+                text_search_terms = ["User asked"]
+            else:
+                text_search_terms = [query]
+        else:
+            text_search_terms = [query]
 
-        req = urllib.request.Request(search_url, method="GET")
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            all_passages = json.loads(resp.read().decode("utf-8"))
-
-        if not isinstance(all_passages, list):
-            all_passages = all_passages.get(
-                "passages", all_passages.get("results", [])
+        # Search for each text pattern and merge results (dedup by id)
+        all_passages = []
+        seen_ids = set()
+        for term in text_search_terms:
+            encoded = urllib.parse.quote(term, safe="")
+            url = (
+                f"{letta_base_url}/v1/agents/{agent_id}"
+                f"/archival-memory?search={encoded}&limit=50"
             )
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                results = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(results, list):
+                results = results.get(
+                    "passages", results.get("results", [])
+                )
+            for p in results:
+                pid = p.get("id", "")
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    all_passages.append(p)
 
         # Build valid date set for filtering
         now_utc = datetime.now(timezone.utc)
