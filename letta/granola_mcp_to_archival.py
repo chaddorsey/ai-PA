@@ -7,8 +7,8 @@ of the local Granola cache file. This is the preferred ingestion path — it
 works on any machine with proxy access, doesn't depend on the Granola desktop
 app's cache, and gets the canonical server-side data.
 
-Shares state with the cache-based watcher (granola_watcher.py) so the two
-won't double-import.
+After each successful archival import, also writes a shareable Markdown file
+to the export directory (default: ~/Dropbox/Granola-exports/).
 
 Usage:
     # Dry run — parse and format but don't insert
@@ -56,6 +56,12 @@ MCP_PROXY_URL = os.getenv("GRANOLA_MCP_URL", "http://localhost:8089/mcp")
 
 # Shared state file — same one the cache watcher uses
 STATE_FILE = Path("/Volumes/main-drive/ai-PA/letta/.granola_watcher_state.json")
+
+# Markdown export directory (shareable meeting archive)
+EXPORT_DIR = Path(os.getenv(
+    "GRANOLA_EXPORT_DIR",
+    "/Users/dorseyhomeserver/Dropbox/Granola-exports",
+))
 
 LOG_FILE = Path("/Volumes/main-drive/ai-PA/letta/logs/granola_mcp_ingest.log")
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -346,9 +352,17 @@ def format_content(meeting: dict, summary: str, transcript_text: str,
     if dt:
         lines.append(f"**Date:** {dt.strftime('%Y-%m-%d %H:%M')}")
 
-    names = [p["name"] for p in meeting.get("participants", []) if p.get("name")]
-    if names:
-        lines.append(f"**Participants:** {', '.join(names)}")
+    # Store participants with emails so downstream tools can populate recipients
+    participant_entries = []
+    for p in meeting.get("participants", []):
+        name = p.get("name", "")
+        email = p.get("email", "")
+        if name and email:
+            participant_entries.append(f"{name} <{email}>")
+        elif name:
+            participant_entries.append(name)
+    if participant_entries:
+        lines.append(f"**Participants:** {', '.join(participant_entries)}")
 
     if private_notes and private_notes.strip():
         lines.append("")
@@ -366,6 +380,100 @@ def format_content(meeting: dict, summary: str, transcript_text: str,
         lines.append(transcript_text)
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Markdown export (shareable archive)
+# ---------------------------------------------------------------------------
+
+def _sanitize_filename(name: str) -> str:
+    """Sanitize a string for use in filenames."""
+    name = name.replace("/", "_").replace("\\", "_")
+    name = re.sub(r'[<>"|?*]', "", name)
+    name = re.sub(r"[_ ]{2,}", " ", name)
+    return name.strip()
+
+
+def export_meeting_markdown(
+    meeting: dict,
+    summary: str,
+    private_notes: str,
+    transcript_text: str,
+) -> Optional[Path]:
+    """Write a shareable Markdown file for one meeting.
+
+    Uses the data already fetched during MCP ingest — no extra API calls.
+    Skips if file already exists (idempotent).
+
+    Returns the output path, or None on failure.
+    """
+    try:
+        EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+        mid = meeting["id"]
+        title = meeting.get("title", "Untitled Meeting")
+        date_str = meeting.get("date", "")
+        dt = parse_mcp_date(date_str)
+
+        # Build filename matching existing granolaNote convention
+        if dt:
+            time_safe = dt.strftime("%Y-%m-%dT%H_%M_%S")
+        else:
+            time_safe = re.sub(r"[: ]", "_", date_str)
+        title_safe = _sanitize_filename(title)
+        filename = f"granolaNote--{time_safe}--{mid}--{title_safe}.md"
+        output_path = EXPORT_DIR / filename
+
+        if output_path.exists():
+            return output_path
+
+        # Build markdown
+        sections = []
+        sections.append(f"# {title}\n")
+
+        # Metadata table
+        meta = [
+            "| Field | Value |",
+            "|-------|-------|",
+            f"| **Date** | {date_str} |",
+            f"| **Granola Document ID** | `{mid}` |",
+            f"| **Granola Link** | [notes.granola.ai/d/{mid}](https://notes.granola.ai/d/{mid}) |",
+        ]
+        participants = meeting.get("participants", [])
+        if participants:
+            names = []
+            for p in participants:
+                name = p.get("name", "")
+                email = p.get("email", "")
+                if name and email:
+                    names.append(f"{name} ({email})")
+                elif name:
+                    names.append(name)
+                elif email:
+                    names.append(email)
+            if names:
+                meta.append(f"| **Participants** | {', '.join(names)} |")
+        sections.append("\n".join(meta))
+
+        if private_notes and private_notes.strip():
+            sections.append("---\n\n## Meeting Notes\n")
+            sections.append(private_notes.strip())
+
+        if summary and summary.strip():
+            sections.append("---\n\n## Summary\n")
+            sections.append(summary.strip())
+
+        if transcript_text and transcript_text.strip():
+            sections.append("---\n\n## Transcript\n")
+            sections.append(transcript_text.strip())
+
+        markdown = "\n\n".join(sections) + "\n"
+        output_path.write_text(markdown, encoding="utf-8")
+        return output_path
+
+    except Exception as e:
+        logger.warning(f"  Markdown export failed (non-fatal): {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +607,13 @@ def ingest_meeting_by_id(
     if not dry_run:
         notify_agent_new_meeting(meeting_id, meeting.get("title", "Untitled Meeting"))
 
+        # Export shareable Markdown file
+        md_path = export_meeting_markdown(
+            meeting, summary, private_notes, transcript_text,
+        )
+        if md_path:
+            logger.info(f"  Exported {md_path.name}")
+
     return True
 
 
@@ -575,6 +690,13 @@ def ingest_meetings(
                 # Trigger post-meeting processing
                 if not dry_run:
                     notify_agent_new_meeting(mid, title)
+
+                    # Export shareable Markdown file
+                    md_path = export_meeting_markdown(
+                        meeting, summary, private_notes, transcript_text,
+                    )
+                    if md_path:
+                        logger.info(f"  Exported {md_path.name}")
             else:
                 errors += 1
 
