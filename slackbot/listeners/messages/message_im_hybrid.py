@@ -430,16 +430,16 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                             if isinstance(parsed, dict) and 'verbatim_user_output' in parsed:
                                 content = parsed['verbatim_user_output']
                                 logger.error(f"🔧 TOOL RETURN: Extracted verbatim_user_output ({len(content)} chars)")
-                        except (json_module.JSONDecodeError, TypeError) as e:
+                        except (json_module.JSONDecodeError, TypeError):
+                            # Letta truncates tool_return at ~50K chars, breaking JSON.
                             # Fallback: try ast.literal_eval for Python dict format
                             try:
                                 import ast
                                 parsed = ast.literal_eval(content)
                                 if isinstance(parsed, dict) and 'verbatim_user_output' in parsed:
                                     content = parsed['verbatim_user_output']
-                                    logger.error(f"🔧 TOOL RETURN: Extracted verbatim_user_output via ast ({len(content)} chars)")
                             except (ValueError, SyntaxError):
-                                logger.error(f"🔧 TOOL RETURN: Could not parse as dict ({len(content)} chars)")
+                                pass  # Fall through to marker extraction below
                                 # Fallback: extract verbatim content via [VERBATIM_USER_OUTPUT] marker
                                 # Raw dict string has escaped newlines (\n as literal backslash+n)
                                 # which breaks multiline regex in the proposal parser
@@ -447,12 +447,25 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                                 marker_idx = content.find(marker)
                                 if marker_idx >= 0:
                                     extracted = content[marker_idx:]
-                                    # Unescape Python string repr sequences
-                                    extracted = (extracted
-                                        .replace('\\n', '\n')
-                                        .replace('\\t', '\t')
-                                        .replace("\\'", "'")
-                                        .replace('\\"', '"'))
+                                    # The content is from a truncated JSON string value,
+                                    # so it has JSON escapes (\n, \u2013, \", etc).
+                                    # Decode all JSON escape sequences in one pass.
+                                    import re as _re_mod
+                                    _esc_map = {'\\n': '\n', '\\t': '\t', '\\r': '\r',
+                                                '\\"': '"', "\\'": "'", '\\\\': '\\'}
+                                    def _json_unescape_repl(m):
+                                        tok = m.group(0)
+                                        if tok.startswith('\\u') and len(tok) == 6:
+                                            try:
+                                                return chr(int(tok[2:], 16))
+                                            except ValueError:
+                                                return tok
+                                        return _esc_map.get(tok, tok)
+                                    extracted = _re_mod.sub(
+                                        r'\\u[0-9a-fA-F]{4}|\\[ntr\\"\']',
+                                        _json_unescape_repl,
+                                        extracted,
+                                    )
                                     content = extracted
                                     logger.error(f"🔧 TOOL RETURN: Extracted verbatim via marker ({len(content)} chars)")
                                 else:
@@ -574,7 +587,25 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
 
         # Post regular response if proposals weren't handled
         if not proposals_posted:
-            final_chunks = list(_chunk_text(final_text)) or [""]
+            # If the agent responded entirely via tool calls (no assistant text),
+            # fall back to tool return content which has the readable output.
+            display_text = final_text
+            if not display_text and tool_return_content:
+                display_text = tool_return_content
+                # Strip internal markers before displaying
+                for marker in ("[VERBATIM_USER_OUTPUT]", "[PARTICIPANTS:", "[PARTICIPANT_NAMES:"):
+                    while marker in display_text:
+                        idx = display_text.find(marker)
+                        end = display_text.find("]", idx)
+                        if end >= 0:
+                            display_text = display_text[:idx] + display_text[end + 1:]
+                        else:
+                            break
+                display_text = display_text.strip()
+            if not display_text:
+                display_text = "I processed your request but didn't generate a text response. Please try again."
+
+            final_chunks = list(_chunk_text(display_text))
 
             # Post response as regular DM message
             post_response = client.chat_postMessage(
