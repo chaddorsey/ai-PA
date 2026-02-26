@@ -10,13 +10,17 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from ai.providers.letta_stream import LettaAPIStreaming
-from ai.letta_conversation import get_or_create_letta_conversation
+from ai.letta_conversation import get_or_create_letta_conversation, get_cached_identity
 from listeners.messages.status_messages import get_status_for_tool, get_default_status
 
 MAX_SLACK_MESSAGE_LENGTH = 3500  # Slack hard limit is 4000 characters; keep buffer for formatting
 MAX_STREAM_PREVIEW_LENGTH = 1200
 
 _STREAM_FLAG_VALUES = {"1", "true", "yes", "on"}
+
+# Cross-agent awareness: write DM summaries to main agent's archival memory
+_MAIN_AGENT_ID = "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a"
+_ARCHIVAL_WRITE_TIMEOUT = 10  # seconds
 
 
 def _is_streaming_enabled() -> bool:
@@ -78,6 +82,53 @@ def _should_use_streaming(logger: Logger) -> bool:
         logger.info("Streaming disabled via DISABLE_ASSISTANT_STREAMING flag")
         return False
     return True
+
+
+def _write_dm_to_archival(
+    user_id: str,
+    user_message: str,
+    agent_response: str,
+    logger: Logger,
+    identity_id: Optional[str] = None,
+) -> None:
+    """Fire-and-forget: write DM exchange summary to main agent's archival.
+
+    Mirrors Pattern 3 from pa-routing-handler. Non-blocking, non-critical.
+    Failures are logged but never propagate.
+    """
+    import requests
+    from datetime import datetime, timezone
+
+    try:
+        letta_base = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
+
+        user_preview = (user_message[:80] + "...") if len(user_message) > 80 else user_message
+        response_preview = (agent_response[:120] + "...") if len(agent_response) > 120 else agent_response
+        passage_text = (
+            f"[Slack DM] User asked calendar-agent: {user_preview}. "
+            f"Response: {response_preview}"
+        )
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        tags = [
+            "memory:session",
+            f"session:{today}",
+            "agent:calendar-agent",
+            "source:slack",
+            f"user:{user_id}",
+        ]
+        if identity_id:
+            tags.append(f"identity:{identity_id}")
+
+        resp = requests.post(
+            f"{letta_base}/v1/agents/{_MAIN_AGENT_ID}/archival-memory",
+            json={"text": passage_text, "tags": tags},
+            timeout=_ARCHIVAL_WRITE_TIMEOUT,
+        )
+        resp.raise_for_status()
+        logger.info("archival_dm_write_success user=%s identity=%s len=%d", user_id, identity_id, len(passage_text))
+    except Exception as exc:
+        logger.warning("archival_dm_write_failed user=%s error=%s", user_id, exc)
 
 
 def _stream_dm_reply(
@@ -538,6 +589,18 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                     channel=working_channel,
                     text=extra_chunk,
                 )
+
+        # Cross-agent awareness: log DM exchange to main agent archival (fire-and-forget)
+        try:
+            if text and final_text:
+                cached_identity = get_cached_identity(user_id)
+                threading.Thread(
+                    target=_write_dm_to_archival,
+                    args=(user_id, text, final_text, logger, cached_identity),
+                    daemon=True,
+                ).start()
+        except Exception:
+            pass  # Never fail the DM response
 
         # Clear the loading status now that response is complete
         if streaming_enabled and user_message_ts:
