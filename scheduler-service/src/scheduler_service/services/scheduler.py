@@ -166,7 +166,20 @@ class SchedulerService:
                 log.warning("Job not found, removing from scheduler")
                 self.scheduler.remove_job(str(job_id))
                 return
-            
+
+            # Guard: skip execution if job is no longer scheduled (e.g. paused, cancelled)
+            if job.status != JobStatus.SCHEDULED.value:
+                log.info(
+                    "Job status is %s, skipping execution and removing from scheduler",
+                    job.status,
+                    job_id=str(job_id),
+                )
+                try:
+                    self.scheduler.remove_job(str(job_id))
+                except Exception:
+                    pass
+                return
+
             # Skip execution if this is the off-hours job running on Friday evening (6 PM - 11 PM)
             # The off-hours job should stop at 7 AM Friday and resume Sunday 6 PM
             if job.title == "Gold-Standard Briefing Update (Off-Hours - Next Day)":

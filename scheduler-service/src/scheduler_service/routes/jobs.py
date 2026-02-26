@@ -456,8 +456,8 @@ async def update_job(
     if payload.status is not None:
         new_status = payload.status.value
         job.status = new_status
-        # If job is being archived or cancelled, remove it from the scheduler
-        if new_status in (JobStatus.ARCHIVED.value, JobStatus.CANCELLED.value):
+        # If job is no longer scheduled, remove it from the in-memory scheduler
+        if new_status != JobStatus.SCHEDULED.value:
             await scheduler_service.remove_job(job.job_id)
     if payload.schedule is not None:
         job.schedule_type = payload.schedule.type.value
