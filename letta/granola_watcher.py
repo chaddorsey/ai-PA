@@ -107,6 +107,16 @@ def verify_state_against_archival() -> set:
                 if t.startswith('id:'):
                     actual_ids.add(t[3:])
 
+        # Safety: if we hit the query limit, results are truncated and
+        # we MUST NOT remove IDs from the state file based on incomplete data.
+        QUERY_LIMIT = 3000
+        if len(passages) >= QUERY_LIMIT:
+            logger.warning(
+                f"Archival returned {len(passages)} passages (= query limit {QUERY_LIMIT}). "
+                f"Results are likely truncated — skipping state correction to avoid data loss."
+            )
+            return set(load_state().get('imported_ids', []))
+
         # Load current state
         state = load_state()
         state_ids = set(state.get('imported_ids', []))
@@ -253,18 +263,13 @@ def run_once(dry_run: bool = False, force_verify: bool = False) -> bool:
     last_mtime = state.get('last_cache_mtime')
     last_verified = state.get('last_verified')
 
-    # Verify state against archival once per day (or if forced, or never verified)
-    should_verify = force_verify or last_verified is None
-    if not should_verify and last_verified:
-        try:
-            last_verified_dt = datetime.fromisoformat(last_verified)
-            hours_since_verify = (datetime.utcnow() - last_verified_dt).total_seconds() / 3600
-            should_verify = hours_since_verify >= 24
-        except:
-            should_verify = True
-
-    if should_verify and not dry_run:
-        logger.info("Verifying state against archival memory...")
+    # Only verify when explicitly requested via --verify flag.
+    # Automatic verification is disabled because the archival API has a
+    # hard limit of 3000 passages.  When the archive grows beyond that,
+    # the truncated results cause the state file to drop IDs, which
+    # triggers a costly bulk re-import through the gpt-4.1 agent.
+    if force_verify and not dry_run:
+        logger.info("Verifying state against archival memory (forced)...")
         imported_ids = verify_state_against_archival()
 
     logger.info(f"Previously imported: {len(imported_ids)} meetings")

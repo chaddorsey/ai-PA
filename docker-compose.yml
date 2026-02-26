@@ -595,6 +595,7 @@ services:
   letta:
     image: letta/letta:latest
     entrypoint: ["/bin/bash", "/app/tools/letta/entrypoint-wrapper.sh"]
+    command: ["--host", "0.0.0.0"]
     ports:
       - "8283:8283"  # Letta web interface
     volumes:

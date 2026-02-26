@@ -37,7 +37,7 @@ LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
 ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
 AGENT_ID = "agent-62edcfac-2cc7-41a5-a3c2-d417da393397"
 BRIDGE_URL = "http://localhost:8889"
-SLACKBOT_URL = "http://localhost:8081"
+SLACKBOT_URL = os.getenv("SLACKBOT_URL", "http://localhost:8083")
 USER_NAME = "Chad Dorsey"
 NOTIFIED_EXPIRY_DAYS = 7
 
