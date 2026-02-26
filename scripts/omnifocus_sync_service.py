@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 
 # Concurrency guard and run state
 _sync_lock = threading.Lock()
+_notified_lock = threading.Lock()
 _last_result = None
 _last_run_time = None
 _start_time = time.time()
@@ -77,15 +78,17 @@ def _save_notified(notified: dict) -> None:
 
 def _is_already_notified(ref_id: str) -> bool:
     """Check if a ref_id has already been notified."""
-    notified = _load_notified()
-    return ref_id in notified
+    with _notified_lock:
+        notified = _load_notified()
+        return ref_id in notified
 
 
 def _mark_notified(ref_id: str) -> None:
     """Mark a ref_id as notified."""
-    notified = _load_notified()
-    notified[ref_id] = time.time()
-    _save_notified(notified)
+    with _notified_lock:
+        notified = _load_notified()
+        notified[ref_id] = time.time()
+        _save_notified(notified)
 
 
 # ── Slack notification ──
@@ -401,9 +404,16 @@ def run_sync() -> dict:
                 ins_resp.raise_for_status()
                 new_passage_id = ins_resp.json().get("id", "")
 
-                client.delete(
-                    f"{LETTA_BASE_URL}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}",
-                )
+                try:
+                    del_resp = client.delete(
+                        f"{LETTA_BASE_URL}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}",
+                    )
+                    del_resp.raise_for_status()
+                except Exception as del_err:
+                    logger.warning(
+                        "Failed to delete old passage %s after inserting %s: %s",
+                        passage_id, new_passage_id, del_err,
+                    )
 
             details.append({
                 "ref_id": ref_id,
