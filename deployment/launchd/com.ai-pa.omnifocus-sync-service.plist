@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3</string>
+        <string>/usr/bin/python3</string>
         <string>/Volumes/main-drive/ai-PA/scripts/omnifocus_sync_service.py</string>
     </array>
 
@@ -26,7 +26,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/dorseyhomeserver</string>
     </dict>
