@@ -44,6 +44,8 @@ class SynthesisConfig:
     mode: str  # template_only, template_with_enhancement, main_agent_only
     template: Optional[str] = None
     enhancement_prompt: Optional[str] = None
+    evaluation_prompt: Optional[str] = None
+    synthesis_prompt: Optional[str] = None
 
 
 @dataclass
@@ -58,10 +60,19 @@ class TaskType:
     synthesis: SynthesisConfig
     success_criteria: List[str] = field(default_factory=list)
     metrics: List[str] = field(default_factory=list)
+    resolve_agent: Optional[str] = None
 
     def get_enabled_agents(self) -> Dict[str, AgentConfig]:
         """Get only enabled agents."""
         return {name: config for name, config in self.agents.items() if config.enabled}
+
+    def get_gather_agents(self) -> Dict[str, AgentConfig]:
+        """Get enabled agents excluding the resolve agent."""
+        return {
+            name: config
+            for name, config in self.agents.items()
+            if config.enabled and name != self.resolve_agent
+        }
 
     def is_executable(self) -> bool:
         """Check if task type can be executed (not draft)."""
@@ -134,6 +145,8 @@ class TaskTypeLoader:
             mode=synthesis_data.get("mode", "template_only"),
             template=synthesis_data.get("template"),
             enhancement_prompt=synthesis_data.get("enhancement_prompt"),
+            evaluation_prompt=synthesis_data.get("evaluation_prompt"),
+            synthesis_prompt=synthesis_data.get("synthesis_prompt"),
         )
 
         return TaskType(
@@ -145,6 +158,7 @@ class TaskTypeLoader:
             synthesis=synthesis,
             success_criteria=data.get("success_criteria", []),
             metrics=data.get("metrics", []),
+            resolve_agent=data.get("resolve_agent"),
         )
 
     def list_all(self) -> List[str]:

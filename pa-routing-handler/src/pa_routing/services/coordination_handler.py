@@ -1,9 +1,15 @@
 """Coordination block handler for multi-agent tasks.
 
-Manages three per-identity blocks:
+Manages per-identity blocks:
 - coordination_task_{identity_id}: Task context (handler writes, agents read)
-- coordination_gathered_{identity_id}: Agent findings (agents append, handler reads)
+- coordination_gathered_{identity_id}_{agent}: Per-agent findings (one block per agent, no race)
 - coordination_status_{identity_id}: Completion tracking (handler only)
+
+Each agent gets its own gathered block to write to, eliminating the race
+condition that occurs when multiple agents call memory_insert on a shared block
+simultaneously (Letta's read-modify-write has no locking).
+
+The orchestrator consolidates per-agent blocks when collecting findings.
 
 Agents write findings in natural language format: [AgentName HH:MM] findings...
 This is easier for LLMs than JSON and the handler parses via get_gathered_findings().
@@ -351,14 +357,18 @@ Expected contributions:
         # Update task block value (in case it existed with old content)
         await self.update_block(task_block_id, task_content)
 
-        # Create/reset gathered block
-        gathered_block_id = await self.get_or_create_block(
-            label=f"coordination_gathered_{identity_id}",
-            initial_value="",
-            description="Agent findings (append-only)"
-        )
-        if gathered_block_id:
-            await self.update_block(gathered_block_id, "")
+        # Create per-agent gathered blocks (one per agent, no shared-write race)
+        gathered_block_ids: Dict[str, str] = {}
+        for agent_name in agents:
+            agent_label = f"coordination_gathered_{identity_id}_{agent_name}"
+            block_id = await self.get_or_create_block(
+                label=agent_label,
+                initial_value="",
+                description=f"Findings from {agent_name} agent"
+            )
+            if block_id:
+                await self.update_block(block_id, "")
+                gathered_block_ids[agent_name] = block_id
 
         # Create/initialize status block
         status = {agent: "pending" for agent in agents}
@@ -372,15 +382,17 @@ Expected contributions:
         if status_block_id:
             await self.update_block(status_block_id, json.dumps(status))
 
-        # Attach task and gathered blocks to participating agents
+        # Attach task block + agent's own gathered block to each agent
         # (Status block is handler-only, not attached to agents)
-        if agent_ids and task_block_id and gathered_block_id:
+        if agent_ids and task_block_id:
             for agent_name, agent_id in agent_ids.items():
                 if agent_name in agents:
                     # Attach task block (read-only for agents)
                     await self.attach_block_to_agent(task_block_id, agent_id)
-                    # Attach gathered block (agents will memory_insert here)
-                    await self.attach_block_to_agent(gathered_block_id, agent_id)
+                    # Attach this agent's own gathered block
+                    agent_gathered_id = gathered_block_ids.get(agent_name)
+                    if agent_gathered_id:
+                        await self.attach_block_to_agent(agent_gathered_id, agent_id)
                     logger.info(
                         "coordination_blocks_attached",
                         agent_name=agent_name,
@@ -401,27 +413,27 @@ Expected contributions:
         self,
         identity_id: str,
         agent_name: str,
-        reference_agent_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> bool:
         """
-        Check if agent has added findings to gathered block.
+        Check if agent has added findings to its per-agent gathered block.
 
-        Looks for [AgentName pattern in gathered block. If found,
-        updates status block to mark agent as "done".
+        Each agent has its own block: coordination_gathered_{identity_id}_{agent_name}.
+        Looks for [AgentName pattern. If found, updates status block to "done".
 
         Args:
             identity_id: User's identity ID
             agent_name: Agent name to check (calendar, email, etc.)
-            reference_agent_id: Optional agent ID to query blocks from
+            agent_id: Optional agent ID to query blocks from
                 (needed because agent-attached blocks aren't in global list)
 
         Returns:
             True if agent has contributed, False otherwise
         """
-        # Get gathered block - use agent-specific lookup if reference provided
-        label = f"coordination_gathered_{identity_id}"
-        if reference_agent_id:
-            gathered = await self.get_block_from_agent(reference_agent_id, label)
+        # Read from agent's own gathered block
+        label = f"coordination_gathered_{identity_id}_{agent_name}"
+        if agent_id:
+            gathered = await self.get_block_from_agent(agent_id, label)
         else:
             gathered = await self.get_block_by_label(label)
         if not gathered:
@@ -497,98 +509,64 @@ Expected contributions:
         main_agent_id: str,
     ) -> bool:
         """
-        Archive gathered block if approaching capacity.
+        Archive gathered blocks if approaching capacity.
 
-        Writes current content to main agent's archival memory,
-        then resets block with archive marker.
-
-        Args:
-            identity_id: User's identity ID
-            main_agent_id: Main agent ID for archival storage
+        With per-agent blocks, rotation is rarely needed since each block
+        only holds one agent's findings. Kept for backwards compatibility.
 
         Returns:
-            True if rotation occurred, False otherwise
+            False (rotation not needed with per-agent blocks)
         """
-        gathered = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
-        if not gathered:
-            return False
-
-        value = gathered.get("value", "")
-        if len(value) < ROTATION_THRESHOLD:
-            return False
-
-        # Get task context for archive
-        task_block = await self.get_block_by_label(f"coordination_task_{identity_id}")
-        task_context = task_block.get("value", "") if task_block else "Unknown task"
-
-        # Archive to main agent's archival memory
-        archive_text = f"""Coordination Session Findings
-
-Task: {task_context}
-Timestamp: {datetime.now(timezone.utc).isoformat()}
-
-{value}"""
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/agents/{main_agent_id}/archival-memory",
-                    json={
-                        "text": archive_text,
-                        "tags": [
-                            f"identity:{identity_id}",
-                            "type:coordination_findings",
-                        ]
-                    }
-                )
-
-                if response.status_code != 200:
-                    logger.warning(
-                        "coordination_archive_failed",
-                        identity_id=identity_id,
-                        status=response.status_code
-                    )
-                    return False
-
-        except Exception as e:
-            logger.warning("coordination_archive_error", error=str(e))
-            return False
-
-        # Reset gathered block with archive marker
-        reset_value = f"[Archived at {datetime.now(timezone.utc).strftime('%H:%M')}]\n\n"
-        await self.update_block(gathered["id"], reset_value)
-
-        logger.info("coordination_block_rotated", identity_id=identity_id)
-        return True
+        return False
 
     async def complete_task(
         self,
         identity_id: str,
         main_agent_id: str,
         agent_ids: Optional[Dict[str, str]] = None,
+        agent_names: Optional[List[str]] = None,
     ) -> bool:
         """
         Archive coordination state and reset blocks.
 
-        Called when all agents have completed their contributions.
-        If agent_ids provided, detaches coordination blocks from agents.
+        Consolidates per-agent gathered blocks into a single archive,
+        detaches blocks from agents, and resets everything.
 
         Args:
             identity_id: User's identity ID
             main_agent_id: Main agent ID for archival storage
             agent_ids: Optional mapping of agent_name -> agent_id for block detachment
+            agent_names: List of agent names that participated (for block cleanup)
 
         Returns:
             True on success, False on failure
         """
-        # Get all blocks
+        agents = agent_names or list(agent_ids.keys()) if agent_ids else []
+
+        # Get shared blocks
         task_block = await self.get_block_by_label(f"coordination_task_{identity_id}")
-        gathered_block = await self.get_block_by_label(f"coordination_gathered_{identity_id}")
         status_block = await self.get_block_by_label(f"coordination_status_{identity_id}")
 
         task_value = task_block.get("value", "") if task_block else ""
-        gathered_value = gathered_block.get("value", "") if gathered_block else ""
         status_value = status_block.get("value", "{}") if status_block else "{}"
+
+        # Consolidate per-agent gathered blocks
+        gathered_parts = []
+        per_agent_blocks = []
+        for agent_name in agents:
+            label = f"coordination_gathered_{identity_id}_{agent_name}"
+            agent_id = agent_ids.get(agent_name) if agent_ids else None
+            if agent_id:
+                block = await self.get_block_from_agent(agent_id, label)
+            else:
+                block = await self.get_block_by_label(label)
+            if block:
+                per_agent_blocks.append((agent_name, block))
+                value = block.get("value", "").strip()
+                if value:
+                    gathered_parts.append(value)
+
+        gathered_value = "\n".join(gathered_parts)
 
         # Archive complete session
         archive_text = f"""COMPLETED COORDINATION TASK
@@ -626,8 +604,11 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
             for agent_name, agent_id in agent_ids.items():
                 if task_block:
                     await self.detach_block_from_agent(task_block["id"], agent_id)
-                if gathered_block:
-                    await self.detach_block_from_agent(gathered_block["id"], agent_id)
+                # Detach agent's own gathered block
+                for an, block in per_agent_blocks:
+                    if an == agent_name:
+                        await self.detach_block_from_agent(block["id"], agent_id)
+                        break
             logger.info(
                 "coordination_blocks_detached",
                 identity_id=identity_id,
@@ -637,8 +618,8 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
         # Reset all blocks
         if task_block:
             await self.update_block(task_block["id"], "")
-        if gathered_block:
-            await self.update_block(gathered_block["id"], "")
+        for _, block in per_agent_blocks:
+            await self.update_block(block["id"], "")
         if status_block:
             await self.update_block(status_block["id"], "{}")
 
@@ -648,55 +629,55 @@ Completed: {datetime.now(timezone.utc).isoformat()}"""
     async def get_gathered_findings(
         self,
         identity_id: str,
-        reference_agent_id: Optional[str] = None,
+        agent_ids: Optional[Dict[str, str]] = None,
+        agent_names: Optional[List[str]] = None,
     ) -> dict[str, str]:
         """
-        Parse gathered block into agent-keyed findings dictionary.
+        Read per-agent gathered blocks and parse into findings dictionary.
 
-        Looks for patterns like [AgentName HH:MM] in the block content
-        and extracts the content following each agent marker.
+        Each agent writes to its own block: coordination_gathered_{identity_id}_{agent}.
+        This reads each one and extracts the [AgentName HH:MM] content.
 
         Args:
             identity_id: User's identity ID
-            reference_agent_id: Optional agent ID to query blocks from
-                (needed because agent-attached blocks aren't in global list)
+            agent_ids: Mapping of agent_name -> agent_id for block lookup
+            agent_names: List of agent names to check
 
         Returns:
             Dict mapping agent name (lowercase) to their finding text
         """
-        label = f"coordination_gathered_{identity_id}"
-        if reference_agent_id:
-            gathered = await self.get_block_from_agent(reference_agent_id, label)
-        else:
-            gathered = await self.get_block_by_label(label)
-        if not gathered:
-            return {}
-
-        value = gathered.get("value", "")
-        if not value:
-            return {}
-
-        findings: dict[str, str] = {}
-
-        # Parse agent entries using simple pattern matching
-        # Format: [AgentName HH:MM] finding text
         import re
 
-        # Match [AgentName ...] patterns
+        agents = agent_names or list(agent_ids.keys()) if agent_ids else []
+        findings: dict[str, str] = {}
+
         pattern = r"\[([A-Za-z]+)\s+\d{1,2}:\d{2}\]"
-        matches = list(re.finditer(pattern, value))
 
-        for i, match in enumerate(matches):
-            agent_name = match.group(1).lower()
-            start = match.end()
+        for agent_name in agents:
+            label = f"coordination_gathered_{identity_id}_{agent_name}"
+            agent_id = agent_ids.get(agent_name) if agent_ids else None
 
-            # Find end of this entry (start of next entry or end of string)
-            if i + 1 < len(matches):
-                end = matches[i + 1].start()
+            if agent_id:
+                block = await self.get_block_from_agent(agent_id, label)
             else:
-                end = len(value)
+                block = await self.get_block_by_label(label)
 
-            finding_text = value[start:end].strip()
-            findings[agent_name] = finding_text
+            if not block:
+                continue
+
+            value = block.get("value", "").strip()
+            if not value:
+                continue
+
+            # Parse [AgentName HH:MM] pattern from this agent's block
+            matches = list(re.finditer(pattern, value))
+            if matches:
+                # Take last match (in case agent wrote multiple times)
+                match = matches[-1]
+                finding_text = value[match.end():].strip()
+                findings[agent_name] = finding_text
+            else:
+                # Agent wrote something but not in expected format — include it anyway
+                findings[agent_name] = value
 
         return findings

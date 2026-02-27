@@ -102,3 +102,141 @@ agents: {}
         enabled = task_type.get_enabled_agents()
         assert "calendar" in enabled
         assert "email" in enabled
+
+
+class TestTaskTypePhaseConfig:
+    """Tests for phased execution fields: resolve_agent, evaluation/synthesis prompts."""
+
+    def test_parse_resolve_agent(self, tmp_path):
+        """YAML with resolve_agent parses correctly."""
+        from pa_routing.services.task_type_loader import TaskTypeLoader
+
+        yaml_file = tmp_path / "phased_task.yaml"
+        yaml_file.write_text("""
+name: phased_task
+version: 2.0.0
+lifecycle_stage: active
+goal: "Phased execution test"
+resolve_agent: calendar
+
+agents:
+  calendar:
+    prompt_template: "Resolve meeting details"
+    timeout_seconds: 10
+  email:
+    prompt_template: "Gather email context"
+    timeout_seconds: 15
+
+synthesis:
+  mode: template_with_enhancement
+  template: "Results: {findings}"
+""")
+
+        loader = TaskTypeLoader(str(tmp_path))
+        task_type = loader.load("phased_task")
+
+        assert task_type.resolve_agent == "calendar"
+
+    def test_get_gather_agents_excludes_resolve(self, tmp_path):
+        """get_gather_agents() returns enabled agents minus the resolve agent."""
+        from pa_routing.services.task_type_loader import TaskTypeLoader
+
+        yaml_file = tmp_path / "phased_task.yaml"
+        yaml_file.write_text("""
+name: phased_task
+version: 2.0.0
+lifecycle_stage: active
+goal: "Phased execution test"
+resolve_agent: calendar
+
+agents:
+  calendar:
+    prompt_template: "Resolve meeting details"
+    timeout_seconds: 10
+  email:
+    prompt_template: "Gather email context"
+    timeout_seconds: 15
+  slack:
+    prompt_template: "Search slack messages"
+    timeout_seconds: 12
+
+synthesis:
+  mode: template_with_enhancement
+  template: "Results: {findings}"
+""")
+
+        loader = TaskTypeLoader(str(tmp_path))
+        task_type = loader.load("phased_task")
+
+        gather_agents = task_type.get_gather_agents()
+
+        # resolve agent should be excluded
+        assert "calendar" not in gather_agents
+        # other enabled agents should be present
+        assert "email" in gather_agents
+        assert "slack" in gather_agents
+
+    def test_parse_evaluation_and_synthesis_prompts(self, tmp_path):
+        """evaluation_prompt and synthesis_prompt parse from YAML synthesis section."""
+        from pa_routing.services.task_type_loader import TaskTypeLoader
+
+        yaml_file = tmp_path / "prompted_task.yaml"
+        yaml_file.write_text("""
+name: prompted_task
+version: 2.0.0
+lifecycle_stage: active
+goal: "Prompt parsing test"
+
+agents:
+  calendar:
+    prompt_template: "Find meetings"
+    timeout_seconds: 10
+
+synthesis:
+  mode: template_with_enhancement
+  template: "Results: {findings}"
+  evaluation_prompt: "Evaluate whether the gathered information is sufficient."
+  synthesis_prompt: "Synthesize all agent responses into a coherent briefing."
+""")
+
+        loader = TaskTypeLoader(str(tmp_path))
+        task_type = loader.load("prompted_task")
+
+        assert task_type.synthesis.evaluation_prompt == "Evaluate whether the gathered information is sufficient."
+        assert task_type.synthesis.synthesis_prompt == "Synthesize all agent responses into a coherent briefing."
+
+    def test_resolve_agent_defaults_to_none(self, tmp_path):
+        """v1 YAML without resolve_agent still works, defaults to None."""
+        from pa_routing.services.task_type_loader import TaskTypeLoader
+
+        yaml_file = tmp_path / "v1_task.yaml"
+        yaml_file.write_text("""
+name: v1_task
+version: 1.0.0
+lifecycle_stage: active
+goal: "Legacy v1 task"
+
+agents:
+  calendar:
+    prompt_template: "Find meetings"
+    timeout_seconds: 10
+  email:
+    prompt_template: "Find emails"
+    timeout_seconds: 15
+
+synthesis:
+  mode: template_only
+  template: "Results: {findings}"
+""")
+
+        loader = TaskTypeLoader(str(tmp_path))
+        task_type = loader.load("v1_task")
+
+        assert task_type.resolve_agent is None
+        assert task_type.synthesis.evaluation_prompt is None
+        assert task_type.synthesis.synthesis_prompt is None
+
+        # get_gather_agents should fall back to get_enabled_agents
+        gather_agents = task_type.get_gather_agents()
+        assert "calendar" in gather_agents
+        assert "email" in gather_agents
