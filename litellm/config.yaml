@@ -1,0 +1,125 @@
+# LiteLLM Proxy Configuration
+# Routes Letta agent LLM calls for per-agent cost tracking
+# Each agent gets a model alias (e.g., gpt-4.1-mini/calendar) that maps
+# to the same underlying model but with that agent's dedicated OpenAI API key.
+#
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+
+model_list:
+  # =========================================================================
+  # FALLBACK (used when no per-agent alias matches)
+  # =========================================================================
+  - model_name: "gpt-4.1-mini"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_FALLBACK"
+
+  - model_name: "gpt-4.1"
+    litellm_params:
+      model: "openai/gpt-4.1"
+      api_key: "os.environ/OPENAI_KEY_FALLBACK"
+
+  - model_name: "gpt-5-mini"
+    litellm_params:
+      model: "openai/gpt-5-mini"
+      api_key: "os.environ/OPENAI_KEY_FALLBACK"
+
+  - model_name: "text-embedding-3-small"
+    litellm_params:
+      model: "openai/text-embedding-3-small"
+      api_key: "os.environ/OPENAI_KEY_FALLBACK"
+
+  # =========================================================================
+  # PER-AGENT MODEL ALIASES
+  # =========================================================================
+
+  # --- main-assistant-agent-kinara ---
+  - model_name: "gpt-5-mini/kinara"
+    litellm_params:
+      model: "openai/gpt-5-mini"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
+  # --- companion-sleeptime_copy (Anthropic model, but embedding goes through here) ---
+  # Note: This agent uses Claude, not OpenAI for chat. Embedding only.
+
+  # --- calendar-agent_copy ---
+  - model_name: "gpt-4.1-mini/calendar"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_CALENDAR"
+
+  # --- docs-and-transcripts-agent ---
+  - model_name: "gpt-4.1-mini/docs"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_DOCS_TRANSCRIPTS"
+
+  # --- email-agent ---
+  - model_name: "gpt-4.1-mini/email"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_EMAIL"
+
+  # --- pulse-monitor-agent ---
+  - model_name: "gpt-4.1-mini/pulse"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_PULSE"
+
+  # --- pulse-monitor-agent_copy (sleeptime) ---
+  - model_name: "gpt-4.1-mini/pulse-sleep"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_PULSE_SLEEPTIME"
+
+  # --- tasks-agent ---
+  - model_name: "gpt-4.1-mini/tasks"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_TASKS"
+
+  # --- tasks-agent-sleeptime ---
+  - model_name: "gpt-4.1-mini/tasks-sleep"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_TASKS_SLEEPTIME"
+
+  # --- daily-schedule-agent-sleeptime ---
+  - model_name: "gpt-4.1-mini/schedule"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_MAIN_SLEEPTIME"
+
+  # --- sports_and_media_maven ---
+  - model_name: "gpt-4.1-mini/media"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_MEDIA"
+
+  # --- sports_and_media_maven_sleeptime ---
+  - model_name: "gpt-4.1-mini/media-sleep"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_MEDIA_SLEEPTIME"
+
+  # --- old/archived agents ---
+  - model_name: "gpt-4.1-mini/old"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_OLD_AGENTS"
+
+  - model_name: "gpt-4.1/old"
+    litellm_params:
+      model: "openai/gpt-4.1"
+      api_key: "os.environ/OPENAI_KEY_OLD_AGENTS"
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 120
+  success_callback: ["db"]
+  failure_callback: ["db"]
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: "os.environ/LITELLM_DATABASE_URL"
+  alerting: []

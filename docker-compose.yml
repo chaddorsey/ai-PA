@@ -364,8 +364,11 @@ services:
       # Entity extraction via Graphiti (adds entities to Neo4j knowledge graph)
       - ENABLE_ENTITY_EXTRACTION=false
       - GRAPHITI_BASE_URL=http://graphiti-mcp-server:8000
+      # Snapshot storage for document diff/edit tracking
+      - SNAPSHOT_BASE_PATH=/data/snapshots
     volumes:
       - ~/.gmail-mcp:/app/credentials
+      - /Volumes/main-filestore/ai-PA-data/drive-rag-snapshots:/data/snapshots
     ports:
       - "8095:8000"
     healthcheck:
@@ -619,7 +622,9 @@ services:
       # https://docs.letta.com/guides/server/providers/google
       GEMINI_API_KEY: $GEMINI_API_KEY
       #OLLAMA_BASE_URL: $OLLAMA_BASE_URL
-      OPENAI_API_KEY: $OPENAI_API_KEY
+      # Letta authenticates to LiteLLM proxy with master key (not real OpenAI key)
+      # Real per-agent keys are in LiteLLM's config, selected by model alias
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
       # Slack tokens for analytics tools
       SLACK_MCP_XOXP_TOKEN: $SLACK_MCP_XOXP_TOKEN
       # Drive analytics OAuth paths (container paths)
@@ -651,6 +656,49 @@ services:
       timeout: 5s
       retries: 18
       start_period: 1s
+
+
+  # LiteLLM proxy for per-agent cost tracking
+  # Routes OpenAI calls through a proxy that logs spend per user/agent to PostgreSQL
+  litellm:
+    image: docker.litellm.ai/berriai/litellm:main-latest
+    container_name: litellm
+    restart: unless-stopped
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+    networks: [pa-internal]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LITELLM_DATABASE_URL: "postgresql://litellm:${LITELLM_DB_PASSWORD:-litellm_secret}@supabase-db:5432/litellm"
+      # Per-agent OpenAI API keys
+      OPENAI_KEY_MAIN: ${OPENAI_KEY_MAIN}
+      OPENAI_KEY_MAIN_SLEEPTIME: ${OPENAI_KEY_MAIN_SLEEPTIME}
+      OPENAI_KEY_CALENDAR: ${OPENAI_KEY_CALENDAR}
+      OPENAI_KEY_DOCS_TRANSCRIPTS: ${OPENAI_KEY_DOCS_TRANSCRIPTS}
+      OPENAI_KEY_EMAIL: ${OPENAI_KEY_EMAIL}
+      OPENAI_KEY_PULSE: ${OPENAI_KEY_PULSE}
+      OPENAI_KEY_PULSE_SLEEPTIME: ${OPENAI_KEY_PULSE_SLEEPTIME}
+      OPENAI_KEY_TASKS: ${OPENAI_KEY_TASKS}
+      OPENAI_KEY_TASKS_SLEEPTIME: ${OPENAI_KEY_TASKS_SLEEPTIME}
+      OPENAI_KEY_MEDIA: ${OPENAI_KEY_MEDIA}
+      OPENAI_KEY_MEDIA_SLEEPTIME: ${OPENAI_KEY_MEDIA_SLEEPTIME}
+      OPENAI_KEY_OLD_AGENTS: ${OPENAI_KEY_OLD_AGENTS}
+      OPENAI_KEY_FALLBACK: ${OPENAI_KEY_FALLBACK}
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:4000/health/liveliness"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 
   # Open WebUI is the front-end UI to Letta
