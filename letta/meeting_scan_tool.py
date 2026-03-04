@@ -311,6 +311,94 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 }
             )
 
+        # ── Keyword-based proposed action extraction from AI summary ──
+        # When there are no user markers, scan the AI summary for phrases
+        # that suggest actions or decisions. These become "proposed" items
+        # the agent can promote into a draft (labeled as Proposed).
+        #
+        # Granola AI summaries use markdown bullet points like:
+        #   - Agreed to cancel the conference
+        #   - Will email conferences@nctm.org to cancel
+        #   - Chad to follow up with Hee-Sun
+        #   - Scott may still attend to take notes
+        #
+        # We extract lines containing action verbs or decision language.
+
+        # Pattern 1: Lines with explicit action/decision keywords
+        ACTION_LINE_RE = re.compile(
+            r"^\s*[-*]\s+(.+)$",  # any bullet line
+            re.MULTILINE,
+        )
+        # Phrases within bullet lines that signal actions
+        ACTION_SIGNALS = re.compile(
+            r"(?:"
+            r"(?:will|agreed to|need(?:s)? to|should|must|plan(?:s|ning)? to|going to)\s+\w+"
+            r"|(?:next\s+(?:action|step)s?|action\s+items?)\s*[:\-;]"
+            r"|(?:\w+)\s+(?:to\s+(?:follow\s*up|send|draft|review|schedule|prepare|check"
+            r"|reach\s+out|connect|share|update|submit|complete|cancel|confirm|email"
+            r"|contact|present|attend|coordinate|discuss|explore|investigate|finalize"
+            r"|organize|arrange|set\s+up|write|create|build|implement|look\s+into"
+            r"|talk\s+(?:to|with)|meet\s+with|circle\s+back|loop\s+in|flag|notify"
+            r"|address|resolve|handle|process|forward|distribute|announce|propose"
+            r"|convene|brief|debrief|report|document|outline|identify|assess|evaluate"
+            r"|prioritize|allocate|commit|deliver|publish|register|sign\s+up|book"
+            r"|reserve|order|request|apply|file|approve|sign|endorse|ratify))"
+            r")",
+            re.IGNORECASE,
+        )
+        DECISION_SIGNALS = re.compile(
+            r"(?:"
+            r"(?:agreed|decided|decision)\s+(?:to\s+|[:\-;])"
+            r"|(?:will\s+(?:not|no\s+longer)\s+)"
+            r"|(?:cancell?(?:ed|ing))"
+            r"|(?:confirmed|approved|endorsed|committed\s+to)"
+            r")",
+            re.IGNORECASE,
+        )
+
+        proposed_actions = []
+        proposed_decisions = []
+        has_user_markers = bool(my_tasks or their_tasks or pointers or decisions)
+
+        if ai_summary and not has_user_markers:
+            seen_texts = set()
+            for line_match in ACTION_LINE_RE.finditer(ai_summary):
+                line_text = line_match.group(1).strip()
+                # Skip sub-bullets (indented further) that are just context
+                if line_text.startswith("-"):
+                    continue
+                # Skip very short or header-like lines
+                if len(line_text) < 20:
+                    continue
+
+                # Check for decision signals first (decisions are a subset of actions)
+                if DECISION_SIGNALS.search(line_text):
+                    normalized = line_text.lower()
+                    if normalized not in seen_texts:
+                        seen_texts.add(normalized)
+                        proposed_decisions.append({"text": line_text, "source": "ai_summary"})
+                    continue
+
+                # Check for action signals
+                if ACTION_SIGNALS.search(line_text):
+                    normalized = line_text.lower()
+                    if normalized not in seen_texts:
+                        seen_texts.add(normalized)
+                        proposed_actions.append({"text": line_text, "source": "ai_summary"})
+
+            # Also scan transcript for "next action" / "action item" phrases
+            if transcript_text:
+                ACTION_PHRASE_RE = re.compile(
+                    r"(?:next\s+action|action\s+item)s?\s*(?:is|are|would\s+be)?\s*[:;]?\s*(.{15,120})",
+                    re.IGNORECASE,
+                )
+                for m in ACTION_PHRASE_RE.finditer(transcript_text):
+                    text = m.group(1).strip().rstrip(".")
+                    normalized = text.lower()
+                    if normalized not in seen_texts:
+                        seen_texts.add(normalized)
+                        proposed_actions.append({"text": text, "source": "transcript"})
+
         # ── Queue task candidates to durable memory block ──
         QUEUE_BLOCK_ID = "block-809efd9b-e2ca-4d11-af89-9a1c7710716c"
         QUEUE_BLOCK_LIMIT = 20000
@@ -349,7 +437,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 for item in queue_items:
                     scan_id = _uuid.uuid4().hex[:8]
                     marker_type = (
-                        "my_tasks" if item["marker"] in ("[]", "[ ]") else "their_tasks"
+                        "my_tasks" if "c" in item["marker"].lower() else "their_tasks"
                     )
                     entry_lines = [
                         f"[queued: {now_str}; scan_id: {scan_id}] meeting_id: {meeting_id}",
@@ -649,8 +737,11 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             # [c] markers are Chad's tasks — ensure they start with "Chad to"
             if not action.lower().startswith("chad to"):
                 action = "Chad to " + action[0].lower() + action[1:]
+            # Append deadline only if not already present in the task text
             if item.get("deadline_hint"):
-                action += f" ({item['deadline_hint']})"
+                hint_text = item["deadline_hint"]
+                if hint_text.lower() not in action.lower():
+                    action += f" {hint_text}"
             followup_my.append(action)
 
         followup_their = []
@@ -658,11 +749,24 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             # [;] markers already contain the assignee in the bullet text
             # (e.g., "Susan to review the budget") — leave as-is
             action = item["text"]
+            # Append deadline only if not already present in the task text
             if item.get("deadline_hint"):
-                action += f" ({item['deadline_hint']})"
+                hint_text = item["deadline_hint"]
+                if hint_text.lower() not in action.lower():
+                    action += f" {hint_text}"
             followup_their.append(action)
 
         followup_decisions = [item["text"] for item in decisions]
+
+        # Merge proposed items into followup args when no user markers
+        is_proposed = False
+        if not has_user_markers and (proposed_actions or proposed_decisions):
+            is_proposed = True
+            # Use proposed items as the followup content
+            for pa in proposed_actions:
+                followup_my.append(pa["text"])
+            for pd in proposed_decisions:
+                followup_decisions.append(pd["text"])
 
         next_action = {
             "tool": "prepare_meeting_followup",
@@ -674,15 +778,21 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 "decisions": " | ".join(followup_decisions),
                 "my_actions": " | ".join(followup_my),
                 "their_actions": " | ".join(followup_their),
+                "proposed": is_proposed,
             },
             "instruction": (
-                "REQUIRED: Call prepare_meeting_followup with the pre_computed_args above. "
+                "Call prepare_meeting_followup with the pre_computed_args above ONLY if "
+                "there are actual actions or decisions. "
+                "If there are no actions AND no decisions, do NOT call — skip the followup. "
+                "CRITICAL: Pass the 'proposed' field exactly as shown in pre_computed_args. "
+                "When proposed is true, the email subject gets a [Proposed] prefix. "
                 "You may augment my_actions or their_actions with additional items from "
                 "your semantic review before calling. For their_actions, leave the text "
                 "as-is — the assignee is already named in the bullet (e.g., 'Susan to "
                 "review the budget'). Do NOT add 'TBD to' or any other prefix. "
                 "For my_actions, each item already starts with 'Chad to'. "
-                "If there are truly no actions or decisions, you may skip the call."
+                "IMPORTANT: Pass participants EXACTLY as provided — including the "
+                "'Name <email>' format. Do not strip email addresses."
             ),
         }
 
@@ -699,6 +809,11 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 "pointers": pointers,
                 "decisions": decisions,
             },
+            "proposed_items": {
+                "actions": proposed_actions,
+                "decisions": proposed_decisions,
+            },
+            "has_user_markers": has_user_markers,
             "scannable_content": scannable_content,
             "has_user_notes": bool(private_notes),
             "doc_urls_found": doc_urls,
