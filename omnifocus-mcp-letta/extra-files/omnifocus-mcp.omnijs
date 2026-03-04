@@ -7819,6 +7819,81 @@
     }
   };
 
+  lib.validateHierarchyIntegrity = params => {
+    const rootId = params.rootId || null;
+    const validationLevel = params.validationLevel || 'standard';
+    const includeRepairSuggestions = params.includeRepairSuggestions || false;
+
+    const errors = [];
+    const warnings = [];
+
+    try {
+      // If rootId specified, validate that specific hierarchy
+      if (rootId) {
+        const rootTask = flattenedTasks.find(t => bareId(t.id) === rootId);
+        if (!rootTask) {
+          errors.push({
+            type: 'missing_root',
+            severity: 'critical',
+            message: `Root task not found: ${rootId}`,
+            repairSuggestion: includeRepairSuggestions ? 'Remove orphaned reference' : undefined
+          });
+        } else {
+          // Check for circular references in children
+          const visited = new Set();
+          const checkCircular = (taskId) => {
+            if (visited.has(taskId)) {
+              errors.push({
+                type: 'circular_reference',
+                severity: 'critical',
+                message: `Circular reference detected at task: ${taskId}`,
+                repairSuggestion: includeRepairSuggestions ? 'Break circular reference by moving task to root' : undefined
+              });
+              return;
+            }
+            visited.add(taskId);
+            const children = flattenedTasks.filter(t => t.parent && bareId(t.parent) === taskId);
+            for (const child of children) {
+              checkCircular(bareId(child.id));
+            }
+          };
+          checkCircular(rootId);
+        }
+      }
+
+      // Determine overall health
+      let overallHealth = 'healthy';
+      const criticalCount = errors.filter(e => e.severity === 'critical').length;
+      if (criticalCount > 0) {
+        overallHealth = 'critical';
+      } else if (errors.length > 0) {
+        overallHealth = 'degraded';
+      } else if (warnings.length > 0) {
+        overallHealth = 'minor_issues';
+      }
+
+      return {
+        rootId: rootId,
+        validationLevel: validationLevel,
+        errors: errors,
+        warnings: warnings,
+        overallHealth: overallHealth
+      };
+    } catch (e) {
+      return {
+        rootId: rootId,
+        validationLevel: validationLevel,
+        errors: [{
+          type: 'validation_error',
+          severity: 'critical',
+          message: `Validation failed: ${e.message}`
+        }],
+        warnings: [],
+        overallHealth: 'critical'
+      };
+    }
+  };
+
   lib.repairHierarchyIntegrity = params => {
     const startTime = Date.now();
     const hierarchyId = params.hierarchyId;
