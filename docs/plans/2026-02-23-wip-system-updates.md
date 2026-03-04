@@ -1,6 +1,6 @@
 # WIP System Updates Tracker
 
-**Last updated:** 2026-02-25
+**Last updated:** 2026-03-03
 
 This document tracks in-flight system improvement projects that have been designed but not yet fully implemented. Each entry links to its detailed plan document.
 
@@ -41,28 +41,31 @@ This document tracks in-flight system improvement projects that have been design
 
 ---
 
-## 3. Meeting Follow-up Email Pipeline (Compaction Fix)
+## 3. Meeting Follow-up Email Pipeline (VERIFIED)
 
-**Status:** Fix deployed (Option B) — awaiting production verification on next real meeting
+**Status:** Deployed, verified in production, and enhanced with proposed items
 **Plan:** [2026-02-17-meeting-notes-processing-design.md](2026-02-17-meeting-notes-processing-design.md) / [2026-02-17-meeting-notes-processing-tasks.md](2026-02-17-meeting-notes-processing-tasks.md)
 **Risk:** Low
-**Estimated effort:** Done (verification remaining)
+**Estimated effort:** Done
 
 **What's deployed and working:**
-- `scan_meeting_notes` tool — registered on Granola agent, called on every new meeting (13+ calls observed)
+- `scan_meeting_notes` tool — registered on Granola agent, called on every new meeting
 - `prepare_meeting_followup` tool — registered, creates HTML D/NA Gmail draft
 - Post-ingestion trigger in `granola_mcp_to_archival.py` — fires on every new meeting
-- Agent system prompt + `meeting_processing_chain` memory block with full instructions
+- Agent system prompt with full `meeting_processing_protocol`
 - Granola import cron jobs (3 jobs covering business hours, off-hours, weekends)
-- Marker convention updated to `[c]` for Chad tasks (2026-02-23; Granola was swallowing `[ ]`)
+- Marker convention: `[c]` for Chad tasks, `[;]` for others' tasks
 
-**The problem (now fixed):** After `scan_meeting_notes` returned, Letta's context compaction fired (the scan result + meeting content is large), and the agent lost the instruction to call `prepare_meeting_followup`. It produced a text summary instead of creating the Gmail draft. Result: 16 scans, only 1 followup call (and that one had empty args).
+**Compaction fix (2026-02-23):** `scan_meeting_notes` returns `next_action` block with pre-computed args that survive Letta context compaction.
 
-**Fix applied (2026-02-23):** Option B — `scan_meeting_notes` now returns a `next_action` block with pre-computed `prepare_meeting_followup` args embedded in the tool return. Tool returns survive compaction. Tested with zero-marker meetings and marker-rich meetings (Rebecca meeting with 4 `[;]` items — all correctly populated in pipe-separated format). The instruction tells the agent to call the tool with the pre-computed args, allowing semantic augmentation before calling.
+**Fixes applied (2026-03-03):**
+1. **Draft gating** — agent prompt updated to only create drafts when user markers exist or proposed items found (was creating drafts for every meeting)
+2. **Deadline doubling** — `scan_meeting_notes` now checks if deadline hint already appears in task text before appending (was producing "by EOD Wednesday (by EOD Wednesday)")
+3. **Email passthrough** — prompt and `next_action` instruction reinforce passing participants with `Name <email>` format (agent was stripping emails)
+4. **marker_type bug** — queue writes now correctly classify `[c]` as `my_tasks` (was checking for empty `[]` which never matched)
+5. **Proposed items extraction** — see Item 15 below
 
-**Also fixed (2026-02-23):** Marker regex bug — `\[\s?\]` only matched `[ ]`/`[]`, missing `[  ]`/`[   ]` variants users actually typed. Now uses `[c]` convention which avoids the Granola checkbox problem entirely.
-
-**Verification:** Monitor the next real meeting archived via Granola cron. Check Gmail drafts and agent message history for `prepare_meeting_followup` calls.
+**Mass re-import root cause (2026-03-02):** ExFAT permission error prevented `.granola_watcher_state.json` writes → state never saved → every import cycle saw ~90 meetings as "new" → 836+ agent notifications on March 1-2 → ~2500 junk Gmail drafts. Resolved by APFS migration (Item 12).
 
 ---
 
@@ -237,4 +240,122 @@ Future work (not yet started):
 
 Suggested order: 8 → 9 → 10 (each builds on the previous).
 
-**Completed:** Items 1-7 — archive embedding migration, completion feedback loop, meeting follow-up fix, OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping.
+---
+
+## 11. Coordination V2 — Follow-up Fixes
+
+**Status:** Deployed — follow-up issues identified during smoke testing
+**Plan:** [2026-02-27-coordination-v2-design.md](2026-02-27-coordination-v2-design.md) / [2026-02-27-coordination-v2-impl.md](2026-02-27-coordination-v2-impl.md)
+
+**What's deployed and working:**
+- 5-phase coordination flow: Resolve (calendar-first) → Gather (parallel) → Evaluate (main agent) → Refine (follow-ups) → Synthesize
+- Calendar resolution populates `{resolved_title}`, `{resolved_participants}`, `{resolved_emails}`, `{resolved_time}` for downstream agents
+- Evaluation phase correctly identifies which agents need follow-up prompts
+- Synthesis output is clean (no template variable leaks)
+
+**Known issues to address:**
+1. **Document agent gather timeout** — times out in Phase 1 (90s) but contributes successfully during Phase 3 refinement. May need longer Phase 1 timeout or prompt tuning.
+2. **Pulse agent never contributes** — returns empty findings across all test runs. May lack Slack search tools or not understand the memory-write instruction.
+3. **`coordination_logs` table missing** — all log POSTs return 404. Need to create the table in Supabase for observability.
+
+---
+
+## 12. Infrastructure — ExFAT to APFS Migration (COMPLETED)
+
+**Status:** Completed (2026-03-03)
+
+**What was done:**
+- Backed up main-drive (256GB ExFAT SSD) to main-filestore via `ditto`
+- Verified backup with SHA-256 checksums across 34+ files
+- Reformatted main-drive from ExFAT to APFS via Disk Utility
+- Restored files via `ditto`, verified checksums match
+- Docker Desktop restarted — 24 containers healthy
+- Confirmed no `._*` metadata sidecar files on APFS
+
+**Benefit:** Eliminates ExFAT metadata file issues that poisoned Docker builds and Letta restarts. Proper Unix permissions, symlinks, and extended attributes now supported.
+
+---
+
+## 13. Infrastructure — Time Machine Backup
+
+**Status:** In progress (2026-03-03)
+**Risk:** Low
+
+**What was done:**
+- Time Machine configured to back up to main-filestore (14TB APFS HDD, 11TB free)
+
+**Still to do:**
+- Exclude `/Volumes/main-drive/Docker` from Time Machine (228GB VM image changes constantly, bloats backups)
+- Include main-drive in Time Machine for versioned ai-PA/ollama snapshots
+- Verify first backup completes successfully
+
+---
+
+## 14. Infrastructure — Evaluate OrbStack Migration (NOT STARTED)
+
+**Status:** Not started — planned
+**Risk:** Low (drop-in Docker Desktop replacement, can run side-by-side)
+**Estimated effort:** 1-2 hours
+
+**Problem:** Docker Desktop uses a fixed VM allocation (7.9GB of 24GB RAM). With 34 containers, memory pressure caused a kernel panic (61 swapfiles, 97% memory compression, WindowServer watchdog timeout).
+
+**Approach:**
+1. Install OrbStack (uses dynamic memory sharing — no fixed VM)
+2. Import Docker Desktop data
+3. Test all services start and run correctly
+4. Prove stability over 24-48 hours
+5. Uninstall Docker Desktop if satisfied
+
+**Benefit:** Dynamic memory sharing means containers only consume what they actually use, dramatically reducing memory pressure on the 24GB Mac Mini.
+
+---
+
+## 15. Meeting Follow-up — Proposed Items Extraction (COMPLETED)
+
+**Status:** Implemented, deployed, and verified in production (2026-03-03)
+**Extends:** Item 3 (Meeting Follow-up Pipeline)
+**Risk:** Low (additive feature, no existing behavior changes)
+
+**What was built:**
+- **Semantic extraction** in `scan_meeting_notes` — scans AI summary bullet lines for action verbs (`ACTION_SIGNALS`) and decision language (`DECISION_SIGNALS`). Returns `proposed_items: {actions: [...], decisions: [...]}` and `has_user_markers: bool`.
+- **Proposed draft workflow** — agent prompt updated: if `has_user_markers=false` but `proposed_items` contains items, creates draft with `proposed=true` (adds `[Proposed]` to subject line). If no markers AND no proposed items, skips followup entirely.
+- **`proposed` parameter** on `prepare_meeting_followup` tool — boolean flag that prepends `[Proposed]` to email subject when true.
+- **Pre-computed args integration** — when no user markers, `next_action.pre_computed_args` merges proposed items into followup args and sets `proposed: true`.
+
+**Verification (live end-to-end through agent):**
+- "Check in re proposal development" (no markers) → scan found 1 action + 2 decisions → agent created `[Proposed]` draft ✓
+- "Chad and Kate" (no markers, personal chat) → scan found 0 items → agent correctly skipped followup ✓
+
+**Key extraction patterns:**
+- `ACTION_SIGNALS`: will/agreed to/need to/should + verb, "next action/step" headers, Name + action verb patterns
+- `DECISION_SIGNALS`: agreed/decided/decision + to, will not/no longer, cancelled/confirmed/approved
+
+**Tool IDs:**
+- `scan_meeting_notes`: `tool-6079e940-f49f-4cd2-925a-ebf33c4ba3d7`
+- `prepare_meeting_followup`: `tool-301ba80c-c4e8-4087-90a9-f1cdba295f85`
+- Agent: `agent-398b4f6c-6afa-493f-8063-897c6b171a0d` (docs-and-transcripts-agent)
+
+---
+
+## Execution Order
+
+Items 1-7, 12, 15 complete.
+
+Remaining monitoring:
+
+- **Item 1 (Archive Embedding Migration):** 7-day soak period for DEPRECATED archives (delete after 2026-03-02)
+- **Item 6 (Outbound Notifications):** Awaiting production verification on next OmniFocus completion sync with external-origin task
+- **Item 7 (Cross-Agent Awareness Phase 1):** Deployed. Monitor sleeptime consolidation of daily_awareness block and verify archival writes from Slack DMs.
+- **Item 13 (Time Machine Backup):** Configure exclusions, verify first backup.
+
+Future work (not yet started):
+
+- **Item 8 (Shared Routing):** Layer 2 of cross-interface continuity. Give Slack access to dynamic agent routing.
+- **Item 9 (Conversation Continuity):** Layer 3. Allow conversations to span interfaces via identity_id lookup.
+- **Item 10 (Weekly Rollups):** Phase 2 of cross-agent awareness. Longer-term activity memory.
+- **Item 11 (Coordination V2 Follow-ups):** Fix document timeout, pulse agent, coordination_logs table.
+- **Item 14 (OrbStack Migration):** Evaluate as Docker Desktop replacement for memory pressure relief.
+
+Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
+
+**Completed:** Items 1-7, 12, 15 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration.
