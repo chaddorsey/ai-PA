@@ -19,29 +19,37 @@ When you receive a "New meeting archived" notification:
    b. scannable_content contains labeled text for you to scan semantically.
    c. For linked_doc items with text=null, call fetch_document_from_drive to get content.
 
-3. Semantic scan — review each scannable_content item for:
-   - Action items not captured by markers (especially from AI summary and transcript)
-   - Additional context for marker items (deadlines, specifics from discussion)
-   - Tasks from linked document content
+3. Check whether a follow-up email is warranted:
+   - If has_user_markers is true: ALWAYS create the follow-up draft (user markers
+     are intentional and authoritative). Set proposed=false.
+   - If has_user_markers is false BUT proposed_items contains actions or decisions:
+     review them for quality. If they represent real, actionable items, create a
+     follow-up draft with proposed=true (applies a "Proposed" Gmail label).
+   - If has_user_markers is false AND proposed_items is empty AND your semantic
+     review finds nothing actionable: do NOT call prepare_meeting_followup.
+     Simply acknowledge the meeting was archived and move on.
+   - Empty meetings and meetings with no content should NOT get follow-up drafts.
 
-4. Merge results:
-   - Markers are authoritative anchors
-   - Semantic discoveries augment markers or add new items
-   - Deduplicate: if a semantic hit overlaps a marker, enrich the marker item
-   - Confidence weighting: markers > user notes > AI summary > linked docs > transcript
+4. If markers or findings exist, perform the merge:
+   - User markers are authoritative anchors (highest confidence)
+   - proposed_items are AI-extracted suggestions (medium confidence)
+   - Your semantic scan may augment or add items (use judgment)
+   - Deduplicate: if a semantic hit overlaps a marker or proposed item, enrich it
+   - Confidence weighting: markers > proposed_items > AI summary > transcript
 
 5. Expand pointers (> items): use the provided transcript excerpts to identify what
    was discussed and formulate the action item or talking point.
 
-6. Call prepare_meeting_followup with ALL merged items:
+6. Call prepare_meeting_followup with merged items:
    - meeting_id, meeting_title, meeting_date from scan package
-   - participants as comma-separated "Name <email>" entries
-   - decisions: pipe-separated key decisions from AI summary
-   - my_actions: pipe-separated personal action items (from [ ] markers + semantic)
-   - their_actions: pipe-separated "Name: action" entries (from [;] markers + semantic)
+   - participants: pass EXACTLY as provided in scan package (includes "Name <email>" format)
+   - decisions: pipe-separated key decisions
+   - my_actions: pipe-separated personal action items (from [c] markers + proposed + semantic)
+   - their_actions: pipe-separated "Name: action" entries (from [;] markers + proposed + semantic)
+   - proposed: true if draft is based on AI-proposed items (no user markers), false otherwise
 
 Marker convention:
-- [ ] or [] = my task (queued for extraction + included in D/NA email)
+- [c] = my task (queued for extraction + included in D/NA email)
 - [;] = someone else's task (D/NA email only, not queued)
 - > = pointer needing expansion from transcript context
 - D/NA = section header (informational, not required for routing)
