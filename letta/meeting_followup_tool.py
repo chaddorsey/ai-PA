@@ -18,6 +18,7 @@ def prepare_meeting_followup(
     decisions: Optional[str] = None,
     my_actions: Optional[str] = None,
     their_actions: Optional[str] = None,
+    proposed: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Create a follow-up email draft with Decisions and Next Actions from a meeting.
@@ -44,6 +45,9 @@ def prepare_meeting_followup(
         their_actions: Pipe-separated list of others' action items as complete sentences
             (e.g. "AJ to send budget|Rebecca to contact Rose"). Each item already contains
             the assignee name. Omit if no actions for others identified.
+        proposed: Set to true when the draft is based on AI-proposed items rather than
+            explicit user markers. Applies a "Proposed" Gmail label to the draft so the
+            user can distinguish AI-suggested drafts from marker-based ones.
 
     Returns:
         Dictionary with status, draft_id, and email details.
@@ -120,6 +124,17 @@ def prepare_meeting_followup(
             cap_d = d[0].upper() + d[1:] if d else d
             decision_items.append(f"<li><i>Decision</i> &#8211; {cap_d}</li>")
 
+        # ── Strip leading auxiliary verbs ──
+        # Proposed items often start with "Will email..." or "Needs to review..."
+        # which produces "Chad to will email..." when prefixed. Strip these so
+        # the result is "Chad to email..." or "Name to review...".
+        LEADING_VERB_RE = re.compile(
+            r"^(?:will|shall|should|must|needs?\s+to|has\s+to|have\s+to"
+            r"|agreed\s+to|plans?\s+to|planning\s+to|going\s+to"
+            r"|is\s+going\s+to|was\s+going\s+to)\s+",
+            re.IGNORECASE,
+        )
+
         # Build action bullet items ("Name to verb..." format)
         action_items = []
         for a in my_action_list:
@@ -127,23 +142,32 @@ def prepare_meeting_followup(
                 continue
             a_lower = a.lower()
             if a_lower.startswith("chad to ") or a_lower.startswith("chad: "):
-                action_items.append(f"<li>{a}</li>")
+                # Already has "Chad to" — still strip doubled aux verbs
+                prefix_len = 8 if a_lower.startswith("chad to ") else 6
+                rest = a[prefix_len:]
+                rest = LEADING_VERB_RE.sub("", rest)
+                action_items.append(f"<li>{a[:prefix_len]}{rest}</li>")
             else:
-                action_items.append(f"<li>Chad to {a[0].lower()}{a[1:]}</li>")
+                stripped = LEADING_VERB_RE.sub("", a)
+                action_items.append(f"<li>Chad to {stripped[0].lower()}{stripped[1:]}</li>")
 
         for a in their_action_list:
-            if a:
+            if not a:
+                continue
+            # Check for "Name to will verb..." pattern and strip the aux verb
+            name_to_match = re.match(r"^(\w+(?:\s+\w+)?\s+to\s+)", a, re.IGNORECASE)
+            if name_to_match:
+                prefix = name_to_match.group(1)
+                rest = a[len(prefix):]
+                rest = LEADING_VERB_RE.sub("", rest)
+                action_items.append(f"<li>{prefix}{rest}</li>")
+            else:
                 action_items.append(f"<li>{a}</li>")
 
-        # Assemble bullet lists with blank line between decisions and actions
-        if decision_items and action_items:
-            html_parts.append("<ul>" + "".join(decision_items) + "</ul>")
-            html_parts.append("<br>")
-            html_parts.append("<ul>" + "".join(action_items) + "</ul>")
-        elif decision_items:
-            html_parts.append("<ul>" + "".join(decision_items) + "</ul>")
-        elif action_items:
-            html_parts.append("<ul>" + "".join(action_items) + "</ul>")
+        # Assemble all items in a single bullet list
+        all_items = decision_items + action_items
+        if all_items:
+            html_parts.append("<ul>" + "".join(all_items) + "</ul>")
 
         body_html = "".join(html_parts)
 
@@ -186,14 +210,45 @@ def prepare_meeting_followup(
 
         draft_id = draft.get("id", "")
         draft_message = draft.get("message", {})
+        message_id = draft_message.get("id", "")
+
+        # Apply "Proposed" label if this draft is AI-proposed (no user markers)
+        label_applied = False
+        if proposed and message_id:
+            PROPOSED_LABEL_NAME = "Proposed"
+            # Find or create the "Proposed" label
+            labels_resp = gmail.users().labels().list(userId="me").execute()
+            proposed_label_id = None
+            for label in labels_resp.get("labels", []):
+                if label["name"] == PROPOSED_LABEL_NAME:
+                    proposed_label_id = label["id"]
+                    break
+            if not proposed_label_id:
+                new_label = gmail.users().labels().create(
+                    userId="me",
+                    body={
+                        "name": PROPOSED_LABEL_NAME,
+                        "labelListVisibility": "labelShow",
+                        "messageListVisibility": "show",
+                    },
+                ).execute()
+                proposed_label_id = new_label["id"]
+            # Apply label to the draft's message
+            gmail.users().messages().modify(
+                userId="me",
+                id=message_id,
+                body={"addLabelIds": [proposed_label_id]},
+            ).execute()
+            label_applied = True
 
         return {
             "status": "ok",
             "draft_id": draft_id,
-            "message_id": draft_message.get("id", ""),
+            "message_id": message_id,
             "thread_id": draft_message.get("threadId", ""),
             "email_to": ", ".join(emails_list),
             "email_subject": subject,
+            "proposed_label": label_applied,
         }
 
     except Exception as e:
