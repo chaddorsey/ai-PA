@@ -7,7 +7,7 @@ from omnifocus_cli.cli import cli
 def test_task_create_minimal(mock_call):
     mock_call.return_value = {"id": "new-1", "name": "Buy milk"}
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "task", "create", "--name", "Buy milk"])
+    result = runner.invoke(cli, ["--format", "json", "task", "create", "--name", "Buy milk"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("createTask", {"name": "Buy milk"})
 
@@ -46,7 +46,7 @@ def test_task_create_full(mock_call):
 def test_task_get(mock_call):
     mock_call.return_value = {"id": "t-1", "name": "Test"}
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "task", "get", "t-1"])
+    result = runner.invoke(cli, ["--format", "json", "task", "get", "t-1"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("getTask", {"taskId": "t-1"})
 
@@ -92,7 +92,7 @@ def test_task_update_unflag(mock_call):
 def test_task_list_by_project(mock_call):
     mock_call.return_value = [{"id": "t-1", "name": "Task A"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "task", "list", "--project", "proj-1"])
+    result = runner.invoke(cli, ["--format", "json", "task", "list", "--project", "proj-1"])
     assert result.exit_code == 0
     params = mock_call.call_args[0][1]
     assert params["projectId"] == "proj-1"

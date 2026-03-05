@@ -7,7 +7,7 @@ from omnifocus_cli.cli import cli
 def test_tags_list(mock_call):
     mock_call.return_value = [{"id": "t-1", "name": "urgent"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "tags", "list"])
+    result = runner.invoke(cli, ["--format", "json", "tags", "list"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("listTags", {})
 

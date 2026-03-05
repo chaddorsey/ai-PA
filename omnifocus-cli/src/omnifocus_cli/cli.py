@@ -1,29 +1,126 @@
+import json
 import sys
 
 import click
 
 from omnifocus_cli.bridge import call_omnifocus
-from omnifocus_cli.formatters import output_error, output_result
+from omnifocus_cli.fields import apply_field_mask
+from omnifocus_cli.formatters import output_error, output_result, should_use_json
+from omnifocus_cli.schema import get_schema, list_schemas
+from omnifocus_cli.validate import validate_body
 
 
 @click.group()
-@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("--format", "format_flag", type=click.Choice(["json", "text"]), default=None)
+@click.option("--body", "body_json", default=None, help="Raw JSON input (agent-first path)")
+@click.option("--dry-run", is_flag=True, default=False, help="Validate + preview, no execution")
+@click.option("--fields", default=None, help="Comma-separated output fields")
 @click.pass_context
-def cli(ctx, json_output):
+def cli(ctx, format_flag, body_json, dry_run, fields):
     """OmniFocus CLI - manage tasks, projects, and tags."""
     ctx.ensure_object(dict)
-    ctx.obj["json"] = json_output
+    ctx.obj["format"] = format_flag
+    ctx.obj["body"] = body_json
+    ctx.obj["dry_run"] = dry_run
+    ctx.obj["fields"] = fields.split(",") if fields else None
 
 
-def _run(ctx, method: str, params: dict):
-    """Call the OmniFocus bridge, stripping None values from params."""
-    cleaned = {k: v for k, v in params.items() if v is not None}
+def _run(ctx, schema_key: str, method: str, params: dict, had_convenience_flags: bool = False):
+    """Core execution helper.
+
+    1. If --body was provided, parse JSON and validate against schema; ignore params arg.
+    2. If --body AND convenience flags: use --body, warn to stderr.
+    3. If no --body: use params from convenience flags.
+    4. Validation errors -> stdout JSON, exit 2.
+    5. --dry-run -> stdout JSON, exit 0 (valid) or 2 (invalid).
+    6. Otherwise: call bridge, apply field mask, output.
+    """
+    body_json = ctx.obj.get("body")
+    dry_run = ctx.obj.get("dry_run", False)
+    use_json = should_use_json(ctx.obj.get("format"))
+    field_list = ctx.obj.get("fields")
+
+    if body_json is not None:
+        # Agent path: parse --body JSON
+        try:
+            parsed_body = json.loads(body_json)
+        except json.JSONDecodeError as exc:
+            click.echo(json.dumps({"error": "invalid_json", "detail": str(exc)}), nl=True)
+            ctx.exit(2)
+            return
+
+        if had_convenience_flags:
+            click.echo("Warning: --body provided; ignoring convenience flags", err=True)
+
+        # Validate against schema
+        errors = validate_body(schema_key, parsed_body)
+        if errors:
+            if dry_run:
+                click.echo(json.dumps({
+                    "dry_run": True,
+                    "method": method,
+                    "validation_errors": errors,
+                }, indent=2))
+                ctx.exit(2)
+                return
+            click.echo(json.dumps({
+                "error": "validation_failed",
+                "errors": errors,
+            }, indent=2))
+            ctx.exit(2)
+            return
+
+        final_params = parsed_body
+    else:
+        # Convenience-flag path: use params as-is (already cleaned by caller).
+        # Skip schema validation here -- convenience flags are already
+        # structurally correct by construction and may include params
+        # (e.g. filter-only search fields) not in the primary schema.
+        final_params = params
+
+    if dry_run:
+        click.echo(json.dumps({
+            "dry_run": True,
+            "method": method,
+            "params": final_params,
+            "validation": "passed",
+        }, indent=2))
+        ctx.exit(0)
+        return
+
+    # Execute
     try:
-        result = call_omnifocus(method, cleaned)
-        output_result(result, json_output=ctx.obj["json"])
+        result = call_omnifocus(method, final_params)
+        result = apply_field_mask(result, field_list)
+        output_result(result, json_output=use_json)
     except Exception as exc:
-        output_error(str(exc), json_output=ctx.obj["json"])
+        output_error(str(exc), json_output=use_json)
         sys.exit(1)
+
+
+# ── schema command ──────────────────────────────────────────────────
+
+
+@cli.command("schema")
+@click.argument("method", required=False)
+@click.option("--list", "list_all", is_flag=True, help="List all available methods")
+@click.pass_context
+def schema_cmd(ctx, method, list_all):
+    """Show schema for a method, or list all methods."""
+    if list_all:
+        print("\n".join(list_schemas()))
+        ctx.exit(0)
+        return
+    if not method:
+        click.echo("Usage: omnifocus-cli schema <method> or --list", err=True)
+        ctx.exit(2)
+        return
+    s = get_schema(method)
+    if s is None:
+        click.echo(f"Unknown method: {method}", err=True)
+        ctx.exit(2)
+        return
+    print(json.dumps(s, indent=2))
 
 
 # ── task command group ───────────────────────────────────────────────
@@ -35,7 +132,7 @@ def task():
 
 
 @task.command("create")
-@click.option("--name", required=True, help="Task name")
+@click.option("--name", default=None, help="Task name")
 @click.option("--project", "project_id", default=None, help="Project ID")
 @click.option("--note", default=None, help="Task note")
 @click.option("--flag/--no-flag", "flagged", default=None, help="Flag the task")
@@ -48,18 +145,27 @@ def task():
 def task_create(ctx, name, project_id, note, flagged, due_date, defer_date,
                 planned_date, estimated_minutes, tag_ids):
     """Create a new task."""
-    params = {
-        "name": name,
-        "projectId": project_id,
-        "note": note,
-        "flagged": flagged,
-        "dueDate": due_date,
-        "deferDate": defer_date,
-        "plannedDate": planned_date,
-        "estimatedMinutes": estimated_minutes,
-        "tagIds": list(tag_ids) if tag_ids else None,
-    }
-    _run(ctx, "createTask", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [
+            name, project_id, note, flagged, due_date, defer_date,
+            planned_date, estimated_minutes,
+        ]) or bool(tag_ids)
+        _run(ctx, "task.create", "createTask", {}, had_convenience_flags=had_flags)
+    else:
+        params = {
+            "name": name,
+            "projectId": project_id,
+            "note": note,
+            "flagged": flagged,
+            "dueDate": due_date,
+            "deferDate": defer_date,
+            "plannedDate": planned_date,
+            "estimatedMinutes": estimated_minutes,
+            "tagIds": list(tag_ids) if tag_ids else None,
+        }
+        cleaned = {k: v for k, v in params.items() if v is not None}
+        _run(ctx, "task.create", "createTask", cleaned)
 
 
 @task.command("get")
@@ -67,7 +173,11 @@ def task_create(ctx, name, project_id, note, flagged, due_date, defer_date,
 @click.pass_context
 def task_get(ctx, task_id):
     """Get a task by ID."""
-    _run(ctx, "getTask", {"taskId": task_id})
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.get", "getTask", {})
+    else:
+        _run(ctx, "task.get", "getTask", {"taskId": task_id})
 
 
 @task.command("update")
@@ -85,19 +195,28 @@ def task_get(ctx, task_id):
 def task_update(ctx, task_id, name, project_id, note, flagged, due_date,
                 defer_date, planned_date, estimated_minutes, tag_ids):
     """Update a task by ID."""
-    params = {
-        "taskId": task_id,
-        "name": name,
-        "projectId": project_id,
-        "note": note,
-        "flagged": flagged,
-        "dueDate": due_date,
-        "deferDate": defer_date,
-        "plannedDate": planned_date,
-        "estimatedMinutes": estimated_minutes,
-        "tagIds": list(tag_ids) if tag_ids else None,
-    }
-    _run(ctx, "updateTask", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [
+            name, project_id, note, flagged, due_date, defer_date,
+            planned_date, estimated_minutes,
+        ]) or bool(tag_ids)
+        _run(ctx, "task.update", "updateTask", {}, had_convenience_flags=had_flags)
+    else:
+        params = {
+            "taskId": task_id,
+            "name": name,
+            "projectId": project_id,
+            "note": note,
+            "flagged": flagged,
+            "dueDate": due_date,
+            "deferDate": defer_date,
+            "plannedDate": planned_date,
+            "estimatedMinutes": estimated_minutes,
+            "tagIds": list(tag_ids) if tag_ids else None,
+        }
+        cleaned = {k: v for k, v in params.items() if v is not None}
+        _run(ctx, "task.update", "updateTask", cleaned)
 
 
 @task.command("complete")
@@ -105,7 +224,11 @@ def task_update(ctx, task_id, name, project_id, note, flagged, due_date,
 @click.pass_context
 def task_complete(ctx, task_id):
     """Mark a task as complete."""
-    _run(ctx, "completeTask", {"taskId": task_id})
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.complete", "completeTask", {})
+    else:
+        _run(ctx, "task.complete", "completeTask", {"taskId": task_id})
 
 
 @task.command("list")
@@ -116,13 +239,19 @@ def task_complete(ctx, task_id):
 @click.pass_context
 def task_list(ctx, project_id, tag_id, flagged, include_completed):
     """List tasks with optional filters."""
-    params = {
-        "projectId": project_id,
-        "tagId": tag_id,
-        "flagged": flagged if flagged else None,
-        "includeCompleted": include_completed if include_completed else None,
-    }
-    _run(ctx, "queryTasks", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [project_id, tag_id]) or flagged or include_completed
+        _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=had_flags)
+    else:
+        params = {
+            "projectId": project_id,
+            "tagId": tag_id,
+            "flagged": flagged if flagged else None,
+            "includeCompleted": include_completed if include_completed else None,
+        }
+        cleaned = {k: v for k, v in params.items() if v is not None}
+        _run(ctx, "task.list", "queryTasks", cleaned)
 
 
 # ── Search command ─────────────────────────────────────────
@@ -144,6 +273,16 @@ def task_list(ctx, project_id, tag_id, flagged, include_completed):
 def search(ctx, query, project_id, tag_id, flagged, available, due_before,
            due_after, defer_before, defer_after, overdue, limit):
     """Search tasks with filters. Requires at least one filter option."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [
+            query, project_id, tag_id, flagged, available, due_before,
+            due_after, defer_before, defer_after, overdue, limit,
+        ])
+        _run(ctx, "search", "searchTasks", {}, had_convenience_flags=had_flags)
+        return
+
+    # Convenience-flag path
     has_text = query is not None
     has_filter = any(v is not None for v in [
         project_id, tag_id, flagged, available, due_before, due_after,
@@ -152,7 +291,8 @@ def search(ctx, query, project_id, tag_id, flagged, available, due_before,
 
     if not has_text and not has_filter:
         click.echo("Error: at least one filter is required. See --help.", err=True)
-        sys.exit(2)
+        ctx.exit(2)
+        return
 
     if has_text:
         params = {"query": query}
@@ -177,7 +317,7 @@ def search(ctx, query, project_id, tag_id, flagged, available, due_before,
             params["isOverdue"] = True
         if limit:
             params["maxResults"] = limit
-        _run(ctx, "searchTasks", params)
+        _run(ctx, "search", "searchTasks", params)
     else:
         params = {}
         if project_id:
@@ -198,7 +338,7 @@ def search(ctx, query, project_id, tag_id, flagged, available, due_before,
             params["deferAfter"] = defer_after
         if overdue:
             params["isOverdue"] = True
-        _run(ctx, "queryTasks", params)
+        _run(ctx, "task.list", "queryTasks", params)
 
 
 # ── Project commands ───────────────────────────────────────
@@ -217,12 +357,17 @@ def project():
 @click.pass_context
 def list_projects(ctx, folder_id, show_all, by_folder):
     """List projects (active by default)."""
-    params = {"completion": "all" if show_all else "active"}
-    if folder_id:
-        params["folderId"] = folder_id
-    if by_folder:
-        params["listByFolder"] = True
-    _run(ctx, "listProjects", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [folder_id]) or show_all or by_folder
+        _run(ctx, "project.list", "listProjects", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"completion": "all" if show_all else "active"}
+        if folder_id:
+            params["folderId"] = folder_id
+        if by_folder:
+            params["listByFolder"] = True
+        _run(ctx, "project.list", "listProjects", params)
 
 
 @project.command("get")
@@ -230,11 +375,15 @@ def list_projects(ctx, folder_id, show_all, by_folder):
 @click.pass_context
 def project_get(ctx, project_id):
     """Get project details by ID."""
-    _run(ctx, "getProjectById", {"projectId": project_id})
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "project.get", "getProjectById", {})
+    else:
+        _run(ctx, "project.get", "getProjectById", {"projectId": project_id})
 
 
 @project.command("create")
-@click.option("--name", required=True, help="Project name")
+@click.option("--name", default=None, help="Project name")
 @click.option("--folder", "folder_id", help="Folder UUID")
 @click.option("--note", help="Project notes")
 @click.option("--flag/--no-flag", default=None, help="Flag the project")
@@ -244,23 +393,28 @@ def project_get(ctx, project_id):
 @click.pass_context
 def create_project(ctx, name, folder_id, note, flag, sequential, due_date, defer_date):
     """Create a new project."""
-    params = {"name": name}
-    if folder_id:
-        params["folderId"] = folder_id
-    properties = {}
-    if note:
-        properties["note"] = note
-    if flag is not None:
-        properties["flagged"] = flag
-    if sequential is not None:
-        properties["sequential"] = sequential
-    if due_date:
-        properties["dueDate"] = due_date
-    if defer_date:
-        properties["deferDate"] = defer_date
-    if properties:
-        params["properties"] = properties
-    _run(ctx, "createProject", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [name, folder_id, note, flag, sequential, due_date, defer_date])
+        _run(ctx, "project.create", "createProject", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"name": name}
+        if folder_id:
+            params["folderId"] = folder_id
+        properties = {}
+        if note:
+            properties["note"] = note
+        if flag is not None:
+            properties["flagged"] = flag
+        if sequential is not None:
+            properties["sequential"] = sequential
+        if due_date:
+            properties["dueDate"] = due_date
+        if defer_date:
+            properties["deferDate"] = defer_date
+        if properties:
+            params["properties"] = properties
+        _run(ctx, "project.create", "createProject", params)
 
 
 @project.command("update")
@@ -276,29 +430,39 @@ def create_project(ctx, name, folder_id, note, flag, sequential, due_date, defer
 @click.pass_context
 def update_project(ctx, project_id, name, note, flag, sequential, status, due_date, defer_date):
     """Update a project by ID."""
-    properties = {}
-    if name:
-        properties["name"] = name
-    if note:
-        properties["note"] = note
-    if flag is not None:
-        properties["flagged"] = flag
-    if sequential is not None:
-        properties["sequential"] = sequential
-    if status:
-        properties["status"] = status
-    if due_date:
-        properties["dueDate"] = due_date
-    if defer_date:
-        properties["deferDate"] = defer_date
-    _run(ctx, "setProjectProperties", {"projectId": project_id, "properties": properties})
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [name, note, flag, sequential, status, due_date, defer_date])
+        _run(ctx, "project.update", "setProjectProperties", {}, had_convenience_flags=had_flags)
+    else:
+        properties = {}
+        if name:
+            properties["name"] = name
+        if note:
+            properties["note"] = note
+        if flag is not None:
+            properties["flagged"] = flag
+        if sequential is not None:
+            properties["sequential"] = sequential
+        if status:
+            properties["status"] = status
+        if due_date:
+            properties["dueDate"] = due_date
+        if defer_date:
+            properties["deferDate"] = defer_date
+        _run(ctx, "project.update", "setProjectProperties",
+             {"projectId": project_id, "properties": properties})
 
 
 @project.command("folders")
 @click.pass_context
 def list_folders(ctx):
     """List all folders."""
-    _run(ctx, "listFolders", {})
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "project.folders", "listFolders", {})
+    else:
+        _run(ctx, "project.folders", "listFolders", {})
 
 
 # ── Inbox commands ─────────────────────────────────────────
@@ -316,12 +480,17 @@ def inbox():
 @click.pass_context
 def list_inbox(ctx, limit, include_completed):
     """List inbox items."""
-    params = {}
-    if limit:
-        params["limit"] = limit
-    if include_completed:
-        params["includeCompleted"] = True
-    _run(ctx, "listInbox", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = limit is not None or include_completed
+        _run(ctx, "inbox.list", "listInbox", {}, had_convenience_flags=had_flags)
+    else:
+        params = {}
+        if limit:
+            params["limit"] = limit
+        if include_completed:
+            params["includeCompleted"] = True
+        _run(ctx, "inbox.list", "listInbox", params)
 
 
 @inbox.command()
@@ -334,18 +503,23 @@ def list_inbox(ctx, limit, include_completed):
 @click.pass_context
 def process(ctx, task_id, project_id, tag_ids, flag, due_date, defer_date):
     """Process an inbox item (assign project, tags, dates)."""
-    params = {"taskId": task_id}
-    if project_id:
-        params["projectId"] = project_id
-    if tag_ids:
-        params["tagIds"] = list(tag_ids)
-    if flag is not None:
-        params["flagged"] = flag
-    if due_date:
-        params["dueDate"] = due_date
-    if defer_date:
-        params["deferDate"] = defer_date
-    _run(ctx, "processInboxItem", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [project_id, flag, due_date, defer_date]) or bool(tag_ids)
+        _run(ctx, "inbox.process", "processInboxItem", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"taskId": task_id}
+        if project_id:
+            params["projectId"] = project_id
+        if tag_ids:
+            params["tagIds"] = list(tag_ids)
+        if flag is not None:
+            params["flagged"] = flag
+        if due_date:
+            params["dueDate"] = due_date
+        if defer_date:
+            params["deferDate"] = defer_date
+        _run(ctx, "inbox.process", "processInboxItem", params)
 
 
 # ── Tags commands ──────────────────────────────────────────
@@ -361,28 +535,42 @@ def tags():
 @click.pass_context
 def list_tags(ctx):
     """List all tags."""
-    _run(ctx, "listTags", {})
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "tags.list", "listTags", {})
+    else:
+        _run(ctx, "tags.list", "listTags", {})
 
 
 @tags.command()
-@click.option("--name", required=True, help="Tag name")
+@click.option("--name", default=None, help="Tag name")
 @click.option("--parent", "parent_tag_id", help="Parent tag UUID for nesting")
 @click.pass_context
 def create(ctx, name, parent_tag_id):
     """Create a new tag."""
-    params = {"name": name}
-    if parent_tag_id:
-        params["parentTagId"] = parent_tag_id
-    _run(ctx, "createTag", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [name, parent_tag_id])
+        _run(ctx, "tags.create", "createTag", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"name": name}
+        if parent_tag_id:
+            params["parentTagId"] = parent_tag_id
+        _run(ctx, "tags.create", "createTag", params)
 
 
 @tags.command()
 @click.argument("tag_id")
-@click.option("--name", required=True, help="New tag name")
+@click.option("--name", default=None, help="New tag name")
 @click.pass_context
 def rename(ctx, tag_id, name):
     """Rename a tag."""
-    _run(ctx, "updateTag", {"tagId": tag_id, "name": name})
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = name is not None
+        _run(ctx, "tags.rename", "updateTag", {}, had_convenience_flags=had_flags)
+    else:
+        _run(ctx, "tags.rename", "updateTag", {"tagId": tag_id, "name": name})
 
 
 @tags.command()
@@ -391,7 +579,12 @@ def rename(ctx, tag_id, name):
 @click.pass_context
 def delete(ctx, tag_id, force):
     """Delete a tag."""
-    params = {"tagId": tag_id}
-    if force:
-        params["force"] = True
-    _run(ctx, "deleteTag", params)
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = force
+        _run(ctx, "tags.delete", "deleteTag", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"tagId": tag_id}
+        if force:
+            params["force"] = True
+        _run(ctx, "tags.delete", "deleteTag", params)

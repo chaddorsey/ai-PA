@@ -7,7 +7,7 @@ from omnifocus_cli.cli import cli
 def test_inbox_list(mock_call):
     mock_call.return_value = [{"id": "i-1", "name": "Random thought"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "inbox", "list"])
+    result = runner.invoke(cli, ["--format", "json", "inbox", "list"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("listInbox", {})
 

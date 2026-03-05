@@ -7,7 +7,7 @@ from omnifocus_cli.cli import cli
 def test_search_text(mock_call):
     mock_call.return_value = [{"id": "t-1", "name": "Dentist appt"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "search", "--text", "dentist"])
+    result = runner.invoke(cli, ["--format", "json", "search", "--text", "dentist"])
     assert result.exit_code == 0
     call_args = mock_call.call_args[0]
     assert call_args[0] == "searchTasks"

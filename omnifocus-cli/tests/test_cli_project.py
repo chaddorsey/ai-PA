@@ -7,7 +7,7 @@ from omnifocus_cli.cli import cli
 def test_project_list(mock_call):
     mock_call.return_value = [{"id": "p-1", "name": "Work"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "project", "list"])
+    result = runner.invoke(cli, ["--format", "json", "project", "list"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("listProjects", {"completion": "active"})
 
@@ -36,7 +36,7 @@ def test_project_list_by_folder(mock_call):
 def test_project_get(mock_call):
     mock_call.return_value = {"id": "p-1", "name": "Work", "taskCount": 5}
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "project", "get", "p-1"])
+    result = runner.invoke(cli, ["--format", "json", "project", "get", "p-1"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("getProjectById", {"projectId": "p-1"})
 
@@ -91,6 +91,6 @@ def test_project_update_status(mock_call):
 def test_project_list_folders(mock_call):
     mock_call.return_value = [{"id": "f-1", "name": "Work"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--json", "project", "folders"])
+    result = runner.invoke(cli, ["--format", "json", "project", "folders"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("listFolders", {})
