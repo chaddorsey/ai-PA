@@ -1295,6 +1295,37 @@ services:
       - "component=routing"
       - "network=pa-internal"
 
+  gws-bridge:
+    build:
+      context: ./gws-bridge
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    container_name: gws-bridge
+    restart: unless-stopped
+    networks: [pa-internal]
+    environment:
+      - GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE=/root/.gws/credentials.json
+      - PORT=8098
+    volumes:
+      - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro
+    ports:
+      - "8098:8098"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8098/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=gws-bridge"
+      - "component=gmail"
+      - "network=pa-internal"
+
   pa-web-ui:
     build:
       context: ./pa-web-ui
@@ -1309,11 +1340,14 @@ services:
         condition: service_healthy
       supabase-db:
         condition: service_healthy
+      gws-bridge:
+        condition: service_healthy
     environment:
       - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
       - LETTA_BASE_URL=http://letta:8283
       - PORT=5200
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      - GWS_BRIDGE_URL=http://gws-bridge:8098
     ports:
       - "5200:5200"
     healthcheck:
