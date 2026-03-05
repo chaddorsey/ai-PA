@@ -444,9 +444,14 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                                 # Raw dict string has escaped newlines (\n as literal backslash+n)
                                 # which breaks multiline regex in the proposal parser
                                 marker = '[VERBATIM_USER_OUTPUT]'
+                                end_marker = '[/VERBATIM_USER_OUTPUT]'
                                 marker_idx = content.find(marker)
                                 if marker_idx >= 0:
-                                    extracted = content[marker_idx:]
+                                    end_idx = content.find(end_marker, marker_idx)
+                                    if end_idx >= 0:
+                                        extracted = content[marker_idx:end_idx]
+                                    else:
+                                        extracted = content[marker_idx:]
                                     # The content is from a truncated JSON string value,
                                     # so it has JSON escapes (\n, \u2013, \", etc).
                                     # Decode all JSON escape sequences in one pass.
@@ -470,8 +475,14 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                                     logger.error(f"🔧 TOOL RETURN: Extracted verbatim via marker ({len(content)} chars)")
                                 else:
                                     logger.error(f"🔧 TOOL RETURN: No verbatim marker found, using raw")
-                    tool_return_content += content
-                    logger.error(f"🔧 TOOL RETURN captured: {len(content)} chars")
+                    # If this tool return has proposal content, REPLACE (not append)
+                    # to avoid doubling when the orchestrator is called multiple times.
+                    if "[VERBATIM_USER_OUTPUT]" in content or "## Best Options" in content or "## If We Can Move" in content:
+                        tool_return_content = content
+                        logger.error(f"🔧 TOOL RETURN (proposals): replaced with {len(content)} chars")
+                    else:
+                        tool_return_content += content
+                        logger.error(f"🔧 TOOL RETURN captured: {len(content)} chars")
             elif event_type == "text":
                 # Accumulate text
                 text_chunks.append(event.get("content", ""))
@@ -479,8 +490,12 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
         final_text = (streamer.last_message or "".join(text_chunks)).strip()
 
         # Check if response contains scheduling proposals
-        # Check both assistant text AND tool returns (verbatim content may be in tool return)
-        combined_content = final_text + "\n" + tool_return_content
+        # Prefer tool_return_content (verbatim orchestrator output) over final_text
+        # to avoid duplicating proposals that appear in both sources.
+        if tool_return_content and ("## Best Options" in tool_return_content or "## If We Can Move" in tool_return_content or "[VERBATIM_USER_OUTPUT]" in tool_return_content):
+            combined_content = tool_return_content
+        else:
+            combined_content = final_text
         proposals_posted = False
         has_best_options = "## Best Options" in combined_content
         has_conflict_options = "## If We Can Move" in combined_content
@@ -506,8 +521,11 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                 participants = []
                 participant_names = {}  # email -> display name
 
+                # Search both sources for metadata markers
+                metadata_content = final_text + "\n" + tool_return_content
+
                 # First, try to get resolved names from PARTICIPANT_NAMES tag (from identity service)
-                names_match = re_module.search(r'\[PARTICIPANT_NAMES:([^\]]+)\]', combined_content)
+                names_match = re_module.search(r'\[PARTICIPANT_NAMES:([^\]]+)\]', metadata_content)
                 if names_match:
                     # Parse email=name pairs
                     for pair in names_match.group(1).split(','):
@@ -519,7 +537,7 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                                 participant_names[email] = name
 
                 # Extract participant emails from PARTICIPANTS tag
-                participants_match = re_module.search(r'\[PARTICIPANTS:([^\]]+)\]', combined_content)
+                participants_match = re_module.search(r'\[PARTICIPANTS:([^\]]+)\]', metadata_content)
                 if participants_match:
                     participants = [p.strip() for p in participants_match.group(1).split(',') if p.strip()]
                     # For any participants without resolved names, fall back to email prefix
