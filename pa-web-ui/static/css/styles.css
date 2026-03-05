@@ -1140,6 +1140,215 @@ header h1 {
     background: var(--accent-hover);
 }
 
+/* ── Draft Cards ── */
+
+.draft-card {
+    background: var(--sb-card);
+    border: 1px solid var(--sb-card-border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    transition: background 0.15s, border-color 0.15s, opacity 0.3s, transform 0.3s;
+}
+
+.draft-card:hover {
+    background: var(--sb-card-hover);
+    border-color: #2f3560;
+}
+
+.draft-card.removing {
+    opacity: 0;
+    transform: translateX(100%);
+    pointer-events: none;
+}
+
+.draft-card-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.draft-card-subject {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+}
+
+.draft-card-to {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 6px;
+}
+
+.draft-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.draft-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(0, 212, 170, 0.12);
+    color: var(--sb-teal-dim);
+    border: 1px solid rgba(0, 212, 170, 0.2);
+}
+
+.draft-label-proposed {
+    background: rgba(255, 171, 64, 0.12);
+    color: var(--sb-amber);
+    border-color: rgba(255, 171, 64, 0.2);
+}
+
+.draft-time {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.draft-card-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.draft-card:hover .draft-card-actions {
+    opacity: 1;
+}
+
+.draft-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    border: 1px solid var(--sb-card-border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.draft-btn-edit:hover {
+    background: rgba(0, 212, 170, 0.15);
+    color: var(--sb-teal);
+    border-color: var(--sb-teal-dim);
+}
+
+.draft-btn-send:hover {
+    background: rgba(0, 212, 170, 0.15);
+    color: var(--sb-teal);
+    border-color: var(--sb-teal-dim);
+}
+
+.draft-btn-discard:hover {
+    background: rgba(233, 69, 96, 0.15);
+    color: var(--accent);
+    border-color: var(--accent);
+}
+
+/* ── Draft Edit Modal ── */
+
+.draft-edit-dialog {
+    max-width: 600px;
+    width: 90vw;
+}
+
+.draft-edit-fields {
+    padding: 0 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.draft-field-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.draft-field-label span {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    width: 55px;
+    flex-shrink: 0;
+}
+
+.draft-field-input {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 1px solid var(--sb-card-border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 6px 10px;
+}
+
+.draft-field-input:focus {
+    outline: none;
+    border-color: var(--sb-teal-dim);
+}
+
+.draft-edit-body {
+    width: 100%;
+    min-height: 200px;
+    max-height: 50vh;
+    background: var(--bg-primary);
+    border: 1px solid var(--sb-card-border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.8rem;
+    padding: 10px;
+    resize: vertical;
+    margin: 0 1.5rem;
+}
+
+.draft-edit-body:focus {
+    outline: none;
+    border-color: var(--sb-teal-dim);
+}
+
+.draft-edit-error {
+    margin: 8px 1.5rem 0;
+    padding: 8px 12px;
+    background: rgba(233, 69, 96, 0.15);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 0.75rem;
+}
+
+.draft-send-btn {
+    background: var(--sb-teal) !important;
+    color: var(--sb-bg) !important;
+    border-color: var(--sb-teal) !important;
+    font-weight: 600;
+}
+
+.draft-send-btn:hover:not(:disabled) {
+    background: var(--sb-teal-dim) !important;
+}
+
 /* ── Accordion ── */
 
 .task-accordion-toggle {
