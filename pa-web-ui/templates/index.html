@@ -4,36 +4,108 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PA Chat</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=10">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=11">
     <!-- Marked.js for markdown rendering (pinned to v9 for stable API) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Personal Assistant</h1>
-            <select id="agent-select">
-                <option value="">Loading agents...</option>
-            </select>
-        </header>
+    <div class="page-layout">
+        <div class="container">
+            <header>
+                <h1>Personal Assistant</h1>
+                <select id="agent-select">
+                    <option value="">Loading agents...</option>
+                </select>
+            </header>
 
-        <main class="chat-container">
-            <div id="messages" class="messages"></div>
-        </main>
+            <main class="chat-container">
+                <div id="messages" class="messages"></div>
+            </main>
 
-        <div id="reply-indicator" class="reply-indicator">
-            <span class="reply-to-text">
-                Replying to <span class="agent-name"></span>
-            </span>
-            <button class="clear-reply-btn" title="Clear reply">×</button>
+            <div id="reply-indicator" class="reply-indicator">
+                <span class="reply-to-text">
+                    Replying to <span class="agent-name"></span>
+                </span>
+                <button class="clear-reply-btn" title="Clear reply">&times;</button>
+            </div>
+
+            <footer class="input-area">
+                <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
+                <button id="send-btn">Send</button>
+            </footer>
         </div>
 
-        <footer class="input-area">
-            <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
-            <button id="send-btn">Send</button>
-        </footer>
+        <!-- Sidebar toggle tab -->
+        <button id="sidebar-toggle" class="sidebar-toggle">
+            <span class="sidebar-toggle-label" id="sidebar-toggle-label">TASKS</span>
+            <span id="sidebar-badge" class="task-badge"></span>
+        </button>
+
+        <!-- Task Review Sidebar -->
+        <aside id="task-sidebar" class="task-sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab active" data-tab="tasks">
+                        Tasks <span id="tasks-tab-count" class="tab-count"></span>
+                    </button>
+                    <button class="sidebar-tab" data-tab="drafts">
+                        Drafts <span id="drafts-tab-count" class="tab-count"></span>
+                    </button>
+                </div>
+                <button class="sidebar-close-btn">&times;</button>
+            </div>
+            <div id="task-list" class="task-list"></div>
+            <div id="draft-list" class="task-list" style="display:none"></div>
+            <div id="bulk-actions-bar" class="bulk-actions-bar">
+                <span class="bulk-count"></span>
+                <button id="bulk-reject-btn" class="bulk-btn bulk-btn-reject">Reject Selected</button>
+                <button id="bulk-merge-btn" class="bulk-btn bulk-btn-merge">Merge</button>
+            </div>
+        </aside>
     </div>
 
+    <!-- OmniFocus Project Picker Dialog -->
+    <div id="of-dialog-overlay" class="dialog-overlay">
+        <div class="dialog of-dialog">
+            <div class="dialog-header">
+                <h3>Add to OmniFocus</h3>
+                <button class="dialog-close" id="of-dialog-cancel">&times;</button>
+            </div>
+            <div class="of-dialog-task-preview"></div>
+            <a class="of-inbox-link" id="of-inbox-btn">Add to Inbox (no project)</a>
+            <div id="of-tree" class="of-tree"></div>
+            <div class="dialog-footer">
+                <span class="of-selected-project">No project selected</span>
+                <div class="dialog-footer-buttons">
+                    <button class="dialog-btn dialog-btn-cancel" id="of-dialog-cancel-btn">Cancel</button>
+                    <button class="dialog-btn dialog-btn-confirm" id="of-dialog-confirm-btn" disabled>Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merge Dialog -->
+    <div id="merge-dialog-overlay" class="dialog-overlay">
+        <div class="dialog merge-dialog">
+            <div class="dialog-header">
+                <h3>Merge Tasks</h3>
+                <button class="dialog-close" id="merge-dialog-cancel">&times;</button>
+            </div>
+            <textarea id="merge-description" class="merge-textarea" rows="4" placeholder="Merged task description..."></textarea>
+            <div class="dialog-footer">
+                <div class="dialog-footer-buttons">
+                    <button class="dialog-btn dialog-btn-cancel" id="merge-cancel-btn">Cancel</button>
+                    <button class="dialog-btn dialog-btn-confirm" id="merge-confirm-btn">Merge Tasks</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+    <script src="{{ url_for('static', filename='js/sidebar.js') }}?v=1"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}?v=17"></script>
 </body>
 </html>
