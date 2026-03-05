@@ -2,6 +2,19 @@ import json
 import sys
 
 
+def should_use_json(format_flag: str | None = None) -> bool:
+    """Determine whether to output JSON.
+
+    Args:
+        format_flag: "json", "text", or None (auto-detect)
+    """
+    if format_flag == "json":
+        return True
+    if format_flag == "text":
+        return False
+    return not sys.stdout.isatty()
+
+
 def output_result(data, json_output: bool = False):
     if json_output:
         print(json.dumps(data, indent=2, default=str))

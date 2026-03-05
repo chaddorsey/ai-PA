@@ -1,5 +1,6 @@
 import json
-from omnifocus_cli.formatters import output_result, output_error
+from unittest.mock import patch
+from omnifocus_cli.formatters import output_result, output_error, should_use_json
 
 
 def test_output_result_json(capsys):
@@ -37,3 +38,21 @@ def test_output_error_human(capsys):
     captured = capsys.readouterr()
     assert "Error:" in captured.err
     assert "Something broke" in captured.err
+
+
+def test_should_use_json_explicit_true():
+    assert should_use_json(format_flag="json") is True
+
+
+def test_should_use_json_explicit_false():
+    assert should_use_json(format_flag="text") is False
+
+
+@patch("sys.stdout.isatty", return_value=False)
+def test_should_use_json_auto_non_tty(mock_tty):
+    assert should_use_json(format_flag=None) is True
+
+
+@patch("sys.stdout.isatty", return_value=True)
+def test_should_use_json_auto_tty(mock_tty):
+    assert should_use_json(format_flag=None) is False
