@@ -76,9 +76,12 @@ class DraftsSidebar {
     card.className = 'draft-card';
     card.dataset.draftId = draft.id;
 
-    // Gmail labelIds are IDs not names — we'll show known ones
-    const hasProposed = (draft.labelIds || []).some(l => l === 'Proposed' || draft.snippet?.includes('[Proposed]'));
-    const labelTags = `<span class="draft-label">Followup</span>${hasProposed ? '<span class="draft-label draft-label-proposed">Proposed</span>' : ''}`;
+    // Use resolved label names from gws-bridge
+    const names = draft.labelNames || [];
+    const hasFollowup = names.includes('Followup');
+    const hasProposed = names.includes('Proposed');
+    const labelTags = (hasFollowup ? '<span class="draft-label">Followup</span>' : '')
+      + (hasProposed ? '<span class="draft-label draft-label-proposed">Proposed</span>' : '');
 
     const timeLabel = draft.internalDate
       ? this.formatTime(new Date(parseInt(draft.internalDate)))
@@ -208,8 +211,8 @@ class DraftsSidebar {
     errorEl.style.display = 'none';
 
     try {
-      // Save current edits
-      await fetch(`/api/drafts/${draftId}`, {
+      // Save current edits first
+      const saveResp = await fetch(`/api/drafts/${draftId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -219,6 +222,7 @@ class DraftsSidebar {
           body: document.getElementById('draft-edit-body').value,
         }),
       });
+      if (!saveResp.ok) throw new Error(`Save failed: HTTP ${saveResp.status}`);
 
       // Send
       const resp = await fetch(`/api/drafts/${draftId}/send`, { method: 'POST' });

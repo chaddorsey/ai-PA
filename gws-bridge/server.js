@@ -34,6 +34,18 @@ app.get('/health', (_req, res) => {
   }
 });
 
+// Build a label ID → name map (cached per request)
+function getLabelMap() {
+  const labelsData = runGws([
+    'gmail', 'users.labels', 'list',
+    '--params', JSON.stringify({ userId: 'me' }),
+    '--format', 'json',
+  ]);
+  const map = {};
+  (labelsData.labels || []).forEach(l => { map[l.id] = l.name; });
+  return map;
+}
+
 // List drafts, optionally filtered by Gmail query
 app.get('/gmail/drafts', (req, res) => {
   try {
@@ -47,6 +59,10 @@ app.get('/gmail/drafts', (req, res) => {
       '--params', JSON.stringify(params),
       '--format', 'json',
     ]);
+
+    // Resolve label IDs to names once for the whole response
+    let labelMap = {};
+    try { labelMap = getLabelMap(); } catch { /* proceed without names */ }
 
     // gws returns raw Gmail API response: { drafts: [...], resultSizeEstimate: N }
     // Each draft has { id, message: { id, threadId } }
@@ -64,6 +80,9 @@ app.get('/gmail/drafts', (req, res) => {
         const headerMap = {};
         headers.forEach(h => { headerMap[h.name.toLowerCase()] = h.value; });
 
+        const labelIds = full.message?.labelIds || [];
+        const labelNames = labelIds.map(id => labelMap[id] || id);
+
         return {
           id: draft.id,
           messageId: full.message?.id || '',
@@ -74,7 +93,8 @@ app.get('/gmail/drafts', (req, res) => {
           from: headerMap['from'] || '',
           date: headerMap['date'] || '',
           snippet: full.message?.snippet || '',
-          labelIds: full.message?.labelIds || [],
+          labelIds,
+          labelNames,
           internalDate: full.message?.internalDate || '',
         };
       } catch {
