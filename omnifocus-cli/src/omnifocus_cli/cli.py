@@ -299,3 +299,99 @@ def update_project(ctx, project_id, name, note, flag, sequential, status, due_da
 def list_folders(ctx):
     """List all folders."""
     _run(ctx, "listFolders", {})
+
+
+# ── Inbox commands ─────────────────────────────────────────
+
+
+@cli.group()
+def inbox():
+    """List and process inbox items."""
+    pass
+
+
+@inbox.command("list")
+@click.option("--limit", type=int, help="Max items to return")
+@click.option("--include-completed", is_flag=True, default=False, help="Include completed items")
+@click.pass_context
+def list_inbox(ctx, limit, include_completed):
+    """List inbox items."""
+    params = {}
+    if limit:
+        params["limit"] = limit
+    if include_completed:
+        params["includeCompleted"] = True
+    _run(ctx, "listInbox", params)
+
+
+@inbox.command()
+@click.argument("task_id")
+@click.option("--project", "project_id", help="Move to project UUID")
+@click.option("--tag", "tag_ids", multiple=True, help="Assign tag UUID (repeatable)")
+@click.option("--flag/--no-flag", default=None, help="Flag the item")
+@click.option("--due", "due_date", help="Set due date")
+@click.option("--defer", "defer_date", help="Set defer date")
+@click.pass_context
+def process(ctx, task_id, project_id, tag_ids, flag, due_date, defer_date):
+    """Process an inbox item (assign project, tags, dates)."""
+    params = {"taskId": task_id}
+    if project_id:
+        params["projectId"] = project_id
+    if tag_ids:
+        params["tagIds"] = list(tag_ids)
+    if flag is not None:
+        params["flagged"] = flag
+    if due_date:
+        params["dueDate"] = due_date
+    if defer_date:
+        params["deferDate"] = defer_date
+    _run(ctx, "processInboxItem", params)
+
+
+# ── Tags commands ──────────────────────────────────────────
+
+
+@cli.group()
+def tags():
+    """List, create, rename, and delete tags."""
+    pass
+
+
+@tags.command("list")
+@click.pass_context
+def list_tags(ctx):
+    """List all tags."""
+    _run(ctx, "listTags", {})
+
+
+@tags.command()
+@click.option("--name", required=True, help="Tag name")
+@click.option("--parent", "parent_tag_id", help="Parent tag UUID for nesting")
+@click.pass_context
+def create(ctx, name, parent_tag_id):
+    """Create a new tag."""
+    params = {"name": name}
+    if parent_tag_id:
+        params["parentTagId"] = parent_tag_id
+    _run(ctx, "createTag", params)
+
+
+@tags.command()
+@click.argument("tag_id")
+@click.option("--name", required=True, help="New tag name")
+@click.pass_context
+def rename(ctx, tag_id, name):
+    """Rename a tag."""
+    _run(ctx, "updateTag", {"tagId": tag_id, "name": name})
+
+
+@tags.command()
+@click.argument("tag_id")
+@click.option("--force", is_flag=True, help="Delete even if tasks use this tag")
+@click.pass_context
+def delete(ctx, tag_id, force):
+    """Delete a tag."""
+    params = {"tagId": tag_id}
+    if force:
+        params["force"] = True
+    _run(ctx, "deleteTag", params)
