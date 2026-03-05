@@ -163,10 +163,18 @@ app.get('/gmail/drafts/:id', (req, res) => {
   }
 });
 
-// Update draft (to, cc, subject, body)
+// Update draft (to, cc, subject, body) — preserves labels across the message replacement
 app.put('/gmail/drafts/:id', (req, res) => {
   try {
     const { to, cc, subject, body } = req.body;
+
+    // Read current draft to capture labels before the update replaces the message
+    const current = runGws([
+      'gmail', 'users', 'drafts', 'get',
+      '--params', JSON.stringify({ userId: 'me', id: req.params.id, format: 'minimal' }),
+      '--format', 'json',
+    ], 10000);
+    const oldLabelIds = (current.message?.labelIds || []).filter(l => l !== 'DRAFT');
 
     // Build RFC 2822 message
     const lines = [];
@@ -184,6 +192,19 @@ app.put('/gmail/drafts/:id', (req, res) => {
       '--json', JSON.stringify({ message: { raw } }),
       '--format', 'json',
     ], 20000);
+
+    // Re-apply labels to the new message
+    const newMessageId = data.message?.id;
+    if (newMessageId && oldLabelIds.length > 0) {
+      try {
+        runGws([
+          'gmail', 'users', 'messages', 'modify',
+          '--params', JSON.stringify({ userId: 'me', id: newMessageId }),
+          '--json', JSON.stringify({ addLabelIds: oldLabelIds }),
+          '--format', 'json',
+        ], 10000);
+      } catch { /* label restore is best-effort */ }
+    }
 
     res.json({ status: 'ok', id: data.id || req.params.id });
   } catch (err) {
