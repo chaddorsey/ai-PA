@@ -106,7 +106,7 @@ SCHEMAS: dict[str, dict] = {
         "description": "Update properties of an existing project",
         "params": {
             "projectId": {"type": "string", "required": True, "description": "Project ID to update"},
-            "properties": {"type": "object", "required": False, "description": "Properties to set on the project"},
+            "properties": {"type": "object", "required": True, "description": "Properties to set on the project"},
         },
     },
     "project.folders": {
