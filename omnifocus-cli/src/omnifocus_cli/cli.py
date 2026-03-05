@@ -123,3 +123,179 @@ def task_list(ctx, project_id, tag_id, flagged, include_completed):
         "includeCompleted": include_completed if include_completed else None,
     }
     _run(ctx, "queryTasks", params)
+
+
+# ── Search command ─────────────────────────────────────────
+
+
+@cli.command()
+@click.option("--text", "query", help="Text to search in task names/notes")
+@click.option("--project", "project_id", help="Filter by project UUID")
+@click.option("--tag", "tag_id", help="Filter by tag UUID")
+@click.option("--flagged", is_flag=True, default=None, help="Only flagged tasks")
+@click.option("--available", is_flag=True, default=None, help="Only available (not blocked/deferred)")
+@click.option("--due-before", help="Tasks due before date (ISO)")
+@click.option("--due-after", help="Tasks due after date (ISO)")
+@click.option("--defer-before", help="Tasks deferred before date (ISO)")
+@click.option("--defer-after", help="Tasks deferred after date (ISO)")
+@click.option("--overdue", is_flag=True, default=None, help="Only overdue tasks")
+@click.option("--limit", type=int, help="Max results")
+@click.pass_context
+def search(ctx, query, project_id, tag_id, flagged, available, due_before,
+           due_after, defer_before, defer_after, overdue, limit):
+    """Search tasks with filters. Requires at least one filter option."""
+    has_text = query is not None
+    has_filter = any(v is not None for v in [
+        project_id, tag_id, flagged, available, due_before, due_after,
+        defer_before, defer_after, overdue, limit,
+    ])
+
+    if not has_text and not has_filter:
+        click.echo("Error: at least one filter is required. See --help.", err=True)
+        sys.exit(2)
+
+    if has_text:
+        params = {"query": query}
+        if project_id:
+            params["scope"] = "project"
+            params["scopeId"] = project_id
+        if tag_id:
+            params["tagId"] = tag_id
+        if flagged:
+            params["flagged"] = True
+        if available:
+            params["isAvailable"] = True
+        if due_before:
+            params["dueBefore"] = due_before
+        if due_after:
+            params["dueAfter"] = due_after
+        if defer_before:
+            params["deferBefore"] = defer_before
+        if defer_after:
+            params["deferAfter"] = defer_after
+        if overdue:
+            params["isOverdue"] = True
+        if limit:
+            params["maxResults"] = limit
+        _run(ctx, "searchTasks", params)
+    else:
+        params = {}
+        if project_id:
+            params["projectId"] = project_id
+        if tag_id:
+            params["tagId"] = tag_id
+        if flagged:
+            params["flagged"] = True
+        if available:
+            params["isAvailable"] = True
+        if due_before:
+            params["dueBefore"] = due_before
+        if due_after:
+            params["dueAfter"] = due_after
+        if defer_before:
+            params["deferBefore"] = defer_before
+        if defer_after:
+            params["deferAfter"] = defer_after
+        if overdue:
+            params["isOverdue"] = True
+        _run(ctx, "queryTasks", params)
+
+
+# ── Project commands ───────────────────────────────────────
+
+
+@cli.group()
+def project():
+    """List, view, create, and update projects."""
+    pass
+
+
+@project.command("list")
+@click.option("--folder", "folder_id", help="Filter by folder UUID")
+@click.option("--all", "show_all", is_flag=True, help="Include completed/dropped projects")
+@click.option("--by-folder", is_flag=True, help="Group results by folder")
+@click.pass_context
+def list_projects(ctx, folder_id, show_all, by_folder):
+    """List projects (active by default)."""
+    params = {"completion": "all" if show_all else "active"}
+    if folder_id:
+        params["folderId"] = folder_id
+    if by_folder:
+        params["listByFolder"] = True
+    _run(ctx, "listProjects", params)
+
+
+@project.command("get")
+@click.argument("project_id")
+@click.pass_context
+def project_get(ctx, project_id):
+    """Get project details by ID."""
+    _run(ctx, "getProjectById", {"projectId": project_id})
+
+
+@project.command("create")
+@click.option("--name", required=True, help="Project name")
+@click.option("--folder", "folder_id", help="Folder UUID")
+@click.option("--note", help="Project notes")
+@click.option("--flag/--no-flag", default=None, help="Flag the project")
+@click.option("--sequential/--parallel", default=None, help="Sequential or parallel")
+@click.option("--due", "due_date", help="Due date (ISO)")
+@click.option("--defer", "defer_date", help="Defer date (ISO)")
+@click.pass_context
+def create_project(ctx, name, folder_id, note, flag, sequential, due_date, defer_date):
+    """Create a new project."""
+    params = {"name": name}
+    if folder_id:
+        params["folderId"] = folder_id
+    properties = {}
+    if note:
+        properties["note"] = note
+    if flag is not None:
+        properties["flagged"] = flag
+    if sequential is not None:
+        properties["sequential"] = sequential
+    if due_date:
+        properties["dueDate"] = due_date
+    if defer_date:
+        properties["deferDate"] = defer_date
+    if properties:
+        params["properties"] = properties
+    _run(ctx, "createProject", params)
+
+
+@project.command("update")
+@click.argument("project_id")
+@click.option("--name", help="New project name")
+@click.option("--note", help="New project notes")
+@click.option("--flag/--no-flag", default=None, help="Set/unset flag")
+@click.option("--sequential/--parallel", default=None, help="Sequential or parallel")
+@click.option("--status", type=click.Choice(["active", "onHold", "completed", "dropped"]),
+              help="Project status")
+@click.option("--due", "due_date", help="Due date (ISO)")
+@click.option("--defer", "defer_date", help="Defer date (ISO)")
+@click.pass_context
+def update_project(ctx, project_id, name, note, flag, sequential, status, due_date, defer_date):
+    """Update a project by ID."""
+    properties = {}
+    if name:
+        properties["name"] = name
+    if note:
+        properties["note"] = note
+    if flag is not None:
+        properties["flagged"] = flag
+    if sequential is not None:
+        properties["sequential"] = sequential
+    if status:
+        properties["status"] = status
+    if due_date:
+        properties["dueDate"] = due_date
+    if defer_date:
+        properties["deferDate"] = defer_date
+    _run(ctx, "setProjectProperties", {"projectId": project_id, "properties": properties})
+
+
+@project.command("folders")
+@click.pass_context
+def list_folders(ctx):
+    """List all folders."""
+    _run(ctx, "listFolders", {})
