@@ -1,7 +1,7 @@
 # Design: Replace Gmail API Tools with Google Workspace CLI (`gws`)
 
 **Date:** 2026-03-04
-**Status:** On hold — waiting for `gws` linux/arm64 support
+**Status:** Experiment active — powering Gmail drafts sidebar in pa-web-ui via x86_64 sidecar (full tool replacement still awaits linux/arm64)
 **Scope:** Validate `gws` CLI as Gmail backend; no disruption to existing tools
 
 ---

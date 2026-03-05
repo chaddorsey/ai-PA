@@ -355,30 +355,30 @@ Future work (not yet started):
 - **Item 10 (Weekly Rollups):** Phase 2 of cross-agent awareness. Longer-term activity memory.
 - **Item 11 (Coordination V2 Follow-ups):** Fix document timeout, pulse agent, coordination_logs table.
 - **Item 14 (OrbStack Migration):** Evaluate as Docker Desktop replacement for memory pressure relief.
-- **Item 16 (gws CLI Gmail Replacement):** On hold — waiting for linux/arm64 binary support from Google.
+- **Item 16 (gws CLI Experiment):** Active — powering Gmail drafts sidebar via x86_64 sidecar. Full tool replacement still awaits linux/arm64.
 
 Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
 
 ---
 
-## 16. Google Workspace CLI (`gws`) — Gmail Tool Replacement (ON HOLD)
+## 16. Google Workspace CLI (`gws`) — Experiment Active
 
-**Status:** On hold — waiting for `gws` linux/arm64 binary support
+**Status:** Experiment deployed — powering Gmail drafts sidebar in pa-web-ui via x86_64 sidecar
 **Plan:** [2026-03-04-gws-cli-gmail-experiment-design.md](2026-03-04-gws-cli-gmail-experiment-design.md)
-**Risk:** Low (no changes to existing system until triggered)
-**Estimated effort:** 2-3 hours (when linux/arm64 ships)
+**Design:** [2026-03-04-gmail-drafts-sidebar-design.md](2026-03-04-gmail-drafts-sidebar-design.md)
+**Risk:** Low (isolated sidecar, no disruption to existing Gmail tools)
+**Estimated effort:** Completed initial deployment
 
-**Problem:** Every Gmail Letta tool (`gmail_tools.py`, `meeting_followup_tool.py`, etc.) duplicates ~30 lines of OAuth boilerplate. Token refresh, credential loading, and pagination are handled manually across 5+ files.
+**Experiment:** Rather than replacing existing Gmail tools (blocked by linux/arm64), the gws CLI is used via an x86_64 Docker sidecar (`gws-bridge` on port 8098, Rosetta emulation) to power a new feature: a Gmail Drafts sidebar tab in pa-web-ui. Users can list, edit, send, and discard agent-generated meeting follow-up drafts directly from the web UI.
 
-**Solution:** Replace direct `googleapis` calls with `gws` CLI subprocess calls. `gws` (official Google Workspace CLI) handles auth, token refresh, pagination, and retries internally. Each tool becomes a thin subprocess wrapper. CLI approach chosen over MCP server mode to avoid tool explosion (10-80 Gmail tools) and proxy overhead.
+**Components deployed:**
+- `gws-bridge` — Node.js/Express sidecar wrapping `gws` CLI as HTTP (6 endpoints)
+- `pa-web-ui` — `/api/drafts/*` proxy routes, tabbed sidebar (Tasks/Drafts), DraftsSidebar JS class with edit modal
+- `meeting_followup_tool.py` — Now applies `Followup` label to all meeting drafts (previously only `Proposed` label on AI-proposed drafts)
 
-**Blocker:** `gws` v0.3.4 does not ship a linux/arm64 binary. The Letta container runs Debian 12 on arm64 (Apple Silicon via Docker). A bridge workaround (x86_64 sidecar or host-based service) was evaluated but rejected — the added infrastructure negates the simplification benefit.
+**Full tool replacement still on hold:** Direct in-container `gws` use awaits linux/arm64 binary support. When it ships, migration is a one-line-per-tool change (swap HTTP call for subprocess call).
 
-**Trigger to resume:**
-- `gws` ships `aarch64-unknown-linux-gnu` binary → proceed with direct in-container migration
-- A new Google Workspace API (Calendar, Sheets, etc.) is needed → reconsider x86_64 sidecar bridge (amortized cost across multiple services)
-
-**Broader opportunity:** Once `gws` runs in-container, the same pattern extends to Calendar, Drive, Sheets, Docs — one auth mechanism for all Google Workspace APIs.
+**Broader opportunity:** The sidecar validates `gws` for production use. If stable, extends to Calendar, Drive, Sheets — one auth mechanism for all Google Workspace APIs.
 
 ---
 
