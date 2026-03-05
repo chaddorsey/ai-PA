@@ -1085,6 +1085,9 @@ def parse_archival_passage(text):
     """Parse structured archival passage text into sections."""
     result = {}
 
+    # Include raw text for note formatting
+    result['raw_text'] = text
+
     m = re.search(r'^TASK:\s*(.+)$', text, re.MULTILINE)
     if m:
         result['task'] = m.group(1).strip()
@@ -1093,19 +1096,42 @@ def parse_archival_passage(text):
     if m:
         result['ref_id'] = m.group(1).strip()
 
+    m = re.search(r'^ORIGIN:\s*(.+)$', text, re.MULTILINE)
+    if m:
+        result['origin'] = m.group(1).strip()
+
     # SOURCE REFERENCE
     source_ref = {}
-    m = re.search(r'- Origin:\s*(.+)', text)
+    m = re.search(r'SOURCE REFERENCE\n((?:- .+\n)*)', text)
     if m:
-        source_ref['origin'] = m.group(1).strip()
-    m = re.search(r'- Context:\s*(.+)', text)
-    if m:
-        source_ref['context'] = m.group(1).strip()
-    m = re.search(r'- Extracted by:\s*(.+)', text)
-    if m:
-        source_ref['extracted_by'] = m.group(1).strip()
+        for line in m.group(1).strip().split('\n'):
+            lm = re.match(r'- (.+?):\s*(.+)', line)
+            if lm:
+                source_ref[lm.group(1).strip().lower().replace(' ', '_')] = lm.group(2).strip()
     if source_ref:
         result['source_reference'] = source_ref
+
+    # SOURCE METADATA
+    source_meta = {}
+    m = re.search(r'SOURCE METADATA\n((?:- .+\n)*)', text)
+    if m:
+        for line in m.group(1).strip().split('\n'):
+            lm = re.match(r'- (.+?):\s*(.+)', line)
+            if lm:
+                source_meta[lm.group(1).strip().lower().replace(' ', '_')] = lm.group(2).strip()
+    if source_meta:
+        result['source_metadata'] = source_meta
+
+    # RELATED URLS
+    urls_section = re.search(r'RELATED URLS\n((?:- .+\n)*)', text)
+    if urls_section:
+        urls = []
+        for line in urls_section.group(1).strip().split('\n'):
+            url_match = re.match(r'- (.+)', line)
+            if url_match:
+                urls.append(url_match.group(1).strip())
+        if urls:
+            result['related_urls'] = urls
 
     # TIMESTAMPS
     timestamps = []
@@ -1644,11 +1670,12 @@ def api_omnifocus_tree():
 
 @app.route('/api/tasks/omnifocus-create', methods=['POST'])
 def api_omnifocus_create():
-    """Create an OmniFocus task."""
+    """Create an OmniFocus task with optional note containing full context."""
     try:
         data = request.get_json()
         name = data.get('name')
         project_id = data.get('projectId')
+        note = data.get('note', '')
 
         if not name:
             return jsonify({"error": "name required"}), 400
@@ -1656,6 +1683,8 @@ def api_omnifocus_create():
         args = {"action": "create", "name": name}
         if project_id:
             args["projectId"] = project_id
+        if note:
+            args["note"] = note
 
         result = call_omnifocus_mcp("taskOperations", args)
         # Response may be nested: {result: {id: ...}} or flat {id: ...}

@@ -589,10 +589,22 @@ class TaskSidebar {
 
     const confirmBtn = document.getElementById('of-dialog-confirm-btn');
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Creating\u2026';
+    confirmBtn.textContent = 'Loading details\u2026';
 
     try {
-      // 1. Create OmniFocus task
+      // 0. Fetch full passage details for note
+      let details = this.taskDetails[refId];
+      if (!details) {
+        const detResp = await fetch(`/api/tasks/${refId}`);
+        if (detResp.ok) details = await detResp.json();
+      }
+
+      // Build OmniFocus note from passage context
+      const note = this.buildOFNote(refId, details);
+
+      confirmBtn.textContent = 'Creating\u2026';
+
+      // 1. Create OmniFocus task (vanilla name, ref_id goes in note)
       const task = this.tasks.find(t => t.ref_id === refId);
       const createResp = await fetch('/api/tasks/omnifocus-create', {
         method: 'POST',
@@ -600,6 +612,7 @@ class TaskSidebar {
         body: JSON.stringify({
           name: task ? task.description : refId,
           projectId: this.selectedProjectId,
+          note: note,
         }),
       });
 
@@ -643,6 +656,61 @@ class TaskSidebar {
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Confirm';
     }
+  }
+
+  buildOFNote(refId, details) {
+    if (!details) return `ref_id: ${refId}`;
+
+    const lines = [];
+    lines.push(`ref_id: ${refId}`);
+
+    if (details.origin) {
+      lines.push(`Origin: ${details.origin}`);
+    }
+
+    // Source Reference
+    if (details.source_reference) {
+      const sr = details.source_reference;
+      lines.push('');
+      lines.push('--- Source ---');
+      if (sr.type) lines.push(`Type: ${sr.type}`);
+      if (sr.context) lines.push(`Context: ${sr.context}`);
+      if (sr.reference_id) lines.push(`Reference ID: ${sr.reference_id}`);
+    }
+
+    // Source Metadata
+    if (details.source_metadata) {
+      const sm = details.source_metadata;
+      lines.push('');
+      lines.push('--- Metadata ---');
+      if (sm.timestamp) lines.push(`Timestamp: ${sm.timestamp}`);
+      if (sm.from) lines.push(`From: ${sm.from}`);
+      if (sm.location) lines.push(`Location: ${sm.location}`);
+      if (sm.location_id) lines.push(`Location ID: ${sm.location_id}`);
+    }
+
+    // Related URLs
+    if (details.related_urls && details.related_urls.length > 0) {
+      lines.push('');
+      lines.push('--- URLs ---');
+      details.related_urls.forEach(u => lines.push(u));
+    }
+
+    // Timestamps
+    if (details.timestamps && details.timestamps.length > 0) {
+      lines.push('');
+      lines.push('--- Timestamps ---');
+      details.timestamps.forEach(ts => lines.push(`${ts.label}: ${ts.value}`));
+    }
+
+    // Source Text
+    if (details.source_text) {
+      lines.push('');
+      lines.push('--- Source Text ---');
+      lines.push(details.source_text);
+    }
+
+    return lines.join('\n');
   }
 
   closeOFDialog() {
