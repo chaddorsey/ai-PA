@@ -20,7 +20,7 @@ function runGws(args, timeoutMs = 15000) {
 app.get('/health', (_req, res) => {
   try {
     const status = runGws(['auth', 'status']);
-    const healthy = status.credential_source && status.credential_source !== 'none';
+    const healthy = status.token_valid === true || (status.storage && status.storage !== 'none');
     res.json({
       status: healthy ? 'healthy' : 'unhealthy',
       gws_version: '0.3.4',
@@ -37,7 +37,7 @@ app.get('/health', (_req, res) => {
 // Build a label ID → name map (cached per request)
 function getLabelMap() {
   const labelsData = runGws([
-    'gmail', 'users.labels', 'list',
+    'gmail', 'users', 'labels', 'list',
     '--params', JSON.stringify({ userId: 'me' }),
     '--format', 'json',
   ]);
@@ -55,7 +55,7 @@ app.get('/gmail/drafts', (req, res) => {
     if (q) params.q = q;
 
     const data = runGws([
-      'gmail', 'users.drafts', 'list',
+      'gmail', 'users', 'drafts', 'list',
       '--params', JSON.stringify(params),
       '--format', 'json',
     ]);
@@ -71,7 +71,7 @@ app.get('/gmail/drafts', (req, res) => {
     const enriched = drafts.map(draft => {
       try {
         const full = runGws([
-          'gmail', 'users.drafts', 'get',
+          'gmail', 'users', 'drafts', 'get',
           '--params', JSON.stringify({ userId: 'me', id: draft.id, format: 'metadata' }),
           '--format', 'json',
         ], 10000);
@@ -112,7 +112,7 @@ app.get('/gmail/drafts', (req, res) => {
 app.get('/gmail/drafts/:id', (req, res) => {
   try {
     const data = runGws([
-      'gmail', 'users.drafts', 'get',
+      'gmail', 'users', 'drafts', 'get',
       '--params', JSON.stringify({ userId: 'me', id: req.params.id, format: 'full' }),
       '--format', 'json',
     ]);
@@ -179,7 +179,7 @@ app.put('/gmail/drafts/:id', (req, res) => {
     const raw = Buffer.from(lines.join('\r\n')).toString('base64url');
 
     const data = runGws([
-      'gmail', 'users.drafts', 'update',
+      'gmail', 'users', 'drafts', 'update',
       '--params', JSON.stringify({ userId: 'me', id: req.params.id }),
       '--json', JSON.stringify({ message: { raw } }),
       '--format', 'json',
@@ -198,7 +198,7 @@ app.put('/gmail/drafts/:id', (req, res) => {
 app.post('/gmail/drafts/:id/send', (req, res) => {
   try {
     const data = runGws([
-      'gmail', 'users.drafts', 'send',
+      'gmail', 'users', 'drafts', 'send',
       '--json', JSON.stringify({ id: req.params.id }),
       '--params', JSON.stringify({ userId: 'me' }),
       '--format', 'json',
@@ -217,7 +217,7 @@ app.post('/gmail/drafts/:id/send', (req, res) => {
 app.delete('/gmail/drafts/:id', (req, res) => {
   try {
     runGws([
-      'gmail', 'users.drafts', 'delete',
+      'gmail', 'users', 'drafts', 'delete',
       '--params', JSON.stringify({ userId: 'me', id: req.params.id }),
       '--format', 'json',
     ]);
