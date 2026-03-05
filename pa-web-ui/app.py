@@ -111,6 +111,7 @@ ROUTING_HANDLER_URL = os.getenv(
     "PA_ROUTING_HANDLER_URL", "http://pa-routing-handler:5201"
 )
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+GWS_BRIDGE_URL = os.getenv("GWS_BRIDGE_URL", "http://gws-bridge:8098")
 
 # Database configuration
 import psycopg2
@@ -1042,6 +1043,731 @@ def stream():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ── Task Review Sidebar API ──
+
+TASKS_AGENT_ID = "agent-dd15479e-6543-400e-8463-b2a48b13cd4a"
+EXTRACTED_TASKS_BLOCK_ID = "block-90300b77-6b72-42cb-8e67-c74fbb497cf6"
+TASKS_ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
+OMNIFOCUS_MCP_URL = os.getenv(
+    "OMNIFOCUS_MCP_URL", "http://host.docker.internal:8888/mcp"
+)
+
+# Task block line pattern:
+# [extracted_time: 2026-02-15T10:30:00-05:00; ref_id: a1b2c3d4] Description
+# [extracted_time: ...; ref_id: ...; origin: meeting_transcript] Description
+TASK_LINE_PATTERN = re.compile(
+    r'\[extracted_time:\s*([^;]+);\s*ref_id:\s*([a-f0-9]+)'
+    r'(?:;\s*origin:\s*([^\]]*))?\]\s*(.+)'
+)
+
+
+def parse_task_block(block_value):
+    """Parse extracted_tasks block text into list of task dicts."""
+    tasks = []
+    for line in block_value.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        m = TASK_LINE_PATTERN.search(line)
+        if m:
+            tasks.append({
+                "extracted_time": m.group(1).strip(),
+                "ref_id": m.group(2).strip(),
+                "origin": (m.group(3) or "").strip() or None,
+                "description": m.group(4).strip(),
+            })
+    return tasks
+
+
+def parse_archival_passage(text):
+    """Parse structured archival passage text into sections."""
+    result = {}
+
+    m = re.search(r'^TASK:\s*(.+)$', text, re.MULTILINE)
+    if m:
+        result['task'] = m.group(1).strip()
+
+    m = re.search(r'^REF_ID:\s*(\S+)', text, re.MULTILINE)
+    if m:
+        result['ref_id'] = m.group(1).strip()
+
+    # SOURCE REFERENCE
+    source_ref = {}
+    m = re.search(r'- Origin:\s*(.+)', text)
+    if m:
+        source_ref['origin'] = m.group(1).strip()
+    m = re.search(r'- Context:\s*(.+)', text)
+    if m:
+        source_ref['context'] = m.group(1).strip()
+    m = re.search(r'- Extracted by:\s*(.+)', text)
+    if m:
+        source_ref['extracted_by'] = m.group(1).strip()
+    if source_ref:
+        result['source_reference'] = source_ref
+
+    # TIMESTAMPS
+    timestamps = []
+    ts_section = re.search(r'TIMESTAMPS\n((?:- .+\n)*)', text)
+    if ts_section:
+        for ts_line in ts_section.group(1).strip().split('\n'):
+            ts_match = re.match(r'- (.+?):\s*(.+)', ts_line)
+            if ts_match:
+                timestamps.append({
+                    'label': ts_match.group(1).strip(),
+                    'value': ts_match.group(2).strip(),
+                })
+    result['timestamps'] = timestamps
+
+    # OMNIFOCUS
+    omnifocus = {}
+    m = re.search(r'- Task ID:\s*(.+)', text)
+    if m:
+        omnifocus['task_id'] = m.group(1).strip()
+    m = re.search(r'- Status:\s*(.+)', text)
+    if m:
+        omnifocus['status'] = m.group(1).strip()
+    if omnifocus:
+        result['omnifocus'] = omnifocus
+
+    # SOURCE TEXT
+    m = re.search(r'SOURCE TEXT\n(.+)', text, re.DOTALL)
+    if m:
+        result['source_text'] = m.group(1).strip()
+
+    return result
+
+
+def _mcp_post(client, payload, session_id=None):
+    """Send a JSON-RPC request to the OmniFocus MCP server, handling SSE responses."""
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+    if session_id:
+        headers["mcp-session-id"] = session_id
+
+    resp = client.post(OMNIFOCUS_MCP_URL, json=payload, headers=headers)
+    resp.raise_for_status()
+
+    content_type = resp.headers.get("content-type", "")
+    resp_session = resp.headers.get("mcp-session-id", session_id)
+
+    if "text/event-stream" in content_type:
+        data = None
+        for line in resp.text.splitlines():
+            if line.startswith("data: "):
+                try:
+                    candidate = json.loads(line[6:])
+                    if candidate.get("id") == payload.get("id"):
+                        data = candidate
+                        break
+                except json.JSONDecodeError:
+                    continue
+        if not data:
+            raise Exception("No JSON-RPC response in SSE stream")
+    elif resp.text.strip():
+        data = resp.json()
+    else:
+        data = {}
+
+    return data, resp_session
+
+
+# Cache for the MCP session ID (reset on server restart)
+_omnifocus_session_id = None
+
+
+def call_omnifocus_mcp(tool_name, arguments):
+    """Call OmniFocus MCP server via Streamable HTTP transport with session management."""
+    global _omnifocus_session_id
+
+    with httpx.Client(timeout=30.0) as client:
+        # Initialize session if needed
+        if not _omnifocus_session_id:
+            init_resp, session_id = _mcp_post(client, {
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "pa-web-ui", "version": "1.0"},
+                },
+            })
+            _omnifocus_session_id = session_id
+
+            # Send initialized notification (fire-and-forget)
+            _mcp_post(client, {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            }, session_id=_omnifocus_session_id)
+
+        # Call the tool
+        try:
+            data, _ = _mcp_post(client, {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": arguments},
+            }, session_id=_omnifocus_session_id)
+        except (httpx.HTTPStatusError, Exception) as e:
+            # Session may have expired — retry with fresh session
+            if "400" in str(e) or "Bad Request" in str(e):
+                _omnifocus_session_id = None
+                return call_omnifocus_mcp(tool_name, arguments)
+            raise
+
+    if "error" in data:
+        raise Exception(data["error"].get("message", str(data["error"])))
+    result = data.get("result", {})
+
+    # MCP returns content array
+    if isinstance(result, dict) and "content" in result:
+        for item in result["content"]:
+            if item.get("type") == "text":
+                try:
+                    return json.loads(item["text"])
+                except (json.JSONDecodeError, TypeError):
+                    return {"text": item["text"]}
+    return result
+
+
+def _find_archival_passage(client, ref_id):
+    """Search archival memory for a passage matching ref_id. Returns (passage, error_response)."""
+    resp = client.get(
+        f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}/archival-memory",
+        params={"search": ref_id},
+    )
+    resp.raise_for_status()
+    for p in resp.json():
+        if f"REF_ID: {ref_id}" in p.get('text', '') and p.get('archive_id') == TASKS_ARCHIVE_ID:
+            return p, None
+    return None, (jsonify({"error": f"No passage found for {ref_id}"}), 404)
+
+
+def _replace_passage(client, passage_id, new_text, tags):
+    """Delete old passage and insert replacement in shared archive."""
+    client.delete(
+        f"{LETTA_BASE_URL}/v1/archives/{TASKS_ARCHIVE_ID}/passages/{passage_id}"
+    )
+    ins_resp = client.post(
+        f"{LETTA_BASE_URL}/v1/archives/{TASKS_ARCHIVE_ID}/passages",
+        json={"text": new_text, "tags": tags},
+    )
+    ins_resp.raise_for_status()
+    return ins_resp.json()
+
+
+def _remove_ref_from_block(client, ref_id):
+    """Remove a task line from the extracted_tasks block (best-effort)."""
+    try:
+        block_resp = client.get(
+            f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
+        )
+        block_resp.raise_for_status()
+        val = block_resp.json().get('value', '')
+        new_val = re.sub(
+            rf'[^\n]*ref_id: {re.escape(ref_id)}[^\n]*\n*', '', val
+        )
+        while '\n\n\n' in new_val:
+            new_val = new_val.replace('\n\n\n', '\n\n')
+        if new_val != val:
+            client.patch(
+                f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
+                json={"value": new_val},
+            )
+    except Exception:
+        pass
+
+
+@app.route('/api/tasks', methods=['GET'])
+def api_get_tasks():
+    """Get all pending extracted tasks from block."""
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(
+                f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
+            )
+            resp.raise_for_status()
+            block = resp.json()
+
+        tasks = parse_task_block(block.get('value', ''))
+        return jsonify({"tasks": tasks})
+    except Exception as e:
+        logger.error("api_get_tasks_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/<ref_id>', methods=['GET'])
+def api_get_task_detail(ref_id):
+    """Get archival passage details for a task."""
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            passage, err = _find_archival_passage(client, ref_id)
+            if err:
+                return err
+            return jsonify(parse_archival_passage(passage['text']))
+    except Exception as e:
+        logger.error("api_get_task_detail_error", ref_id=ref_id, error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/<ref_id>', methods=['PATCH'])
+def api_update_task(ref_id):
+    """Update task description (inline edit)."""
+    try:
+        data = request.get_json()
+        task_description = data.get('task_description')
+        if not task_description:
+            return jsonify({"error": "task_description required"}), 400
+
+        from datetime import timezone
+        now = datetime.now(timezone.utc).astimezone()
+        iso_timestamp = now.isoformat()
+
+        with httpx.Client(timeout=15.0) as client:
+            passage, err = _find_archival_passage(client, ref_id)
+            if err:
+                return err
+
+            old_text = passage['text']
+            old_tags = passage.get('tags', [])
+            passage_id = passage['id']
+
+            # Update TASK line
+            new_text = re.sub(
+                r'^TASK: .*$', f'TASK: {task_description}',
+                old_text, count=1, flags=re.MULTILINE,
+            )
+
+            # Add Updated timestamp
+            new_text = re.sub(
+                r'(TIMESTAMPS\n(?:- .+\n)*)',
+                lambda m: m.group(0) + f'- Updated: {iso_timestamp}\n',
+                new_text, count=1,
+            )
+
+            _replace_passage(client, passage_id, new_text, old_tags)
+
+            # Update block line
+            block_resp = client.get(
+                f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
+            )
+            block_resp.raise_for_status()
+            block_val = block_resp.json().get('value', '')
+            new_val = re.sub(
+                rf'(\[extracted_time: [^;]+; ref_id: {re.escape(ref_id)}[^\]]*\]) .+',
+                f'\\1 {task_description}',
+                block_val,
+            )
+            if new_val != block_val:
+                client.patch(
+                    f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
+                    json={"value": new_val},
+                )
+
+        return jsonify({"status": "ok", "ref_id": ref_id})
+    except Exception as e:
+        logger.error("api_update_task_error", ref_id=ref_id, error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/<ref_id>/transition', methods=['POST'])
+def api_transition_task(ref_id):
+    """Transition task: confirm, reject, or complete."""
+    try:
+        data = request.get_json()
+        action = data.get('action')
+        omnifocus_task_id = data.get('omnifocus_task_id')
+
+        valid_actions = {"confirm", "reject", "complete"}
+        if action not in valid_actions:
+            return jsonify({
+                "error": f"Invalid action. Must be one of: {', '.join(sorted(valid_actions))}"
+            }), 400
+
+        if action == "confirm" and not omnifocus_task_id:
+            return jsonify({"error": "omnifocus_task_id required for confirm"}), 400
+
+        from datetime import timezone
+        now = datetime.now(timezone.utc).astimezone()
+        iso_timestamp = now.isoformat()
+
+        with httpx.Client(timeout=15.0) as client:
+            passage, err = _find_archival_passage(client, ref_id)
+            if err:
+                return err
+
+            old_text = passage['text']
+            old_tags = list(passage.get('tags', []))
+            passage_id = passage['id']
+            new_text = old_text
+
+            if action == "confirm":
+                new_text = re.sub(
+                    r'(- OmniFocus: )pending',
+                    f'- OmniFocus created: {iso_timestamp}',
+                    new_text,
+                )
+                new_text = re.sub(
+                    r'- Task ID: pending',
+                    f'- Task ID: {omnifocus_task_id}',
+                    new_text,
+                )
+                new_text = re.sub(
+                    r'- Status: extracted', '- Status: confirmed', new_text
+                )
+                old_tags = [t for t in old_tags if not t.startswith('status:')]
+                old_tags.append('status:confirmed')
+
+            elif action == "reject":
+                task_match = re.search(r'^TASK: (.+)$', new_text, re.MULTILINE)
+                if task_match:
+                    desc = task_match.group(1)
+                    if not desc.startswith('[REJECTED]'):
+                        new_text = re.sub(
+                            r'^TASK: .+$',
+                            f'TASK: [REJECTED] {desc}',
+                            new_text, count=1, flags=re.MULTILINE,
+                        )
+                new_text = re.sub(r'- OmniFocus: pending\n', '', new_text)
+                new_text = re.sub(
+                    r'(TIMESTAMPS\n(?:- .+\n)*)',
+                    lambda m: m.group(0) + f'- Rejected: {iso_timestamp}\n',
+                    new_text, count=1,
+                )
+                new_text = re.sub(
+                    r'\nOMNIFOCUS\n- Task ID: .+\n- Status: .+\n?', '', new_text
+                )
+                old_tags = [t for t in old_tags if not t.startswith('status:')]
+                old_tags.append('status:rejected')
+
+            elif action == "complete":
+                task_match = re.search(r'^TASK: (.+)$', new_text, re.MULTILINE)
+                if task_match:
+                    desc = task_match.group(1)
+                    if not desc.startswith('[COMPLETED]'):
+                        new_text = re.sub(
+                            r'^TASK: .+$',
+                            f'TASK: [COMPLETED] {desc}',
+                            new_text, count=1, flags=re.MULTILINE,
+                        )
+                new_text = re.sub(
+                    r'(TIMESTAMPS\n(?:- .+\n)*)',
+                    lambda m: m.group(0) + f'- Completed: {iso_timestamp}\n',
+                    new_text, count=1,
+                )
+                new_text = re.sub(
+                    r'- Status: (extracted|confirmed)',
+                    '- Status: completed',
+                    new_text,
+                )
+                old_tags = [t for t in old_tags if not t.startswith('status:')]
+                old_tags.append('status:completed')
+
+            _replace_passage(client, passage_id, new_text, old_tags)
+            _remove_ref_from_block(client, ref_id)
+
+        return jsonify({"status": "ok", "ref_id": ref_id, "action": action})
+    except Exception as e:
+        logger.error(
+            "api_transition_task_error",
+            ref_id=ref_id, error=str(e),
+        )
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/merge', methods=['POST'])
+def api_merge_tasks():
+    """Merge multiple tasks into one."""
+    try:
+        data = request.get_json()
+        ref_ids = data.get('ref_ids', [])
+        merged_description = data.get('merged_task_description', '')
+
+        if len(ref_ids) < 2:
+            return jsonify({"error": "At least 2 ref_ids required"}), 400
+        if not merged_description:
+            return jsonify({"error": "merged_task_description required"}), 400
+
+        import uuid
+        from datetime import timezone
+        now = datetime.now(timezone.utc).astimezone()
+        iso_timestamp = now.isoformat()
+        year_month = now.strftime("%Y-%m")
+        new_ref_id = uuid.uuid4().hex[:8]
+
+        with httpx.Client(timeout=15.0) as client:
+            # Find all passages
+            found = {}
+            for rid in ref_ids:
+                passage, _ = _find_archival_passage(client, rid)
+                if passage:
+                    found[rid] = passage
+
+            missing = [rid for rid in ref_ids if rid not in found]
+            if missing:
+                return jsonify({
+                    "error": f"Passages not found: {', '.join(missing)}"
+                }), 404
+
+            # Mark originals as merged
+            for rid, passage in found.items():
+                old_text = passage['text']
+                old_tags = list(passage.get('tags', []))
+                pid = passage['id']
+                new_text = old_text
+
+                task_match = re.search(r'^TASK: (.+)$', new_text, re.MULTILINE)
+                if task_match:
+                    desc = task_match.group(1)
+                    if not desc.startswith('[MERGED]'):
+                        new_text = re.sub(
+                            r'^TASK: .+$',
+                            f'TASK: [MERGED] {desc}',
+                            new_text, count=1, flags=re.MULTILINE,
+                        )
+
+                new_text = re.sub(
+                    rf'(REF_ID: {re.escape(rid)})',
+                    f'\\1\nMERGE_PARENT_ID: {new_ref_id}',
+                    new_text, count=1,
+                )
+                new_text = re.sub(
+                    r'(TIMESTAMPS\n(?:- .+\n)*)',
+                    lambda m: m.group(0) + f'- Merged: {iso_timestamp}\n',
+                    new_text, count=1,
+                )
+                new_tags = [t for t in old_tags if not t.startswith('status:')]
+                new_tags.append('status:merged')
+
+                _replace_passage(client, pid, new_text, new_tags)
+
+            # Create merged passage
+            merged_text = (
+                f"TASK: {merged_description}\n"
+                f"REF_ID: {new_ref_id}\n"
+                f"MERGED_IDS: {', '.join(ref_ids)}\n\n"
+                f"TIMESTAMPS\n"
+                f"- Merged: {iso_timestamp}\n"
+                f"- OmniFocus: pending\n\n"
+                f"OMNIFOCUS\n"
+                f"- Task ID: pending\n"
+                f"- Status: extracted\n"
+            )
+            client.post(
+                f"{LETTA_BASE_URL}/v1/archives/{TASKS_ARCHIVE_ID}/passages",
+                json={
+                    "text": merged_text,
+                    "tags": [year_month, "status:extracted"],
+                },
+            )
+
+            # Update block: remove merged entries, add new one
+            try:
+                block_resp = client.get(
+                    f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
+                )
+                block_resp.raise_for_status()
+                block_val = block_resp.json().get('value', '')
+                for rid in ref_ids:
+                    block_val = re.sub(
+                        rf'[^\n]*ref_id: {re.escape(rid)}[^\n]*\n*',
+                        '', block_val,
+                    )
+                while '\n\n\n' in block_val:
+                    block_val = block_val.replace('\n\n\n', '\n\n')
+                new_line = (
+                    f"[extracted_time: {iso_timestamp}; ref_id: {new_ref_id}]"
+                    f" {merged_description}"
+                )
+                block_val = block_val.rstrip() + '\n' + new_line + '\n'
+                client.patch(
+                    f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
+                    json={"value": block_val},
+                )
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "ok",
+            "ref_id": new_ref_id,
+            "merged_ids": ref_ids,
+        })
+    except Exception as e:
+        logger.error("api_merge_tasks_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+def _normalize_of_tree(subfolders):
+    """Convert OmniFocus MCP tree format to sidebar-friendly {id, name, type, children}."""
+    nodes = []
+    for item in subfolders:
+        folder = item.get("folder", {})
+        children = _normalize_of_tree(item.get("subfolders", []))
+        # Add projects from this folder
+        for p in item.get("projects", []):
+            children.append({
+                "id": p.get("id"),
+                "name": p.get("name"),
+                "type": "project",
+                "children": [],
+            })
+        nodes.append({
+            "id": folder.get("id"),
+            "name": folder.get("name"),
+            "type": "folder",
+            "children": children,
+        })
+    return nodes
+
+
+@app.route('/api/tasks/omnifocus-tree', methods=['GET'])
+def api_omnifocus_tree():
+    """Get OmniFocus folder/project tree with projects."""
+    try:
+        result = call_omnifocus_mcp(
+            "folderNavigation",
+            {"action": "getTree", "includeProjects": True},
+        )
+        raw = result.get("result", result)
+        subfolders = raw.get("subfolders", [])
+        tree = _normalize_of_tree(subfolders)
+        return jsonify({"tree": tree})
+    except Exception as e:
+        logger.error("api_omnifocus_tree_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/omnifocus-create', methods=['POST'])
+def api_omnifocus_create():
+    """Create an OmniFocus task."""
+    try:
+        data = request.get_json()
+        name = data.get('name')
+        project_id = data.get('projectId')
+
+        if not name:
+            return jsonify({"error": "name required"}), 400
+
+        args = {"action": "create", "name": name}
+        if project_id:
+            args["projectId"] = project_id
+
+        result = call_omnifocus_mcp("taskOperations", args)
+        # Response may be nested: {result: {id: ...}} or flat {id: ...}
+        inner = result.get("result", result)
+        task_id = inner.get("id", inner.get("taskId", ""))
+
+        if not task_id:
+            raise Exception(
+                f"No task ID in OmniFocus response: {json.dumps(result)[:200]}"
+            )
+
+        return jsonify({"status": "ok", "omnifocus_task_id": task_id})
+    except Exception as e:
+        logger.error("api_omnifocus_create_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Gmail Drafts API (proxied via gws-bridge) ──
+
+@app.route('/api/drafts', methods=['GET'])
+def api_list_drafts():
+    """List Gmail drafts filtered by Followup label."""
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(
+                f"{GWS_BRIDGE_URL}/gmail/drafts",
+                params={"q": "label:Followup", "maxResults": 50},
+            )
+            resp.raise_for_status()
+            return jsonify(resp.json())
+    except httpx.HTTPStatusError as e:
+        logger.error("api_list_drafts_error", status=e.response.status_code)
+        return jsonify({"error": f"Bridge error: {e.response.status_code}"}), 502
+    except Exception as e:
+        logger.error("api_list_drafts_error", error=str(e))
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/api/drafts/<draft_id>', methods=['GET'])
+def api_get_draft(draft_id):
+    """Get a single draft with full body."""
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}")
+            resp.raise_for_status()
+            return jsonify(resp.json())
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        if status == 404:
+            return jsonify({"error": "Draft not found"}), 404
+        return jsonify({"error": f"Bridge error: {status}"}), 502
+    except Exception as e:
+        logger.error("api_get_draft_error", error=str(e))
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/api/drafts/<draft_id>', methods=['PUT'])
+def api_update_draft(draft_id):
+    """Update a draft's to, cc, subject, or body."""
+    try:
+        data = request.get_json()
+        with httpx.Client(timeout=30) as client:
+            resp = client.put(
+                f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}",
+                json=data,
+            )
+            resp.raise_for_status()
+            return jsonify(resp.json())
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        if status == 404:
+            return jsonify({"error": "Draft not found"}), 404
+        return jsonify({"error": f"Bridge error: {status}"}), 502
+    except Exception as e:
+        logger.error("api_update_draft_error", error=str(e))
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/api/drafts/<draft_id>/send', methods=['POST'])
+def api_send_draft(draft_id):
+    """Send a draft."""
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}/send")
+            resp.raise_for_status()
+            return jsonify(resp.json())
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        if status == 404:
+            return jsonify({"error": "Draft not found (may already be sent)"}), 404
+        return jsonify({"error": f"Bridge error: {status}"}), 502
+    except Exception as e:
+        logger.error("api_send_draft_error", error=str(e))
+        return jsonify({"error": str(e)}), 502
+
+
+@app.route('/api/drafts/<draft_id>', methods=['DELETE'])
+def api_delete_draft(draft_id):
+    """Delete (discard) a draft."""
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.delete(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}")
+            resp.raise_for_status()
+            return jsonify(resp.json())
+    except httpx.HTTPStatusError as e:
+        status = e.response.status_code
+        if status == 404:
+            return jsonify({"error": "Draft not found"}), 404
+        return jsonify({"error": f"Bridge error: {status}"}), 502
+    except Exception as e:
+        logger.error("api_delete_draft_error", error=str(e))
+        return jsonify({"error": str(e)}), 502
 
 
 if __name__ == "__main__":
