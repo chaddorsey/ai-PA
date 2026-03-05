@@ -104,8 +104,42 @@
         </div>
     </div>
 
+    <!-- Draft Edit Dialog -->
+    <div id="draft-edit-overlay" class="dialog-overlay">
+        <div class="dialog draft-edit-dialog">
+            <div class="dialog-header">
+                <h3>Edit Draft</h3>
+                <button class="dialog-close" id="draft-edit-cancel">&times;</button>
+            </div>
+            <div class="draft-edit-fields">
+                <label class="draft-field-label">
+                    <span>To</span>
+                    <input type="text" id="draft-edit-to" class="draft-field-input" placeholder="recipient@example.com" />
+                </label>
+                <label class="draft-field-label">
+                    <span>Cc</span>
+                    <input type="text" id="draft-edit-cc" class="draft-field-input" placeholder="cc@example.com" />
+                </label>
+                <label class="draft-field-label">
+                    <span>Subject</span>
+                    <input type="text" id="draft-edit-subject" class="draft-field-input" />
+                </label>
+                <textarea id="draft-edit-body" class="draft-edit-body" rows="12" placeholder="Email body..."></textarea>
+            </div>
+            <div id="draft-edit-error" class="draft-edit-error" style="display:none"></div>
+            <div class="dialog-footer">
+                <div class="dialog-footer-buttons">
+                    <button class="dialog-btn dialog-btn-cancel" id="draft-edit-cancel-btn">Cancel</button>
+                    <button class="dialog-btn dialog-btn-confirm" id="draft-edit-save-btn">Save Draft</button>
+                    <button class="dialog-btn draft-send-btn" id="draft-edit-send-btn">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <script src="{{ url_for('static', filename='js/sidebar.js') }}?v=1"></script>
+    <script src="{{ url_for('static', filename='js/drafts.js') }}?v=1"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}?v=17"></script>
 </body>
 </html>

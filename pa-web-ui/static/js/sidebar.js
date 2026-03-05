@@ -57,7 +57,9 @@ class TaskSidebar {
     // Escape key closes dialogs/sidebar
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (document.getElementById('of-dialog-overlay')?.classList.contains('visible')) {
+        if (document.getElementById('draft-edit-overlay')?.classList.contains('visible')) {
+          window.draftsSidebar?.closeEditModal();
+        } else if (document.getElementById('of-dialog-overlay')?.classList.contains('visible')) {
           this.closeOFDialog();
         } else if (document.getElementById('merge-dialog-overlay')?.classList.contains('visible')) {
           this.closeMergeDialog();
@@ -803,4 +805,18 @@ class TaskSidebar {
 // Initialize on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   window.taskSidebar = new TaskSidebar();
+  window.draftsSidebar = new DraftsSidebar(window.taskSidebar);
+  window.taskSidebar.draftsSidebar = window.draftsSidebar;
+
+  // Draft edit modal events
+  document.getElementById('draft-edit-overlay')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) window.draftsSidebar.closeEditModal();
+  });
+  document.getElementById('draft-edit-cancel')?.addEventListener('click', () => window.draftsSidebar.closeEditModal());
+  document.getElementById('draft-edit-cancel-btn')?.addEventListener('click', () => window.draftsSidebar.closeEditModal());
+  document.getElementById('draft-edit-save-btn')?.addEventListener('click', () => window.draftsSidebar.saveDraft());
+  document.getElementById('draft-edit-send-btn')?.addEventListener('click', () => window.draftsSidebar.sendFromModal());
+
+  // Load initial draft count
+  window.draftsSidebar.loadDrafts();
 });
