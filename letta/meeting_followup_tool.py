@@ -212,34 +212,60 @@ def prepare_meeting_followup(
         draft_message = draft.get("message", {})
         message_id = draft_message.get("id", "")
 
-        # Apply "Proposed" label if this draft is AI-proposed (no user markers)
-        label_applied = False
-        if proposed and message_id:
-            PROPOSED_LABEL_NAME = "Proposed"
-            # Find or create the "Proposed" label
+        # Apply "Followup" label to all meeting drafts
+        label_applied_followup = False
+        label_applied_proposed = False
+        if message_id:
             labels_resp = gmail.users().labels().list(userId="me").execute()
-            proposed_label_id = None
-            for label in labels_resp.get("labels", []):
-                if label["name"] == PROPOSED_LABEL_NAME:
-                    proposed_label_id = label["id"]
+            all_labels = labels_resp.get("labels", [])
+
+            # Find or create "Followup" label
+            FOLLOWUP_LABEL_NAME = "Followup"
+            followup_label_id = None
+            for label in all_labels:
+                if label["name"] == FOLLOWUP_LABEL_NAME:
+                    followup_label_id = label["id"]
                     break
-            if not proposed_label_id:
+            if not followup_label_id:
                 new_label = gmail.users().labels().create(
                     userId="me",
                     body={
-                        "name": PROPOSED_LABEL_NAME,
+                        "name": FOLLOWUP_LABEL_NAME,
                         "labelListVisibility": "labelShow",
                         "messageListVisibility": "show",
                     },
                 ).execute()
-                proposed_label_id = new_label["id"]
-            # Apply label to the draft's message
+                followup_label_id = new_label["id"]
+
+            label_ids_to_add = [followup_label_id]
+
+            # Additionally apply "Proposed" label if AI-proposed (no user markers)
+            if proposed:
+                PROPOSED_LABEL_NAME = "Proposed"
+                proposed_label_id = None
+                for label in all_labels:
+                    if label["name"] == PROPOSED_LABEL_NAME:
+                        proposed_label_id = label["id"]
+                        break
+                if not proposed_label_id:
+                    new_label = gmail.users().labels().create(
+                        userId="me",
+                        body={
+                            "name": PROPOSED_LABEL_NAME,
+                            "labelListVisibility": "labelShow",
+                            "messageListVisibility": "show",
+                        },
+                    ).execute()
+                    proposed_label_id = new_label["id"]
+                label_ids_to_add.append(proposed_label_id)
+
             gmail.users().messages().modify(
                 userId="me",
                 id=message_id,
-                body={"addLabelIds": [proposed_label_id]},
+                body={"addLabelIds": label_ids_to_add},
             ).execute()
-            label_applied = True
+            label_applied_followup = True
+            label_applied_proposed = proposed
 
         return {
             "status": "ok",
@@ -248,7 +274,8 @@ def prepare_meeting_followup(
             "thread_id": draft_message.get("threadId", ""),
             "email_to": ", ".join(emails_list),
             "email_subject": subject,
-            "proposed_label": label_applied,
+            "followup_label": label_applied_followup,
+            "proposed_label": label_applied_proposed,
         }
 
     except Exception as e:
