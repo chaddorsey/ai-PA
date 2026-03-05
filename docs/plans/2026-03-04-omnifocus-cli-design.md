@@ -27,7 +27,7 @@ Letta Tool (Python, subprocess.run)
 |------------|-------------------|------------|
 | `omnifocus_task` | `omnifocus-cli task` | create, get, update (flag/defer/duration/due/tags/notes/planned-date), complete, list |
 | `omnifocus_search` | `omnifocus-cli search` | text search, filter by due range, defer range, flagged, tag, project, status, available |
-| `omnifocus_project` | `omnifocus-cli project` | list, get, list-folders, projects-in-folder |
+| `omnifocus_project` | `omnifocus-cli project` | list, get, create, update (name/status/sequential/due/defer/flag), list-folders, projects-in-folder |
 | `omnifocus_inbox` | `omnifocus-cli inbox` | list, process (move to project, assign tags) |
 | `omnifocus_tags` | `omnifocus-cli tags` | list, create, rename, delete |
 
@@ -46,8 +46,8 @@ These MCP tools are intentionally excluded from v0. This section tracks them for
 | MCP Tool | What It Does | Recovery Notes |
 |----------|-------------|----------------|
 | `taskHierarchy` | Create subtasks, flatten groups, move branches | Add as `omnifocus-cli task subtask`, `task flatten`, `task move-branch` |
-| `projectOperations` (create/update/move) | Full project CRUD | v0 has read-only projects. Add create/update as `project create`, `project update` |
-| `projectSettings` | Sequential/parallel, completion behavior | Add as `project settings` subcommand |
+| `projectOperations` (move only) | Move project between folders | Add as `project move` when folder operations are needed |
+| `projectSettings` | Completion behavior (completedByChildren) | Add as `project update --completed-by-children` flag |
 | `folderOperations` (create/delete) | Folder CRUD | v0 has read-only folders via project tool. Add `folder create`, `folder delete` |
 | `folderNavigation` | Full tree view, validate moves | Add as `project tree` or `folder tree` |
 | `taskGroupOperations` | Sequential/parallel task groups | Add as `task group-type` subcommand |
@@ -87,8 +87,8 @@ Beyond MCP tool coverage, these OmniFocus capabilities are not addressed in v0:
 | Feature | Description | Recovery Path |
 |---------|-------------|---------------|
 | **Repetition rules** | Recurring task configuration (daily/weekly/monthly, from-completion) | Add `--repeat` flag to `task create`/`task update` with structured syntax |
-| **Project creation** | Creating new projects (only listing/reading in v0) | Add `project create` command |
-| **Project status changes** | Setting active/on-hold/completed/dropped | Add `project update --status` |
+| ~~**Project creation**~~ | ~~Moved to v0 scope~~ | — |
+| ~~**Project status changes**~~ | ~~Moved to v0 scope~~ | — |
 | **Nested tags** | Parent-child tag hierarchies | Add `--parent` flag to `tags create` |
 | **Planned dates** | "When do you plan to work on this" (Forecast view) | Add `--planned-date` to task update (**Note: already in scope above — verify plugin support**) |
 | **Drop/delete tasks** | Dropping or deleting tasks (only complete in v0) | Add `task drop`, `task delete` |
