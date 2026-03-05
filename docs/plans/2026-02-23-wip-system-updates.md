@@ -1,6 +1,6 @@
 # WIP System Updates Tracker
 
-**Last updated:** 2026-03-03
+**Last updated:** 2026-03-04
 
 This document tracks in-flight system improvement projects that have been designed but not yet fully implemented. Each entry links to its detailed plan document.
 
@@ -355,7 +355,31 @@ Future work (not yet started):
 - **Item 10 (Weekly Rollups):** Phase 2 of cross-agent awareness. Longer-term activity memory.
 - **Item 11 (Coordination V2 Follow-ups):** Fix document timeout, pulse agent, coordination_logs table.
 - **Item 14 (OrbStack Migration):** Evaluate as Docker Desktop replacement for memory pressure relief.
+- **Item 16 (gws CLI Gmail Replacement):** On hold — waiting for linux/arm64 binary support from Google.
 
 Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
+
+---
+
+## 16. Google Workspace CLI (`gws`) — Gmail Tool Replacement (ON HOLD)
+
+**Status:** On hold — waiting for `gws` linux/arm64 binary support
+**Plan:** [2026-03-04-gws-cli-gmail-experiment-design.md](2026-03-04-gws-cli-gmail-experiment-design.md)
+**Risk:** Low (no changes to existing system until triggered)
+**Estimated effort:** 2-3 hours (when linux/arm64 ships)
+
+**Problem:** Every Gmail Letta tool (`gmail_tools.py`, `meeting_followup_tool.py`, etc.) duplicates ~30 lines of OAuth boilerplate. Token refresh, credential loading, and pagination are handled manually across 5+ files.
+
+**Solution:** Replace direct `googleapis` calls with `gws` CLI subprocess calls. `gws` (official Google Workspace CLI) handles auth, token refresh, pagination, and retries internally. Each tool becomes a thin subprocess wrapper. CLI approach chosen over MCP server mode to avoid tool explosion (10-80 Gmail tools) and proxy overhead.
+
+**Blocker:** `gws` v0.3.4 does not ship a linux/arm64 binary. The Letta container runs Debian 12 on arm64 (Apple Silicon via Docker). A bridge workaround (x86_64 sidecar or host-based service) was evaluated but rejected — the added infrastructure negates the simplification benefit.
+
+**Trigger to resume:**
+- `gws` ships `aarch64-unknown-linux-gnu` binary → proceed with direct in-container migration
+- A new Google Workspace API (Calendar, Sheets, etc.) is needed → reconsider x86_64 sidecar bridge (amortized cost across multiple services)
+
+**Broader opportunity:** Once `gws` runs in-container, the same pattern extends to Calendar, Drive, Sheets, Docs — one auth mechanism for all Google Workspace APIs.
+
+---
 
 **Completed:** Items 1-7, 12, 15 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration.

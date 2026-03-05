@@ -1,7 +1,7 @@
 # Design: Replace Gmail API Tools with Google Workspace CLI (`gws`)
 
 **Date:** 2026-03-04
-**Status:** Experiment — proof-of-concept for `search_emails` only
+**Status:** On hold — waiting for `gws` linux/arm64 support
 **Scope:** Validate `gws` CLI as Gmail backend; no disruption to existing tools
 
 ---
@@ -44,155 +44,111 @@ Gmail access in the PA ecosystem uses **direct Google API calls** from Python Le
 - `gws` handles auth, pagination, retries internally
 - Each tool becomes a thin subprocess wrapper instead of 30+ lines of API boilerplate
 
+### MCP Server Mode — Evaluated and Rejected
+
+`gws mcp -s gmail` exposes all Gmail Discovery API methods as MCP tools (10-80 tools). Problems:
+- **Tool explosion** — Letta sees dozens of tools it will never use, degrading tool selection accuracy
+- **No per-method filtering** — you get all of a service's methods or none
+- **Requires supergateway proxy** — `gws mcp` is stdio-only, so Letta needs a proxy (same pattern as Granola MCP)
+- **Another process to manage** — launchd plist, health monitoring, restart logic
+
+The CLI approach avoids all of this: each Letta tool wraps exactly one `gws` command, giving the agent a curated tool set instead of a raw API dump.
+
 ---
 
 ## Constraints Discovered
 
 ### Platform: `gws` does NOT run in the Letta Docker container
 
-The Letta container runs **Debian 12 on linux/arm64** (Apple Silicon via Docker). The `gws` npm package only ships native binaries for:
+The Letta container runs **Debian 12 on linux/arm64** (Apple Silicon via Docker). The `gws` npm package (v0.3.4) only ships native binaries for:
 - `aarch64-apple-darwin` (macOS ARM)
 - `x86_64-apple-darwin` (macOS Intel)
 - `x86_64-unknown-linux-gnu` (Linux x86_64)
 - Windows variants
 
-**linux/arm64 is not supported.** `npm install -g @googleworkspace/cli` fails inside the container.
+**linux/arm64 is not supported.** `npm install -g @googleworkspace/cli` fails inside the container with: `Platform with type "Linux" and architecture "arm64" is not supported`.
 
-### Solution: Host-based `gws` via HTTP bridge
+**Verified:** Node 22 and npm 10 are already installed in the Letta container. The binary platform support is the only blocker.
 
-Since `gws` runs on the macOS host but not inside the container, the Letta tool must reach it over the network. Two viable patterns:
+**This is not a Letta-specific constraint** — it's the combination of:
+1. Apple Silicon host → Docker runs arm64 containers by default
+2. `gws` not shipping a linux/arm64 binary (yet)
 
-**Pattern A — Thin HTTP bridge service (selected):**
-A minimal FastAPI service on the host that exposes specific `gws` commands as HTTP endpoints. Letta tools call the bridge the same way they call `gmail-watch-service`.
+### Workaround Options Evaluated
 
-**Pattern B — SSH/exec bridge:**
-Letta tool SSHes to host or uses `docker exec` in reverse. Fragile, not recommended.
+**Option A — x86_64 sidecar container in Docker Compose:**
+Run a small `node:20-slim` container with `platform: linux/amd64` (via Rosetta 2 emulation). Install `gws` there, expose an HTTP bridge on `pa-internal`. This solves all operational concerns (managed by Compose, restartable, health-checkable, service DNS). Emulation overhead is negligible for network-bound CLI calls.
 
-**Pattern C — Wait for linux/arm64 support:**
-`gws` is pre-1.0. ARM Linux support may come. Not viable for experiment timeline.
+```yaml
+gws-bridge:
+  image: node:20-slim
+  platform: linux/amd64
+  volumes:
+    - ./gws-bridge:/app
+    - ~/.gmail-mcp:/root/.gmail-mcp:ro
+  ports:
+    - "8098:8098"
+  networks:
+    - pa-internal
+```
+
+**Option B — Host-based bridge with launchd:**
+Run `gws` on macOS host, expose via FastAPI on port 8098. Letta calls `http://host.docker.internal:8098`. Breaks the Docker Compose model — not managed, no restart policy, silent failures, separate process management.
+
+**Option C — Force Letta container to x86_64:**
+Set `platform: linux/amd64` on the Letta service. Imposes emulation penalty on ALL Letta operations (inference, memory, tool execution) — far too costly just for one CLI binary.
+
+**Option D — Wait for linux/arm64 support (selected):**
+`gws` is pre-1.0 (v0.3.4). linux/arm64 is a natural addition as the tool matures — ARM servers (AWS Graviton, etc.) are increasingly common. When this ships, tools call `gws` via subprocess directly inside the Letta container with zero infrastructure changes.
+
+### Why We're Waiting (Not Building the Bridge)
+
+While Option A (x86_64 sidecar) is technically viable, **the bridge negates most of the simplification benefit**:
+
+| What we wanted | What the bridge gives us |
+|---|---|
+| `subprocess.run(["gws", ...])` in tool | `urllib.request.urlopen("http://gws-bridge:8098/...")` in tool |
+| No extra services | A new container + bridge code to maintain |
+| Fewer moving parts | One more moving part |
+| Eliminated OAuth boilerplate | Traded for HTTP client boilerplate |
+
+The current `gmail_tools.py` works. The OAuth boilerplate is repetitive but stable. Adding a bridge introduces a network hop, a new service, and a new failure domain — to solve a problem that's already solved. The real win comes when `gws` runs directly in the container.
 
 ---
 
-## Experiment Design
-
-### Goal
-
-Validate that `gws` CLI produces equivalent results to the current `search_emails` Letta tool, with acceptable latency and reliability.
+## Ideal End State (When linux/arm64 Ships)
 
 ### Architecture
 
 ```
-┌─────────────────────────┐     HTTP      ┌──────────────────────┐
-│  Letta container        │ ────────────► │  gws-bridge (host)   │
-│                         │               │  FastAPI :8098       │
-│  search_emails_gws()    │               │                      │
-│  (Letta tool)           │  ◄──────────  │  subprocess:         │
-│                         │     JSON      │  gws gmail users     │
-└─────────────────────────┘               │  messages list ...   │
-                                          └──────────────────────┘
-                                                    │
-                                                    ▼
-                                          Google Gmail API v1
-                                          (auth via gws credentials)
+┌──────────────────────────────────┐
+│  Letta container (arm64)         │
+│                                  │
+│  search_emails() ──► subprocess  │──► Google Gmail API v1
+│  draft_email()   ──► gws CLI    │    (auth via gws credentials)
+│  send_email()    ──► ...        │
+│                                  │
+│  /root/.config/gws/credentials  │
+└──────────────────────────────────┘
 ```
 
-### Components
-
-#### 1. `gws` Auth Setup (host)
-
-`gws` needs its own OAuth credentials. Two options:
-
-**Option A — Reuse existing GCP OAuth client (recommended):**
-```bash
-# Point gws at the existing client_secret
-cp ~/.gmail-mcp/gcp-oauth.keys.json ~/.config/gws/client_secret.json
-# Or symlink
-ln -s ~/.gmail-mcp/gcp-oauth.keys.json ~/.config/gws/client_secret.json
-
-# Login (opens browser, one-time)
-gws auth login
-```
-
-Note: The existing `gcp-oauth.keys.json` uses the `"web"` client type. `gws` may need an `"installed"` (desktop) client type for the local OAuth flow. If so, create a new OAuth client ID in the same GCP project with type "Desktop app" and download it as `client_secret.json`.
-
-**Option B — Use env vars with existing tokens:**
-```bash
-export GOOGLE_WORKSPACE_CLI_CLIENT_ID=<from gcp-oauth.keys.json>
-export GOOGLE_WORKSPACE_CLI_CLIENT_SECRET=<from gcp-oauth.keys.json>
-export GOOGLE_WORKSPACE_CLI_TOKEN=<access_token from credentials.json>
-```
-Downside: access tokens expire hourly, no auto-refresh in this mode.
-
-#### 2. `gws-bridge` Service (host, port 8098)
-
-Minimal FastAPI service — NOT a general-purpose proxy. Exposes only the operations we're testing.
-
-**File:** `gws-bridge/main.py`
+No bridge, no MCP, no proxy. Each Letta tool is a thin subprocess wrapper:
 
 ```python
-"""Thin HTTP bridge for gws CLI commands. Runs on host, not in Docker."""
-
-from fastapi import FastAPI, HTTPException
-import subprocess
-import json
-
-app = FastAPI()
-
-GWS_BIN = "gws"  # Assumes gws is on PATH
-
-@app.get("/health")
-def health():
-    result = subprocess.run([GWS_BIN, "auth", "status"], capture_output=True, text=True, timeout=10)
-    status = json.loads(result.stdout) if result.returncode == 0 else {"error": result.stderr}
-    return {"status": "healthy" if "credential_source" in status else "unhealthy", "gws_auth": status}
-
-@app.post("/gmail/messages/search")
-def search_messages(query: str, max_results: int = 10):
-    """Search Gmail messages via gws CLI."""
-    cmd = [
-        GWS_BIN, "gmail", "users", "messages", "list",
-        "--params", json.dumps({"userId": "me", "q": query, "maxResults": max_results}),
-        "--format", "json",
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise HTTPException(status_code=502, detail=f"gws error: {result.stderr}")
-
-    messages_response = json.loads(result.stdout)
-    # gws returns raw Gmail API response — may need to fetch individual message metadata
-    # just like the current tool does, OR use a second gws call per message
-    return messages_response
-```
-
-**Key design decisions:**
-- Runs on host (not Docker) because `gws` binary is macOS-only on ARM
-- Port 8098 (unused in current port map)
-- Letta reaches it via `http://host.docker.internal:8098`
-- No auth on the bridge itself (internal network only, same as other MCP servers)
-- Each endpoint maps to exactly one `gws` command — no generic passthrough
-
-#### 3. `search_emails_gws` Letta Tool
-
-**File:** `letta/gmail_gws_experiment.py`
-
-A new Letta tool registered alongside (not replacing) the existing `search_emails`. Follows all Letta tool patterns.
-
-```python
-def search_emails_gws(query: str, max_results: int = 10) -> Dict[str, Any]:
+def search_emails(query: str, max_results: int = 10) -> Dict[str, Any]:
     """
-    [EXPERIMENT] Search Gmail via gws CLI bridge.
+    Search Gmail messages using Gmail search syntax.
 
     Args:
         query: Gmail search query string
-        max_results: Maximum results (1-50, default 10)
+        max_results: Maximum number of results to return (1-50, default 10)
 
     Returns:
         Dictionary with status, emails list, and count.
     """
     import json
+    import subprocess
     import traceback
-    import urllib.request
-    import urllib.parse
 
     try:
         if max_results is None or max_results < 1:
@@ -200,95 +156,107 @@ def search_emails_gws(query: str, max_results: int = 10) -> Dict[str, Any]:
         if max_results > 50:
             max_results = 50
 
-        params = urllib.parse.urlencode({"query": query, "max_results": max_results})
-        url = f"http://host.docker.internal:8098/gmail/messages/search?{params}"
+        cmd = [
+            "gws", "gmail", "users", "messages", "list",
+            "--params", json.dumps({"userId": "me", "q": query, "maxResults": max_results}),
+            "--format", "json",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
-        req = urllib.request.Request(url, method="POST")
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode())
+        if result.returncode != 0:
+            return {"status": "error", "error_message": f"gws error: {result.stderr}"}
 
-        # Normalize to match existing search_emails output format
-        # (transformation logic depends on what gws returns)
+        data = json.loads(result.stdout)
+        messages = data.get("messages", [])
 
-        return {"status": "ok", "data": data, "source": "gws-bridge"}
+        if not messages:
+            return {"status": "ok", "emails": [], "count": 0, "query": query}
+
+        # Fetch metadata for each message
+        emails = []
+        for msg in messages:
+            cmd_get = [
+                "gws", "gmail", "users", "messages", "get",
+                "--params", json.dumps({
+                    "userId": "me",
+                    "id": msg["id"],
+                    "format": "metadata",
+                    "metadataHeaders": ["Subject", "From", "To", "Date"],
+                }),
+                "--format", "json",
+            ]
+            msg_result = subprocess.run(cmd_get, capture_output=True, text=True, timeout=15)
+            if msg_result.returncode != 0:
+                continue
+
+            msg_data = json.loads(msg_result.stdout)
+            headers = msg_data.get("payload", {}).get("headers", [])
+            header_map = {h["name"].lower(): h["value"] for h in headers}
+
+            emails.append({
+                "id": msg_data["id"],
+                "threadId": msg_data.get("threadId", ""),
+                "subject": header_map.get("subject", ""),
+                "from": header_map.get("from", ""),
+                "to": header_map.get("to", ""),
+                "date": header_map.get("date", ""),
+                "snippet": msg_data.get("snippet", ""),
+                "labelIds": msg_data.get("labelIds", []),
+            })
+
+        return {"status": "ok", "emails": emails, "count": len(emails), "query": query}
 
     except Exception as e:
         return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
 ```
 
-#### 4. Comparison Test Script
+Compare to current: **no OAuth imports, no credential loading, no token refresh, no service building.** The ~30 lines of auth boilerplate per tool become zero.
 
-**File:** `scripts/test-gws-experiment.py`
+### Migration Steps (When Ready)
 
-Calls both `search_emails` (existing) and `search_emails_gws` (experiment) with the same queries and compares:
-- Result equivalence (same message IDs returned?)
-- Latency (wall clock time for each)
-- Error handling (what happens with bad queries, empty results, auth expiry?)
+1. Install `gws` in Letta container: `npm install -g @googleworkspace/cli` (add to Dockerfile or startup script)
+2. Auth setup: `gws auth login` on host, then `gws auth export > credentials.json` and mount into container at `/root/.config/gws/credentials.json` via `GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE` env var
+3. Write new `search_emails` with subprocess pattern (as above)
+4. Comparison test: run old and new tool with identical queries, verify same message IDs
+5. If successful, convert remaining 8 core tools one at a time
+6. Update specialized tools (meeting followup, email task queue, draft reply) to use subprocess pattern
+7. Remove `google-auth-library`, `google-api-python-client` from Letta sandbox pip requirements
+8. Retire `gmail_tools.py` OAuth boilerplate
 
-Test queries:
-1. `is:unread` — basic inbox check
-2. `from:specific@email.com newer_than:7d` — scoped search
-3. `label:TaskQueue` — label-based (used by email_task_queue_tool)
-4. `subject:"meeting notes"` — subject search (used by meeting pipeline)
-5. Empty result query — edge case
+### Migration Effort Estimate
 
----
+The bridge-to-direct migration (if we had built the bridge) would be a one-line-per-tool change — swap HTTP call for subprocess call. The JSON output is identical either way.
 
-## What This Experiment Does NOT Change
-
-- No existing tools are modified or replaced
-- No Docker Compose changes
-- No Letta agent re-registration (the experiment tool is additive)
-- `gmail-watch-service` is untouched
-- Meeting followup, email task queue, draft reply tools are untouched
-- Auth credentials for existing tools are untouched
+The full migration from current `gmail_tools.py` → `gws` subprocess is also straightforward: each tool keeps its parameter signature and return format, only the middle section (auth + API call) changes.
 
 ---
 
-## Success Criteria
+## Broader Opportunity: Beyond Gmail
 
-1. **Functional:** `search_emails_gws` returns the same message IDs as `search_emails` for identical queries
-2. **Latency:** Within 2x of current tool (acceptable given extra network hop to bridge)
-3. **Auth:** `gws` handles token refresh without manual intervention for 24+ hours
-4. **Reliability:** No failures across 20+ test queries
+Once `gws` runs in-container, the same subprocess pattern works for **all Google Workspace APIs**:
 
-## If Successful — Migration Path
+| API | Current State | With `gws` |
+|-----|--------------|------------|
+| Gmail | 9 custom tools + 3 specialized | Subprocess wrappers, no OAuth |
+| Google Calendar | No direct tools (uses Calendly MCP) | `gws calendar` — native access |
+| Google Drive | `drive-rag-service` has its own OAuth | Could share `gws` auth |
+| Google Sheets | No integration | `gws sheets` — available immediately |
+| Google Docs | Comment tools use Drive API directly | `gws docs` — unified access |
 
-1. Add more endpoints to gws-bridge: `read_email`, `draft_email`, `send_email`, `modify_email`, `list_labels`
-2. Write equivalent `_gws` Letta tools for each
-3. Validate with comparison tests
-4. Swap Letta agent tool attachments from old → new (one at a time)
-5. Retire `gmail_tools.py` OAuth boilerplate
-6. Update specialized tools (meeting followup, etc.) to call bridge instead of direct API
-7. Eventually: when `gws` supports linux/arm64, move bridge logic into Letta tools directly
-
-## If `gws` Adds linux/arm64 Support
-
-The bridge service becomes unnecessary. Tools would call `gws` via subprocess directly from inside the container, which was the original preferred approach:
-
-```python
-cmd = ["gws", "gmail", "users", "messages", "list", "--params", json.dumps({...})]
-result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-```
-
-This is the ideal end state — no bridge, no MCP, just clean subprocess calls.
+This is the real long-term value: **one auth mechanism and one CLI for all Google Workspace APIs**, instead of building separate OAuth integrations per service.
 
 ---
 
-## Risks
+## Monitoring: When to Revisit
 
-| Risk | Likelihood | Mitigation |
-|------|-----------|------------|
-| `gws` CLI interface changes (pre-1.0) | Medium | Pin version, bridge isolates changes |
-| OAuth scope mismatch (gws requests different scopes) | Low | Use same GCP project, verify scopes |
-| `gws` output format differs from raw Gmail API | Medium | Bridge normalizes output |
-| Bridge service adds latency | Certain (small) | Acceptable for experiment; eliminated if arm64 support added |
-| `gws` token refresh fails headless | Low | `gws auth login` with `--full` stores refresh token in keyring |
+- **Watch:** [github.com/googleworkspace/cli/issues](https://github.com/googleworkspace/cli) for linux/arm64 support
+- **Trigger:** When `gws` ships a `aarch64-unknown-linux-gnu` binary (or equivalent), proceed with the migration steps above
+- **Alternative trigger:** If a new Google Workspace API integration is needed (Calendar, Sheets, etc.) and the bridge cost is justified by multi-service use, reconsider Option A (x86_64 sidecar)
 
 ---
 
-## Port Allocation
+## Port Allocation (Reserved)
 
 | Service | Port | Status |
 |---------|------|--------|
-| gws-bridge | 8098 | New (experiment only) |
+| gws-bridge | 8098 | Reserved for future use |
