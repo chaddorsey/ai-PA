@@ -18,3 +18,8 @@ omnifocus-cli = "omnifocus_cli.cli:cli"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires OmniFocus running on macOS",
+]
