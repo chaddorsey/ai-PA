@@ -7,7 +7,7 @@ This tool provides intelligent meeting search with:
 - Multi-filter combinations (participants + date + type)
 - Semantic search with structured filtering
 
-Designed to work with meetings imported to archival memory via granola_cache_to_archival.py
+Designed to work with meetings imported to archival memory via granola_mcp_to_archival.py
 """
 
 from typing import Dict, Any, Optional

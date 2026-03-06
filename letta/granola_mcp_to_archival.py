@@ -37,25 +37,19 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-# Add parent directory for imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from granola_cache_to_archival import (
-    chunk_content,
-    insert_to_archival,
-    AGENT_ID,
-    INTERNAL_DOMAIN,
-    MAX_PASSAGE_CHARS,
-)
-
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
+AGENT_ID = os.getenv("GRANOLA_AGENT_ID", "agent-398b4f6c-6afa-493f-8063-897c6b171a0d")
+LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
+INTERNAL_DOMAIN = "concord.org"
+MAX_PASSAGE_CHARS = 28000
+
 MCP_PROXY_URL = os.getenv("GRANOLA_MCP_URL", "http://localhost:8089/mcp")
 
-# Shared state file — same one the cache watcher uses
-STATE_FILE = Path("/Volumes/main-drive/ai-PA/letta/.granola_watcher_state.json")
+# Own state file — separate from the deprecated cache watcher
+STATE_FILE = Path("/Volumes/main-drive/ai-PA/letta/.granola_mcp_import_state.json")
 
 # Markdown export directory (shareable meeting archive)
 EXPORT_DIR = Path(os.getenv(
@@ -77,16 +71,149 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Archival memory helpers (inlined from deprecated granola_cache_to_archival)
+# ---------------------------------------------------------------------------
+
+def split_long_text(text: str, max_chars: int) -> list:
+    """Split long text into chunks at sentence or word boundaries."""
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks = []
+    remaining = text
+
+    while len(remaining) > max_chars:
+        chunk_end = max_chars
+        for punct in ['. ', '! ', '? ', '." ', '!" ', '?" ']:
+            last_punct = remaining[:max_chars].rfind(punct)
+            if last_punct > max_chars // 2:
+                chunk_end = last_punct + len(punct)
+                break
+        else:
+            last_space = remaining[:max_chars].rfind(' ')
+            if last_space > max_chars // 2:
+                chunk_end = last_space + 1
+        chunks.append(remaining[:chunk_end].strip())
+        remaining = remaining[chunk_end:].strip()
+
+    if remaining:
+        chunks.append(remaining)
+    return chunks
+
+
+def chunk_content(content: str, meeting_id: str, tags: list, meeting_title: str = "Meeting") -> list:
+    """Split content into archival-sized chunks."""
+    if len(content) <= MAX_PASSAGE_CHARS:
+        return [(content, tags)]
+
+    chunks = []
+    parts = content.split("### Transcript")
+
+    if len(parts) == 2:
+        header_and_summary = parts[0].strip()
+        transcript = parts[1].strip()
+
+        chunk1 = header_and_summary
+        chunk1_tags = tags + ["chunk:summary"]
+        if len(chunk1) <= MAX_PASSAGE_CHARS:
+            chunks.append((chunk1, chunk1_tags))
+        else:
+            chunks.append((chunk1[:MAX_PASSAGE_CHARS], chunk1_tags))
+
+        transcript_lines = transcript.split('\n')
+        expanded_lines = []
+        for line in transcript_lines:
+            if len(line) > MAX_PASSAGE_CHARS - 500:
+                expanded_lines.extend(split_long_text(line, MAX_PASSAGE_CHARS - 500))
+            else:
+                expanded_lines.append(line)
+
+        current_chunk = f"## Meeting: {meeting_title} (Transcript continued)\n\n**ID:** {meeting_id}\n\n### Transcript\n"
+        chunk_num = 1
+
+        def has_dialogue(text: str) -> bool:
+            return 'Me:' in text or 'Them:' in text
+
+        for line in expanded_lines:
+            test_chunk = current_chunk + line + '\n'
+            if len(test_chunk) > MAX_PASSAGE_CHARS:
+                if current_chunk.strip() and len(current_chunk) > 500 and has_dialogue(current_chunk):
+                    chunk_tags = tags + [f"chunk:transcript-{chunk_num}"]
+                    chunks.append((current_chunk.strip(), chunk_tags))
+                    chunk_num += 1
+                current_chunk = f"## Meeting: {meeting_title} (Transcript continued)\n\n**ID:** {meeting_id}\n\n### Transcript\n{line}\n"
+            else:
+                current_chunk = test_chunk
+
+        if current_chunk.strip() and "### Transcript" in current_chunk and len(current_chunk) > 500 and has_dialogue(current_chunk):
+            chunk_tags = tags + [f"chunk:transcript-{chunk_num}"]
+            chunks.append((current_chunk.strip(), chunk_tags))
+    else:
+        chunk_num = 1
+        for i in range(0, len(content), MAX_PASSAGE_CHARS):
+            chunk = content[i:i + MAX_PASSAGE_CHARS]
+            chunk_tags = tags + [f"chunk:{chunk_num}"]
+            chunks.append((chunk, chunk_tags))
+            chunk_num += 1
+
+    return chunks
+
+
+def insert_to_archival(content: str, tags: list, dry_run: bool = False) -> bool:
+    """Insert content into Letta archival memory via HTTP API."""
+    if dry_run:
+        logger.info(f"  [DRY RUN] Would insert {len(content)} chars with tags: {tags[:5]}...")
+        return True
+
+    import urllib.request
+    payload = json.dumps({"text": content, "tags": tags}).encode()
+    req = urllib.request.Request(
+        f"{LETTA_BASE_URL}/v1/agents/{AGENT_ID}/archival-memory",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req, timeout=30)
+        return True
+    except Exception as e:
+        logger.error(f"  Archival insert failed: {str(e)[:200]}")
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Post-ingestion agent notification
 # ---------------------------------------------------------------------------
 
 def notify_agent_new_meeting(meeting_id: str, meeting_title: str):
-    """Send a message to the Granola agent to trigger post-meeting processing."""
+    """Send a message to the Granola agent to trigger post-meeting processing.
+
+    Creates a fresh conversation per meeting to avoid context poisoning —
+    each meeting gets an isolated message history, while core memory blocks
+    (meeting_processing_chain, etc.) are still shared across conversations.
+    """
     import urllib.request as _urllib_req
     import json as _json
 
-    letta_base = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
-    url = f"{letta_base}/v1/agents/{AGENT_ID}/messages"
+    letta_base = LETTA_BASE_URL
+
+    # Create a per-meeting conversation so the agent starts with a clean context
+    conv_label = f"meeting-{meeting_id[:12]}"
+    try:
+        conv_req = _urllib_req.Request(
+            f"{letta_base}/v1/conversations/?agent_id={AGENT_ID}",
+            data=_json.dumps({"label": conv_label}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        conv_resp = _urllib_req.urlopen(conv_req, timeout=15)
+        conv_data = _json.loads(conv_resp.read().decode("utf-8"))
+        conversation_id = conv_data.get("id")
+        logger.info(f"  Created conversation {conversation_id} for meeting {meeting_id[:12]}")
+    except Exception as e:
+        logger.warning(f"  Failed to create conversation ({e}), falling back to agent-level messaging")
+        conversation_id = None
+
     message_content = (
         f'New meeting archived: "{meeting_title}" (meeting_id: {meeting_id}). '
         f"Run post-meeting processing: call scan_meeting_notes with this meeting_id, "
@@ -95,16 +222,28 @@ def notify_agent_new_meeting(meeting_id: str, meeting_title: str):
         f"Any task markers found have been queued to queued_tasks_from_meetings — "
         f"process them after completing the scan review and followup email."
     )
-    payload = _json.dumps({
-        "messages": [{"role": "user", "content": message_content}],
-    }).encode("utf-8")
+
+    if conversation_id:
+        # Send via conversation (isolated context)
+        url = f"{letta_base}/v1/conversations/{conversation_id}/messages"
+        payload = _json.dumps({
+            "input": message_content,
+            "streaming": False,
+        }).encode("utf-8")
+    else:
+        # Fallback: agent-level messaging
+        url = f"{letta_base}/v1/agents/{AGENT_ID}/messages"
+        payload = _json.dumps({
+            "messages": [{"role": "user", "content": message_content}],
+        }).encode("utf-8")
+
     req = _urllib_req.Request(
         url, data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     try:
-        _urllib_req.urlopen(req, timeout=60)
+        _urllib_req.urlopen(req, timeout=120)
         logger.info(f"  Notified agent for post-meeting processing")
     except Exception as e:
         logger.warning(f"  Agent notification failed (non-fatal): {e}")
@@ -269,7 +408,7 @@ def parse_transcript(json_text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Formatting (mirrors granola_cache_to_archival but from MCP data)
+# Formatting
 # ---------------------------------------------------------------------------
 
 def parse_mcp_date(date_str: str) -> Optional[datetime]:
