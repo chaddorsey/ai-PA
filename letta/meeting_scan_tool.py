@@ -494,9 +494,13 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
 
             for item in my_tasks:
                 task_text = item["text"]
-                # Ensure "Chad to" prefix for consistency
-                if not task_text.lower().startswith("chad to"):
-                    task_text = "Chad to " + task_text[0].lower() + task_text[1:]
+                # Strip "Chad to" prefix — tasks should begin with an action verb
+                # e.g. "Chad to send a follow-up" → "Send a follow-up"
+                _stripped = re.sub(r'^(?:Chad\s+to\s+)', '', task_text, flags=re.IGNORECASE).strip()
+                if _stripped:
+                    task_text = _stripped[0].upper() + _stripped[1:]
+                else:
+                    task_text = task_text
 
                 extract_payload = {
                     "task_description": task_text,
