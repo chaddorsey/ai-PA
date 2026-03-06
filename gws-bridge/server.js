@@ -121,28 +121,24 @@ app.get('/gmail/drafts/:id', (req, res) => {
     const headerMap = {};
     headers.forEach(h => { headerMap[h.name.toLowerCase()] = h.value; });
 
-    // Extract body text — prefer text/plain, fall back to text/html
+    // Extract body — prefer text/html (for rich text editor), fall back to text/plain
     let bodyText = '';
     const payload = data.message?.payload || {};
 
-    function findBody(part) {
-      if (part.mimeType === 'text/plain' && part.body?.data) {
+    function findBody(part, preferred) {
+      if (part.mimeType === preferred && part.body?.data) {
         return Buffer.from(part.body.data, 'base64url').toString('utf-8');
       }
       if (part.parts) {
         for (const sub of part.parts) {
-          const found = findBody(sub);
+          const found = findBody(sub, preferred);
           if (found) return found;
         }
-      }
-      // Fall back to text/html
-      if (part.mimeType === 'text/html' && part.body?.data) {
-        return Buffer.from(part.body.data, 'base64url').toString('utf-8');
       }
       return null;
     }
 
-    bodyText = findBody(payload) || '';
+    bodyText = findBody(payload, 'text/html') || findBody(payload, 'text/plain') || '';
 
     res.json({
       id: data.id,
@@ -181,7 +177,8 @@ app.put('/gmail/drafts/:id', (req, res) => {
     if (to) lines.push(`To: ${to}`);
     if (cc) lines.push(`Cc: ${cc}`);
     if (subject) lines.push(`Subject: ${subject}`);
-    lines.push('Content-Type: text/plain; charset=utf-8');
+    const isHtml = /<[a-z][\s\S]*>/i.test(body || '');
+    lines.push(isHtml ? 'Content-Type: text/html; charset=utf-8' : 'Content-Type: text/plain; charset=utf-8');
     lines.push('');
     lines.push(body || '');
     const raw = Buffer.from(lines.join('\r\n')).toString('base64url');
