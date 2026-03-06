@@ -14,9 +14,9 @@ OMNIFOCUS_CLI_DIR = "/Volumes/main-drive/ai-PA/.worktrees/omnifocus-cli/omnifocu
 
 
 def run_cli(*args):
-    """Run omnifocus-cli with --json and return parsed output."""
+    """Run omnifocus-cli with --format json and return parsed output."""
     result = subprocess.run(
-        ["poetry", "run", "omnifocus-cli", "--json", *args],
+        ["poetry", "run", "omnifocus-cli", "--format", "json", *args],
         capture_output=True,
         text=True,
         cwd=OMNIFOCUS_CLI_DIR,
@@ -60,3 +60,58 @@ def test_task_lifecycle():
 
     completed = run_cli("task", "complete", task_id)
     assert completed.get("success") is True or "markComplete" not in str(completed)
+
+
+# ── Agent-first path smoke tests ──────────────────────────────
+
+
+def test_schema_list_returns_all_methods():
+    """Schema --list should return all 17 methods."""
+    result = subprocess.run(
+        ["poetry", "run", "omnifocus-cli", "schema", "--list"],
+        capture_output=True, text=True, cwd=OMNIFOCUS_CLI_DIR, timeout=10,
+    )
+    assert result.returncode == 0
+    assert "task.create" in result.stdout
+    assert "search" in result.stdout
+    assert "project.list" in result.stdout
+
+
+def test_schema_task_create_returns_params():
+    """Schema introspection should return method metadata."""
+    result = subprocess.run(
+        ["poetry", "run", "omnifocus-cli", "schema", "task.create"],
+        capture_output=True, text=True, cwd=OMNIFOCUS_CLI_DIR, timeout=10,
+    )
+    assert result.returncode == 0
+    parsed = json.loads(result.stdout)
+    assert parsed["method"] == "createTask"
+    assert "name" in parsed["params"]
+
+
+def test_dry_run_task_create():
+    """Dry-run should validate without executing."""
+    result = subprocess.run(
+        ["poetry", "run", "omnifocus-cli",
+         "--body", '{"name": "Integration dry-run test"}',
+         "--dry-run",
+         "task", "create"],
+        capture_output=True, text=True, cwd=OMNIFOCUS_CLI_DIR, timeout=10,
+    )
+    assert result.returncode == 0
+    parsed = json.loads(result.stdout)
+    assert parsed["dry_run"] is True
+    assert parsed["validation"] == "passed"
+
+
+def test_validation_error_returns_structured_json():
+    """Invalid body should return structured validation errors."""
+    result = subprocess.run(
+        ["poetry", "run", "omnifocus-cli",
+         "--body", '{"flagged": "not_bool"}',
+         "task", "create"],
+        capture_output=True, text=True, cwd=OMNIFOCUS_CLI_DIR, timeout=10,
+    )
+    assert result.returncode == 2
+    parsed = json.loads(result.stdout)
+    assert parsed["error"] == "validation_failed"
