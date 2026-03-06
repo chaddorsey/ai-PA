@@ -1711,7 +1711,7 @@ def api_list_drafts():
         with httpx.Client(timeout=30) as client:
             resp = client.get(
                 f"{GWS_BRIDGE_URL}/gmail/drafts",
-                params={"q": "label:Followup", "maxResults": 50},
+                params={"q": "label:Followup OR subject:\"meeting summary\"", "maxResults": 50},
             )
             resp.raise_for_status()
             return jsonify(resp.json())
