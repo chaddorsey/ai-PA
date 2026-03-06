@@ -1274,6 +1274,9 @@ header h1 {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
 }
 
 .draft-field-label {
@@ -1313,11 +1316,11 @@ header h1 {
     align-items: center;
     gap: 2px;
     padding: 4px 6px;
-    margin: 0 1.5rem;
     background: var(--bg-secondary);
     border: 1px solid var(--sb-card-border);
     border-bottom: none;
     border-radius: 4px 4px 0 0;
+    flex-shrink: 0;
 }
 
 .tb-btn {
@@ -1352,9 +1355,8 @@ header h1 {
 }
 
 .draft-edit-body {
-    width: calc(100% - 3rem);
-    min-height: 200px;
-    max-height: 50vh;
+    min-height: 120px;
+    flex: 1;
     overflow-y: auto;
     background: var(--bg-primary);
     border: 1px solid var(--sb-card-border);
@@ -1364,7 +1366,6 @@ header h1 {
     font-size: 0.85rem;
     line-height: 1.5;
     padding: 12px 14px;
-    margin: 0 1.5rem;
 }
 
 .draft-edit-body:focus {
@@ -1387,6 +1388,7 @@ header h1 {
 
 .draft-edit-error {
     margin: 8px 1.5rem 0;
+    flex-shrink: 0;
     padding: 8px 12px;
     background: rgba(233, 69, 96, 0.15);
     border: 1px solid var(--accent);
