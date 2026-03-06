@@ -7,7 +7,7 @@ from omnifocus_cli.bridge import call_omnifocus
 from omnifocus_cli.fields import apply_field_mask
 from omnifocus_cli.formatters import output_error, output_result, should_use_json
 from omnifocus_cli.schema import get_schema, list_schemas
-from omnifocus_cli.validate import validate_body
+from omnifocus_cli.validate import validate_body, validate_date, validate_name, validate_uuid
 
 
 @click.group()
@@ -23,6 +23,46 @@ def cli(ctx, format_flag, body_json, dry_run, fields):
     ctx.obj["body"] = body_json
     ctx.obj["dry_run"] = dry_run
     ctx.obj["fields"] = fields.split(",") if fields else None
+
+
+_DATE_SUFFIXES = ("Date", "Before", "After")
+
+
+def _validate_semantics(schema_key: str, params: dict) -> list[dict]:
+    """Validate UUID, date, and name values in params."""
+    errors: list[dict] = []
+    schema = get_schema(schema_key)
+    if schema is None:
+        return errors
+
+    for field_name, value in params.items():
+        if value is None:
+            continue
+        param_def = schema["params"].get(field_name)
+        if param_def is None:
+            continue
+
+        # UUID fields: string type, name ends with "Id"
+        if param_def["type"] == "string" and field_name.endswith("Id"):
+            err = validate_uuid(value)
+            if err:
+                errors.append({"field": field_name, "error": err})
+
+        # Date fields: string type, name ends with "Date", "Before", or "After"
+        elif param_def["type"] == "string" and any(
+            field_name.endswith(s) for s in _DATE_SUFFIXES
+        ):
+            err = validate_date(value)
+            if err:
+                errors.append({"field": field_name, "error": err})
+
+        # Name field
+        elif field_name == "name" and param_def["type"] == "string":
+            err = validate_name(value)
+            if err:
+                errors.append({"field": field_name, "error": err})
+
+    return errors
 
 
 def _run(ctx, schema_key: str, method: str, params: dict, had_convenience_flags: bool = False):
@@ -77,6 +117,24 @@ def _run(ctx, schema_key: str, method: str, params: dict, had_convenience_flags:
         # structurally correct by construction and may include params
         # (e.g. filter-only search fields) not in the primary schema.
         final_params = params
+
+    # Semantic validation: UUIDs, dates, names
+    semantic_errors = _validate_semantics(schema_key, final_params)
+    if semantic_errors:
+        if dry_run:
+            click.echo(json.dumps({
+                "dry_run": True,
+                "method": method,
+                "validation_errors": semantic_errors,
+            }, indent=2))
+            ctx.exit(2)
+            return
+        click.echo(json.dumps({
+            "error": "validation_failed",
+            "errors": semantic_errors,
+        }, indent=2))
+        ctx.exit(2)
+        return
 
     if dry_run:
         click.echo(json.dumps({
