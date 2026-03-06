@@ -125,21 +125,67 @@ class DraftsSidebar {
     }
   }
 
+  // ── Rich Text Toolbar ──
+
+  initToolbar() {
+    if (this._toolbarReady) return;
+    this._toolbarReady = true;
+
+    document.querySelectorAll('.draft-toolbar .tb-btn').forEach(btn => {
+      btn.addEventListener('mousedown', e => e.preventDefault()); // keep focus in editor
+      btn.addEventListener('click', () => {
+        const cmd = btn.dataset.cmd;
+        const body = document.getElementById('draft-edit-body');
+        body.focus();
+
+        if (cmd === 'createLink') {
+          const url = prompt('Enter URL:');
+          if (url) document.execCommand('createLink', false, url);
+        } else {
+          document.execCommand(cmd, false, null);
+        }
+        this.updateToolbarState();
+      });
+    });
+
+    // Update active state on selection change
+    document.getElementById('draft-edit-body')?.addEventListener('keyup', () => this.updateToolbarState());
+    document.getElementById('draft-edit-body')?.addEventListener('mouseup', () => this.updateToolbarState());
+  }
+
+  updateToolbarState() {
+    document.querySelectorAll('.draft-toolbar .tb-btn[data-cmd]').forEach(btn => {
+      const cmd = btn.dataset.cmd;
+      if (['bold', 'italic', 'underline', 'insertUnorderedList', 'insertOrderedList'].includes(cmd)) {
+        btn.classList.toggle('active', document.queryCommandState(cmd));
+      }
+    });
+  }
+
   // ── Edit Modal ──
 
+  getBodyHtml() {
+    return document.getElementById('draft-edit-body').innerHTML;
+  }
+
+  setBodyHtml(html) {
+    document.getElementById('draft-edit-body').innerHTML = html || '';
+  }
+
   async openEditModal(draftId) {
+    this.initToolbar();
+
     const overlay = document.getElementById('draft-edit-overlay');
     const toInput = document.getElementById('draft-edit-to');
     const ccInput = document.getElementById('draft-edit-cc');
     const subjectInput = document.getElementById('draft-edit-subject');
-    const bodyInput = document.getElementById('draft-edit-body');
     const errorEl = document.getElementById('draft-edit-error');
 
     // Reset
     toInput.value = '';
     ccInput.value = '';
     subjectInput.value = '';
-    bodyInput.value = '';
+    this.setBodyHtml('');
     errorEl.textContent = '';
     errorEl.style.display = 'none';
     overlay.dataset.draftId = draftId;
@@ -154,11 +200,20 @@ class DraftsSidebar {
       toInput.value = data.to || '';
       ccInput.value = data.cc || '';
       subjectInput.value = data.subject || '';
-      bodyInput.value = data.body || '';
+      this.setBodyHtml(data.body || '');
     } catch (e) {
       errorEl.textContent = `Failed to load draft: ${e.message}`;
       errorEl.style.display = 'block';
     }
+  }
+
+  collectFormData() {
+    return {
+      to: document.getElementById('draft-edit-to').value,
+      cc: document.getElementById('draft-edit-cc').value,
+      subject: document.getElementById('draft-edit-subject').value,
+      body: this.getBodyHtml(),
+    };
   }
 
   async saveDraft() {
@@ -175,12 +230,7 @@ class DraftsSidebar {
       const resp = await fetch(`/api/drafts/${draftId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: document.getElementById('draft-edit-to').value,
-          cc: document.getElementById('draft-edit-cc').value,
-          subject: document.getElementById('draft-edit-subject').value,
-          body: document.getElementById('draft-edit-body').value,
-        }),
+        body: JSON.stringify(this.collectFormData()),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
@@ -200,7 +250,6 @@ class DraftsSidebar {
     const draftId = overlay.dataset.draftId;
     const to = document.getElementById('draft-edit-to').value;
 
-    // Save first, then send
     const errorEl = document.getElementById('draft-edit-error');
     const sendBtn = document.getElementById('draft-edit-send-btn');
 
@@ -215,12 +264,7 @@ class DraftsSidebar {
       const saveResp = await fetch(`/api/drafts/${draftId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: document.getElementById('draft-edit-to').value,
-          cc: document.getElementById('draft-edit-cc').value,
-          subject: document.getElementById('draft-edit-subject').value,
-          body: document.getElementById('draft-edit-body').value,
-        }),
+        body: JSON.stringify(this.collectFormData()),
       });
       if (!saveResp.ok) throw new Error(`Save failed: HTTP ${saveResp.status}`);
 

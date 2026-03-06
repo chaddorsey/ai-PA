@@ -124,7 +124,18 @@
                     <span>Subject</span>
                     <input type="text" id="draft-edit-subject" class="draft-field-input" />
                 </label>
-                <textarea id="draft-edit-body" class="draft-edit-body" rows="12" placeholder="Email body..."></textarea>
+                <div class="draft-toolbar">
+                    <button type="button" class="tb-btn" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+                    <button type="button" class="tb-btn" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+                    <button type="button" class="tb-btn" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+                    <span class="tb-sep"></span>
+                    <button type="button" class="tb-btn" data-cmd="insertUnorderedList" title="Bullet list">&#8226;</button>
+                    <button type="button" class="tb-btn" data-cmd="insertOrderedList" title="Numbered list">1.</button>
+                    <span class="tb-sep"></span>
+                    <button type="button" class="tb-btn" data-cmd="createLink" title="Insert link">&#128279;</button>
+                    <button type="button" class="tb-btn" data-cmd="removeFormat" title="Clear formatting">&#8999;</button>
+                </div>
+                <div id="draft-edit-body" class="draft-edit-body" contenteditable="true" role="textbox" aria-multiline="true"></div>
             </div>
             <div id="draft-edit-error" class="draft-edit-error" style="display:none"></div>
             <div class="dialog-footer">

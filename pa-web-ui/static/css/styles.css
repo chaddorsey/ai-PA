@@ -1308,18 +1308,62 @@ header h1 {
     border-color: var(--sb-teal-dim);
 }
 
+.draft-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    margin: 0 1.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--sb-card-border);
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+}
+
+.tb-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.78rem;
+    padding: 3px 7px;
+    line-height: 1;
+    min-width: 26px;
+    text-align: center;
+}
+
+.tb-btn:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border-color: var(--sb-card-border);
+}
+
+.tb-btn:active, .tb-btn.active {
+    background: var(--sb-teal-dim);
+    color: var(--text-primary);
+}
+
+.tb-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--sb-card-border);
+    margin: 0 4px;
+}
+
 .draft-edit-body {
-    width: 100%;
+    width: calc(100% - 3rem);
     min-height: 200px;
     max-height: 50vh;
+    overflow-y: auto;
     background: var(--bg-primary);
     border: 1px solid var(--sb-card-border);
-    border-radius: 4px;
+    border-radius: 0 0 4px 4px;
     color: var(--text-primary);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.8rem;
-    padding: 10px;
-    resize: vertical;
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    padding: 12px 14px;
     margin: 0 1.5rem;
 }
 
@@ -1327,6 +1371,19 @@ header h1 {
     outline: none;
     border-color: var(--sb-teal-dim);
 }
+
+.draft-edit-body:empty::before {
+    content: 'Email body...';
+    color: var(--text-secondary);
+    opacity: 0.5;
+}
+
+.draft-edit-body p { margin: 0 0 0.6em; }
+.draft-edit-body ul, .draft-edit-body ol { margin: 0.4em 0; padding-left: 1.5em; }
+.draft-edit-body li { margin: 0.15em 0; }
+.draft-edit-body a { color: var(--sb-teal); text-decoration: underline; }
+.draft-edit-body b, .draft-edit-body strong { font-weight: 600; }
+.draft-edit-body i, .draft-edit-body em { font-style: italic; }
 
 .draft-edit-error {
     margin: 8px 1.5rem 0;
