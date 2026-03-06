@@ -3,7 +3,7 @@ name = "omnifocus-cli"
 version = "0.1.0"
 description = "CLI for OmniFocus via Omni Automation plugin"
 authors = ["ai-PA"]
-packages = [{include = "omnifocus_cli", from = "src"}]
+packages = [{include = "omnifocus_cli", from = "src"}, {include = "letta_tools"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
