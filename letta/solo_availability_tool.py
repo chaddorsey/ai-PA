@@ -162,27 +162,31 @@ def find_my_availability(
         if time_preference:
             utterance += f" in the {time_preference}"
 
-        # Call orchestrate_scheduling via HTTP (to the Letta container)
-        letta_base_url = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
+        # Call scheduling-orchestrator-api via HTTP
+        orchestrator_url = os.environ.get(
+            "SCHEDULING_ORCHESTRATOR_URL",
+            "http://scheduling-orchestrator-api:8095"
+        ).rstrip("/")
 
-        # Import the orchestrator directly if available (faster)
         try:
-            import sys
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from scheduling_orchestrator.orchestrate_scheduling import orchestrate_scheduling
-
-            result = orchestrate_scheduling(
-                utterance=utterance,
-                participant_ids=[user_id],
-                user_id=user_id,
-                context_json=json.dumps(context)
+            resp = requests.post(
+                f"{orchestrator_url}/schedule",
+                json={
+                    "utterance": utterance,
+                    "participant_ids": [user_id],
+                    "user_id": user_id,
+                    "context_json": json.dumps(context),
+                },
+                timeout=60,
             )
-        except ImportError as import_err:
-            # Fallback: call via API (would need agent with tool attached)
+            resp.raise_for_status()
+            result = resp.json()
+        except Exception as api_err:
             return {
                 "status": "error",
-                "error_message": f"Scheduling orchestrator not available: {str(import_err)}",
-                "available_slots": []
+                "error_message": f"Scheduling orchestrator unavailable: {str(api_err)}",
+                "available_slots": [],
+                "debug": {"orchestrator_url": orchestrator_url},
             }
 
         # Debug: log raw result from orchestrate_scheduling
