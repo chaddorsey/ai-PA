@@ -232,12 +232,13 @@ def inject_scheduling_context(
     """
     def _inject():
         try:
-            from ai.conversation_helper import get_conversation_for_user
+            from ai.letta_conversation import get_or_create_letta_conversation
 
-            conversation_id = get_conversation_for_user(user_id, logger=logger)
+            conversation_id = get_or_create_letta_conversation(user_id, logger=logger)
             if not conversation_id:
-                logger.info("No conversation for user %s, skipping context injection", user_id)
+                logger.error("Context injection: no conversation for user %s, skipping", user_id)
                 return
+            logger.error("Context injection: using conversation %s for user %s", conversation_id, user_id)
 
             # Build a concise context summary
             names = []
@@ -261,13 +262,29 @@ def inject_scheduling_context(
                 if labels:
                     proposal_summary = f" Options shown: {', '.join(labels)}."
 
+            # Build participant email list for tool call
+            participant_emails = ", ".join(participants)
+
+            # Include the user's local date so the agent resolves "tomorrow" correctly
+            from datetime import datetime as _dt
+            import pytz as _pytz
+            local_now = _dt.now(_pytz.timezone("America/New_York"))
+            local_date_str = local_now.strftime("%A, %B %d, %Y")
+
             context_msg = (
                 f"[SCHEDULING_CONTEXT] The user just used the fast scheduling path. "
+                f"The user's local date/time is {local_date_str} (Eastern). "
                 f'Their request: "{utterance}". '
                 f"Participants: {participants_str}. "
+                f"Participant emails for tool calls: {participant_emails}. "
                 f"I showed {num_clean} available slots and {num_conflict} conflict options."
                 f"{proposal_summary} "
                 f"The user has not yet selected a time. "
+                f"IMPORTANT: If the user asks a follow-up about scheduling with these participants "
+                f"(e.g. 'what about tomorrow?', 'any times next week?'), use orchestrate_scheduling "
+                f"with participant_ids='{participant_emails}' — do NOT use find_my_availability, "
+                f"which only checks one person's calendar. "
+                f"When computing dates like 'tomorrow', use the user's local date above, not UTC. "
                 f"Do not respond to this message — it is context injection only. "
                 f"Simply reply: noted."
             )
@@ -281,10 +298,10 @@ def inject_scheduling_context(
                 timeout=30.0,
             )
             resp.raise_for_status()
-            logger.info("Injected scheduling context into conversation %s", conversation_id)
+            logger.error("Context injection: SUCCESS into conversation %s", conversation_id)
 
         except Exception as e:
-            logger.warning("Context injection failed (non-critical): %s", e)
+            logger.error("Context injection FAILED (non-critical): %s", e, exc_info=True)
 
     thread = threading.Thread(target=_inject, daemon=True)
     thread.start()

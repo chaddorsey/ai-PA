@@ -757,6 +757,20 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
                         proposals_posted = True
                         logger.error(f"✅ PROPOSALS POSTED: session={session_id}")
 
+                        # Inject context into Letta conversation for follow-up awareness
+                        try:
+                            from services.agent_bridge import inject_scheduling_context
+                            inject_scheduling_context(
+                                user_id=user_id,
+                                utterance=text,
+                                participants=participants,
+                                participant_names=participant_names,
+                                proposal_set=proposal_set,
+                                logger=logger,
+                            )
+                        except Exception as ctx_err:
+                            logger.warning("Context injection setup failed: %s", ctx_err)
+
                     logger.info(f"Posted interactive scheduling proposals for session {session_id}")
                 else:
                     logger.error("⚠️ PROPOSAL PARSING: No proposals found in output")
