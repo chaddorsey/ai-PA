@@ -89,13 +89,23 @@ def initialize_dspy():
         pass  # python-dotenv not installed or .env doesn't exist
     
     # Get LLM configuration from environment
-    # Support OpenAI, Anthropic, or other providers
+    # DSPY_MODEL env var overrides default model selection.
+    # Default: gpt-4.1-nano (fast, cheap, sufficient for structured extraction)
     openai_api_key = os.getenv("OPENAI_API_KEY")
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    
-    if openai_api_key:
-        lm = dspy.LM(model="gpt-4o-mini", api_key=openai_api_key)
-        print(f"[initialize_dspy] Using OpenAI with model gpt-4o-mini", file=sys.stderr, flush=True)
+    model_override = os.getenv("DSPY_MODEL")
+
+    if model_override:
+        # Explicit model override — determine provider from model name
+        api_key = openai_api_key if not model_override.startswith("claude") else anthropic_api_key
+        if not api_key:
+            print(f"[initialize_dspy] WARNING: No API key for DSPY_MODEL={model_override}", file=sys.stderr, flush=True)
+            return None
+        lm = dspy.LM(model=model_override, api_key=api_key)
+        print(f"[initialize_dspy] Using DSPY_MODEL override: {model_override}", file=sys.stderr, flush=True)
+    elif openai_api_key:
+        lm = dspy.LM(model="gpt-4.1-nano", api_key=openai_api_key)
+        print(f"[initialize_dspy] Using OpenAI with model gpt-4.1-nano", file=sys.stderr, flush=True)
     elif anthropic_api_key:
         lm = dspy.LM(model="claude-3-5-sonnet-20241022", api_key=anthropic_api_key)
         print(f"[initialize_dspy] Using Anthropic with model claude-3-5-sonnet-20241022", file=sys.stderr, flush=True)
