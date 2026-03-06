@@ -785,6 +785,12 @@ def ingest_meetings(
             # Fetch detailed data
             summary, private_notes, detail_participants = fetch_meeting_detail(mid)
 
+            # Skip meetings Granola hasn't finished processing yet —
+            # they'll be picked up on a future polling cycle
+            if not summary or summary.strip().lower() == "no summary":
+                logger.info(f"  Skipping {mid} — no summary yet (Granola still processing)")
+                continue
+
             # Merge participants — detail may have more info
             if detail_participants:
                 meeting["participants"] = detail_participants
