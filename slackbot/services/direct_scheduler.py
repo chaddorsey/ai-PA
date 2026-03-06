@@ -232,6 +232,31 @@ def call_orchestrator(
     elapsed_ms = int((time.time() - start) * 1000)
     logger.info("Orchestrator responded: status=%s elapsed=%dms",
                 result.get("status"), elapsed_ms)
+
+    # Inject resolved participants into result so extract_participant_metadata
+    # can find them (the orchestrator response doesn't include them).
+    if "agent_data" not in result or result["agent_data"] is None:
+        result["agent_data"] = {}
+    if "participants" not in result["agent_data"]:
+        # Build participant list with name resolution from identities
+        identities = _get_identities()
+        email_to_identity = {
+            id_.get("identifier_key", "").lower(): id_
+            for id_ in identities
+            if id_.get("identifier_key")
+        }
+        participant_entries = []
+        for email in participant_ids:
+            identity = email_to_identity.get(email.lower(), {})
+            name = _find_property(identity, "colloquial_name") if identity else None
+            if not name:
+                name = identity.get("name", "") if identity else ""
+            participant_entries.append({
+                "email": email,
+                "name": name or email.split("@")[0].replace(".", " ").replace("_", " ").title(),
+            })
+        result["agent_data"]["participants"] = participant_entries
+
     return result
 
 
