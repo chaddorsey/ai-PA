@@ -3,16 +3,21 @@ Agent bridge for sending synthetic structured messages to Letta.
 
 Generates messages that combine conversational context with
 machine-parseable scheduling data for agent-mediated scheduling.
+Also handles background context injection for direct-path scheduling
+so the agent has conversational continuity for follow-up questions.
 """
 import json
+import logging
 import os
+import threading
 from logging import Logger
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from slack_sdk import WebClient
 
 from services.interactive_proposals import (
     InteractiveProposal,
+    InteractiveProposalSet,
     MeetingContext,
 )
 
@@ -206,3 +211,80 @@ def send_synthetic_message(
                     )
         except Exception:
             pass
+
+
+def inject_scheduling_context(
+    user_id: str,
+    utterance: str,
+    participants: List[str],
+    participant_names: Dict[str, str],
+    proposal_set: Optional[InteractiveProposalSet],
+    logger: Logger,
+) -> None:
+    """
+    Inject scheduling context into the Letta conversation in the background.
+
+    Called after the direct orchestrator fast path posts proposals to Slack.
+    Sends a context message to the agent so it has conversational continuity
+    for follow-up questions like "What about the week after?"
+
+    The agent's response is discarded (not posted to Slack).
+    """
+    def _inject():
+        try:
+            from ai.conversation_helper import get_conversation_for_user
+
+            conversation_id = get_conversation_for_user(user_id, logger=logger)
+            if not conversation_id:
+                logger.info("No conversation for user %s, skipping context injection", user_id)
+                return
+
+            # Build a concise context summary
+            names = []
+            for email in participants:
+                name = participant_names.get(email)
+                if name:
+                    names.append(f"{name} ({email})")
+                else:
+                    names.append(email)
+            participants_str = ", ".join(names)
+
+            num_clean = len(proposal_set.clean_proposals) if proposal_set else 0
+            num_conflict = len(proposal_set.conflict_proposals) if proposal_set else 0
+
+            # Build proposal summary
+            proposal_summary = ""
+            if proposal_set:
+                labels = []
+                for p in (proposal_set.clean_proposals + proposal_set.conflict_proposals)[:8]:
+                    labels.append(p.label)
+                if labels:
+                    proposal_summary = f" Options shown: {', '.join(labels)}."
+
+            context_msg = (
+                f"[SCHEDULING_CONTEXT] The user just used the fast scheduling path. "
+                f'Their request: "{utterance}". '
+                f"Participants: {participants_str}. "
+                f"I showed {num_clean} available slots and {num_conflict} conflict options."
+                f"{proposal_summary} "
+                f"The user has not yet selected a time. "
+                f"Do not respond to this message — it is context injection only. "
+                f"Simply reply: noted."
+            )
+
+            letta_base = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
+            import requests
+            resp = requests.post(
+                f"{letta_base}/v1/conversations/{conversation_id}/messages",
+                json={"input": context_msg, "streaming": False},
+                headers={"Content-Type": "application/json"},
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            logger.info("Injected scheduling context into conversation %s", conversation_id)
+
+        except Exception as e:
+            logger.warning("Context injection failed (non-critical): %s", e)
+
+    thread = threading.Thread(target=_inject, daemon=True)
+    thread.start()

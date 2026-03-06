@@ -390,6 +390,20 @@ def _try_direct_scheduling(
                     )
                     proposals_posted = True
                     logger.info("⚡ Fast path: posted interactive proposals (session=%s)", session_id)
+
+                    # Inject context into Letta conversation (background, non-blocking)
+                    try:
+                        from services.agent_bridge import inject_scheduling_context
+                        inject_scheduling_context(
+                            user_id=user_id,
+                            utterance=text,
+                            participants=participants,
+                            participant_names=participant_names,
+                            proposal_set=proposal_set,
+                            logger=logger,
+                        )
+                    except Exception as ctx_err:
+                        logger.warning("⚡ Context injection setup failed: %s", ctx_err)
         except Exception as e:
             logger.error("⚡ Fast path proposal rendering failed: %s", e, exc_info=True)
 

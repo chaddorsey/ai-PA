@@ -166,6 +166,20 @@ def _run_scheduling(utterance: str, user_id: str, channel_id: str, client: WebCl
                         blocks=[intro_block] + proposal_blocks,
                     )
                     logger.info("/cal: posted interactive proposals (session=%s)", session_id)
+
+                    # Inject context into Letta conversation (background, non-blocking)
+                    try:
+                        from services.agent_bridge import inject_scheduling_context
+                        inject_scheduling_context(
+                            user_id=user_id,
+                            utterance=utterance,
+                            participants=participants,
+                            participant_names=participant_names,
+                            proposal_set=proposal_set,
+                            logger=logger,
+                        )
+                    except Exception as ctx_err:
+                        logger.warning("/cal: context injection setup failed: %s", ctx_err)
                     return
         except Exception as e:
             logger.error("/cal: proposal rendering failed: %s", e, exc_info=True)
