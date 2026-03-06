@@ -1,6 +1,6 @@
 # WIP System Updates Tracker
 
-**Last updated:** 2026-03-04
+**Last updated:** 2026-03-05
 
 This document tracks in-flight system improvement projects that have been designed but not yet fully implemented. Each entry links to its detailed plan document.
 
@@ -356,8 +356,10 @@ Future work (not yet started):
 - **Item 11 (Coordination V2 Follow-ups):** Fix document timeout, pulse agent, coordination_logs table.
 - **Item 14 (OrbStack Migration):** Evaluate as Docker Desktop replacement for memory pressure relief.
 - **Item 16 (gws CLI Experiment):** Active — powering Gmail drafts sidebar via x86_64 sidecar. Full tool replacement still awaits linux/arm64.
+- **Item 17 (Credential Consolidation):** Merge 5+ Google OAuth tokens into one unified credential. Enables gws CLI for Calendar/Drive.
 
 Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
+Suggested order for Google/gws: 17 (unblocks gws Calendar endpoints in Item 16).
 
 ---
 
@@ -382,4 +384,47 @@ Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous
 
 ---
 
-**Completed:** Items 1-7, 12, 15 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration.
+## 17. Google OAuth Credential Consolidation (NOT STARTED)
+
+**Status:** Not started — design documented
+**Plan:** [2026-03-05-google-credential-consolidation-design.md](2026-03-05-google-credential-consolidation-design.md)
+**Depends on:** Item 16 (gws CLI experiment)
+**Risk:** Low (OAuth re-auth is non-destructive; old tokens keep working)
+**Estimated effort:** 1-2 hours
+
+**Problem:** 2 GCP projects, 4 OAuth clients, and 5+ separate token files with narrow, overlapping scopes. The gws CLI only has Gmail scopes, so it can't be used for Calendar or Drive. Each service manages its own credential refresh independently.
+
+**Approach:** Consolidate onto the `letta-calendar-tools` OAuth client (`389544848122`), which already has tokens for calendar, drive, and admin scopes. Run one incremental OAuth flow (with `include_granted_scopes=true`) to add Gmail scopes, producing a single unified token. Export in gws format for gws-bridge. Then point all services at the unified token.
+
+**Three phases:**
+1. Create unified auth script (modify `authenticate_calendar.py` or new `scripts/google-unified-auth.py`)
+2. Migrate services to unified token (docker-compose env vars, gws-bridge credentials, drive-rag-service)
+3. Cleanup deprecated individual token files after 7-day soak
+
+**Context:** The n8n calendar dependency was removed (2026-03-05) by adding direct Google Calendar API calls to the scheduling orchestrator. The orchestrator currently uses `calendar.credentials.json` directly — consolidation would simplify this further but isn't blocking.
+
+---
+
+## 18. Scheduling Pipeline — Direct Calendar API (COMPLETED)
+
+**Status:** Deployed and verified (2026-03-05)
+**Risk:** Low (n8n MCP fallback available via `USE_DIRECT_CALENDAR=false`)
+
+**What was built:**
+- `google_calendar_client.py` — Direct Google Calendar API client using `google-api-python-client`. Same interface as `MCPCalendarClient` (initialize, get_core_event_data, fetch_event_by_id).
+- `calendar_client_factory.py` — Selects direct API vs n8n MCP based on `USE_DIRECT_CALENDAR` env var.
+- Event classification logic (`_classify_event`) replicating n8n's `locked`/`protected`/`flexible`/`transparent` computation from raw Google Calendar API fields.
+- OAuth credentials (`~/.gmail-mcp`) mounted read-only into `scheduling-orchestrator-api` container.
+- All 4 `MCPCalendarClient` import sites in `orchestrate_scheduling.py` updated to use the factory.
+
+**Performance:** 5.7s end-to-end (down from 6-8s with n8n MCP hop). Combined with the Letta bypass (item not tracked here, commit 113b465), total DM-to-proposal time dropped from ~25s to ~6s.
+
+**Key files:**
+- `letta/scheduling_orchestrator/google_calendar_client.py`
+- `letta/scheduling_orchestrator/calendar_client_factory.py`
+- `letta/scheduling_orchestrator/orchestrate_scheduling.py` (4 import sites changed)
+- `docker-compose.yml` (orchestrator env vars + volume mount)
+
+---
+
+**Completed:** Items 1-7, 12, 15, 18 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling.
