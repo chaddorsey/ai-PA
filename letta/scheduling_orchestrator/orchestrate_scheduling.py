@@ -695,25 +695,16 @@ def orchestrate_scheduling(
             import os
             import asyncio
             try:
-                # Try relative import first (when run as package)
-                from .mcp_client import MCPCalendarClient, MCPError
-            except (ImportError, ValueError):
+                from calendar_client_factory import get_calendar_client
+            except ImportError:
                 try:
-                    # Try absolute import (when run standalone or in Letta)
-                    from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
-                except ImportError:
-                    # Last resort: try direct import
-                    from mcp_client import MCPCalendarClient, MCPError
-            
-            # Get MCP server URL from environment or use default
-            mcp_url = os.getenv(
-                "MCP_CALENDAR_SERVER_URL",
-                "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
-            )
-            
-            # Create MCP client
-            mcp_client = MCPCalendarClient(
-                base_url=mcp_url,
+                    from .calendar_client_factory import get_calendar_client
+                except (ImportError, ValueError):
+                    from scheduling_orchestrator.calendar_client_factory import get_calendar_client
+            from mcp_client import MCPError
+
+            # Create calendar client (direct Google API or n8n MCP based on config)
+            mcp_client = get_calendar_client(
                 timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
                 max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
             )
@@ -1537,24 +1528,19 @@ def orchestrate_scheduling(
                         import os
                         import asyncio
                         try:
-                            from .mcp_client import MCPCalendarClient, MCPError
-                        except (ImportError, ValueError):
+                            from calendar_client_factory import get_calendar_client
+                        except ImportError:
                             try:
-                                from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
-                            except ImportError:
-                                from mcp_client import MCPCalendarClient, MCPError
-                        
-                        mcp_url = os.getenv(
-                            "MCP_CALENDAR_SERVER_URL",
-                            "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
-                        )
-                        
-                        mcp_client = MCPCalendarClient(
-                            base_url=mcp_url,
+                                from .calendar_client_factory import get_calendar_client
+                            except (ImportError, ValueError):
+                                from scheduling_orchestrator.calendar_client_factory import get_calendar_client
+                        from mcp_client import MCPError
+
+                        mcp_client = get_calendar_client(
                             timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
                             max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
                         )
-                        
+
                         # Fetch calendars for determined participants
                         async def fetch_calendars_for_search():
                             await mcp_client.initialize()
@@ -2303,24 +2289,19 @@ def orchestrate_scheduling(
                             import os
                             import asyncio
                             try:
-                                from .mcp_client import MCPCalendarClient, MCPError
-                            except (ImportError, ValueError):
+                                from calendar_client_factory import get_calendar_client
+                            except ImportError:
                                 try:
-                                    from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
-                                except ImportError:
-                                    from mcp_client import MCPCalendarClient, MCPError
-                            
-                            mcp_url = os.getenv(
-                                "MCP_CALENDAR_SERVER_URL",
-                                "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
-                            )
-                            
-                            mcp_client = MCPCalendarClient(
-                                base_url=mcp_url,
+                                    from .calendar_client_factory import get_calendar_client
+                                except (ImportError, ValueError):
+                                    from scheduling_orchestrator.calendar_client_factory import get_calendar_client
+                            from mcp_client import MCPError
+
+                            mcp_client = get_calendar_client(
                                 timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
                                 max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
                             )
-                            
+
                             # Reuse the fetch_calendar_events function logic
                             async def fetch_all_participant_calendars():
                                 await mcp_client.initialize()
@@ -4150,27 +4131,22 @@ def orchestrate_scheduling(
             # Fetch calendars for missing participants if we have MCP client capability
             if missing_participants and context_json and context_json.get("timeframe"):
                 try:
-                    # Import MCP client - try absolute imports first
+                    # Import calendar client factory
+                    get_calendar_client = None
                     try:
-                        from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
-                    except (ImportError, ValueError):
+                        from calendar_client_factory import get_calendar_client
+                    except ImportError:
                         try:
-                            from .mcp_client import MCPCalendarClient, MCPError
+                            from .calendar_client_factory import get_calendar_client
                         except (ImportError, ValueError):
                             try:
-                                from mcp_client import MCPCalendarClient, MCPError
+                                from scheduling_orchestrator.calendar_client_factory import get_calendar_client
                             except ImportError:
-                                MCPCalendarClient = None
-                                MCPError = None
-                    
-                    if MCPCalendarClient:
-                        mcp_url = os.getenv(
-                            "MCP_CALENDAR_SERVER_URL",
-                            "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
-                        )
-                        
-                        mcp_client = MCPCalendarClient(
-                            base_url=mcp_url,
+                                pass
+                    from mcp_client import MCPError
+
+                    if get_calendar_client:
+                        mcp_client = get_calendar_client(
                             timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
                             max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
                         )

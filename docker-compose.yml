@@ -795,6 +795,12 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       N8N_MCP_URL: "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+      # Direct Google Calendar API (replaces n8n MCP for calendar fetching)
+      USE_DIRECT_CALENDAR: "true"
+      CALENDAR_CREDENTIALS_PATH: "/root/.gmail-mcp/calendar.credentials.json"
+      CALENDAR_OAUTH_PATH: "/root/.gmail-mcp/gcp-oauth.calendar.desktop.json"
+    volumes:
+      - ${HOME}/.gmail-mcp:/root/.gmail-mcp:ro
     ports:
       - "8096:8095"
     healthcheck:
