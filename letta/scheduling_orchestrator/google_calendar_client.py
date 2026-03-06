@@ -86,44 +86,19 @@ def _classify_event(event: Dict[str, Any]) -> Dict[str, bool]:
     """
     Compute scheduling classification flags for a calendar event.
 
-    Replicates the logic previously done by the n8n Core_Event_Data workflow:
-    - locked: Event cannot be moved (multi-attendee external meetings)
-    - protected: Event is important but could theoretically move
-    - flexible: Event can be freely rescheduled
-    - transparent: Event doesn't block the calendar ("show as free")
+    Uses description markers matching the n8n Core_Event_Data workflow:
+    - [lk] in description → locked (cannot be moved)
+    - [pr] in description → protected (important, shouldn't move)
+    - neither → flexible (can be freely rescheduled)
+    - transparent: event set to "show as free"
     """
+    description = event.get("description", "") or ""
     transparency = event.get("transparency", "opaque")
-    is_transparent = transparency == "transparent"
 
-    attendees = event.get("attendees", [])
-    num_attendees = len(attendees)
-
-    # Count non-declined, non-self attendees
-    real_attendees = [
-        a for a in attendees
-        if not a.get("self", False)
-        and a.get("responseStatus") != "declined"
-    ]
-    num_real_attendees = len(real_attendees)
-
-    # Check if any attendee is external (different domain)
-    organizer_email = event.get("organizer", {}).get("email", "")
-    organizer_domain = organizer_email.split("@")[-1] if "@" in organizer_email else ""
-    has_external = any(
-        a.get("email", "").split("@")[-1] != organizer_domain
-        for a in real_attendees
-        if "@" in a.get("email", "")
-    ) if organizer_domain else False
-
-    # Classification logic
-    # Locked: multi-person meetings with external attendees, or events marked as locked
-    locked = (num_real_attendees >= 2 and has_external) or event.get("locked", False)
-
-    # Protected: multi-person internal meetings (can move but shouldn't)
-    protected = not locked and num_real_attendees >= 1
-
-    # Flexible: solo events, focus time, etc.
+    locked = "[lk]" in description
+    protected = "[pr]" in description
     flexible = not locked and not protected
+    is_transparent = transparency == "transparent"
 
     return {
         "locked": locked,
@@ -260,6 +235,7 @@ class GoogleCalendarClient:
             result.append(
                 {
                     "summary": event.get("summary", "(No title)"),
+                    "description": event.get("description", ""),
                     "id": event.get("id", ""),
                     "start": start,
                     "end": end,
@@ -334,6 +310,7 @@ class GoogleCalendarClient:
 
         return {
             "summary": event.get("summary", "(No title)"),
+            "description": event.get("description", ""),
             "id": event.get("id", ""),
             "start": event.get("start", {}),
             "end": event.get("end", {}),
