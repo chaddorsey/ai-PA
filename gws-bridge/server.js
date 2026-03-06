@@ -234,17 +234,17 @@ app.post('/gmail/drafts/:id/send', (req, res) => {
 // Delete (discard) a draft
 app.delete('/gmail/drafts/:id', (req, res) => {
   try {
-    runGws([
+    execFileSync(GWS, [
       'gmail', 'users', 'drafts', 'delete',
       '--params', JSON.stringify({ userId: 'me', id: req.params.id }),
-      '--format', 'json',
-    ]);
+    ], { encoding: 'utf-8', timeout: 15000, env: { ...process.env } });
     res.json({ status: 'ok' });
   } catch (err) {
-    if (err.message?.includes('404') || err.message?.includes('Not Found')) {
+    const stderr = err.stderr || err.message || '';
+    if (stderr.includes('404') || stderr.includes('Not Found')) {
       return res.status(404).json({ error: 'Draft not found' });
     }
-    res.status(502).json({ error: `gws error: ${err.message}` });
+    res.status(502).json({ error: `gws error: ${stderr.slice(0, 300)}` });
   }
 });
 
