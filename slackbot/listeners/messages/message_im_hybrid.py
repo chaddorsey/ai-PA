@@ -279,6 +279,148 @@ def _resolve_dm_channel(
     return fallback_channel, channel_debug
 
 
+def _try_direct_scheduling(
+    text: str,
+    user_id: str,
+    channel_id: str,
+    user_message_ts: Optional[str],
+    streaming_enabled: bool,
+    client: WebClient,
+    logger: Logger,
+) -> bool:
+    """
+    Attempt to handle a scheduling request via direct orchestrator call.
+
+    Returns True if the message was handled (scheduling request detected and processed),
+    False if it should fall through to the normal Letta agent path.
+    """
+    try:
+        from services.direct_scheduler import (
+            is_scheduling_request,
+            resolve_user_email,
+            call_orchestrator,
+            extract_display_content,
+            extract_participant_metadata,
+        )
+    except ImportError as e:
+        logger.error("⚡ direct_scheduler import failed: %s", e)
+        return False
+
+    if not is_scheduling_request(text):
+        return False
+
+    logger.info("⚡ Fast path: scheduling request detected, bypassing Letta agent")
+
+    # Update status to show we're working on scheduling
+    if streaming_enabled and user_message_ts:
+        _set_assistant_status(
+            client, logger, channel_id, user_message_ts,
+            status="Finding available times...",
+            loading_messages=["Checking calendars", "Running scheduler"],
+        )
+
+    # Resolve user email from Slack ID
+    user_email = resolve_user_email(user_id)
+    if not user_email:
+        logger.warning("⚡ Could not resolve email for Slack user %s, falling back to agent", user_id)
+        return False
+
+    # Call orchestrator directly
+    result = call_orchestrator(utterance=text, user_email=user_email)
+
+    if result.get("status") == "error":
+        logger.warning("⚡ Orchestrator error, falling back to agent: %s", result.get("error_message"))
+        return False
+
+    # Extract display content
+    display_content = extract_display_content(result)
+    if not display_content:
+        logger.warning("⚡ No display content from orchestrator, falling back to agent")
+        return False
+
+    # Try to render interactive proposals (same as agent path)
+    proposals_posted = False
+    has_best_options = "## Best Options" in display_content
+    has_conflict_options = "## If We Can Move" in display_content
+
+    if has_best_options or has_conflict_options:
+        try:
+            import uuid as uuid_module
+            from services.proposal_formatter import parse_orchestrator_proposals
+            from services.proposal_cache import proposal_cache
+            from adapters.slack_proposal_adapter import render_proposal_blocks, INTRO_TEXT
+            from services.interactive_proposals import MeetingContext
+
+            session_id = f"sess_{uuid_module.uuid4().hex[:12]}"
+
+            # Get participant metadata from result
+            participants, participant_names = extract_participant_metadata(result)
+
+            # Fallback: resolve names for any participants without display names
+            for email in participants:
+                if email not in participant_names and "@" in email:
+                    name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                    participant_names[email] = name
+
+            meeting_context = MeetingContext(participant_names=participant_names)
+
+            proposal_set = parse_orchestrator_proposals(
+                output=display_content,
+                session_id=session_id,
+                user_id=user_id,
+                participants=participants,
+                meeting_context=meeting_context,
+            )
+
+            if proposal_set.clean_proposals or proposal_set.conflict_proposals:
+                proposal_cache.store(session_id, proposal_set)
+                proposal_blocks = render_proposal_blocks(proposal_set)
+
+                if proposal_blocks:
+                    intro_block = {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": INTRO_TEXT},
+                    }
+                    full_blocks = [intro_block] + proposal_blocks
+
+                    client.chat_postMessage(
+                        channel=channel_id,
+                        text=INTRO_TEXT,
+                        blocks=full_blocks,
+                    )
+                    proposals_posted = True
+                    logger.info("⚡ Fast path: posted interactive proposals (session=%s)", session_id)
+        except Exception as e:
+            logger.error("⚡ Fast path proposal rendering failed: %s", e, exc_info=True)
+
+    # If no interactive proposals, post the text content
+    if not proposals_posted:
+        # Strip internal markers before displaying
+        import re as _re
+        display_text = display_content
+        for marker in ("[VERBATIM_USER_OUTPUT]", "[/VERBATIM_USER_OUTPUT]",
+                       "[PARTICIPANTS:", "[PARTICIPANT_NAMES:"):
+            while marker in display_text:
+                idx = display_text.find(marker)
+                end = display_text.find("]", idx)
+                if end >= 0:
+                    display_text = display_text[:idx] + display_text[end + 1:]
+                else:
+                    break
+        display_text = display_text.strip()
+
+        if display_text:
+            for chunk in _chunk_text(display_text):
+                client.chat_postMessage(channel=channel_id, text=chunk)
+        else:
+            client.chat_postMessage(
+                channel=channel_id,
+                text="I processed your scheduling request but couldn't generate proposals. Try rephrasing.",
+            )
+
+    return True
+
+
 def _handle_dm(event: dict, client: WebClient, logger: Logger):
     if event.get("channel_type") != "im" or event.get("subtype"):
         return
@@ -367,6 +509,12 @@ def _handle_dm(event: dict, client: WebClient, logger: Logger):
     # and where they expect the response. Don't resolve to a different channel.
     working_channel = channel_id
     logger.info(f"Using event channel for response: {working_channel}")
+
+    # ── Fast path: direct orchestrator for scheduling requests ──
+    # Detects scheduling keywords and calls the orchestrator HTTP service directly,
+    # bypassing Letta LLM inference (~20s → ~2-3s).
+    if text and _try_direct_scheduling(text, user_id, working_channel, user_message_ts, streaming_enabled, client, logger):
+        return
 
     try:
         # Skip conversation history due to permissions issues - mirror slash command behaviour

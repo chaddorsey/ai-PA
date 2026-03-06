@@ -780,6 +780,39 @@ services:
       retries: 3
       start_period: 30s
 
+  # --- Scheduling Orchestrator API (direct HTTP access, bypasses Letta LLM) ---
+  scheduling-orchestrator-api:
+    build:
+      context: ./letta/scheduling_orchestrator
+      dockerfile: Dockerfile.api
+    container_name: scheduling-orchestrator-api
+    restart: unless-stopped
+    networks: [pa-internal]
+    env_file:
+      - .env
+    environment:
+      LETTA_BASE_URL: "http://letta:8283"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      N8N_MCP_URL: "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
+    ports:
+      - "8096:8095"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=scheduling-orchestrator-api"
+      - "component=scheduling"
+      - "network=pa-internal"
+
   # --- Slackbot Service ---
   slackbot:
     build:
@@ -803,6 +836,8 @@ services:
       # Supabase for conversation tracking
       SUPABASE_URL: "http://supabase-rest:3000"
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+      # Direct scheduling orchestrator (bypasses Letta LLM inference)
+      SCHEDULING_ORCHESTRATOR_URL: "http://scheduling-orchestrator-api:8095"
       # Owner Slack user ID for agent-initiated DM notifications
       OWNER_SLACK_USER_ID: ${OWNER_SLACK_USER_ID}
       HEALTH_CHECK_PORT: "8081"

@@ -55,6 +55,12 @@
         "description": "Ask the bot a question",
         "usage_hint": "[prompt]",
         "should_escape": false
+      },
+      {
+        "command": "/cal",
+        "description": "Quick schedule — find meeting times fast",
+        "usage_hint": "[scheduling request]",
+        "should_escape": false
       }
     ]
   },
