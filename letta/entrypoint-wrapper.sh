@@ -11,6 +11,14 @@ python3 -m pip install --quiet --no-warn-script-location \
     pytz \
     2>&1 | tail -3
 
+# Install omnifocus-cli for OmniFocus task management
+if [ -d "/app/tools/omnifocus-cli" ]; then
+    echo "[entrypoint-wrapper] Installing omnifocus-cli..."
+    python3 -m pip install --quiet --no-warn-script-location \
+        /app/tools/omnifocus-cli/ \
+        2>&1 | tail -3
+fi
+
 # Install gws CLI (Google Workspace) for Gmail/Calendar/Drive API access
 GWS_VERSION=0.7.0
 ARCH=$(uname -m)

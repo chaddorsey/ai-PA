@@ -606,6 +606,7 @@ services:
       - ./letta:/app/tools/letta  # Mount letta directory for tool execution (different path to avoid conflicts)
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro  # gws CLI credentials (Gmail/Calendar/Drive)
       - ./analytics:/app/tools/analytics  # Mount analytics directory for briefing output
+      - ./omnifocus-cli:/app/tools/omnifocus-cli:ro  # OmniFocus CLI source for pip install
     networks: [pa-internal]
     environment:
       PYTHONPATH: "/app/tools/letta"
@@ -641,6 +642,7 @@ services:
       SLACKBOT_NOTIFY_URL: "http://slackbot:8081/api/notify"
       # gws CLI credentials file path (Google Workspace CLI)
       GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
+      OMNIFOCUS_BRIDGE_URL: "http://host.docker.internal:8889"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 
