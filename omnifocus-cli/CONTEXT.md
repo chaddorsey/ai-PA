@@ -38,12 +38,19 @@ omnifocus-cli task list --fields id,name,flagged
 
 | Group | Actions |
 |-------|---------|
-| task | create, get, update, complete, delete, move, list, subtasks, add-subtask, hierarchy, flatten |
+| task | create, get, update, complete, delete, move, list, subtasks, add-subtask, hierarchy, flatten, group-type, set-group-type |
 | search | (single command with filters) |
-| project | list, get, create, update, complete, move, convert |
+| project | list, get, create, update, complete, move, convert, group-type, set-group-type |
 | folder | list, get, create, delete, tree |
 | inbox | list, process, context, bulk |
 | tags | list, get, create, rename, delete |
+| perspective | list, get, switch |
+| review | list, mark, next |
+| analytics | health, workload, trends, summary |
+| transaction | begin, execute, accept, rollback, history |
+| validate | transaction, move, create |
+| automation | suggest, diagnose, cleanup |
+| health | (top-level command) |
 | schema | (introspection: `schema <method>` or `schema --list`) |
 
 ## Workflow Pattern

@@ -6,7 +6,7 @@ def omnifocus_project(action: str, params: Optional[str] = None, fields: Optiona
     Manage OmniFocus projects. Run omnifocus-cli schema project.<action> to discover params.
 
     Args:
-        action: One of: list, get, create, update, complete, move, convert (REQUIRED)
+        action: One of: list, get, create, update, complete, move, convert, group-type, set-group-type (REQUIRED)
         params: JSON string with parameters. Use schema to discover fields.
         fields: Comma-separated output fields to return (limits token usage)
 

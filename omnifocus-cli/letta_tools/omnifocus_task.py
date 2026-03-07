@@ -6,7 +6,7 @@ def omnifocus_task(action: str, params: Optional[str] = None, fields: Optional[s
     Manage OmniFocus tasks. Run omnifocus-cli schema task.<action> to discover params.
 
     Args:
-        action: One of: create, get, update, complete, delete, move, list, subtasks, add-subtask, hierarchy, flatten (REQUIRED)
+        action: One of: create, get, update, complete, delete, move, list, subtasks, add-subtask, hierarchy, flatten, group-type, set-group-type (REQUIRED)
         params: JSON string with parameters. Use schema to discover fields.
         fields: Comma-separated output fields to return (limits token usage)
 
