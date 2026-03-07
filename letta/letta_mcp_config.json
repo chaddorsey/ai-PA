@@ -46,16 +46,6 @@
       },
       "disabled": false
     },
-    "omnifocus-tools": {
-      "command": "http",
-      "args": ["http://host.docker.internal:8888/mcp"],
-      "env": {
-        "MCP_SERVER_NAME": "omnifocus-tools",
-        "MCP_SERVER_VERSION": "1.0.0",
-        "MCP_TRANSPORT": "streamable-http"
-      },
-      "disabled": false
-    },
     "granola-tools": {
       "command": "http",
       "args": ["http://host.docker.internal:8089/mcp"],
