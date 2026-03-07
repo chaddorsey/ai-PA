@@ -166,6 +166,35 @@ SCHEMAS: dict[str, dict] = {
         "description": "List all folders",
         "params": {},
     },
+    "folder.get": {
+        "method": "getFolderById",
+        "description": "Get details of a specific folder",
+        "params": {
+            "folderId": {"type": "string", "required": True, "description": "Folder ID to retrieve"},
+        },
+    },
+    "folder.create": {
+        "method": "createFolder",
+        "description": "Create a new folder",
+        "params": {
+            "name": {"type": "string", "required": True, "description": "Folder name"},
+            "parentFolderId": {"type": "string", "required": False, "description": "Parent folder ID for nesting"},
+        },
+    },
+    "folder.delete": {
+        "method": "deleteFolder",
+        "description": "Delete a folder",
+        "params": {
+            "folderId": {"type": "string", "required": True, "description": "Folder ID to delete"},
+        },
+    },
+    "folder.tree": {
+        "method": "getFolderHierarchy",
+        "description": "Get folder hierarchy tree",
+        "params": {
+            "folderId": {"type": "string", "required": False, "description": "Root folder ID (omit for entire library)"},
+        },
+    },
     "inbox.list": {
         "method": "listInbox",
         "description": "List items in the OmniFocus inbox",

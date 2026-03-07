@@ -637,6 +637,62 @@ def list_folders(ctx):
         _run(ctx, "folder.list", "listFolders", {})
 
 
+@folder.command("get")
+@click.argument("folder_id")
+@click.pass_context
+def folder_get(ctx, folder_id):
+    """Get folder details by ID."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "folder.get", "getFolderById", {})
+    else:
+        _run(ctx, "folder.get", "getFolderById", {"folderId": folder_id})
+
+
+@folder.command("create")
+@click.option("--name", default=None, help="Folder name")
+@click.option("--parent", "parent_folder_id", default=None, help="Parent folder ID")
+@click.pass_context
+def folder_create(ctx, name, parent_folder_id):
+    """Create a new folder."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [name, parent_folder_id])
+        _run(ctx, "folder.create", "createFolder", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"name": name}
+        if parent_folder_id:
+            params["parentFolderId"] = parent_folder_id
+        _run(ctx, "folder.create", "createFolder", params)
+
+
+@folder.command("delete")
+@click.argument("folder_id")
+@click.pass_context
+def folder_delete(ctx, folder_id):
+    """Delete a folder."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "folder.delete", "deleteFolder", {})
+    else:
+        _run(ctx, "folder.delete", "deleteFolder", {"folderId": folder_id})
+
+
+@folder.command("tree")
+@click.option("--root", "folder_id", default=None, help="Root folder ID (omit for entire library)")
+@click.pass_context
+def folder_tree(ctx, folder_id):
+    """Get folder hierarchy tree."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "folder.tree", "getFolderHierarchy", {})
+    else:
+        params = {}
+        if folder_id:
+            params["folderId"] = folder_id
+        _run(ctx, "folder.tree", "getFolderHierarchy", params)
+
+
 # ── Inbox commands ─────────────────────────────────────────
 
 
