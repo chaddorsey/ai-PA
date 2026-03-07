@@ -75,6 +75,41 @@ SCHEMAS: dict[str, dict] = {
             "includeCompleted": {"type": "boolean", "required": False, "description": "Include completed tasks in results"},
         },
     },
+    "task.subtasks": {
+        "method": "getTaskSubtasks",
+        "description": "Get subtasks of a task",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Parent task ID"},
+        },
+    },
+    "task.add-subtask": {
+        "method": "createSubtask",
+        "description": "Create a subtask under a parent task",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Parent task ID"},
+            "name": {"type": "string", "required": True, "description": "Subtask name"},
+            "note": {"type": "string", "required": False, "description": "Subtask note"},
+            "flagged": {"type": "boolean", "required": False, "description": "Whether the subtask is flagged"},
+            "dueDate": {"type": "string", "required": False, "description": "Due date (ISO 8601)"},
+            "deferDate": {"type": "string", "required": False, "description": "Defer date (ISO 8601)"},
+            "estimatedMinutes": {"type": "integer", "required": False, "description": "Duration in minutes"},
+            "tagIds": {"type": "array[string]", "required": False, "description": "Tag IDs to apply"},
+        },
+    },
+    "task.hierarchy": {
+        "method": "getTaskHierarchy",
+        "description": "Get full task hierarchy tree",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Root task ID"},
+        },
+    },
+    "task.flatten": {
+        "method": "flattenTaskHierarchy",
+        "description": "Flatten a task hierarchy (promote subtasks)",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Parent task ID to flatten"},
+        },
+    },
     "search": {
         "method": "searchTasks",
         "description": "Search tasks with advanced filters",

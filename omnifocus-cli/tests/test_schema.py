@@ -34,6 +34,10 @@ def test_list_schemas_returns_all_keys():
     assert "tags.create" in keys
     assert "tags.rename" in keys
     assert "tags.delete" in keys
+    assert "task.subtasks" in keys
+    assert "task.add-subtask" in keys
+    assert "task.hierarchy" in keys
+    assert "task.flatten" in keys
 
 
 def test_all_schemas_have_method_and_params():

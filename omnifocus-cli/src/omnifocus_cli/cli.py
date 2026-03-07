@@ -347,6 +347,76 @@ def task_move(ctx, task_id, target_project_id, parent_task_id, position):
         _run(ctx, "task.move", "moveTask", params)
 
 
+@task.command("subtasks")
+@click.argument("task_id")
+@click.pass_context
+def task_subtasks(ctx, task_id):
+    """Get subtasks of a task."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.subtasks", "getTaskSubtasks", {})
+    else:
+        _run(ctx, "task.subtasks", "getTaskSubtasks", {"taskId": task_id})
+
+
+@task.command("add-subtask")
+@click.argument("task_id")
+@click.option("--name", default=None, help="Subtask name")
+@click.option("--note", default=None, help="Subtask note")
+@click.option("--flag/--no-flag", "flagged", default=None)
+@click.option("--due", "due_date", default=None, help="Due date (ISO)")
+@click.option("--defer", "defer_date", default=None, help="Defer date (ISO)")
+@click.option("--duration", "estimated_minutes", type=int, default=None)
+@click.option("--tag", "tag_ids", multiple=True, help="Tag ID (repeatable)")
+@click.pass_context
+def task_add_subtask(ctx, task_id, name, note, flagged, due_date, defer_date,
+                     estimated_minutes, tag_ids):
+    """Create a subtask under a parent task."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [
+            name, note, flagged, due_date, defer_date, estimated_minutes,
+        ]) or bool(tag_ids)
+        _run(ctx, "task.add-subtask", "createSubtask", {}, had_convenience_flags=had_flags)
+    else:
+        params = {
+            "taskId": task_id,
+            "name": name,
+            "note": note,
+            "flagged": flagged,
+            "dueDate": due_date,
+            "deferDate": defer_date,
+            "estimatedMinutes": estimated_minutes,
+            "tagIds": list(tag_ids) if tag_ids else None,
+        }
+        cleaned = {k: v for k, v in params.items() if v is not None}
+        _run(ctx, "task.add-subtask", "createSubtask", cleaned)
+
+
+@task.command("hierarchy")
+@click.argument("task_id")
+@click.pass_context
+def task_hierarchy(ctx, task_id):
+    """Get full task hierarchy tree."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.hierarchy", "getTaskHierarchy", {})
+    else:
+        _run(ctx, "task.hierarchy", "getTaskHierarchy", {"taskId": task_id})
+
+
+@task.command("flatten")
+@click.argument("task_id")
+@click.pass_context
+def task_flatten(ctx, task_id):
+    """Flatten a task hierarchy (promote subtasks to siblings)."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.flatten", "flattenTaskHierarchy", {})
+    else:
+        _run(ctx, "task.flatten", "flattenTaskHierarchy", {"taskId": task_id})
+
+
 # ── Search command ─────────────────────────────────────────
 
 
