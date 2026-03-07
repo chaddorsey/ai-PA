@@ -313,6 +313,25 @@ SCHEMAS: dict[str, dict] = {
             "perspectiveName": {"type": "string", "required": False, "description": "Perspective name (alternative to ID)"},
         },
     },
+    "review.list": {
+        "method": "listProjectsNeedingReview",
+        "description": "List projects needing review",
+        "params": {},
+    },
+    "review.mark": {
+        "method": "markProjectReviewed",
+        "description": "Mark a project as reviewed",
+        "params": {
+            "projectId": {"type": "string", "required": True, "description": "Project ID to mark reviewed"},
+        },
+    },
+    "review.next": {
+        "method": "getProjectNextReview",
+        "description": "Get next review date for a project",
+        "params": {
+            "projectId": {"type": "string", "required": True, "description": "Project ID"},
+        },
+    },
 }
 
 

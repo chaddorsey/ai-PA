@@ -954,3 +954,47 @@ def perspective_switch(ctx, perspective_id, perspective_name):
         if perspective_name:
             params["perspectiveName"] = perspective_name
         _run(ctx, "perspective.switch", "switchToPerspective", params)
+
+
+# ── Review commands ───────────────────────────────────────────
+
+
+@cli.group()
+def review():
+    """Manage project reviews."""
+    pass
+
+
+@review.command("list")
+@click.pass_context
+def review_list(ctx):
+    """List projects needing review."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "review.list", "listProjectsNeedingReview", {})
+    else:
+        _run(ctx, "review.list", "listProjectsNeedingReview", {})
+
+
+@review.command("mark")
+@click.argument("project_id")
+@click.pass_context
+def review_mark(ctx, project_id):
+    """Mark a project as reviewed."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "review.mark", "markProjectReviewed", {})
+    else:
+        _run(ctx, "review.mark", "markProjectReviewed", {"projectId": project_id})
+
+
+@review.command("next")
+@click.argument("project_id")
+@click.pass_context
+def review_next(ctx, project_id):
+    """Get next review date for a project."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "review.next", "getProjectNextReview", {})
+    else:
+        _run(ctx, "review.next", "getProjectNextReview", {"projectId": project_id})

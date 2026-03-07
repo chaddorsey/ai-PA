@@ -51,6 +51,9 @@ def test_list_schemas_returns_all_keys():
     assert "perspective.list" in keys
     assert "perspective.get" in keys
     assert "perspective.switch" in keys
+    assert "review.list" in keys
+    assert "review.mark" in keys
+    assert "review.next" in keys
 
 
 def test_all_schemas_have_method_and_params():
