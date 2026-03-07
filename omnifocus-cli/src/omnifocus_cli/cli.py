@@ -512,15 +512,24 @@ def update_project(ctx, project_id, name, note, flag, sequential, status, due_da
              {"projectId": project_id, "properties": properties})
 
 
-@project.command("folders")
+# ── Folder commands ────────────────────────────────────────
+
+
+@cli.group()
+def folder():
+    """List and manage folders."""
+    pass
+
+
+@folder.command("list")
 @click.pass_context
 def list_folders(ctx):
     """List all folders."""
     body = ctx.obj.get("body")
     if body is not None:
-        _run(ctx, "project.folders", "listFolders", {})
+        _run(ctx, "folder.list", "listFolders", {})
     else:
-        _run(ctx, "project.folders", "listFolders", {})
+        _run(ctx, "folder.list", "listFolders", {})
 
 
 # ── Inbox commands ─────────────────────────────────────────

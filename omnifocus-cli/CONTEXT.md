@@ -40,7 +40,8 @@ omnifocus-cli task list --fields id,name,flagged
 |-------|---------|
 | task | create, get, update, complete, list |
 | search | (single command with filters) |
-| project | list, get, create, update, folders |
+| project | list, get, create, update |
+| folder | list |
 | inbox | list, process |
 | tags | list, create, rename, delete |
 | schema | (introspection: `schema <method>` or `schema --list`) |

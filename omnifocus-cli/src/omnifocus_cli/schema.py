@@ -109,7 +109,7 @@ SCHEMAS: dict[str, dict] = {
             "properties": {"type": "object", "required": True, "description": "Properties to set on the project"},
         },
     },
-    "project.folders": {
+    "folder.list": {
         "method": "listFolders",
         "description": "List all folders",
         "params": {},

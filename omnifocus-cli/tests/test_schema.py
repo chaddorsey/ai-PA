@@ -25,7 +25,7 @@ def test_list_schemas_returns_all_keys():
     assert "project.get" in keys
     assert "project.create" in keys
     assert "project.update" in keys
-    assert "project.folders" in keys
+    assert "folder.list" in keys
     assert "inbox.list" in keys
     assert "inbox.process" in keys
     assert "tags.list" in keys

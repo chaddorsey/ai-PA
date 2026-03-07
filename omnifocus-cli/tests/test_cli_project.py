@@ -88,9 +88,9 @@ def test_project_update_status(mock_call):
 
 
 @patch("omnifocus_cli.cli.call_omnifocus")
-def test_project_list_folders(mock_call):
+def test_folder_list(mock_call):
     mock_call.return_value = [{"id": "f-1", "name": "Work"}]
     runner = CliRunner()
-    result = runner.invoke(cli, ["--format", "json", "project", "folders"])
+    result = runner.invoke(cli, ["--format", "json", "folder", "list"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("listFolders", {})

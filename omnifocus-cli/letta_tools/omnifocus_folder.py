@@ -1,12 +1,12 @@
 from typing import Dict, Any, Optional
 
 
-def omnifocus_project(action: str, params: Optional[str] = None, fields: Optional[str] = None) -> Dict[str, Any]:
+def omnifocus_folder(action: str, params: Optional[str] = None, fields: Optional[str] = None) -> Dict[str, Any]:
     """
-    Manage OmniFocus projects. Run omnifocus-cli schema project.<action> to discover params.
+    Manage OmniFocus folders. Run omnifocus-cli schema folder.<action> to discover params.
 
     Args:
-        action: One of: list, get, create, update (REQUIRED)
+        action: One of: list (REQUIRED)
         params: JSON string with parameters. Use schema to discover fields.
         fields: Comma-separated output fields to return (limits token usage)
 
@@ -18,7 +18,7 @@ def omnifocus_project(action: str, params: Optional[str] = None, fields: Optiona
     import traceback
 
     try:
-        cli_args = ["omnifocus-cli", "project", action]
+        cli_args = ["omnifocus-cli", "folder", action]
         if params:
             cli_args.extend(["--body", params])
         if fields:
