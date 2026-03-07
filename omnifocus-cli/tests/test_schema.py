@@ -54,6 +54,10 @@ def test_list_schemas_returns_all_keys():
     assert "review.list" in keys
     assert "review.mark" in keys
     assert "review.next" in keys
+    assert "analytics.health" in keys
+    assert "analytics.workload" in keys
+    assert "analytics.trends" in keys
+    assert "analytics.summary" in keys
 
 
 def test_all_schemas_have_method_and_params():

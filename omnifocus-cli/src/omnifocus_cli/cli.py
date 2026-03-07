@@ -998,3 +998,40 @@ def review_next(ctx, project_id):
         _run(ctx, "review.next", "getProjectNextReview", {})
     else:
         _run(ctx, "review.next", "getProjectNextReview", {"projectId": project_id})
+
+
+# ── Analytics commands ────────────────────────────────────────
+
+
+@cli.group()
+def analytics():
+    """Project health, workload, and trend analytics."""
+    pass
+
+
+@analytics.command("health")
+@click.pass_context
+def analytics_health(ctx):
+    """Get project health metrics."""
+    _run(ctx, "analytics.health", "getProjectHealth", {})
+
+
+@analytics.command("workload")
+@click.pass_context
+def analytics_workload(ctx):
+    """Get workload summary."""
+    _run(ctx, "analytics.workload", "getWorkloadSummary", {})
+
+
+@analytics.command("trends")
+@click.pass_context
+def analytics_trends(ctx):
+    """Get trend insights."""
+    _run(ctx, "analytics.trends", "getTrendInsights", {})
+
+
+@analytics.command("summary")
+@click.pass_context
+def analytics_summary(ctx):
+    """Get analytics summary."""
+    _run(ctx, "analytics.summary", "getAnalyticsSummary", {})

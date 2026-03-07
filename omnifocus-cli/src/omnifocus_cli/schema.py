@@ -332,6 +332,26 @@ SCHEMAS: dict[str, dict] = {
             "projectId": {"type": "string", "required": True, "description": "Project ID"},
         },
     },
+    "analytics.health": {
+        "method": "getProjectHealth",
+        "description": "Get project health metrics",
+        "params": {},
+    },
+    "analytics.workload": {
+        "method": "getWorkloadSummary",
+        "description": "Get workload summary",
+        "params": {},
+    },
+    "analytics.trends": {
+        "method": "getTrendInsights",
+        "description": "Get trend insights",
+        "params": {},
+    },
+    "analytics.summary": {
+        "method": "getAnalyticsSummary",
+        "description": "Get analytics summary",
+        "params": {},
+    },
 }
 
 
