@@ -11,6 +11,16 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install gws CLI for Google Calendar API access
+ARG GWS_VERSION=0.7.0
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then TARGET="aarch64-unknown-linux-gnu"; \
+    elif [ "$ARCH" = "amd64" ]; then TARGET="x86_64-unknown-linux-gnu"; \
+    else echo "Unsupported arch: $ARCH" && exit 1; fi && \
+    curl -fsSL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/gws-${TARGET}.tar.gz" \
+    | tar -xz --strip-components=1 -C /usr/local/bin/ && \
+    chmod +x /usr/local/bin/gws
+
 COPY requirements-api.txt .
 RUN pip install --no-cache-dir -r requirements-api.txt
 

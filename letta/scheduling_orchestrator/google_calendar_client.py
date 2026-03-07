@@ -1,11 +1,11 @@
 """
-Direct Google Calendar API client for the scheduling orchestrator.
+Google Calendar client for the scheduling orchestrator using gws CLI.
 
-Replaces MCPCalendarClient (which routes through n8n MCP) with direct
-Google Calendar API calls using google-api-python-client.
+Uses the gws CLI (Google Workspace CLI) to make Calendar API calls via
+subprocess, replacing the previous google-api-python-client implementation.
 
-Uses existing OAuth2 credentials from ~/.gmail-mcp/calendar.credentials.json
-(same credentials as letta/calendar_tools/tools.py).
+Credentials are mounted at /root/.gws/credentials.json (same OAuth2 tokens
+used by gws-bridge and other gws-based services).
 
 Interface is compatible with MCPCalendarClient so orchestrate_scheduling.py
 can swap imports with minimal changes.
@@ -13,9 +13,7 @@ can swap imports with minimal changes.
 
 import json
 import logging
-import os
-from datetime import datetime, timedelta
-from pathlib import Path
+import subprocess
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -23,63 +21,56 @@ logger = logging.getLogger(__name__)
 # Re-export MCPError for backward compatibility with orchestrate_scheduling.py imports
 from mcp_client import MCPError
 
+GWS_CMD = "/usr/local/bin/gws"
 
-def _get_calendar_service():
+
+def _gws_calendar(resource: str, method: str, params: Dict[str, Any]) -> Any:
     """
-    Build an authenticated Google Calendar API service.
+    Run a gws calendar CLI command and return parsed JSON output.
 
-    Uses OAuth2 credentials from calendar.credentials.json,
-    auto-refreshing expired tokens.
+    Args:
+        resource: Calendar API resource (e.g. "events")
+        method: API method (e.g. "list", "get")
+        params: API parameters as a dict
+
+    Returns:
+        Parsed JSON response from gws.
+
+    Raises:
+        MCPError: On API errors (404, 403, etc.)
     """
-    from google.auth.transport.requests import Request
-    from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
+    cmd = [GWS_CMD, "calendar", resource, method, "--params", json.dumps(params)]
 
-    TOKEN_PATH = os.getenv(
-        "CALENDAR_CREDENTIALS_PATH",
-        str(Path.home() / ".gmail-mcp" / "calendar.credentials.json"),
-    )
-    OAUTH_KEY_FILE = os.getenv(
-        "CALENDAR_OAUTH_PATH",
-        str(Path.home() / ".gmail-mcp" / "gcp-oauth.calendar.desktop.json"),
-    )
-    SCOPES = ["https://www.googleapis.com/auth/calendar"]
-
-    # Check for refreshed token in /tmp first (read-only mount workaround)
-    tmp_token = "/tmp/calendar.credentials.json"
-    if os.path.exists(tmp_token):
-        token_file = tmp_token
-    elif os.path.exists(TOKEN_PATH):
-        token_file = TOKEN_PATH
-    else:
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        raise MCPError(code=-32603, message="gws calendar command timed out after 30s")
+    except FileNotFoundError:
         raise MCPError(
             code=-32603,
-            message=f"Calendar credentials not found at {TOKEN_PATH}. "
-            "Run: python3 letta/calendar_tools/authenticate_calendar.py",
+            message=f"gws CLI not found at {GWS_CMD}. Check Dockerfile installation.",
         )
 
-    creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        if "404" in stderr or "Not Found" in stderr or "notFound" in stderr:
+            raise MCPError(code=-32603, message=f"Calendar API 404: {stderr}")
+        if "403" in stderr or "forbidden" in stderr.lower():
+            raise MCPError(code=-32603, message=f"Calendar API 403: {stderr}")
+        raise MCPError(code=-32603, message=f"gws calendar error: {stderr}")
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            # Persist refreshed token (try original path, fall back to /tmp)
-            for save_path in [TOKEN_PATH, "/tmp/calendar.credentials.json"]:
-                try:
-                    with open(save_path, "w") as f:
-                        f.write(creds.to_json())
-                    logger.info("Refreshed calendar OAuth token, saved to %s", save_path)
-                    break
-                except OSError:
-                    continue
-        else:
-            raise MCPError(
-                code=-32603,
-                message="Calendar credentials expired and cannot be refreshed. "
-                "Run: python3 letta/calendar_tools/authenticate_calendar.py",
-            )
-
-    return build("calendar", "v3", credentials=creds)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        raise MCPError(
+            code=-32603,
+            message=f"Failed to parse gws output: {e}\nstdout: {result.stdout[:500]}",
+        )
 
 
 def _classify_event(event: Dict[str, Any]) -> Dict[str, bool]:
@@ -87,9 +78,9 @@ def _classify_event(event: Dict[str, Any]) -> Dict[str, bool]:
     Compute scheduling classification flags for a calendar event.
 
     Uses description markers matching the n8n Core_Event_Data workflow:
-    - [lk] in description → locked (cannot be moved)
-    - [pr] in description → protected (important, shouldn't move)
-    - neither → flexible (can be freely rescheduled)
+    - [lk] in description -> locked (cannot be moved)
+    - [pr] in description -> protected (important, shouldn't move)
+    - neither -> flexible (can be freely rescheduled)
     - transparent: event set to "show as free"
     """
     description = event.get("description", "") or ""
@@ -110,10 +101,10 @@ def _classify_event(event: Dict[str, Any]) -> Dict[str, bool]:
 
 class GoogleCalendarClient:
     """
-    Direct Google Calendar API client.
+    Google Calendar client using gws CLI.
 
     Drop-in replacement for MCPCalendarClient with the same interface:
-    - initialize() (no-op, kept for compatibility)
+    - initialize() (verifies gws is available)
     - get_core_event_data(calendar_id, before, after)
     - fetch_event_by_id(calendar_id, event_id, days_forward)
     """
@@ -127,17 +118,28 @@ class GoogleCalendarClient:
             max_retries: Not used (kept for interface compatibility)
             **kwargs: Absorbs extra args like base_url for compatibility
         """
-        self._service = None
-
-    def _get_service(self):
-        if self._service is None:
-            self._service = _get_calendar_service()
-        return self._service
+        pass
 
     async def initialize(self) -> None:
-        """No-op for interface compatibility with MCPCalendarClient."""
-        # Eagerly build the service to fail fast on credential issues
-        self._get_service()
+        """Verify gws CLI is available and working."""
+        try:
+            result = subprocess.run(
+                [GWS_CMD, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                raise MCPError(
+                    code=-32603,
+                    message=f"gws CLI check failed: {result.stderr.strip()}",
+                )
+            logger.info("gws CLI available: %s", result.stdout.strip())
+        except FileNotFoundError:
+            raise MCPError(
+                code=-32603,
+                message=f"gws CLI not found at {GWS_CMD}. Check Dockerfile installation.",
+            )
 
     async def get_core_event_data(
         self,
@@ -158,38 +160,30 @@ class GoogleCalendarClient:
             [{summary, id, start, end, locked, protected, flexible, transparent,
               attendees_list, attendees_details, number_of_attendees, internal_only}]
         """
-        service = self._get_service()
+        params = {
+            "calendarId": calendar_id,
+            "timeMin": after,    # START date
+            "timeMax": before,   # END date
+            "singleEvents": True,
+            "orderBy": "startTime",
+            "maxResults": 500,
+        }
 
         try:
-            # The Google Calendar API events.list parameters:
-            # timeMin = start of range, timeMax = end of range
-            # "after" param = start date, "before" param = end date (counterintuitive naming)
-            events_result = (
-                service.events()
-                .list(
-                    calendarId=calendar_id,
-                    timeMin=after,   # START date
-                    timeMax=before,  # END date
-                    singleEvents=True,
-                    orderBy="startTime",
-                    maxResults=500,
-                )
-                .execute()
-            )
-        except Exception as e:
-            error_msg = str(e)
-            if "404" in error_msg or "Not Found" in error_msg:
+            events_result = _gws_calendar("events", "list", params)
+        except MCPError as e:
+            if "404" in e.message:
                 raise MCPError(
                     code=-32603,
                     message=f"Calendar not found: {calendar_id}",
                 )
-            if "403" in error_msg or "forbidden" in error_msg.lower():
+            if "403" in e.message:
                 raise MCPError(
                     code=-32603,
                     message=f"No access to calendar: {calendar_id}. "
                     "Ensure the calendar is shared with the authenticated account.",
                 )
-            raise MCPError(code=-32603, message=f"Calendar API error: {error_msg}")
+            raise
 
         items = events_result.get("items", [])
         result = []
@@ -261,9 +255,6 @@ class GoogleCalendarClient:
         """
         Fetch a specific event by ID.
 
-        Uses events.get() for direct lookup (more efficient than
-        MCPCalendarClient which had to list + filter).
-
         Args:
             calendar_id: Calendar ID (email address)
             event_id: Google Calendar event ID
@@ -272,24 +263,22 @@ class GoogleCalendarClient:
         Returns:
             Event dict in Core_Event_Data format, or None if not found.
         """
-        service = self._get_service()
+        params = {
+            "calendarId": calendar_id,
+            "eventId": event_id,
+        }
 
         try:
-            event = (
-                service.events()
-                .get(calendarId=calendar_id, eventId=event_id)
-                .execute()
-            )
-        except Exception as e:
-            error_msg = str(e)
-            if "404" in error_msg or "Not Found" in error_msg:
+            event = _gws_calendar("events", "get", params)
+        except MCPError as e:
+            if "404" in e.message:
                 logger.warning(
                     "Event %s not found in calendar %s", event_id, calendar_id
                 )
                 return None
             raise MCPError(
                 code=-32603,
-                message=f"Error fetching event {event_id}: {error_msg}",
+                message=f"Error fetching event {event_id}: {e.message}",
             )
 
         if event.get("status") == "cancelled":
