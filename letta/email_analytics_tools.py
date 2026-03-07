@@ -53,15 +53,10 @@ def get_email_analytics(
         get_email_analytics(..., mode="individual")
     """
     # Imports inside function (Letta compliance - must be fully self-contained)
-    import os
     import json
     import hashlib
+    import subprocess
     from datetime import datetime, timedelta, date
-    from pathlib import Path
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
-    from googleapiclient.errors import HttpError
     import pytz
     
     # Configuration (inlined for Letta compliance)
@@ -155,42 +150,20 @@ def get_email_analytics(
         else:
             hash_date = now_eastern.date()
         
-        # Load credentials
-        TOKEN_PATH = os.getenv(
-            "GMAIL_CREDENTIALS_PATH",
-            str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
-        )
-        
-        creds = None
-        if os.path.exists(TOKEN_PATH):
-            creds = Credentials.from_authorized_user_file(TOKEN_PATH)
-        
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-                with open(TOKEN_PATH, "w") as token:
-                    token.write(creds.to_json())
-            else:
-                return {
-                    "status": "error",
-                    "data": {},
-                    "error_message": "No valid credentials found. Please authenticate first."
-                }
-        
-        # Query Admin Reports API for Gmail activity
-        service = build("admin", "reports_v1", credentials=creds)
-        
         # Format times for API
         start_time = start_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z") if start_dt.tzinfo is None else start_dt.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
         end_time = end_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z") if end_dt.tzinfo is None else end_dt.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        
+
+        # Query Admin Reports API for Gmail activity via gws CLI
+        GWS_TIMEOUT = 60
+
         activities = []
         next_page_token = None
         MAX_PAGES = 50
         pages_fetched = 0
-        
+
         while pages_fetched < MAX_PAGES:
-            api_params = {
+            _params = {
                 "userKey": "all",
                 "applicationName": "gmail",
                 "startTime": start_time,
@@ -198,22 +171,25 @@ def get_email_analytics(
                 "maxResults": 1000,
             }
             if next_page_token:
-                api_params["pageToken"] = next_page_token
-            
-            try:
-                response = service.activities().list(**api_params).execute()
-                activities.extend(response.get("items", []))
-                next_page_token = response.get("nextPageToken")
-                pages_fetched += 1
-                
-                if not next_page_token:
-                    break
-            except HttpError as e:
+                _params["pageToken"] = next_page_token
+
+            _cmd = ["gws"] + "admin-reports activities list".split()
+            _cmd.extend(["--params", json.dumps(_params)])
+            _cmd.extend(["--format", "json"])
+            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            if _r.returncode != 0:
                 return {
                     "status": "error",
                     "data": {},
-                    "error_message": f"Admin Reports API error: {str(e)}"
+                    "error_message": f"Admin Reports API error: {_r.stderr[:500] if _r.stderr else f'gws exit {_r.returncode}'}"
                 }
+
+            _data = json.loads(_r.stdout) if _r.stdout.strip() else {}
+            activities.extend(_data.get("items", []))
+            next_page_token = _data.get("nextPageToken")
+            pages_fetched += 1
+            if not next_page_token:
+                break
         
         # Process activities - count sent/received per user
         user_stats = {}  # email -> {"sent": 0, "received": 0}
