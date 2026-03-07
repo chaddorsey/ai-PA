@@ -55,6 +55,7 @@ def prepare_completion_feedback(
     import os
     import re
     import json
+    import subprocess
     import traceback
     import urllib.request
     import urllib.error
@@ -72,6 +73,7 @@ def prepare_completion_feedback(
         ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         AGENT_ID = os.getenv("LETTA_AGENT_ID")
         USER_NAME = "Chad Dorsey"
+        GWS_TIMEOUT = 15
 
         if not ref_id or not ref_id.strip():
             return {**EMPTY_RESULT, "status": "error", "error_message": "ref_id is required"}
@@ -147,9 +149,6 @@ def prepare_completion_feedback(
 
         if source_type == "google-docs-comment" or source_type == "google-drive-comment":
             # Parse reference_id: gdocs-comment-{fileId}-{commentId}
-            # The commentId is always the last segment after the last hyphen
-            # that starts with "AAAB" or similar Google comment ID pattern.
-            # However, fileId can contain hyphens, so we use the known prefix.
             comment_match = re.match(r"gdocs-comment-(.+)-([A-Za-z0-9_]+)$", reference_id)
             if not comment_match:
                 return {
@@ -165,57 +164,46 @@ def prepare_completion_feedback(
             # Extract person's first name for a natural message
             first_name = from_person.split()[0] if from_person else "there"
 
-            # ── Fetch the original comment from Google Drive API ──
-            # Best-effort: if this fails, we proceed with empty context
+            # ── Fetch the original comment from Drive API via gws ──
             source_comment_text = ""
             document_title = ""
             comment_thread = []
             try:
-                from pathlib import Path
-                from google.oauth2.credentials import Credentials
-                from google.auth.transport.requests import Request
-                from googleapiclient.discovery import build
+                # Get document title
+                _cmd = ["gws"] + "drive files get".split()
+                _cmd.extend(["--params", json.dumps({
+                    "fileId": file_id,
+                    "fields": "name",
+                    "supportsAllDrives": True,
+                })])
+                _cmd.extend(["--format", "json"])
+                _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                if _r.returncode != 0:
+                    raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                file_info = json.loads(_r.stdout) if _r.stdout.strip() else {}
+                document_title = file_info.get("name", "")
 
-                TOKEN_PATH = os.getenv(
-                    "GMAIL_CREDENTIALS_PATH",
-                    str(Path.home() / ".gmail-mcp" / "admin-reports.credentials.json")
-                )
-                SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+                # Get the specific comment with replies
+                _cmd = ["gws"] + "drive comments get".split()
+                _cmd.extend(["--params", json.dumps({
+                    "fileId": file_id,
+                    "commentId": comment_id,
+                    "fields": "content,author(displayName),createdTime,resolved,replies(content,author(displayName),createdTime)",
+                    "includeDeleted": False,
+                })])
+                _cmd.extend(["--format", "json"])
+                _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                if _r.returncode != 0:
+                    raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                comment_data = json.loads(_r.stdout) if _r.stdout.strip() else {}
 
-                creds = None
-                if os.path.exists(TOKEN_PATH):
-                    creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
-                if creds and creds.expired and creds.refresh_token:
-                    creds.refresh(Request())
-                    with open(TOKEN_PATH, "w") as token:
-                        token.write(creds.to_json())
-
-                if creds and creds.valid:
-                    service = build("drive", "v3", credentials=creds)
-
-                    # Get document title
-                    file_info = service.files().get(
-                        fileId=file_id,
-                        fields="name",
-                        supportsAllDrives=True,
-                    ).execute()
-                    document_title = file_info.get("name", "")
-
-                    # Get the specific comment with replies
-                    comment_data = service.comments().get(
-                        fileId=file_id,
-                        commentId=comment_id,
-                        fields="content,author(displayName),createdTime,resolved,replies(content,author(displayName),createdTime)",
-                        includeDeleted=False,
-                    ).execute()
-
-                    source_comment_text = comment_data.get("content", "")
-                    for reply in comment_data.get("replies", []):
-                        comment_thread.append({
-                            "author": reply.get("author", {}).get("displayName", ""),
-                            "text": reply.get("content", ""),
-                            "created_time": reply.get("createdTime", ""),
-                        })
+                source_comment_text = comment_data.get("content", "")
+                for reply in comment_data.get("replies", []):
+                    comment_thread.append({
+                        "author": reply.get("author", {}).get("displayName", ""),
+                        "text": reply.get("content", ""),
+                        "created_time": reply.get("createdTime", ""),
+                    })
             except Exception:
                 # Non-fatal: proceed without source context
                 pass
@@ -238,15 +226,16 @@ def prepare_completion_feedback(
                 "reason": f"External request from {from_person} via Google Doc comment",
                 "suggested_action": suggested_action,
                 "routing": {
-                    "tool": "reply_to_document_comment",
-                    "args": {
-                        "file_id": file_id,
-                        "comment_id": comment_id,
+                    "tool": "run_gws",
+                    "reply_command": "drive replies create",
+                    "reply_params": {
+                        "fileId": file_id,
+                        "commentId": comment_id,
                     },
-                    "resolve_tool": "resolve_document_comment",
-                    "resolve_args": {
-                        "file_id": file_id,
-                        "comment_id": comment_id,
+                    "resolve_command": "drive comments update",
+                    "resolve_params": {
+                        "fileId": file_id,
+                        "commentId": comment_id,
                     },
                 },
                 "draft_message": draft,
@@ -341,47 +330,22 @@ def prepare_completion_feedback(
             email_message_id = email_match.group(1)
             first_name = from_person.split()[0] if from_person else "there"
 
-            # ── Fetch email thread context from Gmail API ──
+            # ── Fetch email thread context from Gmail API via gws ──
             source_comment_text = ""
             email_subject = ""
             thread_messages = []
             try:
-                from google.oauth2.credentials import Credentials
-                from google.auth.transport.requests import Request
-                from googleapiclient.discovery import build as gmail_build
-
-                GMAIL_CREDS_DIR = "/root/.gmail-mcp"
-
-                with open(f"{GMAIL_CREDS_DIR}/gcp-oauth.keys.json") as gf:
-                    gkeys = json.load(gf)
-                    gmail_client_config = gkeys.get("installed") or gkeys.get("web")
-
-                with open(f"{GMAIL_CREDS_DIR}/credentials.json") as gf:
-                    gmail_tokens = json.load(gf)
-
-                gmail_creds = Credentials(
-                    token=gmail_tokens.get("access_token"),
-                    refresh_token=gmail_tokens.get("refresh_token"),
-                    token_uri=gmail_client_config["token_uri"],
-                    client_id=gmail_client_config["client_id"],
-                    client_secret=gmail_client_config["client_secret"],
-                    scopes=["https://www.googleapis.com/auth/gmail.modify",
-                            "https://www.googleapis.com/auth/gmail.settings.basic"],
-                )
-
-                if not gmail_creds.valid:
-                    gmail_creds.refresh(Request())
-                    gmail_tokens["access_token"] = gmail_creds.token
-                    with open(f"{GMAIL_CREDS_DIR}/credentials.json", "w") as gf:
-                        json.dump(gmail_tokens, gf, indent=2)
-
-                gmail_svc = gmail_build("gmail", "v1", credentials=gmail_creds)
-
                 # Get original message for threadId and subject
-                original_msg = gmail_svc.users().messages().get(
-                    userId="me", id=email_message_id, format="metadata",
-                    metadataHeaders=["Subject", "From", "To", "Cc", "Date"],
-                ).execute()
+                _cmd = ["gws"] + "gmail users messages get".split()
+                _cmd.extend(["--params", json.dumps({
+                    "userId": "me", "id": email_message_id, "format": "metadata",
+                    "metadataHeaders": ["Subject", "From", "To", "Cc", "Date"],
+                })])
+                _cmd.extend(["--format", "json"])
+                _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                if _r.returncode != 0:
+                    raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                original_msg = json.loads(_r.stdout) if _r.stdout.strip() else {}
 
                 orig_hdrs = original_msg.get("payload", {}).get("headers", [])
                 orig_hdr_map = {}
@@ -393,10 +357,16 @@ def prepare_completion_feedback(
 
                 # Get full thread for conversation context
                 if email_thread_id:
-                    thread_data = gmail_svc.users().threads().get(
-                        userId="me", id=email_thread_id, format="metadata",
-                        metadataHeaders=["Subject", "From", "To", "Date"],
-                    ).execute()
+                    _cmd = ["gws"] + "gmail users threads get".split()
+                    _cmd.extend(["--params", json.dumps({
+                        "userId": "me", "id": email_thread_id, "format": "metadata",
+                        "metadataHeaders": ["Subject", "From", "To", "Date"],
+                    })])
+                    _cmd.extend(["--format", "json"])
+                    _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                    if _r.returncode != 0:
+                        raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                    thread_data = json.loads(_r.stdout) if _r.stdout.strip() else {}
 
                     for tmsg in thread_data.get("messages", []):
                         tmsg_hdrs = tmsg.get("payload", {}).get("headers", [])

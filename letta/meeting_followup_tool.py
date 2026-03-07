@@ -55,17 +55,16 @@ def prepare_meeting_followup(
     import re
     import json
     import base64
+    import subprocess
     import traceback
     from datetime import datetime
     from email.mime.text import MIMEText
     import pytz
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
 
     try:
         tz = pytz.timezone("America/New_York")
         now = datetime.now(tz)
+        GWS_TIMEOUT = 15
 
         # ── Parse participants ──
         SENDER_EMAIL = "cdorsey@concord.org"
@@ -171,42 +170,21 @@ def prepare_meeting_followup(
 
         body_html = "".join(html_parts)
 
-        # ── Create Gmail draft ──
-        CREDS_DIR = "/root/.gmail-mcp"
-        with open(f"{CREDS_DIR}/gcp-oauth.keys.json") as f:
-            keys = json.load(f)
-            client_config = keys.get("installed") or keys.get("web")
-        with open(f"{CREDS_DIR}/credentials.json") as f:
-            tokens = json.load(f)
-
-        creds = Credentials(
-            token=tokens.get("access_token"),
-            refresh_token=tokens.get("refresh_token"),
-            token_uri=client_config["token_uri"],
-            client_id=client_config["client_id"],
-            client_secret=client_config["client_secret"],
-            scopes=[
-                "https://www.googleapis.com/auth/gmail.modify",
-                "https://www.googleapis.com/auth/gmail.settings.basic",
-            ],
-        )
-        if not creds.valid:
-            creds.refresh(Request())
-            tokens["access_token"] = creds.token
-            with open(f"{CREDS_DIR}/credentials.json", "w") as f:
-                json.dump(tokens, f, indent=2)
-
-        gmail = build("gmail", "v1", credentials=creds)
-
+        # ── Create Gmail draft via gws ──
         message = MIMEText(body_html, "html")
         message["To"] = ", ".join(emails_list)
         subject = f"{meeting_title} - meeting summary"
         message["Subject"] = subject
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-        draft = gmail.users().drafts().create(
-            userId="me", body={"message": {"raw": raw}}
-        ).execute()
+        _cmd = ["gws"] + "gmail users drafts create".split()
+        _cmd.extend(["--params", json.dumps({"userId": "me"})])
+        _cmd.extend(["--json", json.dumps({"message": {"raw": raw}})])
+        _cmd.extend(["--format", "json"])
+        _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+        if _r.returncode != 0:
+            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+        draft = json.loads(_r.stdout) if _r.stdout.strip() else {}
 
         draft_id = draft.get("id", "")
         draft_message = draft.get("message", {})
@@ -216,7 +194,13 @@ def prepare_meeting_followup(
         label_applied_followup = False
         label_applied_proposed = False
         if message_id:
-            labels_resp = gmail.users().labels().list(userId="me").execute()
+            _cmd = ["gws"] + "gmail users labels list".split()
+            _cmd.extend(["--params", json.dumps({"userId": "me"})])
+            _cmd.extend(["--format", "json"])
+            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            if _r.returncode != 0:
+                raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+            labels_resp = json.loads(_r.stdout) if _r.stdout.strip() else {}
             all_labels = labels_resp.get("labels", [])
 
             # Find or create "Followup" label
@@ -227,14 +211,18 @@ def prepare_meeting_followup(
                     followup_label_id = label["id"]
                     break
             if not followup_label_id:
-                new_label = gmail.users().labels().create(
-                    userId="me",
-                    body={
-                        "name": FOLLOWUP_LABEL_NAME,
-                        "labelListVisibility": "labelShow",
-                        "messageListVisibility": "show",
-                    },
-                ).execute()
+                _cmd = ["gws"] + "gmail users labels create".split()
+                _cmd.extend(["--params", json.dumps({"userId": "me"})])
+                _cmd.extend(["--json", json.dumps({
+                    "name": FOLLOWUP_LABEL_NAME,
+                    "labelListVisibility": "labelShow",
+                    "messageListVisibility": "show",
+                })])
+                _cmd.extend(["--format", "json"])
+                _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                if _r.returncode != 0:
+                    raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                new_label = json.loads(_r.stdout) if _r.stdout.strip() else {}
                 followup_label_id = new_label["id"]
 
             label_ids_to_add = [followup_label_id]
@@ -248,22 +236,30 @@ def prepare_meeting_followup(
                         proposed_label_id = label["id"]
                         break
                 if not proposed_label_id:
-                    new_label = gmail.users().labels().create(
-                        userId="me",
-                        body={
-                            "name": PROPOSED_LABEL_NAME,
-                            "labelListVisibility": "labelShow",
-                            "messageListVisibility": "show",
-                        },
-                    ).execute()
+                    _cmd = ["gws"] + "gmail users labels create".split()
+                    _cmd.extend(["--params", json.dumps({"userId": "me"})])
+                    _cmd.extend(["--json", json.dumps({
+                        "name": PROPOSED_LABEL_NAME,
+                        "labelListVisibility": "labelShow",
+                        "messageListVisibility": "show",
+                    })])
+                    _cmd.extend(["--format", "json"])
+                    _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                    if _r.returncode != 0:
+                        raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                    new_label = json.loads(_r.stdout) if _r.stdout.strip() else {}
                     proposed_label_id = new_label["id"]
                 label_ids_to_add.append(proposed_label_id)
 
-            gmail.users().messages().modify(
-                userId="me",
-                id=message_id,
-                body={"addLabelIds": label_ids_to_add},
-            ).execute()
+            _cmd = ["gws"] + "gmail users messages modify".split()
+            _cmd.extend(["--params", json.dumps({
+                "userId": "me", "id": message_id,
+            })])
+            _cmd.extend(["--json", json.dumps({"addLabelIds": label_ids_to_add})])
+            _cmd.extend(["--format", "json"])
+            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            if _r.returncode != 0:
+                raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
             label_applied_followup = True
             label_applied_proposed = proposed
 

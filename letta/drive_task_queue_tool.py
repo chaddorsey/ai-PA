@@ -38,41 +38,23 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
     import os
     import re
     import json
+    import subprocess
     import traceback
     import pytz
     import urllib.request
     import urllib.error
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
         AGENT_ID = os.getenv("LETTA_AGENT_ID")
         QUEUE_BLOCK_LABEL = "queued_tasks_from_drive"
         OWNER_EMAIL = "cdorsey@concord.org"
+        GWS_TIMEOUT = 15
 
         if max_entries is None or max_entries < 1:
             max_entries = 10
         if max_entries > 20:
             max_entries = 20
-
-        # ── Google Auth (Drive scopes via drive-docs-token.json) ──
-        TOKEN_FILE = "/root/.gmail-mcp/drive-docs-token.json"
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE)
-        if not creds.valid:
-            creds.refresh(Request())
-            token_data = {
-                "token": creds.token,
-                "refresh_token": creds.refresh_token,
-                "token_uri": creds.token_uri,
-                "client_id": creds.client_id,
-                "client_secret": creds.client_secret,
-                "scopes": list(creds.scopes) if creds.scopes else [],
-            }
-            with open(TOKEN_FILE, "w") as f:
-                json.dump(token_data, f, indent=2)
-        drive_service = build("drive", "v3", credentials=creds)
 
         # ── Get queue block ──
         if not AGENT_ID:
@@ -155,10 +137,16 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
 
                 # ── Drive API: file metadata ──
                 try:
-                    file_meta = drive_service.files().get(
-                        fileId=doc_id,
-                        fields="id,name,mimeType,webViewLink",
-                    ).execute()
+                    _cmd = ["gws"] + "drive files get".split()
+                    _cmd.extend(["--params", json.dumps({
+                        "fileId": doc_id,
+                        "fields": "id,name,mimeType,webViewLink",
+                    })])
+                    _cmd.extend(["--format", "json"])
+                    _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                    if _r.returncode != 0:
+                        raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                    file_meta = json.loads(_r.stdout) if _r.stdout.strip() else {}
                 except Exception as api_err:
                     errors.append({
                         "doc_id": doc_id,
@@ -186,11 +174,17 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
 
                 if comment_id:
                     try:
-                        comment_data = drive_service.comments().get(
-                            fileId=doc_id,
-                            commentId=comment_id,
-                            fields="content,author,quotedFileContent,createdTime,resolved",
-                        ).execute()
+                        _cmd = ["gws"] + "drive comments get".split()
+                        _cmd.extend(["--params", json.dumps({
+                            "fileId": doc_id,
+                            "commentId": comment_id,
+                            "fields": "content,author,quotedFileContent,createdTime,resolved",
+                        })])
+                        _cmd.extend(["--format", "json"])
+                        _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                        if _r.returncode != 0:
+                            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                        comment_data = json.loads(_r.stdout) if _r.stdout.strip() else {}
                         comment_text = comment_data.get("content", "")
                         author = comment_data.get("author", {})
                         comment_author = author.get("displayName", "")
@@ -205,10 +199,15 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
                 surrounding_context = ""
                 if quoted_passage and doc_type == "document":
                     try:
-                        docs_service = build("docs", "v1", credentials=creds)
-                        doc_data = docs_service.documents().get(
-                            documentId=doc_id,
-                        ).execute()
+                        _cmd = ["gws"] + "docs documents get".split()
+                        _cmd.extend(["--params", json.dumps({
+                            "documentId": doc_id,
+                        })])
+                        _cmd.extend(["--format", "json"])
+                        _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                        if _r.returncode != 0:
+                            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                        doc_data = json.loads(_r.stdout) if _r.stdout.strip() else {}
                         body_content = doc_data.get("body", {}).get("content", [])
                         paragraphs = []
                         for element in body_content:
@@ -244,11 +243,16 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
 
                 elif quoted_passage and doc_type == "spreadsheet":
                     try:
-                        sheets_service = build("sheets", "v4", credentials=creds)
-                        sheet_data = sheets_service.spreadsheets().get(
-                            spreadsheetId=doc_id,
-                            fields="sheets.data.rowData.values.formattedValue",
-                        ).execute()
+                        _cmd = ["gws"] + "sheets spreadsheets get".split()
+                        _cmd.extend(["--params", json.dumps({
+                            "spreadsheetId": doc_id,
+                            "fields": "sheets.data.rowData.values.formattedValue",
+                        })])
+                        _cmd.extend(["--format", "json"])
+                        _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                        if _r.returncode != 0:
+                            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                        sheet_data = json.loads(_r.stdout) if _r.stdout.strip() else {}
                         all_cells = []
                         for sheet in sheet_data.get("sheets", []):
                             for grid_data in sheet.get("data", []):
@@ -271,11 +275,16 @@ def process_drive_task_queue(max_entries: int = 10) -> Dict[str, Any]:
 
                 elif quoted_passage and doc_type == "presentation":
                     try:
-                        slides_service = build("slides", "v1", credentials=creds)
-                        pres_data = slides_service.presentations().get(
-                            presentationId=doc_id,
-                            fields="slides.pageElements.shape.text.textElements.textRun.content",
-                        ).execute()
+                        _cmd = ["gws"] + "slides presentations get".split()
+                        _cmd.extend(["--params", json.dumps({
+                            "presentationId": doc_id,
+                            "fields": "slides.pageElements.shape.text.textElements.textRun.content",
+                        })])
+                        _cmd.extend(["--format", "json"])
+                        _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                        if _r.returncode != 0:
+                            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                        pres_data = json.loads(_r.stdout) if _r.stdout.strip() else {}
                         for slide in pres_data.get("slides", []):
                             slide_text_parts = []
                             for element in slide.get("pageElements", []):

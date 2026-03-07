@@ -46,14 +46,12 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
     import re
     import json
     import base64
+    import subprocess
     import traceback
     from datetime import datetime
     import pytz
     import urllib.request
     import urllib.error
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
@@ -65,6 +63,7 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
             r'^(From|Date|Subject|To):\s*(.+)$', re.MULTILINE
         )
         EMAIL_PATTERN = re.compile(r'[\w.+-]+@[\w.-]+')
+        GWS_TIMEOUT = 15
 
         # Clamp max_messages
         if max_messages is None or max_messages < 1:
@@ -75,33 +74,11 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
         tz = pytz.timezone("America/New_York")
         now = datetime.now(tz)
 
-        # ── Gmail Auth ──
-        CREDS_DIR = "/root/.gmail-mcp"
-        with open(f"{CREDS_DIR}/gcp-oauth.keys.json") as f:
-            keys = json.load(f)
-            client_config = keys.get("installed") or keys.get("web")
-        with open(f"{CREDS_DIR}/credentials.json") as f:
-            tokens = json.load(f)
-        creds = Credentials(
-            token=tokens.get("access_token"),
-            refresh_token=tokens.get("refresh_token"),
-            token_uri=client_config["token_uri"],
-            client_id=client_config["client_id"],
-            client_secret=client_config["client_secret"],
-            scopes=[
-                "https://www.googleapis.com/auth/gmail.modify",
-                "https://www.googleapis.com/auth/gmail.settings.basic",
-            ],
-        )
-        if not creds.valid:
-            creds.refresh(Request())
-            tokens["access_token"] = creds.token
-            with open(f"{CREDS_DIR}/credentials.json", "w") as f:
-                json.dump(tokens, f, indent=2)
-        gmail = build("gmail", "v1", credentials=creds)
-
         # ── Find TaskQueue label ID ──
-        labels_resp = gmail.users().labels().list(userId="me").execute()
+        _r = subprocess.run(["gws", "gmail", "users", "labels", "list", "--params", json.dumps({"userId": "me"}), "--format", "json"], capture_output=True, text=True, timeout=GWS_TIMEOUT)
+        if _r.returncode != 0:
+            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+        labels_resp = json.loads(_r.stdout) if _r.stdout.strip() else {}
         taskqueue_label_id = None
         for lbl in labels_resp.get("labels", []):
             if lbl["name"] == TASKQUEUE_LABEL_NAME:
@@ -116,11 +93,17 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
             }
 
         # ── Search for TaskQueue messages ──
-        search_resp = gmail.users().messages().list(
-            userId="me",
-            labelIds=[taskqueue_label_id],
-            maxResults=max_messages,
-        ).execute()
+        _cmd = ["gws"] + "gmail users messages list".split()
+        _cmd.extend(["--params", json.dumps({
+            "userId": "me",
+            "labelIds": taskqueue_label_id,
+            "maxResults": max_messages,
+        })])
+        _cmd.extend(["--format", "json"])
+        _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+        if _r.returncode != 0:
+            raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+        search_resp = json.loads(_r.stdout) if _r.stdout.strip() else {}
         messages = search_resp.get("messages", [])
         if not messages:
             return {
@@ -163,9 +146,15 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
             msg_id = msg_ref["id"]
             try:
                 # Read full message
-                msg = gmail.users().messages().get(
-                    userId="me", id=msg_id, format="full"
-                ).execute()
+                _cmd = ["gws"] + "gmail users messages get".split()
+                _cmd.extend(["--params", json.dumps({
+                    "userId": "me", "id": msg_id, "format": "full",
+                })])
+                _cmd.extend(["--format", "json"])
+                _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                if _r.returncode != 0:
+                    raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                msg = json.loads(_r.stdout) if _r.stdout.strip() else {}
 
                 # Extract headers
                 headers = msg.get("payload", {}).get("headers", [])
@@ -247,9 +236,15 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
                             f'from:{from_email} subject:"{clean_subject}"'
                         )
                         try:
-                            orig_search = gmail.users().messages().list(
-                                userId="me", q=search_q, maxResults=5
-                            ).execute()
+                            _cmd = ["gws"] + "gmail users messages list".split()
+                            _cmd.extend(["--params", json.dumps({
+                                "userId": "me", "q": search_q, "maxResults": 5,
+                            })])
+                            _cmd.extend(["--format", "json"])
+                            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                            if _r.returncode != 0:
+                                raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
+                            orig_search = json.loads(_r.stdout) if _r.stdout.strip() else {}
                             orig_messages = orig_search.get("messages", [])
                             for orig_ref in orig_messages:
                                 if orig_ref["id"] != msg_id:
@@ -306,11 +301,15 @@ def process_email_task_queue(max_messages: int = 10) -> Dict[str, Any]:
                 urllib.request.urlopen(update_req, timeout=10)
 
                 # ── Remove TaskQueue label ──
-                gmail.users().messages().modify(
-                    userId="me",
-                    id=msg_id,
-                    body={"removeLabelIds": [taskqueue_label_id]},
-                ).execute()
+                _cmd = ["gws"] + "gmail users messages modify".split()
+                _cmd.extend(["--params", json.dumps({
+                    "userId": "me", "id": msg_id,
+                })])
+                _cmd.extend(["--json", json.dumps({"removeLabelIds": [taskqueue_label_id]})])
+                _cmd.extend(["--format", "json"])
+                _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                if _r.returncode != 0:
+                    raise RuntimeError(_r.stderr[:500] if _r.stderr else f"gws exit {_r.returncode}")
 
                 processed.append({
                     "message_id": original_message_id,
