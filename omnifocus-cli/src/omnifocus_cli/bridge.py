@@ -36,8 +36,14 @@ def call_omnifocus(method: str, params: dict | None = None) -> dict:
             raise RuntimeError(f"osascript failed (exit {result.returncode}): {result.stderr.strip()}")
         raw = result.stdout.strip()
         parsed = json.loads(raw)
-        if "error" in parsed:
+        # osascript may double-encode: JSON.stringify wraps the plugin's
+        # JSON string result in quotes, so first json.loads yields a str.
+        if isinstance(parsed, str):
+            parsed = json.loads(parsed)
+        if isinstance(parsed, dict) and "error" in parsed:
             raise RuntimeError(f"OmniFocus plugin error: {parsed['error']}")
-        return parsed.get("result", parsed)
+        if isinstance(parsed, dict):
+            return parsed.get("result", parsed)
+        return parsed
     finally:
         script_path.unlink(missing_ok=True)
