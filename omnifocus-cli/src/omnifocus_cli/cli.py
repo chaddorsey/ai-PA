@@ -817,6 +817,18 @@ def list_tags(ctx):
         _run(ctx, "tags.list", "listTags", {})
 
 
+@tags.command("get")
+@click.argument("tag_id")
+@click.pass_context
+def tag_get(ctx, tag_id):
+    """Get tag details by ID."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "tags.get", "getTagById", {})
+    else:
+        _run(ctx, "tags.get", "getTagById", {"tagId": tag_id})
+
+
 @tags.command()
 @click.option("--name", default=None, help="Tag name")
 @click.option("--parent", "parent_tag_id", help="Parent tag UUID for nesting")

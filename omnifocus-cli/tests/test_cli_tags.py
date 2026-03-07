@@ -59,3 +59,12 @@ def test_tags_delete_force(mock_call):
     assert result.exit_code == 0
     params = mock_call.call_args[0][1]
     assert params["force"] is True
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_tags_get(mock_call):
+    mock_call.return_value = {"id": "t-1", "name": "urgent", "taskCount": 5}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--format", "json", "tags", "get", "t-1"])
+    assert result.exit_code == 0
+    mock_call.assert_called_once_with("getTagById", {"tagId": "t-1"})

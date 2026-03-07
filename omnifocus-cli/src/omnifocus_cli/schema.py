@@ -244,6 +244,13 @@ SCHEMAS: dict[str, dict] = {
         "description": "List all tags",
         "params": {},
     },
+    "tags.get": {
+        "method": "getTagById",
+        "description": "Get details of a specific tag",
+        "params": {
+            "tagId": {"type": "string", "required": True, "description": "Tag ID to retrieve"},
+        },
+    },
     "tags.create": {
         "method": "createTag",
         "description": "Create a new tag",

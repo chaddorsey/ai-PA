@@ -38,6 +38,7 @@ def test_list_schemas_returns_all_keys():
     assert "inbox.list" in keys
     assert "inbox.process" in keys
     assert "tags.list" in keys
+    assert "tags.get" in keys
     assert "tags.create" in keys
     assert "tags.rename" in keys
     assert "tags.delete" in keys
