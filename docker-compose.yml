@@ -644,8 +644,6 @@ services:
       GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
       OMNIFOCUS_BRIDGE_URL: "http://host.docker.internal:8889"
     extra_hosts:
-      - "omnifocus-mcp-server:192.168.65.254"
-
       # Do not attempt to use Ollama, LM Studio or OpenRouter chat models with Letta.
       # Letta is *very* picky and will only reliably work with the major cloud providers.
       # Embedding models will work fine, but only uncomment if you know what you're doing.
@@ -939,49 +937,6 @@ services:
       - "service=gmail-watch-service"
       - "component=gmail-watch"
       - "network=pa-internal"
-
-  omnifocus-mcp-server:
-    build:
-      context: ./omnifocus-mcp-letta
-      dockerfile: Dockerfile
-    container_name: omnifocus-mcp-server
-    restart: unless-stopped
-    networks: [pa-internal]
-    ports:
-      - "8888:8888"  # Expose HTTP bridge for Letta Desktop access
-    volumes:
-      - ./omnifocus-mcp-letta/extra-files:/app/extra-files:ro
-    environment:
-      # Common MCP variables
-      - MCP_SERVER_NAME=omnifocus-tools
-      - MCP_SERVER_VERSION=1.0.0
-      - MCP_SERVER_DESCRIPTION=OmniFocus integration tools via AppleScript
-      - MCP_SERVER_HOST=0.0.0.0
-      - MCP_SERVER_PORT=8888
-      - NODE_ENV=production
-      - PORT=8888
-      # Use host bridge service for osascript execution (required for Docker)
-      - HOST_BRIDGE_URL=http://host.docker.internal:8889
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8888/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        labels: "service,component,network"
-    labels:
-      - "service=omnifocus-mcp-server"
-      - "component=mcp-server"
-      - "network=pa-internal"
-      - "mcp-transport=http"
-      - "mcp-version=1.0.0"
-      - "security.internal-only=true"
-      - "security.no-external-access=true"
 
   # --- Web-based Administration Tools ---
   portainer:
