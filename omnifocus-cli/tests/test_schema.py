@@ -1,0 +1,93 @@
+import pytest
+from omnifocus_cli.schema import SCHEMAS, get_schema, list_schemas
+
+
+def test_get_schema_returns_task_create():
+    s = get_schema("task.create")
+    assert s["method"] == "createTask"
+    assert "name" in s["params"]
+    assert s["params"]["name"]["required"] is True
+
+
+def test_get_schema_returns_none_for_unknown():
+    assert get_schema("bogus.method") is None
+
+
+def test_list_schemas_returns_all_keys():
+    keys = list_schemas()
+    assert "task.create" in keys
+    assert "task.get" in keys
+    assert "task.update" in keys
+    assert "task.complete" in keys
+    assert "task.delete" in keys
+    assert "task.move" in keys
+    assert "task.list" in keys
+    assert "search" in keys
+    assert "project.list" in keys
+    assert "project.get" in keys
+    assert "project.create" in keys
+    assert "project.update" in keys
+    assert "project.complete" in keys
+    assert "project.move" in keys
+    assert "project.convert" in keys
+    assert "folder.list" in keys
+    assert "folder.get" in keys
+    assert "folder.create" in keys
+    assert "folder.delete" in keys
+    assert "folder.tree" in keys
+    assert "inbox.list" in keys
+    assert "inbox.process" in keys
+    assert "inbox.context" in keys
+    assert "inbox.bulk" in keys
+    assert "tags.list" in keys
+    assert "tags.get" in keys
+    assert "tags.create" in keys
+    assert "tags.rename" in keys
+    assert "tags.delete" in keys
+    assert "task.subtasks" in keys
+    assert "task.add-subtask" in keys
+    assert "task.hierarchy" in keys
+    assert "task.flatten" in keys
+    assert "perspective.list" in keys
+    assert "perspective.get" in keys
+    assert "perspective.switch" in keys
+    assert "review.list" in keys
+    assert "review.mark" in keys
+    assert "review.next" in keys
+    assert "analytics.health" in keys
+    assert "analytics.workload" in keys
+    assert "analytics.trends" in keys
+    assert "analytics.summary" in keys
+    assert "system.health" in keys
+    assert "validate.transaction" in keys
+    assert "validate.move" in keys
+    assert "validate.create" in keys
+    assert "automation.suggest" in keys
+    assert "automation.diagnose" in keys
+    assert "automation.cleanup" in keys
+    assert "task.get-group-type" in keys
+    assert "task.set-group-type" in keys
+    assert "project.get-group-type" in keys
+    assert "project.set-group-type" in keys
+    assert "transaction.begin" in keys
+    assert "transaction.execute" in keys
+    assert "transaction.accept" in keys
+    assert "transaction.rollback" in keys
+    assert "transaction.history" in keys
+
+
+def test_all_schemas_have_method_and_params():
+    for key in list_schemas():
+        s = get_schema(key)
+        assert "method" in s, f"{key} missing 'method'"
+        assert "params" in s, f"{key} missing 'params'"
+        assert isinstance(s["params"], dict), f"{key} params not a dict"
+
+
+def test_param_entries_have_required_fields():
+    for key in list_schemas():
+        s = get_schema(key)
+        for pname, pdef in s["params"].items():
+            assert "type" in pdef, f"{key}.{pname} missing 'type'"
+            assert "required" in pdef, f"{key}.{pname} missing 'required'"
+            assert "description" in pdef, f"{key}.{pname} missing 'description'"
