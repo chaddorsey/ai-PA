@@ -40,13 +40,13 @@ def sync_omnifocus_completions() -> Dict[str, Any]:
     import traceback
     from datetime import datetime
     import pytz
+    import subprocess
     import urllib.request
     import urllib.error
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
         ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
-        BRIDGE_URL = "http://host.docker.internal:8889"
         # Use agent archival-memory substring search for reliable text matching.
         AGENT_ID = os.getenv("LETTA_AGENT_ID", "agent-62edcfac-2cc7-41a5-a3c2-d417da393397")
 
@@ -112,36 +112,19 @@ def sync_omnifocus_completions() -> Dict[str, Any]:
             }
 
         # ── Step 3: Batch-check OmniFocus completion status ──
-        bridge_payload = json.dumps({
-            "command": "checkTaskCompletionStatus",
-            "args": {"taskIds": list(task_map.keys())},
-        }).encode("utf-8")
-        bridge_req = urllib.request.Request(
-            f"{BRIDGE_URL}/execute", data=bridge_payload,
-            headers={"Content-Type": "application/json"}, method="POST",
+        batch_body = json.dumps({"taskIds": list(task_map.keys())})
+        cli_result = subprocess.run(
+            ["omnifocus-cli", "--format", "json", "--body", batch_body, "task", "batch-status"],
+            capture_output=True, text=True, timeout=30,
         )
-        with urllib.request.urlopen(bridge_req, timeout=30) as resp:
-            bridge_resp = json.loads(resp.read().decode("utf-8"))
-
-        if not bridge_resp.get("success"):
+        if cli_result.returncode != 0:
             return {
                 "status": "error",
                 "checked": len(task_map), "completed": 0, "dropped": 0, "not_found": 0,
                 "details": [],
-                "error_message": f"Bridge call failed: {bridge_resp.get('error', 'unknown')}",
+                "error_message": f"CLI batch-status failed: {cli_result.stderr.strip() or cli_result.stdout.strip()}",
             }
-
-        # Bridge result is double-encoded: the AppleScript evaluate
-        # javascript returns a JSON string, which the bridge wraps in
-        # {"success": true, "result": "<json-string>"}.
-        raw_result = bridge_resp.get("result", {})
-        if isinstance(raw_result, str):
-            parsed = json.loads(raw_result)
-            completion_statuses = parsed.get("result", parsed)
-        elif isinstance(raw_result, dict):
-            completion_statuses = raw_result.get("result", raw_result)
-        else:
-            completion_statuses = {}
+        completion_statuses = json.loads(cli_result.stdout)
 
         # ── Step 4: Transition completed/dropped tasks ──
         completed_count = 0
