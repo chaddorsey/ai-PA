@@ -312,6 +312,41 @@ def task_list(ctx, project_id, tag_id, flagged, include_completed):
         _run(ctx, "task.list", "queryTasks", cleaned)
 
 
+@task.command("delete")
+@click.argument("task_id")
+@click.pass_context
+def task_delete(ctx, task_id):
+    """Delete a task."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.delete", "deleteTask", {})
+    else:
+        _run(ctx, "task.delete", "deleteTask", {"taskId": task_id})
+
+
+@task.command("move")
+@click.argument("task_id")
+@click.option("--project", "target_project_id", default=None, help="Destination project ID")
+@click.option("--parent", "parent_task_id", default=None, help="Parent task ID (make subtask)")
+@click.option("--position", type=int, default=None, help="Position within target (0-indexed)")
+@click.pass_context
+def task_move(ctx, task_id, target_project_id, parent_task_id, position):
+    """Move a task to a different project or make it a subtask."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [target_project_id, parent_task_id, position])
+        _run(ctx, "task.move", "moveTask", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"taskId": task_id}
+        if target_project_id is not None:
+            params["targetProjectId"] = target_project_id
+        if parent_task_id is not None:
+            params["parentTaskId"] = parent_task_id
+        if position is not None:
+            params["position"] = position
+        _run(ctx, "task.move", "moveTask", params)
+
+
 # ── Search command ─────────────────────────────────────────
 
 

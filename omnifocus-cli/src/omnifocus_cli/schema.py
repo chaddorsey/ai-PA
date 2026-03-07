@@ -48,6 +48,23 @@ SCHEMAS: dict[str, dict] = {
             "taskId": {"type": "string", "required": True, "description": "Task ID to complete"},
         },
     },
+    "task.delete": {
+        "method": "deleteTask",
+        "description": "Delete a task",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID to delete"},
+        },
+    },
+    "task.move": {
+        "method": "moveTask",
+        "description": "Move a task to a different project or inbox",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID to move"},
+            "targetProjectId": {"type": "string", "required": False, "description": "Destination project ID (null for inbox)"},
+            "parentTaskId": {"type": "string", "required": False, "description": "Make subtask of this task ID"},
+            "position": {"type": "integer", "required": False, "description": "Position within target (0-indexed)"},
+        },
+    },
     "task.list": {
         "method": "queryTasks",
         "description": "List tasks with optional filters",

@@ -106,3 +106,33 @@ def test_task_list_flagged(mock_call):
     assert result.exit_code == 0
     params = mock_call.call_args[0][1]
     assert params["flagged"] is True
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_task_delete(mock_call):
+    mock_call.return_value = {"success": True}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["task", "delete", "t-1"])
+    assert result.exit_code == 0
+    mock_call.assert_called_once_with("deleteTask", {"taskId": "t-1"})
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_task_move_to_project(mock_call):
+    mock_call.return_value = {"success": True}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["task", "move", "t-1", "--project", "p-1"])
+    assert result.exit_code == 0
+    params = mock_call.call_args[0][1]
+    assert params["taskId"] == "t-1"
+    assert params["targetProjectId"] == "p-1"
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_task_move_as_subtask(mock_call):
+    mock_call.return_value = {"success": True}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["task", "move", "t-1", "--parent", "t-2"])
+    assert result.exit_code == 0
+    params = mock_call.call_args[0][1]
+    assert params["parentTaskId"] == "t-2"

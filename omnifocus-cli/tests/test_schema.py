@@ -19,6 +19,8 @@ def test_list_schemas_returns_all_keys():
     assert "task.get" in keys
     assert "task.update" in keys
     assert "task.complete" in keys
+    assert "task.delete" in keys
+    assert "task.move" in keys
     assert "task.list" in keys
     assert "search" in keys
     assert "project.list" in keys
