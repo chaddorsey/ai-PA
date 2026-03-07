@@ -6,6 +6,8 @@ Combines threading headers from reply_to_email with draft creation from
 draft_email. The draft appears in Gmail's Drafts folder for user review
 and manual sending.
 
+Uses gws CLI for Gmail API access instead of direct OAuth.
+
 Tool: draft_reply_to_email
 """
 
@@ -52,12 +54,10 @@ def draft_reply_to_email(
     import json
     import base64
     import html as html_mod
+    import subprocess
     import traceback
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    from googleapiclient.discovery import build
 
     EMPTY = {
         "status": "", "draft_id": "", "message_id": "", "threadId": "",
@@ -72,43 +72,19 @@ def draft_reply_to_email(
         if not reply_text or not reply_text.strip():
             return {**EMPTY, "status": "error", "error_message": "reply_text is required"}
 
-        # --- Auth boilerplate (same as gmail_tools.py) ---
-        CREDS_DIR = "/root/.gmail-mcp"
-
-        with open(f"{CREDS_DIR}/gcp-oauth.keys.json") as f:
-            keys = json.load(f)
-            client_config = keys.get("installed") or keys.get("web")
-
-        with open(f"{CREDS_DIR}/credentials.json") as f:
-            tokens = json.load(f)
-
-        creds = Credentials(
-            token=tokens.get("access_token"),
-            refresh_token=tokens.get("refresh_token"),
-            token_uri=client_config["token_uri"],
-            client_id=client_config["client_id"],
-            client_secret=client_config["client_secret"],
-            scopes=["https://www.googleapis.com/auth/gmail.modify",
-                    "https://www.googleapis.com/auth/gmail.settings.basic"],
-        )
-
-        if not creds.valid:
-            creds.refresh(Request())
-            tokens["access_token"] = creds.token
-            with open(f"{CREDS_DIR}/credentials.json", "w") as f:
-                json.dump(tokens, f, indent=2)
-
-        gmail = build("gmail", "v1", credentials=creds)
-        # --- End auth boilerplate ---
-
         # Fetch original message to get threadId
-        original = gmail.users().messages().get(
-            userId="me",
-            id=message_id.strip(),
-            format="metadata",
-            metadataHeaders=["Subject"],
-        ).execute()
+        r = subprocess.run(
+            ["gws", "gmail", "users", "messages", "get",
+             "--params", json.dumps({
+                 "userId": "me", "id": message_id.strip(),
+                 "format": "metadata",
+             }),
+             "--format", "json"],
+            capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return {**EMPTY, "status": "error", "error_message": r.stderr[:500]}
 
+        original = json.loads(r.stdout)
         thread_id = original.get("threadId", "")
         orig_hdrs = original.get("payload", {}).get("headers", [])
         orig_subject = ""
@@ -117,13 +93,18 @@ def draft_reply_to_email(
                 orig_subject = h["value"]
 
         # Fetch full thread to find the most recent message
-        thread_data = gmail.users().threads().get(
-            userId="me",
-            id=thread_id,
-            format="metadata",
-            metadataHeaders=["Subject", "From", "To", "Cc", "Message-ID", "References", "Date"],
-        ).execute()
+        r2 = subprocess.run(
+            ["gws", "gmail", "users", "threads", "get",
+             "--params", json.dumps({
+                 "userId": "me", "id": thread_id,
+                 "format": "metadata",
+             }),
+             "--format", "json"],
+            capture_output=True, text=True, timeout=15)
+        if r2.returncode != 0:
+            return {**EMPTY, "status": "error", "error_message": r2.stderr[:500]}
 
+        thread_data = json.loads(r2.stdout)
         thread_msgs = thread_data.get("messages", [])
         # Use the last message in the thread for reply context
         last_msg = thread_msgs[-1] if thread_msgs else {}
@@ -144,25 +125,29 @@ def draft_reply_to_email(
         last_body_text = ""
         last_body_html = ""
         if last_gmail_id:
-            last_full = gmail.users().messages().get(
-                userId="me", id=last_gmail_id, format="full",
-            ).execute()
-            payload = last_full.get("payload", {})
+            r3 = subprocess.run(
+                ["gws", "gmail", "users", "messages", "get",
+                 "--params", json.dumps({"userId": "me", "id": last_gmail_id, "format": "full"}),
+                 "--format", "json"],
+                capture_output=True, text=True, timeout=15)
+            if r3.returncode == 0:
+                last_full = json.loads(r3.stdout)
+                payload = last_full.get("payload", {})
 
-            # Extract both plain text and HTML from MIME parts
-            parts_to_check = [payload]
-            while parts_to_check:
-                part = parts_to_check.pop(0)
-                mime = part.get("mimeType", "")
-                body_data = part.get("body", {}).get("data")
-                if body_data:
-                    decoded = base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
-                    if mime == "text/plain" and not last_body_text:
-                        last_body_text = decoded
-                    elif mime == "text/html" and not last_body_html:
-                        last_body_html = decoded
-                if part.get("parts"):
-                    parts_to_check.extend(part["parts"])
+                # Extract both plain text and HTML from MIME parts
+                parts_to_check = [payload]
+                while parts_to_check:
+                    part = parts_to_check.pop(0)
+                    mime = part.get("mimeType", "")
+                    body_data = part.get("body", {}).get("data")
+                    if body_data:
+                        decoded = base64.urlsafe_b64decode(body_data).decode("utf-8", errors="replace")
+                        if mime == "text/plain" and not last_body_text:
+                            last_body_text = decoded
+                        elif mime == "text/html" and not last_body_html:
+                            last_body_html = decoded
+                    if part.get("parts"):
+                        parts_to_check.extend(part["parts"])
 
         # Build reply subject
         reply_subject = orig_subject
@@ -175,8 +160,15 @@ def draft_reply_to_email(
 
         if reply_all:
             # Get our own email to exclude from recipients
-            profile = gmail.users().getProfile(userId="me").execute()
-            my_email = profile.get("emailAddress", "").lower()
+            r_profile = subprocess.run(
+                ["gws", "gmail", "users", "getProfile",
+                 "--params", json.dumps({"userId": "me"}),
+                 "--format", "json"],
+                capture_output=True, text=True, timeout=15)
+            my_email = ""
+            if r_profile.returncode == 0:
+                profile = json.loads(r_profile.stdout)
+                my_email = profile.get("emailAddress", "").lower()
 
             # Combine last message's To and Cc, excluding ourselves
             all_recipients = []
@@ -203,16 +195,12 @@ def draft_reply_to_email(
                 plain_body = reply_clean
 
             # HTML version — embed original HTML body in gmail_quote blockquote
-            # Using the original HTML verbatim maximizes chance of Gmail's
-            # trimmed-content detection recognizing it as duplicate content
             reply_html = html_mod.escape(reply_clean).replace("\n", "<br>")
             attr_html = html_mod.escape(f"On {last_date}, {last_from} wrote:")
 
             if has_html:
-                # Use original HTML directly — Gmail can match it against thread
                 quote_content = last_body_html.strip()
             else:
-                # Fall back to escaped plain text
                 quote_content = html_mod.escape(last_body_text.strip()).replace("\n", "<br>\n")
 
             html_body = (
@@ -244,13 +232,18 @@ def draft_reply_to_email(
             else:
                 message["References"] = last_message_id
 
-        # Encode and create DRAFT (not send)
+        # Encode and create DRAFT (not send) via gws
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-        draft = gmail.users().drafts().create(
-            userId="me",
-            body={"message": {"raw": raw, "threadId": thread_id}},
-        ).execute()
+        r_draft = subprocess.run(
+            ["gws", "gmail", "users", "drafts", "create",
+             "--params", json.dumps({"userId": "me"}),
+             "--json", json.dumps({"message": {"raw": raw, "threadId": thread_id}}),
+             "--format", "json"],
+            capture_output=True, text=True, timeout=30)
+        if r_draft.returncode != 0:
+            return {**EMPTY, "status": "error", "error_message": r_draft.stderr[:500]}
 
+        draft = json.loads(r_draft.stdout) if r_draft.stdout.strip() else {}
         draft_message = draft.get("message", {})
         draft_msg_id = draft_message.get("id", "")
 
@@ -262,7 +255,7 @@ def draft_reply_to_email(
             "subject": reply_subject,
             "to": reply_to,
             "cc": reply_cc,
-            "gmail_link": f"https://mail.google.com/mail/u/0/#drafts/{draft_msg_id}",
+            "gmail_link": f"https://mail.google.com/mail/u/0/#drafts/{draft.get('id', '')}",
             "error_message": "",
         }
 

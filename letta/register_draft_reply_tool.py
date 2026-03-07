@@ -87,7 +87,7 @@ def main():
     print(f"Tool ID: {created_tool.id}")
     print()
     print("Environment requirements in Letta container:")
-    print("  Gmail OAuth credentials mounted at /root/.gmail-mcp/")
+    print("  gws CLI installed and credentials at /root/.gws/credentials.json")
     return 0
 
 

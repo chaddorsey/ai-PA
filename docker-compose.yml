@@ -605,6 +605,7 @@ services:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
       - ./letta:/app/tools/letta  # Mount letta directory for tool execution (different path to avoid conflicts)
       - ~/.gmail-mcp:/root/.gmail-mcp  # Mount OAuth credentials directory
+      - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro  # gws CLI credentials (Gmail/Calendar/Drive)
       - ./analytics:/app/tools/analytics  # Mount analytics directory for briefing output
     networks: [pa-internal]
     environment:
@@ -643,6 +644,8 @@ services:
       SUPABASE_SERVICE_KEY: "${SUPABASE_SERVICE_KEY}"
       # Slackbot notify endpoint for agent-initiated DMs
       SLACKBOT_NOTIFY_URL: "http://slackbot:8081/api/notify"
+      # gws CLI credentials file path (Google Workspace CLI)
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
     extra_hosts:
       - "omnifocus-mcp-server:192.168.65.254"
 
