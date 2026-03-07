@@ -6,7 +6,7 @@ def omnifocus_tags(action: str, params: Optional[str] = None, fields: Optional[s
     Manage OmniFocus tags. Run omnifocus-cli schema tags.<action> to discover params.
 
     Args:
-        action: One of: list, create, rename, delete (REQUIRED)
+        action: One of: list, get, create, rename, delete (REQUIRED)
         params: JSON string with parameters. Use schema to discover fields.
         fields: Comma-separated output fields to return (limits token usage)
 

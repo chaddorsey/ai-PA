@@ -6,7 +6,7 @@ def omnifocus_folder(action: str, params: Optional[str] = None, fields: Optional
     Manage OmniFocus folders. Run omnifocus-cli schema folder.<action> to discover params.
 
     Args:
-        action: One of: list (REQUIRED)
+        action: One of: list, get, create, delete, tree (REQUIRED)
         params: JSON string with parameters. Use schema to discover fields.
         fields: Comma-separated output fields to return (limits token usage)
 

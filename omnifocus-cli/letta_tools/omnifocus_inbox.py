@@ -6,7 +6,7 @@ def omnifocus_inbox(action: str, params: Optional[str] = None, fields: Optional[
     Manage OmniFocus inbox items. Run omnifocus-cli schema inbox.<action> to discover params.
 
     Args:
-        action: One of: list, process (REQUIRED)
+        action: One of: list, process, context, bulk (REQUIRED)
         params: JSON string with parameters. Use schema to discover fields.
         fields: Comma-separated output fields to return (limits token usage)
 
