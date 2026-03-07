@@ -617,6 +617,53 @@ def update_project(ctx, project_id, name, note, flag, sequential, status, due_da
              {"projectId": project_id, "properties": properties})
 
 
+@project.command("complete")
+@click.argument("project_id")
+@click.pass_context
+def project_complete(ctx, project_id):
+    """Mark a project as completed."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "project.complete", "completeProject", {})
+    else:
+        _run(ctx, "project.complete", "completeProject", {"projectId": project_id})
+
+
+@project.command("move")
+@click.argument("project_id")
+@click.option("--folder", "folder_id", required=True, help="Destination folder ID")
+@click.option("--position", type=int, default=None, help="Position within folder")
+@click.pass_context
+def project_move(ctx, project_id, folder_id, position):
+    """Move a project to a different folder."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [folder_id, position])
+        _run(ctx, "project.move", "moveProject", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"projectId": project_id, "folderId": folder_id}
+        if position is not None:
+            params["position"] = position
+        _run(ctx, "project.move", "moveProject", params)
+
+
+@project.command("convert")
+@click.argument("task_id")
+@click.option("--folder", "folder_id", default=None, help="Folder for new project")
+@click.pass_context
+def project_convert(ctx, task_id, folder_id):
+    """Convert a task into a project."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = folder_id is not None
+        _run(ctx, "project.convert", "convertTaskToProject", {}, had_convenience_flags=had_flags)
+    else:
+        params = {"taskId": task_id}
+        if folder_id:
+            params["folderId"] = folder_id
+        _run(ctx, "project.convert", "convertTaskToProject", params)
+
+
 # ── Folder commands ────────────────────────────────────────
 
 

@@ -161,6 +161,30 @@ SCHEMAS: dict[str, dict] = {
             "properties": {"type": "object", "required": True, "description": "Properties to set on the project"},
         },
     },
+    "project.complete": {
+        "method": "completeProject",
+        "description": "Mark a project as completed",
+        "params": {
+            "projectId": {"type": "string", "required": True, "description": "Project ID to complete"},
+        },
+    },
+    "project.move": {
+        "method": "moveProject",
+        "description": "Move a project to a different folder",
+        "params": {
+            "projectId": {"type": "string", "required": True, "description": "Project ID to move"},
+            "folderId": {"type": "string", "required": True, "description": "Destination folder ID"},
+            "position": {"type": "integer", "required": False, "description": "Position within folder"},
+        },
+    },
+    "project.convert": {
+        "method": "convertTaskToProject",
+        "description": "Convert a task into a project",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID to convert"},
+            "folderId": {"type": "string", "required": False, "description": "Folder to place new project"},
+        },
+    },
     "folder.list": {
         "method": "listFolders",
         "description": "List all folders",

@@ -88,6 +88,35 @@ def test_project_update_status(mock_call):
 
 
 @patch("omnifocus_cli.cli.call_omnifocus")
+def test_project_complete(mock_call):
+    mock_call.return_value = {"success": True}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["project", "complete", "p-1"])
+    assert result.exit_code == 0
+    mock_call.assert_called_once_with("completeProject", {"projectId": "p-1"})
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_project_move(mock_call):
+    mock_call.return_value = {"success": True}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["project", "move", "p-1", "--folder", "f-1"])
+    assert result.exit_code == 0
+    params = mock_call.call_args[0][1]
+    assert params["projectId"] == "p-1"
+    assert params["folderId"] == "f-1"
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_project_convert_task(mock_call):
+    mock_call.return_value = {"projectId": "p-new"}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["project", "convert", "t-1"])
+    assert result.exit_code == 0
+    mock_call.assert_called_once_with("convertTaskToProject", {"taskId": "t-1"})
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
 def test_folder_list(mock_call):
     mock_call.return_value = [{"id": "f-1", "name": "Work"}]
     runner = CliRunner()
