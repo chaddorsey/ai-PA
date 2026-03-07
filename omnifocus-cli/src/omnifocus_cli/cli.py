@@ -1045,3 +1045,62 @@ def analytics_trends(ctx):
 def analytics_summary(ctx):
     """Get analytics summary."""
     _run(ctx, "analytics.summary", "getAnalyticsSummary", {})
+
+
+# ── Transaction commands ──────────────────────────────────────
+
+
+@cli.group()
+def transaction():
+    """Batch operations with rollback support."""
+    pass
+
+
+@transaction.command("begin")
+@click.pass_context
+def transaction_begin(ctx):
+    """Begin a new transaction."""
+    _run(ctx, "transaction.begin", "beginTransaction", {})
+
+
+@transaction.command("execute")
+@click.pass_context
+def transaction_execute(ctx):
+    """Execute operations within a transaction. Requires --body."""
+    body = ctx.obj.get("body")
+    if body is None:
+        click.echo("Error: transaction execute requires --body with operations array", err=True)
+        ctx.exit(2)
+        return
+    _run(ctx, "transaction.execute", "executeTransactional", {})
+
+
+@transaction.command("accept")
+@click.argument("transaction_id")
+@click.pass_context
+def transaction_accept(ctx, transaction_id):
+    """Accept and commit a transaction."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "transaction.accept", "acceptTransaction", {})
+    else:
+        _run(ctx, "transaction.accept", "acceptTransaction", {"transactionId": transaction_id})
+
+
+@transaction.command("rollback")
+@click.argument("transaction_id")
+@click.pass_context
+def transaction_rollback(ctx, transaction_id):
+    """Rollback a transaction."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "transaction.rollback", "rollbackTransaction", {})
+    else:
+        _run(ctx, "transaction.rollback", "rollbackTransaction", {"transactionId": transaction_id})
+
+
+@transaction.command("history")
+@click.pass_context
+def transaction_history(ctx):
+    """Get transaction history."""
+    _run(ctx, "transaction.history", "getTransactionHistory", {})

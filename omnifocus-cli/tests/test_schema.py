@@ -59,6 +59,11 @@ def test_list_schemas_returns_all_keys():
     assert "analytics.trends" in keys
     assert "analytics.summary" in keys
     assert "system.health" in keys
+    assert "transaction.begin" in keys
+    assert "transaction.execute" in keys
+    assert "transaction.accept" in keys
+    assert "transaction.rollback" in keys
+    assert "transaction.history" in keys
 
 
 def test_all_schemas_have_method_and_params():

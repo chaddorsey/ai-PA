@@ -357,6 +357,37 @@ SCHEMAS: dict[str, dict] = {
         "description": "Check OmniFocus plugin health status",
         "params": {},
     },
+    "transaction.begin": {
+        "method": "beginTransaction",
+        "description": "Begin a new transaction",
+        "params": {},
+    },
+    "transaction.execute": {
+        "method": "executeTransactional",
+        "description": "Execute operations within a transaction",
+        "params": {
+            "operations": {"type": "array[object]", "required": True, "description": "Operations to execute"},
+        },
+    },
+    "transaction.accept": {
+        "method": "acceptTransaction",
+        "description": "Accept and commit a transaction",
+        "params": {
+            "transactionId": {"type": "string", "required": True, "description": "Transaction ID to accept"},
+        },
+    },
+    "transaction.rollback": {
+        "method": "rollbackTransaction",
+        "description": "Rollback a transaction",
+        "params": {
+            "transactionId": {"type": "string", "required": True, "description": "Transaction ID to rollback"},
+        },
+    },
+    "transaction.history": {
+        "method": "getTransactionHistory",
+        "description": "Get transaction history",
+        "params": {},
+    },
 }
 
 
