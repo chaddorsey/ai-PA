@@ -1,8 +1,14 @@
 import base64
 import json
+import os
+import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
+
+DEFAULT_BRIDGE_URL = "http://host.docker.internal:8889"
 
 
 def build_payload(method: str, params: dict | None = None) -> str:
@@ -21,7 +27,7 @@ return _res
 """
 
 
-def call_omnifocus(method: str, params: dict | None = None) -> dict:
+def _call_via_osascript(method: str, params: dict | None = None) -> dict:
     """Call OmniFocus via osascript and return parsed JSON result."""
     script = build_applescript(method, params)
     with tempfile.NamedTemporaryFile(mode="w", suffix=".applescript", delete=False) as f:
@@ -47,3 +53,41 @@ def call_omnifocus(method: str, params: dict | None = None) -> dict:
         return parsed
     finally:
         script_path.unlink(missing_ok=True)
+
+
+def _call_via_http(method: str, params: dict | None = None) -> dict:
+    """Call OmniFocus via HTTP bridge and return parsed JSON result."""
+    bridge_url = os.environ.get("OMNIFOCUS_BRIDGE_URL", DEFAULT_BRIDGE_URL)
+    url = f"{bridge_url}/execute"
+    body = json.dumps({"command": method, "args": params or {}}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"HTTP bridge request failed: {exc}") from exc
+
+    parsed = json.loads(raw)
+    # Bridge returns {"success": true, "result": "<json-string>"}
+    # The result value may be a JSON-encoded string that needs a second parse.
+    if isinstance(parsed, dict) and "error" in parsed:
+        raise RuntimeError(f"OmniFocus bridge error: {parsed['error']}")
+    result = parsed.get("result", parsed)
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return result
+
+
+def call_omnifocus(method: str, params: dict | None = None) -> dict:
+    """Call OmniFocus via osascript (local) or HTTP bridge (Docker)."""
+    if shutil.which("osascript"):
+        return _call_via_osascript(method, params)
+    return _call_via_http(method, params)
