@@ -59,6 +59,12 @@ def test_list_schemas_returns_all_keys():
     assert "analytics.trends" in keys
     assert "analytics.summary" in keys
     assert "system.health" in keys
+    assert "validate.transaction" in keys
+    assert "validate.move" in keys
+    assert "validate.create" in keys
+    assert "automation.suggest" in keys
+    assert "automation.diagnose" in keys
+    assert "automation.cleanup" in keys
     assert "task.get-group-type" in keys
     assert "task.set-group-type" in keys
     assert "project.get-group-type" in keys

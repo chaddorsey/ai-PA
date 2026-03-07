@@ -387,6 +387,44 @@ SCHEMAS: dict[str, dict] = {
             "groupType": {"type": "string", "required": True, "description": "Group type: sequential or parallel"},
         },
     },
+    "validate.transaction": {
+        "method": "validateTransaction",
+        "description": "Validate a transaction before executing",
+        "params": {
+            "operations": {"type": "array[object]", "required": True, "description": "Operations to validate"},
+        },
+    },
+    "validate.move": {
+        "method": "validateMove",
+        "description": "Validate a move operation",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID to move"},
+            "targetProjectId": {"type": "string", "required": False, "description": "Target project ID"},
+            "parentTaskId": {"type": "string", "required": False, "description": "Target parent task ID"},
+        },
+    },
+    "validate.create": {
+        "method": "validateCreate",
+        "description": "Validate a create operation",
+        "params": {
+            "name": {"type": "string", "required": True, "description": "Item name"},
+        },
+    },
+    "automation.suggest": {
+        "method": "suggestAutomation",
+        "description": "Get automation suggestions",
+        "params": {},
+    },
+    "automation.diagnose": {
+        "method": "diagnoseIssues",
+        "description": "Diagnose common issues",
+        "params": {},
+    },
+    "automation.cleanup": {
+        "method": "suggestCleanup",
+        "description": "Get cleanup suggestions",
+        "params": {},
+    },
     "transaction.begin": {
         "method": "beginTransaction",
         "description": "Begin a new transaction",

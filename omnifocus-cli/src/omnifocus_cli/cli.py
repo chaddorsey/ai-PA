@@ -1156,3 +1156,78 @@ def transaction_rollback(ctx, transaction_id):
 def transaction_history(ctx):
     """Get transaction history."""
     _run(ctx, "transaction.history", "getTransactionHistory", {})
+
+
+# ── Validate commands ─────────────────────────────────────────
+
+
+@cli.group()
+def validate():
+    """Validate operations before executing."""
+    pass
+
+
+@validate.command("transaction")
+@click.pass_context
+def validate_transaction(ctx):
+    """Validate a transaction. Requires --body."""
+    body = ctx.obj.get("body")
+    if body is None:
+        click.echo("Error: validate transaction requires --body", err=True)
+        ctx.exit(2)
+        return
+    _run(ctx, "validate.transaction", "validateTransaction", {})
+
+
+@validate.command("move")
+@click.pass_context
+def validate_move(ctx):
+    """Validate a move operation. Requires --body."""
+    body = ctx.obj.get("body")
+    if body is None:
+        click.echo("Error: validate move requires --body", err=True)
+        ctx.exit(2)
+        return
+    _run(ctx, "validate.move", "validateMove", {})
+
+
+@validate.command("create")
+@click.pass_context
+def validate_create(ctx):
+    """Validate a create operation. Requires --body."""
+    body = ctx.obj.get("body")
+    if body is None:
+        click.echo("Error: validate create requires --body", err=True)
+        ctx.exit(2)
+        return
+    _run(ctx, "validate.create", "validateCreate", {})
+
+
+# ── Automation commands ───────────────────────────────────────
+
+
+@cli.group()
+def automation():
+    """Automation helpers -- suggestions, diagnostics, cleanup."""
+    pass
+
+
+@automation.command("suggest")
+@click.pass_context
+def automation_suggest(ctx):
+    """Get automation suggestions."""
+    _run(ctx, "automation.suggest", "suggestAutomation", {})
+
+
+@automation.command("diagnose")
+@click.pass_context
+def automation_diagnose(ctx):
+    """Diagnose common issues."""
+    _run(ctx, "automation.diagnose", "diagnoseIssues", {})
+
+
+@automation.command("cleanup")
+@click.pass_context
+def automation_cleanup(ctx):
+    """Get cleanup suggestions."""
+    _run(ctx, "automation.cleanup", "suggestCleanup", {})
