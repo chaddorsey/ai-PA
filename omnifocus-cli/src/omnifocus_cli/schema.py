@@ -110,6 +110,13 @@ SCHEMAS: dict[str, dict] = {
             "taskId": {"type": "string", "required": True, "description": "Parent task ID to flatten"},
         },
     },
+    "task.batch-status": {
+        "method": "checkTaskCompletionStatus",
+        "description": "Batch check completion/dropped status of multiple tasks",
+        "params": {
+            "taskIds": {"type": "array[string]", "required": True, "description": "List of OmniFocus task IDs to check"},
+        },
+    },
     "search": {
         "method": "searchTasks",
         "description": "Search tasks with advanced filters",

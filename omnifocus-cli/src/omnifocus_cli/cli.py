@@ -453,6 +453,13 @@ def task_set_group_type(ctx, task_id, group_type):
         _run(ctx, "task.set-group-type", "setTaskGroupType", {"taskId": task_id, "groupType": group_type})
 
 
+@task.command("batch-status")
+@click.pass_context
+def task_batch_status(ctx):
+    """Batch check completion status of multiple tasks."""
+    _run(ctx, "task.batch-status", "checkTaskCompletionStatus", {})
+
+
 # ── Search command ─────────────────────────────────────────
 
 
