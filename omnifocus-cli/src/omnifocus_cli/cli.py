@@ -899,3 +899,58 @@ def delete(ctx, tag_id, force):
         if force:
             params["force"] = True
         _run(ctx, "tags.delete", "deleteTag", params)
+
+
+# ── Perspective commands ──────────────────────────────────────
+
+
+@cli.group()
+def perspective():
+    """List, view, and switch perspectives."""
+    pass
+
+
+@perspective.command("list")
+@click.option("--include-builtin/--no-builtin", default=True, help="Include built-in perspectives")
+@click.pass_context
+def perspective_list(ctx, include_builtin):
+    """List all perspectives."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "perspective.list", "listPerspectives", {})
+    else:
+        params = {}
+        if not include_builtin:
+            params["includeBuiltIn"] = False
+        _run(ctx, "perspective.list", "listPerspectives", params)
+
+
+@perspective.command("get")
+@click.argument("perspective_id")
+@click.pass_context
+def perspective_get(ctx, perspective_id):
+    """Get perspective details by ID."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "perspective.get", "getPerspective", {})
+    else:
+        _run(ctx, "perspective.get", "getPerspective", {"perspectiveId": perspective_id})
+
+
+@perspective.command("switch")
+@click.option("--id", "perspective_id", default=None, help="Perspective ID")
+@click.option("--name", "perspective_name", default=None, help="Perspective name")
+@click.pass_context
+def perspective_switch(ctx, perspective_id, perspective_name):
+    """Switch OmniFocus to a perspective view."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = any(v is not None for v in [perspective_id, perspective_name])
+        _run(ctx, "perspective.switch", "switchToPerspective", {}, had_convenience_flags=had_flags)
+    else:
+        params = {}
+        if perspective_id:
+            params["perspectiveId"] = perspective_id
+        if perspective_name:
+            params["perspectiveName"] = perspective_name
+        _run(ctx, "perspective.switch", "switchToPerspective", params)

@@ -291,6 +291,28 @@ SCHEMAS: dict[str, dict] = {
             "force": {"type": "boolean", "required": False, "description": "Force deletion even if tag is in use"},
         },
     },
+    "perspective.list": {
+        "method": "listPerspectives",
+        "description": "List all perspectives",
+        "params": {
+            "includeBuiltIn": {"type": "boolean", "required": False, "description": "Include built-in perspectives"},
+        },
+    },
+    "perspective.get": {
+        "method": "getPerspective",
+        "description": "Get perspective details",
+        "params": {
+            "perspectiveId": {"type": "string", "required": True, "description": "Perspective ID"},
+        },
+    },
+    "perspective.switch": {
+        "method": "switchToPerspective",
+        "description": "Switch OmniFocus to a perspective view",
+        "params": {
+            "perspectiveId": {"type": "string", "required": False, "description": "Perspective ID"},
+            "perspectiveName": {"type": "string", "required": False, "description": "Perspective name (alternative to ID)"},
+        },
+    },
 }
 
 

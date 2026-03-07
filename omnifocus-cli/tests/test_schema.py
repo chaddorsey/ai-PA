@@ -48,6 +48,9 @@ def test_list_schemas_returns_all_keys():
     assert "task.add-subtask" in keys
     assert "task.hierarchy" in keys
     assert "task.flatten" in keys
+    assert "perspective.list" in keys
+    assert "perspective.get" in keys
+    assert "perspective.switch" in keys
 
 
 def test_all_schemas_have_method_and_params():
