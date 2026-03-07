@@ -37,3 +37,12 @@ def test_analytics_summary(mock_call):
     result = runner.invoke(cli, ["--format", "json", "analytics", "summary"])
     assert result.exit_code == 0
     mock_call.assert_called_once_with("getAnalyticsSummary", {})
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_system_health(mock_call):
+    mock_call.return_value = {"status": "healthy", "version": "1.0"}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--format", "json", "health"])
+    assert result.exit_code == 0
+    mock_call.assert_called_once_with("health", {})

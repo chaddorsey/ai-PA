@@ -58,6 +58,7 @@ def test_list_schemas_returns_all_keys():
     assert "analytics.workload" in keys
     assert "analytics.trends" in keys
     assert "analytics.summary" in keys
+    assert "system.health" in keys
 
 
 def test_all_schemas_have_method_and_params():

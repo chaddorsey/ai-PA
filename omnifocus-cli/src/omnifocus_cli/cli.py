@@ -181,6 +181,16 @@ def schema_cmd(ctx, method, list_all):
     print(json.dumps(s, indent=2))
 
 
+# ── health command ──────────────────────────────────────────────────
+
+
+@cli.command("health")
+@click.pass_context
+def system_health(ctx):
+    """Check OmniFocus plugin health status."""
+    _run(ctx, "system.health", "health", {})
+
+
 # ── task command group ───────────────────────────────────────────────
 
 

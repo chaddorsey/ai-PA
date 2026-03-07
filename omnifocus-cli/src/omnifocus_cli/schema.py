@@ -352,6 +352,11 @@ SCHEMAS: dict[str, dict] = {
         "description": "Get analytics summary",
         "params": {},
     },
+    "system.health": {
+        "method": "health",
+        "description": "Check OmniFocus plugin health status",
+        "params": {},
+    },
 }
 
 
