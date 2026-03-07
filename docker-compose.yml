@@ -604,7 +604,6 @@ services:
     volumes:
       - ./letta/letta_mcp_config.json:/root/.letta/mcp_config.json
       - ./letta:/app/tools/letta  # Mount letta directory for tool execution (different path to avoid conflicts)
-      - ~/.gmail-mcp:/root/.gmail-mcp  # Mount OAuth credentials directory
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro  # gws CLI credentials (Gmail/Calendar/Drive)
       - ./analytics:/app/tools/analytics  # Mount analytics directory for briefing output
     networks: [pa-internal]
@@ -628,10 +627,6 @@ services:
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
       # Slack tokens for analytics tools
       SLACK_MCP_XOXP_TOKEN: $SLACK_MCP_XOXP_TOKEN
-      # Drive analytics OAuth paths (container paths)
-      # Note: Using gcp-oauth.keys.json (the actual file name) which works for all Google API scopes
-      GMAIL_OAUTH_PATH: "/root/.gmail-mcp/gcp-oauth.keys.json"
-      GMAIL_CREDENTIALS_PATH: "/root/.gmail-mcp/admin-reports.credentials.json"
       MY_EMAIL: "${MY_EMAIL:-cdorsey@concord.org}"
       # Atlassian Rovo MCP Server token
       ATLASSIAN_ROVO_TOKEN: "${ATLASSIAN_ROVO_TOKEN:-70121-cecc6a6e-e07f-440f-bcef-0e1b8d0fe274:qe97rgirCzv2J2Zm:aVN_aZh27EoEo4TfjaoTTNs9HEcqQeZp}"

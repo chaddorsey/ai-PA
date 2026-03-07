@@ -9,9 +9,6 @@ echo "[entrypoint-wrapper] Installing custom tool dependencies..."
 python3 -m ensurepip --default-pip 2>/dev/null || true
 python3 -m pip install --quiet --no-warn-script-location \
     pytz \
-    google-auth \
-    google-auth-oauthlib \
-    google-api-python-client \
     2>&1 | tail -3
 
 # Install gws CLI (Google Workspace) for Gmail/Calendar/Drive API access
