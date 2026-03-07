@@ -56,34 +56,13 @@ def main():
         source = inspect.getsource(request_agent_followup)
         tool_name = "request_agent_followup"
 
-        # Check if tool already exists
-        existing_tools = client.tools.list()
-        existing = [t for t in existing_tools if t.name == tool_name]
-
-        if existing:
-            tool = existing[0]
-            print(f"Tool '{tool_name}' already exists: {tool.id}")
-            client.tools.update(
-                tool_id=tool.id,
-                source_code=source
-            )
-            tool_id = tool.id
-            print(f"  Updated tool source code")
-        else:
-            # Create new tool
-            try:
-                created = client.tools.create_from_function(
-                    func=request_agent_followup,
-                    tags=["coordination", "evaluation"]
-                )
-            except AttributeError:
-                created = client.create_tool(
-                    func=request_agent_followup,
-                    name=tool_name,
-                    tags=["coordination", "evaluation"]
-                )
-            tool_id = created.id if hasattr(created, 'id') else created.get('id', 'N/A')
-            print(f"  Created tool: {tool_id}")
+        # Upsert tool (create or update)
+        created = client.tools.upsert_from_function(
+            func=request_agent_followup,
+            tags=["coordination", "evaluation"]
+        )
+        tool_id = created.id
+        print(f"  Upserted tool: {tool_id}")
 
         # Attach to main agent
         print()

@@ -18,9 +18,13 @@ from drive_analytics_tools import (
     get_drive_trends,
     get_my_drive_activity,
     get_drive_mentions,
-    get_document_activity,
+    get_document_events,
     get_top_documents,
     get_recent_my_activity,
+    get_drive_file_info,
+    get_drive_documents,
+    search_drive_activity,
+    initialize_drive_analytics_memory,
 )
 
 # Configuration
@@ -50,9 +54,13 @@ def main():
             "get_drive_trends": get_drive_trends,
             "get_my_drive_activity": get_my_drive_activity,
             "get_drive_mentions": get_drive_mentions,
-            "get_document_activity": get_document_activity,
+            "get_document_events": get_document_events,
             "get_top_documents": get_top_documents,
             "get_recent_my_activity": get_recent_my_activity,
+            "get_drive_file_info": get_drive_file_info,
+            "get_drive_documents": get_drive_documents,
+            "search_drive_activity": search_drive_activity,
+            "initialize_drive_analytics_memory": initialize_drive_analytics_memory,
         }
         
         print("Registering tools with Letta:\n")
@@ -61,18 +69,10 @@ def main():
         for tool_name, tool_func in tools.items():
             try:
                 # Create tool in Letta - try both methods
-                try:
-                    created_tool = client.tools.create_from_function(
-                        func=tool_func,
-                        tags=["drive", "analytics", "custom"]
-                    )
-                except AttributeError:
-                    # Fallback to create_tool if create_from_function doesn't exist
-                    created_tool = client.create_tool(
-                        func=tool_func,
-                        name=tool_name,
-                        tags=["drive", "analytics", "custom"]
-                    )
+                created_tool = client.tools.upsert_from_function(
+                    func=tool_func,
+                    tags=["drive", "analytics", "custom"]
+                )
                 
                 print(f"  ✓ Registered: {tool_name}")
                 registered_tools.append(created_tool)

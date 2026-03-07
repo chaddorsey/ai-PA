@@ -795,6 +795,7 @@ services:
       N8N_MCP_URL: "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
       # Direct Google Calendar API via gws CLI
       USE_DIRECT_CALENDAR: "true"
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
     volumes:
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro
     ports:
@@ -885,11 +886,6 @@ services:
       - "service=cloudflare-tunnel"
       - "component=external-access"
       - "network=pa-internal"
-
-  # gmail-mcp-server: DECOMMISSIONED 2026-02-15
-  # Replaced by custom Letta tools in letta/gmail_tools.py
-  # Gmail API access now via direct OAuth in Letta sandbox
-  # Source kept in gmail-mcp/ for reference
 
   gmail-watch-service:
     build:
