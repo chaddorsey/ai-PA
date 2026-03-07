@@ -427,6 +427,32 @@ def task_flatten(ctx, task_id):
         _run(ctx, "task.flatten", "flattenTaskHierarchy", {"taskId": task_id})
 
 
+@task.command("group-type")
+@click.argument("task_id")
+@click.pass_context
+def task_group_type(ctx, task_id):
+    """Get the group type of a task."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "task.get-group-type", "getTaskGroupType", {})
+    else:
+        _run(ctx, "task.get-group-type", "getTaskGroupType", {"taskId": task_id})
+
+
+@task.command("set-group-type")
+@click.argument("task_id")
+@click.option("--type", "group_type", required=True, type=click.Choice(["sequential", "parallel"]), help="Group type")
+@click.pass_context
+def task_set_group_type(ctx, task_id, group_type):
+    """Set the group type of a task (sequential or parallel)."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = group_type is not None
+        _run(ctx, "task.set-group-type", "setTaskGroupType", {}, had_convenience_flags=had_flags)
+    else:
+        _run(ctx, "task.set-group-type", "setTaskGroupType", {"taskId": task_id, "groupType": group_type})
+
+
 # ── Search command ─────────────────────────────────────────
 
 
@@ -672,6 +698,32 @@ def project_convert(ctx, task_id, folder_id):
         if folder_id:
             params["folderId"] = folder_id
         _run(ctx, "project.convert", "convertTaskToProject", params)
+
+
+@project.command("group-type")
+@click.argument("project_id")
+@click.pass_context
+def project_group_type(ctx, project_id):
+    """Get the group type of a project."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "project.get-group-type", "getProjectGroupType", {})
+    else:
+        _run(ctx, "project.get-group-type", "getProjectGroupType", {"projectId": project_id})
+
+
+@project.command("set-group-type")
+@click.argument("project_id")
+@click.option("--type", "group_type", required=True, type=click.Choice(["sequential", "parallel"]), help="Group type")
+@click.pass_context
+def project_set_group_type(ctx, project_id, group_type):
+    """Set the group type of a project (sequential or parallel)."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        had_flags = group_type is not None
+        _run(ctx, "project.set-group-type", "setProjectGroupType", {}, had_convenience_flags=had_flags)
+    else:
+        _run(ctx, "project.set-group-type", "setProjectGroupType", {"projectId": project_id, "groupType": group_type})
 
 
 # ── Folder commands ────────────────────────────────────────

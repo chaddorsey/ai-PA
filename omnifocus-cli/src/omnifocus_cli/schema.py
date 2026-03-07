@@ -357,6 +357,36 @@ SCHEMAS: dict[str, dict] = {
         "description": "Check OmniFocus plugin health status",
         "params": {},
     },
+    "task.get-group-type": {
+        "method": "getTaskGroupType",
+        "description": "Get the group type of a task",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID"},
+        },
+    },
+    "task.set-group-type": {
+        "method": "setTaskGroupType",
+        "description": "Set the group type of a task",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID"},
+            "groupType": {"type": "string", "required": True, "description": "Group type: sequential or parallel"},
+        },
+    },
+    "project.get-group-type": {
+        "method": "getProjectGroupType",
+        "description": "Get the group type of a project",
+        "params": {
+            "projectId": {"type": "string", "required": True, "description": "Project ID"},
+        },
+    },
+    "project.set-group-type": {
+        "method": "setProjectGroupType",
+        "description": "Set the group type of a project",
+        "params": {
+            "projectId": {"type": "string", "required": True, "description": "Project ID"},
+            "groupType": {"type": "string", "required": True, "description": "Group type: sequential or parallel"},
+        },
+    },
     "transaction.begin": {
         "method": "beginTransaction",
         "description": "Begin a new transaction",
