@@ -17,7 +17,7 @@ from omnifocus_cli.validate import validate_body, validate_date, validate_name, 
 @click.option("--fields", default=None, help="Comma-separated output fields")
 @click.pass_context
 def cli(ctx, format_flag, body_json, dry_run, fields):
-    """OmniFocus CLI - manage tasks, projects, and tags."""
+    """OmniFocus CLI - manage tasks, projects, folders, and tags."""
     ctx.ensure_object(dict)
     ctx.obj["format"] = format_flag
     ctx.obj["body"] = body_json
