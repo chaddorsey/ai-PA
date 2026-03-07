@@ -239,6 +239,22 @@ SCHEMAS: dict[str, dict] = {
             "deferDate": {"type": "string", "required": False, "description": "Defer date (ISO 8601 string)"},
         },
     },
+    "inbox.context": {
+        "method": "getInboxProcessingContext",
+        "description": "Get context for processing an inbox item (available projects, tags)",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Inbox item ID"},
+        },
+    },
+    "inbox.bulk": {
+        "method": "executeBulkInboxProcessing",
+        "description": "Process multiple inbox items at once",
+        "params": {
+            "operations": {"type": "array[object]", "required": True, "description": "Array of {taskId, projectId, action} objects"},
+            "validateFirst": {"type": "boolean", "required": False, "description": "Validate before executing"},
+            "continueOnError": {"type": "boolean", "required": False, "description": "Continue if an operation fails"},
+        },
+    },
     "tags.list": {
         "method": "listTags",
         "description": "List all tags",

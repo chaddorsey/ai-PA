@@ -46,3 +46,29 @@ def test_inbox_process_with_tags(mock_call):
     assert result.exit_code == 0
     params = mock_call.call_args[0][1]
     assert params["tagIds"] == ["tag-1", "tag-2"]
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_inbox_context(mock_call):
+    mock_call.return_value = {"projects": [], "tags": []}
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--format", "json", "inbox", "context", "i-1"])
+    assert result.exit_code == 0
+    mock_call.assert_called_once_with("getInboxProcessingContext", {"taskId": "i-1"})
+
+
+@patch("omnifocus_cli.cli.call_omnifocus")
+def test_inbox_bulk(mock_call):
+    mock_call.return_value = {"processed": 2}
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "--body", '{"operations": [{"taskId": "i-1", "projectId": "p-1"}]}',
+        "inbox", "bulk",
+    ])
+    assert result.exit_code == 0
+
+
+def test_inbox_bulk_requires_body():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["inbox", "bulk"])
+    assert result.exit_code == 2

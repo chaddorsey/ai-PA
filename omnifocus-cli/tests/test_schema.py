@@ -37,6 +37,8 @@ def test_list_schemas_returns_all_keys():
     assert "folder.tree" in keys
     assert "inbox.list" in keys
     assert "inbox.process" in keys
+    assert "inbox.context" in keys
+    assert "inbox.bulk" in keys
     assert "tags.list" in keys
     assert "tags.get" in keys
     assert "tags.create" in keys

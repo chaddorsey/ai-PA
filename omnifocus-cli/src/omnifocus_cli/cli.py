@@ -797,6 +797,30 @@ def process(ctx, task_id, project_id, tag_ids, flag, due_date, defer_date):
         _run(ctx, "inbox.process", "processInboxItem", params)
 
 
+@inbox.command("context")
+@click.argument("task_id")
+@click.pass_context
+def inbox_context(ctx, task_id):
+    """Get processing context for an inbox item."""
+    body = ctx.obj.get("body")
+    if body is not None:
+        _run(ctx, "inbox.context", "getInboxProcessingContext", {})
+    else:
+        _run(ctx, "inbox.context", "getInboxProcessingContext", {"taskId": task_id})
+
+
+@inbox.command("bulk")
+@click.pass_context
+def inbox_bulk(ctx):
+    """Process multiple inbox items at once. Requires --body."""
+    body = ctx.obj.get("body")
+    if body is None:
+        click.echo("Error: inbox bulk requires --body with operations array", err=True)
+        ctx.exit(2)
+        return
+    _run(ctx, "inbox.bulk", "executeBulkInboxProcessing", {})
+
+
 # ── Tags commands ──────────────────────────────────────────
 
 
