@@ -1,6 +1,6 @@
 # WIP System Updates Tracker
 
-**Last updated:** 2026-03-05
+**Last updated:** 2026-03-07
 
 This document tracks in-flight system improvement projects that have been designed but not yet fully implemented. Each entry links to its detailed plan document.
 
@@ -360,6 +360,7 @@ Future work (not yet started):
 
 Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
 Suggested order for Google/gws: 17 (unblocks gws Calendar endpoints in Item 16).
+Independent: 19 (scheduler tool consolidation — no dependencies, quick win if Option B chosen).
 
 ---
 
@@ -424,6 +425,26 @@ Suggested order for Google/gws: 17 (unblocks gws Calendar endpoints in Item 16).
 - `letta/scheduling_orchestrator/calendar_client_factory.py`
 - `letta/scheduling_orchestrator/orchestrate_scheduling.py` (4 import sites changed)
 - `docker-compose.yml` (orchestrator env vars + volume mount)
+
+---
+
+## 19. Scheduler Tool Consolidation (DECISION PENDING)
+
+**Status:** Design options documented — awaiting decision
+**Plan:** [2026-03-07-scheduler-cli-design.md](2026-03-07-scheduler-cli-design.md)
+**Risk:** Low (additive replacement, rollback documented)
+**Estimated effort:** 1-6 hours depending on option chosen
+
+**Problem:** The scheduler service requires a dedicated MCP server (`scheduler-mcp`, port 8088, separate Docker container) to expose 10 tools to Letta agents. This is a lot of infrastructure to proxy a 12-endpoint REST API that's already on the Docker network.
+
+**Options:**
+- **A: Full CLI** (omnifocus-cli pattern) — schema discovery, `--dry-run`, `--fields`, pip install in container. 4-6 hours.
+- **B: Direct Letta tool** (recommended) — single `run_scheduler` tool calling REST API via `urllib.request`. No CLI, no subprocess. 1-2 hours.
+- **C: Lightweight CLI** — thin Click wrapper without schema registry. 2-3 hours.
+
+**Recommendation:** Option B. The scheduler is an internal REST API with a small surface (12 endpoints). The `create-cli` pattern is best justified when the underlying service isn't directly callable from Docker or has a large API surface (>30 methods). See design doc for full analysis.
+
+**Decommissions:** `scheduler-mcp` Docker service, `scheduler-tools` MCP config entry, 10 individual MCP tools.
 
 ---
 
