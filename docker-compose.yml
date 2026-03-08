@@ -643,7 +643,6 @@ services:
       # gws CLI credentials file path (Google Workspace CLI)
       GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
       OMNIFOCUS_BRIDGE_URL: "http://host.docker.internal:8889"
-    extra_hosts:
       # Do not attempt to use Ollama, LM Studio or OpenRouter chat models with Letta.
       # Letta is *very* picky and will only reliably work with the major cloud providers.
       # Embedding models will work fine, but only uncomment if you know what you're doing.
