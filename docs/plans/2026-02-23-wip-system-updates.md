@@ -360,7 +360,7 @@ Future work (not yet started):
 
 Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
 Suggested order for Google/gws: 17 (unblocks gws Calendar endpoints in Item 16).
-Independent: 19 (scheduler tool consolidation — no dependencies, quick win if Option B chosen).
+- **Item 19 (Slack CLI):** Agent-first CLI wrapping Slack Web API. Implemented on `slack-cli` branch, merged.
 Independent: 20 (Letta Code migration — Phase 0 validation can start anytime).
 Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — proposed recipes for omnifocus-cli, slack-cli, and cross-service workflows (feeds into Item 20).
 
@@ -430,7 +430,39 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
-## 19. Scheduler Tool Consolidation (DECISION PENDING)
+## 19. Slack CLI — Agent-First Slack Web API Wrapper (MERGED)
+
+**Status:** Implementation complete, merged to main
+**Branch:** `slack-cli` (merged)
+**Design:** [2026-03-07-slack-cli-design.md](2026-03-07-slack-cli-design.md)
+**Plan:** [2026-03-07-slack-cli-impl.md](2026-03-07-slack-cli-impl.md)
+**Risk:** Low (new standalone tool, no existing services modified)
+
+**Problem:** Slack interactions are fragmented across 5+ places: third-party MCP server (port 3001), 4 custom Letta tools, DM notification tool, channel reply tool, analytics browser automation. Agents have limited, inconsistent access to the Slack API.
+
+**Approach:** Python CLI (`click` + `slack_sdk`) following `gws` and `omnifocus-cli` patterns:
+- `slack <resource> <method>` for raw API access (conversations, chat, users, reactions, files, search, pins, bookmarks, reminders, team)
+- `slack <resource> +<helper>` for multi-step convenience commands (+send, +find, +whois)
+- `--body '{JSON}'` agent-first path, convenience flags as sugar
+- Schema introspection (`slack schema <method>`), `--dry-run`, `--fields`, structured JSON errors
+- Credential chain: env vars → config file → fallback to existing tokens
+- Auto token selection (bot vs user) per method
+- Input validation (Slack IDs, timestamps, control chars)
+- Letta tool wrappers via subprocess pattern (same as omnifocus-cli)
+
+**Key files:**
+- `slack-cli/src/slack_cli/cli.py` — Click entry point + `_run()` helper
+- `slack-cli/src/slack_cli/schema.py` — Schema registry (52 methods)
+- `slack-cli/src/slack_cli/client.py` — Slack SDK wrapper
+- `slack-cli/src/slack_cli/auth.py` — Credential chain
+- `slack-cli/src/slack_cli/validate.py` — Input hardening
+- `slack-cli/letta_tools/` — Subprocess wrappers for Letta agents
+
+**Out of scope:** Admin analytics (stays in `slack-analytics-mcp-server`), Socket Mode, OAuth flows, MCP transport.
+
+---
+
+## 20. Scheduler Tool Consolidation (DECISION PENDING)
 
 **Status:** Design options documented — awaiting decision
 **Plan:** [2026-03-07-scheduler-cli-design.md](2026-03-07-scheduler-cli-design.md)
@@ -450,7 +482,7 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
-## 20. Letta Code Migration Assessment (NOT STARTED)
+## 21. Letta Code Migration Assessment (NOT STARTED)
 
 **Status:** Assessment complete — hybrid architecture recommended, no code changes yet
 **Plan:** [2026-03-07-letta-code-migration-assessment.md](2026-03-07-letta-code-migration-assessment.md)
