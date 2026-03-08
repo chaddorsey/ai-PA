@@ -37,3 +37,12 @@ def test_empty_fields_returns_empty_dicts():
 def test_non_dict_data_returned_as_is():
     assert apply_field_mask("raw string", ["id"]) == "raw string"
     assert apply_field_mask(42, ["id"]) == 42
+
+
+def test_unwraps_result_envelope():
+    data = {"result": [
+        {"id": "t-1", "name": "A", "note": "x"},
+        {"id": "t-2", "name": "B", "note": "y"},
+    ]}
+    result = apply_field_mask(data, ["id", "name"])
+    assert result == [{"id": "t-1", "name": "A"}, {"id": "t-2", "name": "B"}]
