@@ -62,6 +62,8 @@ These are CLI wrappers or simple HTTP calls. They translate directly to bash ski
 
 **Caveat**: Both CLIs are currently Docker-only and must be installed on the host (see Phase 0 step 2). omnifocus-cli's `bridge.py` auto-detects macOS and uses direct osascript — no HTTP bridge needed when running locally. Port mappings for other services change from Docker-internal names to localhost:PORT.
 
+**Skills**: gws ships 89 pre-built SKILL.md files (OpenClaw format) — no custom skills needed. omnifocus-cli and slack-cli need custom SKILL.md files authored to match the same format.
+
 ### Tier 2: HTTP Service Calls via curl (Medium — 10 tools)
 
 These call internal Docker services and can be curl skills, but lose Python response formatting/pagination.
@@ -155,19 +157,62 @@ Rather than a full migration, run Letta Code alongside the existing standard age
 2. **Install CLIs on host** (currently Docker-only):
    - **gws CLI**: Download Go binary or `brew install`. Credentials already on host at `~/.gws/credentials.json` (volume-mounted into Docker). No credential duplication needed — both Docker and host use the same OAuth tokens.
    - **omnifocus-cli**: `pip install ./omnifocus-cli` (the local Python package). `bridge.py` already has a direct `osascript` code path for macOS — when running on the host it calls `/usr/bin/osascript` directly, bypassing the HTTP bridge service entirely. Much simpler than the Docker path (which goes CLI → HTTP bridge → osascript).
+   - **slack-cli** (planned): `pip install ./slack-cli` on host. Pure HTTP (Slack API) — works identically in Docker and on host. Needs `SLACK_BOT_TOKEN` env var.
    - **Note**: Existing Docker installations stay untouched. Standard Letta agents continue using their in-container CLIs. No rework to existing tools.
 3. Verify connectivity: `LETTA_BASE_URL=http://localhost:8283 letta --new`
 4. Verify memory blocks are accessible from Letta Code agent
 5. **Critical test**: Determine if Letta Code can run as a persistent daemon for programmatic invocation
 
+### Agent Skills: Pre-Built and Custom
+
+The gws CLI ships with **89 SKILL.md files** in its repo (`skills/` directory), organized into three tiers:
+
+| Tier | Example | Count | Description |
+|------|---------|-------|-------------|
+| **Service skills** | `gws-gmail`, `gws-calendar`, `gws-drive` | ~25 | One per Google API — commands, flags, discovery pointers |
+| **Recipes** | `recipe-find-free-time`, `recipe-meeting-prep` | ~50 | Multi-step workflows combining services |
+| **Personas** | `persona-exec-assistant`, `persona-project-manager` | ~10 | Role-based skill bundles |
+
+Skills use [OpenClaw](https://github.com/anthropics/openclaw) format:
+```yaml
+---
+name: gws-gmail-triage
+version: 1.0.0
+description: "Gmail: Show unread inbox summary (sender, subject, date)."
+metadata:
+  openclaw:
+    category: "productivity"
+    requires:
+      bins: ["gws"]
+    cliHelp: "gws gmail +triage --help"
+---
+```
+
+A shared skill (`gws-shared`) provides auth, global flags, and security rules — referenced by all other skills via relative path.
+
+**Key implication**: For gws, no custom SKILL.md files needed — copy the official ones into `.skills/`. For omnifocus-cli and slack-cli, author matching skills following the same OpenClaw format.
+
 ### Phase 1: Companion Agent (Week 2-3)
 
-Create a fresh Letta Code agent (`letta --new`) with a small skill set:
-- `.skills/gws/` — Google Workspace CLI
-- `.skills/omnifocus/` — OmniFocus CLI
-- `.skills/slack/` — Slack API curl wrappers
-- `.skills/check-time/` — Current time
-- `.skills/drive-rag/` — curl to drive-rag-service
+Create a fresh Letta Code agent (`letta --new`) with skills:
+
+**Pre-built (from gws repo):**
+- `.skills/gws-shared/` — Auth, global flags, security rules
+- `.skills/gws-gmail/` — Gmail commands
+- `.skills/gws-gmail-triage/` — Inbox summary helper
+- `.skills/gws-gmail-send/` — Email composition
+- `.skills/gws-calendar/` — Calendar commands
+- `.skills/gws-drive/` — Drive commands
+- Relevant recipes (e.g., `recipe-find-free-time`, `recipe-meeting-prep`)
+
+**Custom (authored to match OpenClaw format):**
+- `.skills/omnifocus-shared/` — Auth, global flags, CLI syntax
+- `.skills/omnifocus-tasks/` — Task CRUD, inbox, review
+- `.skills/omnifocus-search/` — Search and filtering
+- `.skills/slack-shared/` — Auth, API patterns
+- `.skills/slack-channels/` — Channel operations
+- `.skills/slack-messages/` — Message read/write/search
+- `.skills/slack-users/` — User lookups
 
 Test interactively. Learn the patterns. No disruption to existing agents.
 
