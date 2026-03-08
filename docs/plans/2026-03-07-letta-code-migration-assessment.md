@@ -216,6 +216,92 @@ Create a fresh Letta Code agent (`letta --new`) with skills:
 
 Test interactively. Learn the patterns. No disruption to existing agents.
 
+**Installing gws skills**: Clone or copy the entire `skills/` directory from the [gws repo](https://github.com/googleworkspace/cli/tree/main/skills) into the Letta Code agent's `.skills/` directory. This includes all 89 service skills, recipes, and personas. No custom authoring needed for gws.
+
+### Recipe Architecture: Two-Tier System for Both Agent Types
+
+Recipes are multi-step workflow templates (2-5 numbered steps of CLI commands). The gws repo ships 33 relevant recipes. Custom recipes will be authored for omnifocus-cli and slack-cli. All recipes should be available to **both** Letta Code agents (via `.skills/` SKILL.md files) and standard Letta agents (via memory).
+
+**Tier 1 — Core memory block (index):** A single `workflow_recipes` block (~2500 chars) listing all recipes with one-line descriptions, organized by domain. Gives the agent enough context to recognize "this situation matches a recipe" and provides an unambiguous lookup key.
+
+**Tier 2 — Archival memory (full recipes):** Each recipe stored as an archival passage with a deterministic ID prefix: `[RECIPE:namespace:name]`. The agent uses text substring search (`?search=RECIPE:gws:email-triage`) to retrieve exactly one passage.
+
+**Core memory block format:**
+
+```
+## Workflow Recipes
+Search archival memory for the recipe ID to load full steps.
+Example: search for "RECIPE:gws:find-free-time"
+
+### Scheduling & Calendar
+- RECIPE:gws:find-free-time — Query free/busy across multiple people for a meeting slot
+- RECIPE:gws:block-focus-time — Create recurring focus blocks to protect deep work
+- RECIPE:gws:plan-weekly-schedule — Review week, identify gaps, add events
+- RECIPE:gws:reschedule-meeting — Move event to new time, notify attendees
+- RECIPE:gws:batch-invite — Add attendees to existing event
+- RECIPE:gws:schedule-recurring — Create repeating event with attendees
+- RECIPE:gws:create-events-from-sheet — Create calendar events from spreadsheet rows
+- RECIPE:gws:share-event-materials — Share Drive files with all event attendees
+
+### Email & Gmail
+- RECIPE:gws:label-and-archive — Apply labels to matching messages, remove from inbox
+- RECIPE:gws:draft-email-from-doc — Read Doc content, use as email body
+- RECIPE:gws:email-drive-link — Share Drive file and email the link
+- RECIPE:gws:save-email-attachments — Save attachments to Drive folder
+- RECIPE:gws:save-email-to-doc — Copy email body into a Google Doc
+- RECIPE:gws:forward-labeled — Forward messages with a specific label
+- RECIPE:gws:create-gmail-filter — Auto-label/star/categorize incoming messages
+- RECIPE:gws:vacation-responder — Enable/disable out-of-office auto-reply
+
+### Drive & Files
+- RECIPE:gws:find-large-files — Identify files consuming storage quota
+- RECIPE:gws:organize-folder — Create folder structure, move files into place
+- RECIPE:gws:share-doc-and-notify — Share doc with edit access, email collaborators
+- RECIPE:gws:share-folder-with-team — Share folder and contents with collaborators
+- RECIPE:gws:bulk-download-folder — Download all files from a folder
+- RECIPE:gws:watch-drive-changes — Subscribe to file change notifications
+- RECIPE:gws:create-shared-drive — Create Shared Drive, add members with roles
+
+### Docs, Sheets & Slides
+- RECIPE:gws:create-doc-from-template — Copy template, fill content, share
+- RECIPE:gws:generate-report-from-sheet — Read sheet data, create formatted Doc report
+- RECIPE:gws:backup-sheet-as-csv — Export sheet tab as CSV
+- RECIPE:gws:collect-form-responses — Retrieve and review Google Form responses
+- RECIPE:gws:compare-sheet-tabs — Diff two tabs to find differences
+- RECIPE:gws:copy-sheet-for-new-month — Duplicate template tab for new month
+- RECIPE:gws:create-expense-tracker — Set up expense tracking spreadsheet
+- RECIPE:gws:create-feedback-form — Create Google Form, share via Gmail
+- RECIPE:gws:create-presentation — Create slide deck with initial slides
+- RECIPE:gws:sync-contacts-to-sheet — Export contacts to spreadsheet
+```
+
+**Archival passage format (one per recipe):**
+
+```
+[RECIPE:gws:find-free-time]
+Find Free Time Across Calendars
+CLIs: gws
+Prereq skills: gws-calendar
+
+Steps:
+1. Query free/busy: gws calendar freebusy query --json '{"timeMin":"...","timeMax":"...","items":[{"id":"user1@example.com"},{"id":"user2@example.com"}]}'
+2. Review output to find overlapping free slots
+3. Create event in free slot: gws calendar +insert --summary 'Meeting' --attendees user1@example.com,user2@example.com --start '2026-03-08T14:00:00' --duration 30
+```
+
+**Agent instructions (add to persona/guidelines block):**
+
+```
+When you encounter a task that might match a workflow recipe, check the
+workflow_recipes block first. If a recipe matches, search archival memory
+for its full steps (e.g., search "RECIPE:gws:find-free-time") before
+proceeding. Follow the recipe steps, adapting parameters to the current context.
+```
+
+**Why one block, not per-CLI:** The agent reasons about "what am I trying to do" not "which CLI do I need." Cross-service recipes don't belong to any single CLI. One block = one place to look, organized by domain/use-case.
+
+**Suggested recipes for omnifocus-cli and slack-cli:** See [2026-03-08-cli-recipe-suggestions.md](2026-03-08-cli-recipe-suggestions.md) for proposals (not yet implemented).
+
 ### Phase 2: Extract Complex Tools to HTTP Services (Week 3-8)
 
 This is valuable regardless of Letta Code — it makes tools callable from anywhere:

@@ -362,6 +362,7 @@ Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous
 Suggested order for Google/gws: 17 (unblocks gws Calendar endpoints in Item 16).
 Independent: 19 (scheduler tool consolidation — no dependencies, quick win if Option B chosen).
 Independent: 20 (Letta Code migration — Phase 0 validation can start anytime).
+Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — proposed recipes for omnifocus-cli, slack-cli, and cross-service workflows (feeds into Item 20).
 
 ---
 
