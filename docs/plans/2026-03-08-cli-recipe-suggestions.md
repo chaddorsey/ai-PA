@@ -114,6 +114,174 @@ These combine multiple CLIs and would live in a shared recipe namespace.
 
 ---
 
+## Implemented Recipes (from existing agent workflows)
+
+These recipes formalize multi-step procedures already documented in agent memory blocks. Unlike CLI-only recipes, these reference Letta tools (`run_gws`, `add_extracted_tasks`, etc.) because the workflows span the agent's tool ecosystem. The format is identical — numbered steps the agent follows — but the commands are tool calls rather than bash.
+
+### RECIPE:cross:completion-feedback
+
+```
+[RECIPE:cross:completion-feedback]
+Completion Feedback Loop — Notify stakeholders when externally-originated tasks are completed in OmniFocus
+CLIs/Tools: sync_omnifocus_completions, prepare_completion_feedback, send_slack_dm
+Agents: tasks-agent
+
+Steps:
+1. Run sync_omnifocus_completions to check for newly completed tasks.
+   Filter results to tasks where has_external_origin is true.
+2. For each externally-originated completion, call prepare_completion_feedback(ref_id)
+   to get source context (original comment/message, document title, reply thread, routing info).
+3. Craft a context-aware reply:
+   - Read source_comment_text to understand the original request
+   - Review comment_thread for existing replies (avoid duplicating)
+   - Write a natural 1-2 sentence reply confirming completion, referencing what was done
+   - For dropped tasks, briefly explain why
+4. Present draft to user via send_slack_dm with:
+   - text: summary of completed task and proposed action
+   - suggested_reply: the crafted reply (not the raw template)
+   - detail: "On [document_title], [from_person] wrote: [source_comment_text]"
+   - reply_context: JSON with routing tool, args, resolve tool, resolve args
+5. Wait for user response via Slack buttons (Send Reply / Modify / Skip).
+   On approval: call the routing tool with provided args and reply text.
+   If resolve_after_reply is true, also call the resolve tool.
+6. For email sources (should_send_feedback: false), send informational DM only:
+   "You may want to follow up on [task] with [person]."
+
+Rules:
+- Never send feedback without presenting to user first
+- Match tone of the original comment
+- Skip tasks without external origins
+```
+
+### RECIPE:cross:email-task-extract
+
+```
+[RECIPE:cross:email-task-extract]
+Email Task Extraction — Extract actionable tasks from Gmail messages into the extracted_tasks system
+CLIs/Tools: run_gws (Gmail), add_extracted_tasks, update_tasks_section, report_refs
+Agents: email-agent
+
+Steps:
+1. Retrieve email context:
+   - For queued items: read queued_tasks_from_email block, get message IDs
+   - For inbox scans: run_gws(command="gmail users messages list", params='{"userId":"me","q":"<query>","maxResults":10}')
+   - For each actionable message: run_gws(command="gmail users threads get", params='{"userId":"me","id":"THREAD_ID","format":"full"}')
+2. Parse and normalize:
+   - Split multi-ask emails into single-action, verb-led tasks
+   - Derive task description from message body (not subject line)
+   - Use imperative mood, remove filler
+   - For evolving threads, extract the most current version of the ask
+3. Deduplicate:
+   - Check extracted_tasks block for existing entries
+   - Account for forwarded messages, reply chains, CC'd copies
+   - Keep earliest occurrence; prefer original requesting email
+4. Format and store:
+   - reference_id: email-{message_id}
+   - Entry format: [extracted_time: YYYY-MM-DD HH:MM; ref_id: <hash>] <Task> --> email:<message_id> | subject: <subject> | from: <sender> | date: <date>
+   - Context block: brief actionable excerpt (1-3 sentences), To/CC if relevant, Gmail web link
+   - Call add_extracted_tasks with source_type="email", source_text=<full message body for archival>
+5. For queued entries: pass cleanup_block_id and cleanup_entry_identifier to remove from queue.
+   Check marker_type: "explicit" means task_hint IS the task; "pointer" means expand from email body.
+6. Call report_refs to enable user follow-up on referenced content.
+
+Rules:
+- Use ONLY add_extracted_tasks or update_tasks_section for writes (never memory_replace)
+- Thread-level collapse: group related asks from same thread under earliest message's ref_id
+- Include due_date/defer_date/priority only when explicit in source
+- Check important_people block to resolve first-name-only references
+```
+
+### RECIPE:cross:doc-task-extract
+
+```
+[RECIPE:cross:doc-task-extract]
+Document & Transcript Task Extraction — Extract tasks assigned to user from Drive docs, meeting transcripts, and doc comments
+CLIs/Tools: search_documents, fetch_document_from_drive, search_meetings_smart, get_meeting_details, get_document_comments, add_extracted_tasks
+Agents: docs-and-transcripts-agent
+
+Steps:
+1. Retrieve source content:
+   - Drive docs: search_documents or fetch_document_from_drive
+   - Meeting transcripts: search_meetings_smart + get_meeting_details
+   - Doc comments: get_document_comments
+   Always retrieve full context before extracting.
+2. Parse and filter:
+   - Split multi-ask content into single-action, verb-led tasks
+   - Only extract tasks explicitly assigned to user ("Chad will...", "Chad:", "Assign to Chad", "cdorsey")
+   - If ownership is ambiguous, flag for human review
+   - In meetings, action items often cluster after "next steps" or at section boundaries
+3. Deduplicate:
+   - Check extracted_tasks block before adding
+   - Skip exact matches
+   - Use update_extracted_task if newer version supersedes older entry
+4. Format by source type and store:
+
+   MEETING TRANSCRIPTS:
+   - reference_id: meeting-{meeting_id}
+   - Entry: [extracted_time; ref_id] <Task> --> meeting:{meeting_id} | title | date | attendees
+   - Context: Granola link + 1-3 sentence excerpt of assignment context
+   - add_extracted_tasks: source_type="meeting", source_text=<relevant transcript excerpt>
+
+   GOOGLE DOCS:
+   - reference_id: gdocs-{file_id}
+   - Entry: [extracted_time; ref_id] <Task> --> gdocs:{file_id} | title | url
+   - Context: excerpt from document where task was found
+   - add_extracted_tasks: source_type="google-docs", source_text=<verbatim excerpt>
+
+   DOC COMMENTS:
+   - reference_id: gdocs-comment-{file_id}-{comment_id}
+   - Entry: [extracted_time; ref_id] <Task> --> gdocs-comment:{file_id}/{comment_id} | doc | author | date
+   - Context: verbatim comment text + reply thread if relevant
+   - add_extracted_tasks: source_type="google-docs-comment", source_text=<comment + replies>
+
+5. Call report_refs to enable user follow-up.
+   Check important_people block to resolve first-name references.
+
+Rules:
+- Use ONLY add_extracted_tasks or update_tasks_section (never memory_replace)
+- Include due_date/defer_date/priority only when explicit in source
+- Source_text for archival should be the actionable excerpt, not the full document/transcript
+- Every entry must include source ID (meeting_id, file_id, comment_id) for traceability
+```
+
+### RECIPE:slack:pulse-report
+
+```
+[RECIPE:slack:pulse-report]
+Slack Pulse Report — Generate a structured Slack activity summary for a time period
+CLIs/Tools: get_slack_messages, search_slack_messages, get_slack_channels, get_recently_changed_documents
+Agents: pulse-monitor-agent
+
+Steps:
+1. Personal Channels section:
+   - Search DMs and MPDMs for the requested period
+   - Summarize top topics and key posters (play-by-play style)
+   - Bullet what key posters are asking about or advocating for
+   - Note sentiment/mood if notable
+   - List all URLs and files shared in DMs/MPDMs (raw list)
+2. Public Activity section:
+   - Identify top-traffic public channels (from analytics or channel list)
+   - For each channel: get message history for the period
+   - Write 1-2 paragraph play-by-play of discussions, questions, key contributions
+   - Bullet what key posters are asking or advocating for
+   - List important links/files shared (skip bot/mundane links)
+   - @-mentions sub-section: list all personal @-mentions received, formatted as:
+     "From [First Name] in #[channel] on [Date, Time]: [message excerpt]"
+     Hyperlink "in #[channel]" to the Slack post permalink
+3. Document Activity section (optional):
+   - Call get_recently_changed_documents(since="yesterday") for Drive activity
+   - Surface: most-edited documents, who's been active, docs related to Slack discussions
+   - Cross-reference document edits with Slack topics for fuller context
+
+Formatting rules:
+- Hyperlink the first couple words of each bullet to the relevant Slack message permalink
+- Use channel names with # prefix
+- Group by channel in public section
+- Keep excerpts concise but attributable
+```
+
+---
+
 ## Implementation Notes
 
 ### For Letta Code Agents
