@@ -252,3 +252,4 @@ docs/technical/slack-analytics-export.md
 sports-and-media-tools/credentials/*.json
 sports-and-media-tools/credentials/browser_states/
 .worktrees/
+omnifocus-cli/.venv/
