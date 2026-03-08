@@ -124,6 +124,33 @@ def conversations():
     """Manage channels and conversations."""
 
 
+@conversations.command("+find")
+@click.option("--name", required=True, help="Channel name substring to search for")
+@click.pass_context
+def conversations_find_helper(ctx, name):
+    """Find channels by name (fuzzy match)."""
+    format_flag = ctx.obj.get("format")
+    fields = ctx.obj.get("fields")
+    as_user = ctx.obj.get("as_user", False)
+    as_bot = ctx.obj.get("as_bot", False)
+
+    try:
+        client = SlackClient(force_user=as_user, force_bot=as_bot)
+        result = client.call("conversations.list", {"types": "public_channel,private_channel", "limit": 1000})
+        channels = result.get("channels", [])
+        matches = [c for c in channels if name.lower() in c.get("name", "").lower()]
+
+        output_data = {"ok": True, "channels": matches, "count": len(matches)}
+        masked = apply_field_mask(output_data, fields)
+        click.echo(format_output(masked, format_flag or "json"))
+
+    except SlackCliError as e:
+        click.echo(e.to_json())
+        if e.hint:
+            click.echo(f"Hint: {e.hint}", err=True)
+        sys.exit(e.exit_code)
+
+
 @conversations.command("list")
 @click.option("--types", default=None, help="Comma-separated channel types (public_channel, private_channel, mpim, im)")
 @click.option("--limit", type=int, default=None, help="Max results per page")
@@ -319,6 +346,49 @@ def chat():
     """Send, update, and delete messages."""
 
 
+@chat.command("+send")
+@click.option("--channel", required=True, help="Channel name or ID")
+@click.option("--text", required=True, help="Message text")
+@click.option("--thread-ts", default=None, help="Thread timestamp for reply")
+@click.pass_context
+def chat_send_helper(ctx, channel, text, thread_ts):
+    """Send a message (resolves channel names to IDs)."""
+    format_flag = ctx.obj.get("format")
+    fields = ctx.obj.get("fields")
+    as_user = ctx.obj.get("as_user", False)
+    as_bot = ctx.obj.get("as_bot", False)
+
+    try:
+        client = SlackClient(force_user=as_user, force_bot=as_bot)
+
+        # Resolve channel name to ID if not already an ID
+        resolved_channel = channel
+        if not channel.startswith(("C", "D", "G")):
+            # Try to find by name
+            result = client.call("conversations.list", {"types": "public_channel,private_channel", "limit": 1000})
+            channels = result.get("channels", [])
+            match = [c for c in channels if c.get("name") == channel]
+            if not match:
+                click.echo(format_error("channel_not_found", f"No channel named '{channel}'"))
+                sys.exit(EXIT_EXECUTION)
+                return
+            resolved_channel = match[0]["id"]
+
+        params = {"channel": resolved_channel, "text": text}
+        if thread_ts:
+            params["thread_ts"] = thread_ts
+
+        result = client.call("chat.postMessage", params)
+        masked = apply_field_mask(result, fields)
+        click.echo(format_output(masked, format_flag or "json"))
+
+    except SlackCliError as e:
+        click.echo(e.to_json())
+        if e.hint:
+            click.echo(f"Hint: {e.hint}", err=True)
+        sys.exit(e.exit_code)
+
+
 @chat.command("postMessage")
 @click.option("--channel", default=None, help="Channel, private group, or IM channel to send message to")
 @click.option("--text", default=None, help="Text of the message to send")
@@ -411,6 +481,49 @@ def chat_unfurl(ctx, channel, ts, unfurls):
 @cli.group()
 def users():
     """Manage users."""
+
+
+@users.command("+whois")
+@click.option("--name", default=None, help="Display name to search for")
+@click.option("--email", default=None, help="Email to look up")
+@click.pass_context
+def users_whois_helper(ctx, name, email):
+    """Find a user by name or email."""
+    format_flag = ctx.obj.get("format")
+    fields = ctx.obj.get("fields")
+    as_user = ctx.obj.get("as_user", False)
+    as_bot = ctx.obj.get("as_bot", False)
+
+    if not name and not email:
+        click.echo(format_error("no_input", "Provide --name or --email"))
+        sys.exit(EXIT_VALIDATION)
+        return
+
+    try:
+        client = SlackClient(force_user=as_user, force_bot=as_bot)
+
+        if email:
+            result = client.call("users.lookupByEmail", {"email": email})
+            output_data = {"ok": True, "users": [result.get("user", {})], "count": 1}
+        else:
+            result = client.call("users.list", {"limit": 1000})
+            members = result.get("members", [])
+            matches = [
+                m for m in members
+                if name.lower() in (m.get("real_name", "") or "").lower()
+                or name.lower() in (m.get("name", "") or "").lower()
+                or name.lower() in (m.get("profile", {}).get("display_name", "") or "").lower()
+            ]
+            output_data = {"ok": True, "users": matches, "count": len(matches)}
+
+        masked = apply_field_mask(output_data, fields)
+        click.echo(format_output(masked, format_flag or "json"))
+
+    except SlackCliError as e:
+        click.echo(e.to_json())
+        if e.hint:
+            click.echo(f"Hint: {e.hint}", err=True)
+        sys.exit(e.exit_code)
 
 
 @users.command("list")
