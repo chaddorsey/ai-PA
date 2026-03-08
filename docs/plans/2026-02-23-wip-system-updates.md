@@ -361,6 +361,7 @@ Future work (not yet started):
 Suggested order for cross-interface: 8 → 9 → 10 (each builds on the previous).
 Suggested order for Google/gws: 17 (unblocks gws Calendar endpoints in Item 16).
 Independent: 19 (scheduler tool consolidation — no dependencies, quick win if Option B chosen).
+Independent: 20 (Letta Code migration — Phase 0 validation can start anytime).
 
 ---
 
@@ -445,6 +446,23 @@ Independent: 19 (scheduler tool consolidation — no dependencies, quick win if 
 **Recommendation:** Option B. The scheduler is an internal REST API with a small surface (12 endpoints). The `create-cli` pattern is best justified when the underlying service isn't directly callable from Docker or has a large API surface (>30 methods). See design doc for full analysis.
 
 **Decommissions:** `scheduler-mcp` Docker service, `scheduler-tools` MCP config entry, 10 individual MCP tools.
+
+---
+
+## 20. Letta Code Migration Assessment (NOT STARTED)
+
+**Status:** Assessment complete — hybrid architecture recommended, no code changes yet
+**Plan:** [2026-03-07-letta-code-migration-assessment.md](2026-03-07-letta-code-migration-assessment.md)
+**Risk:** Low (assessment only; Phase 0 is validation with no disruption to existing agents)
+**Estimated effort:** Phase 0: 1-2 weeks; Phase 1: 1 week; Phase 2: 5 weeks; Phase 3: ongoing
+
+**Problem:** Letta is shifting development focus from standard agents to "Letta Code" agents (client-side bash/skills execution). The PA ecosystem is headless and programmatically invoked (slackbot, scheduler, n8n), which is incompatible with Letta Code's interactive model. Need to understand migration path and position for future Letta features.
+
+**Recommendation:** Permanent hybrid architecture. Standard Letta agents keep all programmatic workflows. A new Letta Code companion agent provides interactive terminal access. Complex tools gradually extracted into HTTP microservices callable from either model.
+
+**Critical blocker:** Letta Code skills require a connected client process — agents invoked by slackbot/scheduler cannot rely solely on skills unless daemon mode is confirmed.
+
+**Prerequisites for Phase 0:** Install gws CLI and omnifocus-cli on host (both currently Docker-only). gws credentials already on host. omnifocus-cli's `bridge.py` has direct osascript path on macOS (bypasses HTTP bridge).
 
 ---
 
