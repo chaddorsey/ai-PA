@@ -1413,28 +1413,98 @@ git commit -m "feat: add +send, +find, +whois helper commands"
 
 ---
 
-### Task 13: Skill File Generation
+### Task 13: Hand-Written Skill Files (OpenClaw Format)
 
 **Files:**
-- Modify: `slack-cli/src/slack_cli/cli.py` (add generate-skills command)
-- Create: `slack-cli/src/slack_cli/skills.py`
-- Create: `slack-cli/tests/test_skills.py`
+- Create: `slack-cli/skills/slack-shared/SKILL.md`
+- Create: `slack-cli/skills/slack-channels/SKILL.md`
+- Create: `slack-cli/skills/slack-messages/SKILL.md`
+- Create: `slack-cli/skills/slack-search/SKILL.md`
+- Create: `slack-cli/skills/slack-users/SKILL.md`
+- Create: `slack-cli/skills/slack-files/SKILL.md`
+- Create: `slack-cli/skills/slack-dm/SKILL.md`
+- Create: `slack-cli/skills/recipe-slack-daily-summary/SKILL.md`
+- Create: `slack-cli/skills/recipe-slack-thread-export/SKILL.md`
 
-**Command:** `slack generate-skills --output skills/`
+Skills are hand-written (not auto-generated) following the OpenClaw format from `gws`. Each teaches patterns and common examples, pointing to `slack schema <method>` for full parameter discovery.
 
-Generates one SKILL.md per command group from the schema registry. Each file has YAML frontmatter + usage examples + important notes.
+**Step 1: Write slack-shared SKILL.md**
 
-Also generates a top-level `CONTEXT.md` with agent invariants.
+The shared skill covers:
+- Installation: `pip install ./slack-cli` (host) or `pip install /app/tools/slack-cli/` (Docker)
+- Auth: `SLACK_BOT_TOKEN` env var
+- CLI syntax: `slack <resource> <method> [flags]`
+- Global flags table: `--body`, `--format`, `--fields`, `--dry-run`, `--page-all`, `--page-limit`, `--as-user`/`--as-bot`
+- Security rules: no secrets output, confirm before write/delete, prefer `--dry-run`
 
-**Step 1: Write failing tests**
+Format (matching gws-shared):
+```yaml
+---
+name: slack-shared
+version: 1.0.0
+description: "Slack CLI: Shared patterns for authentication, global flags, and output formatting."
+metadata:
+  openclaw:
+    category: "productivity"
+    requires:
+      bins: ["slack"]
+---
+```
 
-**Step 2: Implement skill generator**
+**Step 2: Write per-resource skills**
 
-**Step 3: Commit**
+Each resource skill follows the gws-gmail pattern:
+```yaml
+---
+name: slack-channels
+version: 1.0.0
+description: "Slack: List channels, get channel info, read channel history."
+metadata:
+  openclaw:
+    category: "productivity"
+    requires:
+      bins: ["slack"]
+    cliHelp: "slack conversations --help"
+---
+```
+
+Body includes:
+- PREREQUISITE reference to `../slack-shared/SKILL.md`
+- Helper commands table (if any `+` helpers exist for this resource)
+- Common command examples (2-4 per skill)
+- "Discovering Commands" section pointing to `slack schema` and `--help`
+- Known quirks specific to that resource
+
+**Key quirks to document:**
+- `slack-search`: `on:YYYY-MM-DD` works; `after:` + `before:` combined returns 0 results
+- `slack-channels`: Channel names don't include `#`; prefer IDs over names
+- `slack-messages`: `thread_ts` is the parent message timestamp, not the reply
+
+**Step 3: Write recipe skills**
+
+Recipe skills follow the `recipe-find-free-time` pattern:
+```yaml
+---
+name: recipe-slack-daily-summary
+version: 1.0.0
+description: "Search today's messages across key channels and summarize activity."
+metadata:
+  openclaw:
+    category: "recipe"
+    domain: "communication"
+    requires:
+      bins: ["slack"]
+      skills: ["slack-channels", "slack-search"]
+---
+```
+
+Body includes numbered steps with exact CLI commands.
+
+**Step 4: Commit**
 
 ```bash
-git add slack-cli/src/slack_cli/skills.py slack-cli/tests/test_skills.py
-git commit -m "feat: add skill file generation from schema registry"
+git add slack-cli/skills/
+git commit -m "feat: add OpenClaw skill files for Letta Code agent consumption"
 ```
 
 ---

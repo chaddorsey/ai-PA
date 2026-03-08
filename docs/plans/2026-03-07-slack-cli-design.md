@@ -181,30 +181,80 @@ $ slack schema chat.postMessage
 
 Schema data maintained in a declarative registry alongside each command module.
 
-## Skill Files
+## Deployment Environments
 
-Auto-generated via `slack generate-skills`:
+The CLI runs in **two environments** with identical behavior:
+
+| Environment | Install Method | Token Source | Use Case |
+|-------------|---------------|--------------|----------|
+| **macOS host** | `pip install ./slack-cli` | `SLACK_BOT_TOKEN` env var | Letta Code agents (bash skills) |
+| **Letta Docker** | `pip install /app/tools/slack-cli/` in `entrypoint-wrapper.sh` | `SLACK_BOT_TOKEN` env var | Standard Letta agent tools via `subprocess.run()` |
+
+**Design constraint:** No Docker-specific assumptions. No hardcoded service names or Docker-internal URLs. The CLI only needs a Slack token env var and HTTP access to `https://slack.com/api/`.
+
+## Skill Files (OpenClaw Format)
+
+Skills ship as hand-written SKILL.md files in `skills/` directory, following the [OpenClaw format](https://github.com/googleworkspace/cli/tree/main/skills) used by the gws CLI. These are consumed by Letta Code agents as bash skills.
+
+### Required Skills
+
+| Skill | Directory | Purpose |
+|-------|-----------|---------|
+| `slack-shared` | `skills/slack-shared/` | CLI syntax, installation, auth, global flags, security rules |
+| `slack-channels` | `skills/slack-channels/` | List channels, get info, channel history |
+| `slack-messages` | `skills/slack-messages/` | Send messages, reply in threads, read messages, react |
+| `slack-search` | `skills/slack-search/` | Search messages with Slack query syntax |
+| `slack-users` | `skills/slack-users/` | List users, get user info, lookup by email |
+| `slack-files` | `skills/slack-files/` | List/download files |
+| `slack-dm` | `skills/slack-dm/` | Send direct messages, list DM conversations |
+| `recipe-slack-daily-summary` | `skills/recipe-slack-daily-summary/` | Multi-step: search today's messages, summarize |
+| `recipe-slack-thread-export` | `skills/recipe-slack-thread-export/` | Export a thread with all replies |
+
+### Skill Format
+
+Each SKILL.md uses YAML frontmatter + markdown body:
 
 ```markdown
 ---
-name: slack-conversations
-description: Channel and DM management
-tools: [conversations.list, conversations.info, conversations.history, +find]
+name: slack-channels
+version: 1.0.0
+description: "Slack: List channels, get channel info, read channel history."
+metadata:
+  openclaw:
+    category: "productivity"
+    requires:
+      bins: ["slack"]
+    cliHelp: "slack conversations --help"
 ---
 
-# Conversations
+# Slack Channels
 
-## List channels
-`slack conversations list --params '{"types":"public_channel","limit":100}'`
+> **PREREQUISITE:** Read `../slack-shared/SKILL.md` for auth, global flags, and security rules.
 
-## IMPORTANT
-- ALWAYS use --fields to limit response size
-- Use --page-limit to control pagination depth
-- Channel names don't include #, just the name
-- Prefer channel IDs over names for reliability
+## Common Commands
+...
+
+## Discovering Commands
+Before calling any API method, inspect it:
+```bash
+slack conversations --help
+slack schema conversations.<method>
+```
 ```
 
-Top-level `CONTEXT.md` ships invariants agents can't infer from `--help`.
+### Design Principles for Skills
+
+1. **Teach patterns, not exhaustive params** — skills show common examples; `slack schema <method>` provides full reference
+2. **Document known quirks** — Slack API bugs and gotchas belong in skills, not just code comments
+3. **Link to discovery** — every skill points to `slack schema` and `--help` for self-service
+4. **Prerequisite chain** — all skills reference `slack-shared` for auth and global flags
+5. **Recipes are multi-step** — recipe skills combine multiple CLI calls into a workflow
+
+### Known Slack API Quirks (documented in skills)
+
+- **Search date filtering:** `on:YYYY-MM-DD` works reliably; combining `after:` + `before:` returns 0 results (known Slack bug)
+- **Rate limits:** Tier 2/3 methods have different rate limits; CLI surfaces rate-limit events to stderr
+- **Pagination:** Always use cursor-based pagination, not offset
 
 ## Scope: Core API Groups
 
