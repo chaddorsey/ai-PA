@@ -224,6 +224,19 @@ services:
       retries: 5
       start_period: 60s
 
+  # --- Redis (required by Letta for background streaming) ---
+  redis:
+    image: redis:alpine
+    container_name: pa-redis
+    restart: unless-stopped
+    networks: [pa-internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   # --- Graphiti MCP Server ---
   graphiti-mcp-server:
     build:
@@ -466,6 +479,37 @@ services:
       - "mcp-version=0.1.0"
       - "security.internal-only=true"
 
+  # --- Granola Meeting Ingest Service ---
+  granola-ingest:
+    build:
+      context: ./granola-ingest
+    container_name: granola-ingest
+    restart: unless-stopped
+    environment:
+      LETTA_BASE_URL: http://letta:8283
+      GRANOLA_MCP_URL: http://host.docker.internal:8089/mcp
+      GRANOLA_AGENT_ID: agent-398b4f6c-6afa-493f-8063-897c6b171a0d
+      GRANOLA_STATE_FILE: /data/state/.granola_mcp_import_state.json
+      GRANOLA_EXPORT_DIR: /data/exports
+    volumes:
+      - ./letta:/data/state
+      - /Users/dorseyhomeserver/Dropbox/Granola-exports:/data/exports
+    networks: [pa-internal]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "service=granola-ingest"
+      - "component=ingest"
+      - "network=pa-internal"
+
   # --- Calendly MCP Server ---
   calendly-mcp-server:
     build:
@@ -596,7 +640,7 @@ services:
   # Letta is an agent building framework with built-in memory/vectordb support.
   # https://docs.letta.com/quickstart/docker
   letta:
-    image: letta/letta:latest
+    image: letta/letta:0.16.4  # pinned — 0.16.6 broke LLM auth routing
     entrypoint: ["/bin/bash", "/app/tools/letta/entrypoint-wrapper.sh"]
     command: ["--host", "0.0.0.0"]
     ports:
@@ -607,6 +651,7 @@ services:
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro  # gws CLI credentials (Gmail/Calendar/Drive)
       - ./analytics:/app/tools/analytics  # Mount analytics directory for briefing output
       - ./omnifocus-cli:/app/tools/omnifocus-cli:ro  # OmniFocus CLI source for pip install
+      - ./slack-cli:/app/tools/slack-cli:ro  # Slack CLI source for pip install
     networks: [pa-internal]
     environment:
       PYTHONPATH: "/app/tools/letta"
@@ -625,8 +670,9 @@ services:
       #OLLAMA_BASE_URL: $OLLAMA_BASE_URL
       # Letta authenticates to LiteLLM proxy with master key (not real OpenAI key)
       # Real per-agent keys are in LiteLLM's config, selected by model alias
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}
-      # Slack tokens for analytics tools
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY}  # All OpenAI calls route through LiteLLM proxy
+      # Slack tokens for slack-cli and analytics tools
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
       SLACK_MCP_XOXP_TOKEN: $SLACK_MCP_XOXP_TOKEN
       MY_EMAIL: "${MY_EMAIL:-cdorsey@concord.org}"
       # Atlassian Rovo MCP Server token
@@ -643,9 +689,15 @@ services:
       # gws CLI credentials file path (Google Workspace CLI)
       GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
       OMNIFOCUS_BRIDGE_URL: "http://host.docker.internal:8889"
+      # Redis for Letta background streaming (required by Letta Code CLI)
+      LETTA_REDIS_HOST: "redis"
+      LETTA_REDIS_PORT: "6379"
       # Do not attempt to use Ollama, LM Studio or OpenRouter chat models with Letta.
       # Letta is *very* picky and will only reliably work with the major cloud providers.
       # Embedding models will work fine, but only uncomment if you know what you're doing.
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8283/v1/health/"]
