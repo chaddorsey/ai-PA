@@ -34,6 +34,7 @@ class Curator(Base):
     __tablename__ = "curators"
 
     user_login: Mapped[str] = mapped_column(String(100), primary_key=True)
+    platform: Mapped[str] = mapped_column(String(20), primary_key=True, default="github")
     overlap_count: Mapped[int] = mapped_column(Integer, default=0)
     overlap_score: Mapped[float] = mapped_column(Float, default=0.0)
     earlyness_mean: Mapped[float] = mapped_column(Float, default=0.0)
@@ -57,3 +58,41 @@ class BackfillCheckpoint(Base):
     job_name: Mapped[str] = mapped_column(String(100), primary_key=True)
     checkpoint: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class BookmarkedTweet(Base):
+    __tablename__ = "bookmarked_tweets"
+
+    tweet_id: Mapped[str] = mapped_column(String(30), primary_key=True)
+    author_handle: Mapped[str] = mapped_column(String(100))
+    author_name: Mapped[str] = mapped_column(String(200), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    tweet_url: Mapped[str] = mapped_column(String(300))
+    bookmarked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    likers_fetched: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class TweetLiker(Base):
+    __tablename__ = "tweet_likers"
+
+    tweet_id: Mapped[str] = mapped_column(String(30), primary_key=True)
+    user_handle: Mapped[str] = mapped_column(String(100), primary_key=True, index=True)
+    user_name: Mapped[str] = mapped_column(String(200), default="")
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TwitterList(Base):
+    __tablename__ = "twitter_lists"
+
+    list_id: Mapped[str] = mapped_column(String(30), primary_key=True)
+    list_name: Mapped[str] = mapped_column(String(100))
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TwitterListMember(Base):
+    __tablename__ = "twitter_list_members"
+
+    list_id: Mapped[str] = mapped_column(String(30), primary_key=True)
+    user_handle: Mapped[str] = mapped_column(String(100), primary_key=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

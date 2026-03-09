@@ -16,5 +16,21 @@ class Settings(BaseSettings):
         alias="SLACKBOT_NOTIFY_URL",
     )
     slack_user_id: str = Field(default="", alias="SLACK_USER_ID")
+    smaug_config_path: str = Field(
+        default="/Volumes/main-drive/ai-PA/smaug/smaug.config.json",
+        alias="SMAUG_CONFIG_PATH",
+    )
+    smaug_data_path: str = Field(
+        default="/Volumes/main-drive/ai-PA/smaug-data",
+        alias="SMAUG_DATA_PATH",
+    )
+    twitter_list_name: str = Field(
+        default="Curator Radar",
+        alias="TWITTER_LIST_NAME",
+    )
+    twitter_list_size: int = Field(
+        default=50,
+        alias="TWITTER_LIST_SIZE",
+    )
 
     model_config = {"env_file": ".env", "extra": "ignore"}
