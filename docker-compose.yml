@@ -1443,6 +1443,32 @@ services:
       - "component=batch-processing"
       - "network=pa-internal"
 
+  # --- Curator Radar: GitHub star overlap monitoring ---
+  curator-radar:
+    build:
+      context: ./curator-radar
+    container_name: curator-radar
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://curator_radar:curator_radar_secret@supabase-db:5432/curator_radar"
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_USERNAME: "chaddorsey"
+      TOP_CURATORS_K: "20"
+      SLACKBOT_NOTIFY_URL: "http://slackbot:8081/api/notify"
+      SLACK_USER_ID: "${SLACK_USER_ID:-U02V91KU8}"
+    ports:
+      - "5145:5145"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5145/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 
 volumes:
   supabase_db:
