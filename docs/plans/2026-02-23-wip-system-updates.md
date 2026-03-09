@@ -499,27 +499,57 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
-## 22. Curator Radar — GitHub Star Overlap Monitoring (NOT STARTED)
+## 22. Curator Radar — Multi-Platform Curator Discovery (CODE COMPLETE)
 
-**Status:** Plan written, not yet implemented
+**Status:** Code complete (GitHub + Twitter), pending deployment (DB setup, backfill, scheduler jobs)
 **Plan:** [2026-03-08-curator-radar.md](2026-03-08-curator-radar.md)
+**Twitter design:** [2026-03-09-twitter-curator-discovery-design.md](2026-03-09-twitter-curator-discovery-design.md)
 **Risk:** Low (new service, no existing system dependencies)
-**Estimated effort:** ~10 tasks, 3-4 hours total
 
-**Problem:** No systematic way to discover interesting new GitHub repos. Manually browsing is time-consuming and misses repos from trusted curators.
+**Problem:** No systematic way to discover interesting GitHub repos or high-signal Twitter accounts. Manual browsing misses repos/accounts from trusted curators.
 
-**Solution:** FastAPI microservice (port 5145) that backfills GitHub stargazer data, computes IDF-weighted overlap scores to rank "curators" (users with similar star patterns), monitors top curators' daily activity (WatchEvents), and delivers weekly Markdown digests via Slack. No LLM calls — pure code pipeline.
+**Solution:** FastAPI microservice (port 5145) with two curator discovery engines:
+1. **GitHub:** Backfills stargazer data, computes IDF-weighted overlap scores, monitors top curators' WatchEvents, weekly Slack digest.
+2. **Twitter:** Reads bookmarked tweet IDs from Smaug's archive, fetches likers via Favoriters GraphQL endpoint, scores overlap with same IDF algorithm, auto-manages a private Twitter List of top curators.
 
 **Key components:**
 - Supabase PostgreSQL schema (`curator_radar` schema)
-- GitHub API client with rate limiting and conditional requests
-- Backfill pipeline for stargazer history (last 12 months)
-- Scoring engine: IDF-weighted overlap + earlyness percentile
-- Daily WatchEvent monitor via scheduler-service cron
-- Weekly Slack digest with ranked new repos
+- GitHub API client + Twitter GraphQL client (both with adaptive rate limiting)
+- Backfill pipelines for stargazer history + tweet likers
+- Scoring engine: IDF-weighted overlap (+ earlyness for GitHub)
+- Daily Twitter pipeline: ingest → fetch likers → score → sync list
+- Weekly Slack digest with GitHub + Twitter sections
 - Letta tool (`query_curator_radar`) for agent access
+- Reads Smaug output for bookmark data (volume mount, no duplicate auth)
 
-**Prerequisites:** GitHub PAT with `read:user` scope, Supabase DB access, scheduler-service cron integration.
+**To deploy:**
+1. Create `curator_radar` database + user in Supabase
+2. Set `GITHUB_TOKEN` in `.env`
+3. `docker-compose up -d curator-radar`
+4. Run migration: `migrate_curator_platform.py` (if existing data)
+5. Register scheduler jobs (GitHub daily monitor, Twitter daily pipeline, weekly digest)
+6. Run initial backfills (GitHub stars, Twitter likers)
+
+---
+
+## 23. Smaug — Twitter/X Bookmarks Archival (ACTIVE)
+
+**Status:** Deployed, running every 6 hours via launchd
+**Design:** [2026-03-08-smaug-twitter-bookmarks-design.md](2026-03-08-smaug-twitter-bookmarks-design.md)
+**Upstream:** [github.com/alexknowshtml/smaug](https://github.com/alexknowshtml/smaug)
+**Risk:** Low (standalone host tool, no internal service dependencies)
+
+**What:** Archives Twitter/X bookmarks to structured markdown with AI categorization (Claude Code). bird CLI fetches via Twitter's GraphQL API using browser cookies. Output: `bookmarks.md` master archive + `knowledge/tools/` and `knowledge/articles/` with YAML frontmatter.
+
+**Components:**
+- bird CLI (from npm, global install) — Twitter GraphQL wrapper with pagination
+- Smaug (Node.js) — `/Volumes/main-drive/ai-PA/smaug/`
+- Output — `/Volumes/main-drive/ai-PA/smaug-data/`
+- launchd — `com.ai-pa.smaug`, every 6 hours
+
+**Initial backfill:** 993 bookmarks processed (Feb 2024 → Mar 2026): 15 tools, 18 articles, 12 videos, 948 tweets.
+
+**Downstream consumer:** Curator Radar (Item 22) reads `smaug-data/bookmarks.md` and `.state/bookmarks-state.json` to ingest tweet IDs for Twitter curator discovery. Smaug's output files are the single source of truth for bookmarked tweets.
 
 ---
 
