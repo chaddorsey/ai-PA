@@ -44,14 +44,14 @@ async def backfill_status(session: AsyncSession = Depends(get_session)):
 
 
 @router.post("/score")
-async def run_scoring(session: AsyncSession = Depends(get_session)):
-    count = await score_curators(session)
+async def run_scoring(platform: str = "github", session: AsyncSession = Depends(get_session)):
+    count = await score_curators(session, platform)
     return {"status": "ok", "curators_scored": count}
 
 
 @router.get("/curators")
-async def list_curators(top_k: int = 20, session: AsyncSession = Depends(get_session)):
-    return await get_top_curators(session, top_k)
+async def list_curators(top_k: int = 20, platform: str = "github", session: AsyncSession = Depends(get_session)):
+    return await get_top_curators(session, top_k, platform)
 
 
 @router.post("/monitor/refresh")

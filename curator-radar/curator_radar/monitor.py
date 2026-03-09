@@ -13,7 +13,7 @@ async def refresh_curator_events(session: AsyncSession, client: GitHubClient, to
     """Fetch WatchEvents from top-K curators and store new ones."""
     result = await session.execute(
         select(Curator)
-        .where(Curator.blocked == False)
+        .where(Curator.blocked == False, Curator.platform == "github")
         .order_by(Curator.overlap_score.desc())
         .limit(top_k)
     )
