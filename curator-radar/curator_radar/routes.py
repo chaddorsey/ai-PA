@@ -9,6 +9,10 @@ from .backfill import backfill_stars, backfill_stargazers, get_backfill_status
 from .scoring import score_curators, get_top_curators
 from .monitor import refresh_curator_events, get_discoveries
 from .digest import generate_digest
+from .twitter_client import TwitterClient
+from .twitter_ingest import ingest_bookmarks, get_ingest_status
+from .twitter_backfill import fetch_tweet_likers
+from .twitter_list_sync import sync_twitter_list
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1")
@@ -90,3 +94,94 @@ async def deliver_digest(since_days: int = 7, session: AsyncSession = Depends(ge
             },
         )
     return {"status": "ok", "slack_response": resp.status_code}
+
+
+# --- Twitter Curator Routes ---
+
+
+async def _run_twitter_daily():
+    """Daily Twitter curator pipeline: ingest → fetch likers → score → sync list."""
+    from .database import AsyncSessionFactory
+    client = TwitterClient(settings)
+    try:
+        async with AsyncSessionFactory() as session:
+            logger.info("Twitter daily: ingesting new bookmarks...")
+            ingested = await ingest_bookmarks(session, settings)
+            logger.info(f"Twitter daily: ingested {ingested} new bookmarks")
+
+            logger.info("Twitter daily: fetching likers...")
+            stats = await fetch_tweet_likers(session, client)
+            logger.info(f"Twitter daily: {stats}")
+
+            logger.info("Twitter daily: scoring curators...")
+            scored = await score_curators(session, platform="twitter")
+            logger.info(f"Twitter daily: scored {scored} curators")
+
+            logger.info("Twitter daily: syncing list...")
+            sync_stats = await sync_twitter_list(session, client, settings)
+            logger.info(f"Twitter daily: list sync {sync_stats}")
+
+            logger.info("Twitter daily run complete.")
+    except Exception as e:
+        logger.error(f"Twitter daily run failed: {e}", exc_info=True)
+    finally:
+        await client.close()
+
+
+@router.post("/twitter/run")
+async def twitter_daily_run(background_tasks: BackgroundTasks):
+    """Run the full daily Twitter curator pipeline in background."""
+    background_tasks.add_task(_run_twitter_daily)
+    return {"status": "started", "pipeline": "twitter-daily"}
+
+
+@router.post("/twitter/ingest")
+async def twitter_ingest(session: AsyncSession = Depends(get_session)):
+    """Ingest new bookmarks from Smaug archive."""
+    count = await ingest_bookmarks(session, settings)
+    return {"status": "ok", "ingested": count}
+
+
+@router.get("/twitter/status")
+async def twitter_status(session: AsyncSession = Depends(get_session)):
+    """Get Twitter ingestion and likers-fetch status."""
+    return await get_ingest_status(session)
+
+
+@router.post("/twitter/fetch-likers")
+async def twitter_fetch_likers(background_tasks: BackgroundTasks):
+    """Fetch likers for unfetched tweets in background."""
+    async def _fetch():
+        from .database import AsyncSessionFactory
+        client = TwitterClient(settings)
+        try:
+            async with AsyncSessionFactory() as session:
+                await fetch_tweet_likers(session, client)
+        finally:
+            await client.close()
+    background_tasks.add_task(_fetch)
+    return {"status": "started"}
+
+
+@router.post("/twitter/score")
+async def twitter_score(session: AsyncSession = Depends(get_session)):
+    """Score Twitter curators."""
+    count = await score_curators(session, platform="twitter")
+    return {"status": "ok", "curators_scored": count}
+
+
+@router.get("/twitter/curators")
+async def twitter_curators(top_k: int = 50, session: AsyncSession = Depends(get_session)):
+    """List top Twitter curators."""
+    return await get_top_curators(session, top_k, platform="twitter")
+
+
+@router.post("/twitter/sync-list")
+async def twitter_sync_list(session: AsyncSession = Depends(get_session)):
+    """Sync the Twitter list with top curators."""
+    client = TwitterClient(settings)
+    try:
+        stats = await sync_twitter_list(session, client, settings)
+        return {"status": "ok", **stats}
+    finally:
+        await client.close()
