@@ -12,7 +12,7 @@ from .settings import Settings
 
 logger = logging.getLogger(__name__)
 
-FAVORITERS_QUERY_ID = "LLkk5EcVutJL6y-2gkz22A"
+RETWEETERS_QUERY_ID = "qVWT1Tn1FiklyVDqYiOhLg"
 CREATE_LIST_QUERY_ID = "nHFMQuE0r6yVEGmPSSbDdg"
 LIST_ADD_MEMBER_QUERY_ID = "sw71TVciw0CoWPcFfIhrnA"
 LIST_REMOVE_MEMBER_QUERY_ID = "cvl5jMbF1DqPRJalJTkNzA"
@@ -109,6 +109,8 @@ class TwitterClient:
                 headers={
                     "Authorization": f"Bearer {BEARER_TOKEN}",
                     "x-csrf-token": self.auth.ct0,
+                    "x-twitter-auth-type": "OAuth2Session",
+                    "x-twitter-active-user": "yes",
                     "Cookie": f"auth_token={self.auth.auth_token}; ct0={self.auth.ct0}",
                     "Content-Type": "application/json",
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
@@ -141,8 +143,8 @@ class TwitterClient:
                 self.rate.consecutive_429s = 0
                 self.rate.current_delay = self.rate.base_delay
 
-    async def get_favoriters(self, tweet_id: str) -> list[dict]:
-        """Fetch all users who liked a tweet. Returns list of {handle, name}."""
+    async def get_retweeters(self, tweet_id: str) -> list[dict]:
+        """Fetch all users who retweeted a tweet. Returns list of {handle, name}."""
         all_users = []
         cursor = None
 
@@ -150,7 +152,16 @@ class TwitterClient:
             await self._wait()
             client = await self._get_client()
 
-            variables = {"tweetId": tweet_id, "count": 100}
+            variables = {
+                "tweetId": tweet_id,
+                "count": 100,
+                "includePromotedContent": False,
+                "withDownvotePerspective": False,
+                "withReactionsMetadata": False,
+                "withReactionsPerspective": False,
+                "withSuperFollowsTweetFields": False,
+                "withSuperFollowsUserFields": False,
+            }
             if cursor:
                 variables["cursor"] = cursor
 
@@ -160,7 +171,7 @@ class TwitterClient:
             }
 
             resp = await client.get(
-                f"{GRAPHQL_BASE}/{FAVORITERS_QUERY_ID}/Favoriters",
+                f"{GRAPHQL_BASE}/{RETWEETERS_QUERY_ID}/Retweeters",
                 params=params,
             )
             await self._handle_rate_limit(resp)
@@ -168,13 +179,13 @@ class TwitterClient:
             if resp.status_code == 429:
                 continue
             if resp.status_code != 200:
-                logger.error(f"Favoriters API error {resp.status_code} for tweet {tweet_id}: {resp.text[:200]}")
+                print(f"Retweeters API error {resp.status_code} for tweet {tweet_id}: {resp.text[:200]}", flush=True)
                 break
 
             data = resp.json()
             timeline = (
                 data.get("data", {})
-                .get("favoriters_timeline", {})
+                .get("retweeters_timeline", {})
                 .get("timeline", {})
                 .get("instructions", [])
             )
@@ -209,7 +220,7 @@ class TwitterClient:
                 break
             cursor = next_cursor
 
-        logger.info(f"Tweet {tweet_id}: {len(all_users)} likers")
+        logger.info(f"Tweet {tweet_id}: {len(all_users)} retweeters")
         return all_users
 
     async def create_list(self, name: str, description: str = "", private: bool = True) -> str | None:

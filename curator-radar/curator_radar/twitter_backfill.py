@@ -1,6 +1,8 @@
 """
-Fetch likers for bookmarked tweets via Twitter's Favoriters GraphQL endpoint.
+Fetch retweeters for bookmarked tweets via Twitter's Retweeters GraphQL endpoint.
 Processes newest-first. Resumable via likers_fetched flag.
+Note: Originally designed for Favoriters (likers), but Twitter disabled that endpoint
+in 2024 when they made likes private. Retweeters serves as a public-signal proxy.
 """
 import logging
 from datetime import datetime, timezone
@@ -37,7 +39,7 @@ async def fetch_tweet_likers(session: AsyncSession, client: TwitterClient) -> di
 
     for tweet in tweets:
         try:
-            likers = await client.get_favoriters(tweet.tweet_id)
+            likers = await client.get_retweeters(tweet.tweet_id)
 
             now = datetime.now(timezone.utc)
             for liker in likers:
@@ -56,12 +58,12 @@ async def fetch_tweet_likers(session: AsyncSession, client: TwitterClient) -> di
             total_likers += len(likers)
             logger.info(
                 f"[{tweets_processed}/{len(tweets)}] Tweet {tweet.tweet_id}: "
-                f"{len(likers)} likers (total: {total_likers})"
+                f"{len(likers)} retweeters (total: {total_likers})"
             )
 
         except Exception as e:
             errors += 1
-            logger.error(f"Error fetching likers for tweet {tweet.tweet_id}: {e}")
+            logger.error(f"Error fetching retweeters for tweet {tweet.tweet_id}: {e}")
             await session.rollback()
 
             if errors >= 5:
