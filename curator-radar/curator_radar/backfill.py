@@ -11,6 +11,13 @@ logger = logging.getLogger(__name__)
 TWELVE_MONTHS_AGO = datetime.now(timezone.utc) - timedelta(days=365)
 
 
+def _parse_dt(val: str | None) -> datetime | None:
+    """Parse an ISO 8601 timestamp string to a datetime, or return None."""
+    if not val:
+        return None
+    return datetime.fromisoformat(val.replace("Z", "+00:00"))
+
+
 async def backfill_stars(session: AsyncSession, client: GitHubClient, since_days: int = 365):
     """Fetch user's starred repos from the last N days."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
@@ -32,12 +39,12 @@ async def backfill_stars(session: AsyncSession, client: GitHubClient, since_days
                 language=repo.get("language"),
                 topics=repo.get("topics", []),
                 stargazers_count=repo.get("stargazers_count", 0),
-                created_at=repo.get("created_at"),
-                pushed_at=repo.get("pushed_at"),
+                created_at=_parse_dt(repo.get("created_at")),
+                pushed_at=_parse_dt(repo.get("pushed_at")),
                 starred_at_by_chad=starred_at,
             ).on_conflict_do_update(
                 index_elements=["repo_id"],
-                set_={"stargazers_count": repo.get("stargazers_count", 0), "pushed_at": repo.get("pushed_at")},
+                set_={"stargazers_count": repo.get("stargazers_count", 0), "pushed_at": _parse_dt(repo.get("pushed_at"))},
             )
             await session.execute(stmt)
             count += 1
