@@ -37,8 +37,6 @@ def generate_daily_briefing(
     import traceback
     import re
     import os
-    import sys
-    import asyncio
     from datetime import datetime, timedelta
     import pytz
     
@@ -117,58 +115,37 @@ def generate_daily_briefing(
         except ValueError:
             update_day_number = str(now.day)
         
-        # Add parent directory to path for imports
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
-        # Import MCP client from scheduling orchestrator
+        # ========== FETCH CALENDAR EVENTS VIA GWS CLI ==========
+        import subprocess
+        import json as json_lib
+
+        time_min = target_dt.astimezone(pytz.UTC).strftime("%Y-%m-%dT00:00:00Z")
+        time_max = (target_dt + timedelta(days=1)).astimezone(pytz.UTC).strftime("%Y-%m-%dT23:59:59Z")
+
+        gws_params = json_lib.dumps({
+            "calendarId": calendar_id,
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "singleEvents": True,
+            "orderBy": "startTime"
+        })
+
         try:
-            from scheduling_orchestrator.mcp_client import MCPCalendarClient, MCPError
-        except ImportError:
-            MCPCalendarClient = None
-            MCPError = Exception
-        
-        # Initialize MCP client if available
-        if MCPCalendarClient is None:
-            return {
-                "status": "error",
-                "briefing": "",
-                "instructions": "An error occurred. Do not update memory.",
-                "timestamp": now.isoformat(),
-                "current_time_eastern": current_time_formatted,
-                "error_message": "MCP calendar client not available. Ensure scheduling_orchestrator.mcp_client is accessible."
-            }
-        
-        # Get MCP server URL from environment or use default
-        mcp_url = os.getenv(
-            "MCP_CALENDAR_SERVER_URL",
-            "http://n8n:5678/mcp/ede03719-3045-4eba-9f78-959cb02c04bb"
-        )
-        
-        # Create MCP client
-        mcp_client = MCPCalendarClient(
-            base_url=mcp_url,
-            timeout=int(os.getenv("MCP_CALENDAR_TIMEOUT", "30")),
-            max_retries=int(os.getenv("MCP_CALENDAR_RETRY_ATTEMPTS", "3"))
-        )
-        
-        # ========== FETCH CALENDAR EVENTS ==========
-        # Fetch a window around the target date
-        day_before_start = target_dt - timedelta(days=1)
-        day_after_end = target_dt + timedelta(days=2)
-        after_date_iso = day_before_start.astimezone(pytz.UTC).strftime("%Y-%m-%dT00:00:00Z")
-        before_date_iso = day_after_end.astimezone(pytz.UTC).strftime("%Y-%m-%dT23:59:59Z")
-        
-        # Use inline async execution
-        try:
-            async def _async_fetch():
-                if not mcp_client._initialized:
-                    await mcp_client.initialize()
-                return await mcp_client.get_core_event_data(
-                    calendar_id=calendar_id,
-                    before=before_date_iso,
-                    after=after_date_iso
-                )
-            raw_events = asyncio.run(_async_fetch())
+            result = subprocess.run(
+                ["gws", "calendar", "events", "list", "--params", gws_params, "--format", "json"],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.returncode != 0:
+                return {
+                    "status": "error",
+                    "briefing": "",
+                    "instructions": "An error occurred. Do not update memory.",
+                    "timestamp": now.isoformat(),
+                    "current_time_eastern": current_time_formatted,
+                    "error_message": f"gws CLI error (exit {result.returncode}): {result.stderr[:200]}"
+                }
+            gws_data = json_lib.loads(result.stdout)
+            raw_events = gws_data.get("items", [])
         except Exception as e:
             return {
                 "status": "error",
@@ -275,36 +252,22 @@ def generate_daily_briefing(
             # Clean the title
             title = _clean_str(evt.get("summary", ""))
             
-            # Process attendees
-            attendees_list = evt.get("attendees_list", [])
-            attendees_details = evt.get("attendees_details", [])
-            if isinstance(attendees_list, str):
-                try:
-                    import ast
-                    attendees_list = ast.literal_eval(attendees_list)
-                except:
-                    attendees_list = []
-            elif not isinstance(attendees_list, list):
-                attendees_list = []
-            
+            # Process attendees — gws returns standard Google Calendar API format
+            raw_attendees = evt.get("attendees", [])
+            if not isinstance(raw_attendees, list):
+                raw_attendees = []
+
             attendees = []
-            if attendees_details and isinstance(attendees_details, list):
-                for attendee in attendees_details:
-                    if isinstance(attendee, dict):
-                        name = _clean_str(attendee.get("name", ""))
-                        email = _clean_str(attendee.get("email", ""))
-                        if name and email:
-                            attendees.append({"name": name, "email": email})
-                        elif email:
-                            attendees.append({"name": "", "email": email})
-                        elif name:
-                            attendees.append({"name": name, "email": ""})
-            if not attendees and attendees_list:
-                for a in attendees_list:
-                    if a:
-                        cleaned = _clean_str(str(a))
-                        if cleaned:
-                            attendees.append({"name": "", "email": cleaned})
+            for attendee in raw_attendees:
+                if isinstance(attendee, dict):
+                    name = _clean_str(attendee.get("displayName", ""))
+                    email = _clean_str(attendee.get("email", ""))
+                    if name and email:
+                        attendees.append({"name": name, "email": email})
+                    elif email:
+                        attendees.append({"name": "", "email": email})
+                    elif name:
+                        attendees.append({"name": name, "email": ""})
             
             normalized_events.append({
                 "id": evt.get("id", ""),
@@ -681,9 +644,32 @@ def generate_daily_briefing(
         except Exception as avail_err:
             available_time_section = f"**Available Time Remaining** — error calculating"
         
+        # ========== BUILD SCHEDULE JSON LINE ==========
+        # Single-line JSON for time-remaining.py consumption
+        # busy_blocks uses same rules as available time: only real meetings + Chad Out
+        busy_blocks_json = []
+        for event, event_id, start_dt, end_dt in real_meetings:
+            if start_dt and end_dt:
+                busy_blocks_json.append({
+                    "name": str(event.get("title", "") or ""),
+                    "start": start_dt.strftime("%H:%M"),
+                    "end": end_dt.strftime("%H:%M")
+                })
+        for event, event_id, start_dt, end_dt in chad_out_events:
+            if start_dt and end_dt:
+                busy_blocks_json.append({
+                    "name": str(event.get("title", "") or ""),
+                    "start": start_dt.strftime("%H:%M"),
+                    "end": end_dt.strftime("%H:%M")
+                })
+        busy_blocks_json.sort(key=lambda b: b["start"])
+
+        schedule_json_obj = {"work_end": "17:00", "busy_blocks": busy_blocks_json}
+        schedule_json_line = f"**Schedule JSON** (for time-remaining.py): {json_lib.dumps(schedule_json_obj, separators=(',', ':'))}"
+
         # Combine into briefing
-        briefing = f"{header}\n\n{schedule_section}\n\n{available_time_section}"
-        
+        briefing = f"{header}\n\n{schedule_section}\n\n{available_time_section}\n\n{schedule_json_line}"
+
         # Wrap in VERBATIM tags so the agent passes it through unchanged
         verbatim_briefing = f"[VERBATIM_USER_OUTPUT]\n{briefing}\n[/VERBATIM_USER_OUTPUT]"
         
@@ -701,7 +687,6 @@ def generate_daily_briefing(
             
             import urllib.request
             import urllib.error
-            import json as json_lib
             
             url = f"{letta_url}/v1/blocks/{memory_block_id}"
             data = json_lib.dumps({"value": briefing}).encode('utf-8')
