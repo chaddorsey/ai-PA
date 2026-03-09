@@ -1460,6 +1460,13 @@ services:
       TOP_CURATORS_K: "20"
       SLACKBOT_NOTIFY_URL: "http://slackbot:8081/api/notify"
       SLACK_USER_ID: "${SLACK_USER_ID:-U02V91KU8}"
+      SMAUG_CONFIG_PATH: "/app/smaug-config/smaug.config.json"
+      SMAUG_DATA_PATH: "/app/smaug-data"
+      TWITTER_LIST_NAME: "Curator Radar"
+      TWITTER_LIST_SIZE: "50"
+    volumes:
+      - ./smaug/smaug.config.json:/app/smaug-config/smaug.config.json:ro
+      - ./smaug-data:/app/smaug-data:ro
     ports:
       - "5145:5145"
     healthcheck:
