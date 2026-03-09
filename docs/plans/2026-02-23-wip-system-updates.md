@@ -1,6 +1,6 @@
 # WIP System Updates Tracker
 
-**Last updated:** 2026-03-07
+**Last updated:** 2026-03-08
 
 This document tracks in-flight system improvement projects that have been designed but not yet fully implemented. Each entry links to its detailed plan document.
 
@@ -496,6 +496,30 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 **Critical blocker:** Letta Code skills require a connected client process — agents invoked by slackbot/scheduler cannot rely solely on skills unless daemon mode is confirmed.
 
 **Prerequisites for Phase 0:** Install gws CLI and omnifocus-cli on host (both currently Docker-only). gws credentials already on host. omnifocus-cli's `bridge.py` has direct osascript path on macOS (bypasses HTTP bridge).
+
+---
+
+## 22. Curator Radar — GitHub Star Overlap Monitoring (NOT STARTED)
+
+**Status:** Plan written, not yet implemented
+**Plan:** [2026-03-08-curator-radar.md](2026-03-08-curator-radar.md)
+**Risk:** Low (new service, no existing system dependencies)
+**Estimated effort:** ~10 tasks, 3-4 hours total
+
+**Problem:** No systematic way to discover interesting new GitHub repos. Manually browsing is time-consuming and misses repos from trusted curators.
+
+**Solution:** FastAPI microservice (port 5145) that backfills GitHub stargazer data, computes IDF-weighted overlap scores to rank "curators" (users with similar star patterns), monitors top curators' daily activity (WatchEvents), and delivers weekly Markdown digests via Slack. No LLM calls — pure code pipeline.
+
+**Key components:**
+- Supabase PostgreSQL schema (`curator_radar` schema)
+- GitHub API client with rate limiting and conditional requests
+- Backfill pipeline for stargazer history (last 12 months)
+- Scoring engine: IDF-weighted overlap + earlyness percentile
+- Daily WatchEvent monitor via scheduler-service cron
+- Weekly Slack digest with ranked new repos
+- Letta tool (`query_curator_radar`) for agent access
+
+**Prerequisites:** GitHub PAT with `read:user` scope, Supabase DB access, scheduler-service cron integration.
 
 ---
 
