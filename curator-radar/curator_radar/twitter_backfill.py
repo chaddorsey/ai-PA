@@ -15,6 +15,11 @@ from .twitter_client import TwitterClient
 logger = logging.getLogger(__name__)
 
 
+def _strip_null(s: str) -> str:
+    """Remove null bytes that PostgreSQL rejects."""
+    return s.replace("\x00", "") if s else s
+
+
 async def fetch_tweet_likers(session: AsyncSession, client: TwitterClient) -> dict:
     """Fetch likers for all unfetched bookmarked tweets (newest first).
 
@@ -28,25 +33,28 @@ async def fetch_tweet_likers(session: AsyncSession, client: TwitterClient) -> di
     tweets = result.scalars().all()
 
     if not tweets:
-        logger.info("No unfetched tweets to process")
+        print("No unfetched tweets to process", flush=True)
         return {"tweets_processed": 0, "total_likers": 0}
 
-    logger.info(f"Fetching likers for {len(tweets)} tweets (newest first)")
+    # Eagerly capture tweet IDs to avoid lazy-load outside async context
+    tweet_ids = [(tweet.tweet_id, tweet) for tweet in tweets]
+
+    print(f"Fetching likers for {len(tweet_ids)} tweets (newest first)", flush=True)
 
     tweets_processed = 0
     total_likers = 0
     errors = 0
 
-    for tweet in tweets:
+    for tweet_id, tweet in tweet_ids:
         try:
-            likers = await client.get_retweeters(tweet.tweet_id)
+            likers = await client.get_retweeters(tweet_id)
 
             now = datetime.now(timezone.utc)
             for liker in likers:
                 stmt = pg_insert(TweetLiker).values(
-                    tweet_id=tweet.tweet_id,
-                    user_handle=liker["handle"],
-                    user_name=liker.get("name", ""),
+                    tweet_id=tweet_id,
+                    user_handle=_strip_null(liker["handle"]),
+                    user_name=_strip_null(liker.get("name", "")),
                     fetched_at=now,
                 ).on_conflict_do_nothing()
                 await session.execute(stmt)
@@ -56,26 +64,27 @@ async def fetch_tweet_likers(session: AsyncSession, client: TwitterClient) -> di
 
             tweets_processed += 1
             total_likers += len(likers)
-            logger.info(
-                f"[{tweets_processed}/{len(tweets)}] Tweet {tweet.tweet_id}: "
-                f"{len(likers)} retweeters (total: {total_likers})"
+            print(
+                f"[{tweets_processed}/{len(tweet_ids)}] Tweet {tweet_id}: "
+                f"{len(likers)} retweeters (total: {total_likers})",
+                flush=True,
             )
 
         except Exception as e:
             errors += 1
-            logger.error(f"Error fetching retweeters for tweet {tweet.tweet_id}: {e}")
+            print(f"Error fetching retweeters for tweet {tweet_id}: {e}", flush=True)
             await session.rollback()
 
             if errors >= 5:
-                logger.error("Too many consecutive errors, stopping backfill")
+                print("Too many consecutive errors, stopping backfill", flush=True)
                 break
             continue
 
     stats = {
         "tweets_processed": tweets_processed,
-        "tweets_remaining": len(tweets) - tweets_processed,
+        "tweets_remaining": len(tweet_ids) - tweets_processed,
         "total_likers": total_likers,
         "errors": errors,
     }
-    logger.info(f"Backfill complete: {stats}")
+    print(f"Backfill complete: {stats}", flush=True)
     return stats

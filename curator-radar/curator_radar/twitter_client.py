@@ -177,6 +177,7 @@ class TwitterClient:
             await self._handle_rate_limit(resp)
 
             if resp.status_code == 429:
+                print(f"  Tweet {tweet_id}: rate limited, backing off {self.rate.current_delay:.0f}s", flush=True)
                 continue
             if resp.status_code != 200:
                 print(f"Retweeters API error {resp.status_code} for tweet {tweet_id}: {resp.text[:200]}", flush=True)
@@ -219,8 +220,9 @@ class TwitterClient:
             if not found_users or not next_cursor:
                 break
             cursor = next_cursor
+            print(f"  Tweet {tweet_id}: page done, {len(all_users)} retweeters so far", flush=True)
 
-        logger.info(f"Tweet {tweet_id}: {len(all_users)} retweeters")
+        print(f"Tweet {tweet_id}: {len(all_users)} retweeters total", flush=True)
         return all_users
 
     async def create_list(self, name: str, description: str = "", private: bool = True) -> str | None:
