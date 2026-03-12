@@ -16,18 +16,40 @@ def should_use_json(format_flag: str | None) -> bool:
     return not sys.stdout.isatty()
 
 
+def _mask_dict(d: dict, fields: list[str]) -> dict:
+    """Filter a single dict to only include specified fields."""
+    return {k: v for k, v in d.items() if k in fields}
+
+
 def apply_field_mask(data, fields: list[str] | None):
-    """Filter dict or list of dicts to only include specified fields."""
+    """Filter response to only include specified fields.
+
+    Handles Slack API responses where the interesting data is nested inside
+    a list (e.g. {"ok": true, "channels": [...]}). If none of the requested
+    fields match top-level keys, looks for the main data array and applies
+    the mask to each item within it.
+    """
     if fields is None:
         return data
-    if isinstance(data, dict):
-        return {k: v for k, v in data.items() if k in fields}
     if isinstance(data, list):
-        return [
-            {k: v for k, v in item.items() if k in fields}
-            for item in data
-            if isinstance(item, dict)
-        ]
+        return [_mask_dict(item, fields) for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        # Check if any requested fields exist at the top level
+        top_level_match = any(k in fields for k in data)
+        if top_level_match:
+            return _mask_dict(data, fields)
+
+        # No top-level match — find the main data array and mask its items.
+        # Slack responses typically have one list-valued key (channels, members,
+        # messages, files, items, pins, reminders, etc.) alongside metadata
+        # keys like ok, response_metadata, cache_ts.
+        for k, v in data.items():
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                masked_items = [_mask_dict(item, fields) for item in v if isinstance(item, dict)]
+                return {k: masked_items}
+
+        # Fallback: filter top-level keys (original behavior)
+        return _mask_dict(data, fields)
     return data
 
 

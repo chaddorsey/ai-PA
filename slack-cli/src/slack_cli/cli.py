@@ -11,6 +11,55 @@ from slack_cli.schema import get_schema
 from slack_cli.validate import validate_body, validate_semantic
 
 
+# Global options that can appear anywhere in the command line (before or after subcommands).
+# Click normally requires group options before the subcommand name. This custom Group class
+# extracts these options from any position so agents can write natural commands like:
+#   slack conversations list --body '{"limit":5}' --format json
+# instead of requiring:
+#   slack --body '{"limit":5}' --format json conversations list
+GLOBAL_OPTIONS = {
+    "--format": {"nargs": 1, "key": "format"},
+    "--body": {"nargs": 1, "key": "body"},
+    "--dry-run": {"nargs": 0, "key": "dry_run"},
+    "--fields": {"nargs": 1, "key": "fields"},
+    "--page-all": {"nargs": 0, "key": "page_all"},
+    "--page-limit": {"nargs": 1, "key": "page_limit"},
+    "--as-user": {"nargs": 0, "key": "as_user"},
+    "--as-bot": {"nargs": 0, "key": "as_bot"},
+}
+
+
+class GlobalOptionsGroup(click.Group):
+    """Click Group that allows global options to appear anywhere in the command line."""
+
+    def parse_args(self, ctx, args):
+        """Extract global options from args before normal parsing."""
+        remaining = []
+        i = 0
+        extracted = {}
+        while i < len(args):
+            arg = args[i]
+            if arg in GLOBAL_OPTIONS:
+                opt = GLOBAL_OPTIONS[arg]
+                if opt["nargs"] == 0:
+                    extracted[opt["key"]] = True
+                    i += 1
+                elif opt["nargs"] == 1 and i + 1 < len(args):
+                    extracted[opt["key"]] = args[i + 1]
+                    i += 2
+                else:
+                    remaining.append(arg)
+                    i += 1
+            else:
+                remaining.append(arg)
+                i += 1
+
+        # Store extracted globals for apply after normal parsing
+        ctx.ensure_object(dict)
+        ctx.obj["_extracted_globals"] = extracted
+        return super().parse_args(ctx, remaining)
+
+
 def _run(ctx, schema_key: str, params: dict, had_convenience_flags: bool = False):
     """Core execution helper. Every command routes through this.
 
@@ -91,7 +140,7 @@ def _run(ctx, schema_key: str, params: dict, had_convenience_flags: bool = False
         sys.exit(e.exit_code)
 
 
-@click.group()
+@click.group(cls=GlobalOptionsGroup)
 @click.option("--format", "format_flag", type=click.Choice(["json", "text", "csv", "yaml"]), default=None,
               help="Output format (default: json)")
 @click.option("--body", "body_json", default=None, help="Raw JSON input (agent-first path)")
@@ -115,11 +164,30 @@ def cli(ctx, format_flag, body_json, dry_run, fields, page_all, page_limit, as_u
     ctx.obj["as_user"] = as_user
     ctx.obj["as_bot"] = as_bot
 
+    # Merge any global options that appeared after subcommand names
+    extracted = ctx.obj.pop("_extracted_globals", {})
+    if "format" in extracted:
+        ctx.obj["format"] = extracted["format"]
+    if "body" in extracted:
+        ctx.obj["body"] = extracted["body"]
+    if "dry_run" in extracted:
+        ctx.obj["dry_run"] = True
+    if "fields" in extracted:
+        ctx.obj["fields"] = extracted["fields"].split(",")
+    if "page_all" in extracted:
+        ctx.obj["page_all"] = True
+    if "page_limit" in extracted:
+        ctx.obj["page_limit"] = int(extracted["page_limit"])
+    if "as_user" in extracted:
+        ctx.obj["as_user"] = True
+    if "as_bot" in extracted:
+        ctx.obj["as_bot"] = True
+
 
 # ── conversations command group ──────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def conversations():
     """Manage channels and conversations."""
 
@@ -341,7 +409,7 @@ def conversations_set_topic(ctx, channel, topic):
 # ── chat command group ───────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def chat():
     """Send, update, and delete messages."""
 
@@ -478,7 +546,7 @@ def chat_unfurl(ctx, channel, ts, unfurls):
 # ── users command group ──────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def users():
     """Manage users."""
 
@@ -580,7 +648,7 @@ def users_set_presence(ctx, presence):
 # ── reactions command group ──────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def reactions():
     """Manage reactions."""
 
@@ -639,7 +707,7 @@ def reactions_list(ctx, user, limit, cursor):
 # ── files command group ──────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def files():
     """Manage files."""
 
@@ -698,7 +766,7 @@ def files_delete(ctx, file_id):
 # ── search command group ─────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def search():
     """Search messages and files."""
 
@@ -740,7 +808,7 @@ def search_files(ctx, query, sort, sort_dir, count, page):
 # ── pins command group ───────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def pins():
     """Manage pinned items."""
 
@@ -780,7 +848,7 @@ def pins_list(ctx, channel):
 # ── bookmarks command group ──────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def bookmarks():
     """Manage channel bookmarks."""
 
@@ -843,7 +911,7 @@ def bookmarks_list(ctx, channel_id):
 # ── reminders command group ──────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def reminders():
     """Manage reminders."""
 
@@ -902,7 +970,7 @@ def reminders_list(ctx):
 # ── team command group ───────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def team():
     """Team information and administration."""
 
@@ -941,7 +1009,7 @@ def team_billable_info(ctx, user):
 # ── auth command group ───────────────────────────────────────────────────────
 
 
-@cli.group()
+@cli.group(cls=GlobalOptionsGroup)
 def auth():
     """Manage authentication."""
 
