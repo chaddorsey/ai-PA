@@ -46,8 +46,8 @@ JOBS = [
         ],
     },
     {
-        "title": "Curator Radar: GitHub Rescore (Weekly)",
-        "description": "Full rescore of GitHub curators after weekly star scan.",
+        "title": "Curator Radar: Stargazer Refresh (Weekly)",
+        "description": "Check for changed star counts on existing repos, fetch new stargazers, and rescore.",
         "created_by": "system",
         "category": CATEGORY,
         "schedule": {
@@ -59,10 +59,10 @@ JOBS = [
                 "action_type": "http",
                 "config": {
                     "method": "POST",
-                    "url": f"{CURATOR_RADAR_BASE}/score?platform=github",
+                    "url": f"{CURATOR_RADAR_BASE}/stargazers/refresh",
                     "headers": {"Content-Type": "application/json"},
-                    "timeout": 120,
-                    "retries": 2,
+                    "timeout": 600,
+                    "retries": 1,
                 },
             }
         ],

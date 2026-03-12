@@ -17,6 +17,8 @@ class StarredRepo(Base):
     language: Mapped[str | None] = mapped_column(String(50), nullable=True)
     topics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     stargazers_count: Mapped[int] = mapped_column(Integer, default=0)
+    stargazers_count_at_fetch: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stargazers_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     starred_at_by_chad: Mapped[datetime] = mapped_column(DateTime(timezone=True))

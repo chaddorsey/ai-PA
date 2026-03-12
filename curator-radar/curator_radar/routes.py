@@ -5,7 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .database import get_session
 from .settings import Settings
 from .github_client import GitHubClient
-from .backfill import backfill_stars, backfill_stargazers, get_backfill_status
+from .backfill import (
+    backfill_stars, backfill_stargazers, get_backfill_status,
+    refresh_stargazer_counts, refresh_changed_stargazers,
+)
 from .scoring import score_curators, get_top_curators
 from .monitor import refresh_curator_events, get_discoveries
 from .digest import generate_digest
@@ -45,6 +48,40 @@ async def start_backfill(background_tasks: BackgroundTasks, since_days: int = 36
 @router.get("/backfill/status")
 async def backfill_status(session: AsyncSession = Depends(get_session)):
     return await get_backfill_status(session)
+
+
+@router.post("/stargazers/refresh")
+async def refresh_stargazers(background_tasks: BackgroundTasks):
+    """Incrementally refresh stargazers: check for count changes, fetch new ones, rescore."""
+    async def _refresh():
+        import traceback
+        from .database import AsyncSessionFactory
+        client = GitHubClient(settings)
+        try:
+            async with AsyncSessionFactory() as session:
+                print("Stargazer refresh: checking counts...", flush=True)
+                counts = await refresh_stargazer_counts(session, client)
+                print(f"Stargazer refresh: {counts}", flush=True)
+
+                if counts["counts_changed"] > 0:
+                    print("Stargazer refresh: fetching new stargazers...", flush=True)
+                    gazers = await refresh_changed_stargazers(session, client)
+                    print(f"Stargazer refresh: {gazers}", flush=True)
+
+                    print("Stargazer refresh: rescoring...", flush=True)
+                    scored = await score_curators(session, platform="github")
+                    print(f"Stargazer refresh: scored {scored} curators", flush=True)
+                else:
+                    print("Stargazer refresh: no changes detected, skipping fetch and rescore", flush=True)
+
+                print("Stargazer refresh complete.", flush=True)
+        except Exception as e:
+            print(f"Stargazer refresh failed: {e}\n{traceback.format_exc()}", flush=True)
+        finally:
+            await client.close()
+
+    background_tasks.add_task(_refresh)
+    return {"status": "started", "pipeline": "stargazer-refresh"}
 
 
 @router.post("/score")
@@ -152,11 +189,14 @@ async def twitter_status(session: AsyncSession = Depends(get_session)):
 async def twitter_fetch_likers(background_tasks: BackgroundTasks):
     """Fetch likers for unfetched tweets in background."""
     async def _fetch():
+        import traceback
         from .database import AsyncSessionFactory
         client = TwitterClient(settings)
         try:
             async with AsyncSessionFactory() as session:
                 await fetch_tweet_likers(session, client)
+        except Exception as e:
+            print(f"Background fetch-likers failed: {e}\n{traceback.format_exc()}", flush=True)
         finally:
             await client.close()
     background_tasks.add_task(_fetch)
