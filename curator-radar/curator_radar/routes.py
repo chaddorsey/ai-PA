@@ -107,7 +107,11 @@ async def monitor_refresh(session: AsyncSession = Depends(get_session)):
 
 @router.get("/discoveries")
 async def discoveries(since_days: int = 7, session: AsyncSession = Depends(get_session)):
-    return await get_discoveries(session, since_days)
+    client = GitHubClient(settings)
+    try:
+        return await get_discoveries(session, since_days, client=client)
+    finally:
+        await client.close()
 
 
 @router.get("/digest")

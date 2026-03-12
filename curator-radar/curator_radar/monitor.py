@@ -57,8 +57,14 @@ async def refresh_curator_events(session: AsyncSession, client: GitHubClient, to
     return new_events
 
 
-async def get_discoveries(session: AsyncSession, since_days: int = 7) -> list[dict]:
-    """Get repos discovered by curators in the last N days, ranked by curator count."""
+async def get_discoveries(
+    session: AsyncSession, since_days: int = 7, client: GitHubClient | None = None,
+) -> list[dict]:
+    """Get repos discovered by curators in the last N days, ranked by curator count.
+
+    If a GitHubClient is provided, enriches results with repo description,
+    language, and star count from the GitHub API.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
     result = await session.execute(
         select(
@@ -87,15 +93,33 @@ async def get_discoveries(session: AsyncSession, since_days: int = 7) -> list[di
 
     # Sort by number of curators (social proof), then total score
     ranked = sorted(repo_map.values(), key=lambda r: (len(r["curators"]), r["total_score"]), reverse=True)
+    top = ranked[:50]
+
+    # Enrich with GitHub metadata if client available
+    repo_meta: dict[str, dict] = {}
+    if client:
+        for r in top:
+            try:
+                info = await client.get_repo_info(r["repo"])
+                repo_meta[r["repo"]] = {
+                    "description": info.get("description") or "",
+                    "language": info.get("language") or "",
+                    "stars": info.get("stargazers_count", 0),
+                }
+            except Exception:
+                repo_meta[r["repo"]] = {"description": "", "language": "", "stars": 0}
 
     return [
         {
             "repo": r["repo"],
             "github_url": f"https://github.com/{r['repo']}",
+            "description": repo_meta.get(r["repo"], {}).get("description", ""),
+            "language": repo_meta.get(r["repo"], {}).get("language", ""),
+            "stars": repo_meta.get(r["repo"], {}).get("stars", 0),
             "curator_count": len(r["curators"]),
             "curators": [c["login"] for c in r["curators"]],
             "total_curator_score": round(r["total_score"], 2),
             "latest_event": r["latest"].isoformat(),
         }
-        for r in ranked[:50]
+        for r in top
     ]
