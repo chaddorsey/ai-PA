@@ -641,7 +641,10 @@ def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]
         request_id=request_id,
     )
 
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
     if LETTABOT_API_KEY:
         headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
 
@@ -686,7 +689,7 @@ def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]
 
                                 elif msg_type == "tool_call":
                                     tool_name = event.get("toolName", event.get("name", "unknown"))
-                                    tool_input = event.get("toolInput", event.get("args", {}))
+                                    tool_input = event.get("toolInput") or event.get("rawArguments") or event.get("args", {})
                                     yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_input})}\n\n"
 
                                 elif msg_type == "tool_result":
@@ -706,7 +709,7 @@ def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]
                                         yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
 
                                 elif msg_type == "error":
-                                    yield f"data: {json.dumps({'type': 'error', 'message': event.get('error', 'Unknown error')})}\n\n"
+                                    yield f"data: {json.dumps({'type': 'error', 'message': event.get('message', event.get('error', 'Unknown error'))})}\n\n"
 
                             except json.JSONDecodeError:
                                 pass
