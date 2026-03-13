@@ -316,6 +316,42 @@ class TwitterClient:
                         })
         return members
 
+    def get_list_tweets(self, list_id: str, count: int = 20) -> list[dict]:
+        """Fetch recent tweets from a Twitter list timeline."""
+        data = self._graphql_get("ListLatestTweetsTimeline", {
+            "listId": list_id,
+            "count": count,
+        })
+        instructions = (
+            data.get("data", {})
+            .get("list", {})
+            .get("tweets_timeline", {})
+            .get("timeline", {})
+            .get("instructions", [])
+        )
+        return self._extract_instructions_tweets(instructions)
+
+    def get_my_lists(self) -> list[dict]:
+        """Fetch the authenticated user's owned and followed lists via v1.1 API."""
+        session = self._get_session()
+        self._wait()
+        resp = session.get("https://x.com/i/api/1.1/lists/list.json")
+        if resp.status_code != 200:
+            raise RuntimeError(f"lists/list API error {resp.status_code}: {resp.text[:300]}")
+        lists = []
+        for item in resp.json():
+            user = item.get("user", {})
+            owner = user.get("screen_name", "") if isinstance(user, dict) else ""
+            lists.append({
+                "id": item.get("id_str", ""),
+                "name": item.get("name", ""),
+                "description": item.get("description", ""),
+                "member_count": item.get("member_count", 0),
+                "mode": item.get("mode", ""),
+                "owner": owner,
+            })
+        return lists
+
     # --- Write operations ---
 
     def create_list(self, name: str, description: str = "",

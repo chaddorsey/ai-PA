@@ -20,6 +20,8 @@ QUERY_IDS = {
     "TweetDetail": "16nxv6mC_2VaBvBwY2V85g",
     "Favorites": "lI07N6Otwv1PhnEgXILM7A",
     "ListMembers": "aXyqNzwoHJSOGN8R7FCmrg",
+    "ListLatestTweetsTimeline": "CMHuPAVadvYIqbIFURJFmw",
+    "ListOwnerships": "lI8FYYGMOu4wXmZXAMhCHQ",
     "CreateBookmark": "aoDbu3RHznuiSkQ9aNM67Q",
 }
 

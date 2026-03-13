@@ -289,6 +289,17 @@ async def twitter_bookmarks_read(count: int = 20):
         client.close()
 
 
+@router.get("/twitter/lists")
+async def twitter_my_lists():
+    """Fetch the authenticated user's owned lists."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        lists = await asyncio.to_thread(client.get_my_lists)
+        return {"status": "ok", "lists": lists}
+    finally:
+        client.close()
+
+
 @router.get("/twitter/list/{list_id}/members")
 async def twitter_list_members(list_id: str, count: int = 100):
     """Fetch list members for agent access."""
@@ -296,6 +307,30 @@ async def twitter_list_members(list_id: str, count: int = 100):
     try:
         members = await asyncio.to_thread(client.get_list_members, list_id, count)
         return {"status": "ok", "list_id": list_id, "members": members}
+    finally:
+        client.close()
+
+
+@router.get("/twitter/list/{list_id}/tweets")
+async def twitter_list_tweets(list_id: str, count: int = 20):
+    """Fetch recent tweets from a list timeline."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        tweets = await asyncio.to_thread(client.get_list_tweets, list_id, count)
+        return {"status": "ok", "list_id": list_id, "tweets": tweets}
+    finally:
+        client.close()
+
+
+@router.post("/twitter/list/create")
+async def twitter_create_list(name: str, description: str = "", private: bool = True):
+    """Create a new Twitter list."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        list_id = await asyncio.to_thread(client.create_list, name, description, private)
+        if not list_id:
+            return {"status": "error", "error": "Failed to create list"}
+        return {"status": "ok", "list_id": list_id, "name": name}
     finally:
         client.close()
 

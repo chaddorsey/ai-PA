@@ -12,8 +12,9 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
       command="feed"                         -- Your home timeline
       command="user"    params='{"handle":"elonmusk","count":10}'  -- Someone's tweets
       command="search"  params='{"q":"AI agents"}'                 -- Search
+      command="lists"                        -- Your Twitter lists (owned + followed)
+      command="list-tweets" params='{"list_id":"123"}'  -- Tweets from a list
       command="curators"                     -- Top Twitter curators
-      command="bookmarks"                    -- Your bookmarks
       command="schema"                       -- List all commands
 
     Args:
@@ -61,11 +62,23 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
             "description": "A tweet and its replies",
             "params": {"tweet_id": "str (required, in path)"},
         },
+        "lists": {
+            "method": "GET",
+            "path": "/twitter/lists",
+            "description": "Your owned and followed Twitter lists (id, name, member_count)",
+            "params": {},
+        },
         "list-members": {
             "method": "GET",
             "path": "/twitter/list/{list_id}/members",
             "description": "Members of a Twitter list",
             "params": {"list_id": "str (required, in path)", "count": "int (default 100)"},
+        },
+        "list-tweets": {
+            "method": "GET",
+            "path": "/twitter/list/{list_id}/tweets",
+            "description": "Recent tweets from a list timeline",
+            "params": {"list_id": "str (required, in path)", "count": "int (default 20)"},
         },
         "curators": {
             "method": "GET",
@@ -97,6 +110,12 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
             "path": "/twitter/list-remove",
             "description": "Remove a user from a Twitter list",
             "params": {"list_id": "str (required)", "handle": "str (required)"},
+        },
+        "list-create": {
+            "method": "POST",
+            "path": "/twitter/list/create",
+            "description": "Create a new Twitter list",
+            "params": {"name": "str (required)", "description": "str (optional)", "private": "bool (default true)"},
         },
     }
 
