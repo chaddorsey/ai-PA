@@ -21,6 +21,11 @@ def run_notebooklm(command: str, params: Optional[str] = None,
       command="source add-file", params='{"notebookId": "abc123", "filePath": "/path/to.pdf"}'
       command="source list", params='{"notebookId": "abc123"}'
 
+    Remote file support (Tailscale):
+      Files on remote machines can be referenced as "hostname:/path/to/file".
+      The tool will fetch the file via SCP before uploading to NotebookLM.
+      command="source add-file", params='{"notebookId": "abc123", "filePath": "cc-tn2wdg94p2:/Users/chad/paper.pdf"}'
+
     Chat examples:
       command="chat ask", params='{"notebookId": "abc123", "question": "Summarize this"}'
 
@@ -39,6 +44,7 @@ def run_notebooklm(command: str, params: Optional[str] = None,
     Args:
         command: The notebooklm-cli subcommand (e.g. "notebook list", "chat ask")
         params: JSON string of parameters (optional). Passed as --body.
+            For file operations, filePath can be "hostname:/path" for remote files via Tailscale SCP.
         fields: Comma-separated output fields (optional). Limits token usage.
         timeout: Command timeout in seconds (default 60). Use 300 for artifact wait.
 
@@ -46,13 +52,42 @@ def run_notebooklm(command: str, params: Optional[str] = None,
         Dictionary with status and parsed JSON response.
     """
     import json
+    import os
     import shlex
     import subprocess
+    import tempfile
     import traceback
 
     try:
         if not command or not command.strip():
             return {"status": "error", "error_message": "command is required"}
+
+        # Resolve remote file paths (hostname:/path) via SCP
+        staging_files = []
+        if params:
+            params_dict = json.loads(params)
+            for key in ("filePath", "outputPath"):
+                val = params_dict.get(key, "")
+                if ":" in val and not val.startswith("/") and not val.startswith("."):
+                    host_part, remote_path = val.split(":", 1)
+                    if remote_path.startswith("/"):
+                        staging_dir = "/tmp/notebooklm-staging"
+                        os.makedirs(staging_dir, exist_ok=True)
+                        basename = os.path.basename(remote_path)
+                        local_staging = os.path.join(staging_dir, basename)
+                        scp_result = subprocess.run(
+                            ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                             f"{host_part}:{remote_path}", local_staging],
+                            capture_output=True, text=True, timeout=30,
+                        )
+                        if scp_result.returncode != 0:
+                            return {
+                                "status": "error",
+                                "error_message": f"Failed to fetch remote file from {host_part}: {scp_result.stderr[:500]}",
+                            }
+                        params_dict[key] = local_staging
+                        staging_files.append(local_staging)
+            params = json.dumps(params_dict)
 
         cli_args = ["notebooklm-cli"]
 
@@ -68,6 +103,13 @@ def run_notebooklm(command: str, params: Optional[str] = None,
         cli_args.extend(shlex.split(command.strip()))
 
         r = subprocess.run(cli_args, capture_output=True, text=True, timeout=timeout)
+
+        # Clean up staging files
+        for f in staging_files:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
 
         if r.returncode != 0:
             return {"status": "error", "error_message": r.stderr[:1000] if r.stderr else f"Exit code {r.returncode}"}
