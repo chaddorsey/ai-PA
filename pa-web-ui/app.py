@@ -10,6 +10,9 @@ from typing import Generator
 
 import httpx
 
+LETTABOT_API_URL = os.environ.get("LETTABOT_API_URL", "http://localhost:8080")
+LETTABOT_API_KEY = os.environ.get("LETTABOT_API_KEY", "")
+
 # Pattern to strip internal SUMMARY/REFS lines from user-facing responses
 # SUMMARY can appear at start of line OR after punctuation mid-text
 SUMMARY_PATTERN = re.compile(r"\s*SUMMARY:.*$", re.MULTILINE)
@@ -583,6 +586,116 @@ def stream_coordination(
     )
 
 
+def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]:
+    """Stream a message through LettaBot's native API and translate to pa-web SSE format."""
+    import uuid
+
+    request_id = str(uuid.uuid4())
+
+    # Emit routing event
+    yield f"data: {json.dumps({'type': 'routing', 'agent_id': 'lettabot', 'agent_name': 'LettaBot', 'request_id': request_id})}\n\n"
+
+    # Save user message (lightweight log)
+    save_conversation_message(
+        session_id=session_id,
+        role="user",
+        message=message,
+        agent_id="lettabot",
+        agent_name="LettaBot",
+        request_id=request_id,
+    )
+
+    headers = {"Content-Type": "application/json"}
+    if LETTABOT_API_KEY:
+        headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
+
+    assistant_content = ""
+
+    try:
+        with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+            with client.stream(
+                "POST",
+                f"{LETTABOT_API_URL}/api/v1/chat",
+                json={"message": message, "stream": True},
+                headers=headers,
+            ) as response:
+                if response.status_code != 200:
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'LettaBot returned {response.status_code}'})}\n\n"
+                    return
+
+                buffer = ""
+                for chunk in response.iter_text():
+                    buffer += chunk
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+
+                        if not line or line.startswith(":"):
+                            continue
+
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str == "[DONE]":
+                                continue
+
+                            try:
+                                event = json.loads(data_str)
+                                msg_type = event.get("type", "")
+
+                                if msg_type == "assistant":
+                                    content = event.get("content", "")
+                                    if content:
+                                        assistant_content += content
+                                        yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+
+                                elif msg_type == "tool_call":
+                                    tool_name = event.get("toolName", event.get("name", "unknown"))
+                                    tool_input = event.get("toolInput", event.get("args", {}))
+                                    yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_input})}\n\n"
+
+                                elif msg_type == "tool_result":
+                                    tool_content = event.get("content", "")
+                                    is_error = event.get("isError", False)
+                                    yield f"data: {json.dumps({'type': 'tool_result', 'content': tool_content, 'is_error': is_error})}\n\n"
+
+                                elif msg_type == "reasoning":
+                                    content = event.get("content", "")
+                                    if content:
+                                        yield f"data: {json.dumps({'type': 'thinking', 'content': content})}\n\n"
+
+                                elif msg_type == "result":
+                                    success = event.get("success", True)
+                                    if not success:
+                                        error_msg = event.get("error", "Unknown error")
+                                        yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+
+                                elif msg_type == "error":
+                                    yield f"data: {json.dumps({'type': 'error', 'message': event.get('error', 'Unknown error')})}\n\n"
+
+                            except json.JSONDecodeError:
+                                pass
+
+    except httpx.TimeoutException:
+        yield f"data: {json.dumps({'type': 'error', 'message': 'LettaBot request timed out'})}\n\n"
+    except Exception as e:
+        logger.error("lettabot_stream_error", error=str(e))
+        yield f"data: {json.dumps({'type': 'error', 'message': f'LettaBot error: {str(e)}'})}\n\n"
+
+    # Save assistant response (lightweight log)
+    if assistant_content:
+        save_conversation_message(
+            session_id=session_id,
+            role="assistant",
+            message=assistant_content,
+            agent_id="lettabot",
+            agent_name="LettaBot",
+            request_id=request_id,
+        )
+
+    # Emit done
+    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+
 @app.route("/stream", methods=["POST"])
 def stream():
     """
@@ -631,6 +744,26 @@ def stream():
                 session_id=session_id,
                 original_message=message,
             )
+
+    # Check if this is a slash command (explicit agent routing)
+    is_slash_command = bool(slash_command) or bool(agent_id)
+
+    if not is_slash_command:
+        # Default: route to LettaBot
+        logger.info(
+            "lettabot_stream_request",
+            session_id=session_id,
+            message_length=len(message),
+        )
+        return Response(
+            stream_lettabot(message, session_id),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     logger.info(
         "stream_request",
@@ -1022,6 +1155,24 @@ def stream():
                     )
                 except Exception as e:
                     logger.warning("thread_complete_failed", error=str(e))
+
+            # Post summary to LettaBot (fire-and-forget)
+            if assistant_response_parts:
+                summary_text = "".join(assistant_response_parts)[:500]
+                try:
+                    summary_headers = {"Content-Type": "application/json"}
+                    if LETTABOT_API_KEY:
+                        summary_headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
+                    with httpx.Client(timeout=10.0) as summary_client:
+                        summary_client.post(
+                            f"{LETTABOT_API_URL}/api/v1/chat/async",
+                            json={
+                                "message": f"[System: Agent handoff summary] The user invoked /{slash_command or 'agent'} and asked: \"{message[:200]}\"\n{agent_name} responded: \"{summary_text}\""
+                            },
+                            headers=summary_headers,
+                        )
+                except Exception as e:
+                    logger.warning("lettabot_summary_failed", error=str(e))
 
             # Send done event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -1703,12 +1854,13 @@ def api_omnifocus_create():
 
 
 # ── Gmail Drafts API (proxied via gws-bridge) ──
+GWS_BRIDGE_TIMEOUT = 60  # gws-bridge can take 30-35s for filtered queries
 
 @app.route('/api/drafts', methods=['GET'])
 def api_list_drafts():
     """List Gmail drafts filtered by Followup label."""
     try:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.get(
                 f"{GWS_BRIDGE_URL}/gmail/drafts",
                 params={"q": "label:Followup OR subject:\"meeting summary\"", "maxResults": 50},
@@ -1727,7 +1879,7 @@ def api_list_drafts():
 def api_get_draft(draft_id):
     """Get a single draft with full body."""
     try:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.get(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}")
             resp.raise_for_status()
             return jsonify(resp.json())
@@ -1746,7 +1898,7 @@ def api_update_draft(draft_id):
     """Update a draft's to, cc, subject, or body."""
     try:
         data = request.get_json()
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.put(
                 f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}",
                 json=data,
@@ -1767,7 +1919,7 @@ def api_update_draft(draft_id):
 def api_send_draft(draft_id):
     """Send a draft."""
     try:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.post(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}/send")
             resp.raise_for_status()
             return jsonify(resp.json())
@@ -1785,7 +1937,7 @@ def api_send_draft(draft_id):
 def api_delete_draft(draft_id):
     """Delete (discard) a draft."""
     try:
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.delete(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}")
             resp.raise_for_status()
             return jsonify(resp.json())
