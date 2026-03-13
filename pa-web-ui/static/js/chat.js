@@ -127,6 +127,7 @@ class ChatUI {
         }
 
         this.lastHeartbeatTs = '';
+        this.renderedHeartbeatIds = new Set();
 
         this.setupEventListeners();
         this.loadAgents();
@@ -1211,6 +1212,8 @@ class ChatUI {
             if (!resp.ok) return;
             const data = await resp.json();
             for (const hb of (data.heartbeats || [])) {
+                if (this.renderedHeartbeatIds.has(hb.ts)) continue;
+                this.renderedHeartbeatIds.add(hb.ts);
                 this.renderHeartbeatMessage(hb);
                 if (hb.ts > this.lastHeartbeatTs) {
                     this.lastHeartbeatTs = hb.ts;
