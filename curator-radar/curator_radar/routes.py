@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from .database import get_session
 from .settings import Settings
@@ -275,6 +276,11 @@ async def twitter_tweet_detail(tweet_id: str):
     try:
         data = await asyncio.to_thread(client.get_tweet_detail, tweet_id)
         return {"status": "ok", "data": data}
+    except RuntimeError as e:
+        return JSONResponse(
+            status_code=502,
+            content={"status": "error", "error": str(e)},
+        )
     finally:
         client.close()
 

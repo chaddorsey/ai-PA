@@ -160,6 +160,12 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
         if params:
             query_params = json.loads(params)
 
+        # Normalize common param aliases
+        ALIASES = {"id": "tweet_id", "list": "list_id", "user": "handle", "query": "q"}
+        for alias, canonical in ALIASES.items():
+            if alias in query_params and canonical not in query_params:
+                query_params[canonical] = query_params.pop(alias)
+
         # Build URL, substituting path parameters
         path = meta["path"]
         path_params = {}
