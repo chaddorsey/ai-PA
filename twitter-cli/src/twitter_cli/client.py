@@ -316,12 +316,14 @@ class TwitterClient:
                         })
         return members
 
-    def get_list_tweets(self, list_id: str, count: int = 20) -> list[dict]:
-        """Fetch recent tweets from a Twitter list timeline."""
-        data = self._graphql_get("ListLatestTweetsTimeline", {
-            "listId": list_id,
-            "count": count,
-        })
+    def get_list_tweets(self, list_id: str, count: int = 20,
+                        cursor: str | None = None) -> dict:
+        """Fetch recent tweets from a Twitter list timeline.
+        Returns {"tweets": [...], "next_cursor": str|None}."""
+        variables = {"listId": list_id, "count": count}
+        if cursor:
+            variables["cursor"] = cursor
+        data = self._graphql_get("ListLatestTweetsTimeline", variables)
         instructions = (
             data.get("data", {})
             .get("list", {})
@@ -329,7 +331,9 @@ class TwitterClient:
             .get("timeline", {})
             .get("instructions", [])
         )
-        return self._extract_instructions_tweets(instructions)
+        tweets = self._extract_instructions_tweets(instructions)
+        next_cursor = self._extract_cursor(instructions)
+        return {"tweets": tweets, "next_cursor": next_cursor}
 
     def get_my_lists(self) -> list[dict]:
         """Fetch the authenticated user's owned and followed lists via v1.1 API."""
@@ -476,3 +480,14 @@ class TwitterClient:
                     "url": f"https://x.com/{user_legacy.get('screen_name') or user_core.get('screen_name', '_')}/status/{legacy.get('id_str', '')}",
                 })
         return tweets
+
+    @staticmethod
+    def _extract_cursor(instructions: list) -> str | None:
+        """Extract the bottom pagination cursor from timeline instructions."""
+        for instruction in instructions:
+            for entry in instruction.get("entries", []):
+                content = entry.get("content", {})
+                if content.get("entryType") == "TimelineTimelineCursor":
+                    if content.get("cursorType") == "Bottom":
+                        return content.get("value")
+        return None

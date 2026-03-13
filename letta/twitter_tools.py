@@ -77,8 +77,8 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
         "list-tweets": {
             "method": "GET",
             "path": "/twitter/list/{list_id}/tweets",
-            "description": "Recent tweets from a list timeline",
-            "params": {"list_id": "str (required, in path)", "count": "int (default 20)"},
+            "description": "Recent tweets from a list timeline (paginated). Response includes next_cursor — pass it back as cursor to get the next page.",
+            "params": {"list_id": "str (required, in path)", "count": "int (default 20)", "cursor": "str (optional, for pagination)"},
         },
         "curators": {
             "method": "GET",

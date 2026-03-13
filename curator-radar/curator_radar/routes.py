@@ -312,12 +312,17 @@ async def twitter_list_members(list_id: str, count: int = 100):
 
 
 @router.get("/twitter/list/{list_id}/tweets")
-async def twitter_list_tweets(list_id: str, count: int = 20):
-    """Fetch recent tweets from a list timeline."""
+async def twitter_list_tweets(list_id: str, count: int = 20, cursor: str = None):
+    """Fetch recent tweets from a list timeline. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        tweets = await asyncio.to_thread(client.get_list_tweets, list_id, count)
-        return {"status": "ok", "list_id": list_id, "tweets": tweets}
+        result = await asyncio.to_thread(client.get_list_tweets, list_id, count, cursor)
+        return {
+            "status": "ok",
+            "list_id": list_id,
+            "tweets": result["tweets"],
+            "next_cursor": result["next_cursor"],
+        }
     finally:
         client.close()
 
