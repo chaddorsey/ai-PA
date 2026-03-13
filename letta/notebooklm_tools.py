@@ -21,10 +21,11 @@ def run_notebooklm(command: str, params: Optional[str] = None,
       command="source add-file", params='{"notebookId": "abc123", "filePath": "/path/to.pdf"}'
       command="source list", params='{"notebookId": "abc123"}'
 
-    Remote file support (Tailscale):
-      Files on remote machines can be referenced as "hostname:/path/to/file".
-      The tool will fetch the file via SCP before uploading to NotebookLM.
-      command="source add-file", params='{"notebookId": "abc123", "filePath": "cc-tn2wdg94p2:/Users/chad/paper.pdf"}'
+    File handling:
+      filePath can be a local path or a path on a remote Tailscale machine.
+      If the file doesn't exist locally, the tool automatically fetches it from
+      the configured remote host (NOTEBOOKLM_REMOTE_HOST env var) via SCP.
+      Just pass normal file paths — remote fetching is transparent.
 
     Chat examples:
       command="chat ask", params='{"notebookId": "abc123", "question": "Summarize this"}'
@@ -44,7 +45,6 @@ def run_notebooklm(command: str, params: Optional[str] = None,
     Args:
         command: The notebooklm-cli subcommand (e.g. "notebook list", "chat ask")
         params: JSON string of parameters (optional). Passed as --body.
-            For file operations, filePath can be "hostname:/path" for remote files via Tailscale SCP.
         fields: Comma-separated output fields (optional). Limits token usage.
         timeout: Command timeout in seconds (default 60). Use 300 for artifact wait.
 
@@ -55,38 +55,47 @@ def run_notebooklm(command: str, params: Optional[str] = None,
     import os
     import shlex
     import subprocess
-    import tempfile
     import traceback
 
     try:
         if not command or not command.strip():
             return {"status": "error", "error_message": "command is required"}
 
-        # Resolve remote file paths (hostname:/path) via SCP
+        # Resolve file paths: if file doesn't exist locally, fetch from remote host via SCP
         staging_files = []
         if params:
             params_dict = json.loads(params)
             for key in ("filePath", "outputPath"):
                 val = params_dict.get(key, "")
+                if not val:
+                    continue
+
+                # Explicit hostname:path format — always SCP
                 if ":" in val and not val.startswith("/") and not val.startswith("."):
                     host_part, remote_path = val.split(":", 1)
                     if remote_path.startswith("/"):
-                        staging_dir = "/tmp/notebooklm-staging"
-                        os.makedirs(staging_dir, exist_ok=True)
-                        basename = os.path.basename(remote_path)
-                        local_staging = os.path.join(staging_dir, basename)
-                        scp_result = subprocess.run(
-                            ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-                             f"{host_part}:{remote_path}", local_staging],
-                            capture_output=True, text=True, timeout=30,
-                        )
-                        if scp_result.returncode != 0:
-                            return {
-                                "status": "error",
-                                "error_message": f"Failed to fetch remote file from {host_part}: {scp_result.stderr[:500]}",
-                            }
+                        local_staging = _scp_fetch(host_part, remote_path)
+                        if isinstance(local_staging, dict):
+                            return local_staging
                         params_dict[key] = local_staging
                         staging_files.append(local_staging)
+                        continue
+
+                # Normal path — check if it exists locally, if not try remote host
+                if val.startswith("/") and not os.path.exists(val):
+                    remote_host = os.environ.get("NOTEBOOKLM_REMOTE_HOST", "")
+                    if remote_host:
+                        local_staging = _scp_fetch(remote_host, val)
+                        if isinstance(local_staging, dict):
+                            return local_staging
+                        params_dict[key] = local_staging
+                        staging_files.append(local_staging)
+                    else:
+                        return {
+                            "status": "error",
+                            "error_message": f"File not found: {val}. Set NOTEBOOKLM_REMOTE_HOST to fetch from a remote machine.",
+                        }
+
             params = json.dumps(params_dict)
 
         cli_args = ["notebooklm-cli"]
@@ -128,3 +137,33 @@ def run_notebooklm(command: str, params: Optional[str] = None,
         return {"status": "error", "error_message": f"Command timed out after {timeout}s"}
     except Exception as e:
         return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
+
+
+def _scp_fetch(host: str, remote_path: str):
+    """Fetch a file from a remote host via SCP. Returns local path or error dict.
+
+    Args:
+        host: Tailscale hostname or IP.
+        remote_path: Absolute path on the remote machine.
+
+    Returns:
+        Local staging path (str) on success, or error dict on failure.
+    """
+    import os
+    import subprocess
+
+    staging_dir = "/tmp/notebooklm-staging"
+    os.makedirs(staging_dir, exist_ok=True)
+    basename = os.path.basename(remote_path)
+    local_staging = os.path.join(staging_dir, basename)
+    scp_result = subprocess.run(
+        ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+         f"{host}:{remote_path}", local_staging],
+        capture_output=True, text=True, timeout=30,
+    )
+    if scp_result.returncode != 0:
+        return {
+            "status": "error",
+            "error_message": f"Failed to fetch file from {host}:{remote_path} — {scp_result.stderr[:500]}",
+        }
+    return local_staging
