@@ -220,47 +220,74 @@ class TwitterClient:
         )
         return data.get("data", {}).get("user", {}).get("result", {}).get("rest_id")
 
-    def get_user_tweets(self, screen_name: str, count: int = 20) -> list[dict]:
-        """Fetch a user's recent tweets. Returns raw GraphQL tweet entries."""
+    def get_user_tweets(self, screen_name: str, count: int = 20,
+                        cursor: str | None = None) -> list[dict] | dict:
+        """Fetch a user's recent tweets.
+        Without cursor: returns list[dict] (backwards compatible).
+        With cursor: returns {"tweets": [...], "next_cursor": str|None}."""
         user_id = self.get_user_rest_id(screen_name)
         if not user_id:
-            return []
-        data = self._graphql_get("UserTweets", {
+            return {"tweets": [], "next_cursor": None} if cursor else []
+        variables = {
             "userId": user_id,
             "count": count,
             "includePromotedContent": False,
             "withQuickPromoteEligibilityTweetFields": True,
             "withVoice": True,
             "withV2Timeline": True,
-        })
+        }
+        if cursor:
+            variables["cursor"] = cursor
+        data = self._graphql_get("UserTweets", variables)
+        if cursor is not None:
+            return self._extract_timeline_tweets_paged(data)
         return self._extract_timeline_tweets(data)
 
-    def get_home_timeline(self, count: int = 20) -> list[dict]:
-        """Fetch the home timeline."""
-        data = self._graphql_get("HomeTimeline", {
+    def get_home_timeline(self, count: int = 20,
+                          cursor: str | None = None) -> list[dict] | dict:
+        """Fetch the home timeline.
+        Without cursor: returns list[dict]. With cursor: returns paged dict."""
+        variables = {
             "count": count,
             "includePromotedContent": False,
             "latestControlAvailable": True,
             "withCommunity": True,
-        })
+        }
+        if cursor:
+            variables["cursor"] = cursor
+        data = self._graphql_get("HomeTimeline", variables)
+        if cursor is not None:
+            return self._extract_timeline_tweets_paged(data)
         return self._extract_timeline_tweets(data)
 
-    def get_bookmarks(self, count: int = 20) -> list[dict]:
-        """Fetch bookmarked tweets via API."""
-        data = self._graphql_get("Bookmarks", {
+    def get_bookmarks(self, count: int = 20,
+                      cursor: str | None = None) -> list[dict] | dict:
+        """Fetch bookmarked tweets via API.
+        Without cursor: returns list[dict]. With cursor: returns paged dict."""
+        variables = {
             "count": count,
             "includePromotedContent": False,
-        })
+        }
+        if cursor:
+            variables["cursor"] = cursor
+        data = self._graphql_get("Bookmarks", variables)
+        if cursor is not None:
+            return self._extract_timeline_tweets_paged(data)
         return self._extract_timeline_tweets(data)
 
-    def search_tweets(self, query: str, count: int = 20) -> list[dict]:
-        """Search tweets."""
-        data = self._graphql_get("SearchTimeline", {
+    def search_tweets(self, query: str, count: int = 20,
+                      cursor: str | None = None) -> list[dict] | dict:
+        """Search tweets.
+        Without cursor: returns list[dict]. With cursor: returns paged dict."""
+        variables = {
             "rawQuery": query,
             "count": count,
             "querySource": "typed_query",
             "product": "Latest",
-        })
+        }
+        if cursor:
+            variables["cursor"] = cursor
+        data = self._graphql_get("SearchTimeline", variables)
         # Search has a different nesting: data.search_by_raw_query.search_timeline
         search_timeline = (
             data.get("data", {})
@@ -268,7 +295,13 @@ class TwitterClient:
             .get("search_timeline", {})
             .get("timeline", {})
         )
-        return self._extract_instructions_tweets(search_timeline.get("instructions", []))
+        instructions = search_timeline.get("instructions", [])
+        if cursor is not None:
+            return {
+                "tweets": self._extract_instructions_tweets(instructions),
+                "next_cursor": self._extract_cursor(instructions),
+            }
+        return self._extract_instructions_tweets(instructions)
 
     def get_tweet_detail(self, tweet_id: str) -> dict:
         """Fetch a tweet and its replies."""
@@ -282,12 +315,14 @@ class TwitterClient:
         })
         return data
 
-    def get_list_members(self, list_id: str, count: int = 100) -> list[dict]:
-        """Fetch members of a Twitter list."""
-        data = self._graphql_get("ListMembers", {
-            "listId": list_id,
-            "count": count,
-        })
+    def get_list_members(self, list_id: str, count: int = 100,
+                         cursor: str | None = None) -> list[dict] | dict:
+        """Fetch members of a Twitter list.
+        Without cursor: returns list[dict]. With cursor: returns paged dict."""
+        variables = {"listId": list_id, "count": count}
+        if cursor:
+            variables["cursor"] = cursor
+        data = self._graphql_get("ListMembers", variables)
         members = []
         instructions = (
             data.get("data", {})
@@ -314,6 +349,8 @@ class TwitterClient:
                             "name": legacy.get("name") or core.get("name", ""),
                             "id": user_result.get("rest_id", ""),
                         })
+        if cursor is not None:
+            return {"members": members, "next_cursor": self._extract_cursor(instructions)}
         return members
 
     def get_list_tweets(self, list_id: str, count: int = 20,
@@ -442,6 +479,46 @@ class TwitterClient:
                     if instructions:
                         break
         return self._extract_instructions_tweets(instructions)
+
+    def _extract_timeline_tweets_paged(self, data: dict) -> dict:
+        """Like _extract_timeline_tweets but returns {"tweets": [...], "next_cursor": str|None}."""
+        instructions = (
+            data.get("data", {})
+            .get("user", {})
+            .get("result", {})
+            .get("timeline_v2", data.get("data", {}).get("user", {}).get("result", {}).get("timeline", {}))
+            .get("timeline", {})
+            .get("instructions", [])
+        )
+        if not instructions:
+            data_root = data.get("data", {})
+            for key in ("home_timeline_urt", "bookmark_timeline_v2", "timeline_v2"):
+                nested = data_root.get(key, {})
+                if nested:
+                    instructions = nested.get("timeline", {}).get("instructions", [])
+                    if not instructions:
+                        instructions = nested.get("instructions", [])
+                    if instructions:
+                        break
+            if not instructions:
+                for parent_key in data_root:
+                    parent = data_root[parent_key]
+                    if not isinstance(parent, dict):
+                        continue
+                    for key in ("home_timeline_urt", "timeline", "timeline_v2"):
+                        nested = parent.get(key, {})
+                        if nested and isinstance(nested, dict):
+                            instructions = nested.get("instructions", [])
+                            if not instructions:
+                                instructions = nested.get("timeline", {}).get("instructions", [])
+                            if instructions:
+                                break
+                    if instructions:
+                        break
+        return {
+            "tweets": self._extract_instructions_tweets(instructions),
+            "next_cursor": self._extract_cursor(instructions),
+        }
 
     def _extract_instructions_tweets(self, instructions: list) -> list[dict]:
         """Extract tweets from timeline instructions."""

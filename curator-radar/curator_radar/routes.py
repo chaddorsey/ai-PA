@@ -235,34 +235,35 @@ async def twitter_sync_list(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/twitter/feed")
-async def twitter_feed(count: int = 20):
-    """Fetch home timeline for agent access."""
+async def twitter_feed(count: int = 20, cursor: str = None):
+    """Fetch home timeline. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        tweets = await asyncio.to_thread(client.get_home_timeline, count)
-        return {"status": "ok", "tweets": tweets}
+        # Always use paged path (pass "" sentinel when no cursor to get next_cursor on page 1)
+        result = await asyncio.to_thread(client.get_home_timeline, count, cursor or "")
+        return {"status": "ok", "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
     finally:
         client.close()
 
 
 @router.get("/twitter/user/{handle}")
-async def twitter_user_tweets(handle: str, count: int = 20):
-    """Fetch a user's tweets for agent access."""
+async def twitter_user_tweets(handle: str, count: int = 20, cursor: str = None):
+    """Fetch a user's tweets. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        tweets = await asyncio.to_thread(client.get_user_tweets, handle, count)
-        return {"status": "ok", "handle": handle, "tweets": tweets}
+        result = await asyncio.to_thread(client.get_user_tweets, handle, count, cursor or "")
+        return {"status": "ok", "handle": handle, "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
     finally:
         client.close()
 
 
 @router.get("/twitter/search")
-async def twitter_search(q: str, count: int = 20):
-    """Search tweets for agent access."""
+async def twitter_search(q: str, count: int = 20, cursor: str = None):
+    """Search tweets. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        tweets = await asyncio.to_thread(client.search_tweets, q, count)
-        return {"status": "ok", "query": q, "tweets": tweets}
+        result = await asyncio.to_thread(client.search_tweets, q, count, cursor or "")
+        return {"status": "ok", "query": q, "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
     finally:
         client.close()
 
@@ -279,19 +280,19 @@ async def twitter_tweet_detail(tweet_id: str):
 
 
 @router.get("/twitter/bookmarks")
-async def twitter_bookmarks_read(count: int = 20):
-    """Fetch bookmarked tweets via API for agent access."""
+async def twitter_bookmarks_read(count: int = 20, cursor: str = None):
+    """Fetch bookmarked tweets. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        tweets = await asyncio.to_thread(client.get_bookmarks, count)
-        return {"status": "ok", "tweets": tweets}
+        result = await asyncio.to_thread(client.get_bookmarks, count, cursor or "")
+        return {"status": "ok", "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
     finally:
         client.close()
 
 
 @router.get("/twitter/lists")
 async def twitter_my_lists():
-    """Fetch the authenticated user's owned lists."""
+    """Fetch the authenticated user's owned and followed lists."""
     client = TwitterClient(settings.smaug_config_path)
     try:
         lists = await asyncio.to_thread(client.get_my_lists)
@@ -301,12 +302,12 @@ async def twitter_my_lists():
 
 
 @router.get("/twitter/list/{list_id}/members")
-async def twitter_list_members(list_id: str, count: int = 100):
-    """Fetch list members for agent access."""
+async def twitter_list_members(list_id: str, count: int = 100, cursor: str = None):
+    """Fetch list members. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        members = await asyncio.to_thread(client.get_list_members, list_id, count)
-        return {"status": "ok", "list_id": list_id, "members": members}
+        result = await asyncio.to_thread(client.get_list_members, list_id, count, cursor or "")
+        return {"status": "ok", "list_id": list_id, "members": result["members"], "next_cursor": result["next_cursor"]}
     finally:
         client.close()
 

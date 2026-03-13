@@ -35,26 +35,26 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
         "feed": {
             "method": "GET",
             "path": "/twitter/feed",
-            "description": "Your home timeline",
-            "params": {"count": "int (default 20)"},
+            "description": "Your home timeline (paginated)",
+            "params": {"count": "int (default 20)", "cursor": "str (optional, for next page)"},
         },
         "user": {
             "method": "GET",
             "path": "/twitter/user/{handle}",
-            "description": "A user's recent tweets and retweets",
-            "params": {"handle": "str (required, in path)", "count": "int (default 20)"},
+            "description": "A user's recent tweets and retweets (paginated)",
+            "params": {"handle": "str (required, in path)", "count": "int (default 20)", "cursor": "str (optional, for next page)"},
         },
         "bookmarks": {
             "method": "GET",
             "path": "/twitter/bookmarks",
-            "description": "Your bookmarked tweets",
-            "params": {"count": "int (default 20)"},
+            "description": "Your bookmarked tweets (paginated)",
+            "params": {"count": "int (default 20)", "cursor": "str (optional, for next page)"},
         },
         "search": {
             "method": "GET",
             "path": "/twitter/search",
-            "description": "Search tweets",
-            "params": {"q": "str (required)", "count": "int (default 20)"},
+            "description": "Search tweets (paginated)",
+            "params": {"q": "str (required)", "count": "int (default 20)", "cursor": "str (optional, for next page)"},
         },
         "tweet": {
             "method": "GET",
@@ -71,8 +71,8 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
         "list-members": {
             "method": "GET",
             "path": "/twitter/list/{list_id}/members",
-            "description": "Members of a Twitter list",
-            "params": {"list_id": "str (required, in path)", "count": "int (default 100)"},
+            "description": "Members of a Twitter list (paginated)",
+            "params": {"list_id": "str (required, in path)", "count": "int (default 100)", "cursor": "str (optional, for next page)"},
         },
         "list-tweets": {
             "method": "GET",
