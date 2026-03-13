@@ -1,0 +1,26 @@
+[tool.poetry]
+name = "notebooklm-cli"
+version = "0.1.0"
+description = "CLI for Google NotebookLM via notebooklm-py"
+authors = ["ai-PA"]
+packages = [{include = "notebooklm_cli", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+click = "^8.1"
+notebooklm-py = "^0.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[tool.poetry.scripts]
+notebooklm-cli = "notebooklm_cli.cli:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: requires NotebookLM authentication",
+]
