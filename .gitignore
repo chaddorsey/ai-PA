@@ -253,3 +253,10 @@ sports-and-media-tools/credentials/*.json
 sports-and-media-tools/credentials/browser_states/
 .worktrees/
 omnifocus-cli/.venv/
+
+# LettaBot (nested git repo — tracked separately)
+lettabot/
+
+# Smaug (Twitter bookmarks archival)
+smaug/
+smaug-data/

@@ -264,6 +264,8 @@ backup_all_volumes() {
     for volume in $volumes; do
         backup_volume "$volume" "$backup_dir/${volume}_${TIMESTAMP}.tar.gz"
         ((count++)) || true
+        # Brief pause between volume exports to reduce memory spikes
+        sleep 5
     done
     
     log_success "Backed up $count volumes"
@@ -440,6 +442,19 @@ backup_host_data() {
         ((host_backup_count++)) || true
     fi
     
+    # 10. Smaug Twitter Bookmarks Archive
+    if [[ -d "$PROJECT_ROOT/smaug-data" ]]; then
+        log "Backing up Smaug bookmarks archive..."
+        tar czf "$backup_dir/smaug-data_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
+            -C "$PROJECT_ROOT" \
+            smaug-data \
+            2>/dev/null || log_warning "Smaug data backup had issues"
+        local size=$(du -h "$backup_dir/smaug-data_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "Smaug bookmarks archive backed up ($size)"
+        ((host_backup_count++)) || true
+    fi
+
     log_success "Host data backup complete: $host_backup_count items backed up"
 }
 
@@ -463,14 +478,19 @@ backup_all_databases() {
     log "Creating cluster-wide backup with pg_dumpall..."
     docker-compose exec -T supabase-db pg_dumpall -U postgres > "$backup_dir/pg_cluster_$TIMESTAMP.sql"
     log_success "Cluster-wide backup created: pg_cluster_$TIMESTAMP.sql"
-    
+
+    # Let Docker VM release memory before individual dumps
+    sleep 15
+
     # List and backup individual databases
     local databases=$(docker-compose exec -T supabase-db psql -U postgres -tA -c "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres';")
-    
+
     for db in $databases; do
         log "Backing up individual database: $db"
         docker-compose exec -T supabase-db pg_dump -U postgres "$db" > "$backup_dir/${db}_$TIMESTAMP.sql"
         log_success "Database $db backed up"
+        # Brief pause between dumps to reduce peak memory
+        sleep 5
     done
 }
 
@@ -723,20 +743,25 @@ main() {
     mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports,host_data}
     
     # Backup all databases (dynamic discovery + cluster backup)
+    # This is the heaviest phase — pg_dumpall inflates Docker VM memory
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
         backup_all_databases "$BACKUP_PATH/databases"
+        log "Pausing 30s to let Docker VM release memory after DB dumps..."
+        sleep 30
     fi
-    
+
     # Backup volumes (dynamic discovery)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
         backup_all_volumes "$BACKUP_PATH/volumes"
+        log "Pausing 15s between backup phases..."
+        sleep 15
     fi
-    
+
     # Backup host filesystem data (local databases, credentials, data files)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
         backup_host_data "$BACKUP_PATH/host_data"
     fi
-    
+
     # Backup configuration files
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "config" ]]; then
         backup_config ".env" "$BACKUP_PATH/configs/env_$TIMESTAMP.tar.gz" || log_warning "Config backup failed for .env, continuing..."
