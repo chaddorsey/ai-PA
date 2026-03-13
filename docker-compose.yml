@@ -671,6 +671,8 @@ services:
       # Letta authenticates to LiteLLM proxy with master key (not real OpenAI key)
       # Real per-agent keys are in LiteLLM's config, selected by model alias
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}  # All OpenAI calls route through LiteLLM proxy
+      # GitHub token for GitHub stars tool
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
       # Slack tokens for slack-cli and analytics tools
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN}
       SLACK_MCP_XOXP_TOKEN: $SLACK_MCP_XOXP_TOKEN
