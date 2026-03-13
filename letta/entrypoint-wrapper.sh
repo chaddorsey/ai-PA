@@ -19,6 +19,22 @@ if [ -d "/app/tools/omnifocus-cli" ]; then
         2>&1 | tail -3
 fi
 
+# Install notebooklm-cli for NotebookLM access
+if [ -d "/app/tools/notebooklm-cli" ]; then
+    echo "[entrypoint-wrapper] Installing notebooklm-cli..."
+    python3 -m pip install --quiet --no-warn-script-location \
+        /app/tools/notebooklm-cli/ \
+        2>&1 | tail -3
+fi
+
+# Install slack-cli for Slack Web API access
+if [ -d "/app/tools/slack-cli" ]; then
+    echo "[entrypoint-wrapper] Installing slack-cli..."
+    python3 -m pip install --quiet --no-warn-script-location \
+        /app/tools/slack-cli/ \
+        2>&1 | tail -3
+fi
+
 # Install gws CLI (Google Workspace) for Gmail/Calendar/Drive API access
 GWS_VERSION=0.7.0
 ARCH=$(uname -m)

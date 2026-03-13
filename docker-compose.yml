@@ -640,7 +640,7 @@ services:
   # Letta is an agent building framework with built-in memory/vectordb support.
   # https://docs.letta.com/quickstart/docker
   letta:
-    image: letta/letta:0.16.4  # pinned — 0.16.6 broke LLM auth routing
+    image: letta/letta:0.16.6
     entrypoint: ["/bin/bash", "/app/tools/letta/entrypoint-wrapper.sh"]
     command: ["--host", "0.0.0.0"]
     ports:
@@ -651,6 +651,8 @@ services:
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro  # gws CLI credentials (Gmail/Calendar/Drive)
       - ./analytics:/app/tools/analytics  # Mount analytics directory for briefing output
       - ./omnifocus-cli:/app/tools/omnifocus-cli:ro  # OmniFocus CLI source for pip install
+      - ./notebooklm-cli:/app/tools/notebooklm-cli:ro  # NotebookLM CLI source for pip install
+      - ${NOTEBOOKLM_HOME:-~/.notebooklm}:/notebooklm-auth:ro  # NotebookLM auth cookies
       - ./slack-cli:/app/tools/slack-cli:ro  # Slack CLI source for pip install
     networks: [pa-internal]
     environment:
@@ -663,6 +665,7 @@ services:
       # Letta API configuration (for agent-to-agent communication)
       LETTA_API_KEY: "${LETTA_API_KEY:-}"  # Optional: API key for authenticated requests
       LETTA_BASE_URL: "http://localhost:8283"  # Base URL for Letta API (used by tools)
+      NOTEBOOKLM_STORAGE: "/notebooklm-auth/storage_state.json"  # NotebookLM auth path inside container
       # https://docs.letta.com/guides/server/providers/anthropic
       ANTHROPIC_API_KEY: $ANTHROPIC_API_KEY
       # https://docs.letta.com/guides/server/providers/google
@@ -671,6 +674,7 @@ services:
       # Letta authenticates to LiteLLM proxy with master key (not real OpenAI key)
       # Real per-agent keys are in LiteLLM's config, selected by model alias
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY}  # All OpenAI calls route through LiteLLM proxy
+      OPENAI_API_BASE: http://litellm:4000/v1  # Route all OpenAI model calls via LiteLLM
       # GitHub token for GitHub stars tool
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       # Slack tokens for slack-cli and analytics tools
