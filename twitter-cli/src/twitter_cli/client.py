@@ -193,10 +193,12 @@ class TwitterClient:
                             .get("result", {})
                         )
                         legacy = user_result.get("legacy", {})
-                        if legacy.get("screen_name"):
+                        core = user_result.get("core", {})
+                        handle = legacy.get("screen_name") or core.get("screen_name")
+                        if handle:
                             all_users.append({
-                                "handle": legacy["screen_name"],
-                                "name": legacy.get("name", ""),
+                                "handle": handle,
+                                "name": legacy.get("name") or core.get("name", ""),
                             })
                             found_users = True
                     if content.get("entryType") == "TimelineTimelineCursor":
@@ -304,10 +306,12 @@ class TwitterClient:
                         .get("result", {})
                     )
                     legacy = user_result.get("legacy", {})
-                    if legacy.get("screen_name"):
+                    core = user_result.get("core", {})
+                    handle = legacy.get("screen_name") or core.get("screen_name")
+                    if handle:
                         members.append({
-                            "handle": legacy["screen_name"],
-                            "name": legacy.get("name", ""),
+                            "handle": handle,
+                            "name": legacy.get("name") or core.get("name", ""),
                             "id": user_result.get("rest_id", ""),
                         })
         return members
@@ -364,16 +368,37 @@ class TwitterClient:
             data.get("data", {})
             .get("user", {})
             .get("result", {})
-            .get("timeline_v2", {})
+            .get("timeline_v2", data.get("data", {}).get("user", {}).get("result", {}).get("timeline", {}))
             .get("timeline", {})
             .get("instructions", [])
         )
-        # Some endpoints nest differently
+        # Some endpoints nest differently — try flat then one level deep
         if not instructions:
+            data_root = data.get("data", {})
+            # Flat: data.<key>.timeline.instructions
             for key in ("home_timeline_urt", "bookmark_timeline_v2", "timeline_v2"):
-                nested = data.get("data", {}).get(key, {})
+                nested = data_root.get(key, {})
                 if nested:
                     instructions = nested.get("timeline", {}).get("instructions", [])
+                    if not instructions:
+                        # home_timeline_urt has instructions directly (no .timeline wrapper)
+                        instructions = nested.get("instructions", [])
+                    if instructions:
+                        break
+            # Nested: data.<parent>.<key> (e.g. data.home.home_timeline_urt)
+            if not instructions:
+                for parent_key in data_root:
+                    parent = data_root[parent_key]
+                    if not isinstance(parent, dict):
+                        continue
+                    for key in ("home_timeline_urt", "timeline", "timeline_v2"):
+                        nested = parent.get(key, {})
+                        if nested and isinstance(nested, dict):
+                            instructions = nested.get("instructions", [])
+                            if not instructions:
+                                instructions = nested.get("timeline", {}).get("instructions", [])
+                            if instructions:
+                                break
                     if instructions:
                         break
         return self._extract_instructions_tweets(instructions)
@@ -401,16 +426,17 @@ class TwitterClient:
                 legacy = tweet_result.get("legacy", {})
                 user = tweet_result.get("core", {}).get("user_results", {}).get("result", {})
                 user_legacy = user.get("legacy", {})
+                user_core = user.get("core", {})
 
                 tweets.append({
                     "id": legacy.get("id_str", tweet_result.get("rest_id", "")),
                     "text": legacy.get("full_text", ""),
-                    "author_handle": user_legacy.get("screen_name", ""),
-                    "author_name": user_legacy.get("name", ""),
+                    "author_handle": user_legacy.get("screen_name") or user_core.get("screen_name", ""),
+                    "author_name": user_legacy.get("name") or user_core.get("name", ""),
                     "created_at": legacy.get("created_at", ""),
                     "retweet_count": legacy.get("retweet_count", 0),
                     "favorite_count": legacy.get("favorite_count", 0),
                     "reply_count": legacy.get("reply_count", 0),
-                    "url": f"https://x.com/{user_legacy.get('screen_name', '_')}/status/{legacy.get('id_str', '')}",
+                    "url": f"https://x.com/{user_legacy.get('screen_name') or user_core.get('screen_name', '_')}/status/{legacy.get('id_str', '')}",
                 })
         return tweets
