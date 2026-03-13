@@ -97,11 +97,13 @@ SCHEMAS: dict[str, dict] = {
     },
     "source.add-drive": {
         "method": "add_drive",
-        "description": "Add a Google Drive file as a source",
+        "description": "Add a Google Drive document as a source",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
-            "driveFileId": {"type": "string", "required": True, "description": "Google Drive file ID"},
-            "wait": {"type": "boolean", "required": False, "description": "Wait for processing"},
+            "fileId": {"type": "string", "required": True, "description": "Google Drive file ID"},
+            "title": {"type": "string", "required": True, "description": "Display title for the source"},
+            "mimeType": {"type": "string", "required": False, "description": "MIME type of the Drive document"},
+            "wait": {"type": "boolean", "required": False, "description": "Wait for source processing to complete"},
         },
     },
     "source.list": {
@@ -133,7 +135,7 @@ SCHEMAS: dict[str, dict] = {
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
             "sourceId": {"type": "string", "required": True, "description": "Source ID"},
-            "title": {"type": "string", "required": True, "description": "New title"},
+            "newTitle": {"type": "string", "required": True, "description": "New title for the source"},
         },
     },
     "source.refresh": {
@@ -160,14 +162,16 @@ SCHEMAS: dict[str, dict] = {
             "sourceId": {"type": "string", "required": True, "description": "Source ID"},
         },
     },
-    # ── artifact (8) ──
+    # ── artifact (8) — ArtifactsAPI ──
     "artifact.generate": {
-        "method": "generate",
-        "description": "Generate an artifact (audio, video, report, quiz, slides, infographic, mindmap, table)",
+        "method": "generate_audio",
+        "description": "Generate an artifact (audio overview by default)",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
-            "type": {"type": "string", "required": True, "description": "Artifact type: audio, video, report, quiz, slides, infographic, mindmap, table"},
-            "instructions": {"type": "string", "required": False, "description": "Generation instructions"},
+            "type": {"type": "string", "required": False, "description": "Artifact type: audio, video, report, quiz, flashcards, infographic, slide-deck, data-table, mind-map"},
+            "sourceIds": {"type": "array[string]", "required": False, "description": "Source IDs to include (default: all)"},
+            "language": {"type": "string", "required": False, "description": "Language code (default: en)"},
+            "instructions": {"type": "string", "required": False, "description": "Custom generation instructions"},
         },
     },
     "artifact.list": {
@@ -199,24 +203,25 @@ SCHEMAS: dict[str, dict] = {
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
             "artifactId": {"type": "string", "required": True, "description": "Artifact ID"},
-            "title": {"type": "string", "required": True, "description": "New title"},
+            "newTitle": {"type": "string", "required": True, "description": "New title for the artifact"},
         },
     },
     "artifact.download": {
-        "method": "download",
-        "description": "Download an artifact to a file",
+        "method": "download_audio",
+        "description": "Download an artifact to a local file",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
-            "type": {"type": "string", "required": True, "description": "Artifact type to download"},
-            "outputPath": {"type": "string", "required": True, "description": "Output file path"},
+            "outputPath": {"type": "string", "required": True, "description": "Path to save the downloaded file"},
+            "artifactId": {"type": "string", "required": False, "description": "Artifact ID (default: first completed)"},
+            "type": {"type": "string", "required": False, "description": "Artifact type: audio, video, infographic, slide-deck"},
         },
     },
     "artifact.status": {
-        "method": "get_status",
-        "description": "Check artifact generation status",
+        "method": "poll_status",
+        "description": "Poll the status of a generation task",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
-            "taskId": {"type": "string", "required": True, "description": "Generation task ID"},
+            "taskId": {"type": "string", "required": True, "description": "Task/artifact ID to check"},
         },
     },
     "artifact.wait": {
@@ -247,17 +252,20 @@ SCHEMAS: dict[str, dict] = {
         },
     },
     "chat.clear": {
-        "method": "clear",
-        "description": "Clear conversation history",
+        "method": "clear_cache",
+        "description": "Clear local conversation cache",
         "params": {
-            "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
+            "conversationId": {"type": "string", "required": False, "description": "Clear specific conversation, or all if omitted"},
         },
     },
     "chat.save": {
-        "method": "save_to_note",
-        "description": "Save conversation to a notebook note",
+        "method": "configure",
+        "description": "Configure chat persona and response settings for a notebook",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
+            "goal": {"type": "string", "required": False, "description": "Chat persona: DEFAULT, CUSTOM, LEARNING_GUIDE"},
+            "responseLength": {"type": "string", "required": False, "description": "Response verbosity: DEFAULT, SHORTER, LONGER"},
+            "customPrompt": {"type": "string", "required": False, "description": "Custom instructions (required if goal is CUSTOM)"},
         },
     },
     # ── research (3) ──
@@ -280,21 +288,21 @@ SCHEMAS: dict[str, dict] = {
     },
     "research.import": {
         "method": "import_sources",
-        "description": "Import discovered sources from research results",
+        "description": "Import selected research sources into the notebook",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
             "taskId": {"type": "string", "required": True, "description": "Research task ID"},
-            "sourceIds": {"type": "array[string]", "required": True, "description": "Source IDs to import"},
+            "sources": {"type": "array[string]", "required": True, "description": "Sources to import (each with url and title)"},
         },
     },
     # ── note (4) ──
     "note.create": {
         "method": "create",
-        "description": "Create a user note in a notebook",
+        "description": "Create a new note in the notebook",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
-            "title": {"type": "string", "required": True, "description": "Note title"},
-            "content": {"type": "string", "required": True, "description": "Note content"},
+            "title": {"type": "string", "required": False, "description": "Note title (default: New Note)"},
+            "content": {"type": "string", "required": False, "description": "Note content"},
         },
     },
     "note.list": {
@@ -306,12 +314,12 @@ SCHEMAS: dict[str, dict] = {
     },
     "note.update": {
         "method": "update",
-        "description": "Update a note",
+        "description": "Update a note's content and title",
         "params": {
             "notebookId": {"type": "string", "required": True, "description": "Notebook ID"},
             "noteId": {"type": "string", "required": True, "description": "Note ID"},
-            "content": {"type": "string", "required": False, "description": "New content"},
-            "title": {"type": "string", "required": False, "description": "New title"},
+            "content": {"type": "string", "required": True, "description": "New content"},
+            "title": {"type": "string", "required": True, "description": "New title"},
         },
     },
     "note.delete": {
