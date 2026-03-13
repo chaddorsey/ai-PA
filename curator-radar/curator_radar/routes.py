@@ -12,7 +12,7 @@ from .backfill import (
 from .scoring import score_curators, get_top_curators
 from .monitor import refresh_curator_events, get_discoveries
 from .digest import generate_digest
-from .twitter_client import TwitterClient
+from twitter_cli.client import TwitterClient
 from .twitter_ingest import ingest_bookmarks, get_ingest_status
 from .twitter_backfill import fetch_tweet_likers
 from .twitter_list_sync import sync_twitter_list
@@ -143,7 +143,7 @@ async def deliver_digest(since_days: int = 7, session: AsyncSession = Depends(ge
 async def _run_twitter_daily():
     """Daily Twitter curator pipeline: ingest → fetch likers → score → sync list."""
     from .database import AsyncSessionFactory
-    client = TwitterClient(settings)
+    client = TwitterClient(settings.smaug_config_path)
     try:
         async with AsyncSessionFactory() as session:
             logger.info("Twitter daily: ingesting new bookmarks...")
@@ -166,7 +166,7 @@ async def _run_twitter_daily():
     except Exception as e:
         logger.error(f"Twitter daily run failed: {e}", exc_info=True)
     finally:
-        await client.close()
+        client.close()
 
 
 @router.post("/twitter/run")
@@ -195,14 +195,14 @@ async def twitter_fetch_likers(background_tasks: BackgroundTasks):
     async def _fetch():
         import traceback
         from .database import AsyncSessionFactory
-        client = TwitterClient(settings)
+        client = TwitterClient(settings.smaug_config_path)
         try:
             async with AsyncSessionFactory() as session:
                 await fetch_tweet_likers(session, client)
         except Exception as e:
             print(f"Background fetch-likers failed: {e}\n{traceback.format_exc()}", flush=True)
         finally:
-            await client.close()
+            client.close()
     background_tasks.add_task(_fetch)
     return {"status": "started"}
 
@@ -223,9 +223,9 @@ async def twitter_curators(top_k: int = 50, session: AsyncSession = Depends(get_
 @router.post("/twitter/sync-list")
 async def twitter_sync_list(session: AsyncSession = Depends(get_session)):
     """Sync the Twitter list with top curators."""
-    client = TwitterClient(settings)
+    client = TwitterClient(settings.smaug_config_path)
     try:
         stats = await sync_twitter_list(session, client, settings)
         return {"status": "ok", **stats}
     finally:
-        await client.close()
+        client.close()

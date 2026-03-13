@@ -4,13 +4,14 @@ Processes newest-first. Resumable via likers_fetched flag.
 Note: Originally designed for Favoriters (likers), but Twitter disabled that endpoint
 in 2024 when they made likes private. Retweeters serves as a public-signal proxy.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from .models import BookmarkedTweet, TweetLiker
-from .twitter_client import TwitterClient
+from twitter_cli.client import TwitterClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ async def fetch_tweet_likers(session: AsyncSession, client: TwitterClient) -> di
 
     for tweet_id, tweet in tweet_ids:
         try:
-            likers = await client.get_retweeters(tweet_id)
+            likers = await asyncio.to_thread(client.get_retweeters, tweet_id)
 
             now = datetime.now(timezone.utc)
             for liker in likers:

@@ -2,13 +2,14 @@
 Auto-manage a private Twitter List with top-N Twitter curators.
 Creates the list if it doesn't exist, adds/removes members to stay in sync.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from .models import Curator, TwitterList, TwitterListMember
-from .twitter_client import TwitterClient
+from twitter_cli.client import TwitterClient
 from .settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ async def sync_twitter_list(session: AsyncSession, client: TwitterClient, settin
 
     if not twitter_list:
         logger.info(f"Creating Twitter list: {list_name}")
-        list_id = await client.create_list(list_name, description="Auto-managed by Curator Radar", private=True)
+        list_id = await asyncio.to_thread(client.create_list, list_name, "Auto-managed by Curator Radar", True)
         if not list_id:
             logger.error("Failed to create Twitter list")
             return {"status": "error", "message": "Failed to create list"}
@@ -71,11 +72,11 @@ async def sync_twitter_list(session: AsyncSession, client: TwitterClient, settin
     removed = 0
 
     for handle in to_add:
-        user_id = await client.get_user_rest_id(handle)
+        user_id = await asyncio.to_thread(client.get_user_rest_id, handle)
         if not user_id:
             logger.warning(f"Could not resolve user ID for @{handle}")
             continue
-        success = await client.add_list_member(list_id, user_id)
+        success = await asyncio.to_thread(client.add_list_member, list_id, user_id)
         if success:
             stmt = pg_insert(TwitterListMember).values(
                 list_id=list_id,
@@ -90,9 +91,9 @@ async def sync_twitter_list(session: AsyncSession, client: TwitterClient, settin
             logger.info(f"Added @{handle} to list")
 
     for handle in to_remove:
-        user_id = await client.get_user_rest_id(handle)
+        user_id = await asyncio.to_thread(client.get_user_rest_id, handle)
         if user_id:
-            await client.remove_list_member(list_id, user_id)
+            await asyncio.to_thread(client.remove_list_member, list_id, user_id)
         result = await session.execute(
             select(TwitterListMember)
             .where(TwitterListMember.list_id == list_id, TwitterListMember.user_handle == handle)
