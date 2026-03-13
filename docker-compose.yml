@@ -1446,7 +1446,8 @@ services:
   # --- Curator Radar: GitHub star overlap monitoring ---
   curator-radar:
     build:
-      context: ./curator-radar
+      context: .
+      dockerfile: curator-radar/Dockerfile
     container_name: curator-radar
     restart: unless-stopped
     networks: [pa-internal]

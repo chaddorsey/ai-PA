@@ -4,10 +4,16 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Install twitter-cli first (changes less frequently)
+COPY twitter-cli/ ./twitter-cli/
+RUN pip install --no-cache-dir ./twitter-cli
+
+# Install curator-radar dependencies
+COPY curator-radar/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY curator_radar/ ./curator_radar/
+# Copy application code
+COPY curator-radar/curator_radar/ ./curator_radar/
 
 EXPOSE 5145
 
