@@ -10,8 +10,6 @@ from typing import Generator
 
 import httpx
 
-LETTABOT_API_URL = os.environ.get("LETTABOT_API_URL", "http://localhost:8080")
-LETTABOT_API_KEY = os.environ.get("LETTABOT_API_KEY", "")
 
 # Pattern to strip internal SUMMARY/REFS lines from user-facing responses
 # SUMMARY can appear at start of line OR after punctuation mid-text
@@ -115,6 +113,8 @@ ROUTING_HANDLER_URL = os.getenv(
 )
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283")
 GWS_BRIDGE_URL = os.getenv("GWS_BRIDGE_URL", "http://gws-bridge:8098")
+LETTABOT_API_URL = os.environ.get("LETTABOT_API_URL", "http://localhost:8080")
+LETTABOT_API_KEY = os.environ.get("LETTABOT_API_KEY", "")
 
 # Database configuration
 import psycopg2
@@ -674,6 +674,20 @@ def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]
 
                             except json.JSONDecodeError:
                                 pass
+
+                # Process any remaining data in buffer after stream ends
+                if buffer.strip() and buffer.strip().startswith("data: "):
+                    data_str = buffer.strip()[6:]
+                    if data_str != "[DONE]":
+                        try:
+                            event = json.loads(data_str)
+                            if event.get("type") == "assistant":
+                                content = event.get("content", "")
+                                if content:
+                                    assistant_content += content
+                                    yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+                        except json.JSONDecodeError:
+                            pass
 
     except httpx.TimeoutException:
         yield f"data: {json.dumps({'type': 'error', 'message': 'LettaBot request timed out'})}\n\n"
