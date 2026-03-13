@@ -385,14 +385,12 @@ class ChatUI {
         const message = slashCommand ? slashCommand.cleanMessage : rawMessage;
         const displayMessage = rawMessage; // Show original message with slash command in UI
 
-        // Priority: slash command > reply mode > dropdown > auto-routing
+        // Priority: slash command > LettaBot (default)
         let agentId;
         if (slashCommand) {
             agentId = slashCommand.agentId;
-        } else if (this.replyToAgent?.agentId) {
-            agentId = this.replyToAgent.agentId;
         } else {
-            agentId = this.agentSelect.value || null;
+            agentId = null; // LettaBot handles all non-slash messages
         }
 
         // Track thread position and parent for learning signals
@@ -999,6 +997,14 @@ class ChatUI {
                                 const statusText = TOOL_STATUS_MAP[toolName] || `Running ${toolName}...`;
                                 this.updateThreadCardStatus(threadCard, statusText);
                             }
+                        } else if (event.type === 'tool_result') {
+                            // Tool result from LettaBot - show in collapsible detail
+                            const toolContent = event.content || '';
+                            const isError = event.is_error || false;
+                            // Append tool result to thinking accordion for now
+                            const resultPrefix = isError ? '\u274c Error: ' : '\u2705 Result: ';
+                            thinkingContent += `\n\n${resultPrefix}${toolContent}`;
+                            this.updateThinkingContent(threadCard, thinkingContent);
                         } else if (event.type === 'thinking') {
                             // Agent thinking/reasoning content - display in collapsible accordion
                             thinkingContent += event.content;
