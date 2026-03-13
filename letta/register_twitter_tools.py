@@ -1,49 +1,44 @@
 #!/usr/bin/env python3
-"""Register run_twitter tool with the Letta server."""
+"""Register run_twitter tool with the Letta server.
+
+Usage:
+    LETTA_BASE_URL=http://localhost:8283 python register_twitter_tools.py
+"""
 import os
-import requests
-from pathlib import Path
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from letta_client import Letta
+from twitter_tools import run_twitter
 
 LETTA_BASE_URL = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
 
 
 def main():
-    # Read the full source file (not just the function — ENDPOINTS is inside the function body)
-    source_path = Path(__file__).parent / "twitter_tools.py"
-    module_source = source_path.read_text()
+    client = Letta(base_url=LETTA_BASE_URL)
 
-    # Check for existing tool
-    resp = requests.get(f"{LETTA_BASE_URL}/v1/tools/", params={"limit": 100}, timeout=30)
-    resp.raise_for_status()
-    existing = {t["name"]: t["id"] for t in resp.json()}
+    tools = [
+        (run_twitter, ["twitter", "feed", "search", "bookmarks", "lists"]),
+    ]
 
-    tool_name = "run_twitter"
-    tool_payload = {
-        "name": tool_name,
-        "description": "Interact with Twitter — read feeds, search, manage lists, bookmark tweets.",
-        "source_code": module_source,
-        "source_type": "python",
-        "tags": ["twitter"],
-    }
+    registered = []
+    for func, tags in tools:
+        try:
+            tool = client.tools.upsert_from_function(
+                func=func,
+                tags=tags,
+            )
+            registered.append(tool.name)
+            print(f"Registered: {tool.name} ({tool.id})")
+        except Exception as e:
+            if "already exists" in str(e).lower():
+                print(f"Already exists: {func.__name__}")
+                registered.append(func.__name__)
+            else:
+                print(f"Failed to register {func.__name__}: {e}")
 
-    if tool_name in existing:
-        tool_id = existing[tool_name]
-        resp = requests.patch(
-            f"{LETTA_BASE_URL}/v1/tools/{tool_id}/",
-            json=tool_payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        print(f"Updated tool: {tool_name} ({tool_id})")
-    else:
-        resp = requests.post(
-            f"{LETTA_BASE_URL}/v1/tools/",
-            json=tool_payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        print(f"Created tool: {tool_name} ({result.get('id', 'unknown')})")
+    print(f"\nRegistered {len(registered)} tools")
 
 
 if __name__ == "__main__":

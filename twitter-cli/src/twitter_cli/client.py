@@ -16,7 +16,7 @@ from .constants import BEARER_TOKEN, GRAPHQL_BASE, QUERY_IDS, TIMELINE_FEATURES,
 logger = logging.getLogger(__name__)
 
 # Chrome impersonation target for curl_cffi
-IMPERSONATE = "chrome133"
+IMPERSONATE = "chrome136"
 
 BASE_DELAY = 2.0
 MAX_DELAY = 120.0
@@ -163,6 +163,11 @@ class TwitterClient:
                 "tweetId": tweet_id,
                 "count": 100,
                 "includePromotedContent": False,
+                "withDownvotePerspective": False,
+                "withReactionsMetadata": False,
+                "withReactionsPerspective": False,
+                "withSuperFollowsTweetFields": True,
+                "withSuperFollowsUserFields": True,
             }
             if cursor:
                 variables["cursor"] = cursor
