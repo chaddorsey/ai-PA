@@ -144,8 +144,13 @@ notebooklm-cli/
 [tool.poetry.dependencies]
 python = "^3.9"
 click = "^8.1"
-notebooklm-py = "*"
+notebooklm-py = "^0.1"
+
+[tool.poetry.scripts]
+notebooklm-cli = "notebooklm_cli.cli:cli"
 ```
+
+Pin `notebooklm-py` to a minor version range — test before upgrading since it wraps unofficial APIs.
 
 Playwright is NOT a dependency — it's only needed for the one-time `notebooklm login` command (installed separately: `pip install "notebooklm-py[browser]"`).
 
@@ -161,6 +166,7 @@ Follows the established pattern from omnifocus-cli, gws-cli, and slack-cli:
 | `--format json\|text` | Output format (default: auto-detect) |
 | `--fields id,title,...` | Comma-separated output field mask |
 | `--dry-run` | Validate and preview, no execution |
+| `--storage PATH` | Path to storage_state.json (overrides default auth) |
 
 ### Input Paths
 
@@ -220,6 +226,58 @@ The bridge:
 - Serializes `Notebook`, `Source`, `Artifact`, `AskResult`, etc. dataclasses to plain dicts
 - Wraps all exceptions into structured error responses
 - Attempts auth refresh once on auth errors before failing
+- Uses `asyncio.run()` — must be called from a sync context (always true via subprocess from Letta)
+
+### Schema-to-Method Mapping
+
+Each schema entry includes an explicit `method` field mapping the CLI action name to the `notebooklm-py` client method:
+
+```python
+"source.add-url": {
+    "method": "add_url",       # -> client.sources.add_url(...)
+    "description": "Add a URL source to a notebook",
+    "params": { ... }
+}
+```
+
+The bridge uses `getattr(api, schema["method"])` for dispatch — no implicit name translation.
+
+### File Path Security
+
+Commands that accept filesystem paths (`source add-file`, `artifact download`) enforce:
+- **Allowed directories**: Configurable via `NOTEBOOKLM_DATA_DIR` env var (defaults to cwd). Paths must resolve within this directory or be absolute paths the user explicitly provides.
+- **Path traversal prevention**: Reject paths containing `..` components after resolution.
+- **Validation in schema**: `filePath` and `outputPath` params are validated before reaching the bridge.
+
+### Health Command
+
+`notebooklm-cli health` checks:
+1. `storage_state.json` exists and is readable
+2. Required cookies (SID) are present
+3. Lightweight API call succeeds (fetch CSRF token from NotebookLM homepage)
+
+Returns structured JSON: `{"status": "ok", "auth": "valid", "cookieCount": N}` or error details.
+
+### Conversation Lifecycle
+
+`chat ask` returns a `conversationId` in its response. To continue a multi-turn conversation, pass this ID back:
+
+```bash
+# First question — returns conversationId in response
+notebooklm-cli --body '{"notebookId": "nb123", "question": "What is X?"}' chat ask
+# Response: {"status": "ok", "result": {"answer": "...", "conversationId": "conv456"}}
+
+# Follow-up — pass conversationId for context continuity
+notebooklm-cli --body '{"notebookId": "nb123", "question": "Elaborate?", "conversationId": "conv456"}' chat ask
+```
+
+Omitting `conversationId` starts a fresh conversation. `chat history` and `chat clear` also take `conversationId`.
+
+### Artifact Wait & Timeout
+
+`artifact wait` accepts a `timeout` parameter (default 300s) and polls at 3s intervals. If generation exceeds the timeout, returns an error with the last known status so the agent can retry or check `artifact status` independently.
+
+For Letta tool usage: set `timeout=300` on the `run_notebooklm` call for `artifact wait` operations (the default 60s is too short for generation).
 
 ## Letta Integration
 
