@@ -126,9 +126,12 @@ class ChatUI {
             });
         }
 
+        this.lastHeartbeatTs = '';
+
         this.setupEventListeners();
         this.loadAgents();
         this.loadConversationHistory();
+        this.startHeartbeatPolling();
     }
 
     getOrCreateSessionId() {
@@ -1192,6 +1195,81 @@ class ChatUI {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    startHeartbeatPolling() {
+        this.heartbeatInterval = setInterval(() => this.checkHeartbeats(), 60000);
+        this.checkHeartbeats();
+    }
+
+    async checkHeartbeats() {
+        try {
+            const url = this.lastHeartbeatTs
+                ? `/api/heartbeats?since=${encodeURIComponent(this.lastHeartbeatTs)}`
+                : '/api/heartbeats';
+            const resp = await fetch(url);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            for (const hb of (data.heartbeats || [])) {
+                this.renderHeartbeatMessage(hb);
+                if (hb.ts > this.lastHeartbeatTs) {
+                    this.lastHeartbeatTs = hb.ts;
+                }
+            }
+        } catch (e) {
+            console.debug('Heartbeat poll error:', e);
+        }
+    }
+
+    renderHeartbeatMessage(heartbeat) {
+        if (!heartbeat.output && (!heartbeat.events || heartbeat.events.length === 0)) return;
+
+        const card = document.createElement('div');
+        card.className = 'heartbeat-card';
+
+        const time = new Date(heartbeat.ts);
+        const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        let detailHtml = '';
+        if (heartbeat.events && heartbeat.events.length > 0) {
+            const details = heartbeat.events
+                .filter(e => e.type === 'tool_call' || e.type === 'tool_result')
+                .map(e => {
+                    if (e.type === 'tool_call') return `<div class="hb-event">🔧 ${this.escapeHtml(e.name || 'tool')}</div>`;
+                    if (e.type === 'tool_result') return `<div class="hb-event hb-result">${this.escapeHtml((e.content || '').substring(0, 200))}</div>`;
+                    return '';
+                })
+                .join('');
+            if (details) {
+                detailHtml = `
+                    <div class="hb-details-toggle">▶ Show details</div>
+                    <div class="hb-details" style="display: none;">${details}</div>
+                `;
+            }
+        }
+
+        card.innerHTML = `
+            <div class="hb-header">
+                <span class="hb-icon">💓</span>
+                <span class="hb-label">LettaBot Heartbeat</span>
+                <span class="hb-time">${timeStr}</span>
+            </div>
+            <div class="hb-summary">${this.escapeHtml(heartbeat.output || 'No action taken')}</div>
+            ${detailHtml}
+        `;
+
+        const toggle = card.querySelector('.hb-details-toggle');
+        const details = card.querySelector('.hb-details');
+        if (toggle && details) {
+            toggle.addEventListener('click', () => {
+                const showing = details.style.display !== 'none';
+                details.style.display = showing ? 'none' : 'block';
+                toggle.textContent = showing ? '▶ Show details' : '▼ Hide details';
+            });
+        }
+
+        this.messagesContainer.appendChild(card);
+        this.scrollToBottom();
     }
 
     scrollToBottom() {

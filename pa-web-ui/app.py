@@ -476,6 +476,42 @@ def coordinate():
         }), 500
 
 
+@app.route("/api/heartbeats", methods=["GET"])
+def get_heartbeats():
+    """Fetch recent heartbeat turns from LettaBot."""
+    since = request.args.get("since", "")  # ISO timestamp
+    try:
+        headers = {}
+        if LETTABOT_API_KEY:
+            headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.get(
+                f"{LETTABOT_API_URL}/turns/data",
+                headers=headers,
+            )
+            if resp.status_code != 200:
+                return jsonify({"heartbeats": []}), 200
+
+            turns = resp.json()
+            # Filter for heartbeat triggers only
+            heartbeats = []
+            for turn in turns:
+                if turn.get("trigger") == "heartbeat":
+                    ts = turn.get("ts", "")
+                    if since and ts <= since:
+                        continue
+                    heartbeats.append({
+                        "ts": ts,
+                        "output": turn.get("output", ""),
+                        "events": turn.get("events", []),
+                        "durationMs": turn.get("durationMs"),
+                    })
+            return jsonify({"heartbeats": heartbeats}), 200
+    except Exception as e:
+        logger.warning("heartbeat_fetch_error", error=str(e))
+        return jsonify({"heartbeats": []}), 200
+
+
 # Coordination slash commands: command -> (task_type, context_key)
 COORDINATION_COMMANDS = {
     "mprep": ("meeting_prep", "meeting_identifier"),
