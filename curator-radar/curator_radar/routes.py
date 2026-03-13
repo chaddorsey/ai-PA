@@ -229,3 +229,111 @@ async def twitter_sync_list(session: AsyncSession = Depends(get_session)):
         return {"status": "ok", **stats}
     finally:
         client.close()
+
+
+# --- Twitter Agent Access Routes ---
+
+
+@router.get("/twitter/feed")
+async def twitter_feed(count: int = 20):
+    """Fetch home timeline for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        tweets = await asyncio.to_thread(client.get_home_timeline, count)
+        return {"status": "ok", "tweets": tweets}
+    finally:
+        client.close()
+
+
+@router.get("/twitter/user/{handle}")
+async def twitter_user_tweets(handle: str, count: int = 20):
+    """Fetch a user's tweets for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        tweets = await asyncio.to_thread(client.get_user_tweets, handle, count)
+        return {"status": "ok", "handle": handle, "tweets": tweets}
+    finally:
+        client.close()
+
+
+@router.get("/twitter/search")
+async def twitter_search(q: str, count: int = 20):
+    """Search tweets for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        tweets = await asyncio.to_thread(client.search_tweets, q, count)
+        return {"status": "ok", "query": q, "tweets": tweets}
+    finally:
+        client.close()
+
+
+@router.get("/twitter/tweet/{tweet_id}")
+async def twitter_tweet_detail(tweet_id: str):
+    """Fetch a tweet and its replies for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        data = await asyncio.to_thread(client.get_tweet_detail, tweet_id)
+        return {"status": "ok", "data": data}
+    finally:
+        client.close()
+
+
+@router.get("/twitter/bookmarks")
+async def twitter_bookmarks_read(count: int = 20):
+    """Fetch bookmarked tweets via API for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        tweets = await asyncio.to_thread(client.get_bookmarks, count)
+        return {"status": "ok", "tweets": tweets}
+    finally:
+        client.close()
+
+
+@router.get("/twitter/list/{list_id}/members")
+async def twitter_list_members(list_id: str, count: int = 100):
+    """Fetch list members for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        members = await asyncio.to_thread(client.get_list_members, list_id, count)
+        return {"status": "ok", "list_id": list_id, "members": members}
+    finally:
+        client.close()
+
+
+@router.post("/twitter/bookmark/{tweet_id}")
+async def twitter_bookmark_tweet(tweet_id: str):
+    """Bookmark a tweet for agent access."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        ok = await asyncio.to_thread(client.add_bookmark, tweet_id)
+        return {"status": "ok" if ok else "error", "tweet_id": tweet_id}
+    finally:
+        client.close()
+
+
+@router.post("/twitter/list-add")
+async def twitter_list_add(list_id: str, handle: str):
+    """Add a user to a Twitter list."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        user_id = await asyncio.to_thread(client.get_user_rest_id, handle)
+        if not user_id:
+            return {"status": "error", "error": f"User not found: {handle}"}
+        ok = await asyncio.to_thread(client.add_list_member, list_id, user_id)
+        return {"status": "ok" if ok else "error", "handle": handle, "list_id": list_id}
+    finally:
+        client.close()
+
+
+@router.post("/twitter/list-remove")
+async def twitter_list_remove(list_id: str, handle: str):
+    """Remove a user from a Twitter list."""
+    client = TwitterClient(settings.smaug_config_path)
+    try:
+        user_id = await asyncio.to_thread(client.get_user_rest_id, handle)
+        if not user_id:
+            return {"status": "error", "error": f"User not found: {handle}"}
+        ok = await asyncio.to_thread(client.remove_list_member, list_id, user_id)
+        return {"status": "ok" if ok else "error", "handle": handle, "list_id": list_id}
+    finally:
+        client.close()
