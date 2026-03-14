@@ -128,6 +128,8 @@ class ChatUI {
 
         this.lastHeartbeatTs = '';
         this.renderedHeartbeatIds = new Set();
+        this._userScrolledUp = false;  // Track if user deliberately scrolled away from bottom
+        this._programmaticScroll = false;  // Suppress scroll listener during auto-scroll
 
         this.setupEventListeners();
         this.loadAgents();
@@ -191,6 +193,15 @@ class ChatUI {
 
         // Keep chat scrolled to bottom on window resize
         window.addEventListener('resize', () => this.scrollToBottom());
+
+        // Track user scroll to detect deliberate scroll-up
+        const chatContainer = this.messagesContainer.parentElement;
+        chatContainer.addEventListener('scroll', () => {
+            if (this._programmaticScroll) return;  // Ignore scrolls we triggered
+            const threshold = 50;  // px from bottom to consider "at bottom"
+            const atBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < threshold;
+            this._userScrolledUp = !atBottom;
+        });
     }
 
     setReplyMode(agentId, agentName, cardElement) {
@@ -287,7 +298,7 @@ class ChatUI {
                 }
             }
 
-            this.scrollToBottom();
+            this.scrollToBottom(true);
         } catch (error) {
             console.error('Failed to load conversation history:', error);
         }
@@ -386,6 +397,9 @@ class ChatUI {
     async sendMessage() {
         const rawMessage = this.messageInput.value.trim();
         if (!rawMessage) return;
+
+        // User is sending — reset scroll lock so streaming auto-scrolls
+        this._userScrolledUp = false;
 
         // Check for slash command routing
         const slashCommand = this.parseSlashCommand(rawMessage);
@@ -498,7 +512,7 @@ class ChatUI {
 
         // Mark card as streaming again
         card.classList.add('streaming');
-        this.scrollToBottom();
+        this.scrollToBottom(true);
     }
 
     async processStreamRequest(message, agentId, threadCard, learningSignals = {}) {
@@ -563,7 +577,7 @@ class ChatUI {
         `;
 
         this.messagesContainer.appendChild(card);
-        this.scrollToBottom();
+        this.scrollToBottom(true);
         return card;
     }
 
@@ -895,7 +909,7 @@ class ChatUI {
         `;
         this.messagesContainer.appendChild(indicator);
         this.statusIndicator = indicator;
-        this.scrollToBottom();
+        this.scrollToBottom(true);
     }
 
     updateStatusIndicator(text) {
@@ -995,6 +1009,7 @@ class ChatUI {
                             }
 
                             this.updateThreadCardStatus(threadCard, `Connected to ${agentName}...`);
+                            this.scrollToBottom();
                         } else if (event.type === 'tool_call') {
                             // Show contextual status for tool calls
                             const toolName = event.tool || 'unknown';
@@ -1003,6 +1018,7 @@ class ChatUI {
                             if (toolName !== 'report_refs' && toolName !== 'send_message') {
                                 const statusText = TOOL_STATUS_MAP[toolName] || `Running ${toolName}...`;
                                 this.updateThreadCardStatus(threadCard, statusText);
+                                this.scrollToBottom();
                             }
                         } else if (event.type === 'tool_result') {
                             // Tool result from LettaBot - show in collapsible detail
@@ -1012,6 +1028,7 @@ class ChatUI {
                             const resultPrefix = isError ? '\u274c Error: ' : '\u2705 Result: ';
                             thinkingContent += `\n\n${resultPrefix}${toolContent}`;
                             this.updateThinkingContent(threadCard, thinkingContent);
+                            this.scrollToBottom();
                         } else if (event.type === 'thinking') {
                             // Agent thinking/reasoning content - display in collapsible accordion
                             thinkingContent += event.content;
@@ -1021,6 +1038,7 @@ class ChatUI {
                                 agentName
                             });
                             this.updateThinkingContent(threadCard, thinkingContent);
+                            this.scrollToBottom();
                         } else if (event.type === 'text') {
                             hasReceivedContent = true;
                             content += event.content;
@@ -1278,9 +1296,13 @@ class ChatUI {
         this.scrollToBottom();
     }
 
-    scrollToBottom() {
+    scrollToBottom(force = false) {
+        if (!force && this._userScrolledUp) return;
         const container = this.messagesContainer.parentElement;
+        this._programmaticScroll = true;
         container.scrollTop = container.scrollHeight;
+        // Reset after browser processes the scroll event
+        requestAnimationFrame(() => { this._programmaticScroll = false; });
     }
 }
 
