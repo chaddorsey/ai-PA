@@ -25,6 +25,8 @@
 | `omnifocus-timer/omnifocus-timer.omnifocusjs/stop-timer.js` | Action: Stop Timer |
 | `omnifocus-timer/omnifocus-timer.omnifocusjs/check-timer.js` | Action: Check Timer Status |
 
+**Note:** The spec mentions `Resources/config.js` for configurable values. For simplicity, configuration is hardcoded in a `CONFIG` object in `timer-lib.js`. This can be extracted to a Resources file later if runtime configurability is needed.
+
 ### New Files (Phase 2 — CLI)
 
 | File | Responsibility |
@@ -334,17 +336,35 @@ Insert after the `CONFIG` block:
     // In-progress line
     let ipLine = null;
     if (inProgressMs !== null && inProgressMs !== undefined && state.state !== "idle") {
-      const now = new Date();
-      const sessionStart = new Date(state.currentIntervalStart - (state.accumulatedMs - (inProgressMs - (state.accumulatedMs))));
-      // Simpler: use stored interval start for display
-      const displayStart = new Date(state.currentIntervalStart - state.accumulatedMs + (state.sessions.length > 0 ? 0 : 0));
-      ipLine = "[" + formatDate(now) + " " + formatTime(new Date(state.currentIntervalStart)) + " in progress] ~" + formatDuration(inProgressMs);
+      const intervalStart = new Date(state.currentIntervalStart);
+      ipLine = "[" + formatDate(intervalStart) + " " + formatTime(intervalStart) + " in progress] ~" + formatDuration(inProgressMs);
     }
 
-    const totalMs = computeTotalMs(state.sessions, inProgressMs || 0);
+    // Total must include BOTH prior sessions from the note AND current engagement sessions
+    let priorMs = 0;
+    if (parsed.exists) {
+      for (const s of parsed.sessions) {
+        priorMs += parseDurationToMs(s.duration);
+      }
+    }
+    const totalMs = priorMs + computeTotalMs(state.sessions, inProgressMs || 0);
+    // Reconstruct all session lines: prior sessions from note + current engagement
+    let allSessionLines = [];
+    if (parsed.exists) {
+      // Re-render prior sessions from the parsed note (preserve original formatting)
+      for (const s of parsed.sessions) {
+        if (s.startDate) {
+          allSessionLines.push("[" + s.startDate + " " + s.start + "–" + s.endDate + " " + s.end + "] " + s.duration);
+        } else {
+          allSessionLines.push("[" + s.date + " " + s.start + "–" + s.end + "] " + s.duration);
+        }
+      }
+    }
+    allSessionLines = allSessionLines.concat(sessionLines);
+
     const agentEst = parsed.exists ? parsed.agentEstimate : null;
     const origEst = state.originalEstimate;
-    const block = buildNoteBlock(agentEst, origEst, sessionLines, totalMs, ipLine);
+    const block = buildNoteBlock(agentEst, origEst, allSessionLines, totalMs, ipLine);
 
     // Reconstruct note
     if (parsed.exists) {
@@ -1721,29 +1741,45 @@ Insert after the CONFIG block:
     const state = readState();
     const pending = state.pendingEvents || [];
     if (pending.length === 0) return;
-    // Try to send all pending, keep failures
-    const remaining = [];
-    for (const evt of pending) {
-      try {
-        const req = URL.FetchRequest.fromString(CONFIG.relayEndpoint);
-        req.method = "POST";
-        req.headers = { "Content-Type": "application/json" };
-        req.bodyString = JSON.stringify(evt);
-        req.fetch().catch(function() { remaining.push(evt); });
-      } catch (e) {
-        remaining.push(evt);
-      }
+    // Attempt to send all pending events. On success, remove from queue.
+    // We process one at a time to avoid async race conditions.
+    const evt = pending[0];
+    try {
+      const req = URL.FetchRequest.fromString(CONFIG.relayEndpoint);
+      req.method = "POST";
+      req.headers = { "Content-Type": "application/json" };
+      req.bodyString = JSON.stringify(evt);
+      req.fetch().then(function(response) {
+        // Success — remove this event and save
+        const current = JSON.parse(prefs().readString("pendingEvents") || "[]");
+        current.shift();
+        prefs().write("pendingEvents", JSON.stringify(current));
+      }).catch(function() {
+        // Leave in queue for next guardian tick
+      });
+    } catch (e) {
+      // Leave in queue for next guardian tick
     }
-    prefs().write("pendingEvents", JSON.stringify(remaining));
   }
 
   function buildEventPayload(eventType, state, extras) {
+    // Read agent estimate from task note if available
+    let agentEstimateMin = null;
+    try {
+      const task = Task.byIdentifier(state.activeTaskId);
+      if (task) {
+        const parsed = parseNoteBlock(task.note || "");
+        if (parsed.exists) agentEstimateMin = parsed.agentEstimate;
+      }
+    } catch (e) {}
+
     const payload = {
       event: eventType,
       taskId: state.activeTaskId,
       taskName: state.activeTaskName,
       projectName: state.activeProjectName,
       originalEstimateMin: state.originalEstimate,
+      agentEstimateMin: agentEstimateMin,
       timestamp: new Date().toISOString(),
     };
     if (extras) Object.assign(payload, extras);
@@ -1875,7 +1911,49 @@ git commit -m "feat(letta): add OmniFocus timer tool for Rover agent"
 
 ---
 
-### Task 18: Final Integration Smoke Test
+### Task 18: Update Rover Persona for Timer Awareness
+
+**Files:** Rover's system prompt / persona memory block (via Letta API)
+
+- [ ] **Step 1: Add timer behaviors to Rover's persona block**
+
+Update Rover's persona or system prompt to include:
+
+```
+## Timer Awareness
+
+You have access to an OmniFocus task timer via `omnifocus-cli timer` commands.
+
+Behaviors:
+- When you receive a "Timer started" message: briefly acknowledge, especially if you suggested the task.
+- When you receive a "Timer stopped" message: note the estimate vs. actual variance. If the user consistently underestimates certain types of tasks, surface the pattern.
+- When you receive a "Timer switched" message: note the context switch for workload awareness.
+- When presenting a task ("work on X next") and the user agrees: start the timer automatically with `omnifocus-cli timer start <taskId>`.
+- Periodically check `omnifocus-cli timer status`. If time exceeds the estimate by 150%, nudge: "You've been on '<task>' for X min — estimate was Y min. Want to keep going or switch?"
+- Before completing a task: check if a timer is running on it and stop it first.
+```
+
+Use the Letta API to update Rover's persona block:
+```bash
+curl -s "http://localhost:8283/v1/agents/agent-76ee5448-68ec-4fdd-b102-d4895d44e090/blocks" | python3 -c "import sys,json; blocks=json.load(sys.stdin); [print(b['id'], b['label']) for b in blocks]"
+```
+
+Then PATCH the persona block with the timer awareness section appended.
+
+- [ ] **Step 2: Verify Rover acknowledges a timer event**
+
+Send a test timer event through the relay and verify Rover's response includes timer-relevant content.
+
+- [ ] **Step 3: Commit any supporting scripts**
+
+```bash
+git add -A
+git commit -m "feat(letta): update Rover persona with timer awareness behaviors"
+```
+
+---
+
+### Task 19: Final Integration Smoke Test
 
 **Files:** None (testing only)
 
