@@ -1,7 +1,7 @@
 # OmniFocus Task Timer — Design Spec
 
 **Date:** 2026-03-14
-**Status:** Draft
+**Status:** Approved
 **Goal:** Capture actual time spent on OmniFocus tasks via a start/stop/pause timer, enabling an estimation evaluation and improvement loop. Designed for full two-way integration with the Letta PA ecosystem.
 
 ---
@@ -182,7 +182,8 @@ Appended to the task's note, using delimiters for parseability:
 Original Estimate: 30 min
 [2026-03-14 09:15–09:47] 32 min
 [2026-03-14 14:00–14:22] 22 min
-[2026-03-14 14:30 in progress] ~12 min
+[2026-03-14 23:30–2026-03-15 00:15] 45 min
+[2026-03-15 09:30 in progress] ~12 min
 Total: 1h 06m
 Variance: +36 min (+120%)
 --- End Time Tracking ---
@@ -260,7 +261,7 @@ New `timer` command group in the existing omnifocus-cli:
 
 2. **Dedicated timer osascript path:** Timer CLI commands generate their own osascript strings directly, bypassing `bridge.py`. Simpler but duplicates the osascript generation logic.
 
-Option 1 is preferred — it's a small change to the bridge (add a plugin/library parameter to the osascript template) that keeps all OmniFocus communication through a single path and makes future plugins easy to integrate.
+Option 1 is preferred — it's a small change to the bridge (add a plugin/library parameter to the osascript template) that keeps all OmniFocus communication through a single path and makes future plugins easy to integrate. The HTTP payload to `/execute` also needs to carry the `plugin` and `library` parameters so `host-bridge-service.js` can generate the correct osascript for the target plugin.
 
 **Status response example:**
 ```json
@@ -302,7 +303,7 @@ A new endpoint added to the existing `host-bridge-service.js` (port 8889).
 | `timer.switched` | "Timer switched from 'Draft email' to 'Review quarterly report'. Previous session: 22 min." |
 | `timer.stopped` | "Timer stopped on 'Review quarterly report'. Session: 22 min. Total across 3 sessions: 1h 06m. Original estimate: 30 min — actual is 120% over." |
 | `timer.auto-stopped` | "Timer auto-stopped: 'Review quarterly report' was marked complete. Final time: 1h 06m (estimate was 30 min)." |
-| `timer.heartbeat` | Not forwarded to Letta (internal health signal only, unless Rover has subscribed to heartbeats). |
+| `timer.heartbeat` | Not forwarded to Letta (internal health signal only; heartbeat forwarding is out of scope for Phase 3). |
 
 **Configuration:** The Rover agent ID is configured in the host bridge service's environment or a config file, not hardcoded.
 
