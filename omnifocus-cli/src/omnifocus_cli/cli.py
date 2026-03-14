@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import sys
 
@@ -485,7 +487,15 @@ def search(ctx, query, project_id, tag_id, flagged, available, due_before,
             query, project_id, tag_id, flagged, available, due_before,
             due_after, defer_before, defer_after, overdue, limit,
         ])
-        _run(ctx, "search", "searchTasks", {}, had_convenience_flags=had_flags)
+        # Route based on whether body contains a text query
+        try:
+            parsed = json.loads(body)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {}
+        if parsed.get("query"):
+            _run(ctx, "search", "searchTasks", {}, had_convenience_flags=had_flags)
+        else:
+            _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=had_flags)
         return
 
     # Convenience-flag path
@@ -1238,3 +1248,10 @@ def automation_diagnose(ctx):
 def automation_cleanup(ctx):
     """Get cleanup suggestions."""
     _run(ctx, "automation.cleanup", "suggestCleanup", {})
+
+
+# ── Timer commands (plugin-based) ─────────────────────────────
+
+from omnifocus_cli.timer import timer  # noqa: E402
+
+cli.add_command(timer)
