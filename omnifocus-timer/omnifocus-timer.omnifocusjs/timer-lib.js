@@ -79,8 +79,14 @@
   // 2. Config constants
   // ---------------------------------------------------------------------------
 
+  var CONFIG = {
+    relayEndpoint: "http://localhost:8889/timer-event",
+  };
+
   const GUARDIAN_INTERVAL_SEC = 60;
+  const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
   const NOTIFICATION_INTERVAL_MS = 15 * 60 * 1000;
+  const MAX_PENDING_EVENTS = 50;
   const NOTE_BLOCK_START = "--- Time Tracking ---";
   const NOTE_BLOCK_END = "--- End Time Tracking ---";
 
@@ -379,7 +385,130 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 5. Timer operations
+  // 5. Event emission
+  // ---------------------------------------------------------------------------
+
+  function buildEventPayload(eventType, state, extras) {
+    var payload = {
+      event: eventType,
+      taskId: state.activeTaskId,
+      taskName: state.activeTaskName,
+      projectName: state.activeProjectName,
+      originalEstimateMin: state.originalEstimate || null,
+      agentEstimateMin: null,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Try to read agent estimate from the task note
+    if (state.activeTaskId) {
+      try {
+        var task = Task.byIdentifier(state.activeTaskId);
+        if (task) {
+          var parsed = parseNoteBlock(task.note || "");
+          if (parsed.agentEstimate) {
+            var agentMs = parseDurationToMs(parsed.agentEstimate);
+            if (agentMs > 0) {
+              payload.agentEstimateMin = Math.round(agentMs / 60000);
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore — best effort
+      }
+    }
+
+    if (extras) {
+      var keys = Object.keys(extras);
+      for (var i = 0; i < keys.length; i++) {
+        payload[keys[i]] = extras[keys[i]];
+      }
+    }
+
+    return payload;
+  }
+
+  function emitEvent(eventData) {
+    try {
+      var req = URL.FetchRequest.fromString(CONFIG.relayEndpoint);
+      req.method = "POST";
+      req.headers = { "Content-Type": "application/json" };
+      req.bodyString = JSON.stringify(eventData);
+      req.fetch().then(function (response) {
+        // success — no action needed
+      }).catch(function (err) {
+        console.log("Event delivery failed: " + err.message);
+        queuePendingEvent(eventData);
+      });
+    } catch (e) {
+      console.log("Event emission error: " + e.message);
+      queuePendingEvent(eventData);
+    }
+  }
+
+  function queuePendingEvent(eventData) {
+    // Don't queue heartbeats
+    if (eventData.event === "timer.heartbeat") {
+      return;
+    }
+
+    var state = readState();
+    var queue = state.pendingEvents || [];
+
+    // If at capacity, drop heartbeats first, then oldest
+    if (queue.length >= MAX_PENDING_EVENTS) {
+      // Try dropping a heartbeat first
+      var dropped = false;
+      for (var i = 0; i < queue.length; i++) {
+        if (queue[i].event === "timer.heartbeat") {
+          queue.splice(i, 1);
+          dropped = true;
+          break;
+        }
+      }
+      if (!dropped) {
+        queue.shift(); // drop oldest
+      }
+    }
+
+    queue.push(eventData);
+    state.pendingEvents = queue;
+    writeState(state);
+  }
+
+  function retryPendingEvents() {
+    var state = readState();
+    var queue = state.pendingEvents || [];
+    if (queue.length === 0) {
+      return;
+    }
+
+    // Process ONE event at a time to avoid async race conditions
+    var evt = queue[0];
+    try {
+      var req = URL.FetchRequest.fromString(CONFIG.relayEndpoint);
+      req.method = "POST";
+      req.headers = { "Content-Type": "application/json" };
+      req.bodyString = JSON.stringify(evt);
+      req.fetch().then(function (response) {
+        // Success — remove from queue
+        var freshState = readState();
+        var freshQueue = freshState.pendingEvents || [];
+        if (freshQueue.length > 0) {
+          freshQueue.shift();
+          freshState.pendingEvents = freshQueue;
+          writeState(freshState);
+        }
+      }).catch(function (err) {
+        // Leave in queue for next tick
+        console.log("Retry delivery failed: " + err.message);
+      });
+    } catch (e) {
+      console.log("Retry error: " + e.message);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 6. Timer operations
   // ---------------------------------------------------------------------------
 
   function getElapsedMs(state) {
@@ -518,6 +647,17 @@
     if (switchedFrom) {
       result.switchedFrom = switchedFrom;
     }
+
+    // Emit event
+    if (switchedFrom) {
+      emitEvent(buildEventPayload("timer.switched", newState, {
+        switchedFrom: switchedFrom,
+        previousSessionMin: null,  // previous session already stopped
+      }));
+    } else {
+      emitEvent(buildEventPayload("timer.started", newState, {}));
+    }
+
     return result;
   }
 
@@ -526,7 +666,26 @@
     if (state.state === STATE_IDLE || !state.activeTaskId) {
       return { status: "idle", message: "No timer is running" };
     }
-    return stopCurrentTimer(state);
+
+    var elapsed = getElapsedMs(state);
+    var sessionMs = elapsed;  // current engagement total
+    var origEst = state.originalEstimate;
+
+    var result = stopCurrentTimer(state);
+
+    if (result.status === "stopped") {
+      emitEvent(buildEventPayload("timer.stopped", {
+        activeTaskId: result.taskId || state.activeTaskId,
+        activeTaskName: result.taskName,
+        activeProjectName: state.activeProjectName,
+        originalEstimate: origEst,
+      }, {
+        sessionMin: Math.round(sessionMs / 60000),
+        totalMin: Math.round(result.totalElapsed / 60000),
+      }));
+    }
+
+    return result;
   }
 
   function pauseTimer() {
@@ -563,6 +722,11 @@
       writeNoteBlock(task, state, 0);
     }
 
+    // Emit pause event
+    emitEvent(buildEventPayload("timer.paused", state, {
+      elapsedMin: Math.round(state.accumulatedMs / 60000),
+    }));
+
     return {
       status: "paused",
       taskName: state.activeTaskName,
@@ -592,6 +756,9 @@
 
     // Restart guardian
     startGuardian();
+
+    // Emit resume event
+    emitEvent(buildEventPayload("timer.resumed", state, {}));
 
     return {
       status: "resumed",
@@ -646,11 +813,12 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 6. Guardian timer
+  // 7. Guardian timer
   // ---------------------------------------------------------------------------
 
   var guardianTimer = null;
   var lastNotificationMs = 0;
+  var lastHeartbeatMs = 0;
 
   function cancelGuardian() {
     if (guardianTimer) {
@@ -658,14 +826,19 @@
       guardianTimer = null;
     }
     lastNotificationMs = 0;
+    lastHeartbeatMs = 0;
   }
 
   function startGuardian() {
     cancelGuardian();
     lastNotificationMs = Date.now();
+    lastHeartbeatMs = Date.now();
 
     guardianTimer = Timer.repeating(GUARDIAN_INTERVAL_SEC, function () {
       var state = readState();
+
+      // Retry any pending events each tick
+      retryPendingEvents();
 
       // Not running? Cancel self.
       if (state.state !== STATE_RUNNING || !state.activeTaskId) {
@@ -683,10 +856,19 @@
 
       // Check if task was completed externally — auto-stop
       if (task.completed || task.taskStatus === Task.Status.Completed || task.taskStatus === Task.Status.Dropped) {
+        var elapsed = getElapsedMs(state);
+        var origEst = state.originalEstimate;
+        var taskName = state.activeTaskName;
+
+        // Emit auto-stop event before stopping (state still has task info)
+        emitEvent(buildEventPayload("timer.auto-stopped", state, {
+          totalMin: Math.round(elapsed / 60000),
+        }));
+
         stopCurrentTimer(state);
         var note = new Notification("Timer auto-stopped");
         note.subtitle =
-          state.activeTaskName + " was completed. Timer stopped at " + formatDuration(getElapsedMs(state)) + ".";
+          taskName + " was completed. Timer stopped at " + formatDuration(elapsed) + ".";
         note.show();
         return;
       }
@@ -695,8 +877,26 @@
       var elapsed = getElapsedMs(state);
       writeNoteBlock(task, state, elapsed - state.accumulatedMs);
 
-      // 15-minute notification
+      // 5-minute heartbeat (not queued on failure)
       var now = Date.now();
+      if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
+        lastHeartbeatMs = now;
+        var heartbeat = buildEventPayload("timer.heartbeat", state, {
+          elapsedMin: Math.round(elapsed / 60000),
+        });
+        // Fire directly — don't queue heartbeats on failure
+        try {
+          var hbReq = URL.FetchRequest.fromString(CONFIG.relayEndpoint);
+          hbReq.method = "POST";
+          hbReq.headers = { "Content-Type": "application/json" };
+          hbReq.bodyString = JSON.stringify(heartbeat);
+          hbReq.fetch().then(function () {}).catch(function () {});
+        } catch (e) {
+          // Ignore heartbeat failures
+        }
+      }
+
+      // 15-minute notification
       if (now - lastNotificationMs >= NOTIFICATION_INTERVAL_MS) {
         lastNotificationMs = now;
         var notification = new Notification("Timer running");
@@ -708,7 +908,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // 7. Orphan recovery
+  // 8. Orphan recovery
   // ---------------------------------------------------------------------------
 
   function checkOrphanedTimer() {
@@ -770,7 +970,7 @@
   checkOrphanedTimer();
 
   // ---------------------------------------------------------------------------
-  // 8. Library exports
+  // 9. Library exports
   // ---------------------------------------------------------------------------
 
   lib.startTimerOnTask = startTimerOnTask;
