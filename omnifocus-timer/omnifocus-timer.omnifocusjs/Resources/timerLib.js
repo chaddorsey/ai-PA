@@ -29,8 +29,10 @@
   const STATE_PAUSED = "paused";
   const STATE_IDLE = "idle";
 
+  // Preferences MUST be constructed during plugin load, not lazily
+  var _prefs = new Preferences(null);
   function getPrefs() {
-    return new Preferences(null);
+    return _prefs;
   }
 
   function readState() {
