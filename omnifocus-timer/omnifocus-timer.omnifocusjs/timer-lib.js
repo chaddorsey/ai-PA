@@ -80,7 +80,7 @@
   // ---------------------------------------------------------------------------
 
   var CONFIG = {
-    relayEndpoint: "http://localhost:8889/timer-event",
+    relayEndpoint: "http://100.99.171.119:8889/timer-event",
   };
 
   const GUARDIAN_INTERVAL_SEC = 60;

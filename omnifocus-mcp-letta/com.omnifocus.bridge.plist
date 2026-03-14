@@ -27,6 +27,10 @@
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>LETTA_URL</key>
+        <string>http://localhost:8283</string>
+        <key>ROVER_AGENT_ID</key>
+        <string>agent-76ee5448-68ec-4fdd-b102-d4895d44e090</string>
     </dict>
 </dict>
 </plist>
