@@ -696,8 +696,8 @@
         activeProjectName: state.activeProjectName,
         originalEstimate: origEst,
       }, {
-        sessionMin: Math.round(sessionMs / 60000),
-        totalMin: Math.round(result.totalElapsed / 60000),
+        sessionMs: sessionMs,
+        totalMs: result.totalElapsed,
       }));
     }
 
@@ -740,7 +740,7 @@
 
     // Emit pause event
     emitEvent(buildEventPayload("timer.paused", state, {
-      elapsedMin: Math.round(state.accumulatedMs / 60000),
+      elapsedMs: state.accumulatedMs,
     }));
 
     return {
@@ -897,7 +897,7 @@
 
         // Emit auto-stop event before stopping (state still has task info)
         emitEvent(buildEventPayload("timer.auto-stopped", state, {
-          totalMin: Math.round(elapsed / 60000),
+          totalMs: elapsed,
         }));
 
         stopCurrentTimer(state);
@@ -917,7 +917,7 @@
       if (now - lastHeartbeatMs >= HEARTBEAT_INTERVAL_MS) {
         lastHeartbeatMs = now;
         var heartbeat = buildEventPayload("timer.heartbeat", state, {
-          elapsedMin: Math.round(elapsed / 60000),
+          elapsedMs: elapsed,
         });
         // Fire directly — don't queue heartbeats on failure
         try {

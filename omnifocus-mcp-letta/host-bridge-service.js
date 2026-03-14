@@ -129,11 +129,22 @@ return _res
 /**
  * Format a timer event into a natural-language message for Letta.
  */
+function fmtDuration(ms) {
+  if (ms == null) return null;
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min < 60) return `${min}m ${sec < 10 ? '0' : ''}${sec}s`;
+  const hrs = Math.floor(min / 60);
+  const m = min % 60;
+  return `${hrs}h ${m < 10 ? '0' : ''}${m}m ${sec < 10 ? '0' : ''}${sec}s`;
+}
+
 function formatTimerMessage(event) {
   const name = event.taskName || 'Unknown task';
   const project = event.projectName ? ` (${event.projectName})` : '';
   const estMin = event.originalEstimateMin;
-  const agentMin = event.agentEstimateMin;
 
   switch (event.event) {
     case 'timer.started':
@@ -143,31 +154,36 @@ function formatTimerMessage(event) {
 
     case 'timer.switched': {
       const prev = event.switchedFrom || 'unknown task';
-      const prevDur = event.previousSessionMin;
-      return prevDur != null
-        ? `Timer switched from '${prev}' to '${name}'${project}. Previous session: ${prevDur} min.`
+      const prevDur = fmtDuration(event.sessionMs);
+      return prevDur
+        ? `Timer switched from '${prev}' to '${name}'${project}. Previous session: ${prevDur}.`
         : `Timer switched from '${prev}' to '${name}'${project}.`;
     }
 
     case 'timer.stopped': {
-      const session = event.sessionMin != null ? ` Session: ${event.sessionMin} min.` : '';
-      const total = event.totalMin != null ? ` Total: ${event.totalMin} min.` : '';
-      const orig = estMin != null ? ` Original estimate: ${estMin} min.` : '';
-      return `Timer stopped on '${name}'.${session}${total}${orig}`;
+      const session = fmtDuration(event.sessionMs);
+      const total = fmtDuration(event.totalMs);
+      const parts = [`Timer stopped on '${name}'.`];
+      if (session) parts.push(`Session: ${session}.`);
+      if (total) parts.push(`Total: ${total}.`);
+      if (estMin != null) parts.push(`Original estimate: ${estMin} min.`);
+      return parts.join(' ');
     }
 
     case 'timer.paused': {
-      const elapsed = event.elapsedMin != null ? ` Elapsed: ${event.elapsedMin} min.` : '';
-      return `Timer paused on '${name}'.${elapsed}`;
+      const elapsed = fmtDuration(event.elapsedMs);
+      return elapsed
+        ? `Timer paused on '${name}'. Elapsed: ${elapsed}.`
+        : `Timer paused on '${name}'.`;
     }
 
     case 'timer.resumed':
       return `Timer resumed on '${name}'.`;
 
     case 'timer.auto-stopped': {
-      const final_ = event.totalMin != null ? ` Final time: ${event.totalMin} min.` : '';
+      const final_ = fmtDuration(event.totalMs);
       const est = estMin != null ? ` (estimate was ${estMin} min)` : '';
-      return `Timer auto-stopped: '${name}' was marked complete.${final_}${est}`;
+      return `Timer auto-stopped: '${name}' was marked complete.${final_ ? ` Final time: ${final_}.` : ''}${est}`;
     }
 
     default:
