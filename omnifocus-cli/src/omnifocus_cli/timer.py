@@ -7,7 +7,7 @@ from omnifocus_cli.bridge import call_omnifocus
 from omnifocus_cli.formatters import output_result, should_use_json
 
 TIMER_PLUGIN = "com.dorsey.omnifocus-timer"
-TIMER_LIBRARY = "timer-lib"
+TIMER_LIBRARY = "timerLib"
 
 
 def _timer_call(method: str, params: dict | None = None) -> dict:

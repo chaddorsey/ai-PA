@@ -1,7 +1,7 @@
 /*{
   "type": "action",
   "targets": ["omnifocus"],
-  "identifier": "start-timer",
+  "identifier": "startTimer",
   "author": "Chad Dorsey",
   "version": "1.0.0",
   "description": "Start timing the selected task. If another task is being timed, it will be stopped first.",
@@ -10,7 +10,7 @@
 }*/
 (() => {
   const action = new PlugIn.Action(async function (selection) {
-    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timer-lib");
+    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timerLib");
     const task = selection.tasks[0];
     const result = timerLib.startTimerOnTask(task.id.primaryKey);
 

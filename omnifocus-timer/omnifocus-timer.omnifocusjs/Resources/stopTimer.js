@@ -1,7 +1,7 @@
 /*{
   "type": "action",
   "targets": ["omnifocus"],
-  "identifier": "stop-timer",
+  "identifier": "stopTimer",
   "author": "Chad Dorsey",
   "version": "1.0.0",
   "description": "Stop the active timer and save the session to the task note.",
@@ -10,7 +10,7 @@
 }*/
 (() => {
   const action = new PlugIn.Action(async function (selection) {
-    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timer-lib");
+    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timerLib");
 
     // Capture estimate before stopping (stop clears state)
     const preStatus = timerLib.getTimerStatus();
@@ -43,7 +43,7 @@
   });
 
   action.validate = function (selection) {
-    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timer-lib");
+    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timerLib");
     const status = timerLib.getTimerStatus();
     return status.status !== "idle";
   };

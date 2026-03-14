@@ -1,7 +1,7 @@
 /*{
   "type": "action",
   "targets": ["omnifocus"],
-  "identifier": "pause-timer",
+  "identifier": "pauseTimer",
   "author": "Chad Dorsey",
   "version": "1.0.0",
   "description": "Pause the running timer, or resume it if already paused.",
@@ -10,7 +10,7 @@
 }*/
 (() => {
   const action = new PlugIn.Action(async function (selection) {
-    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timer-lib");
+    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timerLib");
     const status = timerLib.getTimerStatus();
 
     let result;
@@ -43,7 +43,7 @@
   });
 
   action.validate = function (selection) {
-    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timer-lib");
+    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timerLib");
     const status = timerLib.getTimerStatus();
     return status.status === "running" || status.status === "paused";
   };

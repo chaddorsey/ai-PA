@@ -1,7 +1,7 @@
 /*{
   "type": "action",
   "targets": ["omnifocus"],
-  "identifier": "check-timer",
+  "identifier": "checkTimer",
   "author": "Chad Dorsey",
   "version": "1.0.0",
   "description": "Show the current timer status.",
@@ -10,7 +10,7 @@
 }*/
 (() => {
   const action = new PlugIn.Action(async function (selection) {
-    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timer-lib");
+    const timerLib = PlugIn.find("com.dorsey.omnifocus-timer").library("timerLib");
     const status = timerLib.getTimerStatus();
 
     let title = "";

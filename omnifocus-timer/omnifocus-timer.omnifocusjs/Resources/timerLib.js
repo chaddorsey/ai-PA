@@ -1,7 +1,7 @@
 /*{
   "type": "library",
   "targets": ["omnifocus"],
-  "identifier": "timer-lib",
+  "identifier": "timerLib",
   "author": "Chad Dorsey",
   "version": "1.0.0",
   "description": "Core timer logic for OmniFocus task timer"
