@@ -65,11 +65,17 @@ OmniFocus has a duration field (`estimatedMinutes`) for tasks, but no mechanism 
 Plugin state change → `URL.FetchRequest` POST to `localhost:8889/timer-event` → host bridge formats natural-language message → POSTs to Letta agent messages API.
 
 **Data flow — inbound (Letta → timer):**
-Rover calls `omnifocus-cli timer start <taskId>` → `bridge.py` → osascript → timer plugin library function `startTimer(taskId)`.
+Rover calls `omnifocus-cli timer start <taskId>` → `bridge.py` (with plugin-aware routing targeting `com.dorsey.omnifocus-timer`) → osascript → timer plugin library function `startTimer(taskId)`.
 
 ---
 
 ## Component 1: Timer Plugin (`omnifocus-timer.omnifocusjs`)
+
+**Note on plugin format:** The existing `omnifocus-mcp.omnijs` is a single-file library plugin. The timer plugin uses the `.omnifocusjs` **bundle** format because it needs both UI actions (Automation menu items) and a library (for external callers). Bundles are directories containing a manifest, action files, and library files.
+
+### Plugin Identifier
+
+`com.dorsey.omnifocus-timer` — used in `PlugIn.find()` calls from osascript and cross-plugin references.
 
 ### Plugin Bundle Structure
 
@@ -83,6 +89,27 @@ omnifocus-timer.omnifocusjs/
   check-timer.js             — action: Check Timer Status
   Resources/
     config.js                — configurable endpoints, notification intervals
+```
+
+### Manifest
+
+```json
+{
+  "defaultLocale": "en",
+  "identifier": "com.dorsey.omnifocus-timer",
+  "author": "Chad Dorsey",
+  "description": "Start/stop/pause timer for tracking actual time spent on tasks",
+  "version": "1.0.0",
+  "actions": [
+    { "identifier": "start-timer", "image": "clock" },
+    { "identifier": "pause-timer", "image": "pause" },
+    { "identifier": "stop-timer", "image": "stop" },
+    { "identifier": "check-timer", "image": "info" }
+  ],
+  "libraries": [
+    { "identifier": "timer-lib" }
+  ]
+}
 ```
 
 ### Actions
@@ -123,16 +150,17 @@ omnifocus-timer.omnifocusjs/
 Notes on Preferences:
 - Preferences only stores primitives (Boolean, String, Number, Date, Data). Complex structures are JSON-serialized strings.
 - `originalEstimate` is captured the first time a task is ever timed. If the note already contains a `--- Time Tracking ---` block with an original estimate, that value is preserved rather than re-snapshotted.
+- **Size limits:** `sessions` array in Preferences holds only sessions for the *current timing engagement*. Once a session is finalized to the note, it can be pruned from Preferences. Maximum 100 sessions retained in Preferences as a safety bound. `pendingEvents` queue is capped at 50 entries; oldest events are dropped when the cap is reached (heartbeats are dropped first since they are stale by definition).
 
 ### Guardian Timer
 
-A `Timer.repeating(60, callback)` that runs whenever state is not `idle`. On each tick:
+A `Timer.repeating(60, callback)` created when a timer starts, cancelled when the timer stops (or state becomes `idle`). After orphan recovery, a new `Timer.repeating` is created since the previous timer object does not survive plugin re-initialization. On each tick:
 
 1. **Persist to note** — compute current elapsed time, write/update the in-progress session line in the task's note. This ensures data loss on crash is bounded to 60 seconds.
 2. **Check task status** — look up the task by ID. If completed or dropped, auto-stop the timer and log the final session. If task not found (deleted), auto-stop with error notation.
 3. **Notification cadence** — every `notificationIntervalMin` minutes (default 15), fire a macOS `Notification`: "Timer: 45 min on 'Review quarterly report'". Clicking the notification could navigate to the task.
 4. **Retry failed events** — drain `pendingEvents` queue, attempt redelivery to relay endpoint.
-5. **Emit heartbeat** — POST a `timer.heartbeat` event to the relay endpoint (allows Letta to know the timer is still alive without querying).
+5. **Emit heartbeat** — POST a `timer.heartbeat` event to the relay endpoint every 5 minutes (not every tick — heartbeats are a low-frequency health signal). Heartbeats are **not queued** on failure since they are stale by definition.
 
 ### Orphan Recovery (on plugin load)
 
@@ -154,7 +182,7 @@ Appended to the task's note, using delimiters for parseability:
 Original Estimate: 30 min
 [2026-03-14 09:15–09:47] 32 min
 [2026-03-14 14:00–14:22] 22 min
-[2026-03-14 in progress] ~12 min
+[2026-03-14 14:30 in progress] ~12 min
 Total: 1h 06m
 Variance: +36 min (+120%)
 --- End Time Tracking ---
@@ -163,11 +191,12 @@ Variance: +36 min (+120%)
 **Rules:**
 - `--- Time Tracking ---` / `--- End Time Tracking ---` delimiters allow finding and updating the block without disturbing other note content.
 - If the task already has notes, the time tracking block is appended at the end with a blank line separator.
-- The `[in progress]` line is written by the guardian every 60s and replaced with a finalized line on stop.
+- The `[in progress]` line includes the session start time and is updated by the guardian every 60s, then replaced with a finalized line on stop.
 - `Total` and `Variance` lines are recomputed on every write.
-- `Variance` line is only shown when an original estimate exists.
+- `Variance` line is only shown when an original estimate exists. Zero variance is formatted as `Variance: 0 min (0%)`.
 - `Original Estimate` line reads "none" if no estimate was set.
 - Times are in the local timezone, formatted as `HH:MM` for readability.
+- **Sessions spanning midnight:** use dual-date format: `[2026-03-14 23:30–2026-03-15 00:15] 45 min`. The duration value is authoritative; the timestamps are informational. Parsers should use the duration, not compute from start/end times.
 - Durations use minutes for <60 min, `Xh YYm` for longer.
 
 ### Outbound Events
@@ -225,7 +254,13 @@ New `timer` command group in the existing omnifocus-cli:
 | `timer status` | none | Return current timer state as JSON. |
 | `timer history` | `<task-id>` | Return parsed time tracking data from a task's note. |
 
-**Implementation:** Each command calls `bridge.call_omnifocus()` with the corresponding timer library function name and parameters. The bridge routes through osascript (local) or the host bridge HTTP endpoint (Docker) — same path as all existing omnifocus-cli commands.
+**Implementation:** The existing `bridge.py` and `host-bridge-service.js` are hardcoded to call `PlugIn.find('omnifocus-mcp').library('omnifocus-mcp').request(payload)`. Timer commands need to target a different plugin. Two options:
+
+1. **Plugin-aware bridge routing (recommended):** Modify `bridge.py` and `host-bridge-service.js` to accept an optional `plugin` parameter. When provided, the osascript template calls `PlugIn.find('<plugin-id>').library('<lib-id>').<method>(params)` instead of routing through the MCP plugin's `request()` dispatcher. When omitted, behavior is unchanged (backwards compatible). Timer CLI commands pass `plugin="com.dorsey.omnifocus-timer", library="timer-lib"`.
+
+2. **Dedicated timer osascript path:** Timer CLI commands generate their own osascript strings directly, bypassing `bridge.py`. Simpler but duplicates the osascript generation logic.
+
+Option 1 is preferred — it's a small change to the bridge (add a plugin/library parameter to the osascript template) that keeps all OmniFocus communication through a single path and makes future plugins easy to integrate.
 
 **Status response example:**
 ```json
@@ -245,7 +280,9 @@ New `timer` command group in the existing omnifocus-cli:
 
 ## Component 3: Host Bridge Timer Relay
 
-A new endpoint added to the existing `host-bridge-service.js` (port 8889):
+A new endpoint added to the existing `host-bridge-service.js` (port 8889).
+
+**Note on routing:** The current host bridge only handles `POST /execute` and returns 404 for all other paths. Adding `/timer-event` requires expanding the URL routing in the request handler (a simple if/else chain — no framework needed, consistent with the bridge's minimal style).
 
 ### Endpoint: `POST /timer-event`
 
@@ -275,7 +312,7 @@ A new endpoint added to the existing `host-bridge-service.js` (port 8889):
 
 ### Rover's Timer Awareness
 
-Rover does not need new custom Letta tools for timer operations — it uses the existing `run_omnifocus_cli` tool (or equivalent) to execute `timer start`, `timer stop`, `timer status`, etc.
+Rover uses the existing OmniFocus CLI tool pattern to execute timer commands. **Prerequisite check:** Phase 3 must verify that Rover has a tool capable of executing `omnifocus-cli` commands (e.g., `run_omnifocus_cli` or a shell execution tool). If no such tool exists, one must be created and attached as part of Phase 3.
 
 Rover's system prompt / persona block should be updated with timer-related behaviors:
 
@@ -305,18 +342,19 @@ For machine consumption (by `timer history`, Rover, analytics):
 --- Time Tracking ---
 Original Estimate: <N> min | none
 [<YYYY-MM-DD HH:MM–HH:MM>] <duration>
-[<YYYY-MM-DD> in progress] ~<duration>
+[<YYYY-MM-DD HH:MM> in progress] ~<duration>
 Total: <duration>
 Variance: +/-<N> min (+/-<N>%) | n/a
 --- End Time Tracking ---
 ```
 
 **Regex patterns:**
-- Session line: `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})–(\d{2}:\d{2})\] (.+)`
-- In-progress line: `\[(\d{4}-\d{2}-\d{2}) in progress\] ~(.+)`
-- Original estimate: `Original Estimate: (\d+) min|none`
+- Session line (same day): `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})–(\d{2}:\d{2})\] (.+)`
+- Session line (cross-midnight): `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})–(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\] (.+)`
+- In-progress line: `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) in progress\] ~(.+)`
+- Original estimate: `Original Estimate: (?:(\d+) min|none)`
 - Total: `Total: (.+)`
-- Variance: `Variance: ([+-]?\d+) min \(([+-]?\d+)%\)|n\/a`
+- Variance: `Variance: (?:([+-]?\d+) min \(([+-]?\d+)%\)|n\/a)`
 
 The `timer history` command and Rover both use these patterns to extract structured data from the note text.
 
@@ -334,8 +372,8 @@ The `timer history` command and Rover both use these patterns to extract structu
 
 ### Phase 2: CLI Integration
 - Timer library functions exposed in the plugin
+- Modify `bridge.py` and `host-bridge-service.js` to support plugin-aware routing (target plugin parameter)
 - omnifocus-cli `timer` command group (start, stop, pause, resume, status, history)
-- Verify host bridge passthrough works for timer library calls
 - **Deliverable:** Letta agents (and any CLI user) can control the timer programmatically
 
 ### Phase 3: Letta Integration
@@ -371,9 +409,13 @@ The `timer history` command and Rover both use these patterns to extract structu
 | Host bridge service not running when plugin emits events | Events lost | Failed-event queue in Preferences with guardian retry |
 | Two OmniFocus windows with different selections | Ambiguous "selected task" for Start action | Start action validates exactly 1 task selected; library `startTimer(taskId)` takes explicit ID |
 | Cross-device sync conflicts on task notes | Two devices write different note content | Mac-primary workflow mitigates this; note block uses append-only pattern within delimiters |
+| `URL.FetchRequest` unavailable in Timer callback context | Outbound events cannot be sent from guardian | Validate in Phase 1 prototype; fallback: guardian writes events to Preferences queue, a separate `Timer.once` dispatches them |
+| Preferences string size degrades with many sessions | Slowdown on read/write | Cap sessions at 100 in Preferences; cap pendingEvents at 50; prune after note persistence |
 
 ---
 
 ## Open Questions
 
-None — all design decisions have been resolved through the brainstorming process.
+1. **`URL.FetchRequest` in `Timer.repeating` callbacks:** The OmniFocus Automation API documentation does not explicitly state whether `URL.FetchRequest` is available inside timer callback contexts (vs. action/library contexts). This must be validated with a quick prototype early in Phase 1. If unavailable, the fallback is to queue events in Preferences and dispatch them from action invocations or a `Timer.once` chain.
+
+2. **Rover's OmniFocus CLI tool:** Phase 3 assumes Rover has a Letta tool that can execute `omnifocus-cli` commands. This needs to be verified — if no such tool exists, it must be created as part of Phase 3.
