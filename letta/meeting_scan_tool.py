@@ -34,10 +34,13 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
     import os
     import re
     import json
+    import base64
+    import subprocess
     import traceback
     import urllib.request
     import urllib.parse
     import urllib.error
+    from email.mime.text import MIMEText
 
     try:
         LETTA_BASE = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
@@ -785,20 +788,184 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 "proposed": is_proposed,
             },
             "instruction": (
-                "Call prepare_meeting_followup with the pre_computed_args above ONLY if "
-                "there are actual actions or decisions. "
-                "If there are no actions AND no decisions, do NOT call — skip the followup. "
+                "The followup email draft has ALREADY been created (see draft_result). "
+                "Do NOT call prepare_meeting_followup — it was created inline. "
+                "Report the draft_result to the user. If draft_result is null and there "
+                "are actions/decisions in pre_computed_args, you may call "
+                "prepare_meeting_followup as a fallback with the pre_computed_args above. "
                 "CRITICAL: Pass the 'proposed' field exactly as shown in pre_computed_args. "
-                "When proposed is true, the email subject gets a [Proposed] prefix. "
-                "You may augment my_actions or their_actions with additional items from "
-                "your semantic review before calling. For their_actions, leave the text "
-                "as-is — the assignee is already named in the bullet (e.g., 'Susan to "
-                "review the budget'). Do NOT add 'TBD to' or any other prefix. "
-                "For my_actions, each item already starts with 'Chad to'. "
                 "IMPORTANT: Pass participants EXACTLY as provided — including the "
                 "'Name <email>' format. Do not strip email addresses."
             ),
         }
+
+        # ── Create followup email draft directly ──
+        # Previously the agent was instructed to relay pre_computed_args to
+        # prepare_meeting_followup, but the agent often mangled them (squishing
+        # multiple markers into one bullet). Creating the draft inline is reliable.
+        draft_result = None
+        all_followup_items = followup_decisions + followup_my + followup_their
+        if all_followup_items:
+            try:
+                import pytz as _pytz_fu
+                _tz_fu = _pytz_fu.timezone("America/New_York")
+                from datetime import datetime as _dt_fu
+                _now_fu = _dt_fu.now(_tz_fu)
+            except Exception:
+                from datetime import datetime as _dt_fu
+                _now_fu = _dt_fu.now()
+
+            GWS_TIMEOUT = 15
+            SENDER_EMAIL = "cdorsey@concord.org"
+            EMAIL_RE_FU = re.compile(r"<([^>]+@[^>]+)>")
+
+            # Extract recipient emails from participants
+            emails_list_fu = []
+            for entry in participants:
+                email_match = EMAIL_RE_FU.search(entry)
+                if email_match:
+                    email = email_match.group(1)
+                    if email.lower() != SENDER_EMAIL:
+                        emails_list_fu.append(email)
+
+            # Time-aware opening
+            try:
+                meeting_hour = int(meeting_date.split(" ")[1].split(":")[0]) if " " in str(meeting_date) else -1
+            except (ValueError, IndexError):
+                meeting_hour = -1
+            if 0 <= meeting_hour < 12:
+                time_phrase = "this morning"
+            elif 12 <= meeting_hour < 17:
+                time_phrase = "this afternoon"
+            else:
+                time_phrase = "today"
+
+            # Build HTML email body
+            html_parts_fu = []
+            html_parts_fu.append("<p>Folks,</p>")
+            html_parts_fu.append(
+                f"<p>Thanks for a great meeting {time_phrase}. I&#39;ve summarized "
+                "below the decisions and next actions I captured. Please let me know "
+                "if your notes differ from mine.</p>"
+            )
+            html_parts_fu.append("<p>--Chad</p>")
+            html_parts_fu.append("<p>=====</p>")
+            html_parts_fu.append("<p><b>Decisions / Next Actions</b></p>")
+
+            # Strip leading auxiliary verbs
+            LEADING_VERB_RE_FU = re.compile(
+                r"^(?:will|shall|should|must|needs?\s+to|has\s+to|have\s+to"
+                r"|agreed\s+to|plans?\s+to|planning\s+to|going\s+to"
+                r"|is\s+going\s+to|was\s+going\s+to)\s+",
+                re.IGNORECASE,
+            )
+
+            li_items = []
+            # Decisions
+            for d in followup_decisions:
+                cap_d = d[0].upper() + d[1:] if d else d
+                li_items.append(f"<li><i>Decision</i> &#8211; {cap_d}</li>")
+
+            # My actions
+            for a in followup_my:
+                if not a:
+                    continue
+                a_lower = a.lower()
+                if a_lower.startswith("chad to ") or a_lower.startswith("chad: "):
+                    prefix_len = 8 if a_lower.startswith("chad to ") else 6
+                    rest = a[prefix_len:]
+                    rest = LEADING_VERB_RE_FU.sub("", rest)
+                    li_items.append(f"<li>{a[:prefix_len]}{rest}</li>")
+                else:
+                    stripped = LEADING_VERB_RE_FU.sub("", a)
+                    li_items.append(f"<li>Chad to {stripped[0].lower()}{stripped[1:]}</li>")
+
+            # Their actions
+            for a in followup_their:
+                if not a:
+                    continue
+                name_to_match = re.match(r"^(\w+(?:\s+\w+)?\s+to\s+)", a, re.IGNORECASE)
+                if name_to_match:
+                    prefix = name_to_match.group(1)
+                    rest = a[len(prefix):]
+                    rest = LEADING_VERB_RE_FU.sub("", rest)
+                    li_items.append(f"<li>{prefix}{rest}</li>")
+                else:
+                    li_items.append(f"<li>{a}</li>")
+
+            if li_items:
+                html_parts_fu.append("<ul>" + "".join(li_items) + "</ul>")
+
+            body_html_fu = "".join(html_parts_fu)
+
+            # Create MIME message and Gmail draft
+            mime_msg = MIMEText(body_html_fu, "html")
+            mime_msg["To"] = ", ".join(emails_list_fu)
+            subject_fu = f"{meeting_title} - meeting summary"
+            mime_msg["Subject"] = subject_fu
+            raw_fu = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode("utf-8")
+
+            _cmd_fu = ["gws", "gmail", "users", "drafts", "create",
+                       "--params", json.dumps({"userId": "me"}),
+                       "--json", json.dumps({"message": {"raw": raw_fu}}),
+                       "--format", "json"]
+            _r_fu = subprocess.run(_cmd_fu, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+
+            if _r_fu.returncode == 0 and _r_fu.stdout.strip():
+                draft_data = json.loads(_r_fu.stdout)
+                draft_id_fu = draft_data.get("id", "")
+                draft_msg_fu = draft_data.get("message", {})
+                message_id_fu = draft_msg_fu.get("id", "")
+
+                # Apply "Followup" label (and "Proposed" if applicable)
+                label_ids_to_add = []
+                if message_id_fu:
+                    _cmd_labels = ["gws", "gmail", "users", "labels", "list",
+                                   "--params", json.dumps({"userId": "me"}),
+                                   "--format", "json"]
+                    _r_labels = subprocess.run(_cmd_labels, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+                    if _r_labels.returncode == 0 and _r_labels.stdout.strip():
+                        all_labels = json.loads(_r_labels.stdout).get("labels", [])
+                        # Find Followup label
+                        followup_label_id = None
+                        for lbl in all_labels:
+                            if lbl["name"] == "Followup":
+                                followup_label_id = lbl["id"]
+                                break
+                        if followup_label_id:
+                            label_ids_to_add.append(followup_label_id)
+
+                        # Apply Proposed label if no user markers
+                        if is_proposed:
+                            proposed_label_id = None
+                            for lbl in all_labels:
+                                if lbl["name"] == "Proposed":
+                                    proposed_label_id = lbl["id"]
+                                    break
+                            if proposed_label_id:
+                                label_ids_to_add.append(proposed_label_id)
+
+                        if label_ids_to_add:
+                            _cmd_modify = ["gws", "gmail", "users", "messages", "modify",
+                                           "--params", json.dumps({"userId": "me", "id": message_id_fu}),
+                                           "--json", json.dumps({"addLabelIds": label_ids_to_add}),
+                                           "--format", "json"]
+                            subprocess.run(_cmd_modify, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+
+                draft_result = {
+                    "status": "ok",
+                    "draft_id": draft_id_fu,
+                    "message_id": message_id_fu,
+                    "email_to": ", ".join(emails_list_fu),
+                    "email_subject": subject_fu,
+                    "proposed": is_proposed,
+                    "items_count": len(li_items),
+                }
+            else:
+                draft_result = {
+                    "status": "error",
+                    "error_message": _r_fu.stderr[:300] if _r_fu.stderr else f"gws exit {_r_fu.returncode}",
+                }
 
         return {
             "status": "ok",
@@ -823,6 +990,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             "doc_urls_found": doc_urls,
             "queued_to_block": queued_count,
             "extraction_results": extraction_results,
+            "draft_result": draft_result,
             "next_action": next_action,
         }
 
