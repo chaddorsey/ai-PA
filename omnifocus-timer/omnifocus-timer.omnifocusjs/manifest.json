@@ -1,0 +1,16 @@
+{
+  "defaultLocale": "en",
+  "identifier": "com.dorsey.omnifocus-timer",
+  "author": "Chad Dorsey",
+  "description": "Start/stop/pause timer for tracking actual time spent on tasks",
+  "version": "1.0.0",
+  "actions": [
+    { "identifier": "start-timer" },
+    { "identifier": "pause-timer" },
+    { "identifier": "stop-timer" },
+    { "identifier": "check-timer" }
+  ],
+  "libraries": [
+    { "identifier": "timer-lib" }
+  ]
+}
