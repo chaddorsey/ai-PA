@@ -97,20 +97,21 @@
   // ---------------------------------------------------------------------------
 
   function formatDuration(ms) {
-    var totalMin = Math.round(ms / 60000);
-    if (totalMin < 1 && ms > 0) {
-      return "< 1 min";
+    var totalSec = Math.round(ms / 1000);
+    if (totalSec < 1) {
+      return "0s";
     }
-    if (totalMin < 1) {
-      return "0 min";
+    if (totalSec < 60) {
+      return totalSec + "s";
     }
+    var totalMin = Math.floor(totalSec / 60);
+    var secs = totalSec % 60;
     if (totalMin < 60) {
-      return totalMin + " min";
+      return totalMin + "m " + (secs < 10 ? "0" : "") + secs + "s";
     }
     var hours = Math.floor(totalMin / 60);
     var mins = totalMin % 60;
-    var minsStr = mins < 10 ? "0" + mins : "" + mins;
-    return hours + "h " + minsStr + "m";
+    return hours + "h " + (mins < 10 ? "0" : "") + mins + "m " + (secs < 10 ? "0" : "") + secs + "s";
   }
 
   function parseDurationToMs(str) {
@@ -118,21 +119,26 @@
       return 0;
     }
     var trimmed = str.replace(/^~/, "").trim();
-    // "< 1 min" — sub-minute session, preserve as 30 seconds (midpoint)
-    if (trimmed === "< 1 min") {
-      return 30000;
-    }
-    // "1h 06m"
-    var hm = trimmed.match(/^(\d+)h\s*(\d+)m$/);
-    if (hm) {
-      return (parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10)) * 60000;
-    }
-    // "32 min"
-    var m = trimmed.match(/^(\d+)\s*min$/);
-    if (m) {
-      return parseInt(m[1], 10) * 60000;
-    }
-    return 0;
+    var total = 0;
+
+    // Hours: "1h" or "2h "
+    var hMatch = trimmed.match(/(\d+)h/);
+    if (hMatch) total += parseInt(hMatch[1], 10) * 3600000;
+
+    // Minutes: "06m" or "32m " or legacy "32 min"
+    var mMatch = trimmed.match(/(\d+)m(?:\s|$)/);
+    if (mMatch) total += parseInt(mMatch[1], 10) * 60000;
+    var minMatch = trimmed.match(/(\d+)\s*min/);
+    if (minMatch) total += parseInt(minMatch[1], 10) * 60000;
+
+    // Seconds: "05s"
+    var sMatch = trimmed.match(/(\d+)s/);
+    if (sMatch) total += parseInt(sMatch[1], 10) * 1000;
+
+    // Legacy "< 1 min"
+    if (trimmed === "< 1 min") return 30000;
+
+    return total;
   }
 
   function formatDateTimePart(d) {
@@ -141,7 +147,8 @@
     var day = (d.getDate() < 10 ? "0" : "") + d.getDate();
     var hours = (d.getHours() < 10 ? "0" : "") + d.getHours();
     var minutes = (d.getMinutes() < 10 ? "0" : "") + d.getMinutes();
-    return year + "-" + month + "-" + day + " " + hours + ":" + minutes;
+    var seconds = (d.getSeconds() < 10 ? "0" : "") + d.getSeconds();
+    return year + "-" + month + "-" + day + " " + hours + ":" + minutes + ":" + seconds;
   }
 
   function formatDatePart(d) {
@@ -784,6 +791,16 @@
     }
 
     var elapsed = getElapsedMs(state);
+
+    // Count sessions from the note (prior engagements) + current engagement
+    var noteSessionCount = 0;
+    var task = resolveTask(state.activeTaskId);
+    if (task) {
+      var parsed = parseNoteBlock(task.note || "");
+      noteSessionCount = parsed.sessions.length;
+    }
+    var totalSessions = noteSessionCount + state.sessions.length + (state.state === STATE_RUNNING ? 1 : 0);
+
     return {
       status: state.state,
       taskId: state.activeTaskId,
@@ -791,7 +808,7 @@
       projectName: state.activeProjectName,
       elapsed: elapsed,
       elapsedFormatted: formatDuration(elapsed),
-      sessionCount: state.sessions.length + (state.state === STATE_RUNNING ? 1 : 0),
+      sessionCount: totalSessions,
       originalEstimate: state.originalEstimate,
     };
   }
