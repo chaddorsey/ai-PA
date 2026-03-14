@@ -179,23 +179,40 @@ Appended to the task's note, using delimiters for parseability:
 
 ```
 --- Time Tracking ---
-Original Estimate: 30 min
+Agent Estimate: 30 min
+Original Estimate: 20 min
 [2026-03-14 09:15–09:47] 32 min
 [2026-03-14 14:00–14:22] 22 min
 [2026-03-14 23:30–2026-03-15 00:15] 45 min
 [2026-03-15 09:30 in progress] ~12 min
-Total: 1h 06m
-Variance: +36 min (+120%)
+Total: 1h 51m
+Variance: +91 min (+455%)
 --- End Time Tracking ---
 ```
+
+**Three-way estimation comparison:**
+- `Agent Estimate` — the Letta agent's initial estimate, written by the agent when it presents the task. The timer plugin **never writes or modifies** this line; it is owned entirely by the agent.
+- `Original Estimate` — the user-revised estimate, snapshotted from `estimatedMinutes` by the timer plugin on first start. This is the agreed-upon estimate after the user reviews the agent's suggestion.
+- `Total` / `Variance` — actual time vs. Original Estimate.
+
+This enables a three-point feedback loop: agent's prediction accuracy, user's estimation accuracy, and the gap between them.
+
+**Pre-seeding by the agent:** Before the timer is ever started, the agent may write:
+```
+--- Time Tracking ---
+Agent Estimate: 30 min
+--- End Time Tracking ---
+```
+The timer plugin detects the existing block and inserts its lines (Original Estimate, sessions, Total, Variance) without disturbing the Agent Estimate line.
 
 **Rules:**
 - `--- Time Tracking ---` / `--- End Time Tracking ---` delimiters allow finding and updating the block without disturbing other note content.
 - If the task already has notes, the time tracking block is appended at the end with a blank line separator.
 - The `[in progress]` line includes the session start time and is updated by the guardian every 60s, then replaced with a finalized line on stop.
 - `Total` and `Variance` lines are recomputed on every write.
-- `Variance` line is only shown when an original estimate exists. Zero variance is formatted as `Variance: 0 min (0%)`.
-- `Original Estimate` line reads "none" if no estimate was set.
+- `Variance` is computed against `Original Estimate` (the user's revised estimate), not Agent Estimate. Zero variance is formatted as `Variance: 0 min (0%)`.
+- `Original Estimate` line reads "none" if no estimate was set (i.e., `estimatedMinutes` was null at first timer start).
+- `Agent Estimate` line is absent if the agent did not pre-seed the block.
 - Times are in the local timezone, formatted as `HH:MM` for readability.
 - **Sessions spanning midnight:** use dual-date format: `[2026-03-14 23:30–2026-03-15 00:15] 45 min`. The duration value is authoritative; the timestamps are informational. Parsers should use the duration, not compute from start/end times.
 - Durations use minutes for <60 min, `Xh YYm` for longer.
@@ -212,7 +229,8 @@ On every state change, the plugin POSTs to the configured relay endpoint:
   "projectName": "Q1 Planning",
   "sessionDurationMs": 1920000,
   "totalDurationMs": 3240000,
-  "originalEstimateMin": 30,
+  "originalEstimateMin": 20,
+  "agentEstimateMin": 30,
   "timestamp": "2026-03-14T09:47:00Z",
   "previousTaskId": "other-task-id"
 }
@@ -233,7 +251,7 @@ Exposed via `PlugIn.Library` for external callers (omnifocus-cli, host bridge):
 | `pauseTimer` | none | `{status, elapsedMs}` | Pause active timer. |
 | `resumeTimer` | none | `{status}` | Resume paused timer. |
 | `getTimerStatus` | none | `{state, taskId, taskName, projectName, currentSessionMs, totalMs, sessionCount, originalEstimateMin}` | Current timer state. Returns `{state: "idle"}` if no timer active. |
-| `getTimerHistory` | `taskId: String` | `{sessions: [...], totalMs, originalEstimateMin, variance}` | Parse time tracking block from task note. Works on any task, not just the active one. |
+| `getTimerHistory` | `taskId: String` | `{sessions: [...], totalMs, agentEstimateMin, originalEstimateMin, variance}` | Parse time tracking block from task note. Works on any task, not just the active one. `agentEstimateMin` is null if no Agent Estimate line exists. |
 
 These functions are called via:
 ```javascript
@@ -341,8 +359,10 @@ For machine consumption (by `timer history`, Rover, analytics):
 
 ```
 --- Time Tracking ---
-Original Estimate: <N> min | none
+Agent Estimate: <N> min                       (optional, agent-owned)
+Original Estimate: <N> min | none             (plugin-owned)
 [<YYYY-MM-DD HH:MM–HH:MM>] <duration>
+[<YYYY-MM-DD HH:MM–YYYY-MM-DD HH:MM>] <duration>   (cross-midnight)
 [<YYYY-MM-DD HH:MM> in progress] ~<duration>
 Total: <duration>
 Variance: +/-<N> min (+/-<N>%) | n/a
@@ -350,10 +370,11 @@ Variance: +/-<N> min (+/-<N>%) | n/a
 ```
 
 **Regex patterns:**
+- Agent estimate: `Agent Estimate: (\d+) min`
+- Original estimate: `Original Estimate: (?:(\d+) min|none)`
 - Session line (same day): `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})–(\d{2}:\d{2})\] (.+)`
 - Session line (cross-midnight): `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})–(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\] (.+)`
 - In-progress line: `\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) in progress\] ~(.+)`
-- Original estimate: `Original Estimate: (?:(\d+) min|none)`
 - Total: `Total: (.+)`
 - Variance: `Variance: (?:([+-]?\d+) min \(([+-]?\d+)%\)|n\/a)`
 
