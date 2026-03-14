@@ -96,6 +96,9 @@
 
   function formatDuration(ms) {
     var totalMin = Math.round(ms / 60000);
+    if (totalMin < 1 && ms > 0) {
+      return "< 1 min";
+    }
     if (totalMin < 1) {
       return "0 min";
     }
@@ -113,6 +116,10 @@
       return 0;
     }
     var trimmed = str.replace(/^~/, "").trim();
+    // "< 1 min" — sub-minute session, preserve as 30 seconds (midpoint)
+    if (trimmed === "< 1 min") {
+      return 30000;
+    }
     // "1h 06m"
     var hm = trimmed.match(/^(\d+)h\s*(\d+)m$/);
     if (hm) {
@@ -799,16 +806,25 @@
       totalMs += parsed.sessions[i].durationMs;
     }
 
+    // Include current in-progress session from Preferences if timer is active on this task
+    var state = readState();
+    var inProgressMs = 0;
+    if (state.activeTaskId === task.id.primaryKey && state.state !== STATE_IDLE) {
+      inProgressMs = getElapsedMs(state);
+      totalMs += inProgressMs;
+    }
+
     return {
       status: "ok",
       taskId: task.id.primaryKey,
       taskName: task.name,
       agentEstimate: parsed.agentEstimate,
       originalEstimate: parsed.originalEstimate,
-      sessionCount: parsed.sessions.length,
+      sessionCount: parsed.sessions.length + (inProgressMs > 0 ? 1 : 0),
       totalMs: totalMs,
       totalFormatted: formatDuration(totalMs),
       sessions: parsed.sessions,
+      inProgress: inProgressMs > 0 ? { elapsedMs: inProgressMs, state: state.state } : null,
     };
   }
 
@@ -943,15 +959,16 @@
           resumeTimer();
         } else {
           // Was running — the interval start is stale, adjust
-          var staleDuration = Date.now() - state.currentIntervalStart;
+          var now = Date.now();
+          var staleDuration = now - state.currentIntervalStart;
           // Keep accumulated, restart interval from now
           state.accumulatedMs += staleDuration;
           state.sessions.push({
             start: state.currentIntervalStart,
-            end: Date.now(),
+            end: now,
             durationMs: staleDuration,
           });
-          state.currentIntervalStart = Date.now();
+          state.currentIntervalStart = now;
           writeState(state);
           startGuardian();
         }
