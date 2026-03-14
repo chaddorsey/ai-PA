@@ -188,6 +188,9 @@ class ChatUI {
         if (clearReplyBtn) {
             clearReplyBtn.addEventListener('click', () => this.clearReplyMode());
         }
+
+        // Keep chat scrolled to bottom on window resize
+        window.addEventListener('resize', () => this.scrollToBottom());
     }
 
     setReplyMode(agentId, agentName, cardElement) {
@@ -1254,7 +1257,7 @@ class ChatUI {
         card.innerHTML = `
             <div class="hb-header">
                 <span class="hb-icon">💓</span>
-                <span class="hb-label">LettaBot Heartbeat</span>
+                <span class="hb-label">Mission Control Heartbeat</span>
                 <span class="hb-time">${timeStr}</span>
             </div>
             <div class="hb-summary">${this.escapeHtml(heartbeat.output || 'No action taken')}</div>
