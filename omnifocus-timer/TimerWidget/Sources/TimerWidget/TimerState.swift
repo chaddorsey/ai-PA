@@ -82,27 +82,35 @@ final class TimerState: ObservableObject {
             widgetState = .running
             if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
             if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
+            if let est = status?.originalEstimate { currentEstimateMin = est }
             showUndo = false
 
         case "paused":
             widgetState = .paused
             if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
             if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
+            if let est = status?.originalEstimate { currentEstimateMin = est }
             showUndo = false
 
         case "idle":
             let wasActive = (previousPollState == "running" || previousPollState == "paused")
-            if wasActive {
-                // Timer just stopped — transition
-                if !queue.tasks.isEmpty {
-                    transitionToQueued(index: 0)
-                } else {
-                    widgetState = .lastCompleted
-                    currentTaskId = cachedTaskId
-                    currentTaskName = cachedTaskName
-                    showUndo = true
-                    undoTaskId = cachedTaskId
-                    undoTaskName = cachedTaskName
+            if wasActive && widgetState != .completing && widgetState != .lastCompleted {
+                // Timer just stopped externally (Caps Lock, CLI, etc.) — trigger completion
+                currentTaskId = cachedTaskId
+                currentTaskName = cachedTaskName
+                undoTaskId = cachedTaskId
+                undoTaskName = cachedTaskName
+                widgetState = .completing
+                showUndo = true
+
+                // After a brief delay for confetti, transition to next state
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                    guard let self = self, self.widgetState == .completing else { return }
+                    if !self.queue.tasks.isEmpty {
+                        self.transitionToQueued(index: 0)
+                    } else {
+                        self.widgetState = .lastCompleted
+                    }
                 }
             } else {
                 // Already idle

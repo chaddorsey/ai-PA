@@ -6,6 +6,7 @@ struct TimerStatusResponse {
     let taskId: String?
     let taskName: String?
     let elapsedSeconds: Int?
+    let originalEstimate: Int?  // minutes
 }
 
 final class OmniFocusBridge {
@@ -30,7 +31,8 @@ final class OmniFocusBridge {
             state: state,
             taskId: obj["taskId"] as? String,
             taskName: obj["taskName"] as? String,
-            elapsedSeconds: obj["elapsedSeconds"] as? Int
+            elapsedSeconds: obj["elapsedSeconds"] as? Int,
+            originalEstimate: obj["originalEstimate"] as? Int
         )
     }
 
