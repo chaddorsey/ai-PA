@@ -27,6 +27,15 @@ final class TimerState: ObservableObject {
     let bridge = OmniFocusBridge()
     let queue = QueueManager()
 
+    /// Queue tasks excluding the currently active task
+    var visibleQueue: [QueuedTask] {
+        let activeId = currentTaskId
+        if activeId.isEmpty {
+            return queue.resolvedTasks
+        }
+        return queue.resolvedTasks.filter { $0.taskId != activeId }
+    }
+
     private var previousPollState: String = "idle"
     private var cachedTaskId: String = ""
     private var cachedTaskName: String = ""
@@ -116,7 +125,7 @@ final class TimerState: ObservableObject {
                 // After a brief delay for confetti, transition to next state
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                     guard let self = self, self.widgetState == .completing else { return }
-                    if !self.queue.resolvedTasks.isEmpty {
+                    if !self.visibleQueue.isEmpty {
                         self.transitionToQueued(index: 0)
                     } else {
                         self.widgetState = .lastCompleted
@@ -126,7 +135,7 @@ final class TimerState: ObservableObject {
                 // Already idle
                 if widgetState == .lastCompleted || widgetState == .completing {
                     // Stay in current state
-                } else if !queue.resolvedTasks.isEmpty {
+                } else if !visibleQueue.isEmpty {
                     transitionToQueued(index: 0)
                 } else {
                     widgetState = .idle
@@ -159,10 +168,11 @@ final class TimerState: ObservableObject {
     }
 
     private func transitionToQueued(index: Int) {
-        guard !queue.resolvedTasks.isEmpty else { return }
-        let clamped = min(index, queue.resolvedTasks.count - 1)
+        let vq = visibleQueue
+        guard !vq.isEmpty else { return }
+        let clamped = min(index, vq.count - 1)
         queueIndex = clamped
-        let task = queue.resolvedTasks[clamped]
+        let task = vq[clamped]
         applyQueueItem(task)
         widgetState = .queued
     }
@@ -189,7 +199,7 @@ final class TimerState: ObservableObject {
             widgetState = .running
 
         case .lastCompleted:
-            if !queue.resolvedTasks.isEmpty {
+            if !visibleQueue.isEmpty {
                 transitionToQueued(index: 0)
             }
 
@@ -215,7 +225,7 @@ final class TimerState: ObservableObject {
             self?.bridge.completeTask(taskId: taskId)
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if !self.queue.resolvedTasks.isEmpty {
+                if !self.visibleQueue.isEmpty {
                     self.transitionToQueued(index: 0)
                 } else {
                     self.widgetState = .lastCompleted
@@ -241,16 +251,17 @@ final class TimerState: ObservableObject {
             widgetState = .paused
         }
 
+        let vq = visibleQueue
         if widgetState == .paused {
             // Show queue items while paused
             let newIndex = queueIndex + direction
-            guard newIndex >= 0, newIndex < queue.resolvedTasks.count else { return }
+            guard newIndex >= 0, newIndex < vq.count else { return }
             queueIndex = newIndex
-            applyQueueItem(queue.resolvedTasks[newIndex])
+            applyQueueItem(vq[newIndex])
         } else {
             // Browsing queue in queued state
             let newIndex = queueIndex + direction
-            guard newIndex >= 0, newIndex < queue.resolvedTasks.count else { return }
+            guard newIndex >= 0, newIndex < vq.count else { return }
             transitionToQueued(index: newIndex)
         }
     }
