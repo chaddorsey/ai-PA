@@ -26,7 +26,7 @@ def timer():
 @click.pass_context
 def timer_start(ctx, task_id):
     """Start a timer for a task."""
-    result = _timer_call("startTimer", {"taskId": task_id})
+    result = _timer_call("startTimerOnTask", {"taskId": task_id})
     use_json = should_use_json(ctx.obj.get("format"))
     output_result(result, json_output=use_json)
 
