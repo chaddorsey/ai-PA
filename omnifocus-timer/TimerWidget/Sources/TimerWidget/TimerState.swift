@@ -34,14 +34,22 @@ final class TimerState: ObservableObject {
     private var queueCancellable: AnyCancellable?
 
     init() {
-        // Watch queue changes
-        queueCancellable = queue.$tasks.sink { [weak self] tasks in
+        // Watch queue ID changes (file watcher triggers this)
+        queueCancellable = queue.$taskIds.sink { [weak self] _ in
+            guard let self = self else { return }
+            // Re-resolve on next poll
+        }
+
+        // Watch resolved tasks for UI updates
+        queue.$resolvedTasks.sink { [weak self] tasks in
             guard let self = self else { return }
             self.onQueueChanged(tasks)
-        }
+        }.store(in: &cancellables)
 
         startPolling()
     }
+
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Polling
 
@@ -53,6 +61,8 @@ final class TimerState: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             let status = self.bridge.getTimerStatus()
+            // Resolve queue task details from OmniFocus
+            self.queue.resolveFromOmniFocus(bridge: self.bridge)
 
             DispatchQueue.main.async {
                 self.handlePollResult(status)
@@ -106,7 +116,7 @@ final class TimerState: ObservableObject {
                 // After a brief delay for confetti, transition to next state
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                     guard let self = self, self.widgetState == .completing else { return }
-                    if !self.queue.tasks.isEmpty {
+                    if !self.queue.resolvedTasks.isEmpty {
                         self.transitionToQueued(index: 0)
                     } else {
                         self.widgetState = .lastCompleted
@@ -116,7 +126,7 @@ final class TimerState: ObservableObject {
                 // Already idle
                 if widgetState == .lastCompleted || widgetState == .completing {
                     // Stay in current state
-                } else if !queue.tasks.isEmpty {
+                } else if !queue.resolvedTasks.isEmpty {
                     transitionToQueued(index: 0)
                 } else {
                     widgetState = .idle
@@ -149,10 +159,10 @@ final class TimerState: ObservableObject {
     }
 
     private func transitionToQueued(index: Int) {
-        guard !queue.tasks.isEmpty else { return }
-        let clamped = min(index, queue.tasks.count - 1)
+        guard !queue.resolvedTasks.isEmpty else { return }
+        let clamped = min(index, queue.resolvedTasks.count - 1)
         queueIndex = clamped
-        let task = queue.tasks[clamped]
+        let task = queue.resolvedTasks[clamped]
         applyQueueItem(task)
         widgetState = .queued
     }
@@ -179,7 +189,7 @@ final class TimerState: ObservableObject {
             widgetState = .running
 
         case .lastCompleted:
-            if !queue.tasks.isEmpty {
+            if !queue.resolvedTasks.isEmpty {
                 transitionToQueued(index: 0)
             }
 
@@ -205,7 +215,7 @@ final class TimerState: ObservableObject {
             self?.bridge.completeTask(taskId: taskId)
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if !self.queue.tasks.isEmpty {
+                if !self.queue.resolvedTasks.isEmpty {
                     self.transitionToQueued(index: 0)
                 } else {
                     self.widgetState = .lastCompleted
@@ -234,13 +244,13 @@ final class TimerState: ObservableObject {
         if widgetState == .paused {
             // Show queue items while paused
             let newIndex = queueIndex + direction
-            guard newIndex >= 0, newIndex < queue.tasks.count else { return }
+            guard newIndex >= 0, newIndex < queue.resolvedTasks.count else { return }
             queueIndex = newIndex
-            applyQueueItem(queue.tasks[newIndex])
+            applyQueueItem(queue.resolvedTasks[newIndex])
         } else {
             // Browsing queue in queued state
             let newIndex = queueIndex + direction
-            guard newIndex >= 0, newIndex < queue.tasks.count else { return }
+            guard newIndex >= 0, newIndex < queue.resolvedTasks.count else { return }
             transitionToQueued(index: newIndex)
         }
     }

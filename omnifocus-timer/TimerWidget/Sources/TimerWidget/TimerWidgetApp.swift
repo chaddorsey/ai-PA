@@ -91,7 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
 
         // Observe queue count for height changes
-        state.queue.$tasks
+        state.queue.$resolvedTasks
             .map { $0.count > 1 }
             .removeDuplicates()
             .sink { [weak self] hasNav in

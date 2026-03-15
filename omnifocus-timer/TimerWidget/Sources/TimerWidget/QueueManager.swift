@@ -1,20 +1,21 @@
 import Foundation
 import Combine
 
-struct QueuedTask: Codable, Identifiable {
+struct QueuedTask: Identifiable {
     let taskId: String
-    let taskName: String
-    let estimateMin: Int?
+    var taskName: String
+    var estimateMin: Int?
 
     var id: String { taskId }
 }
 
 struct QueueFile: Codable {
-    var tasks: [QueuedTask]
+    var tasks: [String]  // just task IDs
 }
 
 final class QueueManager: ObservableObject {
-    @Published var tasks: [QueuedTask] = []
+    @Published var taskIds: [String] = []
+    @Published var resolvedTasks: [QueuedTask] = []
 
     private let queueURL: URL
     private var fileDescriptor: Int32 = -1
@@ -39,31 +40,57 @@ final class QueueManager: ObservableObject {
 
     func loadQueue() {
         guard FileManager.default.fileExists(atPath: queueURL.path) else {
-            tasks = []
+            DispatchQueue.main.async { self.taskIds = [] }
             return
         }
         do {
             let data = try Data(contentsOf: queueURL)
             let file = try JSONDecoder().decode(QueueFile.self, from: data)
             DispatchQueue.main.async {
-                self.tasks = file.tasks
+                self.taskIds = file.tasks
             }
         } catch {
             DispatchQueue.main.async {
-                self.tasks = []
+                self.taskIds = []
             }
         }
     }
 
+    /// Resolve task details from OmniFocus for all queued IDs.
+    /// Called from the poll loop with the bridge.
+    func resolveFromOmniFocus(bridge: OmniFocusBridge) {
+        var resolved: [QueuedTask] = []
+        for taskId in taskIds {
+            if let info = bridge.getTaskInfo(taskId: taskId) {
+                resolved.append(QueuedTask(
+                    taskId: taskId,
+                    taskName: info.name,
+                    estimateMin: info.estimateMin
+                ))
+            } else {
+                // Task not found in OmniFocus — keep ID, mark as unknown
+                resolved.append(QueuedTask(
+                    taskId: taskId,
+                    taskName: "Unknown task",
+                    estimateMin: nil
+                ))
+            }
+        }
+        DispatchQueue.main.async {
+            self.resolvedTasks = resolved
+        }
+    }
+
     func removeTask(id: String) {
-        tasks.removeAll { $0.taskId == id }
+        taskIds.removeAll { $0 == id }
+        resolvedTasks.removeAll { $0.taskId == id }
         saveQueue()
     }
 
     // MARK: - Private
 
     private func saveQueue() {
-        let file = QueueFile(tasks: tasks)
+        let file = QueueFile(tasks: taskIds)
         do {
             let data = try JSONEncoder().encode(file)
             try data.write(to: queueURL, options: .atomic)

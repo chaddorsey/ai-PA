@@ -95,6 +95,34 @@ final class OmniFocusBridge {
         _ = evaluateJS(js)
     }
 
+    struct TaskInfo {
+        let name: String
+        let estimateMin: Int?
+    }
+
+    func getTaskInfo(taskId: String) -> TaskInfo? {
+        let js = """
+        (function() {
+            var task = Task.byIdentifier('\(escapeJS(taskId))');
+            if (!task) return JSON.stringify(null);
+            return JSON.stringify({
+                name: task.name,
+                estimateMin: task.estimatedMinutes || null
+            });
+        })()
+        """
+        guard let raw = evaluateJS(js) else { return nil }
+        if raw == "null" { return nil }
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return TaskInfo(
+            name: obj["name"] as? String ?? "Unknown",
+            estimateMin: obj["estimateMin"] as? Int
+        )
+    }
+
     func navigateToTask(taskId: String) {
         let urlString = "omnifocus:///task/\(taskId)"
         if let url = URL(string: urlString) {
