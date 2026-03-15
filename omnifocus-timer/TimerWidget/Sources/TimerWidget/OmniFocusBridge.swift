@@ -124,6 +124,7 @@ final class OmniFocusBridge {
         do {
             try appleScript.write(to: tempFile, atomically: true, encoding: .utf8)
         } catch {
+            print("[bridge] Failed to write temp file: \(error)")
             return nil
         }
         defer { try? FileManager.default.removeItem(at: tempFile) }
@@ -132,20 +133,30 @@ final class OmniFocusBridge {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = [tempFile.path]
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
 
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
+            print("[bridge] Failed to run osascript: \(error)")
             return nil
         }
 
-        guard process.terminationStatus == 0 else { return nil }
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        if let stderrStr = String(data: stderrData, encoding: .utf8), !stderrStr.isEmpty {
+            print("[bridge] osascript stderr: \(stderrStr.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            print("[bridge] osascript exit code: \(process.terminationStatus)")
+            return nil
+        }
+
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
         var result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // osascript may double-quote the output

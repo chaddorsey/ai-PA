@@ -71,6 +71,11 @@ final class TimerState: ObservableObject {
 
     private func handlePollResult(_ status: TimerStatusResponse?) {
         let newState = status?.state ?? "idle"
+        if status == nil {
+            print("[poll] OmniFocus unavailable")
+        } else {
+            print("[poll] state=\(newState) task=\(status?.taskName ?? "nil")")
+        }
 
         switch newState {
         case "running":
