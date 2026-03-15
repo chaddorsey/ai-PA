@@ -2,112 +2,146 @@
 
 **Date:** 2026-03-14
 **Status:** Draft
-**Goal:** A small floating macOS widget that displays the active OmniFocus timer state, provides play/pause/stop controls, accepts task queue commands from Letta/Rover, and serves as an ambient indicator of active work.
+**Goal:** A small floating macOS widget that displays the active OmniFocus timer state, provides play/pause/done controls, accepts task queue commands from Letta/Rover, and serves as an ambient indicator of active work with celebratory completion animations.
 
 ---
 
 ## Overview
 
-A standalone Swift macOS app that renders a borderless floating window pinned to the upper-right corner of the screen, just below the menu bar. The widget shows the currently timed OmniFocus task with play/pause/stop controls. It polls the OmniFocus timer plugin for state, provides direct control via osascript, and accepts task queue commands from Letta/Rover via a local command file.
+A standalone Swift macOS app that renders a borderless floating window pinned to the upper-right corner of the screen, just below the menu bar. The widget shows the currently timed OmniFocus task with play/pause/done controls. It polls the OmniFocus timer plugin for state, provides direct control via osascript, and accepts task queue commands from Letta/Rover via a local command file.
 
 ## Success Criteria
 
-1. Widget appears automatically when a timer is running or paused
-2. Widget appears when Letta/Rover pushes tasks to the queue
-3. Widget disappears (fades out) when the timer is stopped and no queued tasks remain
-4. User can play/pause/stop the timer directly from the widget
-5. User can browse queued tasks with navigation arrows and start any of them
+1. Widget appears automatically when a timer is running, paused, or tasks are queued
+2. User can play/pause/complete tasks directly from the widget
+3. Completing a task marks it done in OmniFocus, triggers a confetti celebration, and transitions to the next queued task
+4. Undo is available for a limited window after completion
+5. User can browse queued tasks; browsing while running pauses the current task
 6. Clicking the task name brings OmniFocus to the front with the task selected
-7. Widget is visible on all Spaces/desktops and stays above other windows
-8. No Dock icon, no menu bar icon — the widget is the entire UI
+7. Caps Lock integration: starts tasks and completes running tasks
+8. Widget is visible on all Spaces/desktops and stays above other windows
+9. No Dock icon, no menu bar icon — the widget is the entire UI
 
 ## Non-Goals
 
-- Server communication (Letta events are handled by the plugin independently)
-- Multiple simultaneous timers (only one timer can be active at a time)
-- Displaying elapsed time (space constraint; user checks via Check Timer action or CLI)
-- Displaying project name (task name is sufficient for the widget's purpose)
+- Displaying elapsed time in the widget (user checks via Check Timer action or CLI)
+- Displaying project name (task name is sufficient)
+- Stop/abandon button (user pauses and switches to another task instead)
+- Visual distinction between pristine and in-progress queued tasks (future enhancement)
 
 ---
 
 ## Visual States
 
-### Queued (Light Green — Letta suggested tasks)
+### Queued (Light Green — tasks waiting to be started)
 
 - **Background:** Light green (`#A8E6CF` or similar soft green)
 - **Text:** Black
 - **Animation:** 3-second pulse cycle — 0.5s quick fade to full opacity (1.0), then 2.5s gradual ease-out fade to 70% opacity (0.7). Repeat.
 - **Play button:** Full green bubble-like glow effect around the Play icon, enticing the user to start. The glow pulses in sync with the window animation.
-- **Left buttons:** Play (▶) and Stop/dismiss (⏹), stacked vertically
+- **Left buttons:** Play (▶) only
 - **Right side:** Estimate display (large number + small unit) and navigation dots with ◀/▶ arrows
-- **Trigger:** Letta/Rover writes tasks to the command file
+- **Trigger:** Letta/Rover writes tasks to the command file, or timer status becomes idle with tasks in queue
 
 ### Running (Green)
 
 - **Background:** Green (`#34C759` or system green)
 - **Text:** Black
 - **Animation:** Subtle 1-second pulse cycle — opacity oscillates between 0.92 and 1.0, with a soft outer glow that waxes and wanes in sync. Barely noticeable; conveys "alive" without being distracting.
-- **Left buttons:** Pause (⏸) and Stop (⏹), stacked vertically
-- **Right side:** Navigation dots only (if queued tasks exist), no estimate display. New dots animate in with a 1s fade when Rover pushes tasks.
+- **Left buttons:** Pause (⏸) vertically stacked with Done (✓). The Done check mark is darker green than the background with an attractive glossy appearance, enticing the user to complete the task.
+- **Right side:** Navigation dots only (if queued tasks exist). No estimate display during execution.
 
 ### Paused (Gray)
 
 - **Background:** Gray (`#8E8E93` or system gray)
 - **Text:** Black
 - **Animation:** None (completely static)
-- **Left buttons:** Play (▶) and Stop (⏹), stacked vertically
-- **Right side:** Navigation dots only (if queued tasks exist)
+- **Left buttons:** Play (▶) vertically stacked with Done (✓)
+- **Right side:** Navigation dots with ◀/▶ arrows (user can browse queue while paused)
 
-### Stopped (Red → Fade Out)
+### Completing (Transition — ~4.5 seconds)
 
-- **Background:** Red (`#FF3B30` or system red)
-- **Text:** Black
-- **Animation:** 30-second fade-out. Opacity decreases from 1.0 to 0.0 using an ease-in-ease-out curve. If queued tasks exist, transitions to Queued state instead of fading.
-- **Left buttons:** Play (▶) visible (restarts the same task using cached taskId)
+A multi-phase animation triggered when the user clicks Done (✓) or presses Caps Lock while running:
 
-**Fade-out hover behavior:**
-- Mouse enters the widget: immediately snap to opacity 1.0
-- Mouse leaves before 5 seconds of hover: resume the fade from the opacity it was at when interrupted (visible jump from 1.0 back to the interrupted opacity is intentional — the hover is a brief "peek")
-- Mouse stays for 5+ seconds: reset the 30-second fade timer entirely. Fade restarts from the beginning after the mouse leaves.
+**Phase 1 — Celebration (0s–2s):**
+- Task is marked complete in OmniFocus and timer is stopped
+- Widget pulses once (brief scale/opacity bump)
+- Miniature confetti shower erupts from the widget — particles propelled both upward (slightly into the menu bar space) and downward. Confetti falls with gravity acceleration, fading in opacity as it descends, fully transparent by the vertical midpoint of the screen. Total confetti duration: ~2 seconds.
+- Pause button becomes Undo (↩) button
+
+**Phase 2 — Task Exit (0s–3s, overlaps with confetti):**
+- Completed task text slides right, easing up in speed as it exits, disappearing under/past the button area
+- The completed task's navigation dot slides off the left edge of the dot row
+
+**Phase 3 — New Task Entry (1.5s–4.5s, staggered):**
+- New task text fades in from 0% opacity over 3 seconds (ease-in), beginning 1.5 seconds after the slide-out starts
+- Navigation dots adjust to reflect the remaining queue
+
+**Phase 4 — Button Reset (after new task is fully visible):**
+- Undo button animates to a very small round undo button, repositioning to the upper-left corner of the widget
+- Main button position becomes Play (▶) again (new task is queued, not yet started)
+- Small undo button fades over 15 seconds with the same hover behavior as the fade-out (hover snaps to full opacity; <5s hover resumes fade; 5s+ hover resets the 15s timer)
+
+### Last Task Completed (Green → Fade Out)
+
+When the completed task is the only/last task in the queue:
+
+- Same confetti celebration
+- Widget remains **green** (NOT red) — no task text to slide out, just fades
+- Undo (↩) replaces Play button
+- Widget begins 30-second fade-out (ease-in-ease-out, opacity 1.0 → 0.0)
+- Same hover behavior as before (snap to 1.0 on hover; <5s resumes; 5s+ resets)
+- Undo button available throughout the fade period
+- Once fully faded, transitions to Idle (Hidden)
 
 ### Idle (Hidden)
 
 - Widget is not visible
-- Polling continues in the background to detect when a new timer starts or tasks are queued
+- Polling continues in the background to detect new timers or queued tasks
 
 ---
 
 ## Layout
 
-### Queued State (full layout)
+### Queued State (full layout with estimate and navigation)
 
 ```
 ┌──────────────────────────────────────────────────┐
 │ ▶  Review quarterly report for the       30      │
-│ ⏹  upcoming board meeting and ens…      min      │
+│    upcoming board meeting and ens…       min      │
 │                                     ◀  ● ○ ○  ▶  │
 └──────────────────────────────────────────────────┘
 ```
 
-### Running/Paused State (compact right side)
+### Running State (pause + done buttons, dots if queued tasks exist)
 
 ```
 ┌──────────────────────────────────────────────────┐
 │ ⏸  Review quarterly report for the    ● ○ ○     │
-│ ⏹  upcoming board meeting and ens…               │
+│ ✓  upcoming board meeting and ens…               │
 └──────────────────────────────────────────────────┘
 ```
 
-Navigation dots appear only when queued tasks exist alongside the active timer. No estimate display during Running/Paused — the estimate is relevant during task selection (Queued), not during execution.
-
-### Stopped State (minimal)
+### Paused State (play + done, navigation available)
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ ▶  Review quarterly report for the               │
-│    upcoming board meeting and ens…                │
+│ ▶  Review quarterly report for the    ● ○ ○     │
+│ ✓  upcoming board meeting and ens…    ◀     ▶   │
 └──────────────────────────────────────────────────┘
 ```
+
+### Post-Completion (small undo in corner, new task queued)
+
+```
+┌──────────────────────────────────────────────────┐
+│↩▶  Reply to Sarah's email               5       │
+│    about the budget proposal            min      │
+│                                       ● ○  ▶    │
+└──────────────────────────────────────────────────┘
+```
+
+The small ↩ in the upper-left is the fading undo button (round, compact).
 
 ---
 
@@ -116,15 +150,16 @@ Navigation dots appear only when queued tasks exist alongside the active timer. 
 **Position:** Upper-right corner of the screen, pinned just below the menu bar. Right edge aligned approximately with the WiFi icon in the menu bar.
 
 **Dimensions:**
-- Width: ~300px (slightly wider to accommodate right-side elements)
-- Height: ~36px (single-line), ~52px (two-line), ~64px (two-line + navigation row in Queued state)
+- Width: ~300px
+- Height: ~36px (single-line), ~52px (two-line), ~64px (two-line + navigation row)
 - Corner radius: 8px
 - Padding: 6px horizontal, 4px vertical
 
 **Left Buttons:**
-- Play/Pause (▶/⏸) and Stop (⏹) as SF Symbol icons, ~14pt
+- Play/Pause (▶/⏸) and Done (✓) as SF Symbol icons, ~14pt
 - Stacked vertically on the left side
-- Subtle background highlight on hover (white at 15% opacity, small rounded rect) to telegraph clickability
+- Done check mark: darker green than background, glossy/raised appearance
+- Subtle background highlight on hover (white at 15% opacity, small rounded rect) on all buttons
 
 **Task Name (center):**
 - Left-aligned to an invisible vertical border right of the buttons
@@ -133,52 +168,111 @@ Navigation dots appear only when queued tasks exist alongside the active timer. 
 - After ~50 characters across two lines, truncate with ellipsis (…)
 
 **Right Side — Estimate (Queued state only):**
-- Large number (e.g., "30") — system font, 18pt, semibold. Larger and bolder than task text.
-- Small unit below ("min" or "hr") — system font, 8pt, regular. Notably smaller than task text.
-- Vertically centered in the right portion of the widget
+- Large number (e.g., "30") — system font, 18pt, semibold
+- Small unit below ("min" or "hr") — system font, 8pt, regular
+- Vertically centered in the right portion
 
-**Right Side — Navigation (Queued state, bottom row):**
-- ◀ and ▶ arrow buttons flanking navigation dots
-- Dots: filled circle (●) for current task, hollow circle (○) for others
-- First item in queue: only ▶ arrow visible. Last item: only ◀ arrow visible. Middle items: both visible.
-- New dots animate in with a 1-second fade, smoothly pushing existing dots to their new positions
-- Arrow buttons and dots have subtle hover highlight
+**Right Side — Navigation:**
+- ◀ and ▶ arrow buttons flanking navigation dots (in Queued and Paused states)
+- Dots only, no arrows (in Running state — user must pause to browse)
+- Filled circle (●) for current task, hollow circle (○) for others
+- First item: only ▶ visible. Last item: only ◀ visible.
+- New dots animate in with a 1-second fade, smoothly pushing existing dots to their positions
+- Completed task dots slide off the left edge during completion animation
 
-**Right Side — Navigation (Running/Paused state):**
-- Navigation dots only (no arrows, no estimate). Shown only if queued tasks exist.
-- Dots indicate that tasks are waiting; user must stop or complete the current timer to browse them.
+**Small Undo Button (post-completion):**
+- Round, compact (~16px diameter), positioned in the upper-left corner of the widget
+- Fades from full opacity to 0 over 15 seconds
+- Hover behavior: snap to 1.0 on enter; <5s hover resumes fade; 5s+ hover resets 15s timer
 
 **Window Properties:**
 - `NSWindow.Level.floating` — stays above all other windows
 - `NSWindow.CollectionBehavior.canJoinAllSpaces` and `.stationary` — visible on every Space/desktop, not shown in Mission Control
 - `NSWindow.StyleMask.borderless` — no title bar, no chrome
 - `LSUIElement = true` — no Dock icon
-- When fully faded (opacity 0), ignores mouse events (clicks pass through to windows below)
+- When fully faded (opacity 0), ignores mouse events (clicks pass through)
 
 ---
 
-## Interaction
+## Caps Lock Integration
+
+The toggle script (`~/Dropbox/dev/omnifocus-timer/toggle-timer.sh`) integrates with the widget:
+
+| Current State | Caps Lock Press | Result |
+|--------------|----------------|--------|
+| Idle/Queued (no timer) | Start timer on displayed task | → Running, LED on |
+| Running | Complete task (same as ✓ click) | → Completing transition, LED off |
+| Paused | Start/resume the paused task | → Running, LED on |
+
+**Caps Lock does NOT pause.** Pausing is a widget-only function.
+
+The toggle script needs to be updated to call `markComplete` + `stopTimer` instead of just `stopTimer` when a timer is running.
+
+---
+
+## Queue Browsing While Running
+
+When the user pages ◀/▶ through the queue while a task is **running**:
+1. The current running task is **paused** (timer paused in OmniFocus)
+2. Caps Lock LED turns off
+3. Widget transitions to show the browsed-to task in **Queued** state (light green, with Play button)
+4. The paused task remains in the queue (it retains its timer data in the OmniFocus note)
+5. User can:
+   - Click Play on the new task → starts timing it
+   - Page back to the paused task → click Play to resume it
+   - Browse further through the queue
+
+**Navigation dots during Running state** show dots but NO arrows. The user must first pause (via the Pause button) to enable browsing. This prevents accidental task switches during active work.
+
+Wait — correction per the design: paging itself pauses the task. So the arrows ARE visible during Running, and clicking them triggers the pause + browse behavior.
+
+Actually, let me re-read the requirement: "If the user pages to a new task while a task is running, that task is paused." This means arrows are visible during Running and clicking them auto-pauses.
+
+**Revised:** Navigation arrows are visible in Running state when queued tasks exist. Clicking ◀/▶ while running auto-pauses the current task and shows the target queued task.
+
+---
+
+## Interaction Summary
 
 **Click on task name area:**
-Open OmniFocus and navigate to the task. Use the URL scheme: `omnifocus:///task/<taskId>`. This brings OmniFocus to the front and selects the task.
+Open OmniFocus and navigate to the task via `omnifocus:///task/<taskId>`.
 
-**Click Play button:**
-- Queued → start timer on the displayed task via `timerLib.startTimerOnTask(taskId)`. Transition to Running. Remove task from queue.
-- Paused → resume via `timerLib.resumeTimer()`. Transition to Running.
-- Stopped → restart the same task via `timerLib.startTimerOnTask(cachedTaskId)`. Transition to Running.
+**Click Play (▶):**
+- Queued → start timer on displayed task. Transition to Running. Remove from queue.
+- Paused → resume timer. Transition to Running.
 
-**Click Pause button:**
-- Running → pause via `timerLib.pauseTimer()`. Transition to Paused.
+**Click Pause (⏸):**
+- Running → pause timer. Transition to Paused. Caps Lock LED off.
 
-**Click Stop button:**
-- Running or Paused → stop via `timerLib.stopTimer()`. If queued tasks exist, transition to Queued. Otherwise transition to Stopped (red, fade).
-- Queued → dismiss the current queued task. Remove it from the queue. If more tasks remain, show the next one. If no tasks remain, transition to Idle.
+**Click Done (✓):**
+- Running or Paused → stop timer, mark task complete in OmniFocus. Trigger Completing transition.
 
-**Click ◀/▶ navigation arrows (Queued state only):**
-Browse through the queued task list. Updates the displayed task name, estimate, and navigation dots. Does not start a timer.
+**Click Undo (↩) — small button, post-completion:**
+- Mark task incomplete in OmniFocus. Place task back in Paused state. Timer data preserved.
+
+**Click ◀/▶ navigation:**
+- Queued/Paused → browse to adjacent task in queue. No state change.
+- Running → auto-pause current task, browse to adjacent queued task.
 
 **Button hover:**
-All buttons show a subtle highlight (white at 15% opacity, small rounded rect behind the icon) when the mouse hovers over them.
+All buttons show a subtle highlight (white at 15% opacity, small rounded rect) on hover.
+
+---
+
+## Undo Behavior
+
+When Done (✓) is clicked:
+1. Pause button immediately becomes Undo (↩)
+2. Timer is stopped, task is marked complete in OmniFocus
+3. Completion animation plays (confetti, slide-out, new task fade-in)
+4. After new task is visible, Undo animates to a small round button in the upper-left corner
+5. Undo fades over 15 seconds (hover behavior: snap on enter, <5s resumes, 5s+ resets)
+
+When Undo (↩) is clicked (during the fade window):
+1. Task is marked incomplete in OmniFocus (`markIncomplete()`)
+2. Task is placed back in Paused state (timer data preserved in notes)
+3. Widget shows the un-done task in Paused state
+4. If a new task had already been started, it is paused and the un-done task takes focus
 
 ---
 
@@ -186,7 +280,7 @@ All buttons show a subtle highlight (white at 15% opacity, small rounded rect be
 
 ### Command File
 
-The widget watches `~/.omnifocus-timer-widget/queue.json` for changes (via `DispatchSource.makeFileSystemObjectSource` or polling). Rover writes to this file from the laptop via Bash.
+The widget watches `~/.omnifocus-timer-widget/queue.json` for changes (via `DispatchSource.makeFileSystemObjectSource` or polling).
 
 **File format:**
 
@@ -211,7 +305,6 @@ The widget watches `~/.omnifocus-timer-widget/queue.json` for changes (via `Disp
 
 **Push a task to the queue:**
 ```bash
-# Read current queue, append task, write back
 python3 -c "
 import json, os
 path = os.path.expanduser('~/.omnifocus-timer-widget/queue.json')
@@ -236,19 +329,20 @@ echo '{"tasks": []}' > ~/.omnifocus-timer-widget/queue.json
 
 ### Queue Rules
 
-- Rover can add tasks to any position in the queue except displacing the currently viewed task (the task at the current navigation index)
+- Rover can add tasks to any position in the queue except displacing the currently viewed task
 - When a task is started (Play clicked), it is removed from the queue
-- When a task is dismissed (Stop clicked in Queued state), it is removed from the queue
-- Maximum queue size: ~10 tasks (practical limit; navigation dots become unwieldy beyond this)
-- The widget re-reads the command file on each poll cycle (every 2 seconds) or via filesystem watcher
+- When a task is completed (Done clicked), it is marked done in OmniFocus and removed from the queue
+- Tasks that were previously started and paused retain their timer data (in OmniFocus notes) and remain in the queue
+- Maximum queue size: ~10 tasks
+- The widget re-reads the command file on each poll cycle or via filesystem watcher
 
 ### New Task Arrival Animation
 
-When a new task appears in the queue (file changed, new entry detected):
+When a new task appears in the queue:
 - A new navigation dot fades in over 1 second
 - Existing dots smoothly slide to their new positions
-- The widget does NOT auto-navigate to the new task — the user stays on their current selection
-- If the widget was Idle/Hidden and tasks are pushed, it transitions to the Queued state
+- The widget does NOT auto-navigate to the new task
+- If the widget was Idle/Hidden, it transitions to the Queued state
 
 ---
 
@@ -256,49 +350,35 @@ When a new task appears in the queue (file changed, new entry detected):
 
 ### Polling (every 2 seconds, poll-then-wait)
 
-The app polls timer status. The next poll starts 2 seconds after the previous poll **completes** (not on a fixed interval) to prevent stacking if osascript is slow.
+The next poll starts 2 seconds after the previous poll **completes** to prevent stacking.
 
 ```
 osascript -e 'tell application "OmniFocus" to evaluate javascript
   "JSON.stringify(PlugIn.find(\"com.dorsey.omnifocus-timer\").library(\"timerLib\").getTimerStatus())"'
 ```
 
-Response JSON:
-```json
-{
-  "status": "running" | "paused" | "idle",
-  "taskId": "kfoxe4jHuHr",
-  "taskName": "Review quarterly report for the upcoming board meeting",
-  "projectName": "Q1 Planning",
-  "elapsedFormatted": "3m 25s",
-  "sessionCount": 2,
-  "originalEstimate": 30
-}
-```
-
 **State mapping:**
 - `"running"` → Running (green, pulsing)
 - `"paused"` → Paused (gray, static)
-- `"idle"` → if previous poll was `"running"` or `"paused"`, transition to Stopped (red, fade) — or to Queued if tasks are queued. If previous poll was also `"idle"`, remain in current state (Hidden or Queued).
+- `"idle"` → if previous poll was `"running"` or `"paused"`, check queue: if tasks queued → Queued state; if no tasks → Last Task Completed fade-out. If previous poll was also `"idle"`, remain in current state.
 
-**The widget must locally cache the most recent `taskId` and `taskName`** from polling responses so they remain available during the Stopped/fade-out state, when the plugin reports `idle` with no task information.
+**The widget must locally cache the most recent `taskId` and `taskName`** from polling responses so they remain available during transitions and undo, when the plugin reports `idle`.
 
 ### Queue File Monitoring
 
-On each poll cycle (or via filesystem watcher), read `~/.omnifocus-timer-widget/queue.json`. Diff against the current in-memory queue to detect additions/removals and trigger dot animations.
+On each poll cycle (or via filesystem watcher), read `~/.omnifocus-timer-widget/queue.json`. Diff against the in-memory queue to detect additions/removals and trigger dot animations.
 
 ### Button Actions
 
-Each button action runs osascript asynchronously (fire-and-forget). The next poll picks up the state change.
+Each action runs osascript asynchronously (fire-and-forget, next poll picks up state change):
 
-```swift
-func runOmniJS(_ js: String) {
-    // Use Process with osascript, escaping the JS string properly
-    // for embedding in AppleScript double-quoted strings
-}
-```
+- **Play:** `timerLib.startTimerOnTask(taskId)`
+- **Pause:** `timerLib.pauseTimer()`
+- **Resume:** `timerLib.resumeTimer()`
+- **Done:** `timerLib.stopTimer()` then mark task complete via `Task.byIdentifier(taskId).markComplete()`
+- **Undo:** `Task.byIdentifier(taskId).markIncomplete()` then show task in Paused state
 
-**Note:** The JS string must be properly escaped for AppleScript embedding. Task IDs containing special characters should be escaped. Use `NSAppleScript` or write to a temp file to avoid shell quoting issues.
+**Note:** The JS string must be properly escaped for AppleScript embedding. Use temp files or `NSAppleScript` to avoid shell quoting issues with task IDs.
 
 ### Navigate to Task
 
@@ -310,29 +390,30 @@ NSWorkspace.shared.open(URL(string: "omnifocus:///task/\(taskId)")!)
 
 ## Architecture
 
-**SwiftUI app** with AppKit window management. No external dependencies.
+**SwiftUI app** with AppKit window management.
 
 ```
 TimerWidget/
-  TimerWidgetApp.swift    — App entry point, NSWindow setup
-  WidgetView.swift        — SwiftUI view with state-dependent rendering
-  TimerState.swift        — ObservableObject: timer state, queue, fade, animation
-  OmniFocusBridge.swift   — osascript polling and command execution
-  QueueManager.swift      — File watching, queue diffing, Letta command interface
-  Info.plist              — LSUIElement=true, bundle ID
+  TimerWidgetApp.swift      — App entry point, NSWindow setup
+  WidgetView.swift          — SwiftUI view with state-dependent rendering
+  TimerState.swift          — ObservableObject: timer state, queue, animations
+  OmniFocusBridge.swift     — osascript polling, timer commands, task completion
+  QueueManager.swift        — File watching, queue diffing, Letta command interface
+  ConfettiView.swift        — Confetti particle animation overlay
+  Info.plist                — LSUIElement=true, bundle ID
 ```
 
 **Build:** Xcode project or Swift Package. Target: macOS 13+.
 
-**Launch at login:** macOS Login Items (System Settings → General → Login Items) or a launchd plist.
+**Launch at login:** macOS Login Items or launchd plist.
 
 ---
 
 ## Technical Notes
 
-- The osascript call takes ~0.5-1s. With a 2-second poll-then-wait interval, there's a ~1-3 second lag between timer state changes and widget updates. Animations run independently of the data refresh.
-- When OmniFocus is not running, the osascript call will fail. The widget handles this gracefully — stays hidden or shows only the Queued state (which doesn't require OmniFocus).
-- If the timer plugin is not installed, `PlugIn.find()` returns null and the osascript call throws. Same handling as OmniFocus-not-running.
-- The widget should not prevent sleep or interfere with screen savers.
-- The fade-out animation state (current opacity, hover timer) is local to the Swift app and independent of the OmniFocus timer state.
-- The `~/.omnifocus-timer-widget/` directory is created by the app on first launch if it doesn't exist.
+- The osascript call takes ~0.5-1s. With poll-then-wait at 2s, there's a ~1-3 second lag. Animations run independently.
+- When OmniFocus is not running, osascript fails. Widget stays hidden or shows only Queued state.
+- If the timer plugin is not installed, `PlugIn.find()` returns null. Same handling as OmniFocus-not-running.
+- The `~/.omnifocus-timer-widget/` directory is created by the app on first launch.
+- Confetti particles are rendered as a transparent overlay window that extends below the widget, allowing particles to fall through the space below.
+- The toggle script (`toggle-timer.sh`) needs updating: when a timer is running, it should call both `stopTimer()` and `markComplete()` instead of just `stopTimer()`.
