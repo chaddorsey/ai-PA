@@ -946,11 +946,20 @@
   // 8. Orphan recovery
   // ---------------------------------------------------------------------------
 
+  var _orphanCheckDone = false;
+
   function checkOrphanedTimer() {
+    if (_orphanCheckDone) return;
+    _orphanCheckDone = true;
+
     var state = readState();
     if (state.state === STATE_IDLE || !state.activeTaskId) {
+      // Not orphaned — but if running/paused, restart the guardian silently
       return;
     }
+
+    // Check if guardian is already running (timer was started this session)
+    if (guardianTimer) return;
 
     // There's a stale running/paused state from a previous session
     var taskName = state.activeTaskName || "Unknown task";
