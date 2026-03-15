@@ -49,7 +49,7 @@ A standalone Swift macOS app that renders a borderless floating window pinned to
 - **Text:** Black
 - **Animation:** Subtle 1-second pulse cycle — opacity oscillates between 0.92 and 1.0, with a soft outer glow that waxes and wanes in sync. Barely noticeable; conveys "alive" without being distracting.
 - **Left buttons:** Pause (⏸) vertically stacked with Done (✓). The Done check mark is darker green than the background with an attractive glossy appearance, enticing the user to complete the task.
-- **Right side:** Navigation dots only (if queued tasks exist). No estimate display during execution.
+- **Right side:** Estimate display (large number + small unit) and navigation dots (if queued tasks exist)
 
 ### Paused (Gray)
 
@@ -57,7 +57,7 @@ A standalone Swift macOS app that renders a borderless floating window pinned to
 - **Text:** Black
 - **Animation:** None (completely static)
 - **Left buttons:** Play (▶) vertically stacked with Done (✓)
-- **Right side:** Navigation dots with ◀/▶ arrows (user can browse queue while paused)
+- **Right side:** Estimate display (large number + small unit) and navigation dots with ◀/▶ arrows (user can browse queue while paused)
 
 ### Completing (Transition — ~4.5 seconds)
 
@@ -113,21 +113,23 @@ When the completed task is the only/last task in the queue:
 └──────────────────────────────────────────────────┘
 ```
 
-### Running State (pause + done buttons, dots if queued tasks exist)
+### Running State (pause + done buttons, estimate always shown)
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ ⏸  Review quarterly report for the    ● ○ ○     │
-│ ✓  upcoming board meeting and ens…               │
+│ ⏸  Review quarterly report for the       30     │
+│ ✓  upcoming board meeting and ens…      min      │
+│                                       ● ○ ○     │
 └──────────────────────────────────────────────────┘
 ```
 
-### Paused State (play + done, navigation available)
+### Paused State (play + done, estimate and navigation)
 
 ```
 ┌──────────────────────────────────────────────────┐
-│ ▶  Review quarterly report for the    ● ○ ○     │
-│ ✓  upcoming board meeting and ens…    ◀     ▶   │
+│ ▶  Review quarterly report for the       30     │
+│ ✓  upcoming board meeting and ens…      min      │
+│                                     ◀  ● ○ ○  ▶  │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -167,14 +169,14 @@ The small ↩ in the upper-left is the fading undo button (round, compact).
 - Up to 2 lines, wrapping at word boundaries
 - After ~50 characters across two lines, truncate with ellipsis (…)
 
-**Right Side — Estimate (Queued state only):**
+**Right Side — Estimate (all states except Idle):**
 - Large number (e.g., "30") — system font, 18pt, semibold
 - Small unit below ("min" or "hr") — system font, 8pt, regular
 - Vertically centered in the right portion
 
 **Right Side — Navigation:**
-- ◀ and ▶ arrow buttons flanking navigation dots (in Queued and Paused states)
-- Dots only, no arrows (in Running state — user must pause to browse)
+- ◀ and ▶ arrow buttons flanking navigation dots (all active states)
+- Clicking arrows while Running auto-pauses the current task (see Queue Browsing)
 - Filled circle (●) for current task, hollow circle (○) for others
 - First item: only ▶ visible. Last item: only ◀ visible.
 - New dots animate in with a 1-second fade, smoothly pushing existing dots to their positions
