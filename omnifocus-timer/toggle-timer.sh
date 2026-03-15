@@ -2,31 +2,30 @@
 # Toggle OmniFocus timer via Caps Lock
 # Called by Karabiner-Elements
 
-# Adjust this path to where omnifocus-cli is installed on the laptop
-OMNIFOCUS_CLI="${OMNIFOCUS_CLI:-omnifocus-cli}"
+CLI="python3 -c 'from omnifocus_cli.cli import cli; cli()'"
 
-STATUS=$($OMNIFOCUS_CLI timer status --format json 2>/dev/null)
+STATUS=$(eval $CLI --format json timer status 2>/dev/null)
 STATE=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','idle'))" 2>/dev/null)
 
 if [ "$STATE" = "running" ] || [ "$STATE" = "paused" ]; then
   # Timer is active — stop it
-  $OMNIFOCUS_CLI timer stop --format json 2>/dev/null
+  eval $CLI --format json timer stop 2>/dev/null
 else
-  # No timer — start on the most recently selected task
-  # Get the selected task from OmniFocus via AppleScript
+  # No timer — start on the selected task in OmniFocus
   TASK_ID=$(osascript -e '
-    tell application "OmniFocus"
-      set _sel to selected trees of content of first document window
-      if (count of _sel) > 0 then
-        set _task to value of item 1 of _sel
-        return id of _task
-      else
-        return ""
-      end if
-    end tell
-  ' 2>/dev/null)
+tell application "OmniFocus"
+  try
+    set _w to first document window
+    set _sel to selected trees of content of _w
+    if (count of _sel) > 0 then
+      return id of value of item 1 of _sel
+    end if
+  end try
+  return ""
+end tell
+' 2>/dev/null)
 
   if [ -n "$TASK_ID" ]; then
-    $OMNIFOCUS_CLI timer start "$TASK_ID" --format json 2>/dev/null
+    eval $CLI --format json timer start "$TASK_ID" 2>/dev/null
   fi
 fi
