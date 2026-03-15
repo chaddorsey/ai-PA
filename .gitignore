@@ -260,3 +260,5 @@ lettabot/
 # Smaug (Twitter bookmarks archival)
 smaug/
 smaug-data/
+cli-proxy-api/auths/
+cli-proxy-api/logs/

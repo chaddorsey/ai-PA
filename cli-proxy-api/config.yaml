@@ -1,0 +1,26 @@
+# CLIProxyAPI — OAuth subscription proxy for Letta agents
+# Exposes Claude Max and ChatGPT Plus/Pro models as OpenAI-compatible API
+
+port: 8317
+
+# No api-keys restriction — internal network only (pa-internal), no external access
+# api-keys:
+#   - cli-proxy-internal-key
+
+# OAuth token storage
+auth-dir: /CLIProxyAPI/auths
+
+# Retry on transient errors
+request-retry: 3
+
+# Quota exhaustion failover
+quota-exceeded:
+  switch-project: true
+
+# Streaming config
+streaming:
+  keepalive-seconds: 30
+  bootstrap-retries: 2
+
+# Non-streaming keepalive (prevent timeouts on long completions)
+nonstream-keepalive-interval: 15
