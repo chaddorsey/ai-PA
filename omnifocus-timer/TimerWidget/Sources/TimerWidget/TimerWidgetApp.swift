@@ -102,6 +102,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // When widget fade completes, transition to idle
+        widgetFade.$isActive
+            .dropFirst()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.state.widgetState == .lastCompleted {
+                    self.state.widgetState = .idle
+                }
+            }
+            .store(in: &cancellables)
+
         // Initial visibility
         if isVisible(for: state.widgetState) {
             window.orderFront(nil)
