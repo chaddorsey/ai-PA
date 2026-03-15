@@ -25,7 +25,7 @@ final class OmniFocusBridge {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        let state = obj["state"] as? String ?? "idle"
+        let state = obj["status"] as? String ?? "idle"
         return TimerStatusResponse(
             state: state,
             taskId: obj["taskId"] as? String,
