@@ -30,6 +30,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var fadeInOpacity: Double = 1.0
     private var pulseTimer: AnyCancellable?
     private var completingTimer: AnyCancellable?
+    private var inactivityTimer: AnyCancellable?
+    private let inactivityFade = FadeManager(totalDuration: 60)
     private var hostingView: NSHostingView<WidgetView>?
 
     // MARK: - Pulse timing constants
@@ -43,6 +45,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             state: state,
             widgetFade: widgetFade,
             undoFade: undoFade,
+            inactivityFade: inactivityFade,
             pulseOpacity: pulseOpacity,
             queuedGlowOpacity: queuedGlowOpacity,
             completingPhase: completingPhase,
@@ -114,6 +117,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
+        // When inactivity fade completes, transition to idle
+        inactivityFade.$isActive
+            .dropFirst()
+            .filter { !$0 }
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.state.widgetState == .paused || self.state.widgetState == .queued {
+                    self.state.widgetState = .idle
+                }
+            }
+            .store(in: &cancellables)
+
         // Initial visibility
         if isVisible(for: state.widgetState) {
             window.orderFront(nil)
@@ -165,10 +180,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         tracker.onEnter = { [weak self] in
             self?.widgetFade.mouseEntered()
             self?.undoFade.mouseEntered()
+            self?.inactivityFade.mouseEntered()
         }
         tracker.onExit = { [weak self] in
             self?.widgetFade.mouseExited()
             self?.undoFade.mouseExited()
+            self?.inactivityFade.mouseExited()
         }
         // Add tracking view as a sibling on top
         if let contentView = window.contentView {
@@ -210,23 +227,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .running:
             widgetFade.stopFade()
             undoFade.stopFade()
+            inactivityFade.stopFade()
+            cancelInactivityTimer()
             startRunningPulse()
 
         case .queued:
             widgetFade.stopFade()
             undoFade.stopFade()
+            inactivityFade.stopFade()
             startQueuedPulse()
+            startInactivityTimer()
 
         case .paused:
             widgetFade.stopFade()
             undoFade.stopFade()
+            inactivityFade.stopFade()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
             updateView()
+            startInactivityTimer()
 
         case .completing:
             widgetFade.stopFade()
             undoFade.stopFade()
+            inactivityFade.stopFade()
+            cancelInactivityTimer()
             startCompletingAnimation()
 
         case .lastCompleted:
@@ -245,6 +270,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             completingPhase = .inactive
             updateView()
         }
+    }
+
+    // MARK: - Inactivity Fade (60s for paused/queued without interaction)
+
+    private func startInactivityTimer() {
+        cancelInactivityTimer()
+        inactivityTimer = Just(())
+            .delay(for: .seconds(60), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.state.widgetState == .paused || self.state.widgetState == .queued {
+                    self.inactivityFade.startFade()
+                }
+            }
+    }
+
+    private func cancelInactivityTimer() {
+        inactivityTimer?.cancel()
+        inactivityTimer = nil
     }
 
     // MARK: - Running Pulse (1s cycle, 0.92-1.0)
@@ -360,6 +404,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             state: state,
             widgetFade: widgetFade,
             undoFade: undoFade,
+            inactivityFade: inactivityFade,
             pulseOpacity: pulseOpacity,
             queuedGlowOpacity: queuedGlowOpacity,
             completingPhase: completingPhase,

@@ -62,11 +62,18 @@ struct WidgetView: View {
     @ObservedObject var state: TimerState
     @ObservedObject var widgetFade: FadeManager
     @ObservedObject var undoFade: FadeManager
+    @ObservedObject var inactivityFade: FadeManager
     var pulseOpacity: Double = 1.0
     var queuedGlowOpacity: Double = 0.0
     var completingPhase: CompletingPhase = .inactive
     var slideOutOffset: CGFloat = 0
     var fadeInOpacity: Double = 1.0
+
+    private var effectiveOpacity: Double {
+        let fade = widgetFade.isActive ? widgetFade.opacity : 1.0
+        let inactivity = inactivityFade.isActive ? inactivityFade.opacity : 1.0
+        return min(fade, inactivity)
+    }
 
     private var showNav: Bool {
         state.queue.tasks.count > 1
@@ -100,7 +107,7 @@ struct WidgetView: View {
             }
         }
         .frame(width: WidgetLayout.width, height: widgetHeight)
-        .opacity(widgetFade.isActive ? widgetFade.opacity : 1.0)
+        .opacity(effectiveOpacity)
     }
 
     // MARK: - Main Content
