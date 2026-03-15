@@ -70,23 +70,33 @@ def build_applescript(
         )
     else:
         # --- Direct library call path ---
-        # Avoid base64 decoder for direct calls — embed JSON params directly.
-        # Escaping is safe here because timer params are simple strings/numbers.
+        # Use base64 encoding (same as MCP path) but with unique variable names
+        # to avoid any potential conflicts in the OmniFocus JS context.
         plug_id = plugin or DEFAULT_PLUGIN_ID
         lib_id = library or DEFAULT_LIBRARY_ID
-        params_json = json.dumps(resolved_params).replace("\\", "\\\\").replace("'", "\\'")
+        params_json = json.dumps(resolved_params)
+        b64 = base64.b64encode(params_json.encode("utf-8")).decode("ascii")
+        # Use _X prefix for decoder vars to avoid conflicts
         js_body = (
-            f"var p=PlugIn.find('{plug_id}');"
-            f"if(!p)throw new Error('Plugin {plug_id} not found');"
-            f"var lib=p.library('{lib_id}');"
-            f"if(!lib)throw new Error('Library {lib_id} not found');"
-            f"var params=JSON.parse('{params_json}');"
-            "var keys=Object.keys(params);"
-            f"var out;"
-            f"if(keys.length===0)out=lib.{method}();"
-            f"else if(keys.length===1)out=lib.{method}(params[keys[0]]);"
-            f"else out=lib.{method}(params);"
-            "JSON.stringify(out)"
+            f"var _C='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',"
+            f"_s='{b64}',_r='';"
+            "for(var _i=0;_i<_s.length;){"
+            "var _a=_C.indexOf(_s[_i++]),_b=_C.indexOf(_s[_i++]),"
+            "_c=_C.indexOf(_s[_i++]),_d=_C.indexOf(_s[_i++]);"
+            "_r+=String.fromCharCode((_a<<2)|(_b>>4));"
+            "if(_c>=0)_r+=String.fromCharCode(((_b&15)<<4)|(_c>>2));"
+            "if(_d>=0)_r+=String.fromCharCode(((_c&3)<<6)|_d)}"
+            f"var _p=PlugIn.find('{plug_id}');"
+            f"if(!_p)throw new Error('Plugin {plug_id} not found');"
+            f"var _lib=_p.library('{lib_id}');"
+            f"if(!_lib)throw new Error('Library {lib_id} not found');"
+            "var _params=JSON.parse(_r);"
+            "var _keys=Object.keys(_params);"
+            "var _out;"
+            f"if(_keys.length===0)_out=_lib.{method}();"
+            f"else if(_keys.length===1)_out=_lib.{method}(_params[_keys[0]]);"
+            f"else _out=_lib.{method}(_params);"
+            "JSON.stringify(_out)"
         )
 
     return f"""tell application "OmniFocus"
