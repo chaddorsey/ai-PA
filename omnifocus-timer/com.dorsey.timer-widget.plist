@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.dorsey.timer-widget</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/chaddorsey/Dropbox/dev/omnifocus-timer/TimerWidget/.build/release/TimerWidget</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/timer-widget.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/timer-widget.error.log</string>
+</dict>
+</plist>
