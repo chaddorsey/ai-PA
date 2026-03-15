@@ -2,16 +2,15 @@
 # Toggle OmniFocus timer via Caps Lock
 # Called by Karabiner-Elements
 
-CLI="python3 -c 'from omnifocus_cli.cli import cli; cli()'"
+export PATH="/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PYTHONPATH="/Users/chaddorsey/Dropbox/dev/omnifocus-cli/src:$PYTHONPATH"
 
-STATUS=$(eval $CLI --format json timer status 2>/dev/null)
+STATUS=$(python3 -c "from omnifocus_cli.cli import cli; cli()" --format json timer status 2>/dev/null)
 STATE=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','idle'))" 2>/dev/null)
 
 if [ "$STATE" = "running" ] || [ "$STATE" = "paused" ]; then
-  # Timer is active — stop it
-  eval $CLI --format json timer stop 2>/dev/null
+  python3 -c "from omnifocus_cli.cli import cli; cli()" --format json timer stop 2>/dev/null
 else
-  # No timer — start on the selected task in OmniFocus
   TASK_ID=$(osascript -e '
 tell application "OmniFocus"
   try
@@ -26,6 +25,6 @@ end tell
 ' 2>/dev/null)
 
   if [ -n "$TASK_ID" ]; then
-    eval $CLI --format json timer start "$TASK_ID" 2>/dev/null
+    python3 -c "from omnifocus_cli.cli import cli; cli()" --format json timer start "$TASK_ID" 2>/dev/null
   fi
 fi
