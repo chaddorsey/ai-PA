@@ -75,7 +75,7 @@ struct WidgetView: View {
     }
 
     private var showNav: Bool {
-        state.queue.taskIds.count > 1
+        state.queueCount > 1
     }
 
     private var backgroundColor: Color {
@@ -185,7 +185,7 @@ struct WidgetView: View {
             .buttonStyle(HoverButtonStyle())
         } else {
             // lastCompleted / completing — show play if queue has items
-            if !state.queue.taskIds.isEmpty {
+            if state.queueCount > 0 {
                 Button(action: { state.playPressed() }) {
                     Image(systemName: "play.fill")
                         .font(.system(size: WidgetLayout.buttonSize))
@@ -302,17 +302,17 @@ struct WidgetView: View {
 
             // Dots
             HStack(spacing: 3) {
-                ForEach(0..<state.queue.taskIds.count, id: \.self) { idx in
+                ForEach(0..<state.queueCount, id: \.self) { idx in
                     Circle()
                         .fill(idx == state.queueIndex ? Color.black : Color.black.opacity(0.3))
                         .frame(width: WidgetLayout.navDotSize, height: WidgetLayout.navDotSize)
                         .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.5), value: state.queue.taskIds.count)
+                        .animation(.easeInOut(duration: 0.5), value: state.queueCount)
                 }
             }
 
             // Right arrow
-            if state.queueIndex < state.queue.taskIds.count - 1 {
+            if state.queueIndex < state.queueCount - 1 {
                 Button(action: { state.navigateQueue(direction: 1) }) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: WidgetLayout.navArrowSize, weight: .semibold))

@@ -377,9 +377,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWin.contentView = imageView
         ghostWin.ignoresMouseEvents = true
         ghostWin.alphaValue = 0.3
-        ghostWin.orderFront(nil)
         dequeueWindow = ghostWin
         print("[dequeue] ghost window created at \(wf), fallDistance=\(fallDistance)")
+
+        // Order ghost above widget after a brief delay to ensure it's on top
+        // after any state-transition-driven orderFront calls
+        ghostWin.orderFront(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            ghostWin.orderFront(nil)
+        }
 
         let startTime = Date()
         let fadeOutDuration: TimeInterval = 0.6

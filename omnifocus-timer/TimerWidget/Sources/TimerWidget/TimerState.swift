@@ -26,6 +26,9 @@ final class TimerState: ObservableObject {
     @Published var isDequeuing: Bool = false
     @Published var dequeueTaskName: String = ""
 
+    // Queue count for SwiftUI view reactivity
+    @Published var queueCount: Int = 0
+
     // MARK: - Internal
 
     let bridge = OmniFocusBridge()
@@ -169,6 +172,7 @@ final class TimerState: ObservableObject {
     /// Never sets idle — that is the poll's responsibility.
     private func onQueueChanged(_ ids: [String]) {
         print("[queue] ids changed: \(ids.count) ids, widget=\(widgetState)")
+        queueCount = ids.count
         if widgetState == .idle && !ids.isEmpty && !dismissedByInactivity {
             transitionToQueued(index: 0)
         } else if (widgetState == .queued || widgetState == .paused) && !ids.isEmpty && queueIndex >= ids.count {
@@ -355,6 +359,7 @@ final class TimerState: ObservableObject {
                     }
                 }
                 self.queue.saveQueue()
+                self.queueCount = self.queue.taskIds.count
                 // Resolve task details now
                 DispatchQueue.global(qos: .userInitiated).async {
                     self.queue.resolveFromOmniFocus(bridge: self.bridge)
@@ -371,6 +376,7 @@ final class TimerState: ObservableObject {
             queue.taskIds.insert(currentTaskId, at: 0)
             queueIndex = 0
             queue.saveQueue()
+            queueCount = queue.taskIds.count
         }
     }
 }
