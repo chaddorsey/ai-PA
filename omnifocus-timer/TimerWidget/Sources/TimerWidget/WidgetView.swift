@@ -313,14 +313,21 @@ struct WidgetView: View {
 
 struct PlusButtonView: View {
     let action: () -> Void
-    let isWidgetVisible: () -> Bool
+    @ObservedObject var state: TimerState
     @State private var isHovered = false
     @State private var animationDuration: Double = 0.2
     @State private var lastMousePosition: CGPoint = .zero
     @State private var lastMouseTime: Date = Date()
 
+    private var widgetVisible: Bool {
+        switch state.widgetState {
+        case .idle: return false
+        default: return true
+        }
+    }
+
     private var baseOpacity: Double {
-        isWidgetVisible() ? 0.5 : 0.7
+        widgetVisible ? 0.5 : 0.7
     }
 
     // Match widget's running green

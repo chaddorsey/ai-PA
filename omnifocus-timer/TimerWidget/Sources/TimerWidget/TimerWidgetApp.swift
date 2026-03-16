@@ -187,10 +187,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let plusView = PlusButtonView(
             action: { [weak self] in self?.state.queueSelectedTasks() },
-            isWidgetVisible: { [weak self] in
-                guard let self = self else { return false }
-                return self.isVisible(for: self.state.widgetState)
-            }
+            state: state
         )
         let hosting = NSHostingView(rootView: plusView)
 
