@@ -34,6 +34,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let inactivityFade = FadeManager(totalDuration: 60)
     private var hostingView: NSHostingView<WidgetView>?
 
+    // Caps Lock LED control
+    private var capsBlinkTimer: AnyCancellable?
+    private var capsLedState: Bool = false
+
     // MARK: - Pulse timing constants
     private static let runningPulseDuration: TimeInterval = 1.0
     private static let queuedSnapDuration: TimeInterval = 0.5
@@ -230,6 +234,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             inactivityFade.stopFade()
             cancelInactivityTimer()
             startRunningPulse()
+            setCapsLock(on: true)
 
         case .queued:
             widgetFade.stopFade()
@@ -237,6 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             inactivityFade.stopFade()
             startQueuedPulse()
             startInactivityTimer()
+            setCapsLock(on: false)
 
         case .paused:
             widgetFade.stopFade()
@@ -246,6 +252,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queuedGlowOpacity = 0.0
             updateView()
             startInactivityTimer()
+            startCapsLockBlink()
 
         case .completing:
             widgetFade.stopFade()
@@ -253,6 +260,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             inactivityFade.stopFade()
             cancelInactivityTimer()
             startCompletingAnimation()
+            setCapsLock(on: false)
 
         case .lastCompleted:
             pulseOpacity = 1.0
@@ -261,6 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateView()
             widgetFade.startFade()
             undoFade.startFade()
+            setCapsLock(on: false)
 
         case .idle:
             widgetFade.stopFade()
@@ -269,7 +278,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queuedGlowOpacity = 0.0
             completingPhase = .inactive
             updateView()
+            setCapsLock(on: false)
         }
+    }
+
+    // MARK: - Caps Lock LED Control
+
+    private func setCapsLock(on: Bool) {
+        capsBlinkTimer?.cancel()
+        capsBlinkTimer = nil
+
+        let current = getCapsLockState()
+        if current != on {
+            toggleCapsLockKey()
+        }
+        capsLedState = on
+    }
+
+    private func startCapsLockBlink() {
+        capsBlinkTimer?.cancel()
+        // Ensure LED starts on for the blink cycle
+        if !getCapsLockState() {
+            toggleCapsLockKey()
+        }
+        capsLedState = true
+
+        capsBlinkTimer = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self, self.state.widgetState == .paused else {
+                    self?.capsBlinkTimer?.cancel()
+                    self?.capsBlinkTimer = nil
+                    return
+                }
+                self.toggleCapsLockKey()
+                self.capsLedState.toggle()
+            }
+    }
+
+    private func getCapsLockState() -> Bool {
+        // Check via IOKit CGEventFlags
+        let flags = CGEventSource.flagsState(.combinedSessionState)
+        return flags.contains(.maskAlphaShift)
+    }
+
+    private func toggleCapsLockKey() {
+        // Simulate a Caps Lock keypress via CGEvent
+        let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x39, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x39, keyDown: false)
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
     }
 
     // MARK: - Inactivity Fade (60s for paused/queued without interaction)
