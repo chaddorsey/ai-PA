@@ -49,6 +49,7 @@ final class TimerState: ObservableObject {
     private var pollCancellable: AnyCancellable?
     private var queueCancellable: AnyCancellable?
     private var userActionGraceUntil: Date = .distantPast
+    private var suppressCompletionUntil: Date = .distantPast
 
     init() {
         // Watch queue ID changes (file watcher triggers this)
@@ -145,7 +146,8 @@ final class TimerState: ObservableObject {
 
         case "idle":
             let wasActive = (previousPollState == "running" || previousPollState == "paused")
-            if wasActive && widgetState != .completing && widgetState != .lastCompleted {
+            let suppressCompletion = Date() < suppressCompletionUntil
+            if wasActive && !suppressCompletion && widgetState != .completing && widgetState != .lastCompleted {
                 // Timer just stopped externally (Caps Lock, CLI, etc.) — trigger completion
                 currentTaskId = cachedTaskId
                 currentTaskName = cachedTaskName
@@ -325,6 +327,8 @@ final class TimerState: ObservableObject {
         guard widgetState == .paused || widgetState == .queued else { return }
         guard !currentTaskId.isEmpty else { return }
         beginUserActionGrace()
+        // Suppress completion detection — this is a dequeue, not a completion
+        suppressCompletionUntil = Date().addingTimeInterval(6.0)
 
         // Stop the timer (but don't complete) so it doesn't reappear from poll
         if widgetState == .paused {
