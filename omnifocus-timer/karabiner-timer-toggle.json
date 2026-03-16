@@ -15,9 +15,6 @@
           "to": [
             {
               "shell_command": "/Users/chaddorsey/Dropbox/dev/omnifocus-timer/toggle-timer.sh &"
-            },
-            {
-              "key_code": "caps_lock"
             }
           ]
         }
