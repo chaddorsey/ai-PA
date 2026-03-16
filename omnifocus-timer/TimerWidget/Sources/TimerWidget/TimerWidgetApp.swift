@@ -217,9 +217,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         plusWin.contentView = hosting
         plusWin.ignoresMouseEvents = false
 
-        // Plus button: 8px from right edge, top at visibleFrame.maxY - 8
+        // Plus button: 8px from right edge, top-aligned with widget
+        // Widget top = visibleFrame.maxY - margin
+        // Plus top = plusY + plusSize, so plusY = visibleFrame.maxY - margin - plusSize
+        // Nudge down 2px to account for SwiftUI content inset within NSWindow
         let plusX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
-        let plusY = visibleFrame.maxY - WindowLayout.plusSize - WindowLayout.margin
+        let plusY = visibleFrame.maxY - WindowLayout.plusSize - WindowLayout.margin - 2
         plusWin.setFrameOrigin(NSPoint(x: plusX, y: plusY))
 
         plusWin.orderFront(nil)
@@ -285,14 +288,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             undoFade.stopFade()
             inactivityFade.stopFade()
             cancelInactivityTimer()
-            startRunningPulse()
+            pulseOpacity = 1.0
+            queuedGlowOpacity = 0.0
+            updateView()
 
         case .queued:
             widgetFade.stopFade()
             undoFade.stopFade()
             inactivityFade.stopFade()
-            startQueuedPulse()
             startInactivityTimer()
+            pulseOpacity = 1.0
+            queuedGlowOpacity = 0.0
+            updateView()
 
         case .paused:
             widgetFade.stopFade()
@@ -331,8 +338,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Dequeue Animation
 
     private func playDequeueAnimation() {
-        guard let screen = NSScreen.main, let widgetWin = window else { return }
-        guard let contentView = widgetWin.contentView else { return }
+        print("[dequeue] playDequeueAnimation called")
+        guard let screen = NSScreen.main, let widgetWin = window else {
+            print("[dequeue] no screen or window")
+            return
+        }
+        guard let contentView = widgetWin.contentView else {
+            print("[dequeue] no content view")
+            return
+        }
 
         let wf = widgetWin.frame
         let screenMidY = screen.frame.midY
