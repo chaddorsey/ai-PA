@@ -132,6 +132,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 if self.state.widgetState == .paused || self.state.widgetState == .queued {
+                    self.state.dismissedByInactivity = true
                     self.state.widgetState = .idle
                 }
             }
@@ -368,7 +369,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        ghostWin.level = .floating
+        ghostWin.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         ghostWin.collectionBehavior = [.canJoinAllSpaces, .stationary]
         ghostWin.isOpaque = false
         ghostWin.backgroundColor = .clear

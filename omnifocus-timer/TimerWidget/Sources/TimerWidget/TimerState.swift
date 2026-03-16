@@ -37,6 +37,7 @@ final class TimerState: ObservableObject {
     private var pollCancellable: AnyCancellable?
     private var userActionGraceUntil: Date = .distantPast
     private var suppressCompletionUntil: Date = .distantPast
+    var dismissedByInactivity: Bool = false
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -82,6 +83,7 @@ final class TimerState: ObservableObject {
     /// Suppress poll-driven state changes for a grace period after user actions.
     private func beginUserActionGrace() {
         userActionGraceUntil = Date().addingTimeInterval(4.0)
+        dismissedByInactivity = false
     }
 
     private var isInGracePeriod: Bool {
@@ -103,6 +105,7 @@ final class TimerState: ObservableObject {
 
         switch newState {
         case "running":
+            dismissedByInactivity = false
             widgetState = .running
             if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
             if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
@@ -146,12 +149,10 @@ final class TimerState: ObservableObject {
                 }
             } else {
                 // Already idle or suppressed
-                if widgetState == .lastCompleted || widgetState == .completing {
-                    // Stay in current state — let those flows complete naturally
-                } else if !queue.taskIds.isEmpty {
+                if widgetState == .lastCompleted || widgetState == .completing || widgetState == .queued {
+                    // Stay in current state — don't reset queue index or re-trigger transitions
+                } else if widgetState == .idle && !queue.taskIds.isEmpty && !dismissedByInactivity {
                     transitionToQueued(index: 0)
-                } else {
-                    widgetState = .idle
                 }
             }
 
@@ -168,7 +169,7 @@ final class TimerState: ObservableObject {
     /// Never sets idle — that is the poll's responsibility.
     private func onQueueChanged(_ ids: [String]) {
         print("[queue] ids changed: \(ids.count) ids, widget=\(widgetState)")
-        if widgetState == .idle && !ids.isEmpty {
+        if widgetState == .idle && !ids.isEmpty && !dismissedByInactivity {
             transitionToQueued(index: 0)
         } else if (widgetState == .queued || widgetState == .paused) && !ids.isEmpty && queueIndex >= ids.count {
             // Queue shrunk while viewing — clamp index
@@ -347,6 +348,7 @@ final class TimerState: ObservableObject {
             let ids = self.bridge.getSelectedTaskIds()
             guard !ids.isEmpty else { return }
             DispatchQueue.main.async {
+                self.dismissedByInactivity = false
                 for id in ids {
                     if !self.queue.taskIds.contains(id) {
                         self.queue.taskIds.append(id)
