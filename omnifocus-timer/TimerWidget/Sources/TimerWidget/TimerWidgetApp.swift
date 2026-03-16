@@ -473,7 +473,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         collapsePulseTimer?.cancel()
         let startTime = Date()
         let cycleDuration: Double = 4.0
-        let minOpacity: Double = 0.875
+        let minOpacity: Double = 0.75
         let range = 1.0 - minOpacity
 
         collapsePulseTimer = Timer.publish(every: 1.0 / 30, on: .main, in: .common)

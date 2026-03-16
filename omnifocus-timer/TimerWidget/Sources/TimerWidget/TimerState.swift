@@ -46,8 +46,8 @@ final class TimerState: ObservableObject {
     private var collapseTimer: AnyCancellable?
 
     /// How long to wait before collapsing a paused widget. Default 2 min. Set low for testing.
-    var collapseDelay: TimeInterval = 10  // TODO: set back to 120 for production
-    var collapsePulseDuration: TimeInterval = 10  // TODO: set back to 120 for production
+    var collapseDelay: TimeInterval = 120      // 2 minutes before pulsing begins
+    var collapsePulseDuration: TimeInterval = 120  // 2 minutes of pulsing before collapse
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -104,12 +104,20 @@ final class TimerState: ObservableObject {
         let newState = status?.state ?? "idle"
         print("[poll] state=\(newState) widget=\(widgetState) queue=\(queue.taskIds.count) grace=\(isInGracePeriod)")
 
-        // During grace period, only update task info but don't change widget state
-        if isInGracePeriod {
+        // During grace period, or while docked/collapsed, only update task info
+        if isInGracePeriod || widgetState == .docked || widgetState == .collapsed {
             if let id = status?.taskId { cachedTaskId = id }
             if let name = status?.taskName { cachedTaskName = name }
             if let est = status?.originalEstimate { currentEstimateMin = est }
             previousPollState = newState
+            // Exception: if a timer starts while docked, undock
+            if newState == "running" && widgetState == .docked {
+                cancelCollapseTimer()
+                widgetState = .running
+                if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
+                if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
+                autoQueueRunningTask()
+            }
             return
         }
 
