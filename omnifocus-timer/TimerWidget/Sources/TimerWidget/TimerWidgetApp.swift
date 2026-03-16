@@ -218,13 +218,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         plusWin.contentView = hosting
         plusWin.ignoresMouseEvents = false
 
-        // Position in upper-right corner
+        // Position in upper-right corner, top-aligned with widget
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.maxX - plusSize - margin
-        // Top-align with widget top edge
-        // Widget top = visibleFrame.maxY - 8 (from positionWindow)
-        // Plus top = y + plusSize, so y = widgetTop - plusSize
-        let widgetTop = visibleFrame.maxY - 8
+        // Use the widget window's actual top edge for alignment
+        let widgetTop: CGFloat
+        if let wf = window?.frame {
+            widgetTop = wf.maxY
+        } else {
+            widgetTop = visibleFrame.maxY - 8
+        }
         let y = widgetTop - plusSize
         plusWin.setFrameOrigin(NSPoint(x: x, y: y))
 
@@ -362,25 +365,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func playDequeueAnimation() {
         guard let screen = NSScreen.main, let widgetWin = window else { return }
+        guard let contentView = widgetWin.contentView else { return }
 
         let wf = widgetWin.frame
         let screenMidY = screen.frame.midY
         let fallDistance = wf.minY - screenMidY
+        let hasMoreTasks = state.visibleQueue.count > 0
 
-        // Create a ghost window matching the widget
-        let ghostLabel = Text(state.dequeueTaskName)
-            .font(.system(size: 11, weight: .bold))
-            .foregroundColor(.black)
-            .lineLimit(2)
-            .truncationMode(.tail)
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.3))
-            )
-            .frame(width: wf.width, height: wf.height)
+        // Capture the widget as a bitmap snapshot for the ghost
+        let bitmapRep = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)!
+        contentView.cacheDisplay(in: contentView.bounds, to: bitmapRep)
+        let image = NSImage(size: contentView.bounds.size)
+        image.addRepresentation(bitmapRep)
 
-        let ghostHosting = NSHostingView(rootView: ghostLabel)
+        let imageView = NSImageView(frame: NSRect(origin: .zero, size: wf.size))
+        imageView.image = image
+        imageView.imageScaling = .scaleAxesIndependently
 
         let ghostWin = NSWindow(
             contentRect: NSRect(x: wf.minX, y: wf.minY, width: wf.width, height: wf.height),
@@ -393,7 +393,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWin.isOpaque = false
         ghostWin.backgroundColor = .clear
         ghostWin.hasShadow = false
-        ghostWin.contentView = ghostHosting
+        ghostWin.contentView = imageView
         ghostWin.ignoresMouseEvents = true
         ghostWin.alphaValue = 0.2
         ghostWin.orderFront(nil)
@@ -410,7 +410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let elapsed = Date().timeIntervalSince(startTime)
                 let progress = min(elapsed / duration, 1.0)
 
-                // Fall with slight acceleration
+                // Fall with gravity acceleration
                 let easedProgress = progress * progress
                 let yOffset = easedProgress * fallDistance
 
@@ -419,8 +419,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 frame.origin.y = wf.minY - yOffset
                 ghost.setFrame(frame, display: false)
 
-                // Opacity: start at 0.2, fade to 0 linearly
-                ghost.alphaValue = CGFloat(0.2 * (1.0 - progress))
+                if hasMoreTasks {
+                    // Opacity: start at 0.2, fade to 0 linearly
+                    ghost.alphaValue = CGFloat(0.2 * (1.0 - progress))
+                } else {
+                    // Last task: ease-in to 0.2 in first 0.25s, then linear to 0
+                    if progress < 0.125 { // 0.25s / 2s = 0.125
+                        let easeProgress = progress / 0.125
+                        ghost.alphaValue = CGFloat(1.0 - 0.8 * easeProgress * easeProgress)
+                    } else {
+                        let remaining = (progress - 0.125) / (1.0 - 0.125)
+                        ghost.alphaValue = CGFloat(0.2 * (1.0 - remaining))
+                    }
+                }
 
                 if progress >= 1.0 {
                     ghost.orderOut(nil)

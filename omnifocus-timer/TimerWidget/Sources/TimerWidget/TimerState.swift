@@ -324,31 +324,36 @@ final class TimerState: ObservableObject {
     func dequeueCurrentTask() {
         guard widgetState == .paused || widgetState == .queued else { return }
         guard !currentTaskId.isEmpty else { return }
+        beginUserActionGrace()
 
         // If paused, stop the timer but don't complete
         if widgetState == .paused {
-            bridge.pauseTimer() // ensure paused state
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.bridge.pauseTimer()
+            }
         }
 
         let removedId = currentTaskId
         dequeueTaskName = currentTaskName
+
+        // Signal the animation BEFORE removing (so AppDelegate can snapshot)
         isDequeuing = true
 
-        // Remove from queue
+        // Remove from queue and immediately transition
         queue.removeTask(id: removedId)
 
-        // After animation (2s), transition to next task or idle
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            guard let self = self else { return }
-            self.isDequeuing = false
-            self.dequeueTaskName = ""
+        // Transition to next task immediately (ghost animation plays independently)
+        let vq = visibleQueue
+        if !vq.isEmpty {
+            transitionToQueued(index: 0)
+        } else {
+            widgetState = .idle
+        }
 
-            let vq = self.visibleQueue
-            if !vq.isEmpty {
-                self.transitionToQueued(index: 0)
-            } else {
-                self.widgetState = .idle
-            }
+        // Clean up dequeue state after animation completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.isDequeuing = false
+            self?.dequeueTaskName = ""
         }
     }
 
