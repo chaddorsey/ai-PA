@@ -50,11 +50,14 @@ final class TimerState: ObservableObject {
             // Re-resolve on next poll
         }
 
-        // Watch resolved tasks for UI updates
-        queue.$resolvedTasks.sink { [weak self] tasks in
-            guard let self = self else { return }
-            self.onQueueChanged(tasks)
-        }.store(in: &cancellables)
+        // Watch resolved tasks for UI updates — only fire when IDs actually change
+        queue.$taskIds
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.onQueueChanged(self.queue.resolvedTasks)
+            }
+            .store(in: &cancellables)
 
         startPolling()
     }
@@ -174,8 +177,9 @@ final class TimerState: ObservableObject {
     // MARK: - Queue Management
 
     private func onQueueChanged(_ tasks: [QueuedTask]) {
-        print("[queue] changed: \(tasks.count) tasks, state=\(widgetState)")
-        // Don't transition to idle if we're running, paused, completing, etc.
+        print("[queue] changed: \(tasks.count) IDs, state=\(widgetState)")
+        // Only transition to idle from queued state when queue is truly empty
+        // and no grace period is active
         if widgetState == .idle && !tasks.isEmpty {
             transitionToQueued(index: 0)
         } else if widgetState == .queued && tasks.isEmpty && !isInGracePeriod {
@@ -183,7 +187,7 @@ final class TimerState: ObservableObject {
             currentTaskId = ""
             currentTaskName = ""
             currentEstimateMin = nil
-        } else if widgetState == .queued && queueIndex >= tasks.count {
+        } else if widgetState == .queued && !tasks.isEmpty && queueIndex >= tasks.count {
             queueIndex = max(0, tasks.count - 1)
             if !tasks.isEmpty {
                 applyQueueItem(tasks[queueIndex])

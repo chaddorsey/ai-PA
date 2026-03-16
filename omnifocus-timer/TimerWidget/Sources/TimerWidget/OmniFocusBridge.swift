@@ -170,7 +170,7 @@ final class OmniFocusBridge {
         """
 
         let tempFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("of_bridge_\(ProcessInfo.processInfo.processIdentifier).scpt")
+            .appendingPathComponent("of_bridge_\(UUID().uuidString).scpt")
         do {
             try appleScript.write(to: tempFile, atomically: true, encoding: .utf8)
         } catch {

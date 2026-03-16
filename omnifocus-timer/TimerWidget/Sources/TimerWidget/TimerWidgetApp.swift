@@ -221,9 +221,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Position in upper-right corner
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.maxX - plusSize - margin
-        // Top-align with widget: widget top = visibleFrame.maxY - 8
-        // Plus button top should match: y + plusSize = visibleFrame.maxY - 8
-        let y = visibleFrame.maxY - plusSize - 8
+        // Top-align with widget top edge
+        // Widget top = visibleFrame.maxY - 8 (from positionWindow)
+        // Plus top = y + plusSize, so y = widgetTop - plusSize
+        let widgetTop = visibleFrame.maxY - 8
+        let y = widgetTop - plusSize
         plusWin.setFrameOrigin(NSPoint(x: x, y: y))
 
         plusWin.orderFront(nil)
