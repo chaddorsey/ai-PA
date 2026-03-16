@@ -93,7 +93,7 @@ async def receive_completion(event: CompletionEvent):
 
     logger.info(f"Processing completion: {event.task_name} ({event.task_id})")
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         # Check if this is an extracted task
         extraction_info = None
         passage = await find_extracted_task(event.task_id, client)
