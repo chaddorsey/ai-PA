@@ -86,8 +86,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Observe state changes
         state.$widgetState
+            .removeDuplicates()
             .sink { [weak self] newState in
                 guard let self = self else { return }
+                print("[widget] state transition → \(newState), window visible: \(self.isVisible(for: newState))")
                 let visible = self.isVisible(for: newState)
                 if visible {
                     self.window?.orderFront(nil)
