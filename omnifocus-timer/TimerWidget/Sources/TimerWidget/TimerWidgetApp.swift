@@ -36,6 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let confetti = ConfettiState()
     private var cancellables = Set<AnyCancellable>()
     private var dequeueAnimTimer: AnyCancellable?
+    private var collapsePulseTimer: AnyCancellable?
 
     // Animation state
     private var pulseOpacity: Double = 1.0
@@ -144,6 +145,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .filter { $0 }
             .sink { [weak self] _ in
                 self?.playDequeueAnimation()
+            }
+            .store(in: &cancellables)
+
+        // Watch for collapse pulse
+        state.$collapsePulseActive
+            .removeDuplicates()
+            .sink { [weak self] active in
+                if active {
+                    self?.startCollapsePulse()
+                } else {
+                    self?.stopCollapsePulse()
+                }
             }
             .store(in: &cancellables)
 
@@ -273,7 +286,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch widgetState {
         case .idle:
             return false
-        case .queued, .running, .paused, .completing, .lastCompleted, .collapsed:
+        case .queued, .running, .paused, .completing, .lastCompleted, .collapsed, .docked:
             return true
         }
     }
@@ -337,7 +350,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             cancelInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
-            if isCollapsedSize { animateExpand() }
+            if isDocked { animateUndock() }
+            else if isCollapsedSize { animateExpand() }
             updateView()
 
         case .queued:
@@ -347,7 +361,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             startInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
-            if isCollapsedSize { animateExpand() }
+            if isDocked { animateUndock() }
+            else if isCollapsedSize { animateExpand() }
             updateView()
 
         case .paused:
@@ -357,7 +372,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             cancelInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
-            if isCollapsedSize { animateExpand() }
+            if isDocked { animateUndock() }
+            else if isCollapsedSize { animateExpand() }
             updateView()
 
         case .collapsed:
@@ -369,6 +385,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queuedGlowOpacity = 0.0
             updateView()
             animateCollapse()
+
+        case .docked:
+            widgetFade.stopFade()
+            undoFade.stopFade()
+            inactivityFade.stopFade()
+            cancelInactivityTimer()
+            pulseOpacity = 1.0
+            queuedGlowOpacity = 0.0
+            updateView()
+            animateDock()
 
         case .completing:
             widgetFade.stopFade()
@@ -393,6 +419,80 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             completingPhase = .inactive
             updateView()
         }
+    }
+
+    // MARK: - Dock Animation (vertical roll up/down)
+
+    private static let dockTabHeight: CGFloat = WindowLayout.widgetHeight / 2  // half widget height
+    private static let dockTabWidth: CGFloat = dockTabHeight * 3  // 3:1 aspect ratio
+    private var isDocked: Bool = false
+
+    private func animateDock() {
+        guard let window = self.window, let screen = NSScreen.main else { return }
+        isDocked = true
+        let visibleFrame = screen.visibleFrame
+        let currentFrame = window.frame
+
+        // Roll up to a small tab at the top, centered on the widget's position
+        let tabWidth = Self.dockTabWidth
+        let tabHeight = Self.dockTabHeight
+        let centerX = currentFrame.midX - tabWidth / 2
+        let topY = visibleFrame.maxY - tabHeight - WindowLayout.margin
+
+        let targetFrame = NSRect(x: centerX, y: topY, width: tabWidth, height: tabHeight)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.5
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetFrame, display: true)
+        })
+    }
+
+    private func animateUndock() {
+        guard let window = self.window, let screen = NSScreen.main else { return }
+        isDocked = false
+        let visibleFrame = screen.visibleFrame
+        let plusLeftX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+        let targetX = plusLeftX - WindowLayout.widgetWidth - WindowLayout.buffer
+        let targetY = visibleFrame.maxY - WindowLayout.widgetHeight - WindowLayout.margin
+        let targetFrame = NSRect(
+            x: targetX, y: targetY,
+            width: WindowLayout.widgetWidth, height: WindowLayout.widgetHeight
+        )
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.5
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetFrame, display: true)
+        })
+    }
+
+    // MARK: - Collapse Pulse (1s cycle, opacity 0.5–1.0)
+
+    private func startCollapsePulse() {
+        collapsePulseTimer?.cancel()
+        let startTime = Date()
+        collapsePulseTimer = Timer.publish(every: 1.0 / 30, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self, self.state.collapsePulseActive else {
+                    self?.collapsePulseTimer?.cancel()
+                    return
+                }
+                let elapsed = Date().timeIntervalSince(startTime)
+                let phase = elapsed.truncatingRemainder(dividingBy: 1.0)
+                // Sine wave: 0.5 to 1.0
+                let sine = sin(phase * .pi * 2)
+                self.pulseOpacity = 0.75 + 0.25 * sine  // 0.5 to 1.0
+                self.updateView()
+            }
+    }
+
+    private func stopCollapsePulse() {
+        collapsePulseTimer?.cancel()
+        collapsePulseTimer = nil
+        pulseOpacity = 1.0
+        updateView()
     }
 
     // MARK: - Dequeue Animation

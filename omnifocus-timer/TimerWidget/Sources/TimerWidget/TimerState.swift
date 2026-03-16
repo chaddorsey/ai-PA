@@ -7,6 +7,7 @@ enum WidgetState: Equatable {
     case running
     case paused
     case collapsed      // Paused/queued task minimized to small rectangle
+    case docked         // Widget rolled up to a small tab hanging from menu bar
     case completing
     case lastCompleted
 }
@@ -46,6 +47,7 @@ final class TimerState: ObservableObject {
 
     /// How long to wait before collapsing a paused widget. Default 2 min. Set low for testing.
     var collapseDelay: TimeInterval = 10  // TODO: set back to 120 for production
+    var collapsePulseDuration: TimeInterval = 10  // TODO: set back to 120 for production
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -201,6 +203,7 @@ final class TimerState: ObservableObject {
         queueIndex = clamped
         applyQueueItem(resolved[clamped])
         widgetState = .queued
+        startCollapseTimer()
     }
 
     private func applyQueueItem(_ task: QueuedTask) {
@@ -288,7 +291,9 @@ final class TimerState: ObservableObject {
         // Auto-pause if running
         if widgetState == .running {
             beginUserActionGrace()
+            cancelCollapseTimer()
             widgetState = .paused
+            startCollapseTimer()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.bridge.pauseTimer()
             }
@@ -304,10 +309,9 @@ final class TimerState: ObservableObject {
         queueIndex = newIndex
         applyQueueItem(resolved[newIndex])
 
-        if widgetState == .queued {
-            // Already queued, just update index/task
-        }
-        // If paused, stay paused with new task displayed
+        // Restart collapse timer on navigation (user is active but task is paused)
+        cancelCollapseTimer()
+        startCollapseTimer()
     }
 
     func taskNameClicked() {
@@ -381,14 +385,29 @@ final class TimerState: ObservableObject {
 
     // MARK: - Collapse / Expand
 
+    @Published var collapsePulseActive: Bool = false
+
     func startCollapseTimer() {
         collapseTimer?.cancel()
+        collapsePulseActive = false
+
+        // Phase 1: after collapseDelay, start pulsing
         collapseTimer = Just(())
             .delay(for: .seconds(collapseDelay), scheduler: DispatchQueue.main)
             .sink { [weak self] in
                 guard let self = self else { return }
                 if self.widgetState == .paused || self.widgetState == .queued {
-                    self.widgetState = .collapsed
+                    self.collapsePulseActive = true
+                    // Phase 2: after pulseDuration, collapse
+                    self.collapseTimer = Just(())
+                        .delay(for: .seconds(self.collapsePulseDuration), scheduler: DispatchQueue.main)
+                        .sink { [weak self] in
+                            guard let self = self else { return }
+                            self.collapsePulseActive = false
+                            if self.widgetState == .paused || self.widgetState == .queued {
+                                self.widgetState = .collapsed
+                            }
+                        }
                 }
             }
     }
@@ -396,7 +415,32 @@ final class TimerState: ObservableObject {
     func cancelCollapseTimer() {
         collapseTimer?.cancel()
         collapseTimer = nil
+        collapsePulseActive = false
     }
+
+    /// Dock the widget (roll up to small tab)
+    func dockWidget() {
+        guard widgetState != .idle && widgetState != .docked else { return }
+        cancelCollapseTimer()
+        previousStateBeforeDock = widgetState
+        widgetState = .docked
+    }
+
+    /// Undock the widget (restore from tab)
+    func undockWidget() {
+        guard widgetState == .docked else { return }
+        let restoreTo = previousStateBeforeDock
+        if restoreTo == .running || restoreTo == .paused || restoreTo == .queued {
+            widgetState = restoreTo
+            if restoreTo == .paused || restoreTo == .queued {
+                startCollapseTimer()
+            }
+        } else {
+            widgetState = .queued
+        }
+    }
+
+    private var previousStateBeforeDock: WidgetState = .queued
 
     /// Expand from collapsed state back to queued/paused
     func expandFromCollapsed() {

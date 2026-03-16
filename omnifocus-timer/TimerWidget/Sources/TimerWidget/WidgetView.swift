@@ -87,16 +87,22 @@ struct WidgetView: View {
         case .completing: return WidgetColor.completing
         case .lastCompleted: return WidgetColor.lastCompleted
         case .collapsed: return WidgetColor.paused
+        case .docked: return WidgetColor.paused
         }
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if state.widgetState == .collapsed {
+            if state.widgetState == .docked {
+                dockedContent
+            } else if state.widgetState == .collapsed {
                 collapsedContent
             } else {
                 mainContent
                     .opacity(pulseOpacity)
+
+                // Dock tab hover zone at top center
+                dockTabOverlay
             }
 
             // Undo button overlay
@@ -106,8 +112,60 @@ struct WidgetView: View {
                     .offset(x: -4, y: -4)
             }
         }
-        .frame(minWidth: 48, maxWidth: WidgetLayout.width, minHeight: WidgetLayout.fixedHeight, maxHeight: WidgetLayout.fixedHeight)
+        .frame(minWidth: 48, maxWidth: WidgetLayout.width, minHeight: 10, maxHeight: WidgetLayout.fixedHeight)
         .opacity(effectiveOpacity)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                showDockTab = hovering
+            }
+        }
+    }
+
+    // MARK: - Collapsed Content
+
+    // MARK: - Docked Content
+
+    private var dockedContent: some View {
+        VStack(spacing: 0) {
+            Button(action: { state.undockWidget() }) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.black.opacity(0.6))
+            }
+            .buttonStyle(HoverButtonStyle())
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(WidgetColor.paused.opacity(0.8))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    // MARK: - Dock Tab (hover zone at top center)
+
+    @State private var showDockTab: Bool = false
+
+    private var dockTabOverlay: some View {
+        VStack {
+            if showDockTab && state.widgetState != .collapsed && state.widgetState != .docked && state.widgetState != .idle {
+                Button(action: { state.dockWidget() }) {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(.black.opacity(0.5))
+                        .frame(width: 32, height: 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(backgroundColor.opacity(0.8))
+                        )
+                }
+                .buttonStyle(.plain)
+                .offset(y: -12)
+                .transition(.opacity)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Collapsed Content
