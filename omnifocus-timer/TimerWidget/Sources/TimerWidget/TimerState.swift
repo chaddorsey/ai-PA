@@ -45,7 +45,7 @@ final class TimerState: ObservableObject {
     private var collapseTimer: AnyCancellable?
 
     /// How long to wait before collapsing a paused widget. Default 2 min. Set low for testing.
-    var collapseDelay: TimeInterval = 120
+    var collapseDelay: TimeInterval = 10  // TODO: set back to 120 for production
     private var cancellables = Set<AnyCancellable>()
 
     init() {
