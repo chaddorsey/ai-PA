@@ -324,10 +324,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             widgetFade.stopFade()
             undoFade.stopFade()
             inactivityFade.stopFade()
+            cancelInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
             updateView()
-            startInactivityTimer()
             startCapsLockBlink()
 
         case .completing:
