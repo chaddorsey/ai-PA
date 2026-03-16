@@ -315,6 +315,9 @@ struct PlusButtonView: View {
     let action: () -> Void
     let isWidgetVisible: () -> Bool
     @State private var isHovered = false
+    @State private var animationDuration: Double = 0.2
+    @State private var lastMousePosition: CGPoint = .zero
+    @State private var lastMouseTime: Date = Date()
 
     private var baseOpacity: Double {
         isWidgetVisible() ? 0.5 : 0.7
@@ -334,11 +337,13 @@ struct PlusButtonView: View {
         isHovered ? 1.0 : baseOpacity
     }
 
-    // Plus sign grayscale tracks opacity: at 50% opacity → 50% gray (0.5), at 100% → black (0.0)
     private var plusColor: Color {
-        let gray = 1.0 - effectiveOpacity  // 1.0 opacity → 0.0 gray (black), 0.5 opacity → 0.5 gray
+        let gray = 1.0 - effectiveOpacity
         return Color(white: gray)
     }
+
+    // Speed threshold in points/sec — above this, use fast animation
+    private let speedThreshold: CGFloat = 400
 
     var body: some View {
         Button(action: action) {
@@ -360,9 +365,37 @@ struct PlusButtonView: View {
         }
         .buttonStyle(.plain)
         .opacity(effectiveOpacity)
-        .animation(.easeInOut(duration: 0.2), value: isHovered)
+        .animation(.easeInOut(duration: animationDuration), value: isHovered)
         .onHover { hovering in
+            if hovering {
+                // Measure mouse speed from last tracked position
+                let currentPos = NSEvent.mouseLocation
+                let now = Date()
+                let dt = now.timeIntervalSince(lastMouseTime)
+                if dt > 0 {
+                    let dx = currentPos.x - lastMousePosition.x
+                    let dy = currentPos.y - lastMousePosition.y
+                    let distance = sqrt(dx * dx + dy * dy)
+                    let speed = CGFloat(distance) / CGFloat(dt)
+                    // Fast entry (>threshold): 0.2s, slow entry: up to 0.6s
+                    animationDuration = speed > speedThreshold ? 0.2 : 0.6
+                } else {
+                    animationDuration = 0.2
+                }
+            } else {
+                animationDuration = 0.2
+            }
             isHovered = hovering
+        }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active(_):
+                // Track mouse position for speed calculation on next enter
+                lastMousePosition = NSEvent.mouseLocation
+                lastMouseTime = Date()
+            case .ended:
+                break
+            }
         }
         .frame(width: 28, height: 28)
     }
