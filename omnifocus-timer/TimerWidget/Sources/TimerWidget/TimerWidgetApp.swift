@@ -228,7 +228,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             widgetTop = visibleFrame.maxY - 8
         }
-        let y = widgetTop - plusSize
+        // Offset down slightly to align with visual top of rounded rect (not window frame)
+        let y = widgetTop - plusSize - 4
         plusWin.setFrameOrigin(NSPoint(x: x, y: y))
 
         plusWin.orderFront(nil)
@@ -400,9 +401,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         dequeueWindow = ghostWin
 
         let startTime = Date()
-        let duration: TimeInterval = 2.0
+        let duration: TimeInterval = 0.67  // ~3x faster
 
-        dequeueAnimTimer = Timer.publish(every: 1.0 / 30, on: .main, in: .common)
+        dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let ghost = self.dequeueWindow else { return }
@@ -410,28 +411,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let elapsed = Date().timeIntervalSince(startTime)
                 let progress = min(elapsed / duration, 1.0)
 
-                // Fall with gravity acceleration
-                let easedProgress = progress * progress
+                // Ease-in cubic for accelerating fall (3x speed ramp)
+                let easedProgress = progress * progress * progress
                 let yOffset = easedProgress * fallDistance
 
-                // Position
                 var frame = ghost.frame
                 frame.origin.y = wf.minY - yOffset
                 ghost.setFrame(frame, display: false)
 
-                if hasMoreTasks {
-                    // Opacity: start at 0.2, fade to 0 linearly
-                    ghost.alphaValue = CGFloat(0.2 * (1.0 - progress))
-                } else {
-                    // Last task: ease-in to 0.2 in first 0.25s, then linear to 0
-                    if progress < 0.125 { // 0.25s / 2s = 0.125
-                        let easeProgress = progress / 0.125
-                        ghost.alphaValue = CGFloat(1.0 - 0.8 * easeProgress * easeProgress)
-                    } else {
-                        let remaining = (progress - 0.125) / (1.0 - 0.125)
-                        ghost.alphaValue = CGFloat(0.2 * (1.0 - remaining))
-                    }
-                }
+                // Opacity: start at 0.2, fade to 0
+                ghost.alphaValue = CGFloat(0.2 * (1.0 - progress))
 
                 if progress >= 1.0 {
                     ghost.orderOut(nil)

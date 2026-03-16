@@ -71,6 +71,17 @@ final class OmniFocusBridge {
         _ = evaluateJS(js)
     }
 
+    func stopTimer() {
+        let js = """
+        (function() {
+            var lib = PlugIn.find('com.dorsey.omnifocus-timer').library('timerLib');
+            lib.stopTimer();
+            return 'ok';
+        })()
+        """
+        _ = evaluateJS(js)
+    }
+
     func completeTask(taskId: String) {
         let js = """
         (function() {

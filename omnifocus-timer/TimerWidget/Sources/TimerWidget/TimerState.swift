@@ -326,10 +326,10 @@ final class TimerState: ObservableObject {
         guard !currentTaskId.isEmpty else { return }
         beginUserActionGrace()
 
-        // If paused, stop the timer but don't complete
+        // Stop the timer (but don't complete) so it doesn't reappear from poll
         if widgetState == .paused {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                self?.bridge.pauseTimer()
+                self?.bridge.stopTimer()
             }
         }
 
@@ -351,7 +351,7 @@ final class TimerState: ObservableObject {
         }
 
         // Clean up dequeue state after animation completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
             self?.isDequeuing = false
             self?.dequeueTaskName = ""
         }
