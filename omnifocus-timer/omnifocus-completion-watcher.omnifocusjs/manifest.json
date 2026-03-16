@@ -1,0 +1,32 @@
+{
+  "defaultLocale": "en",
+  "identifier": "com.dorsey.omnifocus-completion-watcher",
+  "author": "Chad Dorsey",
+  "description": "Watches for task completions and pushes notifications to the Task Completion Service.",
+  "version": "1.0.0",
+  "actions": [
+    {
+      "identifier": "startWatcher",
+      "label": "Start Completion Watcher",
+      "shortLabel": "Start Watcher",
+      "image": "eye"
+    },
+    {
+      "identifier": "stopWatcher",
+      "label": "Stop Completion Watcher",
+      "shortLabel": "Stop Watcher",
+      "image": "eye.slash"
+    },
+    {
+      "identifier": "watcherStatus",
+      "label": "Completion Watcher Status",
+      "shortLabel": "Watcher Status",
+      "image": "info.circle"
+    }
+  ],
+  "libraries": [
+    {
+      "identifier": "watcherLib"
+    }
+  ]
+}

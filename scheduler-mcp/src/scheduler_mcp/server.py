@@ -235,6 +235,93 @@ def create_mcp_server() -> FastMCP:
         # Response is a list of jobs, convert each to JobResponseModel
         return [JobResponseModel(**job).model_dump() for job in response]
 
+    @mcp.tool(description="""Schedule a one-shot reminder/wake-up message to be delivered to a Letta agent at a specified time.
+
+Use natural language for timing: "in 30 minutes", "at 1:45pm", "tomorrow at 9am".
+The message will be delivered as a system message to the specified agent via the Letta API.
+
+This is designed for agent self-scheduling: set wake timers for time-critical monitoring,
+meeting prep, or session checkpoints. The job auto-completes after delivery.""")
+    async def schedule_reminder(
+        when: str,
+        message: str,
+        agent_id: str,
+        title: Optional[str] = None,
+        created_by: Optional[str] = None,
+        category: Optional[str] = "wake-timer",
+    ) -> Dict[str, Any]:
+        """Schedule a reminder message to an agent.
+
+        Args:
+            when: Natural language time expression (e.g., "in 20 minutes", "at 1:45pm")
+            message: Context message delivered to the agent when the timer fires
+            agent_id: Target Letta agent ID to receive the message
+            title: Optional job title (defaults to "Wake timer: <truncated message>")
+            created_by: Who created this reminder (defaults to agent_id)
+            category: Job category (defaults to "wake-timer")
+        """
+        try:
+            client = await _get_client()
+
+            if not title:
+                title = f"Wake timer: {message[:60]}{'...' if len(message) > 60 else ''}"
+            if not created_by:
+                created_by = agent_id
+
+            # Build raw dict payload — bypasses Pydantic models whose strict schemas
+            # (action_id required, expression must be Dict) don't fit the reminder use case.
+            # This matches the pattern in server_v2.py.
+            job_data = {
+                "title": title,
+                "description": f"Reminder: {message}",
+                "created_by": created_by,
+                "schedule": {
+                    "type": "natural",
+                    "expression": when,
+                    "timezone": "America/New_York",
+                },
+                "actions": [
+                    {
+                        "action_type": "agent_message",
+                        "config": {
+                            "agent_id": agent_id,
+                            "message": message,
+                        },
+                    }
+                ],
+            }
+
+            if category:
+                job_data["metadata"] = [{"key": "category", "value": {"category": category}}]
+
+            result = await client.create_job(job_data)
+            return {
+                "success": True,
+                "job_id": result.get("job_id"),
+                "message": f"Reminder scheduled: {title}",
+                "next_run_at": result.get("next_run_at"),
+                "created_by": created_by,
+                "recipient": agent_id,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @mcp.tool(description="Cancel a previously scheduled reminder or wake timer by job ID.")
+    async def cancel_reminder(
+        job_id: str,
+    ) -> Dict[str, Any]:
+        """Cancel a scheduled reminder.
+
+        Args:
+            job_id: The job ID returned by schedule_reminder
+        """
+        try:
+            client = await _get_client()
+            await client.delete_job(job_id)
+            return {"success": True, "message": f"Reminder {job_id} cancelled"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     # Add health endpoint using FastMCP custom route
     from fastapi import Request
     from fastapi.responses import JSONResponse

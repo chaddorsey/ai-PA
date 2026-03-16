@@ -784,6 +784,33 @@ services:
       - "com.ai-pa.component=llm-proxy"
       - "com.ai-pa.network=internal"
 
+  # Task Completion Service — receives push notifications from OmniFocus completion watcher
+  task-completion-service:
+    build: ./task-completion-service
+    container_name: task-completion-service
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    volumes:
+      - task-completion-data:/data
+    networks: [pa-internal]
+    environment:
+      STATE_DIR: /data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8092/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "com.ai-pa.service=task-completion-service"
+      - "com.ai-pa.component=completion-service"
+      - "com.ai-pa.network=internal"
+
   # Open WebUI is the front-end UI to Letta
   open-webui:
     image: ghcr.io/open-webui/open-webui:0.6.22
@@ -1536,6 +1563,7 @@ volumes:
   content-database-data:
   watch-history-credentials:
   entity-backfill-data:
+  task-completion-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring
