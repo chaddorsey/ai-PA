@@ -360,7 +360,7 @@ struct PlusButtonView: View {
         }
         .buttonStyle(.plain)
         .opacity(effectiveOpacity)
-        .animation(.easeInOut(duration: 0.1), value: isHovered)
+        .animation(.easeInOut(duration: 0.2), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }
