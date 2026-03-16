@@ -272,6 +272,42 @@ final class TimerState: ObservableObject {
         bridge.navigateToTask(taskId: currentTaskId)
     }
 
+    // Dequeue animation state
+    @Published var isDequeuing: Bool = false
+    @Published var dequeueTaskName: String = ""
+
+    /// Remove current task from queue without completing it (paused/queued only)
+    func dequeueCurrentTask() {
+        guard widgetState == .paused || widgetState == .queued else { return }
+        guard !currentTaskId.isEmpty else { return }
+
+        // If paused, stop the timer but don't complete
+        if widgetState == .paused {
+            bridge.pauseTimer() // ensure paused state
+        }
+
+        let removedId = currentTaskId
+        dequeueTaskName = currentTaskName
+        isDequeuing = true
+
+        // Remove from queue
+        queue.removeTask(id: removedId)
+
+        // After animation (2s), transition to next task or idle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self else { return }
+            self.isDequeuing = false
+            self.dequeueTaskName = ""
+
+            let vq = self.visibleQueue
+            if !vq.isEmpty {
+                self.transitionToQueued(index: 0)
+            } else {
+                self.widgetState = .idle
+            }
+        }
+    }
+
     /// Add selected OmniFocus tasks to the queue (called by plus button)
     func queueSelectedTasks() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in

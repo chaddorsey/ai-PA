@@ -17,11 +17,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var plusWindow: NSWindow?
     private var confettiWindow: NSWindow?
+    private var dequeueWindow: NSWindow?
     private let state = TimerState()
     private let widgetFade = FadeManager(totalDuration: 30)
     private let undoFade = FadeManager(totalDuration: 15)
     private let confetti = ConfettiState()
     private var cancellables = Set<AnyCancellable>()
+    private var dequeueAnimTimer: AnyCancellable?
 
     // Animation state
     private var pulseOpacity: Double = 1.0
@@ -132,6 +134,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if self.state.widgetState == .paused || self.state.widgetState == .queued {
                     self.state.widgetState = .idle
                 }
+            }
+            .store(in: &cancellables)
+
+        // Watch for dequeue animation
+        state.$isDequeuing
+            .dropFirst()
+            .filter { $0 }
+            .sink { [weak self] _ in
+                self?.playDequeueAnimation()
             }
             .store(in: &cancellables)
 
@@ -345,6 +356,79 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateView()
             setCapsLock(on: false)
         }
+    }
+
+    // MARK: - Dequeue Animation
+
+    private func playDequeueAnimation() {
+        guard let screen = NSScreen.main, let widgetWin = window else { return }
+
+        let wf = widgetWin.frame
+        let screenMidY = screen.frame.midY
+        let fallDistance = wf.minY - screenMidY
+
+        // Create a ghost window matching the widget
+        let ghostLabel = Text(state.dequeueTaskName)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(.black)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gray.opacity(0.3))
+            )
+            .frame(width: wf.width, height: wf.height)
+
+        let ghostHosting = NSHostingView(rootView: ghostLabel)
+
+        let ghostWin = NSWindow(
+            contentRect: NSRect(x: wf.minX, y: wf.minY, width: wf.width, height: wf.height),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        ghostWin.level = .floating
+        ghostWin.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        ghostWin.isOpaque = false
+        ghostWin.backgroundColor = .clear
+        ghostWin.hasShadow = false
+        ghostWin.contentView = ghostHosting
+        ghostWin.ignoresMouseEvents = true
+        ghostWin.alphaValue = 0.2
+        ghostWin.orderFront(nil)
+        dequeueWindow = ghostWin
+
+        let startTime = Date()
+        let duration: TimeInterval = 2.0
+
+        dequeueAnimTimer = Timer.publish(every: 1.0 / 30, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self, let ghost = self.dequeueWindow else { return }
+
+                let elapsed = Date().timeIntervalSince(startTime)
+                let progress = min(elapsed / duration, 1.0)
+
+                // Fall with slight acceleration
+                let easedProgress = progress * progress
+                let yOffset = easedProgress * fallDistance
+
+                // Position
+                var frame = ghost.frame
+                frame.origin.y = wf.minY - yOffset
+                ghost.setFrame(frame, display: false)
+
+                // Opacity: start at 0.2, fade to 0 linearly
+                ghost.alphaValue = CGFloat(0.2 * (1.0 - progress))
+
+                if progress >= 1.0 {
+                    ghost.orderOut(nil)
+                    self.dequeueWindow = nil
+                    self.dequeueAnimTimer?.cancel()
+                    self.dequeueAnimTimer = nil
+                }
+            }
     }
 
     // MARK: - Caps Lock LED Control

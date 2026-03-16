@@ -114,11 +114,14 @@ struct WidgetView: View {
 
     private var mainContent: some View {
         VStack(spacing: 0) {
-            // Primary row: buttons | task name | estimate
+            // Primary row: buttons | task name | dequeue | estimate
             HStack(spacing: 4) {
                 buttonColumn
                 taskNameView
                 Spacer(minLength: 4)
+                if canDequeue {
+                    dequeueButton
+                }
                 estimateColumn
             }
             .padding(.horizontal, WidgetLayout.horizontalPadding)
@@ -233,6 +236,22 @@ struct WidgetView: View {
             }
             .offset(x: completingPhase == .slideOut ? slideOutOffset : 0)
             .opacity(completingPhase == .fadeIn ? fadeInOpacity : 1.0)
+    }
+
+    // MARK: - Dequeue Button
+
+    private var canDequeue: Bool {
+        state.widgetState == .paused || state.widgetState == .queued
+    }
+
+    private var dequeueButton: some View {
+        Button(action: { state.dequeueCurrentTask() }) {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.black.opacity(0.5))
+        }
+        .buttonStyle(HoverButtonStyle())
+        .frame(width: 18)
     }
 
     // MARK: - Estimate Column
