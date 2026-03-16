@@ -324,10 +324,20 @@ struct PlusButtonView: View {
     private let baseColor = Color(red: 0.2, green: 0.78, blue: 0.35)
 
     private var desaturatedCenter: Color {
-        // 90% lower saturation (3x the original 30%): shift heavily toward gray
-        Color(red: 0.2 + 0.9 * (0.5 - 0.2),
-              green: 0.78 - 0.9 * (0.78 - 0.5),
-              blue: 0.35 + 0.9 * (0.5 - 0.35))
+        // 30% lower saturation: shift toward gray
+        Color(red: 0.2 + 0.3 * (0.5 - 0.2),
+              green: 0.78 - 0.3 * (0.78 - 0.5),
+              blue: 0.35 + 0.3 * (0.5 - 0.35))
+    }
+
+    private var effectiveOpacity: Double {
+        isHovered ? 1.0 : baseOpacity
+    }
+
+    // Plus sign grayscale tracks opacity: at 50% opacity → 50% gray (0.5), at 100% → black (0.0)
+    private var plusColor: Color {
+        let gray = 1.0 - effectiveOpacity  // 1.0 opacity → 0.0 gray (black), 0.5 opacity → 0.5 gray
+        return Color(white: gray)
     }
 
     var body: some View {
@@ -345,11 +355,11 @@ struct PlusButtonView: View {
                     .frame(width: 28, height: 28)
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.black)
+                    .foregroundColor(plusColor)
             }
         }
         .buttonStyle(.plain)
-        .opacity(isHovered ? 1.0 : baseOpacity)
+        .opacity(effectiveOpacity)
         .animation(.easeInOut(duration: 0.1), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
