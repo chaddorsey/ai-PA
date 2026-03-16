@@ -87,9 +87,9 @@ final class QueueManager: ObservableObject {
         saveQueue()
     }
 
-    // MARK: - Private
+    // MARK: - Persistence
 
-    private func saveQueue() {
+    func saveQueue() {
         let file = QueueFile(tasks: taskIds)
         do {
             let data = try JSONEncoder().encode(file)

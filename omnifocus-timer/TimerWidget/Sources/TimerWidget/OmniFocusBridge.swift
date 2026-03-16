@@ -123,6 +123,26 @@ final class OmniFocusBridge {
         )
     }
 
+    /// Get IDs of currently selected tasks in OmniFocus
+    func getSelectedTaskIds() -> [String] {
+        let js = """
+        (function() {
+            var sel = document.windows[0].selection.tasks;
+            var ids = [];
+            for (var i = 0; i < sel.length; i++) {
+                ids.push(sel[i].id.primaryKey);
+            }
+            return JSON.stringify(ids);
+        })()
+        """
+        guard let raw = evaluateJS(js),
+              let data = raw.data(using: .utf8),
+              let ids = try? JSONSerialization.jsonObject(with: data) as? [String] else {
+            return []
+        }
+        return ids
+    }
+
     func navigateToTask(taskId: String) {
         let urlString = "omnifocus:///task/\(taskId)"
         if let url = URL(string: urlString) {

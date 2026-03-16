@@ -308,3 +308,35 @@ struct WidgetView: View {
         .buttonStyle(HoverButtonStyle())
     }
 }
+
+// MARK: - Plus Button View
+
+struct PlusButtonView: View {
+    let action: () -> Void
+    let isWidgetVisible: () -> Bool
+    @State private var isHovered = false
+
+    private var baseOpacity: Double {
+        isWidgetVisible() ? 0.5 : 0.7
+    }
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 24, height: 24)
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+            }
+        }
+        .buttonStyle(.plain)
+        .opacity(isHovered ? 1.0 : baseOpacity)
+        .animation(.easeInOut(duration: 0.1), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .frame(width: 28, height: 28)
+    }
+}

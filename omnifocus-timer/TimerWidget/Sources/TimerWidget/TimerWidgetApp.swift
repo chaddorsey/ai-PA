@@ -15,6 +15,7 @@ struct TimerWidgetApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
+    private var plusWindow: NSWindow?
     private var confettiWindow: NSWindow?
     private let state = TimerState()
     private let widgetFade = FadeManager(totalDuration: 30)
@@ -78,6 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
 
         setupConfettiWindow()
+        setupPlusButton()
         setupTrackingArea()
 
         // Observe state changes
@@ -177,6 +179,68 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         confettiWindow = confWin
     }
 
+    private func setupPlusButton() {
+        guard let screen = NSScreen.main else { return }
+
+        let plusSize: CGFloat = 28
+        let margin: CGFloat = 8
+
+        let plusView = PlusButtonView(
+            action: { [weak self] in self?.state.queueSelectedTasks() },
+            isWidgetVisible: { [weak self] in
+                guard let self = self else { return false }
+                return self.isVisible(for: self.state.widgetState)
+            }
+        )
+        let hosting = NSHostingView(rootView: plusView)
+
+        let plusWin = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: plusSize, height: plusSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        plusWin.level = .floating
+        plusWin.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        plusWin.isOpaque = false
+        plusWin.backgroundColor = .clear
+        plusWin.hasShadow = false
+        plusWin.contentView = hosting
+        plusWin.ignoresMouseEvents = false
+
+        // Position in upper-right corner
+        let visibleFrame = screen.visibleFrame
+        let x = visibleFrame.maxX - plusSize - margin
+        let y = visibleFrame.maxY - plusSize - margin
+        plusWin.setFrameOrigin(NSPoint(x: x, y: y))
+
+        plusWin.orderFront(nil)
+        plusWindow = plusWin
+
+        // Reposition the widget window to be left of the plus button
+        repositionWidgetRelativeToPlus()
+
+        // Update widget position whenever visibility changes
+        state.$widgetState
+            .sink { [weak self] _ in
+                self?.repositionWidgetRelativeToPlus()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func repositionWidgetRelativeToPlus() {
+        guard let screen = NSScreen.main, let widgetWin = window, let plusWin = plusWindow else { return }
+        let visibleFrame = screen.visibleFrame
+        let plusFrame = plusWin.frame
+        let buffer: CGFloat = 6
+        let widgetFrame = widgetWin.frame
+
+        // Widget right edge sits left of plus button with buffer
+        let x = plusFrame.minX - widgetFrame.width - buffer
+        let y = visibleFrame.maxY - widgetFrame.height - 8
+        widgetWin.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
     private func setupTrackingArea() {
         guard let hosting = hostingView, let window = self.window else { return }
         let tracker = MouseTrackingView(frame: hosting.bounds)
@@ -203,8 +267,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func positionWindow(_ window: NSWindow) {
         guard let screen = NSScreen.main else { return }
         let visibleFrame = screen.visibleFrame
+        let plusWidth: CGFloat = 28
+        let plusMargin: CGFloat = 8
+        let buffer: CGFloat = 6
         let windowFrame = window.frame
-        let x = visibleFrame.maxX - windowFrame.width - 12
+        // Leave room for plus button on the right
+        let x = visibleFrame.maxX - plusWidth - plusMargin - buffer - windowFrame.width
         let y = visibleFrame.maxY - windowFrame.height - 8
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }

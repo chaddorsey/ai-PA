@@ -103,6 +103,7 @@ final class TimerState: ObservableObject {
             if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
             if let est = status?.originalEstimate { currentEstimateMin = est }
             showUndo = false
+            autoQueueRunningTask()
 
         case "paused":
             widgetState = .paused
@@ -269,5 +270,35 @@ final class TimerState: ObservableObject {
     func taskNameClicked() {
         guard !currentTaskId.isEmpty else { return }
         bridge.navigateToTask(taskId: currentTaskId)
+    }
+
+    /// Add selected OmniFocus tasks to the queue (called by plus button)
+    func queueSelectedTasks() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let ids = self.bridge.getSelectedTaskIds()
+            guard !ids.isEmpty else { return }
+            DispatchQueue.main.async {
+                for id in ids {
+                    if !self.queue.taskIds.contains(id) {
+                        self.queue.taskIds.append(id)
+                    }
+                }
+                self.queue.saveQueue()
+                // Trigger resolve on next poll, but also do it now
+                DispatchQueue.global(qos: .userInitiated).async {
+                    self.queue.resolveFromOmniFocus(bridge: self.bridge)
+                }
+            }
+        }
+    }
+
+    /// Auto-queue a running task that isn't in the queue
+    func autoQueueRunningTask() {
+        guard !currentTaskId.isEmpty else { return }
+        if !queue.taskIds.contains(currentTaskId) {
+            queue.taskIds.insert(currentTaskId, at: 0)
+            queue.saveQueue()
+        }
     }
 }
