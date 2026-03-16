@@ -151,11 +151,11 @@ struct WidgetView: View {
             if isWidgetHovered && state.widgetState != .collapsed && state.widgetState != .docked && state.widgetState != .idle {
                 Button(action: { state.dockWidget() }) {
                     VStack(spacing: 0) {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(.black.opacity(0.5))
+                        Image(systemName: "chevron.compact.up")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.black.opacity(0.7))
                     }
-                    .frame(width: 32, height: 10)
+                    .frame(width: 28, height: 8)
                     .background(
                         UnevenRoundedRectangle(
                             topLeadingRadius: 3,

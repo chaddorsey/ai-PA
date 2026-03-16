@@ -423,7 +423,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Dock Animation (vertical roll up/down)
 
-    private static let dockTabHeight: CGFloat = WindowLayout.widgetHeight / 2  // half widget height
+    private static let dockTabHeight: CGFloat = WindowLayout.widgetHeight / 8  // 1/4 of previous
     private static let dockTabWidth: CGFloat = dockTabHeight * 3  // 3:1 aspect ratio
     private var isDocked: Bool = false
 
@@ -473,8 +473,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         collapsePulseTimer?.cancel()
         let startTime = Date()
         let cycleDuration: Double = 4.0
-        let minOpacity: Double = 0.875  // only 12.5% drop from full
-        let range = 1.0 - minOpacity     // 0.125
+        let minOpacity: Double = 0.875
+        let range = 1.0 - minOpacity
 
         collapsePulseTimer = Timer.publish(every: 1.0 / 30, on: .main, in: .common)
             .autoconnect()
@@ -486,30 +486,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let elapsed = Date().timeIntervalSince(startTime)
                 let phase = elapsed.truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
 
-                // Asymmetric easing:
-                // 0.0–0.25: ease out of full opacity (same steep ramp down) — quick departure from 1.0
-                // 0.25–0.75: ease in and out of low opacity (slow, gentle bottom) — half ramp slope
-                // 0.75–1.0: ease in to full opacity (same steep ramp up as departure)
-                let opacity: Double
-                if phase < 0.25 {
-                    // Ramp down: 1.0 → minOpacity over 25% of cycle
-                    let t = phase / 0.25
-                    let eased = t * t  // ease-in (accelerating departure from 1.0)
-                    opacity = 1.0 - range * eased
-                } else if phase < 0.75 {
-                    // Gentle bottom: stay near minOpacity with slow ease-in-out
-                    let t = (phase - 0.25) / 0.5
-                    let eased = 0.5 - 0.5 * cos(t * .pi)  // ease-in-out
-                    // Go from minOpacity down slightly and back
-                    opacity = minOpacity - range * 0.3 * sin(t * .pi)
-                } else {
-                    // Ramp up: minOpacity → 1.0 over 25% of cycle
-                    let t = (phase - 0.75) / 0.25
-                    let eased = t * t  // ease-in (same ramp as departure)
-                    opacity = minOpacity + range * eased
-                }
+                // Breathing curve: raised cosine for smooth bounce off both ends
+                // cos gives 1.0 at phase=0, -1.0 at phase=0.5, 1.0 at phase=1.0
+                // Map to: 1.0 at top, minOpacity at bottom, smooth turnaround at both
+                let cosVal = cos(phase * 2.0 * .pi)
+                let opacity = minOpacity + range * (cosVal + 1.0) / 2.0
 
-                self.pulseOpacity = max(minOpacity - range * 0.3, min(1.0, opacity))
+                self.pulseOpacity = opacity
                 self.updateView()
             }
     }
@@ -574,11 +557,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let startTime = Date()
         let fadeOutDuration: TimeInterval = 0.8
-        let hopDuration: TimeInterval = 0.25
+        let totalFlightDuration: TimeInterval = 0.75  // total arc time
         let hopHeight: CGFloat = 15  // pixels upward
-        let dropDuration: TimeInterval = 0.5
-        let dropStartTime: TimeInterval = fadeOutDuration * 0.5  // start falling halfway through fade
-        let totalDuration = max(fadeOutDuration, dropStartTime + dropDuration)
+        let peakTime: TimeInterval = 0.15  // time to reach apex (short — fast launch)
+        let totalDuration = max(fadeOutDuration, totalFlightDuration)
 
         dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
             .autoconnect()
@@ -591,26 +573,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
                 ghost.alphaValue = CGFloat(0.7 * (1.0 - fadeProgress))
 
-                // Movement: hop up first (0–0.25s), then fall
-                var yOffset: CGFloat = 0
-                if elapsed < hopDuration {
-                    // Hop up: ease-out (decelerating upward)
-                    let hopProgress = elapsed / hopDuration
-                    let eased = 1.0 - (1.0 - hopProgress) * (1.0 - hopProgress)
-                    yOffset = -hopHeight * CGFloat(eased)  // negative = upward in macOS coords
-                } else if elapsed < dropStartTime {
-                    // Hold at hop peak briefly
-                    yOffset = -hopHeight
-                } else {
-                    // Fall from hop peak downward
-                    let dropElapsed = elapsed - dropStartTime
-                    let dropProgress = min(dropElapsed / dropDuration, 1.0)
-                    let easedDrop = dropProgress * dropProgress * dropProgress
-                    yOffset = -hopHeight + (hopHeight + fallDistance) * CGFloat(easedDrop)
-                }
+                // Parabolic arc: initial velocity upward, gravity pulls down
+                // y(t) = v0*t - 0.5*g*t^2 where v0 and g are chosen so:
+                //   peak at t=peakTime, y(peakTime)=hopHeight
+                //   y(totalFlightDuration)=fallDistance (below start)
+                // v0 = hopHeight / peakTime + 0.5 * g * peakTime
+                // At peak: v0 = g * peakTime → g = v0 / peakTime
+                // hopHeight = v0 * peakTime - 0.5 * g * peakTime^2
+                //           = 0.5 * v0 * peakTime → v0 = 2 * hopHeight / peakTime
+                let v0 = 2.0 * Double(hopHeight) / peakTime
+                let g = v0 / peakTime
+                let t = min(elapsed, totalFlightDuration)
+                let displacement = v0 * t - 0.5 * g * t * t  // positive = upward
 
                 var frame = ghost.frame
-                frame.origin.y = wf.minY - yOffset
+                // In macOS coords, higher y = higher on screen
+                frame.origin.y = wf.minY + CGFloat(displacement)
                 ghost.setFrame(frame, display: false)
 
                 if elapsed >= totalDuration {
