@@ -90,6 +90,7 @@ final class TimerState: ObservableObject {
 
     private func handlePollResult(_ status: TimerStatusResponse?) {
         let newState = status?.state ?? "idle"
+        print("[poll] state=\(newState) widget=\(widgetState) queue=\(queue.taskIds.count) grace=\(isInGracePeriod)")
 
         // During grace period, only update task info but don't change widget state
         if isInGracePeriod {
@@ -166,6 +167,7 @@ final class TimerState: ObservableObject {
     /// Called when queue taskIds change. ONLY handles idle->queued.
     /// Never sets idle — that is the poll's responsibility.
     private func onQueueChanged(_ ids: [String]) {
+        print("[queue] ids changed: \(ids.count) ids, widget=\(widgetState)")
         if widgetState == .idle && !ids.isEmpty {
             transitionToQueued(index: 0)
         } else if (widgetState == .queued || widgetState == .paused) && !ids.isEmpty && queueIndex >= ids.count {
