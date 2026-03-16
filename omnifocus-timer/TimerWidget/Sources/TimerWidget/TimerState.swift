@@ -174,9 +174,11 @@ final class TimerState: ObservableObject {
     // MARK: - Queue Management
 
     private func onQueueChanged(_ tasks: [QueuedTask]) {
+        print("[queue] changed: \(tasks.count) tasks, state=\(widgetState)")
+        // Don't transition to idle if we're running, paused, completing, etc.
         if widgetState == .idle && !tasks.isEmpty {
             transitionToQueued(index: 0)
-        } else if widgetState == .queued && tasks.isEmpty {
+        } else if widgetState == .queued && tasks.isEmpty && !isInGracePeriod {
             widgetState = .idle
             currentTaskId = ""
             currentTaskName = ""
@@ -212,10 +214,10 @@ final class TimerState: ObservableObject {
         switch widgetState {
         case .queued:
             let taskId = currentTaskId
-            queue.removeTask(id: taskId)
             cachedTaskId = currentTaskId
             cachedTaskName = currentTaskName
-            widgetState = .running
+            widgetState = .running  // Set BEFORE queue removal to prevent idle flash
+            queue.removeTask(id: taskId)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.bridge.startTimer(taskId: taskId)
             }
