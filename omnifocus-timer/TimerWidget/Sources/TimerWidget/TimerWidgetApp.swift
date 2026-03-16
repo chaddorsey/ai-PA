@@ -375,14 +375,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWin.hasShadow = false
         ghostWin.contentView = imageView
         ghostWin.ignoresMouseEvents = true
-        ghostWin.alphaValue = 0.3
+        ghostWin.alphaValue = 0.7
         ghostWin.orderFront(nil)
         dequeueWindow = ghostWin
+        print("[dequeue] ghost window created at \(wf), fallDistance=\(fallDistance)")
 
         let startTime = Date()
-        let fadeOutDuration: TimeInterval = 0.4
+        let fadeOutDuration: TimeInterval = 0.6
         let dropDuration: TimeInterval = 0.5
-        let dropDelay: TimeInterval = 0.2
+        let dropDelay: TimeInterval = 0.3
         let totalDuration = dropDelay + dropDuration
 
         dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
@@ -392,9 +393,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 let elapsed = Date().timeIntervalSince(startTime)
 
-                // Opacity: fade from 0.3 to 0 across fadeOutDuration
+                // Opacity: fade from 0.7 to 0 across fadeOutDuration
                 let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
-                ghost.alphaValue = CGFloat(0.3 * (1.0 - fadeProgress))
+                ghost.alphaValue = CGFloat(0.7 * (1.0 - fadeProgress))
 
                 // Drop: begins at dropDelay, accelerates with cubic ease-in
                 if elapsed > dropDelay {

@@ -132,6 +132,7 @@ struct WidgetView: View {
                     .padding(.bottom, 6)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: WidgetLayout.cornerRadius)
                 .fill(backgroundColor)
