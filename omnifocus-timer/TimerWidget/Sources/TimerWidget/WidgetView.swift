@@ -116,7 +116,7 @@ struct WidgetView: View {
         .opacity(effectiveOpacity)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
-                showDockTab = hovering
+                isWidgetHovered = hovering
             }
         }
     }
@@ -144,24 +144,30 @@ struct WidgetView: View {
 
     // MARK: - Dock Tab (hover zone at top center)
 
-    @State private var showDockTab: Bool = false
+    @State private var isWidgetHovered: Bool = false
 
     private var dockTabOverlay: some View {
         VStack {
-            if showDockTab && state.widgetState != .collapsed && state.widgetState != .docked && state.widgetState != .idle {
+            if isWidgetHovered && state.widgetState != .collapsed && state.widgetState != .docked && state.widgetState != .idle {
                 Button(action: { state.dockWidget() }) {
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(.black.opacity(0.5))
-                        .frame(width: 32, height: 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(backgroundColor.opacity(0.8))
+                    VStack(spacing: 0) {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(.black.opacity(0.5))
+                    }
+                    .frame(width: 32, height: 10)
+                    .background(
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 3,
+                            bottomLeadingRadius: 0,
+                            bottomTrailingRadius: 0,
+                            topTrailingRadius: 3
                         )
+                        .fill(backgroundColor.opacity(0.7))
+                    )
                 }
                 .buttonStyle(.plain)
-                .offset(y: -12)
-                .transition(.opacity)
+                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
             }
             Spacer()
         }

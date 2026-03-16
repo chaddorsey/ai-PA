@@ -472,6 +472,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func startCollapsePulse() {
         collapsePulseTimer?.cancel()
         let startTime = Date()
+        let cycleDuration: Double = 4.0
+        let minOpacity: Double = 0.875  // only 12.5% drop from full
+        let range = 1.0 - minOpacity     // 0.125
+
         collapsePulseTimer = Timer.publish(every: 1.0 / 30, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
@@ -480,10 +484,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
                 let elapsed = Date().timeIntervalSince(startTime)
-                let phase = elapsed.truncatingRemainder(dividingBy: 1.0)
-                // Sine wave: 0.5 to 1.0
-                let sine = sin(phase * .pi * 2)
-                self.pulseOpacity = 0.75 + 0.25 * sine  // 0.5 to 1.0
+                let phase = elapsed.truncatingRemainder(dividingBy: cycleDuration) / cycleDuration
+
+                // Asymmetric easing:
+                // 0.0–0.25: ease out of full opacity (same steep ramp down) — quick departure from 1.0
+                // 0.25–0.75: ease in and out of low opacity (slow, gentle bottom) — half ramp slope
+                // 0.75–1.0: ease in to full opacity (same steep ramp up as departure)
+                let opacity: Double
+                if phase < 0.25 {
+                    // Ramp down: 1.0 → minOpacity over 25% of cycle
+                    let t = phase / 0.25
+                    let eased = t * t  // ease-in (accelerating departure from 1.0)
+                    opacity = 1.0 - range * eased
+                } else if phase < 0.75 {
+                    // Gentle bottom: stay near minOpacity with slow ease-in-out
+                    let t = (phase - 0.25) / 0.5
+                    let eased = 0.5 - 0.5 * cos(t * .pi)  // ease-in-out
+                    // Go from minOpacity down slightly and back
+                    opacity = minOpacity - range * 0.3 * sin(t * .pi)
+                } else {
+                    // Ramp up: minOpacity → 1.0 over 25% of cycle
+                    let t = (phase - 0.75) / 0.25
+                    let eased = t * t  // ease-in (same ramp as departure)
+                    opacity = minOpacity + range * eased
+                }
+
+                self.pulseOpacity = max(minOpacity - range * 0.3, min(1.0, opacity))
                 self.updateView()
             }
     }
@@ -548,9 +574,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let startTime = Date()
         let fadeOutDuration: TimeInterval = 0.8
+        let hopDuration: TimeInterval = 0.25
+        let hopHeight: CGFloat = 15  // pixels upward
         let dropDuration: TimeInterval = 0.5
-        let dropDelay: TimeInterval = 0.4  // halfway through fade
-        let totalDuration = max(fadeOutDuration, dropDelay + dropDuration)
+        let dropStartTime: TimeInterval = fadeOutDuration * 0.5  // start falling halfway through fade
+        let totalDuration = max(fadeOutDuration, dropStartTime + dropDuration)
 
         dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
             .autoconnect()
@@ -563,17 +591,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
                 ghost.alphaValue = CGFloat(0.7 * (1.0 - fadeProgress))
 
-                // Drop: begins at dropDelay, accelerates with cubic ease-in
-                if elapsed > dropDelay {
-                    let dropElapsed = elapsed - dropDelay
+                // Movement: hop up first (0–0.25s), then fall
+                var yOffset: CGFloat = 0
+                if elapsed < hopDuration {
+                    // Hop up: ease-out (decelerating upward)
+                    let hopProgress = elapsed / hopDuration
+                    let eased = 1.0 - (1.0 - hopProgress) * (1.0 - hopProgress)
+                    yOffset = -hopHeight * CGFloat(eased)  // negative = upward in macOS coords
+                } else if elapsed < dropStartTime {
+                    // Hold at hop peak briefly
+                    yOffset = -hopHeight
+                } else {
+                    // Fall from hop peak downward
+                    let dropElapsed = elapsed - dropStartTime
                     let dropProgress = min(dropElapsed / dropDuration, 1.0)
                     let easedDrop = dropProgress * dropProgress * dropProgress
-                    let yOffset = easedDrop * fallDistance
-
-                    var frame = ghost.frame
-                    frame.origin.y = wf.minY - yOffset
-                    ghost.setFrame(frame, display: false)
+                    yOffset = -hopHeight + (hopHeight + fallDistance) * CGFloat(easedDrop)
                 }
+
+                var frame = ghost.frame
+                frame.origin.y = wf.minY - yOffset
+                ghost.setFrame(frame, display: false)
 
                 if elapsed >= totalDuration {
                     ghost.orderOut(nil)
