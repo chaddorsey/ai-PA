@@ -324,10 +324,10 @@ struct PlusButtonView: View {
     private let baseColor = Color(red: 0.2, green: 0.78, blue: 0.35)
 
     private var desaturatedCenter: Color {
-        // 30% lower saturation: shift toward gray
-        Color(red: 0.2 + 0.3 * (0.5 - 0.2),
-              green: 0.78 - 0.3 * (0.78 - 0.5),
-              blue: 0.35 + 0.3 * (0.5 - 0.35))
+        // 90% lower saturation (3x the original 30%): shift heavily toward gray
+        Color(red: 0.2 + 0.9 * (0.5 - 0.2),
+              green: 0.78 - 0.9 * (0.78 - 0.5),
+              blue: 0.35 + 0.9 * (0.5 - 0.35))
     }
 
     var body: some View {
