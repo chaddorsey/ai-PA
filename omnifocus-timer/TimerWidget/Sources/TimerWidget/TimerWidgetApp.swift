@@ -375,7 +375,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWin.hasShadow = false
         ghostWin.contentView = imageView
         ghostWin.ignoresMouseEvents = true
-        ghostWin.alphaValue = 0.7
+        ghostWin.alphaValue = 0.3
         ghostWin.orderFront(nil)
         dequeueWindow = ghostWin
         print("[dequeue] ghost window created at \(wf), fallDistance=\(fallDistance)")
@@ -395,7 +395,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 // Opacity: fade from 0.7 to 0 across fadeOutDuration
                 let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
-                ghost.alphaValue = CGFloat(0.7 * (1.0 - fadeProgress))
+                ghost.alphaValue = CGFloat(0.3 * (1.0 - fadeProgress))
 
                 // Drop: begins at dropDelay, accelerates with cubic ease-in
                 if elapsed > dropDelay {
