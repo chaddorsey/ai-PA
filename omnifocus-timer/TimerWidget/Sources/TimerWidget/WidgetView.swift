@@ -320,15 +320,32 @@ struct PlusButtonView: View {
         isWidgetVisible() ? 0.5 : 0.7
     }
 
+    // Match widget's running green
+    private let baseColor = Color(red: 0.2, green: 0.78, blue: 0.35)
+
+    private var desaturatedCenter: Color {
+        // 30% lower saturation: shift toward gray
+        Color(red: 0.2 + 0.3 * (0.5 - 0.2),
+              green: 0.78 - 0.3 * (0.78 - 0.5),
+              blue: 0.35 + 0.3 * (0.5 - 0.35))
+    }
+
     var body: some View {
         Button(action: action) {
             ZStack {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 24, height: 24)
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(
+                        RadialGradient(
+                            gradient: Gradient(colors: [desaturatedCenter, baseColor]),
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 14
+                        )
+                    )
+                    .frame(width: 28, height: 28)
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.black)
             }
         }
         .buttonStyle(.plain)
