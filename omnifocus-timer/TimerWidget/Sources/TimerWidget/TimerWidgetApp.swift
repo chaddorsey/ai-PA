@@ -221,7 +221,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Position in upper-right corner
         let visibleFrame = screen.visibleFrame
         let x = visibleFrame.maxX - plusSize - margin
-        let y = visibleFrame.maxY - plusSize - margin
+        // Top-align with widget: widget top = visibleFrame.maxY - 8
+        // Plus button top should match: y + plusSize = visibleFrame.maxY - 8
+        let y = visibleFrame.maxY - plusSize - 8
         plusWin.setFrameOrigin(NSPoint(x: x, y: y))
 
         plusWin.orderFront(nil)
@@ -312,7 +314,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             inactivityFade.stopFade()
             cancelInactivityTimer()
             startRunningPulse()
-            setCapsLock(on: true)
 
         case .queued:
             widgetFade.stopFade()
@@ -320,7 +321,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             inactivityFade.stopFade()
             startQueuedPulse()
             startInactivityTimer()
-            setCapsLock(on: false)
 
         case .paused:
             widgetFade.stopFade()
@@ -330,7 +330,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
             updateView()
-            startCapsLockBlink()
 
         case .completing:
             widgetFade.stopFade()
@@ -338,7 +337,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             inactivityFade.stopFade()
             cancelInactivityTimer()
             startCompletingAnimation()
-            setCapsLock(on: false)
 
         case .lastCompleted:
             pulseOpacity = 1.0
@@ -347,7 +345,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateView()
             widgetFade.startFade()
             undoFade.startFade()
-            setCapsLock(on: false)
 
         case .idle:
             widgetFade.stopFade()
@@ -356,7 +353,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queuedGlowOpacity = 0.0
             completingPhase = .inactive
             updateView()
-            setCapsLock(on: false)
         }
     }
 

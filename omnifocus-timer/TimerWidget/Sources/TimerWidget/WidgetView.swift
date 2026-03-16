@@ -142,7 +142,7 @@ struct WidgetView: View {
         .background(
             RoundedRectangle(cornerRadius: WidgetLayout.cornerRadius)
                 .fill(backgroundColor)
-                .animation(.easeInOut(duration: 0.5), value: state.widgetState)
+                .animation(.easeInOut(duration: 0.05), value: state.widgetState)
         )
         .clipShape(RoundedRectangle(cornerRadius: WidgetLayout.cornerRadius))
     }
