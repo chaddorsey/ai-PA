@@ -343,7 +343,7 @@ struct PlusButtonView: View {
     }
 
     // Speed threshold in points/sec — above this, use fast animation
-    private let speedThreshold: CGFloat = 400
+    private let speedThreshold: CGFloat = 150
 
     var body: some View {
         Button(action: action) {
