@@ -41,6 +41,7 @@ final class TimerState: ObservableObject {
     private var cachedTaskName: String = ""
     private var pollCancellable: AnyCancellable?
     private var queueCancellable: AnyCancellable?
+    private var userActionGraceUntil: Date = .distantPast
 
     init() {
         // Watch queue ID changes (file watcher triggers this)
@@ -88,12 +89,32 @@ final class TimerState: ObservableObject {
             }
     }
 
+    /// Suppress poll-driven state changes for a grace period after user actions.
+    /// This prevents the poll from overriding optimistic UI updates before the
+    /// osascript command has propagated to OmniFocus.
+    private func beginUserActionGrace() {
+        userActionGraceUntil = Date().addingTimeInterval(4.0)
+    }
+
+    private var isInGracePeriod: Bool {
+        Date() < userActionGraceUntil
+    }
+
     private func handlePollResult(_ status: TimerStatusResponse?) {
         let newState = status?.state ?? "idle"
         if status == nil {
             print("[poll] OmniFocus unavailable")
         } else {
             print("[poll] state=\(newState) task=\(status?.taskName ?? "nil")")
+        }
+
+        // During grace period, only update task info but don't change widget state
+        if isInGracePeriod {
+            if let id = status?.taskId { cachedTaskId = id }
+            if let name = status?.taskName { cachedTaskName = name }
+            if let est = status?.originalEstimate { currentEstimateMin = est }
+            previousPollState = newState
+            return
         }
 
         switch newState {
@@ -187,6 +208,7 @@ final class TimerState: ObservableObject {
     // MARK: - User Actions
 
     func playPressed() {
+        beginUserActionGrace()
         switch widgetState {
         case .queued:
             let taskId = currentTaskId
@@ -216,6 +238,7 @@ final class TimerState: ObservableObject {
 
     func pausePressed() {
         guard widgetState == .running else { return }
+        beginUserActionGrace()
         widgetState = .paused
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.bridge.pauseTimer()
@@ -224,6 +247,7 @@ final class TimerState: ObservableObject {
 
     func donePressed() {
         guard widgetState == .running || widgetState == .paused else { return }
+        beginUserActionGrace()
         widgetState = .completing
         let taskId = currentTaskId
         undoTaskId = taskId
