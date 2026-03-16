@@ -13,6 +13,18 @@ struct TimerWidgetApp: App {
     }
 }
 
+// MARK: - Layout Constants
+
+private enum WindowLayout {
+    static let widgetWidth: CGFloat = 300
+    static let widgetHeight: CGFloat = 64
+    static let plusSize: CGFloat = 28
+    static let margin: CGFloat = 8
+    static let buffer: CGFloat = 6
+    static let confettiWidth: CGFloat = 350
+    static let confettiHeight: CGFloat = 500
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var plusWindow: NSWindow?
@@ -63,7 +75,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.hostingView = hosting
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 64),
+            contentRect: NSRect(x: 0, y: 0,
+                                width: WindowLayout.widgetWidth,
+                                height: WindowLayout.widgetHeight),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -89,7 +103,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] newState in
                 guard let self = self else { return }
-                print("[widget] state transition → \(newState)")
                 if self.isVisible(for: newState) {
                     self.window?.alphaValue = 1.0
                     self.window?.orderFront(nil)
@@ -97,21 +110,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.window?.orderOut(nil)
                 }
                 self.handleStateTransition(newState)
-            }
-            .store(in: &cancellables)
-
-        // Observe queue count for height changes
-        state.queue.$resolvedTasks  // observe raw, visibleQueue filters
-            .map { $0.count > 1 }
-            .removeDuplicates()
-            .sink { [weak self] hasNav in
-                guard let self = self, let window = self.window else { return }
-                let newHeight: CGFloat = hasNav ? 64 : 52
-                var frame = window.frame
-                let dy = frame.height - newHeight
-                frame.size.height = newHeight
-                frame.origin.y += dy
-                window.setFrame(frame, display: true, animate: true)
             }
             .store(in: &cancellables)
 
@@ -161,9 +159,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let confettiView = ConfettiView(confetti: confetti)
         let confettiHosting = NSHostingView(rootView: confettiView)
 
-        // Confetti window extends below the widget
         let confWin = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 350, height: 500),
+            contentRect: NSRect(x: 0, y: 0,
+                                width: WindowLayout.confettiWidth,
+                                height: WindowLayout.confettiHeight),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -179,13 +178,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Position confetti window centered on widget, extending below
         if let widgetWindow = window {
             let wf = widgetWindow.frame
-            let x = wf.midX - 175
-            let y = wf.minY - 436 // extend well below widget
+            let x = wf.midX - WindowLayout.confettiWidth / 2
+            let y = wf.minY - (WindowLayout.confettiHeight - WindowLayout.widgetHeight)
             confWin.setFrameOrigin(NSPoint(x: x, y: y))
         } else {
             let visibleFrame = screen.visibleFrame
-            let x = visibleFrame.maxX - 350 - 12
-            let y = visibleFrame.maxY - 500 - 8
+            let x = visibleFrame.maxX - WindowLayout.confettiWidth - 12
+            let y = visibleFrame.maxY - WindowLayout.confettiHeight - WindowLayout.margin
             confWin.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
@@ -194,9 +193,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupPlusButton() {
         guard let screen = NSScreen.main else { return }
-
-        let plusSize: CGFloat = 28
-        let margin: CGFloat = 8
+        let visibleFrame = screen.visibleFrame
 
         let plusView = PlusButtonView(
             action: { [weak self] in self?.state.queueSelectedTasks() },
@@ -205,7 +202,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingView(rootView: plusView)
 
         let plusWin = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: plusSize, height: plusSize),
+            contentRect: NSRect(x: 0, y: 0,
+                                width: WindowLayout.plusSize,
+                                height: WindowLayout.plusSize),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -218,45 +217,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         plusWin.contentView = hosting
         plusWin.ignoresMouseEvents = false
 
-        // Position in upper-right corner, top-aligned with widget
-        let visibleFrame = screen.visibleFrame
-        let x = visibleFrame.maxX - plusSize - margin
-        // Use the widget window's actual top edge for alignment
-        let widgetTop: CGFloat
-        if let wf = window?.frame {
-            widgetTop = wf.maxY
-        } else {
-            widgetTop = visibleFrame.maxY - 8
-        }
-        // Offset down slightly to align with visual top of rounded rect (not window frame)
-        let y = widgetTop - plusSize - 4
-        plusWin.setFrameOrigin(NSPoint(x: x, y: y))
+        // Plus button: 8px from right edge, top at visibleFrame.maxY - 8
+        let plusX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+        let plusY = visibleFrame.maxY - WindowLayout.plusSize - WindowLayout.margin
+        plusWin.setFrameOrigin(NSPoint(x: plusX, y: plusY))
 
         plusWin.orderFront(nil)
         plusWindow = plusWin
-
-        // Reposition the widget window to be left of the plus button
-        repositionWidgetRelativeToPlus()
-
-        // Update widget position whenever visibility changes
-        state.$widgetState
-            .sink { [weak self] _ in
-                self?.repositionWidgetRelativeToPlus()
-            }
-            .store(in: &cancellables)
-    }
-
-    private func repositionWidgetRelativeToPlus() {
-        guard let screen = NSScreen.main, let widgetWin = window, let plusWin = plusWindow else { return }
-        let visibleFrame = screen.visibleFrame
-        let plusFrame = plusWin.frame
-        let buffer: CGFloat = 6
-        let widgetFrame = widgetWin.frame
-
-        // Widget right edge sits left of plus button with buffer
-        let x = plusFrame.minX - widgetFrame.width - buffer
-        let y = visibleFrame.maxY - widgetFrame.height - 8
-        widgetWin.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     private func setupTrackingArea() {
@@ -273,7 +240,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.undoFade.mouseExited()
             self?.inactivityFade.mouseExited()
         }
-        // Add tracking view as a sibling on top
         if let contentView = window.contentView {
             tracker.frame = contentView.bounds
             contentView.addSubview(tracker)
@@ -282,16 +248,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Positioning
 
+    /// Position widget: right-justified against plus button with buffer.
+    /// Both windows use visibleFrame.maxY - 8 as their top reference.
     private func positionWindow(_ window: NSWindow) {
         guard let screen = NSScreen.main else { return }
         let visibleFrame = screen.visibleFrame
-        let plusWidth: CGFloat = 28
-        let plusMargin: CGFloat = 8
-        let buffer: CGFloat = 6
-        let windowFrame = window.frame
-        // Leave room for plus button on the right
-        let x = visibleFrame.maxX - plusWidth - plusMargin - buffer - windowFrame.width
-        let y = visibleFrame.maxY - windowFrame.height - 8
+
+        // Widget right edge = plus left edge - buffer
+        let plusLeftX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+        let x = plusLeftX - WindowLayout.widgetWidth - WindowLayout.buffer
+        let y = visibleFrame.maxY - WindowLayout.widgetHeight - WindowLayout.margin
         window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
@@ -307,7 +273,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State Transitions
 
     private func handleStateTransition(_ newState: WidgetState) {
-        // Stop existing pulse
+        // Stop existing animations
         pulseTimer?.cancel()
         pulseTimer = nil
         completingTimer?.cancel()
@@ -371,7 +337,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let wf = widgetWin.frame
         let screenMidY = screen.frame.midY
         let fallDistance = wf.minY - screenMidY
-        let hasMoreTasks = state.visibleQueue.count > 0
 
         // Capture the widget as a bitmap snapshot for the ghost
         let bitmapRep = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)!
@@ -401,9 +366,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         dequeueWindow = ghostWin
 
         let startTime = Date()
-        let fadeOutDuration: TimeInterval = 0.4  // Widget fades out
-        let dropDuration: TimeInterval = 0.5     // Drop animation after fade starts
-        let dropDelay: TimeInterval = fadeOutDuration * 0.5  // Drop begins halfway through fade
+        let fadeOutDuration: TimeInterval = 0.4
+        let dropDuration: TimeInterval = 0.5
+        let dropDelay: TimeInterval = 0.2
         let totalDuration = dropDelay + dropDuration
 
         dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
@@ -413,7 +378,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 let elapsed = Date().timeIntervalSince(startTime)
 
-                // Opacity: fade from 0.3 to 0 across fadeOutDuration (slower than before)
+                // Opacity: fade from 0.3 to 0 across fadeOutDuration
                 let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
                 ghost.alphaValue = CGFloat(0.3 * (1.0 - fadeProgress))
 
@@ -453,7 +418,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startCapsLockBlink() {
         capsBlinkTimer?.cancel()
-        // Ensure LED starts on for the blink cycle
         if !getCapsLockState() {
             toggleCapsLockKey()
         }
@@ -473,20 +437,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func getCapsLockState() -> Bool {
-        // Check via IOKit CGEventFlags
         let flags = CGEventSource.flagsState(.combinedSessionState)
         return flags.contains(.maskAlphaShift)
     }
 
     private func toggleCapsLockKey() {
-        // Simulate a Caps Lock keypress via CGEvent
         let keyDown = CGEvent(keyboardEventSource: nil, virtualKey: 0x39, keyDown: true)
         let keyUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x39, keyDown: false)
         keyDown?.post(tap: .cghidEventTap)
         keyUp?.post(tap: .cghidEventTap)
     }
 
-    // MARK: - Inactivity Fade (60s for paused/queued without interaction)
+    // MARK: - Inactivity Fade (60s for queued without interaction)
 
     private func startInactivityTimer() {
         cancelInactivityTimer()
@@ -494,7 +456,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .delay(for: .seconds(60), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self = self else { return }
-                if self.state.widgetState == .paused || self.state.widgetState == .queued {
+                if self.state.widgetState == .queued {
                     self.inactivityFade.startFade()
                 }
             }
@@ -519,7 +481,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let elapsed = Date().timeIntervalSince(startTime)
                 let phase = elapsed.truncatingRemainder(dividingBy: Self.runningPulseDuration)
                 let normalized = phase / Self.runningPulseDuration
-                // Sine wave: 0.92 to 1.0
                 let sine = sin(normalized * .pi * 2)
                 self.pulseOpacity = 0.96 + 0.04 * sine
                 self.updateView()
@@ -541,14 +502,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let phase = elapsed.truncatingRemainder(dividingBy: Self.queuedTotalDuration)
 
                 if phase < Self.queuedSnapDuration {
-                    // Snap up: 0.7 -> 1.0 over 0.5s
                     let progress = phase / Self.queuedSnapDuration
                     self.pulseOpacity = 0.7 + 0.3 * progress
                     self.queuedGlowOpacity = progress
                 } else {
-                    // Ease out: 1.0 -> 0.7 over 2.5s
                     let easePhase = (phase - Self.queuedSnapDuration) / Self.queuedEaseDuration
-                    let eased = easePhase * easePhase // ease-out quadratic
+                    let eased = easePhase * easePhase
                     self.pulseOpacity = 1.0 - 0.3 * eased
                     self.queuedGlowOpacity = 1.0 - eased
                 }
@@ -577,25 +536,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self else { return }
                 let elapsed = Date().timeIntervalSince(startTime)
 
-                // Phase 2: slide out (0-3s)
+                // Phase 1: slide out (0-3s)
                 if elapsed < 3.0 {
                     self.completingPhase = .slideOut
                     let progress = min(elapsed / 3.0, 1.0)
-                    // Easing acceleration (ease-in)
                     let eased = progress * progress * progress
                     self.slideOutOffset = eased * 350
                 }
 
-                // Phase 3: fade in new task (1.5-4.5s)
+                // Phase 2: fade in new task (1.5-4.5s)
                 if elapsed >= 1.5 && elapsed < 4.5 {
                     self.completingPhase = .fadeIn
-                    self.slideOutOffset = 350 // keep old text off-screen
+                    self.slideOutOffset = 350
                     let fadeProgress = (elapsed - 1.5) / 3.0
-                    // Ease-in
                     self.fadeInOpacity = fadeProgress * fadeProgress
                 }
 
-                // Phase 4: done (after 4.5s)
+                // Phase 3: done (after 4.5s)
                 if elapsed >= 4.5 {
                     self.completingPhase = .done
                     self.slideOutOffset = 0
@@ -603,7 +560,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.completingTimer?.cancel()
                     self.completingTimer = nil
 
-                    // Hide confetti window
                     self.confettiWindow?.orderOut(nil)
                 }
 
@@ -658,7 +614,6 @@ class MouseTrackingView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Pass through clicks to views behind
         return nil
     }
 }

@@ -13,8 +13,7 @@ enum CompletingPhase {
 
 private enum WidgetLayout {
     static let width: CGFloat = 300
-    static let heightCompact: CGFloat = 52
-    static let heightWithNav: CGFloat = 64
+    static let fixedHeight: CGFloat = 64
     static let cornerRadius: CGFloat = 8
     static let horizontalPadding: CGFloat = 6
     static let verticalPadding: CGFloat = 4
@@ -79,10 +78,6 @@ struct WidgetView: View {
         state.queue.taskIds.count > 1
     }
 
-    private var widgetHeight: CGFloat {
-        showNav ? WidgetLayout.heightWithNav : WidgetLayout.heightCompact
-    }
-
     private var backgroundColor: Color {
         switch state.widgetState {
         case .idle: return .clear
@@ -106,7 +101,7 @@ struct WidgetView: View {
                     .offset(x: -4, y: -4)
             }
         }
-        .frame(width: WidgetLayout.width, height: widgetHeight)
+        .frame(width: WidgetLayout.width, height: WidgetLayout.fixedHeight)
         .opacity(effectiveOpacity)
     }
 
@@ -125,18 +120,16 @@ struct WidgetView: View {
                 .padding(.horizontal, WidgetLayout.horizontalPadding)
                 .padding(.vertical, WidgetLayout.verticalPadding)
 
-                // Navigation row
-                if showNav {
-                    navigationRow
-                        .padding(.bottom, 4)
-                }
+                // Navigation row area — always present for fixed height,
+                // but contents only shown when multiple tasks queued
+                navRowArea
             }
 
             // Dequeue arrow — bottom right, just left of estimate
             if canDequeue {
                 dequeueButton
                     .padding(.trailing, state.currentEstimateMin != nil ? 42 : 8)
-                    .padding(.bottom, showNav ? 6 : 4)
+                    .padding(.bottom, 6)
             }
         }
         .background(
@@ -191,7 +184,7 @@ struct WidgetView: View {
             .buttonStyle(HoverButtonStyle())
         } else {
             // lastCompleted / completing — show play if queue has items
-            if !state.visibleQueue.isEmpty {
+            if !state.queue.taskIds.isEmpty {
                 Button(action: { state.playPressed() }) {
                     Image(systemName: "play.fill")
                         .font(.system(size: WidgetLayout.buttonSize))
@@ -277,7 +270,20 @@ struct WidgetView: View {
         .frame(width: 36)
     }
 
-    // MARK: - Navigation Row
+    // MARK: - Navigation Row Area (fixed height, conditional contents)
+
+    private var navRowArea: some View {
+        Group {
+            if showNav {
+                navigationRow
+            } else {
+                // Empty spacer to maintain fixed height
+                Color.clear
+            }
+        }
+        .frame(height: 12)
+        .padding(.bottom, 4)
+    }
 
     private var navigationRow: some View {
         HStack(spacing: 6) {
@@ -401,7 +407,6 @@ struct PlusButtonView: View {
         .animation(.easeInOut(duration: animationDuration), value: isHovered)
         .onHover { hovering in
             if hovering {
-                // Measure mouse speed from last tracked position
                 let currentPos = NSEvent.mouseLocation
                 let now = Date()
                 let dt = now.timeIntervalSince(lastMouseTime)
@@ -410,7 +415,6 @@ struct PlusButtonView: View {
                     let dy = currentPos.y - lastMousePosition.y
                     let distance = sqrt(dx * dx + dy * dy)
                     let speed = CGFloat(distance) / CGFloat(dt)
-                    // Fast entry (>threshold): 0.2s, slow entry: up to 0.6s
                     animationDuration = speed > speedThreshold ? 0.2 : 0.6
                 } else {
                     animationDuration = 0.2
@@ -423,7 +427,6 @@ struct PlusButtonView: View {
         .onContinuousHover { phase in
             switch phase {
             case .active(_):
-                // Track mouse position for speed calculation on next enter
                 lastMousePosition = NSEvent.mouseLocation
                 lastMouseTime = Date()
             case .ended:

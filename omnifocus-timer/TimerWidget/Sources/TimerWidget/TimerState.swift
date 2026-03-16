@@ -13,14 +13,7 @@ enum WidgetState: Equatable {
 final class TimerState: ObservableObject {
     // MARK: - Published State
 
-    @Published var widgetState: WidgetState = .idle {
-        didSet {
-            if widgetState != oldValue {
-                let trace = Thread.callStackSymbols.prefix(5).joined(separator: "\n  ")
-                print("[state] \(oldValue) → \(widgetState)\n  \(trace)")
-            }
-        }
-    }
+    @Published var widgetState: WidgetState = .idle
     @Published var currentTaskId: String = ""
     @Published var currentTaskName: String = ""
     @Published var currentEstimateMin: Int? = nil
@@ -29,48 +22,35 @@ final class TimerState: ObservableObject {
     @Published var undoTaskId: String = ""
     @Published var undoTaskName: String = ""
 
+    // Dequeue animation state
+    @Published var isDequeuing: Bool = false
+    @Published var dequeueTaskName: String = ""
+
     // MARK: - Internal
 
     let bridge = OmniFocusBridge()
     let queue = QueueManager()
 
-    /// Queue tasks excluding the currently active task
-    var visibleQueue: [QueuedTask] {
-        let activeId = currentTaskId
-        if activeId.isEmpty {
-            return queue.resolvedTasks
-        }
-        return queue.resolvedTasks.filter { $0.taskId != activeId }
-    }
-
     private var previousPollState: String = "idle"
     private var cachedTaskId: String = ""
     private var cachedTaskName: String = ""
     private var pollCancellable: AnyCancellable?
-    private var queueCancellable: AnyCancellable?
     private var userActionGraceUntil: Date = .distantPast
     private var suppressCompletionUntil: Date = .distantPast
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Watch queue ID changes (file watcher triggers this)
-        queueCancellable = queue.$taskIds.sink { [weak self] _ in
-            guard let self = self else { return }
-            // Re-resolve on next poll
-        }
-
-        // Watch resolved tasks for UI updates — only fire when IDs actually change
+        // Watch queue ID changes — only handle idle->queued transition
         queue.$taskIds
             .removeDuplicates()
-            .sink { [weak self] _ in
+            .sink { [weak self] ids in
                 guard let self = self else { return }
-                self.onQueueChanged(self.queue.resolvedTasks)
+                self.onQueueChanged(ids)
             }
             .store(in: &cancellables)
 
         startPolling()
     }
-
-    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Polling
 
@@ -82,7 +62,6 @@ final class TimerState: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             let status = self.bridge.getTimerStatus()
-            // Resolve queue task details from OmniFocus
             self.queue.resolveFromOmniFocus(bridge: self.bridge)
 
             DispatchQueue.main.async {
@@ -101,8 +80,6 @@ final class TimerState: ObservableObject {
     }
 
     /// Suppress poll-driven state changes for a grace period after user actions.
-    /// This prevents the poll from overriding optimistic UI updates before the
-    /// osascript command has propagated to OmniFocus.
     private func beginUserActionGrace() {
         userActionGraceUntil = Date().addingTimeInterval(4.0)
     }
@@ -113,11 +90,6 @@ final class TimerState: ObservableObject {
 
     private func handlePollResult(_ status: TimerStatusResponse?) {
         let newState = status?.state ?? "idle"
-        if status == nil {
-            print("[poll] OmniFocus unavailable")
-        } else {
-            print("[poll] state=\(newState) task=\(status?.taskName ?? "nil")")
-        }
 
         // During grace period, only update task info but don't change widget state
         if isInGracePeriod {
@@ -147,8 +119,9 @@ final class TimerState: ObservableObject {
         case "idle":
             let wasActive = (previousPollState == "running" || previousPollState == "paused")
             let suppressCompletion = Date() < suppressCompletionUntil
+
             if wasActive && !suppressCompletion && widgetState != .completing && widgetState != .lastCompleted {
-                // Timer just stopped externally (Caps Lock, CLI, etc.) — trigger completion
+                // Timer stopped externally (Caps Lock, CLI, etc.) — trigger completion
                 currentTaskId = cachedTaskId
                 currentTaskName = cachedTaskName
                 undoTaskId = cachedTaskId
@@ -156,20 +129,25 @@ final class TimerState: ObservableObject {
                 widgetState = .completing
                 showUndo = true
 
-                // After a brief delay for confetti, transition to next state
+                // Remove completed task from queue
+                if !cachedTaskId.isEmpty {
+                    queue.removeTask(id: cachedTaskId)
+                }
+
+                // After confetti, transition to next state
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
                     guard let self = self, self.widgetState == .completing else { return }
-                    if !self.visibleQueue.isEmpty {
+                    if !self.queue.taskIds.isEmpty {
                         self.transitionToQueued(index: 0)
                     } else {
                         self.widgetState = .lastCompleted
                     }
                 }
             } else {
-                // Already idle
+                // Already idle or suppressed
                 if widgetState == .lastCompleted || widgetState == .completing {
-                    // Stay in current state
-                } else if !queue.resolvedTasks.isEmpty {
+                    // Stay in current state — let those flows complete naturally
+                } else if !queue.taskIds.isEmpty {
                     transitionToQueued(index: 0)
                 } else {
                     widgetState = .idle
@@ -185,31 +163,27 @@ final class TimerState: ObservableObject {
 
     // MARK: - Queue Management
 
-    private func onQueueChanged(_ tasks: [QueuedTask]) {
-        print("[queue] changed: \(tasks.count) IDs, state=\(widgetState)")
-        // Only transition to idle from queued state when queue is truly empty
-        // and no grace period is active
-        if widgetState == .idle && !tasks.isEmpty {
+    /// Called when queue taskIds change. ONLY handles idle->queued.
+    /// Never sets idle — that is the poll's responsibility.
+    private func onQueueChanged(_ ids: [String]) {
+        if widgetState == .idle && !ids.isEmpty {
             transitionToQueued(index: 0)
-        } else if widgetState == .queued && tasks.isEmpty && !isInGracePeriod {
-            widgetState = .idle
-            currentTaskId = ""
-            currentTaskName = ""
-            currentEstimateMin = nil
-        } else if widgetState == .queued && !tasks.isEmpty && queueIndex >= tasks.count {
-            queueIndex = max(0, tasks.count - 1)
-            if !tasks.isEmpty {
-                applyQueueItem(tasks[queueIndex])
+        } else if (widgetState == .queued || widgetState == .paused) && !ids.isEmpty && queueIndex >= ids.count {
+            // Queue shrunk while viewing — clamp index
+            queueIndex = max(0, ids.count - 1)
+            let resolved = queue.resolvedTasks
+            if queueIndex < resolved.count {
+                applyQueueItem(resolved[queueIndex])
             }
         }
     }
 
     private func transitionToQueued(index: Int) {
-        let tasks = queue.resolvedTasks
-        guard !tasks.isEmpty else { return }
-        let clamped = min(index, tasks.count - 1)
+        let resolved = queue.resolvedTasks
+        guard !resolved.isEmpty else { return }
+        let clamped = min(index, resolved.count - 1)
         queueIndex = clamped
-        applyQueueItem(tasks[clamped])
+        applyQueueItem(resolved[clamped])
         widgetState = .queued
     }
 
@@ -228,8 +202,7 @@ final class TimerState: ObservableObject {
             let taskId = currentTaskId
             cachedTaskId = currentTaskId
             cachedTaskName = currentTaskName
-            widgetState = .running  // Set BEFORE queue removal to prevent idle flash
-            queue.removeTask(id: taskId)
+            widgetState = .running
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.bridge.startTimer(taskId: taskId)
             }
@@ -241,7 +214,7 @@ final class TimerState: ObservableObject {
             }
 
         case .lastCompleted:
-            if !queue.resolvedTasks.isEmpty {
+            if !queue.taskIds.isEmpty {
                 transitionToQueued(index: 0)
             }
 
@@ -267,11 +240,14 @@ final class TimerState: ObservableObject {
         undoTaskId = taskId
         undoTaskName = currentTaskName
 
+        // Remove completed task from queue
+        queue.removeTask(id: taskId)
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.bridge.completeTask(taskId: taskId)
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if !self.visibleQueue.isEmpty {
+                if !self.queue.taskIds.isEmpty {
                     self.transitionToQueued(index: 0)
                 } else {
                     self.widgetState = .lastCompleted
@@ -293,30 +269,33 @@ final class TimerState: ObservableObject {
 
         // Auto-pause if running
         if widgetState == .running {
-            bridge.pauseTimer()
+            beginUserActionGrace()
             widgetState = .paused
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.bridge.pauseTimer()
+            }
         }
 
-        let tasks = queue.resolvedTasks
+        let ids = queue.taskIds
         let newIndex = queueIndex + direction
-        guard newIndex >= 0, newIndex < tasks.count else { return }
+        guard newIndex >= 0, newIndex < ids.count else { return }
 
-        if widgetState == .paused {
-            queueIndex = newIndex
-            applyQueueItem(tasks[newIndex])
-        } else {
-            transitionToQueued(index: newIndex)
+        let resolved = queue.resolvedTasks
+        guard newIndex < resolved.count else { return }
+
+        queueIndex = newIndex
+        applyQueueItem(resolved[newIndex])
+
+        if widgetState == .queued {
+            // Already queued, just update index/task
         }
+        // If paused, stay paused with new task displayed
     }
 
     func taskNameClicked() {
         guard !currentTaskId.isEmpty else { return }
         bridge.navigateToTask(taskId: currentTaskId)
     }
-
-    // Dequeue animation state
-    @Published var isDequeuing: Bool = false
-    @Published var dequeueTaskName: String = ""
 
     /// Remove current task from queue without completing it (paused/queued only)
     func dequeueCurrentTask() {
@@ -326,7 +305,7 @@ final class TimerState: ObservableObject {
         // Suppress completion detection — this is a dequeue, not a completion
         suppressCompletionUntil = Date().addingTimeInterval(6.0)
 
-        // Stop the timer (but don't complete) so it doesn't reappear from poll
+        // Stop the timer if paused so it doesn't reappear from poll
         if widgetState == .paused {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 self?.bridge.stopTimer()
@@ -339,14 +318,17 @@ final class TimerState: ObservableObject {
         // Signal the animation BEFORE removing (so AppDelegate can snapshot)
         isDequeuing = true
 
-        // Remove from queue and immediately transition
+        // Remove from queue
         queue.removeTask(id: removedId)
 
         // Transition to next task immediately (ghost animation plays independently)
-        if !queue.resolvedTasks.isEmpty {
+        if !queue.taskIds.isEmpty {
             transitionToQueued(index: 0)
         } else {
             widgetState = .idle
+            currentTaskId = ""
+            currentTaskName = ""
+            currentEstimateMin = nil
         }
 
         // Clean up dequeue state after animation completes
@@ -356,7 +338,7 @@ final class TimerState: ObservableObject {
         }
     }
 
-    /// Add selected OmniFocus tasks to the queue (called by plus button)
+    /// Add selected OmniFocus tasks to the queue
     func queueSelectedTasks() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -369,7 +351,7 @@ final class TimerState: ObservableObject {
                     }
                 }
                 self.queue.saveQueue()
-                // Trigger resolve on next poll, but also do it now
+                // Resolve task details now
                 DispatchQueue.global(qos: .userInitiated).async {
                     self.queue.resolveFromOmniFocus(bridge: self.bridge)
                 }
@@ -377,11 +359,13 @@ final class TimerState: ObservableObject {
         }
     }
 
-    /// Auto-queue a running task that isn't in the queue
-    func autoQueueRunningTask() {
+    /// Auto-queue a running task that isn't in the queue.
+    /// Inserts at position 0 and sets queueIndex to point at it.
+    private func autoQueueRunningTask() {
         guard !currentTaskId.isEmpty else { return }
         if !queue.taskIds.contains(currentTaskId) {
             queue.taskIds.insert(currentTaskId, at: 0)
+            queueIndex = 0
             queue.saveQueue()
         }
     }
