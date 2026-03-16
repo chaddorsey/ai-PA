@@ -6,6 +6,7 @@ enum WidgetState: Equatable {
     case queued
     case running
     case paused
+    case collapsed      // Paused/queued task minimized to small rectangle
     case completing
     case lastCompleted
 }
@@ -41,6 +42,10 @@ final class TimerState: ObservableObject {
     private var userActionGraceUntil: Date = .distantPast
     private var suppressCompletionUntil: Date = .distantPast
     var dismissedByInactivity: Bool = false
+    private var collapseTimer: AnyCancellable?
+
+    /// How long to wait before collapsing a paused widget. Default 2 min. Set low for testing.
+    var collapseDelay: TimeInterval = 120
     private var cancellables = Set<AnyCancellable>()
 
     init() {
@@ -109,6 +114,7 @@ final class TimerState: ObservableObject {
         switch newState {
         case "running":
             dismissedByInactivity = false
+            cancelCollapseTimer()
             widgetState = .running
             if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
             if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
@@ -117,7 +123,10 @@ final class TimerState: ObservableObject {
             autoQueueRunningTask()
 
         case "paused":
-            widgetState = .paused
+            if widgetState != .paused && widgetState != .collapsed {
+                widgetState = .paused
+                startCollapseTimer()
+            }
             if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
             if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
             if let est = status?.originalEstimate { currentEstimateMin = est }
@@ -233,7 +242,9 @@ final class TimerState: ObservableObject {
     func pausePressed() {
         guard widgetState == .running else { return }
         beginUserActionGrace()
+        cancelCollapseTimer()
         widgetState = .paused
+        startCollapseTimer()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.bridge.pauseTimer()
         }
@@ -365,6 +376,46 @@ final class TimerState: ObservableObject {
                     self.queue.resolveFromOmniFocus(bridge: self.bridge)
                 }
             }
+        }
+    }
+
+    // MARK: - Collapse / Expand
+
+    func startCollapseTimer() {
+        collapseTimer?.cancel()
+        collapseTimer = Just(())
+            .delay(for: .seconds(collapseDelay), scheduler: DispatchQueue.main)
+            .sink { [weak self] in
+                guard let self = self else { return }
+                if self.widgetState == .paused || self.widgetState == .queued {
+                    self.widgetState = .collapsed
+                }
+            }
+    }
+
+    func cancelCollapseTimer() {
+        collapseTimer?.cancel()
+        collapseTimer = nil
+    }
+
+    /// Expand from collapsed state back to queued/paused
+    func expandFromCollapsed() {
+        guard widgetState == .collapsed else { return }
+        // If there's a cached task that was paused, go to paused
+        // Otherwise go to queued
+        if !currentTaskId.isEmpty && previousPollState == "paused" {
+            widgetState = .paused
+        } else {
+            widgetState = .queued
+        }
+        // Restart collapse timer
+        startCollapseTimer()
+    }
+
+    /// Force collapse for testing
+    func forceCollapse() {
+        if widgetState == .paused || widgetState == .queued {
+            widgetState = .collapsed
         }
     }
 

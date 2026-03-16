@@ -86,13 +86,18 @@ struct WidgetView: View {
         case .paused: return WidgetColor.paused
         case .completing: return WidgetColor.completing
         case .lastCompleted: return WidgetColor.lastCompleted
+        case .collapsed: return WidgetColor.paused
         }
     }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            mainContent
-                .opacity(pulseOpacity)
+            if state.widgetState == .collapsed {
+                collapsedContent
+            } else {
+                mainContent
+                    .opacity(pulseOpacity)
+            }
 
             // Undo button overlay
             if state.showUndo && undoFade.isActive {
@@ -101,8 +106,29 @@ struct WidgetView: View {
                     .offset(x: -4, y: -4)
             }
         }
-        .frame(width: WidgetLayout.width, height: WidgetLayout.fixedHeight)
+        .frame(minWidth: 48, maxWidth: WidgetLayout.width, minHeight: WidgetLayout.fixedHeight, maxHeight: WidgetLayout.fixedHeight)
         .opacity(effectiveOpacity)
+    }
+
+    // MARK: - Collapsed Content
+
+    private var collapsedContent: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.black.opacity(0.6))
+            if state.queueCount > 1 {
+                Text("\(state.queueCount)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.black.opacity(0.6))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: WidgetLayout.cornerRadius)
+                .fill(WidgetColor.paused)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: WidgetLayout.cornerRadius))
     }
 
     // MARK: - Main Content

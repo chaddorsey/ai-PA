@@ -238,6 +238,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.widgetFade.mouseEntered()
             self?.undoFade.mouseEntered()
             self?.inactivityFade.mouseEntered()
+            // Expand from collapsed on hover
+            if self?.state.widgetState == .collapsed {
+                self?.state.expandFromCollapsed()
+            }
         }
         tracker.onExit = { [weak self] in
             self?.widgetFade.mouseExited()
@@ -269,9 +273,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch widgetState {
         case .idle:
             return false
-        case .queued, .running, .paused, .completing, .lastCompleted:
+        case .queued, .running, .paused, .completing, .lastCompleted, .collapsed:
             return true
         }
+    }
+
+    private static let collapsedWidth: CGFloat = 48
+    private var isCollapsedSize: Bool = false
+
+    private func animateCollapse() {
+        guard let window = self.window, let screen = NSScreen.main else { return }
+        isCollapsedSize = true
+        let visibleFrame = screen.visibleFrame
+        let plusLeftX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+        let targetWidth = Self.collapsedWidth
+        let targetX = plusLeftX - targetWidth - WindowLayout.buffer
+        let targetFrame = NSRect(
+            x: targetX,
+            y: window.frame.origin.y,
+            width: targetWidth,
+            height: window.frame.height
+        )
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.5
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(targetFrame, display: true)
+        })
+    }
+
+    private func animateExpand() {
+        guard let window = self.window, let screen = NSScreen.main else { return }
+        isCollapsedSize = false
+        let visibleFrame = screen.visibleFrame
+        let plusLeftX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+        let targetX = plusLeftX - WindowLayout.widgetWidth - WindowLayout.buffer
+        let targetFrame = NSRect(
+            x: targetX,
+            y: window.frame.origin.y,
+            width: WindowLayout.widgetWidth,
+            height: window.frame.height
+        )
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 1.0
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().setFrame(targetFrame, display: true)
+        })
     }
 
     // MARK: - State Transitions
@@ -291,6 +337,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             cancelInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
+            if isCollapsedSize { animateExpand() }
             updateView()
 
         case .queued:
@@ -300,6 +347,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             startInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
+            if isCollapsedSize { animateExpand() }
             updateView()
 
         case .paused:
@@ -309,7 +357,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             cancelInactivityTimer()
             pulseOpacity = 1.0
             queuedGlowOpacity = 0.0
+            if isCollapsedSize { animateExpand() }
             updateView()
+
+        case .collapsed:
+            widgetFade.stopFade()
+            undoFade.stopFade()
+            inactivityFade.stopFade()
+            cancelInactivityTimer()
+            pulseOpacity = 1.0
+            queuedGlowOpacity = 0.0
+            updateView()
+            animateCollapse()
 
         case .completing:
             widgetFade.stopFade()
@@ -376,7 +435,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWin.hasShadow = false
         ghostWin.contentView = imageView
         ghostWin.ignoresMouseEvents = true
-        ghostWin.alphaValue = 0.3
+        ghostWin.alphaValue = 0.7
         dequeueWindow = ghostWin
         print("[dequeue] ghost window created at \(wf), fallDistance=\(fallDistance)")
 
@@ -388,10 +447,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let startTime = Date()
-        let fadeOutDuration: TimeInterval = 0.6
+        let fadeOutDuration: TimeInterval = 0.8
         let dropDuration: TimeInterval = 0.5
-        let dropDelay: TimeInterval = 0.3
-        let totalDuration = dropDelay + dropDuration
+        let dropDelay: TimeInterval = 0.4  // halfway through fade
+        let totalDuration = max(fadeOutDuration, dropDelay + dropDuration)
 
         dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
             .autoconnect()
@@ -402,7 +461,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                 // Opacity: fade from 0.7 to 0 across fadeOutDuration
                 let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
-                ghost.alphaValue = CGFloat(0.3 * (1.0 - fadeProgress))
+                ghost.alphaValue = CGFloat(0.7 * (1.0 - fadeProgress))
 
                 // Drop: begins at dropDelay, accelerates with cubic ease-in
                 if elapsed > dropDelay {
