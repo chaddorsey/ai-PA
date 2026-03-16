@@ -396,12 +396,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWin.hasShadow = false
         ghostWin.contentView = imageView
         ghostWin.ignoresMouseEvents = true
-        ghostWin.alphaValue = 0.2
+        ghostWin.alphaValue = 0.3
         ghostWin.orderFront(nil)
         dequeueWindow = ghostWin
 
         let startTime = Date()
-        let duration: TimeInterval = 0.67  // ~3x faster
+        let fadeOutDuration: TimeInterval = 0.4  // Widget fades out
+        let dropDuration: TimeInterval = 0.5     // Drop animation after fade starts
+        let dropDelay: TimeInterval = fadeOutDuration * 0.5  // Drop begins halfway through fade
+        let totalDuration = dropDelay + dropDuration
 
         dequeueAnimTimer = Timer.publish(every: 1.0 / 60, on: .main, in: .common)
             .autoconnect()
@@ -409,20 +412,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self = self, let ghost = self.dequeueWindow else { return }
 
                 let elapsed = Date().timeIntervalSince(startTime)
-                let progress = min(elapsed / duration, 1.0)
 
-                // Ease-in cubic for accelerating fall (3x speed ramp)
-                let easedProgress = progress * progress * progress
-                let yOffset = easedProgress * fallDistance
+                // Opacity: fade from 0.3 to 0 across fadeOutDuration (slower than before)
+                let fadeProgress = min(elapsed / fadeOutDuration, 1.0)
+                ghost.alphaValue = CGFloat(0.3 * (1.0 - fadeProgress))
 
-                var frame = ghost.frame
-                frame.origin.y = wf.minY - yOffset
-                ghost.setFrame(frame, display: false)
+                // Drop: begins at dropDelay, accelerates with cubic ease-in
+                if elapsed > dropDelay {
+                    let dropElapsed = elapsed - dropDelay
+                    let dropProgress = min(dropElapsed / dropDuration, 1.0)
+                    let easedDrop = dropProgress * dropProgress * dropProgress
+                    let yOffset = easedDrop * fallDistance
 
-                // Opacity: start at 0.2, fade to 0
-                ghost.alphaValue = CGFloat(0.2 * (1.0 - progress))
+                    var frame = ghost.frame
+                    frame.origin.y = wf.minY - yOffset
+                    ghost.setFrame(frame, display: false)
+                }
 
-                if progress >= 1.0 {
+                if elapsed >= totalDuration {
                     ghost.orderOut(nil)
                     self.dequeueWindow = nil
                     self.dequeueAnimTimer?.cancel()

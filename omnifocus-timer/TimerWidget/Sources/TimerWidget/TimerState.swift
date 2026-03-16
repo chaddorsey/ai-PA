@@ -169,7 +169,7 @@ final class TimerState: ObservableObject {
                 // Already idle
                 if widgetState == .lastCompleted || widgetState == .completing {
                     // Stay in current state
-                } else if !visibleQueue.isEmpty {
+                } else if !queue.resolvedTasks.isEmpty {
                     transitionToQueued(index: 0)
                 } else {
                     widgetState = .idle
@@ -205,12 +205,11 @@ final class TimerState: ObservableObject {
     }
 
     private func transitionToQueued(index: Int) {
-        let vq = visibleQueue
-        guard !vq.isEmpty else { return }
-        let clamped = min(index, vq.count - 1)
+        let tasks = queue.resolvedTasks
+        guard !tasks.isEmpty else { return }
+        let clamped = min(index, tasks.count - 1)
         queueIndex = clamped
-        let task = vq[clamped]
-        applyQueueItem(task)
+        applyQueueItem(tasks[clamped])
         widgetState = .queued
     }
 
@@ -242,7 +241,7 @@ final class TimerState: ObservableObject {
             }
 
         case .lastCompleted:
-            if !visibleQueue.isEmpty {
+            if !queue.resolvedTasks.isEmpty {
                 transitionToQueued(index: 0)
             }
 
@@ -298,17 +297,14 @@ final class TimerState: ObservableObject {
             widgetState = .paused
         }
 
-        let vq = visibleQueue
+        let tasks = queue.resolvedTasks
+        let newIndex = queueIndex + direction
+        guard newIndex >= 0, newIndex < tasks.count else { return }
+
         if widgetState == .paused {
-            // Show queue items while paused
-            let newIndex = queueIndex + direction
-            guard newIndex >= 0, newIndex < vq.count else { return }
             queueIndex = newIndex
-            applyQueueItem(vq[newIndex])
+            applyQueueItem(tasks[newIndex])
         } else {
-            // Browsing queue in queued state
-            let newIndex = queueIndex + direction
-            guard newIndex >= 0, newIndex < vq.count else { return }
             transitionToQueued(index: newIndex)
         }
     }
@@ -347,8 +343,7 @@ final class TimerState: ObservableObject {
         queue.removeTask(id: removedId)
 
         // Transition to next task immediately (ghost animation plays independently)
-        let vq = visibleQueue
-        if !vq.isEmpty {
+        if !queue.resolvedTasks.isEmpty {
             transitionToQueued(index: 0)
         } else {
             widgetState = .idle

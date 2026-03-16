@@ -76,7 +76,7 @@ struct WidgetView: View {
     }
 
     private var showNav: Bool {
-        state.visibleQueue.count > 1
+        state.queue.taskIds.count > 1
     }
 
     private var widgetHeight: CGFloat {
@@ -295,17 +295,17 @@ struct WidgetView: View {
 
             // Dots
             HStack(spacing: 3) {
-                ForEach(0..<state.visibleQueue.count, id: \.self) { idx in
+                ForEach(0..<state.queue.taskIds.count, id: \.self) { idx in
                     Circle()
                         .fill(idx == state.queueIndex ? Color.black : Color.black.opacity(0.3))
                         .frame(width: WidgetLayout.navDotSize, height: WidgetLayout.navDotSize)
                         .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.5), value: state.visibleQueue.count)
+                        .animation(.easeInOut(duration: 0.5), value: state.queue.taskIds.count)
                 }
             }
 
             // Right arrow
-            if state.queueIndex < state.visibleQueue.count - 1 {
+            if state.queueIndex < state.queue.taskIds.count - 1 {
                 Button(action: { state.navigateQueue(direction: 1) }) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: WidgetLayout.navArrowSize, weight: .semibold))
