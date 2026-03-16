@@ -189,15 +189,20 @@ final class TimerState: ObservableObject {
     func playPressed() {
         switch widgetState {
         case .queued:
-            bridge.startTimer(taskId: currentTaskId)
-            queue.removeTask(id: currentTaskId)
+            let taskId = currentTaskId
+            queue.removeTask(id: taskId)
             cachedTaskId = currentTaskId
             cachedTaskName = currentTaskName
             widgetState = .running
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.bridge.startTimer(taskId: taskId)
+            }
 
         case .paused:
-            bridge.resumeTimer()
             widgetState = .running
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.bridge.resumeTimer()
+            }
 
         case .lastCompleted:
             if !visibleQueue.isEmpty {
@@ -211,8 +216,10 @@ final class TimerState: ObservableObject {
 
     func pausePressed() {
         guard widgetState == .running else { return }
-        bridge.pauseTimer()
         widgetState = .paused
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.bridge.pauseTimer()
+        }
     }
 
     func donePressed() {

@@ -113,24 +113,30 @@ struct WidgetView: View {
     // MARK: - Main Content
 
     private var mainContent: some View {
-        VStack(spacing: 0) {
-            // Primary row: buttons | task name | dequeue | estimate
-            HStack(spacing: 4) {
-                buttonColumn
-                taskNameView
-                Spacer(minLength: 4)
-                if canDequeue {
-                    dequeueButton
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                // Primary row: buttons | task name | estimate
+                HStack(spacing: 4) {
+                    buttonColumn
+                    taskNameView
+                    Spacer(minLength: 4)
+                    estimateColumn
                 }
-                estimateColumn
-            }
-            .padding(.horizontal, WidgetLayout.horizontalPadding)
-            .padding(.vertical, WidgetLayout.verticalPadding)
+                .padding(.horizontal, WidgetLayout.horizontalPadding)
+                .padding(.vertical, WidgetLayout.verticalPadding)
 
-            // Navigation row
-            if showNav {
-                navigationRow
-                    .padding(.bottom, 4)
+                // Navigation row
+                if showNav {
+                    navigationRow
+                        .padding(.bottom, 4)
+                }
+            }
+
+            // Dequeue arrow — bottom right, just left of estimate
+            if canDequeue {
+                dequeueButton
+                    .padding(.trailing, state.currentEstimateMin != nil ? 42 : 8)
+                    .padding(.bottom, showNav ? 6 : 4)
             }
         }
         .background(
@@ -246,12 +252,12 @@ struct WidgetView: View {
 
     private var dequeueButton: some View {
         Button(action: { state.dequeueCurrentTask() }) {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.black.opacity(0.5))
+            Image(systemName: "arrow.down")
+                .font(.system(size: 10, weight: .regular))
+                .foregroundColor(.black.opacity(0.4))
         }
         .buttonStyle(HoverButtonStyle())
-        .frame(width: 18)
+        .frame(width: 16, height: 16)
     }
 
     // MARK: - Estimate Column
