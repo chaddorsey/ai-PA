@@ -252,8 +252,8 @@ struct WidgetView: View {
 
     private var dequeueButton: some View {
         Button(action: { state.dequeueCurrentTask() }) {
-            Image(systemName: "arrow.down")
-                .font(.system(size: 10, weight: .regular))
+            Text("\u{21E9}")
+                .font(.system(size: 12))
                 .foregroundColor(.black.opacity(0.4))
         }
         .buttonStyle(HoverButtonStyle())

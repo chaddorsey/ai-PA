@@ -89,11 +89,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] newState in
                 guard let self = self else { return }
-                print("[widget] state transition → \(newState), window visible: \(self.isVisible(for: newState))")
-                let visible = self.isVisible(for: newState)
-                if visible {
+                print("[widget] state transition → \(newState)")
+                if self.isVisible(for: newState) {
+                    self.window?.alphaValue = 1.0
                     self.window?.orderFront(nil)
-                } else {
+                } else if newState == .idle {
                     self.window?.orderOut(nil)
                 }
                 self.handleStateTransition(newState)
