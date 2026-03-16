@@ -13,7 +13,14 @@ enum WidgetState: Equatable {
 final class TimerState: ObservableObject {
     // MARK: - Published State
 
-    @Published var widgetState: WidgetState = .idle
+    @Published var widgetState: WidgetState = .idle {
+        didSet {
+            if widgetState != oldValue {
+                let trace = Thread.callStackSymbols.prefix(5).joined(separator: "\n  ")
+                print("[state] \(oldValue) → \(widgetState)\n  \(trace)")
+            }
+        }
+    }
     @Published var currentTaskId: String = ""
     @Published var currentTaskName: String = ""
     @Published var currentEstimateMin: Int? = nil
