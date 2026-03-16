@@ -30,7 +30,7 @@ final class FadeManager: ObservableObject {
     }
 
     func stopFade() {
-        isActive = false
+        let wasActive = isActive
         isHovering = false
         opacity = 1.0
         elapsedBeforePause = 0
@@ -38,6 +38,10 @@ final class FadeManager: ObservableObject {
         hoverStart = nil
         timer?.cancel()
         timer = nil
+        // Only publish isActive change if it was actually active
+        if wasActive {
+            isActive = false
+        }
     }
 
     func mouseEntered() {
