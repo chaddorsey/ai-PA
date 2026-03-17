@@ -18,7 +18,7 @@ OAUTH_PROVIDER="chatgpt_oauth"
 OAUTH_REASONING="low"
 
 # Fallback config
-FALLBACK_MODEL="gpt-5.2"
+FALLBACK_MODEL="gpt-5-mini"
 FALLBACK_ENDPOINT="http://litellm:4000/v1"
 FALLBACK_PROVIDER="openai"
 
