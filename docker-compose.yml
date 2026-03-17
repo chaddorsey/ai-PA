@@ -640,7 +640,7 @@ services:
   # Letta is an agent building framework with built-in memory/vectordb support.
   # https://docs.letta.com/quickstart/docker
   letta:
-    image: letta/letta:0.16.6
+    image: letta/letta:0.16.5
     entrypoint: ["/bin/bash", "/app/tools/letta/entrypoint-wrapper.sh"]
     command: ["--host", "0.0.0.0"]
     ports:
@@ -1450,9 +1450,10 @@ services:
       - PORT=5200
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       - GWS_BRIDGE_URL=http://gws-bridge:8098
-      - LETTABOT_API_URL=http://host.docker.internal:8080
-      - LETTABOT_API_KEY=${LETTABOT_API_KEY:-}
+      - MISSION_CONTROL_AGENT_ID=${MISSION_CONTROL_AGENT_ID:-agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef}
       - OMNIFOCUS_BRIDGE_URL=http://host.docker.internal:8889
+    volumes:
+      - ./pa-web-ui/static:/app/static
     ports:
       - "5200:5200"
     healthcheck:
