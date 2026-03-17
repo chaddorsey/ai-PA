@@ -44,9 +44,19 @@ model_list:
       model: "openai/gpt-5"
       api_key: "os.environ/OPENAI_KEY_MAIN"
 
+  - model_name: "gpt-5.1"
+    litellm_params:
+      model: "openai/gpt-5.1"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
   - model_name: "gpt-5.2"
     litellm_params:
       model: "openai/gpt-5.2"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
+  - model_name: "gpt-5.4"
+    litellm_params:
+      model: "openai/gpt-5.4"
       api_key: "os.environ/OPENAI_KEY_MAIN"
 
   # --- companion-sleeptime_copy (Anthropic model, but embedding goes through here) ---
@@ -111,6 +121,12 @@ model_list:
     litellm_params:
       model: "openai/gpt-4.1-mini"
       api_key: "os.environ/OPENAI_KEY_MEDIA_SLEEPTIME"
+
+  # --- rover ---
+  - model_name: "gpt-4.1-mini/rover"
+    litellm_params:
+      model: "openai/gpt-4.1-mini"
+      api_key: "os.environ/OPENAI_KEY_ROVER"
 
   # --- old/archived agents ---
   - model_name: "gpt-4.1-mini/old"
