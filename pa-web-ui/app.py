@@ -1000,7 +1000,8 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
                                     yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
 
                                 elif msg_type == "usage_statistics":
-                                    pass  # Ignore usage stats
+                                    # Forward usage stats to frontend for cache monitoring
+                                    yield f"data: {json.dumps({'type': 'usage', 'data': event})}\n\n"
 
                             except json.JSONDecodeError:
                                 pass

@@ -757,6 +757,39 @@ class ChatUI {
         card.classList.remove('streaming');
     }
 
+    attachUsageStats(card, usageData) {
+        if (!card || !usageData) return;
+        const completion = usageData.completion_tokens || 0;
+        const prompt = usageData.prompt_tokens || 0;
+        const steps = usageData.step_count || 0;
+        // Extract from nested structure if present
+        const details = usageData.prompt_tokens_details || {};
+        const cachedTokens = details.cached_tokens || 0;
+        const completionDetails = usageData.completion_tokens_details || {};
+        const reasoningTokens = completionDetails.reasoning_tokens || 0;
+
+        const cachePct = prompt > 0 ? Math.round(cachedTokens / prompt * 100) : -1;
+        const fmtK = n => n >= 1000 ? (n/1000).toFixed(1) + 'K' : n.toString();
+
+        const cacheCls = cachePct > 50 ? 'cache-good' : cachePct > 0 ? 'cache-partial' : cachePct === 0 ? 'cache-none' : '';
+
+        let statsHtml = `<span>prompt: ${fmtK(prompt)}</span>`;
+        if (cachePct >= 0) {
+            statsHtml += `<span class="${cacheCls}">cache: ${cachePct}% (${fmtK(cachedTokens)})</span>`;
+        }
+        statsHtml += `<span>completion: ${fmtK(completion)}</span>`;
+        if (reasoningTokens > 0) statsHtml += `<span>reasoning: ${fmtK(reasoningTokens)}</span>`;
+        if (steps > 1) statsHtml += `<span>steps: ${steps}</span>`;
+
+        const statsEl = document.createElement('div');
+        statsEl.className = 'message-usage-stats';
+        statsEl.innerHTML = statsHtml;
+        card.appendChild(statsEl);
+
+        // Also update the global usage bar
+        if (window.fetchUsageStats) window.fetchUsageStats();
+    }
+
     finalizeThreadCard(card, agentId, agentName) {
         card.classList.remove('streaming');
         card.dataset.agentId = agentId;
@@ -952,6 +985,7 @@ class ChatUI {
         let agentId = '';
         let requestId = null;
         let hasReceivedContent = false;
+        let lastUsageData = null;
         let toolCallsMade = [];  // Track tool calls for completion message
         let sseBuffer = '';  // Buffer for handling split SSE messages
 
@@ -1063,6 +1097,9 @@ class ChatUI {
                             if (requestId && this.threads.has(requestId)) {
                                 this.threads.get(requestId).response = content;
                             }
+                        } else if (event.type === 'usage') {
+                            // Store usage stats for display on finalize
+                            lastUsageData = event.data || {};
                         } else if (event.type === 'done') {
                             // Mark thread as complete and finalize card
                             if (requestId && this.threads.has(requestId)) {
@@ -1080,6 +1117,10 @@ class ChatUI {
                                 } else {
                                     this.updateThreadCardResponse(threadCard, agentName, '✓ Done');
                                 }
+                            }
+                            // Attach usage stats to the card
+                            if (lastUsageData && threadCard) {
+                                this.attachUsageStats(threadCard, lastUsageData);
                             }
                             this.finalizeThreadCard(threadCard, agentId, agentName);
                         } else if (event.type === 'ping') {

@@ -128,9 +128,21 @@ header h1 {
     gap: 1rem;
 }
 
-.usage-bar .cache-good { color: #34C759; }
-.usage-bar .cache-partial { color: #FF9500; }
-.usage-bar .cache-none { color: #FF3B30; }
+.usage-bar .cache-good, .message-usage-stats .cache-good { color: #34C759; }
+.usage-bar .cache-partial, .message-usage-stats .cache-partial { color: #FF9500; }
+.usage-bar .cache-none, .message-usage-stats .cache-none { color: #FF3B30; }
+
+.message-usage-stats {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.6rem;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    border-top: 1px solid var(--border);
+    margin-top: 0.25rem;
+}
 
 /* Chat container */
 .chat-container {
