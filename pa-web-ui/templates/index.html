@@ -302,8 +302,11 @@
                 const data = await resp.json();
                 if (data.error) { bar.style.display = 'none'; return; }
 
-                const cacheCls = data.cache_pct > 50 ? 'cache-good' :
-                                 data.cache_pct > 0 ? 'cache-partial' : 'cache-none';
+                const cacheCls = data.cache_pct >= 75 ? 'cache-high' :
+                                 data.cache_pct >= 50 ? 'cache-mid' :
+                                 data.cache_pct >= 25 ? 'cache-low' :
+                                 data.cache_pct > 0 ? 'cache-poor' :
+                                 'cache-none';
 
                 text.innerHTML =
                     `<span>prompt: ${formatTokens(data.prompt_tokens)}</span>` +

@@ -771,7 +771,11 @@ class ChatUI {
         const cachePct = prompt > 0 ? Math.round(cachedTokens / prompt * 100) : -1;
         const fmtK = n => n >= 1000 ? (n/1000).toFixed(1) + 'K' : n.toString();
 
-        const cacheCls = cachePct > 50 ? 'cache-good' : cachePct > 0 ? 'cache-partial' : cachePct === 0 ? 'cache-none' : '';
+        const cacheCls = cachePct >= 75 ? 'cache-high' :
+                         cachePct >= 50 ? 'cache-mid' :
+                         cachePct >= 25 ? 'cache-low' :
+                         cachePct > 0 ? 'cache-poor' :
+                         cachePct === 0 ? 'cache-none' : '';
 
         let statsHtml = `<span>prompt: ${fmtK(prompt)}</span>`;
         if (cachePct >= 0) {
