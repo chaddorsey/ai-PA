@@ -164,6 +164,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if isVisible(for: state.widgetState) {
             window.orderFront(nil)
         }
+
+        // Reposition all windows when screen configuration changes
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.repositionAllWindows()
+        }
+    }
+
+    private func repositionAllWindows() {
+        guard let screen = NSScreen.main else { return }
+        let visibleFrame = screen.visibleFrame
+
+        // Reposition widget
+        if let w = window {
+            let plusLeftX = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+            let x = plusLeftX - w.frame.width - WindowLayout.buffer
+            let y = visibleFrame.maxY - w.frame.height - WindowLayout.margin
+            w.setFrameOrigin(NSPoint(x: x, y: y))
+        }
+
+        // Reposition plus button
+        if let p = plusWindow {
+            let x = visibleFrame.maxX - WindowLayout.plusSize - WindowLayout.margin
+            let y = visibleFrame.maxY - WindowLayout.plusSize - WindowLayout.margin - 2
+            p.setFrameOrigin(NSPoint(x: x, y: y))
+        }
+
+        // Reposition confetti
+        if let c = confettiWindow, let w = window {
+            let wf = w.frame
+            let x = wf.midX - WindowLayout.confettiWidth / 2
+            let y = wf.minY - (WindowLayout.confettiHeight - WindowLayout.widgetHeight)
+            c.setFrameOrigin(NSPoint(x: x, y: y))
+        }
     }
 
     // MARK: - Window Setup
