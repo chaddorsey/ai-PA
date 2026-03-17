@@ -34,6 +34,10 @@
                 </div>
             </header>
 
+            <div id="usage-bar" class="usage-bar" style="display:none">
+                <span id="usage-text"></span>
+            </div>
+
             <main class="chat-container">
                 <div id="messages" class="messages"></div>
             </main>
@@ -280,6 +284,46 @@
 
         fetchModelStatus();
         setInterval(fetchModelStatus, 30000);
+    })();
+
+    // Usage stats — fetch after each message
+    (function() {
+        const bar = document.getElementById('usage-bar');
+        const text = document.getElementById('usage-text');
+
+        function formatTokens(n) {
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return n.toString();
+        }
+
+        window.fetchUsageStats = async function() {
+            try {
+                const resp = await fetch('/api/mc-usage');
+                const data = await resp.json();
+                if (data.error) { bar.style.display = 'none'; return; }
+
+                const cacheCls = data.cache_pct > 50 ? 'cache-good' :
+                                 data.cache_pct > 0 ? 'cache-partial' : 'cache-none';
+
+                text.innerHTML =
+                    `<span>prompt: ${formatTokens(data.prompt_tokens)}</span>` +
+                    `<span class="${cacheCls}">cache: ${data.cache_pct}% (${formatTokens(data.cached_tokens)})</span>` +
+                    `<span>completion: ${formatTokens(data.completion_tokens)}</span>` +
+                    (data.reasoning_tokens > 0 ? `<span>reasoning: ${formatTokens(data.reasoning_tokens)}</span>` : '') +
+                    `<span>$${data.spend.toFixed(4)}</span>` +
+                    `<span>${data.model}</span>`;
+
+                bar.style.display = 'flex';
+            } catch (e) {
+                bar.style.display = 'none';
+            }
+        };
+
+        // Fetch on load and hook into message send
+        window.fetchUsageStats();
+
+        // Poll every 10s to catch updates (will be replaced by post-message hook)
+        setInterval(window.fetchUsageStats, 10000);
     })();
     </script>
 </body>

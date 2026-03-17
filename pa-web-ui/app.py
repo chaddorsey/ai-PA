@@ -622,6 +622,56 @@ def set_mc_reasoning():
         return jsonify({"error": str(e)}), 500
 
 
+LITELLM_URL = os.getenv("LITELLM_URL", "http://litellm:4000")
+LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
+
+
+@app.route("/api/mc-usage")
+def get_mc_usage():
+    """Get the most recent LLM usage stats for MC, including cache info."""
+    try:
+        # Query LiteLLM spend logs for the most recent MC call
+        resp = http_client.get(
+            f"{LITELLM_URL}/spend/logs",
+            params={"limit": 1, "start_date": "2026-03-01"},
+            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not data or not isinstance(data, list):
+            return jsonify({"error": "no data"})
+
+        entry = data[0]
+        meta = entry.get("metadata", {})
+        usage = meta.get("usage_object", {})
+        prompt_details = usage.get("prompt_tokens_details", {})
+        completion_details = usage.get("completion_tokens_details", {})
+
+        prompt_tokens = usage.get("prompt_tokens", 0) or entry.get("prompt_tokens", 0)
+        cached_tokens = prompt_details.get("cached_tokens", 0) or 0
+        completion_tokens = usage.get("completion_tokens", 0) or entry.get("completion_tokens", 0)
+        reasoning_tokens = completion_details.get("reasoning_tokens", 0) or 0
+        spend = entry.get("spend", 0)
+        model = entry.get("model_group", entry.get("model", ""))
+
+        cache_pct = round(cached_tokens / prompt_tokens * 100) if prompt_tokens > 0 else 0
+
+        return jsonify({
+            "prompt_tokens": prompt_tokens,
+            "cached_tokens": cached_tokens,
+            "cache_pct": cache_pct,
+            "completion_tokens": completion_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "total_tokens": usage.get("total_tokens", 0),
+            "spend": round(spend, 4),
+            "model": model,
+            "timestamp": entry.get("startTime", ""),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route("/api/conversations/<session_id>")
 def get_conversations(session_id):
     """Get conversation history for a session."""

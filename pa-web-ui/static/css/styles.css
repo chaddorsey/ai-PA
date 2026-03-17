@@ -117,6 +117,21 @@ header h1 {
     max-width: 55px;
 }
 
+.usage-bar {
+    padding: 0.2rem 1rem;
+    background-color: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex;
+    gap: 1rem;
+}
+
+.usage-bar .cache-good { color: #34C759; }
+.usage-bar .cache-partial { color: #FF9500; }
+.usage-bar .cache-none { color: #FF3B30; }
+
 /* Chat container */
 .chat-container {
     overflow-y: auto;
