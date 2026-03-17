@@ -492,6 +492,15 @@ MC_MODEL_PRESETS = {
         "context_window": 272000,
         "max_tokens": 128000,
     },
+    "gpt-5.3 (API)": {
+        "model": "gpt-5.3-chat-latest",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.3-chat-latest",
+        "context_window": 272000,
+        "max_tokens": 128000,
+    },
     "gpt-5-mini (API)": {
         "model": "gpt-5-mini",
         "model_endpoint_type": "openai",

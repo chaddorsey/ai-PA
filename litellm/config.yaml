@@ -54,6 +54,11 @@ model_list:
       model: "openai/gpt-5.2"
       api_key: "os.environ/OPENAI_KEY_MAIN"
 
+  - model_name: "gpt-5.3-chat-latest"
+    litellm_params:
+      model: "openai/gpt-5.3-chat-latest"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
   - model_name: "gpt-5.4"
     litellm_params:
       model: "openai/gpt-5.4"
