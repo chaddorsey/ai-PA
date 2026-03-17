@@ -31,6 +31,10 @@
         <string>http://localhost:8283</string>
         <key>ROVER_AGENT_ID</key>
         <string>agent-76ee5448-68ec-4fdd-b102-d4895d44e090</string>
+        <key>MC_AGENT_ID</key>
+        <string>agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef</string>
+        <key>TIMER_LOG_DIR</key>
+        <string>/Volumes/main-drive/ai-PA/omnifocus-timer/logs</string>
     </dict>
 </dict>
 </plist>

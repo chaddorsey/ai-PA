@@ -191,12 +191,57 @@ function formatTimerMessage(event) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Timer event logging and completion relay
+// ---------------------------------------------------------------------------
+
+// Log directory — all timer events go to a JSONL file.
+// Completion events additionally get relayed to MC for thinking.
+const TIMER_LOG_DIR = process.env.TIMER_LOG_DIR || '/tmp/omnifocus-timer-logs';
+const MC_AGENT_ID = process.env.MC_AGENT_ID || ROVER_AGENT_ID;
+
+// Ensure log directory exists
+try { fs.mkdirSync(TIMER_LOG_DIR, { recursive: true }); } catch (_) {}
+
+/**
+ * Append a timer event to the local JSONL log file.
+ * File: TIMER_LOG_DIR/timer-events.jsonl
+ */
+function logTimerEvent(event) {
+  const logFile = path.join(TIMER_LOG_DIR, 'timer-events.jsonl');
+  const line = JSON.stringify({ ...event, _logged: new Date().toISOString() }) + '\n';
+  fs.appendFileSync(logFile, line, 'utf8');
+}
+
+/**
+ * Append a completion record to the completions log.
+ * File: TIMER_LOG_DIR/completions.jsonl
+ * This is the file MC reads for batch status updates.
+ */
+function logCompletion(event) {
+  const logFile = path.join(TIMER_LOG_DIR, 'completions.jsonl');
+  const record = {
+    taskId: event.taskId,
+    taskName: event.taskName,
+    projectName: event.projectName,
+    sessionMs: event.sessionMs,
+    totalMs: event.totalMs,
+    originalEstimateMin: event.originalEstimateMin,
+    agentEstimateMin: event.agentEstimateMin,
+    completedAt: new Date().toISOString(),
+  };
+  const line = JSON.stringify(record) + '\n';
+  fs.appendFileSync(logFile, line, 'utf8');
+}
+
 /**
  * Fire-and-forget POST to Letta agent messages API.
+ * Used ONLY for completion events → MC (thinking tier).
  */
-function relayToLetta(message) {
-  if (!ROVER_AGENT_ID) {
-    console.log('[timer-event] ROVER_AGENT_ID not set, skipping Letta relay');
+function relayCompletionToMC(message) {
+  const agentId = MC_AGENT_ID;
+  if (!agentId) {
+    console.log('[timer-event] No MC_AGENT_ID set, skipping completion relay');
     return;
   }
 
@@ -204,7 +249,7 @@ function relayToLetta(message) {
     messages: [{ role: 'user', content: message }],
   });
 
-  const url = new URL(`${LETTA_URL}/v1/agents/${ROVER_AGENT_ID}/messages`);
+  const url = new URL(`${LETTA_URL}/v1/agents/${agentId}/messages`);
 
   const options = {
     hostname: url.hostname,
@@ -222,15 +267,15 @@ function relayToLetta(message) {
     resp.on('data', (chunk) => { body += chunk; });
     resp.on('end', () => {
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
-        console.log(`[timer-event] Letta relay success (${resp.statusCode})`);
+        console.log(`[timer-event] MC completion relay success (${resp.statusCode})`);
       } else {
-        console.error(`[timer-event] Letta relay failed: ${resp.statusCode} ${body.substring(0, 200)}`);
+        console.error(`[timer-event] MC completion relay failed: ${resp.statusCode} ${body.substring(0, 200)}`);
       }
     });
   });
 
   req.on('error', (err) => {
-    console.error(`[timer-event] Letta relay error: ${err.message}`);
+    console.error(`[timer-event] MC completion relay error: ${err.message}`);
   });
 
   req.write(payload);
@@ -239,31 +284,34 @@ function relayToLetta(message) {
 
 /**
  * Handle POST /timer-event requests from the OmniFocus timer plugin.
+ *
+ * ALL events → local JSONL log (no LLM cost).
+ * COMPLETION events only → also relay to MC (thinking tier).
+ * Everything else (start, pause, resume, heartbeat) → log only.
  */
 function handleTimerEvent(body, res) {
   try {
     const event = JSON.parse(body);
-    console.log(`[timer-event] Received: ${event.event} — ${event.taskName || 'n/a'}`);
+    console.log(`[timer-event] ${event.event} — ${event.taskName || 'n/a'}`);
 
-    // Skip heartbeat events
-    if (event.event === 'timer.heartbeat') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ forwarded: false }));
-      return;
+    // Log ALL events to file (zero LLM cost)
+    logTimerEvent(event);
+
+    // Completion events additionally get relayed to MC and logged separately
+    const isCompletion = event.event === 'timer.stopped' || event.event === 'timer.auto-stopped';
+    if (isCompletion) {
+      logCompletion(event);
+      const message = formatTimerMessage(event);
+      console.log(`[timer-event] Completion → MC: ${message}`);
+      relayCompletionToMC(message);
     }
 
-    const message = formatTimerMessage(event);
-    console.log(`[timer-event] Formatted: ${message}`);
-
-    // Fire-and-forget relay to Letta
-    relayToLetta(message);
-
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ forwarded: true }));
+    res.end(JSON.stringify({ logged: true, relayed: isCompletion }));
   } catch (err) {
     console.error('[timer-event] Parse error:', err.message);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ forwarded: false, error: err.message }));
+    res.end(JSON.stringify({ logged: false, error: err.message }));
   }
 }
 
@@ -299,13 +347,15 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 OmniFocus Host Bridge Service listening on port ${PORT}`);
-  console.log(`   Endpoint: http://0.0.0.0:${PORT}/execute`);
-  console.log(`   Timer:    http://0.0.0.0:${PORT}/timer-event`);
-  if (ROVER_AGENT_ID) {
-    console.log(`   Letta relay: ${LETTA_URL} → agent ${ROVER_AGENT_ID}`);
+  console.log(`OmniFocus Host Bridge Service listening on port ${PORT}`);
+  console.log(`   /execute      — OmniFocus plugin commands`);
+  console.log(`   /timer-event  — timer event logging`);
+  console.log(`   Timer log:    ${TIMER_LOG_DIR}/timer-events.jsonl`);
+  console.log(`   Completions:  ${TIMER_LOG_DIR}/completions.jsonl`);
+  if (MC_AGENT_ID) {
+    console.log(`   MC relay:     ${LETTA_URL} → ${MC_AGENT_ID} (completions only)`);
   } else {
-    console.log(`   Letta relay: disabled (ROVER_AGENT_ID not set)`);
+    console.log(`   MC relay:     disabled (no MC_AGENT_ID)`);
   }
 });
 
