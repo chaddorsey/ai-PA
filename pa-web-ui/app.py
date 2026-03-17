@@ -540,6 +540,7 @@ def get_mc_model():
             "model": model,
             "provider": provider,
             "label": label,
+            "reasoning_effort": llm.get("reasoning_effort", "medium"),
             "presets": list(MC_MODEL_PRESETS.keys()),
         })
     except Exception as e:
@@ -578,6 +579,31 @@ def set_mc_model():
             "provider": new_llm.get("model_endpoint_type"),
             "label": preset_name,
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/mc-reasoning", methods=["POST"])
+def set_mc_reasoning():
+    """Set MC's reasoning effort level."""
+    try:
+        data = request.get_json()
+        effort = data.get("effort")
+        if effort not in ("low", "medium", "high"):
+            return jsonify({"error": "effort must be low, medium, or high"}), 400
+
+        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}")
+        resp.raise_for_status()
+        llm = resp.json().get("llm_config", {})
+        llm["reasoning_effort"] = effort
+
+        patch_resp = http_client.patch(
+            f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}",
+            json={"llm_config": llm},
+        )
+        patch_resp.raise_for_status()
+        new_llm = patch_resp.json().get("llm_config", {})
+        return jsonify({"reasoning_effort": new_llm.get("reasoning_effort")})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

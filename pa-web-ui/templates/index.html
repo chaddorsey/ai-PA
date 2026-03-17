@@ -25,6 +25,11 @@
                         <select id="mc-model-select" title="MC Model">
                             <option value="">...</option>
                         </select>
+                        <select id="mc-reasoning-select" title="Reasoning Effort">
+                            <option value="low">low</option>
+                            <option value="medium">med</option>
+                            <option value="high">high</option>
+                        </select>
                     </div>
                 </div>
             </header>
@@ -164,15 +169,16 @@
     // MC Model Status & Switcher
     (function() {
         const dot = document.getElementById('model-dot');
-        const select = document.getElementById('mc-model-select');
+        const modelSelect = document.getElementById('mc-model-select');
+        const reasoningSelect = document.getElementById('mc-reasoning-select');
         let currentLabel = '';
 
         function updateDotColor(provider) {
             if (provider === 'chatgpt_oauth') {
-                dot.style.background = '#34C759'; // green = oauth
+                dot.style.background = '#34C759';
                 dot.title = 'OAuth (free)';
             } else {
-                dot.style.background = '#FF9500'; // orange = API (costs $)
+                dot.style.background = '#FF9500';
                 dot.title = 'API (paid)';
             }
         }
@@ -186,24 +192,29 @@
                 currentLabel = data.label;
                 updateDotColor(data.provider);
 
-                // Populate dropdown
-                select.innerHTML = '';
+                // Populate model dropdown
+                modelSelect.innerHTML = '';
                 (data.presets || []).forEach(name => {
                     const opt = document.createElement('option');
                     opt.value = name;
                     opt.textContent = name;
                     if (name === currentLabel) opt.selected = true;
-                    select.appendChild(opt);
+                    modelSelect.appendChild(opt);
                 });
+
+                // Sync reasoning dropdown
+                if (data.reasoning_effort) {
+                    reasoningSelect.value = data.reasoning_effort;
+                }
             } catch (e) {
                 console.error('MC model fetch error:', e);
             }
         }
 
-        select.addEventListener('change', async () => {
-            const preset = select.value;
+        modelSelect.addEventListener('change', async () => {
+            const preset = modelSelect.value;
             if (!preset) return;
-            dot.style.background = '#999'; // gray while switching
+            dot.style.background = '#999';
             try {
                 const resp = await fetch('/api/mc-model', {
                     method: 'POST',
@@ -213,18 +224,36 @@
                 const data = await resp.json();
                 if (data.error) {
                     alert('Switch failed: ' + data.error);
-                    fetchModelStatus();
                 } else {
                     currentLabel = data.label;
                     updateDotColor(data.provider);
                 }
+                fetchModelStatus();
             } catch (e) {
                 alert('Switch error: ' + e.message);
                 fetchModelStatus();
             }
         });
 
-        // Poll every 30 seconds to detect auto-fallback changes
+        reasoningSelect.addEventListener('change', async () => {
+            const effort = reasoningSelect.value;
+            try {
+                const resp = await fetch('/api/mc-reasoning', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({effort})
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    alert('Reasoning switch failed: ' + data.error);
+                    fetchModelStatus();
+                }
+            } catch (e) {
+                alert('Reasoning error: ' + e.message);
+                fetchModelStatus();
+            }
+        });
+
         fetchModelStatus();
         setInterval(fetchModelStatus, 30000);
     })();
