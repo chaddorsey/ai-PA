@@ -172,6 +172,7 @@
         const modelSelect = document.getElementById('mc-model-select');
         const reasoningSelect = document.getElementById('mc-reasoning-select');
         let currentLabel = '';
+        let presetReasoning = {};
 
         function updateDotColor(provider) {
             if (provider === 'chatgpt_oauth') {
@@ -183,6 +184,27 @@
             }
         }
 
+        function updateReasoningOptions(presetName, currentEffort) {
+            const options = presetReasoning[presetName] || [];
+            reasoningSelect.innerHTML = '';
+            if (options.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'n/a';
+                reasoningSelect.appendChild(opt);
+                reasoningSelect.disabled = true;
+            } else {
+                reasoningSelect.disabled = false;
+                options.forEach(level => {
+                    const opt = document.createElement('option');
+                    opt.value = level;
+                    opt.textContent = level;
+                    if (level === currentEffort) opt.selected = true;
+                    reasoningSelect.appendChild(opt);
+                });
+            }
+        }
+
         async function fetchModelStatus() {
             try {
                 const resp = await fetch('/api/mc-model');
@@ -190,6 +212,7 @@
                 if (data.error) return;
 
                 currentLabel = data.label;
+                presetReasoning = data.preset_reasoning || {};
                 updateDotColor(data.provider);
 
                 // Populate model dropdown
@@ -202,10 +225,8 @@
                     modelSelect.appendChild(opt);
                 });
 
-                // Sync reasoning dropdown
-                if (data.reasoning_effort) {
-                    reasoningSelect.value = data.reasoning_effort;
-                }
+                // Update reasoning options for current model
+                updateReasoningOptions(currentLabel, data.reasoning_effort);
             } catch (e) {
                 console.error('MC model fetch error:', e);
             }
@@ -224,11 +245,14 @@
                 const data = await resp.json();
                 if (data.error) {
                     alert('Switch failed: ' + data.error);
+                    fetchModelStatus();
                 } else {
-                    currentLabel = data.label;
+                    currentLabel = data.label || preset;
                     updateDotColor(data.provider);
+                    // Update reasoning options for the new model
+                    const defaultEffort = (presetReasoning[preset] || [])[0] || '';
+                    updateReasoningOptions(preset, data.reasoning_effort || defaultEffort);
                 }
-                fetchModelStatus();
             } catch (e) {
                 alert('Switch error: ' + e.message);
                 fetchModelStatus();

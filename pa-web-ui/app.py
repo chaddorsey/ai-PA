@@ -469,6 +469,7 @@ MC_MODEL_PRESETS = {
         "reasoning_effort": "low",
         "strict": True,
         "parallel_tool_calls": True,
+        "_reasoning_options": ["low", "medium", "high"],
     },
     "gpt-5.2 (oauth)": {
         "model": "gpt-5.2",
@@ -482,15 +483,7 @@ MC_MODEL_PRESETS = {
         "reasoning_effort": "medium",
         "strict": True,
         "parallel_tool_calls": True,
-    },
-    "gpt-5.2 (API)": {
-        "model": "gpt-5.2",
-        "model_endpoint_type": "openai",
-        "model_endpoint": "http://litellm:4000/v1",
-        "provider_name": "litellm",
-        "handle": "litellm/gpt-5.2",
-        "context_window": 272000,
-        "max_tokens": 128000,
+        "_reasoning_options": ["low", "medium", "high"],
     },
     "gpt-5.3 (API)": {
         "model": "gpt-5.3-chat-latest",
@@ -500,6 +493,18 @@ MC_MODEL_PRESETS = {
         "handle": "litellm/gpt-5.3-chat-latest",
         "context_window": 272000,
         "max_tokens": 128000,
+        "reasoning_effort": "medium",
+        "_reasoning_options": ["medium"],
+    },
+    "gpt-5.2 (API)": {
+        "model": "gpt-5.2",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.2",
+        "context_window": 272000,
+        "max_tokens": 128000,
+        "_reasoning_options": ["low", "medium", "high"],
     },
     "gpt-5-mini (API)": {
         "model": "gpt-5-mini",
@@ -509,6 +514,7 @@ MC_MODEL_PRESETS = {
         "handle": "litellm/gpt-5-mini",
         "context_window": 128000,
         "max_tokens": 32768,
+        "_reasoning_options": [],
     },
     "gpt-4.1 (API)": {
         "model": "gpt-4.1",
@@ -518,6 +524,7 @@ MC_MODEL_PRESETS = {
         "handle": "litellm/gpt-4.1",
         "context_window": 128000,
         "max_tokens": 32768,
+        "_reasoning_options": [],
     },
 }
 
@@ -537,12 +544,18 @@ def get_mc_model():
             if preset_cfg.get("model") == model and preset_cfg.get("model_endpoint_type") == provider:
                 label = preset_name
                 break
+        # Build reasoning options map for frontend
+        preset_reasoning = {
+            name: cfg.get("_reasoning_options", [])
+            for name, cfg in MC_MODEL_PRESETS.items()
+        }
         return jsonify({
             "model": model,
             "provider": provider,
             "label": label,
-            "reasoning_effort": llm.get("reasoning_effort", "medium"),
+            "reasoning_effort": llm.get("reasoning_effort") or "none",
             "presets": list(MC_MODEL_PRESETS.keys()),
+            "preset_reasoning": preset_reasoning,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
