@@ -307,6 +307,46 @@ The system separates cognitive work (interpretation, orchestration, synthesis) f
 - Rapidly changing state (timer elapsed time — the widget handles this)
 - Large documents (store references/summaries, not full content)
 
+### Caching Architecture (OpenAI Prompt Prefix Caching)
+
+**How it works:** OpenAI automatically caches the prefix of prompts >1024 tokens. Cached input tokens cost 50% less. Cache is keyed on exact byte-for-byte prefix match from the start.
+
+**Letta's prompt structure (top to bottom):**
+```
+[System prompt preamble]     ← static, cached
+[Memory blocks in list order]← static between compactions, cached
+[Memory metadata]            ← static between compactions, cached (at tail of memory section)
+[Tool definitions]           ← static, cached (separate API parameter)
+--- cached prefix boundary ---
+[Messages]                   ← changes every turn, not cached
+```
+
+**Key insight: Letta uses deferred compilation.** The compiled system prompt (including the memory metadata timestamp and message count) is generated once during compilation and reused across subsequent calls. It does NOT recompile on every LLM call. This means the entire prefix is stable and cacheable between compaction events.
+
+**What triggers recompilation (cache bust):**
+- Memory block edits via API (`PATCH /v1/blocks/{id}`)
+- Compaction events (sliding window triggers)
+- Explicit recompile (`POST /v1/agents/{id}/recompile`)
+- Daily date change (once per day, negligible)
+- Model switch (different models have separate caches)
+
+**What does NOT bust the cache:**
+- Sending new messages (messages are at the end, after the prefix)
+- Reading blocks or archival memory
+- Tool calls (tool definitions are stable)
+- Timer events (file-logged, don't touch blocks)
+
+**Best practices for maximizing cache hits:**
+1. Batch block writes — multiple edits in quick succession = one recompilation, not many
+2. Keep block content stable — avoid writing frequently-changing data to blocks
+3. Use archival memory for historical/completion data (zero cache impact)
+4. Avoid unnecessary model switches (each switch = cold cache)
+5. Use `self_compact_sliding_window` compaction mode (enabled on MC)
+6. Let the agent pull volatile data via tool calls instead of writing it to blocks
+7. Monitor cache % via the pa-web usage stats bar
+
+**Monitoring:** The pa-web UI displays per-message cache statistics (prompt tokens, cached tokens, cache %, completion tokens, cost) sourced from OpenAI's `prompt_tokens_details.cached_tokens` response field, captured via Letta's `usage_statistics` stream events and LiteLLM's spend logging.
+
 ### Caching Implications
 - **Stable blocks maximize cache hits.** OpenAI's prefix caching works when the system prompt + memory blocks are identical across calls. Every update to a core block invalidates the cache.
 - **Update task-status block in batches, not per-event.** Rather than updating on every timer stop, batch updates at natural breakpoints (end of task batch, end of day, user-initiated check-in).
