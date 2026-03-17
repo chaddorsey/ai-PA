@@ -16,9 +16,17 @@
         <div class="container">
             <header>
                 <h1>Personal Assistant</h1>
-                <select id="agent-select">
-                    <option value="">Loading agents...</option>
-                </select>
+                <div class="header-controls">
+                    <select id="agent-select">
+                        <option value="">Loading agents...</option>
+                    </select>
+                    <div class="mc-model-status" id="mc-model-status">
+                        <span class="model-dot" id="model-dot"></span>
+                        <select id="mc-model-select" title="MC Model">
+                            <option value="">...</option>
+                        </select>
+                    </div>
+                </div>
             </header>
 
             <main class="chat-container">
@@ -152,5 +160,74 @@
     <script src="{{ url_for('static', filename='js/sidebar.js') }}?v=3"></script>
     <script src="{{ url_for('static', filename='js/drafts.js') }}?v=1"></script>
     <script src="{{ url_for('static', filename='js/chat.js') }}?v=23"></script>
+    <script>
+    // MC Model Status & Switcher
+    (function() {
+        const dot = document.getElementById('model-dot');
+        const select = document.getElementById('mc-model-select');
+        let currentLabel = '';
+
+        function updateDotColor(provider) {
+            if (provider === 'chatgpt_oauth') {
+                dot.style.background = '#34C759'; // green = oauth
+                dot.title = 'OAuth (free)';
+            } else {
+                dot.style.background = '#FF9500'; // orange = API (costs $)
+                dot.title = 'API (paid)';
+            }
+        }
+
+        async function fetchModelStatus() {
+            try {
+                const resp = await fetch('/api/mc-model');
+                const data = await resp.json();
+                if (data.error) return;
+
+                currentLabel = data.label;
+                updateDotColor(data.provider);
+
+                // Populate dropdown
+                select.innerHTML = '';
+                (data.presets || []).forEach(name => {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    if (name === currentLabel) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('MC model fetch error:', e);
+            }
+        }
+
+        select.addEventListener('change', async () => {
+            const preset = select.value;
+            if (!preset) return;
+            dot.style.background = '#999'; // gray while switching
+            try {
+                const resp = await fetch('/api/mc-model', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({preset})
+                });
+                const data = await resp.json();
+                if (data.error) {
+                    alert('Switch failed: ' + data.error);
+                    fetchModelStatus();
+                } else {
+                    currentLabel = data.label;
+                    updateDotColor(data.provider);
+                }
+            } catch (e) {
+                alert('Switch error: ' + e.message);
+                fetchModelStatus();
+            }
+        });
+
+        // Poll every 30 seconds to detect auto-fallback changes
+        fetchModelStatus();
+        setInterval(fetchModelStatus, 30000);
+    })();
+    </script>
 </body>
 </html>

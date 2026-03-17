@@ -104,6 +104,31 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+
+def build_web_ui_system_reminder() -> str:
+    """Build a <system-reminder> block identifying the pa-web-ui environment.
+
+    Tells the agent what rendering capabilities are available so it can
+    format responses appropriately (e.g. HTML tables, styled blocks, etc.).
+    """
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return (
+        "<system-reminder>\n"
+        "## Environment\n"
+        "- **Client**: pa-web-ui (custom web dashboard)\n"
+        "- **Renderer**: HTML with markdown support\n"
+        "- **Supports**: HTML tags, markdown, tables, code blocks with syntax highlighting, "
+        "links, images, lists, bold/italic/strikethrough, blockquotes, horizontal rules\n"
+        "- **Does NOT support**: ANSI escape codes, terminal formatting, LaTeX math\n"
+        "- **Prefer**: Rich HTML formatting over plain text when presenting structured data "
+        "(tables, styled lists, cards). Use markdown headers for section organization.\n"
+        f"- **Timestamp**: {now}\n"
+        "</system-reminder>"
+    )
+
+
 app = Flask(__name__)
 CORS(app)
 
@@ -113,8 +138,9 @@ ROUTING_HANDLER_URL = os.getenv(
 )
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283")
 GWS_BRIDGE_URL = os.getenv("GWS_BRIDGE_URL", "http://gws-bridge:8098")
-LETTABOT_API_URL = os.environ.get("LETTABOT_API_URL", "http://localhost:8080")
-LETTABOT_API_KEY = os.environ.get("LETTABOT_API_KEY", "")
+MISSION_CONTROL_AGENT_ID = os.environ.get(
+    "MISSION_CONTROL_AGENT_ID", "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
+)
 
 # Database configuration
 import psycopg2
@@ -126,6 +152,81 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql://postgres:postgres@supabase-db:5432/postgres"
 )
+
+
+def ensure_pa_web_schema():
+    """Create pa_web schema and tables if they don't exist."""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'pa_web'")
+                if cur.fetchone():
+                    return
+                logger.info("pa_web_schema_missing", action="creating")
+                cur.execute("""
+                    CREATE SCHEMA IF NOT EXISTS pa_web;
+
+                    CREATE TABLE IF NOT EXISTS pa_web.conversations (
+                        id SERIAL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        agent_id TEXT DEFAULT '',
+                        agent_name TEXT DEFAULT '',
+                        metadata JSONB,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+
+                    CREATE TABLE IF NOT EXISTS pa_web.routing_signals (
+                        id SERIAL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        slash_command TEXT NOT NULL,
+                        utterance TEXT,
+                        target_agent_id TEXT NOT NULL,
+                        target_agent_name TEXT DEFAULT '',
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+
+                    CREATE TABLE IF NOT EXISTS pa_web.thread_exchanges (
+                        id SERIAL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        request_id TEXT NOT NULL,
+                        thread_position INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        agent_id TEXT DEFAULT '',
+                        agent_name TEXT DEFAULT '',
+                        parent_request_id TEXT,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+
+                    CREATE TABLE IF NOT EXISTS pa_web.response_feedback (
+                        id SERIAL PRIMARY KEY,
+                        session_id TEXT NOT NULL,
+                        request_id TEXT NOT NULL,
+                        feedback_type TEXT NOT NULL,
+                        actual_agent_id TEXT DEFAULT '',
+                        actual_agent_name TEXT DEFAULT '',
+                        intended_agent_id TEXT,
+                        intended_agent_name TEXT,
+                        conversation_id INTEGER,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_conversations_session ON pa_web.conversations(session_id);
+                    CREATE INDEX IF NOT EXISTS idx_conversations_created ON pa_web.conversations(created_at);
+                    CREATE INDEX IF NOT EXISTS idx_routing_signals_session ON pa_web.routing_signals(session_id);
+                    CREATE INDEX IF NOT EXISTS idx_thread_exchanges_session ON pa_web.thread_exchanges(session_id);
+                    CREATE INDEX IF NOT EXISTS idx_thread_exchanges_request ON pa_web.thread_exchanges(request_id);
+                    CREATE INDEX IF NOT EXISTS idx_response_feedback_session ON pa_web.response_feedback(session_id);
+                """)
+            conn.commit()
+            logger.info("pa_web_schema_created")
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error("pa_web_schema_creation_failed", error=str(e))
 
 
 @contextmanager
@@ -352,6 +453,126 @@ def get_config():
     })
 
 
+MC_AGENT_ID = os.getenv("MC_AGENT_ID", "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef")
+
+# Model presets for the MC model switcher
+MC_MODEL_PRESETS = {
+    "gpt-5.4 (oauth)": {
+        "model": "gpt-5.4",
+        "model_endpoint_type": "chatgpt_oauth",
+        "model_endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "provider_name": "chatgpt-plus-pro",
+        "provider_category": "byok",
+        "handle": "chatgpt-plus-pro/gpt-5.4",
+        "context_window": 272000,
+        "max_tokens": 128000,
+        "reasoning_effort": "low",
+        "strict": True,
+        "parallel_tool_calls": True,
+    },
+    "gpt-5.2 (oauth)": {
+        "model": "gpt-5.2",
+        "model_endpoint_type": "chatgpt_oauth",
+        "model_endpoint": "https://chatgpt.com/backend-api/codex/responses",
+        "provider_name": "chatgpt-plus-pro",
+        "provider_category": "byok",
+        "handle": "chatgpt-plus-pro/gpt-5.2",
+        "context_window": 272000,
+        "max_tokens": 128000,
+        "reasoning_effort": "medium",
+        "strict": True,
+        "parallel_tool_calls": True,
+    },
+    "gpt-5.2 (API)": {
+        "model": "gpt-5.2",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.2",
+        "context_window": 272000,
+        "max_tokens": 128000,
+    },
+    "gpt-5-mini (API)": {
+        "model": "gpt-5-mini",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5-mini",
+        "context_window": 128000,
+        "max_tokens": 32768,
+    },
+    "gpt-4.1 (API)": {
+        "model": "gpt-4.1",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-4.1",
+        "context_window": 128000,
+        "max_tokens": 32768,
+    },
+}
+
+
+@app.route("/api/mc-model")
+def get_mc_model():
+    """Get MC's current model configuration."""
+    try:
+        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/")
+        resp.raise_for_status()
+        llm = resp.json().get("llm_config", {})
+        model = llm.get("model", "unknown")
+        provider = llm.get("model_endpoint_type", "unknown")
+        # Build a display label
+        if provider == "chatgpt_oauth":
+            label = f"{model} (oauth)"
+        else:
+            label = f"{model} (API)"
+        return jsonify({
+            "model": model,
+            "provider": provider,
+            "label": label,
+            "presets": list(MC_MODEL_PRESETS.keys()),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/mc-model", methods=["POST"])
+def set_mc_model():
+    """Switch MC's model to a preset."""
+    try:
+        data = request.get_json()
+        preset_name = data.get("preset")
+        if preset_name not in MC_MODEL_PRESETS:
+            return jsonify({"error": f"Unknown preset: {preset_name}"}), 400
+
+        # Get current config
+        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/")
+        resp.raise_for_status()
+        agent = resp.json()
+        llm = agent.get("llm_config", {})
+
+        # Apply preset overrides
+        preset = MC_MODEL_PRESETS[preset_name]
+        for k, v in preset.items():
+            llm[k] = v
+
+        # Patch agent
+        patch_resp = http_client.patch(
+            f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/",
+            json={"llm_config": llm},
+        )
+        patch_resp.raise_for_status()
+        new_llm = patch_resp.json().get("llm_config", {})
+        return jsonify({
+            "model": new_llm.get("model"),
+            "provider": new_llm.get("model_endpoint_type"),
+            "label": preset_name,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/conversations/<session_id>")
 def get_conversations(session_id):
     """Get conversation history for a session."""
@@ -478,38 +699,11 @@ def coordinate():
 
 @app.route("/api/heartbeats", methods=["GET"])
 def get_heartbeats():
-    """Fetch recent heartbeat turns from LettaBot."""
-    since = request.args.get("since", "")  # ISO timestamp
-    try:
-        headers = {}
-        if LETTABOT_API_KEY:
-            headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.get(
-                f"{LETTABOT_API_URL}/turns/data",
-                headers=headers,
-            )
-            if resp.status_code != 200:
-                return jsonify({"heartbeats": []}), 200
-
-            turns = resp.json()
-            # Filter for heartbeat triggers only
-            heartbeats = []
-            for turn in turns:
-                if turn.get("trigger") == "heartbeat":
-                    ts = turn.get("ts", "")
-                    if since and ts <= since:
-                        continue
-                    heartbeats.append({
-                        "ts": ts,
-                        "output": turn.get("output", ""),
-                        "events": turn.get("events", []),
-                        "durationMs": turn.get("durationMs"),
-                    })
-            return jsonify({"heartbeats": heartbeats}), 200
-    except Exception as e:
-        logger.warning("heartbeat_fetch_error", error=str(e))
-        return jsonify({"heartbeats": []}), 200
+    """Fetch recent heartbeat turns from Mission Control via Letta API."""
+    # Heartbeats were previously fetched from Open-WebUI's LettaBot pipeline.
+    # That pipeline is removed; heartbeat data is not available via Letta API.
+    # Return empty list to keep the frontend happy.
+    return jsonify({"heartbeats": []}), 200
 
 
 # Coordination slash commands: command -> (task_type, context_key)
@@ -622,44 +816,38 @@ def stream_coordination(
     )
 
 
-def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]:
-    """Stream a message through LettaBot's native API and translate to pa-web SSE format."""
+def stream_mission_control(message: str, session_id: str) -> Generator[str, None, None]:
+    """Stream a message directly to Mission Control via Letta API."""
     import uuid
 
     request_id = str(uuid.uuid4())
 
     # Emit routing event
-    yield f"data: {json.dumps({'type': 'routing', 'agent_id': 'lettabot', 'agent_name': 'LettaBot', 'request_id': request_id})}\n\n"
+    yield f"data: {json.dumps({'type': 'routing', 'agent_id': MISSION_CONTROL_AGENT_ID, 'agent_name': 'Mission Control', 'request_id': request_id})}\n\n"
 
-    # Save user message (lightweight log)
+    # Save user message
     save_conversation_message(
         session_id=session_id,
         role="user",
         message=message,
-        agent_id="lettabot",
-        agent_name="LettaBot",
+        agent_id=MISSION_CONTROL_AGENT_ID,
+        agent_name="Mission Control",
         request_id=request_id,
     )
 
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-    }
-    if LETTABOT_API_KEY:
-        headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
+    letta_url = f"{LETTA_BASE_URL}/v1/agents/{MISSION_CONTROL_AGENT_ID}/messages/stream"
+    letta_payload = {"messages": [
+        {"role": "system", "content": build_web_ui_system_reminder()},
+        {"role": "user", "content": message},
+    ]}
 
     assistant_content = ""
 
     try:
         with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
-            with client.stream(
-                "POST",
-                f"{LETTABOT_API_URL}/api/v1/chat",
-                json={"message": message, "stream": True},
-                headers=headers,
-            ) as response:
+            with client.stream("POST", letta_url, json=letta_payload) as response:
                 if response.status_code != 200:
-                    yield f"data: {json.dumps({'type': 'error', 'message': f'LettaBot returned {response.status_code}'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'Mission Control returned {response.status_code}'})}\n\n"
                     return
 
                 buffer = ""
@@ -669,7 +857,7 @@ def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]
                         line, buffer = buffer.split("\n", 1)
                         line = line.strip()
 
-                        if not line or line.startswith(":"):
+                        if not line:
                             continue
 
                         if line.startswith("data: "):
@@ -679,69 +867,59 @@ def stream_lettabot(message: str, session_id: str) -> Generator[str, None, None]
 
                             try:
                                 event = json.loads(data_str)
-                                msg_type = event.get("type", "")
+                                msg_type = event.get("message_type", "")
 
-                                if msg_type == "assistant":
+                                if msg_type == "assistant_message":
                                     content = event.get("content", "")
                                     if content:
-                                        assistant_content += content
-                                        yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+                                        cleaned = clean_response_for_user(content)
+                                        if cleaned:
+                                            assistant_content += cleaned
+                                            yield f"data: {json.dumps({'type': 'text', 'content': cleaned})}\n\n"
 
-                                elif msg_type == "tool_call":
-                                    tool_name = event.get("toolName", event.get("name", "unknown"))
-                                    tool_input = event.get("toolInput") or event.get("rawArguments") or event.get("args", {})
+                                elif msg_type == "tool_call_message":
+                                    tool_name = event.get("tool_call", {}).get("name", "unknown")
+                                    tool_args = event.get("tool_call", {}).get("arguments", "")
+                                    try:
+                                        tool_input = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+                                    except json.JSONDecodeError:
+                                        tool_input = tool_args
                                     yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_input})}\n\n"
 
-                                elif msg_type == "tool_result":
+                                elif msg_type == "tool_return":
                                     tool_content = event.get("content", "")
-                                    is_error = event.get("isError", False)
-                                    yield f"data: {json.dumps({'type': 'tool_result', 'content': tool_content, 'is_error': is_error})}\n\n"
+                                    status = event.get("status", "ok")
+                                    yield f"data: {json.dumps({'type': 'tool_result', 'content': tool_content, 'is_error': status != 'ok'})}\n\n"
 
-                                elif msg_type == "reasoning":
+                                elif msg_type == "reasoning_message":
                                     content = event.get("content", "")
                                     if content:
                                         yield f"data: {json.dumps({'type': 'thinking', 'content': content})}\n\n"
 
-                                elif msg_type == "result":
-                                    success = event.get("success", True)
-                                    if not success:
-                                        error_msg = event.get("error", "Unknown error")
-                                        yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                                elif msg_type == "error_message":
+                                    error_msg = event.get("message", "Unknown error")
+                                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
 
-                                elif msg_type == "error":
-                                    yield f"data: {json.dumps({'type': 'error', 'message': event.get('message', event.get('error', 'Unknown error'))})}\n\n"
+                                elif msg_type == "usage_statistics":
+                                    pass  # Ignore usage stats
 
                             except json.JSONDecodeError:
                                 pass
 
-                # Process any remaining data in buffer after stream ends
-                if buffer.strip() and buffer.strip().startswith("data: "):
-                    data_str = buffer.strip()[6:]
-                    if data_str != "[DONE]":
-                        try:
-                            event = json.loads(data_str)
-                            if event.get("type") == "assistant":
-                                content = event.get("content", "")
-                                if content:
-                                    assistant_content += content
-                                    yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
-                        except json.JSONDecodeError:
-                            pass
-
     except httpx.TimeoutException:
-        yield f"data: {json.dumps({'type': 'error', 'message': 'LettaBot request timed out'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Mission Control request timed out'})}\n\n"
     except Exception as e:
-        logger.error("lettabot_stream_error", error=str(e))
-        yield f"data: {json.dumps({'type': 'error', 'message': f'LettaBot error: {str(e)}'})}\n\n"
+        logger.error("mission_control_stream_error", error=str(e))
+        yield f"data: {json.dumps({'type': 'error', 'message': f'Mission Control error: {str(e)}'})}\n\n"
 
-    # Save assistant response (lightweight log)
+    # Save assistant response
     if assistant_content:
         save_conversation_message(
             session_id=session_id,
             role="assistant",
             message=assistant_content,
-            agent_id="lettabot",
-            agent_name="LettaBot",
+            agent_id=MISSION_CONTROL_AGENT_ID,
+            agent_name="Mission Control",
             request_id=request_id,
         )
 
@@ -804,12 +982,12 @@ def stream():
     if not is_slash_command:
         # Default: route to LettaBot
         logger.info(
-            "lettabot_stream_request",
+            "mission_control_stream_request",
             session_id=session_id,
             message_length=len(message),
         )
         return Response(
-            stream_lettabot(message, session_id),
+            stream_mission_control(message, session_id),
             mimetype="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -912,7 +1090,10 @@ def stream():
             message_parts.append(message)
             augmented_message = "\n\n".join(message_parts)
 
-            letta_payload = {"messages": [{"role": "user", "content": augmented_message}]}
+            letta_payload = {"messages": [
+                {"role": "system", "content": build_web_ui_system_reminder()},
+                {"role": "user", "content": augmented_message},
+            ]}
             # Include conversation_id if available (for Letta Conversations persistence)
             if conversation_id:
                 letta_payload["conversation_id"] = conversation_id
@@ -1209,23 +1390,17 @@ def stream():
                 except Exception as e:
                     logger.warning("thread_complete_failed", error=str(e))
 
-            # Post summary to LettaBot (fire-and-forget)
+            # Post summary to Mission Control (fire-and-forget)
             if assistant_response_parts:
                 summary_text = "".join(assistant_response_parts)[:500]
                 try:
-                    summary_headers = {"Content-Type": "application/json"}
-                    if LETTABOT_API_KEY:
-                        summary_headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
                     with httpx.Client(timeout=10.0) as summary_client:
                         summary_client.post(
-                            f"{LETTABOT_API_URL}/api/v1/chat/async",
-                            json={
-                                "message": f"[System: Agent handoff summary] The user invoked /{slash_command or 'agent'} and asked: \"{message[:200]}\"\n{agent_name} responded: \"{summary_text}\""
-                            },
-                            headers=summary_headers,
+                            f"{LETTA_BASE_URL}/v1/agents/{MISSION_CONTROL_AGENT_ID}/messages",
+                            json={"messages": [{"role": "user", "content": f"[System: Agent handoff summary] The user invoked /{slash_command or 'agent'} and asked: \"{message[:200]}\"\n{agent_name} responded: \"{summary_text}\""}]},
                         )
                 except Exception as e:
-                    logger.warning("lettabot_summary_failed", error=str(e))
+                    logger.warning("mission_control_summary_failed", error=str(e))
 
             # Send done event
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -1254,8 +1429,8 @@ def stream():
 TASKS_AGENT_ID = "agent-dd15479e-6543-400e-8463-b2a48b13cd4a"
 EXTRACTED_TASKS_BLOCK_ID = "block-90300b77-6b72-42cb-8e67-c74fbb497cf6"
 TASKS_ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
-OMNIFOCUS_MCP_URL = os.getenv(
-    "OMNIFOCUS_MCP_URL", "http://host.docker.internal:8888/mcp"
+OMNIFOCUS_BRIDGE_URL = os.getenv(
+    "OMNIFOCUS_BRIDGE_URL", "http://host.docker.internal:8889"
 )
 
 # Task block line pattern:
@@ -1369,99 +1544,28 @@ def parse_archival_passage(text):
     return result
 
 
-def _mcp_post(client, payload, session_id=None):
-    """Send a JSON-RPC request to the OmniFocus MCP server, handling SSE responses."""
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-    }
-    if session_id:
-        headers["mcp-session-id"] = session_id
+def call_omnifocus_bridge(method, params=None):
+    """Call OmniFocus via the host bridge service (port 8889).
 
-    resp = client.post(OMNIFOCUS_MCP_URL, json=payload, headers=headers)
+    Same protocol used by omnifocus-cli in Docker containers.
+    """
+    url = f"{OMNIFOCUS_BRIDGE_URL}/execute"
+    resp = httpx.post(
+        url,
+        json={"command": method, "args": params or {}},
+        timeout=30.0,
+    )
     resp.raise_for_status()
-
-    content_type = resp.headers.get("content-type", "")
-    resp_session = resp.headers.get("mcp-session-id", session_id)
-
-    if "text/event-stream" in content_type:
-        data = None
-        for line in resp.text.splitlines():
-            if line.startswith("data: "):
-                try:
-                    candidate = json.loads(line[6:])
-                    if candidate.get("id") == payload.get("id"):
-                        data = candidate
-                        break
-                except json.JSONDecodeError:
-                    continue
-        if not data:
-            raise Exception("No JSON-RPC response in SSE stream")
-    elif resp.text.strip():
-        data = resp.json()
-    else:
-        data = {}
-
-    return data, resp_session
-
-
-# Cache for the MCP session ID (reset on server restart)
-_omnifocus_session_id = None
-
-
-def call_omnifocus_mcp(tool_name, arguments):
-    """Call OmniFocus MCP server via Streamable HTTP transport with session management."""
-    global _omnifocus_session_id
-
-    with httpx.Client(timeout=30.0) as client:
-        # Initialize session if needed
-        if not _omnifocus_session_id:
-            init_resp, session_id = _mcp_post(client, {
-                "jsonrpc": "2.0",
-                "id": 0,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "pa-web-ui", "version": "1.0"},
-                },
-            })
-            _omnifocus_session_id = session_id
-
-            # Send initialized notification (fire-and-forget)
-            _mcp_post(client, {
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-                "params": {},
-            }, session_id=_omnifocus_session_id)
-
-        # Call the tool
+    data = resp.json()
+    if isinstance(data, dict) and "error" in data:
+        raise RuntimeError(f"OmniFocus bridge error: {data['error']}")
+    result = data.get("result", data)
+    # Bridge may double-encode JSON as a string
+    if isinstance(result, str):
         try:
-            data, _ = _mcp_post(client, {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": tool_name, "arguments": arguments},
-            }, session_id=_omnifocus_session_id)
-        except (httpx.HTTPStatusError, Exception) as e:
-            # Session may have expired — retry with fresh session
-            if "400" in str(e) or "Bad Request" in str(e):
-                _omnifocus_session_id = None
-                return call_omnifocus_mcp(tool_name, arguments)
-            raise
-
-    if "error" in data:
-        raise Exception(data["error"].get("message", str(data["error"])))
-    result = data.get("result", {})
-
-    # MCP returns content array
-    if isinstance(result, dict) and "content" in result:
-        for item in result["content"]:
-            if item.get("type") == "text":
-                try:
-                    return json.loads(item["text"])
-                except (json.JSONDecodeError, TypeError):
-                    return {"text": item["text"]}
+            result = json.loads(result)
+        except (json.JSONDecodeError, ValueError):
+            pass
     return result
 
 
@@ -1859,12 +1963,11 @@ def _normalize_of_tree(subfolders):
 def api_omnifocus_tree():
     """Get OmniFocus folder/project tree with projects."""
     try:
-        result = call_omnifocus_mcp(
-            "folderNavigation",
-            {"action": "getTree", "includeProjects": True},
+        result = call_omnifocus_bridge(
+            "getFolderHierarchy", {"includeProjects": True},
         )
-        raw = result.get("result", result)
-        subfolders = raw.get("subfolders", [])
+        raw = result.get("result", result) if isinstance(result, dict) else result
+        subfolders = raw.get("subfolders", []) if isinstance(raw, dict) else []
         tree = _normalize_of_tree(subfolders)
         return jsonify({"tree": tree})
     except Exception as e:
@@ -1884,13 +1987,13 @@ def api_omnifocus_create():
         if not name:
             return jsonify({"error": "name required"}), 400
 
-        args = {"action": "create", "name": name}
+        args = {"name": name}
         if project_id:
             args["projectId"] = project_id
         if note:
             args["note"] = note
 
-        result = call_omnifocus_mcp("taskOperations", args)
+        result = call_omnifocus_bridge("createTask", args)
         # Response may be nested: {result: {id: ...}} or flat {id: ...}
         inner = result.get("result", result)
         task_id = inner.get("id", inner.get("taskId", ""))
@@ -2006,6 +2109,7 @@ def api_delete_draft(draft_id):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5200"))
+    ensure_pa_web_schema()
     logger.info("pa_web_ui_starting", port=port)
     # threaded=True enables concurrent request handling for SSE streams
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
