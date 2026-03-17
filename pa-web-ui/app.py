@@ -417,7 +417,7 @@ def save_response_feedback(
 
 # HTTP client for short requests (agent list, config, etc.)
 # Note: Streaming requests create their own clients to avoid concurrency issues
-http_client = httpx.Client(timeout=30.0)
+http_client = httpx.Client(timeout=30.0, follow_redirects=True)
 
 
 @app.route("/")
@@ -517,7 +517,7 @@ MC_MODEL_PRESETS = {
 def get_mc_model():
     """Get MC's current model configuration."""
     try:
-        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/")
+        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}")
         resp.raise_for_status()
         llm = resp.json().get("llm_config", {})
         model = llm.get("model", "unknown")
@@ -547,7 +547,7 @@ def set_mc_model():
             return jsonify({"error": f"Unknown preset: {preset_name}"}), 400
 
         # Get current config
-        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/")
+        resp = http_client.get(f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}")
         resp.raise_for_status()
         agent = resp.json()
         llm = agent.get("llm_config", {})
@@ -559,7 +559,7 @@ def set_mc_model():
 
         # Patch agent
         patch_resp = http_client.patch(
-            f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/",
+            f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}",
             json={"llm_config": llm},
         )
         patch_resp.raise_for_status()
