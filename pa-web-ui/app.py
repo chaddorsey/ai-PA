@@ -531,11 +531,12 @@ def get_mc_model():
         llm = resp.json().get("llm_config", {})
         model = llm.get("model", "unknown")
         provider = llm.get("model_endpoint_type", "unknown")
-        # Build a display label
-        if provider == "chatgpt_oauth":
-            label = f"{model} (oauth)"
-        else:
-            label = f"{model} (API)"
+        # Find which preset matches the current config
+        label = f"{model} ({('oauth' if provider == 'chatgpt_oauth' else 'API')})"
+        for preset_name, preset_cfg in MC_MODEL_PRESETS.items():
+            if preset_cfg.get("model") == model and preset_cfg.get("model_endpoint_type") == provider:
+                label = preset_name
+                break
         return jsonify({
             "model": model,
             "provider": provider,
