@@ -654,6 +654,8 @@ services:
       - ./notebooklm-cli:/app/tools/notebooklm-cli:ro  # NotebookLM CLI source for pip install
       - ${NOTEBOOKLM_HOME:-~/.notebooklm}:/notebooklm-auth:ro  # NotebookLM auth cookies
       - ./slack-cli:/app/tools/slack-cli:ro  # Slack CLI source for pip install
+      - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro  # SSH key for laptop access via Tailscale
+      - ~/.ssh/known_hosts_laptop:/root/.ssh/known_hosts:ro  # Laptop host key
     networks: [pa-internal]
     environment:
       PYTHONPATH: "/app/tools/letta"
