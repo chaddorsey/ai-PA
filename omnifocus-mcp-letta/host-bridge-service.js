@@ -224,6 +224,7 @@ function logCompletion(event) {
     taskId: event.taskId,
     taskName: event.taskName,
     projectName: event.projectName,
+    refId: event.refId || null,
     sessionMs: event.sessionMs,
     totalMs: event.totalMs,
     originalEstimateMin: event.originalEstimateMin,

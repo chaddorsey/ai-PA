@@ -415,17 +415,23 @@
       timestamp: new Date().toISOString(),
     };
 
-    // Try to read agent estimate from the task note
+    // Try to read agent estimate and ref_id from the task note
     if (state.activeTaskId) {
       try {
         var task = Task.byIdentifier(state.activeTaskId);
         if (task) {
-          var parsed = parseNoteBlock(task.note || "");
+          var noteText = task.note || "";
+          var parsed = parseNoteBlock(noteText);
           if (parsed.agentEstimate) {
             var agentMs = parseDurationToMs(parsed.agentEstimate);
             if (agentMs > 0) {
               payload.agentEstimateMin = Math.round(agentMs / 60000);
             }
+          }
+          // Extract ref_id from note (first line: "ref_id: xxxxxxxx")
+          var refMatch = noteText.match(/^ref_id:\s*([a-f0-9]+)/m);
+          if (refMatch) {
+            payload.refId = refMatch[1];
           }
         }
       } catch (e) {
