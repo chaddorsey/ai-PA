@@ -305,6 +305,27 @@ function handleTimerEvent(body, res) {
       const message = formatTimerMessage(event);
       console.log(`[timer-event] Completion → MC: ${message}`);
       relayCompletionToMC(message);
+
+      // Prepare follow-up and time tracking (async, zero LLM cost)
+      const { spawn } = require('child_process');
+      const followUpScript = path.resolve(__dirname, '../scripts/prepare_follow_up.py');
+      const child = spawn('python3', [followUpScript], {
+        env: {
+          ...process.env,
+          LETTA_URL: LETTA_URL,
+          MC_AGENT_ID: MC_AGENT_ID,
+          TIMER_LOG_DIR: TIMER_LOG_DIR,
+          FOLLOWUP_QUEUE: path.join(TIMER_LOG_DIR, 'pending-followups.jsonl'),
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      child.stdin.write(JSON.stringify(event));
+      child.stdin.end();
+      child.stdout.on('data', (data) => console.log(data.toString().trim()));
+      child.stderr.on('data', (data) => console.error(data.toString().trim()));
+      child.on('close', (code) => {
+        if (code !== 0) console.error(`[follow-up] Script exited with code ${code}`);
+      });
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
