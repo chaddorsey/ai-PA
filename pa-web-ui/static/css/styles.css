@@ -1388,6 +1388,55 @@ header h1 {
     line-height: 1.3;
 }
 
+/* Follow-up sections */
+.fu-section {
+    margin-bottom: 8px;
+}
+
+.fu-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-family: 'IBM Plex Mono', monospace;
+    transition: background 0.15s;
+    margin-bottom: 6px;
+}
+
+.fu-section-header:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.fu-section-chevron {
+    font-size: 0.65rem;
+    width: 10px;
+    text-align: center;
+    opacity: 0.6;
+}
+
+.fu-section-title {
+    flex: 1;
+    text-align: left;
+    font-weight: 500;
+}
+
+.fu-section-badge {
+    font-size: 0.6rem;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(160, 160, 160, 0.15);
+    color: var(--text-secondary);
+    min-width: 18px;
+    text-align: center;
+}
+
 /* Inline editor for follow-up queue items */
 .fu-inline-edit-area {
     margin-top: 4px;

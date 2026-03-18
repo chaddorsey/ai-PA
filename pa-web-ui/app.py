@@ -2124,12 +2124,12 @@ def api_list_drafts():
     gmail_drafts = []
     queue_items = []
 
-    # 1. Gmail drafts (existing)
+    # 1. Gmail drafts — fetch ALL drafts
     try:
         with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.get(
                 f"{GWS_BRIDGE_URL}/gmail/drafts",
-                params={"q": "label:Followup OR subject:\"meeting summary\"", "maxResults": 50},
+                params={"maxResults": 50},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -2141,9 +2141,11 @@ def api_list_drafts():
                 if "Followup" in names:
                     draft["followup_type"] = "meeting"
                     draft["followup_icon"] = "meeting"
+                    draft["followup_section"] = "followups"
                 else:
                     draft["followup_type"] = "draft"
-                    draft["followup_icon"] = "email"
+                    draft["followup_icon"] = "draft"
+                    draft["followup_section"] = "drafts"
                 draft["source"] = "gmail"
                 gmail_drafts.append(draft)
     except Exception as e:
@@ -2170,6 +2172,7 @@ def api_list_drafts():
                             "email": "email",
                         }.get(fu_type, "email")
                         item["source"] = "queue"
+                        item["followup_section"] = "followups"
                         # Map fields for card rendering compatibility
                         item["subject"] = item.get("task_description", "")
                         item["to"] = item.get("from_person", "")

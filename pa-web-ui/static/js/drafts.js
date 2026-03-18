@@ -63,12 +63,61 @@ class DraftsSidebar {
       return;
     }
 
+    // Split into sections: regular drafts vs follow-ups (queue + meeting + labeled)
+    const regularDrafts = this.drafts.filter(d => d.followup_section === 'drafts');
+    const followups = this.drafts.filter(d => d.followup_section !== 'drafts');
+
     this.draftList.innerHTML = '';
-    this.drafts.forEach(draft => {
+
+    // Regular drafts section — collapsible, collapsed by default
+    if (regularDrafts.length > 0) {
+      const section = document.createElement('div');
+      section.className = 'fu-section fu-section-drafts';
+      const isCollapsed = this._draftsCollapsed !== false; // default collapsed
+
+      section.innerHTML = `
+        <button class="fu-section-header fu-section-collapsed" aria-expanded="${!isCollapsed}">
+          <span class="fu-section-chevron">${isCollapsed ? '▸' : '▾'}</span>
+          <span class="fu-section-title">Drafts</span>
+          <span class="fu-section-badge">${regularDrafts.length}</span>
+        </button>
+        <div class="fu-section-body" style="${isCollapsed ? 'display:none' : ''}"></div>
+      `;
+
+      const header = section.querySelector('.fu-section-header');
+      const body = section.querySelector('.fu-section-body');
+      const chevron = section.querySelector('.fu-section-chevron');
+
+      header.addEventListener('click', () => {
+        const hidden = body.style.display === 'none';
+        body.style.display = hidden ? '' : 'none';
+        chevron.textContent = hidden ? '▾' : '▸';
+        header.classList.toggle('fu-section-collapsed', !hidden);
+        header.setAttribute('aria-expanded', hidden);
+        this._draftsCollapsed = !hidden;
+      });
+
+      regularDrafts.forEach(draft => {
+        if (!draft.error) body.appendChild(this.buildDraftCard(draft));
+      });
+
+      this.draftList.appendChild(section);
+    }
+
+    // Follow-ups section
+    followups.forEach(draft => {
       if (!draft.error) {
         this.draftList.appendChild(this.buildDraftCard(draft));
       }
     });
+
+    // If only drafts and no follow-ups, show a note
+    if (followups.length === 0 && regularDrafts.length > 0) {
+      const note = document.createElement('div');
+      note.className = 'sidebar-empty';
+      note.innerHTML = '<span class="empty-icon">✓</span>No pending follow-ups';
+      this.draftList.appendChild(note);
+    }
   }
 
   // Type badge config — uses service favicons
