@@ -24,9 +24,11 @@ QUEUE_BLOCK_ID = os.getenv(
     "LETTA_TASK_QUEUE_BLOCK_ID",
     "block-033a720d-1f13-44a2-a5cb-b5edde418ea1",
 )
-PULSE_AGENT_ID = os.getenv(
-    "LETTA_PULSE_AGENT_ID",
-    "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
+# Task extraction now goes to the Tasks Agent (consolidated extractor)
+# Previously routed to Pulse agent
+EXTRACTION_AGENT_ID = os.getenv(
+    "LETTA_EXTRACTION_AGENT_ID",
+    "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
 )
 
 
@@ -217,7 +219,7 @@ def _trigger_extraction(entry: dict, logger: Logger) -> None:
             "messages": [{"role": "user", "content": message}]
         })
         resp = requests.post(
-            f"{LETTA_BASE_URL}/v1/agents/{PULSE_AGENT_ID}/messages/",
+            f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",
             json=json.loads(payload),
             timeout=120,
         )
