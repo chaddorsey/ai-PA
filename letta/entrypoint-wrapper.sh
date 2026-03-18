@@ -56,5 +56,11 @@ if [ -n "$TARGET" ] && ! command -v gws &>/dev/null; then
         || echo "[entrypoint-wrapper] WARNING: Failed to download gws binary"
 fi
 
+# Install SSH client for laptop access via Tailscale
+if ! command -v ssh &>/dev/null; then
+    echo "[entrypoint-wrapper] Installing SSH client..."
+    apt-get update -qq && apt-get install -y -qq openssh-client 2>&1 | tail -1
+fi
+
 echo "[entrypoint-wrapper] Dependencies installed. Starting Letta..."
 exec letta server "$@"
