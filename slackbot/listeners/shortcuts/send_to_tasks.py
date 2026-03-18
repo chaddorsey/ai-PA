@@ -95,6 +95,23 @@ def _extract_message_info(body: dict, logger: Logger) -> dict:
         ts_clean = message_ts.replace(".", "")
         permalink = f"https://slack.com/archives/{channel_id}/p{ts_clean}"
 
+    # Extract full URLs from blocks (Slack's text field truncates URLs in <url|label> format)
+    urls = []
+    for block in message.get("blocks", []):
+        for element in block.get("elements", []):
+            for item in element.get("elements", []):
+                if item.get("type") == "link":
+                    url = item.get("url", "")
+                    if url:
+                        urls.append(url)
+
+    # Also extract URLs from Slack mrkdwn <url|label> patterns in text as fallback
+    import re
+    for match in re.finditer(r'<(https?://[^|>]+)', text):
+        url = match.group(1)
+        if url not in urls:
+            urls.append(url)
+
     # Extract file names and URLs from message attachments
     files = []
     for f in message.get("files", []):
@@ -106,6 +123,7 @@ def _extract_message_info(body: dict, logger: Logger) -> dict:
 
     return {
         "text": text,
+        "urls": urls,
         "message_user_id": message_user_id,
         "channel_id": channel_id,
         "channel_name": channel_name,
@@ -133,6 +151,8 @@ def _build_queue_entry(info: dict, notes: str = "") -> dict:
         entry["thread_ts"] = info["thread_ts"]
     if info.get("files"):
         entry["files"] = info["files"]
+    if info.get("urls"):
+        entry["urls"] = info["urls"]
     if notes:
         entry["notes"] = notes
     return entry
@@ -164,12 +184,16 @@ def _trigger_extraction(entry: dict, logger: Logger) -> None:
         source_ref = entry.get("source_ref_id", "")
         notes = entry.get("notes", "")
 
+        urls = entry.get("urls", [])
+        urls_str = "\n".join(f"  - {u}" for u in urls) if urls else "(none)"
+
         parts = [
             "New task queued from Slack. Process this item from "
             "queued_tasks_from_slack using add_extracted_tasks.",
             f"Channel: {channel}",
             f"From: {from_id}",
             f"Text: {text_preview}",
+            f"Full URLs from message (use these, not truncated URLs from text):\n{urls_str}",
             f"Link: {link}",
             f"source_ref_id (for cleanup_entry_identifier): {source_ref}",
         ]
@@ -255,6 +279,7 @@ def send_to_tasks_modal_callback(body: dict, ack: Ack, client: WebClient, logger
             "message_ts": info["message_ts"],
             "thread_ts": info["thread_ts"],
             "files": info["files"],
+            "urls": info.get("urls", []),
         })
 
         client.views_open(
@@ -316,6 +341,7 @@ def send_to_tasks_view_callback(ack: Ack, body: dict, view: dict, client: WebCli
             "message_ts": metadata.get("message_ts", ""),
             "thread_ts": metadata.get("thread_ts", ""),
             "files": metadata.get("files", []),
+            "urls": metadata.get("urls", []),
         }
 
         entry = _build_queue_entry(info, notes=notes)
