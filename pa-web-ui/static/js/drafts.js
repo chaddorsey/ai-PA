@@ -138,18 +138,25 @@ class DraftsSidebar {
         ${extraLabels ? `<div class="draft-card-meta">${extraLabels}</div>` : ''}
       </div>
       <div class="draft-card-actions">
-        ${isQueue ? '' : '<button class="draft-btn draft-btn-edit" title="Edit">&#9998;</button>'}
+        <button class="draft-btn draft-btn-edit" title="Edit">&#9998;</button>
         <button class="draft-btn draft-btn-send" title="Send">&#10148;</button>
         <button class="draft-btn draft-btn-discard" title="Dismiss">&#10005;</button>
       </div>
     `;
 
-    if (!isQueue) {
-      card.querySelector('.draft-btn-edit')?.addEventListener('click', () => this.openEditModal(draft.id));
-    }
+    card.querySelector('.draft-btn-edit')?.addEventListener('click', () => {
+      if (isQueue) {
+        this.toggleInlineEdit(card, draft);
+      } else {
+        this.openEditModal(draft.id);
+      }
+    });
     card.querySelector('.draft-btn-send').addEventListener('click', () => {
       if (isQueue) {
-        this.sendFollowup(draft.id, draft.draft_message, draft.from_person);
+        // Get edited message if inline editor is open
+        const editor = card.querySelector('.fu-inline-editor');
+        const message = editor ? editor.value : draft.draft_message;
+        this.sendFollowup(draft.id, message, draft.from_person);
       } else {
         this.sendDraft(draft.id, draft.to);
       }
@@ -339,6 +346,40 @@ class DraftsSidebar {
   }
 
   // ── Card Actions ──
+
+  toggleInlineEdit(card, draft) {
+    const existing = card.querySelector('.fu-inline-edit-area');
+    if (existing) {
+      // Close editor, restore preview
+      existing.remove();
+      const preview = card.querySelector('.fu-draft-preview');
+      if (preview) preview.style.display = '';
+      return;
+    }
+
+    // Hide the static preview
+    const preview = card.querySelector('.fu-draft-preview');
+    if (preview) preview.style.display = 'none';
+
+    // Create inline editor
+    const editArea = document.createElement('div');
+    editArea.className = 'fu-inline-edit-area';
+    editArea.innerHTML = `
+      <textarea class="fu-inline-editor" rows="3">${this.escapeHtml(draft.draft_message || '')}</textarea>
+    `;
+
+    // Insert after source preview or after the to line
+    const insertAfter = card.querySelector('.fu-source-preview') || card.querySelector('.draft-card-to');
+    if (insertAfter) {
+      insertAfter.after(editArea);
+    } else {
+      card.querySelector('.draft-card-body')?.appendChild(editArea);
+    }
+
+    const textarea = editArea.querySelector('.fu-inline-editor');
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }
 
   async sendFollowup(followupId, message, to) {
     if (!confirm(`Send follow-up to ${to || 'recipient'}?`)) return;

@@ -1388,6 +1388,31 @@ header h1 {
     line-height: 1.3;
 }
 
+/* Inline editor for follow-up queue items */
+.fu-inline-edit-area {
+    margin-top: 4px;
+}
+
+.fu-inline-editor {
+    width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    resize: vertical;
+    min-height: 50px;
+}
+
+.fu-inline-editor:focus {
+    outline: none;
+    border-color: var(--sb-teal-dim);
+    background: rgba(255, 255, 255, 0.07);
+}
+
 .draft-label {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.6rem;
