@@ -1291,6 +1291,95 @@ header h1 {
     flex-wrap: wrap;
 }
 
+/* Follow-up type badges */
+.fu-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.62rem;
+    padding: 1px 7px 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.fu-badge-icon {
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+.fu-badge-italic {
+    font-style: italic;
+    opacity: 0.7;
+}
+
+.fu-badge-slack {
+    background: rgba(74, 21, 75, 0.25);
+    color: #d4a6d5;
+    border: 1px solid rgba(74, 21, 75, 0.4);
+}
+.fu-badge-slack .fu-badge-icon {
+    font-weight: 700;
+    color: #e0b0e1;
+}
+
+.fu-badge-docs {
+    background: rgba(66, 133, 244, 0.12);
+    color: #8ab4f8;
+    border: 1px solid rgba(66, 133, 244, 0.25);
+}
+
+.fu-badge-meeting {
+    background: rgba(0, 212, 170, 0.12);
+    color: var(--sb-teal-dim);
+    border: 1px solid rgba(0, 212, 170, 0.2);
+}
+
+.fu-badge-email {
+    background: rgba(234, 67, 53, 0.12);
+    color: #f28b82;
+    border: 1px solid rgba(234, 67, 53, 0.2);
+}
+
+.fu-badge-draft {
+    background: rgba(160, 160, 160, 0.1);
+    color: var(--text-secondary);
+    border: 1px solid rgba(160, 160, 160, 0.15);
+}
+
+/* Card header with badge + time */
+.draft-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+/* Source text preview (original message context) */
+.fu-source-preview {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    margin-top: 4px;
+    padding: 4px 8px;
+    border-left: 2px solid var(--border);
+    line-height: 1.3;
+}
+
+/* Draft message preview (template response) */
+.fu-draft-preview {
+    font-size: 0.72rem;
+    color: var(--text-primary);
+    opacity: 0.85;
+    margin-top: 4px;
+    padding: 4px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    line-height: 1.3;
+}
+
 .draft-label {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.6rem;

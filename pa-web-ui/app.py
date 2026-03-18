@@ -2112,9 +2112,19 @@ def api_omnifocus_create():
 # ── Gmail Drafts API (proxied via gws-bridge) ──
 GWS_BRIDGE_TIMEOUT = 60  # gws-bridge can take 30-35s for filtered queries
 
+FOLLOWUP_QUEUE = os.getenv(
+    "FOLLOWUP_QUEUE",
+    "/Volumes/main-drive/ai-PA/omnifocus-timer/logs/pending-followups.jsonl",
+)
+
+
 @app.route('/api/drafts', methods=['GET'])
 def api_list_drafts():
-    """List Gmail drafts filtered by Followup label."""
+    """List all follow-ups: Gmail drafts + pending follow-up queue."""
+    gmail_drafts = []
+    queue_items = []
+
+    # 1. Gmail drafts (existing)
     try:
         with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.get(
@@ -2122,13 +2132,55 @@ def api_list_drafts():
                 params={"q": "label:Followup OR subject:\"meeting summary\"", "maxResults": 50},
             )
             resp.raise_for_status()
-            return jsonify(resp.json())
-    except httpx.HTTPStatusError as e:
-        logger.error("api_list_drafts_error", status=e.response.status_code)
-        return jsonify({"error": f"Bridge error: {e.response.status_code}"}), 502
+            data = resp.json()
+            for draft in data.get("drafts", []):
+                if draft.get("error"):
+                    continue
+                names = draft.get("labelNames", [])
+                # Determine follow-up type from labels
+                if "Followup" in names:
+                    draft["followup_type"] = "meeting"
+                    draft["followup_icon"] = "meeting"
+                else:
+                    draft["followup_type"] = "draft"
+                    draft["followup_icon"] = "email"
+                draft["source"] = "gmail"
+                gmail_drafts.append(draft)
     except Exception as e:
-        logger.error("api_list_drafts_error", error=str(e))
-        return jsonify({"error": str(e)}), 502
+        logger.error("api_list_drafts_gmail_error", error=str(e))
+
+    # 2. Follow-up queue (Slack, Docs, Email from task completions)
+    try:
+        if os.path.exists(FOLLOWUP_QUEUE):
+            with open(FOLLOWUP_QUEUE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        item = json.loads(line)
+                        if item.get("status") == "dismissed":
+                            continue
+                        # Map to a draft-like structure for the frontend
+                        fu_type = item.get("type", "unknown")
+                        item["followup_type"] = fu_type
+                        item["followup_icon"] = {
+                            "slack": "slack",
+                            "docs_comment": "docs",
+                            "email": "email",
+                        }.get(fu_type, "email")
+                        item["source"] = "queue"
+                        # Map fields for card rendering compatibility
+                        item["subject"] = item.get("task_description", "")
+                        item["to"] = item.get("from_person", "")
+                        queue_items.append(item)
+                    except json.JSONDecodeError:
+                        continue
+    except Exception as e:
+        logger.error("api_list_drafts_queue_error", error=str(e))
+
+    all_items = queue_items + gmail_drafts
+    return jsonify({"drafts": all_items})
 
 
 @app.route('/api/drafts/<draft_id>', methods=['GET'])
@@ -2191,7 +2243,11 @@ def api_send_draft(draft_id):
 
 @app.route('/api/drafts/<draft_id>', methods=['DELETE'])
 def api_delete_draft(draft_id):
-    """Delete (discard) a draft."""
+    """Delete (discard) a draft or follow-up queue item."""
+    # Check if it's a follow-up queue item (fu-xxx format)
+    if draft_id.startswith("fu-"):
+        return _dismiss_followup(draft_id)
+
     try:
         with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.delete(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}")
@@ -2205,6 +2261,120 @@ def api_delete_draft(draft_id):
     except Exception as e:
         logger.error("api_delete_draft_error", error=str(e))
         return jsonify({"error": str(e)}), 502
+
+
+@app.route('/api/followups/<followup_id>/send', methods=['POST'])
+def api_send_followup(followup_id):
+    """Dispatch a follow-up queue item (Slack reply, Docs comment, etc.)."""
+    try:
+        data = request.get_json() or {}
+        message = data.get("message", "")
+
+        # Find the follow-up in the queue
+        item = _find_followup(followup_id)
+        if not item:
+            return jsonify({"error": "Follow-up not found"}), 404
+
+        routing = item.get("routing", {})
+        fu_type = item.get("type", "")
+        final_message = message or item.get("draft_message", "")
+
+        if fu_type == "slack":
+            # Post Slack threaded reply
+            slack_token = os.getenv("SLACK_BOT_TOKEN", "")
+            if not slack_token:
+                return jsonify({"error": "SLACK_BOT_TOKEN not configured"}), 500
+            slack_resp = http_client.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={"Authorization": f"Bearer {slack_token}"},
+                json={
+                    "channel": routing.get("channel", ""),
+                    "thread_ts": routing.get("thread_ts", ""),
+                    "text": final_message,
+                },
+            )
+            slack_data = slack_resp.json()
+            if not slack_data.get("ok"):
+                return jsonify({"error": f"Slack error: {slack_data.get('error', '?')}"}), 500
+            _mark_followup_sent(followup_id)
+            return jsonify({"status": "sent", "channel": routing.get("channel")})
+
+        elif fu_type == "docs_comment":
+            # Reply to Google Docs comment via gws bridge
+            reply_params = routing.get("reply_params", {})
+            with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
+                resp = client.post(
+                    f"{GWS_BRIDGE_URL}/drive/replies/create",
+                    json={**reply_params, "content": final_message},
+                )
+                resp.raise_for_status()
+            # Optionally resolve
+            if item.get("resolve_after_reply"):
+                resolve_params = routing.get("resolve_params", {})
+                with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
+                    client.patch(
+                        f"{GWS_BRIDGE_URL}/drive/comments/update",
+                        json={**resolve_params, "resolved": True},
+                    )
+            _mark_followup_sent(followup_id)
+            return jsonify({"status": "sent"})
+
+        else:
+            return jsonify({"error": f"Unknown follow-up type: {fu_type}"}), 400
+
+    except Exception as e:
+        logger.error("api_send_followup_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+def _find_followup(followup_id):
+    """Find a follow-up in the queue by ID."""
+    if not os.path.exists(FOLLOWUP_QUEUE):
+        return None
+    with open(FOLLOWUP_QUEUE, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+                if item.get("id") == followup_id:
+                    return item
+            except json.JSONDecodeError:
+                continue
+    return None
+
+
+def _mark_followup_sent(followup_id):
+    """Mark a follow-up as sent in the queue file."""
+    _update_followup_status(followup_id, "sent")
+
+
+def _dismiss_followup(followup_id):
+    """Mark a follow-up as dismissed."""
+    _update_followup_status(followup_id, "dismissed")
+    return jsonify({"status": "dismissed"})
+
+
+def _update_followup_status(followup_id, new_status):
+    """Update a follow-up's status in the JSONL queue."""
+    if not os.path.exists(FOLLOWUP_QUEUE):
+        return
+    lines = []
+    with open(FOLLOWUP_QUEUE, "r") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                item = json.loads(stripped)
+                if item.get("id") == followup_id:
+                    item["status"] = new_status
+                lines.append(json.dumps(item) + "\n")
+            except json.JSONDecodeError:
+                lines.append(line)
+    with open(FOLLOWUP_QUEUE, "w") as f:
+        f.writelines(lines)
 
 
 if __name__ == "__main__":

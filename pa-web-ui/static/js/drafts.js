@@ -59,7 +59,7 @@ class DraftsSidebar {
 
   renderDraftList() {
     if (this.drafts.length === 0) {
-      this.draftList.innerHTML = '<div class="sidebar-empty"><span class="empty-icon">&#9993;</span>No drafts</div>';
+      this.draftList.innerHTML = '<div class="sidebar-empty"><span class="empty-icon">&#9993;</span>No follow-ups</div>';
       return;
     }
 
@@ -71,40 +71,89 @@ class DraftsSidebar {
     });
   }
 
+  // Type badge config
+  static TYPE_BADGES = {
+    slack:    { icon: '#',  label: 'Slack',   cls: 'fu-badge-slack' },
+    docs:     { icon: '📄', label: 'Comment', cls: 'fu-badge-docs' },
+    meeting:  { icon: '📅', label: 'Meeting', cls: 'fu-badge-meeting' },
+    email:    { icon: '✉',  label: 'Email',   cls: 'fu-badge-email' },
+    draft:    { icon: '✉',  label: 'Draft',   cls: 'fu-badge-draft' },
+  };
+
   buildDraftCard(draft) {
     const card = document.createElement('div');
     card.className = 'draft-card';
     card.dataset.draftId = draft.id;
+    card.dataset.source = draft.source || 'gmail';
 
-    // Use resolved label names from gws-bridge
-    const names = draft.labelNames || [];
-    const hasFollowup = names.includes('Followup');
-    const hasProposed = names.includes('Proposed');
-    const labelTags = (hasFollowup ? '<span class="draft-label">Followup</span>' : '')
-      + (hasProposed ? '<span class="draft-label draft-label-proposed">Proposed</span>' : '');
+    // Type badge
+    const fuType = draft.followup_icon || draft.followup_type || 'draft';
+    const badge = DraftsSidebar.TYPE_BADGES[fuType] || DraftsSidebar.TYPE_BADGES.draft;
+    const isDraft = fuType === 'draft';
+    const badgeHtml = `<span class="fu-type-badge ${badge.cls}"><span class="fu-badge-icon">${badge.icon}</span><span class="fu-badge-label${isDraft ? ' fu-badge-italic' : ''}">${badge.label}</span></span>`;
+
+    // Context line — differs by source
+    const isQueue = draft.source === 'queue';
+    let contextLine = '';
+    if (isQueue) {
+      const loc = draft.location || draft.source_context || '';
+      contextLine = `→ ${this.escapeHtml(draft.from_person || draft.to || '')}${loc ? ' in ' + this.escapeHtml(loc) : ''}`;
+    } else {
+      contextLine = `To: ${this.escapeHtml(draft.to || '(no recipient)')}`;
+    }
+
+    // Source text preview for queue items
+    let sourcePreview = '';
+    if (isQueue && draft.source_text) {
+      const cleaned = draft.source_text.replace(/<@[A-Z0-9]+>/g, '').trim();
+      sourcePreview = `<div class="fu-source-preview">${this.escapeHtml(cleaned.slice(0, 150))}${cleaned.length > 150 ? '…' : ''}</div>`;
+    }
+
+    // Draft message preview for queue items
+    let draftPreview = '';
+    if (isQueue && draft.draft_message) {
+      draftPreview = `<div class="fu-draft-preview">${this.escapeHtml(draft.draft_message)}</div>`;
+    }
 
     const timeLabel = draft.internalDate
       ? this.formatTime(new Date(parseInt(draft.internalDate)))
-      : (draft.date ? this.formatTime(new Date(draft.date)) : '');
+      : (draft.created_at ? this.formatTime(new Date(draft.created_at))
+        : (draft.date ? this.formatTime(new Date(draft.date)) : ''));
+
+    // Label tags for Gmail drafts (keep existing)
+    const names = draft.labelNames || [];
+    const hasProposed = names.includes('Proposed');
+    const extraLabels = hasProposed ? '<span class="draft-label draft-label-proposed">Proposed</span>' : '';
 
     card.innerHTML = `
       <div class="draft-card-body">
-        <div class="draft-card-subject">${this.escapeHtml(draft.subject || '(no subject)')}</div>
-        <div class="draft-card-to">To: ${this.escapeHtml(draft.to || '(no recipient)')}</div>
-        <div class="draft-card-meta">
-          ${labelTags}
+        <div class="draft-card-header">
+          ${badgeHtml}
           <span class="draft-time">${this.escapeHtml(timeLabel)}</span>
         </div>
+        <div class="draft-card-subject">${this.escapeHtml(draft.subject || draft.task_description || '(no subject)')}</div>
+        <div class="draft-card-to">${contextLine}</div>
+        ${sourcePreview}
+        ${draftPreview}
+        ${extraLabels ? `<div class="draft-card-meta">${extraLabels}</div>` : ''}
       </div>
       <div class="draft-card-actions">
-        <button class="draft-btn draft-btn-edit" title="Edit">&#9998;</button>
+        ${isQueue ? '' : '<button class="draft-btn draft-btn-edit" title="Edit">&#9998;</button>'}
         <button class="draft-btn draft-btn-send" title="Send">&#10148;</button>
-        <button class="draft-btn draft-btn-discard" title="Discard">&#10005;</button>
+        <button class="draft-btn draft-btn-discard" title="Dismiss">&#10005;</button>
       </div>
     `;
 
-    card.querySelector('.draft-btn-edit').addEventListener('click', () => this.openEditModal(draft.id));
-    card.querySelector('.draft-btn-send').addEventListener('click', () => this.sendDraft(draft.id, draft.to));
+    if (!isQueue) {
+      card.querySelector('.draft-btn-edit')?.addEventListener('click', () => this.openEditModal(draft.id));
+    }
+    card.querySelector('.draft-btn-send').addEventListener('click', () => {
+      if (isQueue) {
+        this.sendFollowup(draft.id, draft.draft_message, draft.from_person);
+      } else {
+        this.sendDraft(draft.id, draft.to);
+      }
+    });
     card.querySelector('.draft-btn-discard').addEventListener('click', () => this.discardDraft(draft.id, card));
 
     return card;
@@ -290,6 +339,29 @@ class DraftsSidebar {
   }
 
   // ── Card Actions ──
+
+  async sendFollowup(followupId, message, to) {
+    if (!confirm(`Send follow-up to ${to || 'recipient'}?`)) return;
+
+    try {
+      const resp = await fetch(`/api/followups/${followupId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json();
+        throw new Error(data.error || `HTTP ${resp.status}`);
+      }
+
+      const card = this.draftList.querySelector(`.draft-card[data-draft-id="${followupId}"]`);
+      if (card) this.removeCard(card);
+      this.drafts = this.drafts.filter(d => d.id !== followupId);
+      this.updateBadge(this.drafts.length);
+    } catch (e) {
+      alert(`Send failed: ${e.message}`);
+    }
+  }
 
   async sendDraft(draftId, to) {
     if (!confirm(`Send this email to ${to || 'recipient'}?`)) return;
