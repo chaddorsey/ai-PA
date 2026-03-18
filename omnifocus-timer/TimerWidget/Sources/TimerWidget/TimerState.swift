@@ -192,7 +192,10 @@ final class TimerState: ObservableObject {
     private func onQueueChanged(_ ids: [String]) {
         print("[queue] ids changed: \(ids.count) ids, widget=\(widgetState)")
         queueCount = ids.count
-        if widgetState == .idle && !ids.isEmpty && !dismissedByInactivity {
+        // New tasks from external sources (Rover/MC) should always show,
+        // even if the widget was previously dismissed by inactivity
+        if widgetState == .idle && !ids.isEmpty {
+            dismissedByInactivity = false
             transitionToQueued(index: 0)
         } else if (widgetState == .queued || widgetState == .paused) && !ids.isEmpty && queueIndex >= ids.count {
             // Queue shrunk while viewing — clamp index
