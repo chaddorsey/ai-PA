@@ -71,13 +71,13 @@ class DraftsSidebar {
     });
   }
 
-  // Type badge config
+  // Type badge config — uses service favicons
   static TYPE_BADGES = {
-    slack:    { icon: '#',  label: 'Slack',   cls: 'fu-badge-slack' },
-    docs:     { icon: '📄', label: 'Comment', cls: 'fu-badge-docs' },
-    meeting:  { icon: '📅', label: 'Meeting', cls: 'fu-badge-meeting' },
-    email:    { icon: '✉',  label: 'Email',   cls: 'fu-badge-email' },
-    draft:    { icon: '✉',  label: 'Draft',   cls: 'fu-badge-draft' },
+    slack:    { icon: '<img src="https://a.slack-edge.com/80588/marketing/img/meta/favicon-32.png" class="fu-badge-favicon">', label: 'Slack',   cls: 'fu-badge-slack' },
+    docs:     { icon: '<img src="https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico" class="fu-badge-favicon">', label: 'Comment', cls: 'fu-badge-docs' },
+    meeting:  { icon: '<img src="https://www.granola.ai/favicon.ico" class="fu-badge-favicon">', label: 'Meeting', cls: 'fu-badge-meeting' },
+    email:    { icon: '<img src="https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico" class="fu-badge-favicon">', label: 'Email',   cls: 'fu-badge-email' },
+    draft:    { icon: '<img src="https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico" class="fu-badge-favicon">', label: 'Draft',   cls: 'fu-badge-draft' },
   };
 
   buildDraftCard(draft) {
