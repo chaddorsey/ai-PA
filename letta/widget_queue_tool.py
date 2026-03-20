@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 
 def manage_widget_queue(action: str, task_ids: Optional[str] = None, position: Optional[int] = None) -> Dict[str, Any]:
     """
-    Manage the OmniFocus timer widget queue on the laptop.
+    Manage the OmniFocus timer widget queue on the laptop via SSH.
 
     Controls the floating timer widget's task queue — add, remove, reorder,
     or list tasks queued for focused work sessions.
@@ -24,35 +24,63 @@ def manage_widget_queue(action: str, task_ids: Optional[str] = None, position: O
         Dictionary with status and current queue state.
     """
     import json
+    import subprocess
     import traceback
     import os
 
     try:
-        import requests
-
-        lettabot_url = os.environ.get("ROVER_LETTABOT_URL", "http://100.95.213.46:8080")
-        lettabot_key = os.environ.get("ROVER_LETTABOT_API_KEY", "")
-
         if not action or action not in ("list", "set", "push", "insert", "remove", "move", "clear"):
             return {"status": "error", "error_message": f"Invalid action: {action}. Must be one of: list, set, push, insert, remove, move, clear"}
 
-        payload = {"action": action}
-        if task_ids is not None:
-            payload["task_ids"] = task_ids
-        if position is not None:
-            payload["position"] = position
+        laptop_host = os.environ.get("LAPTOP_SSH_HOST", "chaddorsey@100.95.213.46")
+        ssh_key = os.environ.get("LAPTOP_SSH_KEY", "/root/.ssh/id_ed25519")
+        queue_script = "~/Dropbox/dev/omnifocus-timer/widget-queue.sh"
 
-        headers = {"Content-Type": "application/json"}
-        if lettabot_key:
-            headers["X-Api-Key"] = lettabot_key
+        # Build the remote command
+        cmd_parts = [queue_script, action]
+        if action in ("set", "push") and task_ids:
+            for tid in task_ids.split(","):
+                tid = tid.strip()
+                if tid:
+                    cmd_parts.append(tid)
+        elif action == "insert" and task_ids and position is not None:
+            cmd_parts.append(str(position))
+            cmd_parts.append(task_ids.strip())
+        elif action == "remove" and task_ids:
+            cmd_parts.append(task_ids.strip())
+        elif action == "move" and task_ids and position is not None:
+            cmd_parts.append(task_ids.strip())
+            cmd_parts.append(str(position))
 
-        url = f"{lettabot_url.rstrip('/')}/api/v1/widget-queue"
-        resp = requests.post(url, json=payload, headers=headers, timeout=15)
+        remote_cmd = " ".join(cmd_parts)
 
-        if resp.status_code != 200:
-            return {"status": "error", "error_message": f"HTTP {resp.status_code}: {resp.text[:500]}"}
+        result = subprocess.run(
+            [
+                "ssh",
+                "-i", ssh_key,
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ConnectTimeout=10",
+                laptop_host,
+                remote_cmd,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
 
-        return resp.json()
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
 
+        if result.returncode != 0:
+            return {"status": "error", "error_message": f"SSH exit {result.returncode}: {stderr or stdout}"}
+
+        # Parse the JSON output from widget-queue.sh
+        try:
+            return json.loads(stdout)
+        except json.JSONDecodeError:
+            return {"status": "ok", "raw_output": stdout}
+
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "error_message": "SSH command timed out (20s)"}
     except Exception as e:
         return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
