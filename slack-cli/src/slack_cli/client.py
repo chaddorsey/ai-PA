@@ -40,9 +40,19 @@ class SlackClient:
 
         return client
 
+    # Methods that should auto-retry with user token on channel_not_found
+    _DM_RETRY_METHODS = {
+        "conversations.history", "conversations.replies", "conversations.info",
+        "conversations.members", "conversations.open",
+    }
+
     def call(self, method: str, params: dict | None = None,
              token_type: str | None = None) -> dict:
-        """Call a Slack API method."""
+        """Call a Slack API method.
+
+        For conversation methods, auto-retries with user token if bot token
+        gets channel_not_found (common for DMs where bot isn't a member).
+        """
         if token_type is None:
             schema = get_schema(method)
             token_type = schema["token_type"] if schema else TOKEN_TYPE_EITHER
@@ -54,6 +64,20 @@ class SlackClient:
             return dict(response.data) if hasattr(response, "data") else response
         except SlackApiError as e:
             error_code = e.response.get("error", "api_error") if hasattr(e.response, "get") else "api_error"
+
+            # Auto-retry with user token for DM-related failures
+            if (error_code in ("channel_not_found", "not_in_channel")
+                    and method in self._DM_RETRY_METHODS
+                    and not self._force_user
+                    and not self._force_bot
+                    and self._user_client
+                    and client != self._user_client):
+                try:
+                    response = self._user_client.api_call(method, params=params or {})
+                    return dict(response.data) if hasattr(response, "data") else response
+                except SlackApiError:
+                    pass  # Fall through to original error
+
             raise SlackCliError(
                 error_code,
                 str(e),

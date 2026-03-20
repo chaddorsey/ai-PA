@@ -254,13 +254,40 @@ def conversations_info(ctx, channel):
 @click.option("--cursor", default=None, help="Pagination cursor")
 @click.pass_context
 def conversations_history(ctx, channel, oldest, latest, limit, inclusive, cursor):
-    """Fetch message history of a conversation."""
+    """Fetch message history of a conversation.
+
+    Works for public channels, private channels, DMs, and group DMs.
+    For DMs, automatically uses the user token if the bot token fails.
+    """
     params = {k: v for k, v in {
         "channel": channel, "oldest": oldest, "latest": latest,
         "limit": limit, "inclusive": inclusive, "cursor": cursor,
     }.items() if v is not None}
     had_flags = any(v is not None for v in [channel, oldest, latest, limit, inclusive, cursor])
     _run(ctx, "conversations.history", params, had_convenience_flags=had_flags and ctx.obj.get("body") is not None)
+
+
+@conversations.command("replies")
+@click.option("--channel", default=None, help="Channel ID containing the thread")
+@click.option("--ts", default=None, help="Thread parent message timestamp")
+@click.option("--oldest", default=None, help="Only replies after this Unix timestamp")
+@click.option("--latest", default=None, help="Only replies before this Unix timestamp")
+@click.option("--limit", type=int, default=None, help="Max results per page")
+@click.option("--inclusive", is_flag=True, default=None, help="Include messages with oldest or latest timestamps")
+@click.option("--cursor", default=None, help="Pagination cursor")
+@click.pass_context
+def conversations_replies(ctx, channel, ts, oldest, latest, limit, inclusive, cursor):
+    """Fetch all replies in a message thread.
+
+    Requires channel ID and the thread parent timestamp (ts).
+    Returns the parent message plus all replies in chronological order.
+    """
+    params = {k: v for k, v in {
+        "channel": channel, "ts": ts, "oldest": oldest, "latest": latest,
+        "limit": limit, "inclusive": inclusive, "cursor": cursor,
+    }.items() if v is not None}
+    had_flags = any(v is not None for v in [channel, ts, oldest, latest, limit, inclusive, cursor])
+    _run(ctx, "conversations.replies", params, had_convenience_flags=had_flags and ctx.obj.get("body") is not None)
 
 
 @conversations.command("create")
