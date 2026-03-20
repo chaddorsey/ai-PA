@@ -306,12 +306,14 @@ def task_complete(ctx, task_id):
 @click.option("--tag", "tag_id", default=None, help="Filter by tag ID")
 @click.option("--flagged", is_flag=True, default=False, help="Show only flagged tasks")
 @click.option("--include-completed", is_flag=True, default=False, help="Include completed tasks")
+@click.option("--limit", type=int, default=None, help="Max tasks to return (enables pagination)")
+@click.option("--offset", type=int, default=None, help="Number of tasks to skip (use with --limit)")
 @click.pass_context
-def task_list(ctx, project_id, tag_id, flagged, include_completed):
-    """List tasks with optional filters."""
+def task_list(ctx, project_id, tag_id, flagged, include_completed, limit, offset):
+    """List tasks with optional filters. Supports --limit/--offset pagination."""
     body = ctx.obj.get("body")
     if body is not None:
-        had_flags = any(v is not None for v in [project_id, tag_id]) or flagged or include_completed
+        had_flags = any(v is not None for v in [project_id, tag_id, limit, offset]) or flagged or include_completed
         _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=had_flags)
     else:
         params = {
@@ -319,6 +321,8 @@ def task_list(ctx, project_id, tag_id, flagged, include_completed):
             "tagId": tag_id,
             "flagged": flagged if flagged else None,
             "includeCompleted": include_completed if include_completed else None,
+            "limit": limit,
+            "offset": offset,
         }
         cleaned = {k: v for k, v in params.items() if v is not None}
         _run(ctx, "task.list", "queryTasks", cleaned)

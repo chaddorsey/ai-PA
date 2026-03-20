@@ -67,12 +67,14 @@ SCHEMAS: dict[str, dict] = {
     },
     "task.list": {
         "method": "queryTasks",
-        "description": "List tasks with optional filters",
+        "description": "List tasks with optional filters. Supports limit/offset pagination — when provided, returns {tasks, total, offset, hasMore} instead of a plain array.",
         "params": {
             "projectId": {"type": "string", "required": False, "description": "Filter by project ID"},
             "tagId": {"type": "string", "required": False, "description": "Filter by tag ID"},
             "flagged": {"type": "boolean", "required": False, "description": "Filter by flagged status"},
             "includeCompleted": {"type": "boolean", "required": False, "description": "Include completed tasks in results"},
+            "limit": {"type": "integer", "required": False, "description": "Max tasks to return (enables pagination). Response becomes {tasks, total, offset, hasMore}"},
+            "offset": {"type": "integer", "required": False, "description": "Number of tasks to skip (use with limit to page through results)"},
         },
     },
     "task.subtasks": {
