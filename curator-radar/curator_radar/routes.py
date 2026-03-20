@@ -235,14 +235,22 @@ async def twitter_sync_list(session: AsyncSession = Depends(get_session)):
 # --- Twitter Agent Access Routes ---
 
 
+def _twitter_error_response(e: Exception):
+    """Convert Twitter client errors to structured JSON responses."""
+    msg = str(e)
+    code = 503 if "401" in msg or "authenticate" in msg.lower() else 502
+    return JSONResponse(status_code=code, content={"status": "error", "error": msg})
+
+
 @router.get("/twitter/feed")
 async def twitter_feed(count: int = 20, cursor: str = None):
     """Fetch home timeline. Supports cursor-based pagination."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        # Always use paged path (pass "" sentinel when no cursor to get next_cursor on page 1)
         result = await asyncio.to_thread(client.get_home_timeline, count, cursor or "")
         return {"status": "ok", "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -254,6 +262,8 @@ async def twitter_user_tweets(handle: str, count: int = 20, cursor: str = None):
     try:
         result = await asyncio.to_thread(client.get_user_tweets, handle, count, cursor or "")
         return {"status": "ok", "handle": handle, "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -265,6 +275,8 @@ async def twitter_search(q: str, count: int = 20, cursor: str = None):
     try:
         result = await asyncio.to_thread(client.search_tweets, q, count, cursor or "")
         return {"status": "ok", "query": q, "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -277,10 +289,7 @@ async def twitter_tweet_detail(tweet_id: str):
         data = await asyncio.to_thread(client.get_tweet_detail, tweet_id)
         return {"status": "ok", "data": data}
     except RuntimeError as e:
-        return JSONResponse(
-            status_code=502,
-            content={"status": "error", "error": str(e)},
-        )
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -292,6 +301,8 @@ async def twitter_bookmarks_read(count: int = 20, cursor: str = None):
     try:
         result = await asyncio.to_thread(client.get_bookmarks, count, cursor or "")
         return {"status": "ok", "tweets": result["tweets"], "next_cursor": result["next_cursor"]}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -303,6 +314,8 @@ async def twitter_my_lists():
     try:
         lists = await asyncio.to_thread(client.get_my_lists)
         return {"status": "ok", "lists": lists}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -314,6 +327,8 @@ async def twitter_list_members(list_id: str, count: int = 100, cursor: str = Non
     try:
         result = await asyncio.to_thread(client.get_list_members, list_id, count, cursor or "")
         return {"status": "ok", "list_id": list_id, "members": result["members"], "next_cursor": result["next_cursor"]}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -330,6 +345,8 @@ async def twitter_list_tweets(list_id: str, count: int = 20, cursor: str = None)
             "tweets": result["tweets"],
             "next_cursor": result["next_cursor"],
         }
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 
@@ -352,8 +369,10 @@ async def twitter_bookmark_tweet(tweet_id: str):
     """Bookmark a tweet for agent access."""
     client = TwitterClient(settings.smaug_config_path)
     try:
-        ok = await asyncio.to_thread(client.add_bookmark, tweet_id)
-        return {"status": "ok" if ok else "error", "tweet_id": tweet_id}
+        await asyncio.to_thread(client.add_bookmark, tweet_id)
+        return {"status": "ok", "tweet_id": tweet_id}
+    except RuntimeError as e:
+        return _twitter_error_response(e)
     finally:
         client.close()
 

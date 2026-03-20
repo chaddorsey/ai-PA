@@ -96,7 +96,7 @@ def run_twitter(command: str, params: Optional[str] = None) -> Dict[str, Any]:
         "bookmark": {
             "method": "POST",
             "path": "/twitter/bookmark/{tweet_id}",
-            "description": "Bookmark a tweet",
+            "description": "Bookmark a tweet (NOTE: currently blocked by Twitter — returns 404. Use list-add to save tweets to a list instead)",
             "params": {"tweet_id": "str (required, in path)"},
         },
         "list-add": {

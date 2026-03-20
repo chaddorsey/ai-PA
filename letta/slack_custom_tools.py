@@ -1510,31 +1510,32 @@ def search_slack_messages(
         if is_dm:
             search_query_parts.insert(0, "is:dm")
 
-        # Add date filters using Slack's native syntax (more accurate than post-filtering)
-        if start_date:
-            # Convert to YYYY-MM-DD format for after: syntax
+        # Add date filters using Slack's on: syntax
+        # Note: after:/before: combined returns 0 results (Slack API bug).
+        # on: works reliably for single days and can be repeated for ranges.
+        if start_date or end_date:
+            from datetime import timedelta
             try:
-                if 'T' in start_date:
-                    date_part = start_date.split('T')[0]
-                else:
-                    date_part = start_date
-                search_query_parts.append(f"after:{date_part}")
-            except Exception:
-                pass
-        
-        if end_date:
-            # Convert to YYYY-MM-DD format for before: syntax
-            # Add 1 day because before: is exclusive
-            try:
-                if 'T' in end_date:
-                    date_part = end_date.split('T')[0]
-                else:
-                    date_part = end_date
-                # Parse and add 1 day for inclusive end date
-                from datetime import timedelta
-                end_dt_temp = datetime.strptime(date_part, "%Y-%m-%d")
-                end_dt_plus_one = end_dt_temp + timedelta(days=1)
-                search_query_parts.append(f"before:{end_dt_plus_one.strftime('%Y-%m-%d')}")
+                start_str = (start_date.split('T')[0] if start_date and 'T' in start_date
+                             else start_date) if start_date else None
+                end_str = (end_date.split('T')[0] if end_date and 'T' in end_date
+                           else end_date) if end_date else None
+
+                if start_str and end_str:
+                    s_dt = datetime.strptime(start_str, "%Y-%m-%d")
+                    e_dt = datetime.strptime(end_str, "%Y-%m-%d")
+                    day_count = (e_dt - s_dt).days + 1
+                    if day_count <= 31:
+                        for i in range(day_count):
+                            d = s_dt + timedelta(days=i)
+                            search_query_parts.append(f"on:{d.strftime('%Y-%m-%d')}")
+                    else:
+                        search_query_parts.append(f"after:{start_str}")
+                        search_query_parts.append(f"before:{(e_dt + timedelta(days=1)).strftime('%Y-%m-%d')}")
+                elif start_str:
+                    search_query_parts.append(f"on:{start_str}")
+                elif end_str:
+                    search_query_parts.append(f"on:{end_str}")
             except Exception:
                 pass
 

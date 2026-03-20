@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gmail_tools import (
     run_gws,
+    fetch_gmail_messages,
     compose_gmail,
 )
 
@@ -35,13 +36,14 @@ def register_tools():
 
     tools = [
         (run_gws, ["gws", "google", "gmail", "calendar", "drive"]),
+        (fetch_gmail_messages, ["gws", "gmail", "email", "batch", "inbox"]),
         (compose_gmail, ["gws", "gmail", "email", "send", "draft"]),
     ]
 
     registered = []
     for func, tags in tools:
         try:
-            tool = client.tools.create_from_function(
+            tool = client.tools.upsert_from_function(
                 func=func,
                 tags=tags,
             )

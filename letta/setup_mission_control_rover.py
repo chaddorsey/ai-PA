@@ -233,10 +233,11 @@ def message_agent(target_agent_id: str, message: str) -> str:
     import os
     from letta_client import Letta
 
-    client = Letta(
-        base_url=os.getenv("LETTA_BASE_URL", "http://localhost:8283"),
-        api_key=os.getenv("LETTA_API_KEY") or None
-    )
+    # letta_client auto-reads LETTA_API_KEY from env; empty string causes crash
+    if not os.environ.get("LETTA_API_KEY"):
+        os.environ.pop("LETTA_API_KEY", None)
+
+    client = Letta(base_url=os.getenv("LETTA_BASE_URL", "http://localhost:8283"))
     response = client.agents.messages.create(
         agent_id=target_agent_id,
         messages=[{"role": "user", "content": message}],
@@ -247,6 +248,54 @@ def message_agent(target_agent_id: str, message: str) -> str:
         if hasattr(m, "content") and m.content:
             texts.append(m.content)
     return "\\n".join(texts) if texts else "(no text response)"
+'''
+
+
+# ---------------------------------------------------------------------------
+# message_rover_local tool source
+# Calls LettaBot's chat API on the laptop via Tailscale for local tool access
+# ---------------------------------------------------------------------------
+
+MESSAGE_ROVER_LOCAL_SOURCE = '''
+def message_rover_local(message: str) -> str:
+    """
+    Send a message to Rover through the laptop's LettaBot instance.
+    This gives Rover local Bash/filesystem access on the laptop.
+    Falls back gracefully if the laptop is offline.
+
+    Args:
+        message: The task or message for Rover to handle locally
+
+    Returns:
+        Rover's response, or an offline notice
+    """
+    import os
+    import requests
+
+    laptop_url = os.getenv("ROVER_LETTABOT_URL", "http://100.95.213.46:8080")
+    api_key = os.getenv("ROVER_LETTABOT_API_KEY", "")
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["X-Api-Key"] = api_key
+
+    try:
+        resp = requests.post(
+            f"{laptop_url}/api/v1/chat",
+            json={"message": message},
+            headers=headers,
+            timeout=120
+        )
+        if resp.ok:
+            data = resp.json()
+            return data.get("response", str(data))
+        return f"Rover returned HTTP {resp.status_code}: {resp.text[:500]}"
+    except requests.exceptions.ConnectionError:
+        return "OFFLINE: Laptop is not reachable. Queue this task in the tasks block instead."
+    except requests.exceptions.Timeout:
+        return "TIMEOUT: Rover is busy or unresponsive. Queue this task in the tasks block instead."
+    except Exception as e:
+        return f"ERROR: {str(e)}"
 '''
 
 
@@ -265,13 +314,16 @@ ROLE:
 ROVER COORDINATION:
 - Rover's agent ID: {rover_agent_id}
 - Rover has Bash and filesystem access on the user's laptop, but ONLY when the laptop is on and LettaBot is running
-- For laptop-local tasks: write them to the "tasks" memory block in a clear, actionable format
-- For urgent or complex tasks: also message Rover directly using the message_agent tool (Rover will process when online)
-- Check the "status" block on heartbeats for completed task results from Rover
-- Relay results and status to the user proactively
 
-TASK BLOCK FORMAT:
-Write tasks to the "tasks" block like this:
+COMMUNICATION PRIORITY:
+1. For laptop tasks needing immediate execution: use message_rover_local
+   - This calls Rover's LettaBot on the laptop directly, giving Rover full Bash access
+   - If it returns OFFLINE or TIMEOUT: fall back to tasks block
+   - Tell the user: "Your laptop appears offline -- I've queued this for when it comes back"
+2. For non-urgent laptop tasks: write directly to tasks block (Rover heartbeat picks up every 2 min)
+3. For coordination that doesn't need Bash (memory updates, questions): use message_agent
+
+TASK BLOCK FORMAT (for tasks block):
 Task: [short description]
 Priority: high/medium/low
 From: mission-control
@@ -486,6 +538,34 @@ def main():
         attach_tool_to_agent(client, ROVER_AGENT_ID, new_tool_id, "Rover")
 
     # ------------------------------------------------------------------
+    # Step 4b: Register message_rover_local tool (MC only)
+    # Calls LettaBot chat API on laptop for local Bash access
+    # ------------------------------------------------------------------
+    print("\n--- Step 4b: message_rover_local tool (LettaBot chat API) ---")
+
+    rover_local_tool_id = find_tool_by_name(client, "message_rover_local")
+    if rover_local_tool_id:
+        print(f"  message_rover_local tool already registered (ID: {rover_local_tool_id})")
+    else:
+        print("  Registering message_rover_local tool via source_code...")
+        try:
+            created = client.tools.create(source_code=MESSAGE_ROVER_LOCAL_SOURCE)
+            rover_local_tool_id = created.id if hasattr(created, 'id') else created.get('id')
+            print(f"  Registered message_rover_local tool (ID: {rover_local_tool_id})")
+        except Exception as e:
+            error_str = str(e).lower()
+            if "already exists" in error_str or "duplicate" in error_str:
+                rover_local_tool_id = find_tool_by_name(client, "message_rover_local")
+                print(f"  message_rover_local tool already exists (ID: {rover_local_tool_id})")
+            else:
+                print(f"  Error registering message_rover_local tool: {e}")
+                return 1
+
+    if rover_local_tool_id:
+        attach_tool_to_agent(client, MC_AGENT_ID, rover_local_tool_id, "Mission Control")
+        # NOT attached to Rover — only MC calls this tool
+
+    # ------------------------------------------------------------------
     # Step 5: Agent info blocks (for existing A2A system compatibility)
     # ------------------------------------------------------------------
     print("\n--- Step 5: Agent info blocks ---")
@@ -565,7 +645,8 @@ Shared Blocks:
   status:         {block_ids.get('status', 'N/A')}
   shared_context: {block_ids.get('shared_context', 'N/A')}
 
-message_agent tool: {new_tool_id or 'N/A'}
+message_agent tool:       {new_tool_id or 'N/A'}
+message_rover_local tool: {rover_local_tool_id or 'N/A'}
 """)
 
     # Generate laptop LettaBot config

@@ -428,14 +428,11 @@ class TwitterClient:
             return False
 
     def add_bookmark(self, tweet_id: str) -> bool:
-        """Bookmark a tweet."""
-        try:
-            self._graphql_post("CreateBookmark", {
-                "tweet_id": tweet_id,
-            })
-            return True
-        except RuntimeError:
-            return False
+        """Bookmark a tweet. Raises RuntimeError on failure."""
+        self._graphql_post("CreateBookmark", {
+            "tweet_id": tweet_id,
+        })
+        return True
 
     # --- Internal helpers ---
 
