@@ -224,6 +224,16 @@
 
     if (startIdx === -1 || endIdx === -1) {
       result.beforeBlock = noteText;
+      // No block yet — scan for standalone Agent Estimate line
+      var standaloneLines = noteText.split("\n");
+      for (var s = 0; s < standaloneLines.length; s++) {
+        var sl = standaloneLines[s].trim();
+        var saMatch = sl.match(/^Agent Estimate:\s*(.+)$/);
+        if (saMatch) {
+          result.agentEstimate = saMatch[1].trim();
+          break;
+        }
+      }
       return result;
     }
 
@@ -279,6 +289,24 @@
       // Total and Variance lines are derived — skip them
       if (line.indexOf("Total:") === 0 || line.indexOf("Variance:") === 0) {
         continue;
+      }
+    }
+
+    // If no agent estimate found inside the block, check standalone lines outside it
+    if (!result.agentEstimate) {
+      var fullLines = noteText.split("\n");
+      for (var k = 0; k < fullLines.length; k++) {
+        var fl = fullLines[k].trim();
+        // Skip lines inside the block
+        if (fl === NOTE_BLOCK_START) {
+          while (k < fullLines.length - 1 && fullLines[++k].trim() !== NOTE_BLOCK_END) {}
+          continue;
+        }
+        var extAgentMatch = fl.match(/^Agent Estimate:\s*(.+)$/);
+        if (extAgentMatch) {
+          result.agentEstimate = extAgentMatch[1].trim();
+          break;
+        }
       }
     }
 

@@ -20,6 +20,8 @@ final class QueueManager: ObservableObject {
     private let queueURL: URL
     private var fileDescriptor: Int32 = -1
     private var dispatchSource: DispatchSourceFileSystemObject?
+    private var pollTimer: Timer?
+    private var lastModDate: Date?
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -29,10 +31,12 @@ final class QueueManager: ObservableObject {
         ensureFileExists(directory: dir)
         loadQueue()
         startWatching()
+        startPolling()
     }
 
     deinit {
         dispatchSource?.cancel()
+        pollTimer?.invalidate()
         if fileDescriptor >= 0 {
             close(fileDescriptor)
         }
@@ -44,6 +48,9 @@ final class QueueManager: ObservableObject {
             return
         }
         do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: queueURL.path)
+            lastModDate = attrs[.modificationDate] as? Date
+
             let data = try Data(contentsOf: queueURL)
             let file = try JSONDecoder().decode(QueueFile.self, from: data)
             DispatchQueue.main.async {
@@ -113,17 +120,20 @@ final class QueueManager: ObservableObject {
     }
 
     private func startWatching() {
+        stopWatching()
         fileDescriptor = open(queueURL.path, O_EVTONLY)
         guard fileDescriptor >= 0 else { return }
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fileDescriptor,
-            eventMask: [.write, .rename, .delete],
+            eventMask: [.write, .rename, .delete, .attrib],
             queue: .main
         )
 
         source.setEventHandler { [weak self] in
             self?.loadQueue()
+            // Re-establish watcher if file was replaced (new inode)
+            self?.restartWatchingIfNeeded()
         }
 
         source.setCancelHandler { [weak self] in
@@ -135,5 +145,45 @@ final class QueueManager: ObservableObject {
 
         source.resume()
         dispatchSource = source
+    }
+
+    private func stopWatching() {
+        dispatchSource?.cancel()
+        dispatchSource = nil
+    }
+
+    private func restartWatchingIfNeeded() {
+        // If the file was replaced, the old descriptor points to a deleted inode.
+        // Re-open to track the new file.
+        let newFd = open(queueURL.path, O_EVTONLY)
+        guard newFd >= 0 else { return }
+        close(newFd)
+        // Compare: if we can still stat the old descriptor, it's fine
+        // Otherwise re-establish
+        var stat = stat()
+        if fstat(fileDescriptor, &stat) != 0 || stat.st_nlink == 0 {
+            startWatching()
+        }
+    }
+
+    /// Poll every 5 seconds as a fallback for stale file watchers
+    private func startPolling() {
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            self?.checkForChanges()
+        }
+    }
+
+    private func checkForChanges() {
+        guard FileManager.default.fileExists(atPath: queueURL.path) else { return }
+        do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: queueURL.path)
+            let modDate = attrs[.modificationDate] as? Date
+            if let modDate, modDate != lastModDate {
+                lastModDate = modDate
+                loadQueue()
+                // Also re-establish watcher in case inode changed
+                restartWatchingIfNeeded()
+            }
+        } catch {}
     }
 }
