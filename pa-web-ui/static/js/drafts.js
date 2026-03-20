@@ -722,8 +722,6 @@ class DraftsSidebar {
     const errorEl = document.getElementById('draft-edit-error');
     const sendBtn = document.getElementById('draft-edit-send-btn');
 
-    if (!confirm(`Send this email to ${to}?`)) return;
-
     sendBtn.disabled = true;
     sendBtn.textContent = 'Sending\u2026';
     errorEl.style.display = 'none';
