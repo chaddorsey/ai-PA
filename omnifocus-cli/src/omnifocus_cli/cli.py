@@ -12,19 +12,56 @@ from omnifocus_cli.schema import get_schema, list_schemas
 from omnifocus_cli.validate import validate_body, validate_date, validate_name, validate_uuid
 
 
-@click.group()
-@click.option("--format", "format_flag", type=click.Choice(["json", "text"]), default=None)
-@click.option("--body", "body_json", default=None, help="Raw JSON input (agent-first path)")
-@click.option("--dry-run", is_flag=True, default=False, help="Validate + preview, no execution")
-@click.option("--fields", default=None, help="Comma-separated output fields")
+# Global options that can appear anywhere in the command line (before or after subcommands).
+# Matches the slack-cli GlobalOptionsGroup pattern for agent ergonomics.
+GLOBAL_OPTIONS = {
+    "--format": {"nargs": 1, "key": "format"},
+    "--body": {"nargs": 1, "key": "body"},
+    "--dry-run": {"nargs": 0, "key": "dry_run"},
+    "--fields": {"nargs": 1, "key": "fields"},
+}
+
+
+class GlobalOptionsGroup(click.Group):
+    """Click Group that allows global options to appear anywhere in the command line."""
+
+    def parse_args(self, ctx, args):
+        remaining = []
+        i = 0
+        extracted = {}
+        while i < len(args):
+            arg = args[i]
+            if arg in GLOBAL_OPTIONS:
+                opt = GLOBAL_OPTIONS[arg]
+                if opt["nargs"] == 0:
+                    extracted[opt["key"]] = True
+                    i += 1
+                elif opt["nargs"] == 1 and i + 1 < len(args):
+                    extracted[opt["key"]] = args[i + 1]
+                    i += 2
+                else:
+                    remaining.append(arg)
+                    i += 1
+            else:
+                remaining.append(arg)
+                i += 1
+
+        ctx.ensure_object(dict)
+        ctx.obj["_extracted_globals"] = extracted
+        return super().parse_args(ctx, remaining)
+
+
+@click.group(cls=GlobalOptionsGroup)
 @click.pass_context
-def cli(ctx, format_flag, body_json, dry_run, fields):
+def cli(ctx):
     """OmniFocus CLI - manage tasks, projects, folders, and tags."""
     ctx.ensure_object(dict)
-    ctx.obj["format"] = format_flag
-    ctx.obj["body"] = body_json
-    ctx.obj["dry_run"] = dry_run
-    ctx.obj["fields"] = fields.split(",") if fields else None
+    extracted = ctx.obj.pop("_extracted_globals", {})
+    ctx.obj["format"] = extracted.get("format")
+    ctx.obj["body"] = extracted.get("body")
+    ctx.obj["dry_run"] = extracted.get("dry_run", False)
+    fields_raw = extracted.get("fields")
+    ctx.obj["fields"] = fields_raw.split(",") if fields_raw else None
 
 
 _DATE_SUFFIXES = ("Date", "Before", "After")
@@ -369,14 +406,11 @@ def task_complete(ctx, task_id):
 @click.option("--available", is_flag=True, default=False, help="Show only available (not blocked/deferred) tasks")
 @click.option("--limit", type=int, default=None, help="Max tasks to return (enables pagination)")
 @click.option("--offset", type=int, default=None, help="Number of tasks to skip (use with --limit)")
-@click.option("--fields", default=None, help="Comma-separated fields to return (e.g. id,name,duration)")
 @click.pass_context
 def task_list(ctx, project_id, tag_id, flagged, completed, dropped, include_completed,
               has_estimate, due_before, due_after, defer_before, defer_after,
-              added_before, added_after, overdue, available, limit, offset, fields):
+              added_before, added_after, overdue, available, limit, offset):
     """List tasks with filters and pagination. Returns {data:{tasks:[]}, meta:{total,limit,offset,has_more}}."""
-    if fields:
-        ctx.obj["fields"] = fields
     body = ctx.obj.get("body")
     if body is not None:
         _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=True)
