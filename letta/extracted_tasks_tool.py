@@ -26,6 +26,7 @@ def add_extracted_tasks(
     priority: Optional[str] = None,
     related_urls: Optional[str] = None,
     origin: Optional[str] = None,
+    estimate_minutes: Optional[int] = None,
     cleanup_block_id: Optional[str] = None,
     cleanup_entry_identifier: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -90,6 +91,11 @@ def add_extracted_tasks(
             "agent-identified" — Agent inferred this is a task from
             context analysis.
             Omit if not determinable.
+        estimate_minutes: Estimated task duration in minutes. Always provide
+            your best estimate based on task complexity and context. Consider
+            number of documents/URLs to review, whether composing a response
+            is needed, and typical durations. Round to nearest 5 minutes.
+            Minimum 5, maximum 120 for a single task.
         cleanup_block_id: Optional block ID of the source queue to clean up
             after successful extraction. When provided with
             cleanup_entry_identifier, the matching entry is removed from
@@ -250,7 +256,8 @@ def add_extracted_tasks(
 
         section_match = section_pattern.search(current_value)
         origin_part = f"; origin: {origin}" if origin else ""
-        task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}{origin_part}] {task_description}\n\n"
+        est_part = f"; est: {estimate_minutes}" if estimate_minutes else ""
+        task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}{origin_part}{est_part}] {task_description}\n\n"
 
         if section_match:
             insert_pos = section_match.end()
@@ -293,6 +300,9 @@ def add_extracted_tasks(
 
         # Build TASK METADATA section (only include fields that were provided)
         metadata_lines = []
+        if estimate_minutes:
+            metadata_lines.append(f"- Estimate: {estimate_minutes}")
+            metadata_lines.append(f"- Agent Estimate: {estimate_minutes}")
         if due_date:
             metadata_lines.append(f"- Due: {due_date}")
         if defer_date:

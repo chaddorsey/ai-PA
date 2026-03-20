@@ -1,13 +1,12 @@
 """
-Message shortcut handlers for queuing Slack messages as tasks.
+Message shortcut handlers for sending Slack messages to the Tasks agent.
 
 Two shortcuts:
-  - send_to_tasks: Silent queue, ephemeral confirmation
-  - send_to_tasks_modal: Opens modal for optional notes before queuing
+  - send_to_tasks: Silent send, ephemeral confirmation
+  - send_to_tasks_modal: Opens modal for optional notes before sending
 
-Messages are appended as JSON entries (separated by ---) to the
-queued_tasks_from_slack memory block in Letta, for processing by the
-Pulse agent.
+Messages are sent directly to the Tasks agent for extraction via the
+formulate → enrich pipeline. No intermediate queue block.
 """
 import json
 import os
@@ -20,61 +19,10 @@ from slack_bolt import Ack
 from slack_sdk import WebClient
 
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
-QUEUE_BLOCK_ID = os.getenv(
-    "LETTA_TASK_QUEUE_BLOCK_ID",
-    "block-033a720d-1f13-44a2-a5cb-b5edde418ea1",
-)
-# Task extraction now goes to the Tasks Agent (consolidated extractor)
-# Previously routed to Pulse agent
 EXTRACTION_AGENT_ID = os.getenv(
     "LETTA_EXTRACTION_AGENT_ID",
     "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
 )
-
-
-def _append_to_queue(entry: dict, logger: Logger) -> bool:
-    """Append a JSON entry to the queued_tasks_from_slack memory block.
-
-    Uses --- separators between entries (consistent with other queue blocks,
-    required for atomic cleanup by add_extracted_tasks).
-
-    Returns True on success, False on failure.
-    """
-    try:
-        # Read current block value
-        resp = requests.get(
-            f"{LETTA_BASE_URL}/v1/blocks/{QUEUE_BLOCK_ID}",
-            timeout=10,
-        )
-        resp.raise_for_status()
-        block = resp.json()
-        current_value = block.get("value", "").strip()
-
-        # Build new entry with --- separator
-        new_entry = json.dumps(entry, ensure_ascii=False)
-
-        # Append with --- separator
-        if current_value:
-            if current_value.endswith("---"):
-                updated = f"{current_value}\n{new_entry}\n---"
-            else:
-                updated = f"{current_value}\n---\n{new_entry}\n---"
-        else:
-            updated = f"{new_entry}\n---"
-
-        # Write back
-        resp = requests.patch(
-            f"{LETTA_BASE_URL}/v1/blocks/{QUEUE_BLOCK_ID}",
-            json={"value": updated},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        logger.info(f"Queued task to memory block: {entry.get('link', '?')}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to append to task queue block: {e}", exc_info=True)
-        return False
 
 
 def _extract_message_info(body: dict, logger: Logger) -> dict:
@@ -137,8 +85,8 @@ def _extract_message_info(body: dict, logger: Logger) -> dict:
     }
 
 
-def _build_queue_entry(info: dict, notes: str = "") -> dict:
-    """Build a queue entry dict from extracted message info."""
+def _build_entry(info: dict, notes: str = "") -> dict:
+    """Build an entry dict from extracted message info."""
     entry = {
         "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M"),
         "from_id": info["message_user_id"],
@@ -146,8 +94,8 @@ def _build_queue_entry(info: dict, notes: str = "") -> dict:
         "channel_id": info["channel_id"],
         "text": info["text"],
         "link": info["permalink"],
-        "source_ref_id": f"{info['channel_id']}:{info['message_ts']}",
         "message_ts": info["message_ts"],
+        "triggering_user_id": info["triggering_user_id"],
     }
     if info.get("thread_ts"):
         entry["thread_ts"] = info["thread_ts"]
@@ -160,103 +108,127 @@ def _build_queue_entry(info: dict, notes: str = "") -> dict:
     return entry
 
 
-def _queue_and_trigger(entry: dict, logger: Logger) -> None:
-    """Write to queue block, then trigger the Pulse agent.
+def _send_confirmation(client: WebClient, channel_id: str, user_id: str,
+                       preview: str, logger: Logger) -> None:
+    """Send confirmation: ephemeral in channel, fall back to DM."""
+    text = f"Queued for tasks: _{preview}_"
+    try:
+        client.chat_postEphemeral(channel=channel_id, user=user_id, text=text)
+    except Exception:
+        # Ephemeral failed (bot not in channel, DM, etc.) — try DM
+        try:
+            dm = client.conversations_open(users=[user_id])
+            dm_channel = dm["channel"]["id"]
+            client.chat_postMessage(channel=dm_channel, text=text)
+        except Exception:
+            logger.info(f"Confirmation skipped for user {user_id}")
 
-    Runs in a background thread. Sequenced so the queue entry exists
-    before the agent receives the extraction trigger.
-    """
-    if not _append_to_queue(entry, logger):
-        return  # Queue write failed — don't trigger without durable record
 
-    _trigger_extraction(entry, logger)
+def _resolve_slack_user(user_id: str, client) -> str:
+    """Resolve a Slack user ID to 'Real Name (USERID)' format."""
+    try:
+        resp = client.users_info(user=user_id)
+        if resp.get("ok"):
+            user = resp["user"]
+            name = user.get("real_name") or user.get("profile", {}).get("display_name") or user_id
+            return f"{name} ({user_id})"
+    except Exception:
+        pass
+    return user_id
 
 
-def _trigger_extraction(entry: dict, logger: Logger) -> None:
-    """Send a message to the Pulse agent to extract the queued task.
+def _trigger_extraction(entry: dict, logger: Logger,
+                        slack_client: WebClient = None) -> None:
+    """Send task directly to the Tasks agent for extraction.
 
-    Best-effort. If it fails, the entry stays in the queue for manual
-    or scheduled processing.
+    Passes all context in the message — no intermediate queue block.
+    Runs in a background thread.
     """
     try:
-        text_preview = entry.get("text", "")[:200]
         channel = entry.get("channel", "")
+        channel_id = entry.get("channel_id", "")
         from_id = entry.get("from_id", "")
+        # Resolve user ID to name
+        if slack_client and from_id.startswith("U"):
+            from_id = _resolve_slack_user(from_id, slack_client)
+        text = entry.get("text", "")
         link = entry.get("link", "")
-        source_ref = entry.get("source_ref_id", "")
+        message_ts = entry.get("message_ts", "")
         notes = entry.get("notes", "")
 
         urls = entry.get("urls", [])
         urls_str = "\n".join(f"  - {u}" for u in urls) if urls else "(none)"
 
-        parts = [
-            "New task queued from Slack. Process this item from "
-            "queued_tasks_from_slack using add_extracted_tasks.",
-            f"Channel: {channel}",
-            f"From: {from_id}",
-            f"Text: {text_preview}",
-            f"Full URLs from message (use these, not truncated URLs from text):\n{urls_str}",
-            f"Link: {link}",
-            f"source_ref_id (for cleanup_entry_identifier): {source_ref}",
-        ]
+        files = entry.get("files", [])
+        files_str = "\n".join(
+            f"  - {f['name']} ({f['type']})" for f in files
+        ) if files else ""
+
+        # Build reference_id from channel + timestamp
+        ref_id = f"slack-{channel_id}-{message_ts}"
         thread_ts = entry.get("thread_ts", "")
         if thread_ts:
-            parts.append(
-                f"Thread TS (for reference_id, use format "
-                f"slack-{{channel}}-{{ts}}-t{{thread_ts}}): {thread_ts}"
-            )
+            ref_id += f"-t{thread_ts}"
+
+        parts = [
+            "[TASK EXTRACTION]",
+            "Source: slack",
+            "Trigger: intentional",
+            "",
+            f"Channel: #{channel}",
+            f"From: {from_id}",
+            f"Text: {text}",
+            f"URLs:\n{urls_str}",
+            f"Permalink: {link}",
+            f"reference_id: {ref_id}",
+        ]
+        if files_str:
+            parts.append(f"Files:\n{files_str}")
+        if thread_ts:
+            parts.append(f"Thread TS: {thread_ts}")
         if notes:
             parts.append(f"User notes: {notes}")
         parts.append(
-            "Follow the task_extraction_process_slack guidelines "
+            "\nFollow the task_extraction_process_slack guidelines "
             "including the Context Enrichment Protocol. "
-            "Use origin='user-indicated' (this task was explicitly sent by the user). "
-            "Use cleanup_block_id=block-033a720d-1f13-44a2-a5cb-b5edde418ea1."
+            "Use origin='user-indicated'. "
+            "This message may contain MULTIPLE tasks — extract each one as a "
+            "separate add_extracted_tasks call with its own estimate and relevant URLs. "
+            "Use the same reference_id for all tasks from this message."
         )
         message = "\n".join(parts)
 
-        payload = json.dumps({
-            "messages": [{"role": "user", "content": message}]
-        })
         resp = requests.post(
             f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",
-            json=json.loads(payload),
+            json={"messages": [{"role": "user", "content": message}]},
             timeout=120,
         )
         resp.raise_for_status()
-        logger.info(f"Triggered extraction for {source_ref}")
+        logger.info(f"Triggered extraction for {ref_id}")
 
     except Exception as e:
         logger.error(f"Failed to trigger extraction: {e}", exc_info=True)
 
 
 def send_to_tasks_callback(body: dict, ack: Ack, client: WebClient, logger: Logger):
-    """Silent send — queue message as task, show ephemeral confirmation."""
+    """Silent send — immediate confirmation, extraction in background."""
     ack()
 
     try:
         info = _extract_message_info(body, logger)
         logger.info(f"send_to_tasks triggered: channel={info['channel_id']}, text={info['text'][:50]}")
 
-        # Queue the task and trigger extraction (sequenced in background)
-        entry = _build_queue_entry(info)
+        # Immediate confirmation (before extraction)
+        preview = info["text"][:100] + ("..." if len(info["text"]) > 100 else "")
+        _send_confirmation(client, info["channel_id"], info["triggering_user_id"],
+                           preview, logger)
+
+        entry = _build_entry(info)
         threading.Thread(
-            target=_queue_and_trigger,
-            args=(entry, logger),
+            target=_trigger_extraction,
+            args=(entry, logger, client),
             daemon=True,
         ).start()
-
-        # Try ephemeral confirmation (may fail in DMs/private channels)
-        preview = info["text"][:100] + ("..." if len(info["text"]) > 100 else "")
-        try:
-            client.chat_postEphemeral(
-                channel=info["channel_id"],
-                user=info["triggering_user_id"],
-                text=f"Queued for tasks: _{preview}_",
-            )
-        except Exception:
-            # Ephemeral failed (channel_not_found in DMs) — not critical
-            logger.info(f"Ephemeral confirmation skipped for channel {info['channel_id']}")
 
     except Exception as e:
         logger.error(f"send_to_tasks shortcut failed: {e}", exc_info=True)
@@ -340,18 +312,26 @@ def send_to_tasks_view_callback(ack: Ack, body: dict, view: dict, client: WebCli
             "channel_id": metadata.get("channel_id", ""),
             "channel_name": metadata.get("channel_name", ""),
             "permalink": metadata.get("permalink", ""),
+            "triggering_user_id": metadata.get("triggering_user_id", ""),
             "message_ts": metadata.get("message_ts", ""),
             "thread_ts": metadata.get("thread_ts", ""),
             "files": metadata.get("files", []),
             "urls": metadata.get("urls", []),
         }
 
-        entry = _build_queue_entry(info, notes=notes)
+        entry = _build_entry(info, notes=notes)
 
-        # Queue the task and trigger extraction (sequenced in background)
+        triggering_user_id = body.get("user", {}).get("id", "")
+        entry["triggering_user_id"] = triggering_user_id
+
+        # Immediate confirmation
+        preview = info["text"][:100] + ("..." if len(info["text"]) > 100 else "")
+        _send_confirmation(client, info["channel_id"], triggering_user_id,
+                           preview, logger)
+
         threading.Thread(
-            target=_queue_and_trigger,
-            args=(entry, logger),
+            target=_trigger_extraction,
+            args=(entry, logger, client),
             daemon=True,
         ).start()
 

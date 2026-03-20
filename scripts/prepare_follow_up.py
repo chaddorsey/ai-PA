@@ -154,6 +154,39 @@ def parse_passage_fields(text):
     return fields
 
 
+def _resolve_first_name(from_raw):
+    """Extract first name from 'Name (USERID)' or resolve bare user IDs."""
+    if not from_raw:
+        return "there"
+    # Bare user ID pattern (e.g., U02V91KU8)
+    if re.match(r'^U[A-Z0-9]{6,12}$', from_raw):
+        resolved = _resolve_slack_name(from_raw)
+        return resolved or "there"
+    # Strip parenthetical user ID: "Cynthia McIntyre (U09DXRLAH)" → "Cynthia"
+    name_part = re.sub(r'\s*\([A-Z0-9]+\)\s*$', '', from_raw).strip()
+    return name_part.split()[0] if name_part else "there"
+
+
+def _resolve_slack_name(user_id):
+    """Look up a Slack user's first name via the API."""
+    try:
+        token = os.environ.get("SLACK_BOT_TOKEN", "")
+        if not token:
+            return None
+        req = urllib.request.Request(
+            f"https://slack.com/api/users.info?user={user_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            if data.get("ok"):
+                profile = data["user"].get("profile", {})
+                return profile.get("first_name") or data["user"].get("real_name", "").split()[0]
+    except Exception:
+        pass
+    return None
+
+
 def prepare_slack_followup(ref_id, fields, event):
     """Prepare a Slack thread reply follow-up."""
     reference_id = fields["reference_id"]
@@ -166,7 +199,7 @@ def prepare_slack_followup(ref_id, fields, event):
     message_ts = slack_match.group(2)
     thread_ts = slack_match.group(3) or message_ts
 
-    first_name = fields["from_person"].split()[0] if fields["from_person"] else "there"
+    first_name = _resolve_first_name(fields["from_person"])
     task_desc = re.sub(r"^\[(COMPLETED|DROPPED)\]\s*", "", fields["task_description"])
 
     return {
@@ -201,7 +234,7 @@ def prepare_docs_followup(ref_id, fields, event):
     file_id = comment_match.group(1)
     comment_id = comment_match.group(2)
 
-    first_name = fields["from_person"].split()[0] if fields["from_person"] else "there"
+    first_name = _resolve_first_name(fields["from_person"])
     task_desc = re.sub(r"^\[(COMPLETED|DROPPED)\]\s*", "", fields["task_description"])
 
     return {
@@ -235,7 +268,7 @@ def prepare_email_followup(ref_id, fields, event):
         log(f"Could not parse email reference_id: {reference_id}")
         return None
 
-    first_name = fields["from_person"].split()[0] if fields["from_person"] else "there"
+    first_name = _resolve_first_name(fields["from_person"])
     task_desc = re.sub(r"^\[(COMPLETED|DROPPED)\]\s*", "", fields["task_description"])
 
     return {
