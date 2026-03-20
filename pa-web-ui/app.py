@@ -506,6 +506,26 @@ MC_MODEL_PRESETS = {
         "max_tokens": 128000,
         "_reasoning_options": ["low", "medium", "high"],
     },
+    "gpt-5.4-mini (API)": {
+        "model": "gpt-5.4-mini",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.4-mini",
+        "context_window": 128000,
+        "max_tokens": 32768,
+        "_reasoning_options": [],
+    },
+    "gpt-5.4-nano (API)": {
+        "model": "gpt-5.4-nano",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.4-nano",
+        "context_window": 128000,
+        "max_tokens": 32768,
+        "_reasoning_options": [],
+    },
     "gpt-5-mini (API)": {
         "model": "gpt-5-mini",
         "model_endpoint_type": "openai",
@@ -549,6 +569,20 @@ def get_mc_model():
             name: cfg.get("_reasoning_options", [])
             for name, cfg in MC_MODEL_PRESETS.items()
         }
+        # Check if oauth is available (from model manager state file)
+        oauth_available = False
+        try:
+            state_path = os.path.join(
+                os.getenv("FOLLOWUP_QUEUE", "").rsplit("/", 1)[0],
+                "mc-model-state.json",
+            )
+            if os.path.exists(state_path):
+                with open(state_path) as f:
+                    state = json.load(f)
+                    oauth_available = bool(state.get("oauth_available"))
+        except Exception:
+            pass
+
         return jsonify({
             "model": model,
             "provider": provider,
@@ -556,6 +590,7 @@ def get_mc_model():
             "reasoning_effort": llm.get("reasoning_effort") or "none",
             "presets": list(MC_MODEL_PRESETS.keys()),
             "preset_reasoning": preset_reasoning,
+            "oauth_available": oauth_available,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1538,7 +1573,8 @@ OMNIFOCUS_BRIDGE_URL = os.getenv(
 # [extracted_time: ...; ref_id: ...; origin: meeting_transcript] Description
 TASK_LINE_PATTERN = re.compile(
     r'\[extracted_time:\s*([^;]+);\s*ref_id:\s*([a-f0-9]+)'
-    r'(?:;\s*origin:\s*([^\]]*))?\]\s*(.+)'
+    r'(?:;\s*origin:\s*([^\];]*))?'
+    r'(?:;\s*est:\s*(\d+))?\]\s*(.+)'
 )
 
 
@@ -1551,11 +1587,13 @@ def parse_task_block(block_value):
             continue
         m = TASK_LINE_PATTERN.search(line)
         if m:
+            est_raw = m.group(4)
             tasks.append({
                 "extracted_time": m.group(1).strip(),
                 "ref_id": m.group(2).strip(),
                 "origin": (m.group(3) or "").strip() or None,
-                "description": m.group(4).strip(),
+                "estimate_minutes": int(est_raw) if est_raw else None,
+                "description": m.group(5).strip(),
             })
     return tasks
 
@@ -1578,6 +1616,16 @@ def parse_archival_passage(text):
     m = re.search(r'^ORIGIN:\s*(.+)$', text, re.MULTILINE)
     if m:
         result['origin'] = m.group(1).strip()
+
+    # TASK METADATA - Estimate (current, may be user-edited)
+    m = re.search(r'^- Estimate:\s*(\d+)', text, re.MULTILINE)
+    if m:
+        result['estimate_minutes'] = int(m.group(1))
+
+    # TASK METADATA - Agent Estimate (original, immutable)
+    m = re.search(r'^- Agent Estimate:\s*(\d+)', text, re.MULTILINE)
+    if m:
+        result['agent_estimate_minutes'] = int(m.group(1))
 
     # SOURCE REFERENCE
     source_ref = {}
@@ -1751,12 +1799,14 @@ def api_get_task_detail(ref_id):
 
 @app.route('/api/tasks/<ref_id>', methods=['PATCH'])
 def api_update_task(ref_id):
-    """Update task description (inline edit)."""
+    """Update task description and/or estimate (inline edit)."""
     try:
         data = request.get_json()
         task_description = data.get('task_description')
-        if not task_description:
-            return jsonify({"error": "task_description required"}), 400
+        estimate_minutes = data.get('estimate_minutes')
+
+        if not task_description and estimate_minutes is None:
+            return jsonify({"error": "task_description or estimate_minutes required"}), 400
 
         from datetime import timezone
         now = datetime.now(timezone.utc).astimezone()
@@ -1770,12 +1820,18 @@ def api_update_task(ref_id):
             old_text = passage['text']
             old_tags = passage.get('tags', [])
             passage_id = passage['id']
+            new_text = old_text
 
             # Update TASK line
-            new_text = re.sub(
-                r'^TASK: .*$', f'TASK: {task_description}',
-                old_text, count=1, flags=re.MULTILINE,
-            )
+            if task_description:
+                new_text = re.sub(
+                    r'^TASK: .*$', f'TASK: {task_description}',
+                    new_text, count=1, flags=re.MULTILINE,
+                )
+
+            # Note: passage "- Estimate:" preserves the agent's ORIGINAL estimate
+            # (used for Agent Estimate line in OmniFocus note). User edits only
+            # update the block line's est: field, not the passage.
 
             # Add Updated timestamp
             new_text = re.sub(
@@ -1792,11 +1848,23 @@ def api_update_task(ref_id):
             )
             block_resp.raise_for_status()
             block_val = block_resp.json().get('value', '')
-            new_val = re.sub(
-                rf'(\[extracted_time: [^;]+; ref_id: {re.escape(ref_id)}[^\]]*\]) .+',
-                f'\\1 {task_description}',
-                block_val,
-            )
+            new_val = block_val
+
+            if task_description:
+                new_val = re.sub(
+                    rf'(\[extracted_time: [^;]+; ref_id: {re.escape(ref_id)}[^\]]*\]) .+',
+                    f'\\1 {task_description}',
+                    new_val,
+                )
+
+            if estimate_minutes is not None:
+                est_re = rf'(\[extracted_time: [^;]+; ref_id: {re.escape(ref_id)}(?:; origin: [^\];]*)?)(; est: \d+)?(\])'
+                new_val = re.sub(
+                    est_re,
+                    rf'\g<1>; est: {estimate_minutes}\3',
+                    new_val,
+                )
+
             if new_val != block_val:
                 client.patch(
                     f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
@@ -2092,6 +2160,9 @@ def api_omnifocus_create():
             args["projectId"] = project_id
         if note:
             args["note"] = note
+        estimated = data.get('estimatedMinutes')
+        if estimated:
+            args["estimatedMinutes"] = int(estimated)
 
         result = call_omnifocus_bridge("createTask", args)
         # Response may be nested: {result: {id: ...}} or flat {id: ...}
@@ -2161,7 +2232,7 @@ def api_list_drafts():
                         continue
                     try:
                         item = json.loads(line)
-                        if item.get("status") == "dismissed":
+                        if item.get("status") in ("dismissed", "sent"):
                             continue
                         # Map to a draft-like structure for the frontend
                         fu_type = item.get("type", "unknown")
@@ -2181,6 +2252,26 @@ def api_list_drafts():
                         continue
     except Exception as e:
         logger.error("api_list_drafts_queue_error", error=str(e))
+
+    # Deduplicate: remove Gmail drafts that have a scheduled tracking entry
+    scheduled_draft_ids = set()
+    for item in queue_items:
+        if item.get("status") == "scheduled" and item.get("gmail_draft_id"):
+            scheduled_draft_ids.add(item["gmail_draft_id"])
+    gmail_draft_ids = set(d.get("id") for d in gmail_drafts)
+    gmail_drafts = [d for d in gmail_drafts if d.get("id") not in scheduled_draft_ids]
+
+    # Reverse check: dismiss scheduled tracking entries whose Gmail draft no longer exists
+    stale_tracking = []
+    for item in queue_items:
+        if (item.get("status") == "scheduled"
+                and item.get("gmail_draft_id")
+                and item["gmail_draft_id"] not in gmail_draft_ids):
+            stale_tracking.append(item["id"])
+    if stale_tracking:
+        for stale_id in stale_tracking:
+            _update_followup_status(stale_id, "dismissed")
+        queue_items = [q for q in queue_items if q["id"] not in stale_tracking]
 
     all_items = queue_items + gmail_drafts
     return jsonify({"drafts": all_items})
@@ -2233,6 +2324,8 @@ def api_send_draft(draft_id):
         with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
             resp = client.post(f"{GWS_BRIDGE_URL}/gmail/drafts/{draft_id}/send")
             resp.raise_for_status()
+            # Clean up any scheduled tracking entry
+            _update_followup_status(f"sched-{draft_id}", "sent")
             return jsonify(resp.json())
     except httpx.HTTPStatusError as e:
         status = e.response.status_code
@@ -2283,10 +2376,14 @@ def api_send_followup(followup_id):
         final_message = message or item.get("draft_message", "")
 
         if fu_type == "slack":
-            # Post Slack threaded reply
-            slack_token = os.getenv("SLACK_BOT_TOKEN", "")
+            # Post Slack threaded reply as the user (not the bot)
+            slack_token = os.getenv("SLACK_USER_TOKEN") or os.getenv("SLACK_BOT_TOKEN", "")
             if not slack_token:
-                return jsonify({"error": "SLACK_BOT_TOKEN not configured"}), 500
+                return jsonify({"error": "No Slack token configured"}), 500
+
+            # Convert @username mentions to Slack <@USERID> format
+            final_message = _resolve_slack_mentions(final_message, slack_token)
+
             slack_resp = http_client.post(
                 "https://slack.com/api/chat.postMessage",
                 headers={"Authorization": f"Bearer {slack_token}"},
@@ -2359,7 +2456,89 @@ def _dismiss_followup(followup_id):
     return jsonify({"status": "dismissed"})
 
 
-def _update_followup_status(followup_id, new_status):
+@app.route('/api/followups/<followup_id>', methods=['PATCH'])
+def api_update_followup(followup_id):
+    """Update a follow-up queue item (e.g., draft_message)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    item = _find_followup(followup_id)
+    if not item:
+        return jsonify({"error": "Follow-up not found"}), 404
+
+    _update_followup_status(followup_id, item.get("status", "pending"), data)
+    return jsonify({"status": "ok", "id": followup_id})
+
+
+def _resolve_slack_mentions(text, token):
+    """Convert @username mentions to Slack <@USERID> format."""
+    import re as _re
+    mention_pattern = _re.compile(r'@(\w+)')
+    mentions = mention_pattern.findall(text)
+    if not mentions:
+        return text
+
+    # Build a username → user_id map by fetching the workspace user list (cached)
+    if not hasattr(_resolve_slack_mentions, '_cache'):
+        _resolve_slack_mentions._cache = {}
+        _resolve_slack_mentions._cache_time = 0
+
+    import time
+    now = time.time()
+    cache = _resolve_slack_mentions._cache
+    if now - _resolve_slack_mentions._cache_time > 3600 or not cache:
+        try:
+            resp = http_client.get(
+                "https://slack.com/api/users.list",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"limit": 500},
+            )
+            data = resp.json()
+            if data.get("ok"):
+                for member in data.get("members", []):
+                    name = member.get("name", "").lower()
+                    display = (member.get("profile", {}).get("display_name") or "").lower()
+                    real = (member.get("real_name") or "").lower()
+                    uid = member["id"]
+                    if name:
+                        cache[name] = uid
+                    if display:
+                        cache[display] = uid
+                    # Also map first.last and first_last patterns
+                    if real:
+                        parts = real.split()
+                        if len(parts) >= 2:
+                            cache[parts[0].lower()] = uid  # first name only
+                            cache[f"{parts[0]}{parts[-1]}".lower()] = uid  # firstlast
+                _resolve_slack_mentions._cache_time = now
+        except Exception:
+            pass
+
+    def replace_mention(match):
+        username = match.group(1).lower()
+        uid = cache.get(username)
+        return f"<@{uid}>" if uid else match.group(0)
+
+    return mention_pattern.sub(replace_mention, text)
+
+
+@app.route('/api/followups/<followup_id>/unschedule', methods=['POST'])
+def api_unschedule_followup(followup_id):
+    """Cancel a scheduled follow-up, reverting to pending."""
+    item = _find_followup(followup_id)
+    if not item:
+        return jsonify({"error": "Follow-up not found"}), 404
+
+    # Revert to pending — item moves from Scheduled section back to active list
+    _update_followup_status(followup_id, "pending", {"scheduled_at": None})
+
+    # TODO: also cancel the scheduler-service job if one was created
+
+    return jsonify({"status": "unscheduled"})
+
+
+def _update_followup_status(followup_id, new_status, extra_fields=None):
     """Update a follow-up's status in the JSONL queue."""
     if not os.path.exists(FOLLOWUP_QUEUE):
         return
@@ -2373,11 +2552,136 @@ def _update_followup_status(followup_id, new_status):
                 item = json.loads(stripped)
                 if item.get("id") == followup_id:
                     item["status"] = new_status
+                    if extra_fields:
+                        item.update(extra_fields)
                 lines.append(json.dumps(item) + "\n")
             except json.JSONDecodeError:
                 lines.append(line)
     with open(FOLLOWUP_QUEUE, "w") as f:
         f.writelines(lines)
+
+
+# ── Schedule Send ──
+
+SCHEDULER_SERVICE_URL = os.getenv(
+    "SCHEDULER_SERVICE_URL", "http://scheduler-service:8087"
+)
+SCHEDULER_API_KEY = os.getenv("SCHEDULER_API_KEY", "")
+
+
+@app.route('/api/followups/<followup_id>/schedule', methods=['POST'])
+def api_schedule_followup(followup_id):
+    """Schedule a follow-up queue item for future sending."""
+    data = request.get_json()
+    send_at = data.get("send_at")
+    if not send_at:
+        return jsonify({"error": "send_at required"}), 400
+
+    item = _find_followup(followup_id)
+    if not item:
+        return jsonify({"error": "Follow-up not found"}), 404
+
+    # Store schedule in the queue entry
+    _update_followup_status(followup_id, "scheduled", {"scheduled_at": send_at})
+
+    # Create a scheduler-service job to fire at the scheduled time
+    try:
+        _create_schedule_job(
+            name=f"followup-{followup_id}",
+            send_at=send_at,
+            callback_url=f"http://pa-web-ui:5200/api/followups/{followup_id}/send",
+            callback_body={"message": item.get("draft_message", "")},
+        )
+    except Exception as e:
+        logger.error("schedule_followup_job_error", error=str(e))
+        # Schedule is stored even if job creation fails — can retry
+
+    return jsonify({"status": "scheduled", "send_at": send_at})
+
+
+@app.route('/api/drafts/<draft_id>/schedule', methods=['POST'])
+def api_schedule_draft(draft_id):
+    """Schedule a Gmail draft for future sending."""
+    data = request.get_json()
+    send_at = data.get("send_at")
+    if not send_at:
+        return jsonify({"error": "send_at required"}), 400
+
+    # Store tracking entry in follow-up queue so Scheduled section can display it
+    from datetime import datetime as dt
+    entry = {
+        "id": f"sched-{draft_id}",
+        "type": "email",
+        "status": "scheduled",
+        "scheduled_at": send_at,
+        "created_at": dt.utcnow().isoformat() + "Z",
+        "source": "gmail-scheduled",
+        "gmail_draft_id": draft_id,
+        "subject": data.get("subject", ""),
+        "to": data.get("to", ""),
+        "followup_type": data.get("followup_type", "draft"),
+        "followup_icon": data.get("followup_icon", "draft"),
+        "followup_section": "drafts",
+    }
+    try:
+        with open(FOLLOWUP_QUEUE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        logger.error("schedule_draft_queue_write_error", error=str(e))
+
+    # Create scheduler job
+    try:
+        _create_schedule_job(
+            name=f"draft-{draft_id}",
+            send_at=send_at,
+            callback_url=f"http://pa-web-ui:5200/api/drafts/{draft_id}/send",
+            callback_body={},
+        )
+    except Exception as e:
+        logger.error("schedule_draft_job_error", error=str(e))
+        # Entry is stored even if job creation fails
+
+    return jsonify({"status": "scheduled", "send_at": send_at})
+
+
+def _create_schedule_job(name, send_at, callback_url, callback_body):
+    """Create a one-shot scheduler-service job with HTTP action."""
+    headers = {}
+    if SCHEDULER_API_KEY:
+        headers["X-API-Key"] = SCHEDULER_API_KEY
+
+    job_payload = {
+        "title": f"Scheduled send: {name}",
+        "description": f"Auto-send {name} at {send_at}",
+        "created_by": "pa-web-ui",
+        "category": "follow_up",
+        "schedule": {
+            "type": "one_off",
+            "expression": {"run_at": send_at},
+            "next_run_at": send_at,
+        },
+        "actions": [
+            {
+                "action_type": "http",
+                "config": {
+                    "url": callback_url,
+                    "method": "POST",
+                    "headers": {"Content-Type": "application/json"},
+                    "json": callback_body,
+                    "timeout_seconds": 60,
+                },
+            }
+        ],
+    }
+
+    resp = httpx.post(
+        f"{SCHEDULER_SERVICE_URL}/v1/jobs",
+        json=job_payload,
+        headers=headers,
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 if __name__ == "__main__":
