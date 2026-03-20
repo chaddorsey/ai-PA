@@ -151,11 +151,61 @@ def _run(ctx, schema_key: str, method: str, params: dict, had_convenience_flags:
     # Execute
     try:
         result = call_omnifocus(method, final_params)
+
+        # Normalize response into standard envelope
+        result = _normalize_response(result, schema_key)
+
         result = apply_field_mask(result, field_list)
         output_result(result, json_output=use_json)
     except Exception as exc:
         output_error(str(exc), json_output=use_json)
         sys.exit(1)
+
+
+def _normalize_response(result, schema_key: str):
+    """Wrap raw bridge results in a standard {status, data, meta} envelope."""
+    # Unwrap bridge's {"result": ...} wrapper if present
+    if isinstance(result, dict) and "result" in result and len(result) == 1:
+        result = result["result"]
+        # Double-unwrap: bridge may return {"result": {"result": ...}}
+        if isinstance(result, dict) and "result" in result and len(result) == 1:
+            result = result["result"]
+
+    # If already an envelope (has 'tasks' + 'total'), normalize it
+    if isinstance(result, dict) and "tasks" in result and "total" in result:
+        envelope = {
+            "status": "ok",
+            "data": {"tasks": result["tasks"]},
+            "meta": {
+                "total": result["total"],
+                "offset": result.get("offset", 0),
+                "limit": result.get("limit"),
+                "has_more": result.get("hasMore", False),
+            },
+        }
+        # Count mode: return just the count
+        if schema_key == "task.count":
+            return {
+                "status": "ok",
+                "data": {"count": result["total"]},
+            }
+        return envelope
+
+    # Plain array (no pagination) — wrap it
+    if isinstance(result, list):
+        if schema_key == "task.count":
+            return {
+                "status": "ok",
+                "data": {"count": len(result)},
+            }
+        return {
+            "status": "ok",
+            "data": {"tasks": result},
+            "meta": {"total": len(result)},
+        }
+
+    # Everything else: pass through
+    return result
 
 
 # ── schema command ──────────────────────────────────────────────────
@@ -305,27 +355,88 @@ def task_complete(ctx, task_id):
 @click.option("--project", "project_id", default=None, help="Filter by project ID")
 @click.option("--tag", "tag_id", default=None, help="Filter by tag ID")
 @click.option("--flagged", is_flag=True, default=False, help="Show only flagged tasks")
-@click.option("--include-completed", is_flag=True, default=False, help="Include completed tasks")
+@click.option("--completed", default=None, type=bool, help="Filter by completed status (true/false)")
+@click.option("--dropped", default=None, type=bool, help="Filter by dropped status (true/false)")
+@click.option("--include-completed", is_flag=True, default=False, help="Include completed tasks (legacy)")
+@click.option("--has-estimate", default=None, type=bool, help="Filter by has duration estimate (true/false)")
+@click.option("--due-before", default=None, help="Tasks due before this date (ISO 8601)")
+@click.option("--due-after", default=None, help="Tasks due after this date (ISO 8601)")
+@click.option("--defer-before", default=None, help="Tasks deferred before this date (ISO 8601)")
+@click.option("--defer-after", default=None, help="Tasks deferred after this date (ISO 8601)")
+@click.option("--added-before", default=None, help="Tasks added before this date (ISO 8601)")
+@click.option("--added-after", default=None, help="Tasks added after this date (ISO 8601)")
+@click.option("--overdue", is_flag=True, default=False, help="Show only overdue tasks")
+@click.option("--available", is_flag=True, default=False, help="Show only available (not blocked/deferred) tasks")
 @click.option("--limit", type=int, default=None, help="Max tasks to return (enables pagination)")
 @click.option("--offset", type=int, default=None, help="Number of tasks to skip (use with --limit)")
 @click.pass_context
-def task_list(ctx, project_id, tag_id, flagged, include_completed, limit, offset):
-    """List tasks with optional filters. Supports --limit/--offset pagination."""
+def task_list(ctx, project_id, tag_id, flagged, completed, dropped, include_completed,
+              has_estimate, due_before, due_after, defer_before, defer_after,
+              added_before, added_after, overdue, available, limit, offset):
+    """List tasks with filters and pagination. Returns {data:{tasks:[]}, meta:{total,limit,offset,has_more}}."""
     body = ctx.obj.get("body")
     if body is not None:
-        had_flags = any(v is not None for v in [project_id, tag_id, limit, offset]) or flagged or include_completed
-        _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=had_flags)
+        _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=True)
     else:
         params = {
             "projectId": project_id,
             "tagId": tag_id,
             "flagged": flagged if flagged else None,
+            "completed": completed,
+            "dropped": dropped,
             "includeCompleted": include_completed if include_completed else None,
+            "hasEstimate": has_estimate,
+            "dueBefore": due_before,
+            "dueAfter": due_after,
+            "deferBefore": defer_before,
+            "deferAfter": defer_after,
+            "addedBefore": added_before,
+            "addedAfter": added_after,
+            "isOverdue": True if overdue else None,
+            "isAvailable": True if available else None,
             "limit": limit,
             "offset": offset,
         }
         cleaned = {k: v for k, v in params.items() if v is not None}
         _run(ctx, "task.list", "queryTasks", cleaned)
+
+
+@task.command("count")
+@click.option("--project", "project_id", default=None, help="Filter by project ID")
+@click.option("--tag", "tag_id", default=None, help="Filter by tag ID")
+@click.option("--flagged", is_flag=True, default=False, help="Count only flagged tasks")
+@click.option("--completed", default=None, type=bool, help="Filter by completed status")
+@click.option("--dropped", default=None, type=bool, help="Filter by dropped status")
+@click.option("--include-completed", is_flag=True, default=False, help="Include completed tasks")
+@click.option("--has-estimate", default=None, type=bool, help="Filter by has duration estimate")
+@click.option("--due-before", default=None, help="Tasks due before this date (ISO 8601)")
+@click.option("--due-after", default=None, help="Tasks due after this date (ISO 8601)")
+@click.option("--added-before", default=None, help="Tasks added before this date (ISO 8601)")
+@click.option("--added-after", default=None, help="Tasks added after this date (ISO 8601)")
+@click.option("--overdue", is_flag=True, default=False, help="Count only overdue tasks")
+@click.option("--available", is_flag=True, default=False, help="Count only available tasks")
+@click.pass_context
+def task_count(ctx, project_id, tag_id, flagged, completed, dropped, include_completed,
+               has_estimate, due_before, due_after, added_before, added_after, overdue, available):
+    """Count tasks matching filters. Fast — returns only the count, no task data."""
+    params = {
+        "projectId": project_id,
+        "tagId": tag_id,
+        "flagged": flagged if flagged else None,
+        "completed": completed,
+        "dropped": dropped,
+        "includeCompleted": include_completed if include_completed else None,
+        "hasEstimate": has_estimate,
+        "dueBefore": due_before,
+        "dueAfter": due_after,
+        "addedBefore": added_before,
+        "addedAfter": added_after,
+        "isOverdue": True if overdue else None,
+        "isAvailable": True if available else None,
+    }
+    cleaned = {k: v for k, v in params.items() if v is not None}
+    # Use queryTasks but only return the count
+    _run(ctx, "task.count", "queryTasks", cleaned)
 
 
 @task.command("delete")
