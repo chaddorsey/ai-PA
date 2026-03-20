@@ -67,7 +67,7 @@ SCHEMAS: dict[str, dict] = {
     },
     "task.list": {
         "method": "queryTasks",
-        "description": "List tasks with filters and pagination. Returns {status, data:{tasks:[]}, meta:{total, limit, offset, has_more}}.",
+        "description": "List tasks with filters and pagination. Returns {status, data:{tasks:[]}, meta:{total, limit, offset, has_more}}. Use --fields id,name,duration to project specific fields. Use --body '{...}' for raw JSON params.",
         "params": {
             "projectId": {"type": "string", "required": False, "description": "Filter by project ID"},
             "tagId": {"type": "string", "required": False, "description": "Filter by tag ID"},
@@ -90,7 +90,7 @@ SCHEMAS: dict[str, dict] = {
     },
     "task.count": {
         "method": "queryTasks",
-        "description": "Count tasks matching filters. Fast — returns only {status, data:{count:N}}. Supports all the same filters as task.list.",
+        "description": "Count tasks matching filters. Fast — returns only {status, data:{count:N}}. Supports all the same filters as task.list. No payload, no paging needed.",
         "params": {
             "projectId": {"type": "string", "required": False, "description": "Filter by project ID"},
             "tagId": {"type": "string", "required": False, "description": "Filter by tag ID"},
