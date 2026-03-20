@@ -5,6 +5,7 @@ class TaskSidebar {
     this.tasks = [];
     this.taskDetails = {};
     this.selectedRefIds = new Set();
+    this.openAccordions = new Set();
     this.pollInterval = null;
     this.isOpen = false;
     this.sortable = null;
@@ -219,13 +220,28 @@ class TaskSidebar {
         card.querySelector('.task-card-checkbox').checked = true;
         this.selectedRefIds.add(task.ref_id);
       }
+      // Restore accordion open state
+      if (this.openAccordions.has(task.ref_id)) {
+        card.classList.add('accordion-open');
+        const content = card.querySelector('.task-accordion-content');
+        if (this.taskDetails[task.ref_id]) {
+          this.renderAccordionContent(content, this.taskDetails[task.ref_id]);
+        }
+        // Defer maxHeight so DOM has settled
+        requestAnimationFrame(() => {
+          content.style.maxHeight = content.scrollHeight + 'px';
+        });
+      }
       this.taskList.appendChild(card);
     });
 
-    // Clean up stale selections
+    // Clean up stale selections and accordions
     const currentRefIds = new Set(this.tasks.map(t => t.ref_id));
     for (const id of this.selectedRefIds) {
       if (!currentRefIds.has(id)) this.selectedRefIds.delete(id);
+    }
+    for (const id of this.openAccordions) {
+      if (!currentRefIds.has(id)) this.openAccordions.delete(id);
     }
 
     // SortableJS
@@ -264,6 +280,7 @@ class TaskSidebar {
           <div class="task-card-meta">
             <span class="task-ref-id">${task.ref_id}</span>
             ${originLabel}
+            <span class="task-est-badge${task.estimate_minutes ? '' : ' est-empty'}" data-minutes="${task.estimate_minutes || ''}" title="Estimated duration">⏱ ${task.estimate_minutes ? this.formatEstimate(task.estimate_minutes) : '—'}</span>
             <span class="task-time">${this.escapeHtml(timeLabel)}</span>
           </div>
         </div>
@@ -295,6 +312,13 @@ class TaskSidebar {
     // Inline edit
     const desc = card.querySelector('.task-card-description');
     desc.addEventListener('click', () => this.startEdit(desc, task.ref_id));
+
+    // Estimate edit
+    const estBadge = card.querySelector('.task-est-badge');
+    estBadge?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.startEstimateEdit(estBadge, task.ref_id, task);
+    });
 
     // Confirm
     card.querySelector('.task-btn-confirm').addEventListener('click', (e) => {
@@ -394,10 +418,12 @@ class TaskSidebar {
     if (isExpanded) {
       card.classList.remove('accordion-open');
       content.style.maxHeight = '0';
+      this.openAccordions.delete(refId);
       return;
     }
 
     card.classList.add('accordion-open');
+    this.openAccordions.add(refId);
 
     // Load if not cached
     if (!this.taskDetails[refId]) {
@@ -456,7 +482,7 @@ class TaskSidebar {
       sections.push(`
         <div class="detail-section">
           <div class="detail-label">Source Text</div>
-          <div class="detail-source-text">${this.escapeHtml(data.source_text)}</div>
+          <div class="detail-source-text">${this.linkifyUrls(data.source_text)}</div>
         </div>
       `);
     }
@@ -471,14 +497,27 @@ class TaskSidebar {
     const task = this.tasks.find(t => t.ref_id === refId);
 
     const overlay = document.getElementById('of-dialog-overlay');
-    const preview = overlay.querySelector('.of-dialog-task-preview');
-    preview.textContent = task ? task.description : refId;
+    const input = document.getElementById('of-dialog-task-input');
+    input.value = task ? task.description : refId;
 
     this.selectedProjectId = null;
     this.selectedProjectName = null;
     this.updateOFFooter();
 
+    // Show estimate as read-only check
+    const estEl = document.getElementById('of-dialog-estimate');
+    if (task && task.estimate_minutes) {
+      estEl.textContent = `⏱ ${this.formatEstimate(task.estimate_minutes)} estimated`;
+      estEl.style.display = '';
+    } else {
+      estEl.style.display = 'none';
+    }
+
     overlay.classList.add('visible');
+    // Auto-resize textarea to fit content
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+
     await this.loadOFTree();
   }
 
@@ -602,17 +641,37 @@ class TaskSidebar {
       // Build OmniFocus note from passage context
       const note = this.buildOFNote(refId, details);
 
+      // Read (possibly edited) task name from dialog input
+      const taskInput = document.getElementById('of-dialog-task-input');
+      const taskName = taskInput.value.trim();
+      if (!taskName) { alert('Task name cannot be empty'); return; }
+
+      // If name was edited, persist to backend
+      const task = this.tasks.find(t => t.ref_id === refId);
+      if (task && taskName !== task.description) {
+        await fetch(`/api/tasks/${refId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_description: taskName }),
+        });
+        task.description = taskName;
+        // Update card text in sidebar
+        const card = this.taskList.querySelector(`.task-card[data-ref-id="${refId}"]`);
+        const descEl = card?.querySelector('.task-card-description');
+        if (descEl) descEl.textContent = taskName;
+      }
+
       confirmBtn.textContent = 'Creating\u2026';
 
-      // 1. Create OmniFocus task (vanilla name, ref_id goes in note)
-      const task = this.tasks.find(t => t.ref_id === refId);
+      // 1. Create OmniFocus task
       const createResp = await fetch('/api/tasks/omnifocus-create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: task ? task.description : refId,
+          name: taskName,
           projectId: this.selectedProjectId,
           note: note,
+          estimatedMinutes: task ? task.estimate_minutes : null,
         }),
       });
 
@@ -666,6 +725,19 @@ class TaskSidebar {
 
     if (details.origin) {
       lines.push(`Origin: ${details.origin}`);
+    }
+
+    // Agent Estimate (standalone line for timer widget to pick up)
+    // Use the immutable agent_estimate_minutes, fall back to estimate_minutes
+    const agentEstMins = details.agent_estimate_minutes || details.estimate_minutes;
+    if (agentEstMins) {
+      const mins = agentEstMins;
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      const formatted = h > 0
+        ? `${h}h ${m < 10 ? '0' : ''}${m}m 00s`
+        : `${m}m 00s`;
+      lines.push(`Agent Estimate: ${formatted}`);
     }
 
     // Source Reference
@@ -862,11 +934,83 @@ class TaskSidebar {
 
   // ── Utilities ──
 
+  formatEstimate(minutes) {
+    if (!minutes || minutes <= 0) return '—';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}:${m < 10 ? '0' : ''}${m}`;
+  }
+
+  parseEstimate(str) {
+    if (!str || str === '—') return null;
+    const parts = str.split(':');
+    if (parts.length === 2) {
+      const h = parseInt(parts[0], 10) || 0;
+      const m = parseInt(parts[1], 10) || 0;
+      return h * 60 + m;
+    }
+    const num = parseInt(str, 10);
+    return isNaN(num) ? null : num;
+  }
+
+  startEstimateEdit(badgeEl, refId, task) {
+    if (badgeEl.querySelector('input')) return;
+
+    const originalHtml = badgeEl.innerHTML;
+    const current = this.formatEstimate(task.estimate_minutes);
+    const displayVal = current === '—' ? '' : current;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'est-inline-input';
+    input.value = displayVal;
+    input.placeholder = 'H:MM';
+    input.size = 5;
+
+    badgeEl.textContent = '⏱ ';
+    badgeEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    const commit = async () => {
+      const parsed = this.parseEstimate(input.value);
+      badgeEl.innerHTML = `⏱ ${parsed ? this.formatEstimate(parsed) : '—'}`;
+      badgeEl.classList.toggle('est-empty', !parsed);
+      badgeEl.dataset.minutes = parsed || '';
+
+      if (parsed !== task.estimate_minutes) {
+        task.estimate_minutes = parsed;
+        try {
+          await fetch(`/api/tasks/${refId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estimate_minutes: parsed }),
+          });
+        } catch { /* silent */ }
+      }
+    };
+
+    input.addEventListener('blur', commit, { once: true });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { badgeEl.innerHTML = originalHtml; }
+    });
+  }
+
   escapeHtml(str) {
     if (!str) return '';
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  linkifyUrls(str) {
+    if (!str) return '';
+    const escaped = this.escapeHtml(str);
+    return escaped.replace(
+      /https?:\/\/[^\s<)]+/g,
+      url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+    );
   }
 }
 
