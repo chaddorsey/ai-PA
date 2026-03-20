@@ -64,6 +64,16 @@ model_list:
       model: "openai/gpt-5.4"
       api_key: "os.environ/OPENAI_KEY_MAIN"
 
+  - model_name: "gpt-5.4-mini"
+    litellm_params:
+      model: "openai/gpt-5.4-mini"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
+  - model_name: "gpt-5.4-nano"
+    litellm_params:
+      model: "openai/gpt-5.4-nano"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
   # --- companion-sleeptime_copy (Anthropic model, but embedding goes through here) ---
   # Note: This agent uses Claude, not OpenAI for chat. Embedding only.
 

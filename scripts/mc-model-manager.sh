@@ -7,7 +7,7 @@
 # 3. If stored reset time has passed and MC is on fallback → switch back to oauth, notify user
 # No probing. No test messages. Zero LLM cost for detection.
 
-STATE_FILE="/tmp/mc-model-state.json"
+STATE_FILE="/Volumes/main-drive/ai-PA/omnifocus-timer/logs/mc-model-state.json"
 LETTA_URL="http://localhost:8283"
 MC_AGENT_ID="agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
 
@@ -171,12 +171,14 @@ if [ "$ACTUAL_PROVIDER" = "$OAUTH_PROVIDER" ] || [ "$ACTUAL_PROVIDER" = "chatgpt
   fi
 
 elif [ "$ACTUAL_PROVIDER" = "$FALLBACK_PROVIDER" ] || [ "$ACTUAL_PROVIDER" = "openai" ]; then
-  # MC is on fallback — check if it's time to switch back
+  # MC is on fallback — check if oauth is available again (but don't auto-switch)
   if [ "$RETRY_AFTER" -gt 0 ] && [ "$NOW" -lt "$RETRY_AFTER" ]; then
     REMAINING=$(( (RETRY_AFTER - NOW) / 60 ))
     log "WAITING: MC on fallback, oauth resets in ${REMAINING}m"
   else
-    switch_to_oauth
+    # OAuth is available but don't auto-switch — let the user decide
+    log "READY: OAuth available, MC still on fallback (user controls switch)"
+    echo "{\"mode\":\"fallback\",\"oauth_available\":true,\"switched_at\":$NOW,\"retry_after\":0}" > "$STATE_FILE"
   fi
 
 else
