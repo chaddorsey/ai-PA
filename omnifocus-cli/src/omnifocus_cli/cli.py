@@ -369,11 +369,14 @@ def task_complete(ctx, task_id):
 @click.option("--available", is_flag=True, default=False, help="Show only available (not blocked/deferred) tasks")
 @click.option("--limit", type=int, default=None, help="Max tasks to return (enables pagination)")
 @click.option("--offset", type=int, default=None, help="Number of tasks to skip (use with --limit)")
+@click.option("--fields", default=None, help="Comma-separated fields to return (e.g. id,name,duration)")
 @click.pass_context
 def task_list(ctx, project_id, tag_id, flagged, completed, dropped, include_completed,
               has_estimate, due_before, due_after, defer_before, defer_after,
-              added_before, added_after, overdue, available, limit, offset):
+              added_before, added_after, overdue, available, limit, offset, fields):
     """List tasks with filters and pagination. Returns {data:{tasks:[]}, meta:{total,limit,offset,has_more}}."""
+    if fields:
+        ctx.obj["fields"] = fields
     body = ctx.obj.get("body")
     if body is not None:
         _run(ctx, "task.list", "queryTasks", {}, had_convenience_flags=True)
