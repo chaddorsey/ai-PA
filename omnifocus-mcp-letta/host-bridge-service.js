@@ -9,10 +9,14 @@
  */
 
 import http from 'http';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.argv[2] ? parseInt(process.argv[2], 10) : 8889;
 const LETTA_URL = process.env.LETTA_URL || 'http://localhost:8283';
@@ -307,8 +311,16 @@ function handleTimerEvent(body, res) {
       relayCompletionToMC(message);
 
       // Prepare follow-up and time tracking (async, zero LLM cost)
-      const { spawn } = require('child_process');
       const followUpScript = path.resolve(__dirname, '../scripts/prepare_follow_up.py');
+      // Load SLACK_BOT_TOKEN from .env if not in process env
+      if (!process.env.SLACK_BOT_TOKEN) {
+        try {
+          const envFile = fs.readFileSync(path.resolve(__dirname, '../.env'), 'utf8');
+          const match = envFile.match(/^SLACK_BOT_TOKEN=(.+)$/m);
+          if (match) process.env.SLACK_BOT_TOKEN = match[1].trim();
+        } catch (_) {}
+      }
+
       const child = spawn('python3', [followUpScript], {
         env: {
           ...process.env,
