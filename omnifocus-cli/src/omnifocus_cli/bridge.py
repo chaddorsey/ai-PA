@@ -13,6 +13,7 @@ from pathlib import Path
 DEFAULT_BRIDGE_URL = "http://host.docker.internal:8889"
 DEFAULT_PLUGIN_ID = "omnifocus-mcp"
 DEFAULT_LIBRARY_ID = "omnifocus-mcp"
+BRIDGE_TIMEOUT = int(os.environ.get("OMNIFOCUS_BRIDGE_TIMEOUT", "120"))
 
 # Inline base64 decoder used inside OmniFocus evaluate javascript.
 # Pure ASCII, no characters that need escaping in AppleScript strings.
@@ -121,7 +122,7 @@ def _call_via_osascript(
     try:
         result = subprocess.run(
             ["/usr/bin/osascript", str(script_path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=BRIDGE_TIMEOUT,
         )
         if result.returncode != 0:
             raise RuntimeError(f"osascript failed (exit {result.returncode}): {result.stderr.strip()}")
@@ -164,7 +165,7 @@ def _call_via_http(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=BRIDGE_TIMEOUT) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.URLError as exc:
         raise RuntimeError(f"HTTP bridge request failed: {exc}") from exc
