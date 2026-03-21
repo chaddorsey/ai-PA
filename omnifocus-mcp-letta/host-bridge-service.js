@@ -398,6 +398,23 @@ const server = http.createServer((req, res) => {
       req.on('end', () => handleTimerEvent(body, res));
       return;
     }
+    if (req.url === '/omnifocus-snapshot') {
+      req.on('end', () => {
+        const script = path.resolve(__dirname, '../scripts/omnifocus_snapshot.py');
+        const child = spawn('python3', [script], {
+          env: { ...process.env, SNAPSHOT_DIR: TIMER_LOG_DIR },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        child.stdout.on('data', d => { stdout += d.toString(); });
+        child.stderr.on('data', d => { stdout += d.toString(); });
+        child.on('close', (code) => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: code === 0 ? 'ok' : 'error', output: stdout.trim() }));
+        });
+      });
+      return;
+    }
   }
 
   // Fallback — not found
