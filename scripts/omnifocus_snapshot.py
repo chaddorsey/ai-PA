@@ -44,11 +44,11 @@ def log_lifecycle(event, **fields):
 def fetch_tasks():
     """Fetch all active + recently completed tasks from OmniFocus."""
     try:
-        # Only track active tasks — completed/archived tasks leave naturally.
-        # Completions are tracked separately via the timer bridge.
+        # Pull all tasks including completed — needed to distinguish
+        # completions from deletions. ~1000 tasks, ~3 seconds, ~320KB.
         result = subprocess.run(
             ["omnifocus-cli", "--format", "json", "--fields", FIELDS,
-             "task", "list"],
+             "task", "list", "--include-completed"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode != 0:
@@ -130,15 +130,25 @@ def diff_snapshots(old_tasks, new_tasks):
             continue  # Skip repeating task instances
         created.append(t)
 
-    # Removed tasks (in old but not new) — could be completed, deleted, or archived
+    # Deleted tasks (in old but not new) — truly gone from OmniFocus
     for tid in old_ids - new_ids:
         t = old_tasks[tid]
         if is_repeating_instance(t):
             continue
-        deleted.append(t)  # We log as "removed" — the timer logs completions separately
+        deleted.append(t)
 
-    # Status changes (in both) — detect flagging, estimate changes, etc.
-    # Completion detection is handled by the timer bridge, not here.
+    # Status changes (in both)
+    for tid in old_ids & new_ids:
+        old_t = old_tasks[tid]
+        new_t = new_tasks[tid]
+
+        # Completed (in OmniFocus, not via timer)
+        if not old_t.get("completed") and new_t.get("completed"):
+            completed.append(new_t)
+
+        # Uncompleted (undo)
+        if old_t.get("completed") and not new_t.get("completed"):
+            uncompleted.append(new_t)
 
     return created, deleted, completed, uncompleted
 
@@ -178,12 +188,11 @@ def main():
         )
 
     for t in deleted:
-        log(f"Removed: {t['name'][:60]}")
+        log(f"Deleted: {t['name'][:60]}")
         log_lifecycle(
-            "omnifocus_removed",
+            "omnifocus_deleted",
             omnifocus_id=t["id"],
             task=t.get("name"),
-            note="Task left active set — completed, deleted, dropped, or archived",
         )
 
     for t in completed:
