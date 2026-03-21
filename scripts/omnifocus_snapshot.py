@@ -122,6 +122,7 @@ def diff_snapshots(old_tasks, new_tasks):
     deleted = []
     completed = []
     uncompleted = []
+    changed = []  # field changes (flagged, duration, name, etc.)
 
     # New tasks (in new but not old)
     for tid in new_ids - old_ids:
@@ -137,7 +138,10 @@ def diff_snapshots(old_tasks, new_tasks):
             continue
         deleted.append(t)
 
-    # Status changes (in both)
+    # Status and field changes (in both)
+    TRACKED_FIELDS = ("completed", "flagged", "dropped", "duration", "name",
+                      "dueDate", "deferDate", "projectId")
+
     for tid in old_ids & new_ids:
         old_t = old_tasks[tid]
         new_t = new_tasks[tid]
@@ -150,7 +154,17 @@ def diff_snapshots(old_tasks, new_tasks):
         if old_t.get("completed") and not new_t.get("completed"):
             uncompleted.append(new_t)
 
-    return created, deleted, completed, uncompleted
+        # Detect other field changes
+        diffs = {}
+        for field in TRACKED_FIELDS:
+            old_val = old_t.get(field)
+            new_val = new_t.get(field)
+            if old_val != new_val and field != "completed":  # completion handled above
+                diffs[field] = {"old": old_val, "new": new_val}
+        if diffs:
+            changed.append({"task": new_t, "changes": diffs})
+
+    return created, deleted, completed, uncompleted, changed
 
 
 def main():
@@ -168,9 +182,9 @@ def main():
         save_snapshot(current)
         return
 
-    created, deleted, completed, uncompleted = diff_snapshots(previous, current)
+    created, deleted, completed, uncompleted, changed = diff_snapshots(previous, current)
 
-    if not any([created, deleted, completed, uncompleted]):
+    if not any([created, deleted, completed, uncompleted, changed]):
         log(f"No changes detected ({len(current)} tasks)")
         save_snapshot(current)
         return
@@ -212,8 +226,21 @@ def main():
             task=t.get("name"),
         )
 
+    for item in changed:
+        t = item["task"]
+        changes = item["changes"]
+        fields_str = ", ".join(f"{k}: {v['old']}→{v['new']}" for k, v in changes.items())
+        log(f"Changed: {t['name'][:40]} [{fields_str}]")
+        log_lifecycle(
+            "omnifocus_changed",
+            omnifocus_id=t["id"],
+            task=t.get("name"),
+            changes=changes,
+        )
+
     log(f"Changes: +{len(created)} created, -{len(deleted)} deleted, "
-        f"✓{len(completed)} completed, ↩{len(uncompleted)} uncompleted")
+        f"✓{len(completed)} completed, ↩{len(uncompleted)} uncompleted, "
+        f"~{len(changed)} modified")
 
     save_snapshot(current)
 
