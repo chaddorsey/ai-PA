@@ -740,6 +740,11 @@ class TaskSidebar {
       lines.push(`Agent Estimate: ${formatted}`);
     }
 
+    // Agent Task Statement (original LLM-formulated description for future RL comparison)
+    if (details.task) {
+      lines.push(`Agent Task Statement: ${details.task}`);
+    }
+
     // Source Reference
     if (details.source_reference) {
       const sr = details.source_reference;
