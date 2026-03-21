@@ -218,6 +218,15 @@ function logTimerEvent(event) {
 }
 
 /**
+ * Append to the unified task-lifecycle.jsonl log.
+ */
+function logLifecycle(eventName, fields) {
+  const logFile = path.join(TIMER_LOG_DIR, 'task-lifecycle.jsonl');
+  const entry = { event: eventName, timestamp: new Date().toISOString(), ...fields };
+  try { fs.appendFileSync(logFile, JSON.stringify(entry) + '\n', 'utf8'); } catch (_) {}
+}
+
+/**
  * Append a completion record to the completions log.
  * File: TIMER_LOG_DIR/completions.jsonl
  * This is the file MC reads for batch status updates.
@@ -302,10 +311,26 @@ function handleTimerEvent(body, res) {
     // Log ALL events to file (zero LLM cost)
     logTimerEvent(event);
 
+    // Log to unified lifecycle log for key events
+    if (event.event === 'timer.started') {
+      logLifecycle('timer_started', {
+        ref_id: event.refId, omnifocus_id: event.taskId,
+        task: event.taskName, project: event.projectName,
+        estimate_min: event.originalEstimateMin,
+      });
+    }
+
     // Completion events additionally get relayed to MC and logged separately
     const isCompletion = event.event === 'timer.stopped' || event.event === 'timer.auto-stopped';
     if (isCompletion) {
       logCompletion(event);
+      logLifecycle('timer_completed', {
+        ref_id: event.refId, omnifocus_id: event.taskId,
+        task: event.taskName, project: event.projectName,
+        session_ms: event.sessionMs, total_ms: event.totalMs,
+        estimate_min: event.originalEstimateMin,
+        agent_estimate_min: event.agentEstimateMin,
+      });
       const message = formatTimerMessage(event);
       console.log(`[timer-event] Completion → MC: ${message}`);
       relayCompletionToMC(message);

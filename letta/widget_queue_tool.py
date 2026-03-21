@@ -76,9 +76,27 @@ def manage_widget_queue(action: str, task_ids: Optional[str] = None, position: O
 
         # Parse the JSON output from widget-queue.sh
         try:
-            return json.loads(stdout)
+            parsed = json.loads(stdout)
         except json.JSONDecodeError:
             return {"status": "ok", "raw_output": stdout}
+
+        # Log queue changes to task-lifecycle.jsonl
+        try:
+            log_dir = os.environ.get("TIMER_LOG_DIR", "/app/tools/letta/../omnifocus-timer/logs")
+            log_file = os.path.join(log_dir, "task-lifecycle.jsonl")
+            import datetime
+            entry = {
+                "event": f"queue_{action}",
+                "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "task_ids": task_ids,
+                "queue": parsed.get("queue", []),
+            }
+            with open(log_file, "a") as lf:
+                lf.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass
+
+        return parsed
 
     except subprocess.TimeoutExpired:
         return {"status": "error", "error_message": "SSH command timed out (20s)"}

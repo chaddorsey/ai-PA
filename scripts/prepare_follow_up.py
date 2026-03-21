@@ -297,6 +297,22 @@ def write_followup(followup):
         f.write(line)
     log(f"Follow-up queued: {followup['type']} for {followup['from_person']} ({followup['ref_id']})")
 
+    # Log to task-lifecycle.jsonl
+    try:
+        lifecycle_path = os.path.join(os.path.dirname(FOLLOWUP_QUEUE), "task-lifecycle.jsonl")
+        entry = {
+            "event": "followup_created",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "followup_id": followup.get("id"),
+            "ref_id": followup.get("ref_id"),
+            "type": followup.get("type"),
+            "from_person": followup.get("from_person"),
+        }
+        with open(lifecycle_path, "a") as lf:
+            lf.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
 
 def main():
     # Read completion event from stdin

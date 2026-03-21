@@ -420,6 +420,25 @@ def save_response_feedback(
 http_client = httpx.Client(timeout=30.0, follow_redirects=True)
 
 
+# ── Task Lifecycle Log ──
+# Single append-only JSONL capturing every task state transition for analytics/RL.
+LIFECYCLE_LOG = os.path.join(
+    os.getenv("FOLLOWUP_QUEUE", "/data/timer-logs/pending-followups.jsonl").rsplit("/", 1)[0],
+    "task-lifecycle.jsonl",
+)
+
+
+def log_lifecycle(event: str, **fields):
+    """Append a lifecycle event to the task-lifecycle.jsonl log."""
+    entry = {"event": event, "timestamp": datetime.utcnow().isoformat() + "Z"}
+    entry.update({k: v for k, v in fields.items() if v is not None})
+    try:
+        with open(LIFECYCLE_LOG, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass  # Non-fatal — don't break the operation for logging
+
+
 @app.route("/")
 def index():
     """Main chat interface."""
@@ -1973,6 +1992,20 @@ def api_transition_task(ref_id):
             _replace_passage(client, passage_id, new_text, old_tags)
             _remove_ref_from_block(client, ref_id)
 
+        # Extract task description for logging
+        task_match = re.search(r'^TASK: (?:\[(?:REJECTED|COMPLETED)\] )?(.+)$', old_text, re.MULTILINE)
+        task_desc = task_match.group(1) if task_match else None
+        source_match = re.search(r'^- Type: (.+)$', old_text, re.MULTILINE)
+        source_type = source_match.group(1).strip() if source_match else None
+
+        log_lifecycle(
+            action,
+            ref_id=ref_id,
+            task=task_desc,
+            source_type=source_type,
+            omnifocus_id=omnifocus_task_id,
+        )
+
         return jsonify({"status": "ok", "ref_id": ref_id, "action": action})
     except Exception as e:
         logger.error(
@@ -2448,11 +2481,19 @@ def _find_followup(followup_id):
 def _mark_followup_sent(followup_id):
     """Mark a follow-up as sent in the queue file."""
     _update_followup_status(followup_id, "sent")
+    item = _find_followup(followup_id)
+    log_lifecycle(
+        "followup_sent",
+        followup_id=followup_id,
+        type=item.get("type") if item else None,
+        ref_id=item.get("ref_id") if item else None,
+    )
 
 
 def _dismiss_followup(followup_id):
     """Mark a follow-up as dismissed."""
     _update_followup_status(followup_id, "dismissed")
+    log_lifecycle("followup_dismissed", followup_id=followup_id)
     return jsonify({"status": "dismissed"})
 
 
@@ -2532,6 +2573,7 @@ def api_unschedule_followup(followup_id):
 
     # Revert to pending — item moves from Scheduled section back to active list
     _update_followup_status(followup_id, "pending", {"scheduled_at": None})
+    log_lifecycle("followup_unscheduled", followup_id=followup_id)
 
     # TODO: also cancel the scheduler-service job if one was created
 
@@ -2596,6 +2638,13 @@ def api_schedule_followup(followup_id):
         logger.error("schedule_followup_job_error", error=str(e))
         # Schedule is stored even if job creation fails — can retry
 
+    log_lifecycle(
+        "followup_scheduled",
+        followup_id=followup_id,
+        type=item.get("type"),
+        ref_id=item.get("ref_id"),
+        send_at=send_at,
+    )
     return jsonify({"status": "scheduled", "send_at": send_at})
 
 
@@ -2641,6 +2690,8 @@ def api_schedule_draft(draft_id):
         logger.error("schedule_draft_job_error", error=str(e))
         # Entry is stored even if job creation fails
 
+    log_lifecycle("draft_scheduled", draft_id=draft_id, send_at=send_at,
+                  subject=data.get("subject"))
     return jsonify({"status": "scheduled", "send_at": send_at})
 
 

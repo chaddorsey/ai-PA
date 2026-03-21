@@ -434,6 +434,24 @@ def add_extracted_tasks(
             except Exception as ce:
                 cleanup_result = f"cleanup_error: {str(ce)}"
 
+        # Log to task-lifecycle.jsonl
+        try:
+            lifecycle_path = "/app/tools/letta/../omnifocus-timer/logs/task-lifecycle.jsonl"
+            lifecycle_entry = {
+                "event": "extracted",
+                "timestamp": iso_timestamp,
+                "ref_id": ref_id,
+                "task": task_description,
+                "source_type": source_type,
+                "origin": origin,
+                "estimate_min": estimate_minutes,
+                "agent_name": agent_name,
+            }
+            with open(lifecycle_path, "a") as lf:
+                lf.write(json.dumps(lifecycle_entry) + "\n")
+        except Exception:
+            pass
+
         return {
             "status": "ok",
             "message": "Task extracted and source reference archived.",
