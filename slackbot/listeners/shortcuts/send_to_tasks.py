@@ -39,6 +39,8 @@ def _extract_message_info(body: dict, logger: Logger) -> dict:
     message_ts = message.get("ts", "")
     thread_ts = message.get("thread_ts", "")
 
+    import re
+
     # Build permalink
     permalink = ""
     if channel_id and message_ts:
@@ -124,6 +126,47 @@ def _send_confirmation(client: WebClient, channel_id: str, user_id: str,
             logger.info(f"Confirmation skipped for user {user_id}")
 
 
+def _resolve_mentions(text: str, client) -> str:
+    """Resolve Slack channel and user mentions in message text.
+
+    <#C0AA0HMDW3W> → #channel-name (https://slack.com/archives/C0AA0HMDW3W)
+    <@U02V91KU8> → @Real Name
+    """
+    import re
+
+    def resolve_channel(match):
+        cid = match.group(1)
+        label = match.group(2)  # may be None
+        if label:
+            return f"#{label} (https://slack.com/archives/{cid})"
+        try:
+            resp = client.conversations_info(channel=cid)
+            if resp.get("ok"):
+                name = resp["channel"].get("name", cid)
+                return f"#{name} (https://slack.com/archives/{cid})"
+        except Exception:
+            pass
+        return f"#{cid} (https://slack.com/archives/{cid})"
+
+    def resolve_user(match):
+        uid = match.group(1)
+        label = match.group(2)
+        if label:
+            return f"@{label}"
+        try:
+            resp = client.users_info(user=uid)
+            if resp.get("ok"):
+                name = resp["user"].get("real_name") or resp["user"].get("name", uid)
+                return f"@{name}"
+        except Exception:
+            pass
+        return f"@{uid}"
+
+    text = re.sub(r'<#([A-Z0-9]+)(?:\|([^>]*))?>', resolve_channel, text)
+    text = re.sub(r'<@([A-Z0-9]+)(?:\|([^>]*))?>', resolve_user, text)
+    return text
+
+
 def _resolve_slack_user(user_id: str, client) -> str:
     """Resolve a Slack user ID to 'Real Name (USERID)' format."""
     try:
@@ -152,6 +195,11 @@ def _trigger_extraction(entry: dict, logger: Logger,
         if slack_client and from_id.startswith("U"):
             from_id = _resolve_slack_user(from_id, slack_client)
         text = entry.get("text", "")
+
+        # Resolve channel mentions <#C0AA0HMDW3W> → #channel-name (with permalink)
+        # and user mentions <@U02V91KU8> → @realname
+        if slack_client and text:
+            text = _resolve_mentions(text, slack_client)
         link = entry.get("link", "")
         message_ts = entry.get("message_ts", "")
         notes = entry.get("notes", "")
