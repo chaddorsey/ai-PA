@@ -1,55 +1,107 @@
 from typing import Dict, Any, Optional
 
 
-def run_notebooklm(command: str, params: Optional[str] = None,
-                   fields: Optional[str] = None, timeout: int = 60) -> Dict[str, Any]:
+def run_notebooklm(command: str, timeout: int = 60) -> Dict[str, Any]:
     """
     Run any NotebookLM CLI command. Manage notebooks, sources, chat, artifacts,
     research, and notes in Google NotebookLM.
 
-    Commands follow the pattern: <group> <action>
-    Use --body for JSON input (agent path), or convenience flags (human path).
-    Use "schema --list" to see all available commands.
+    Commands follow the pattern: <group> <action> [args] [--flags]
+    Include all flags directly in the command string, just as you would on the command line.
+    Add --json to any command that supports it for structured output.
 
-    Notebook examples:
-      command="notebook list"
-      command="notebook create", params='{"title": "My Research"}'
-      command="notebook get", params='{"notebookId": "abc123"}'
+    === DISCOVERY ===
+    Use --help on any command to see its flags and usage:
+      command="--help"                           (list all commands and groups)
+      command="source --help"                    (list source subcommands)
+      command="source add --help"                (show add flags and examples)
+      command="ask --help"                       (show ask flags)
+      command="generate --help"                  (show artifact types)
 
-    Source examples:
-      command="source add-url", params='{"notebookId": "abc123", "url": "https://..."}'
-      command="source add-file", params='{"notebookId": "abc123", "filePath": "/path/to.pdf"}'
-      command="source list", params='{"notebookId": "abc123"}'
+    Available services: list, create, delete, rename, share, summary, use,
+      status, clear, ask, configure, history, generate, download
+    Command groups: source, artifact, note, research
 
-    File handling:
-      filePath can be a local path or a path on a remote Tailscale machine.
-      If the file doesn't exist locally, the tool automatically fetches it from
-      the configured remote host (NOTEBOOKLM_REMOTE_HOST env var) via SCP.
-      Just pass normal file paths — remote fetching is transparent.
+    === NOTEBOOKS ===
+    List notebooks:
+      command="list --json"
+    Create notebook:
+      command='create "My Research"'
+    Set current notebook (avoids passing --notebook everywhere):
+      command="use NOTEBOOK_ID"
+    Show current context:
+      command="status"
 
-    Chat examples:
-      command="chat ask", params='{"notebookId": "abc123", "question": "Summarize this"}'
+    === SOURCES ===
+    List sources in a notebook:
+      command="source list --notebook NOTEBOOK_ID --json"
+    Get source details (supports partial IDs):
+      command="source get SOURCE_ID --notebook NOTEBOOK_ID"
+    Add a URL source:
+      command='source add "https://example.com" --notebook NOTEBOOK_ID --json'
+    Add text source:
+      command='source add "My notes here" --title "Research Notes" --notebook NOTEBOOK_ID --json'
+    Add a file (auto-fetched from laptop via SCP if not local):
+      command='source add "/path/to/file.pdf" --notebook NOTEBOOK_ID --json'
+    Get AI-generated source guide (summary + keywords):
+      command="source guide SOURCE_ID --notebook NOTEBOOK_ID"
+    Add sources from web search:
+      command='source add-research "curiosity in education" --source web --notebook NOTEBOOK_ID'
+    Delete a source:
+      command="source delete SOURCE_ID --notebook NOTEBOOK_ID"
+    Refresh a URL/Drive source:
+      command="source refresh SOURCE_ID --notebook NOTEBOOK_ID"
 
-    Artifact examples:
-      command="artifact generate", params='{"notebookId": "abc123", "type": "audio", "instructions": "Make it engaging"}'
-      command="artifact wait", params='{"notebookId": "abc123", "taskId": "task789"}'
-      command="artifact download", params='{"notebookId": "abc123", "type": "audio", "outputPath": "./out.mp3"}'
+    === CHAT ===
+    Ask a question (continues last conversation):
+      command='ask "What are the main themes?" --notebook NOTEBOOK_ID'
+    Ask with new conversation:
+      command='ask --new "Summarize everything" --notebook NOTEBOOK_ID'
+    Ask about specific sources only:
+      command='ask -s SOURCE_ID1 -s SOURCE_ID2 "Compare these two" --notebook NOTEBOOK_ID'
+    View conversation history:
+      command="history --notebook NOTEBOOK_ID"
 
-    Research examples:
-      command="research start", params='{"notebookId": "abc123", "query": "topic", "source": "web"}'
+    === ARTIFACTS ===
+    Generate an artifact (audio overview, quiz, report, etc.):
+      command='generate audio --notebook NOTEBOOK_ID --instructions "Make it engaging"'
+      Artifact types: audio, quiz, report, flashcards, slide-deck, mind-map,
+        infographic, data-table, video
+    Check generation status:
+      command="artifact poll --notebook NOTEBOOK_ID --json"
+    Wait for artifact to complete:
+      command="artifact wait --notebook NOTEBOOK_ID --timeout 300"
+    List artifacts:
+      command="artifact list --notebook NOTEBOOK_ID --json"
+    Download artifact:
+      command="download audio --notebook NOTEBOOK_ID -o ./output.mp3"
 
-    Schema discovery:
-      command="schema --list"
-      command="schema notebook.create"
+    === NOTES ===
+    List notes:
+      command="note list --notebook NOTEBOOK_ID --json"
+    Create a note:
+      command='note create "Note title" --content "Note body" --notebook NOTEBOOK_ID'
+    Save chat response as note:
+      command='note save "Note title" --notebook NOTEBOOK_ID'
+
+    === RESEARCH ===
+    Start web or drive research:
+      command='source add-research "topic" --source web --notebook NOTEBOOK_ID'
+    Check research status:
+      command="research status --notebook NOTEBOOK_ID"
+
+    === TIPS ===
+    - Use "use NOTEBOOK_ID" first to set context, then omit --notebook from subsequent commands
+    - Source IDs support partial matching (e.g., "abc" matches "abc123def456...")
+    - For large operations (artifact generation, research), increase timeout to 300
+    - File paths that don't exist locally are auto-fetched from the laptop via SCP
 
     Args:
-        command: The notebooklm-cli subcommand (e.g. "notebook list", "chat ask")
-        params: JSON string of parameters (optional). Passed as --body.
-        fields: Comma-separated output fields (optional). Limits token usage.
-        timeout: Command timeout in seconds (default 60). Use 300 for artifact wait.
+        command: The full CLI command with all flags (e.g. 'source list --notebook ID --json')
+        timeout: Command timeout in seconds (default 60). Use 300 for artifact wait/generation.
 
     Returns:
-        Dictionary with status and parsed JSON response.
+        Dictionary with status and parsed JSON response, or result_text for non-JSON output.
     """
     import json
     import os
@@ -61,55 +113,23 @@ def run_notebooklm(command: str, params: Optional[str] = None,
         if not command or not command.strip():
             return {"status": "error", "error_message": "command is required"}
 
-        # Resolve file paths: if file doesn't exist locally, fetch from remote host via SCP
+        # Parse command to check for file paths that need SCP fetch
+        parts = shlex.split(command.strip())
         staging_files = []
-        if params:
-            params_dict = json.loads(params)
-            for key in ("filePath", "outputPath"):
-                val = params_dict.get(key, "")
-                if not val:
-                    continue
+        for i, part in enumerate(parts):
+            if part.startswith("/") and not part.startswith("/dev/") and not os.path.exists(part):
+                # Could be a file path on the remote laptop — try SCP fetch
+                remote_host = os.environ.get("NOTEBOOKLM_REMOTE_HOST", "")
+                if remote_host:
+                    local_staging = _scp_fetch(remote_host, part)
+                    if isinstance(local_staging, dict):
+                        return local_staging
+                    parts[i] = local_staging
+                    staging_files.append(local_staging)
 
-                # Explicit hostname:path format — always SCP
-                if ":" in val and not val.startswith("/") and not val.startswith("."):
-                    host_part, remote_path = val.split(":", 1)
-                    if remote_path.startswith("/"):
-                        local_staging = _scp_fetch(host_part, remote_path)
-                        if isinstance(local_staging, dict):
-                            return local_staging
-                        params_dict[key] = local_staging
-                        staging_files.append(local_staging)
-                        continue
-
-                # Normal path — check if it exists locally, if not try remote host
-                if val.startswith("/") and not os.path.exists(val):
-                    remote_host = os.environ.get("NOTEBOOKLM_REMOTE_HOST", "")
-                    if remote_host:
-                        local_staging = _scp_fetch(remote_host, val)
-                        if isinstance(local_staging, dict):
-                            return local_staging
-                        params_dict[key] = local_staging
-                        staging_files.append(local_staging)
-                    else:
-                        return {
-                            "status": "error",
-                            "error_message": f"File not found: {val}. Set NOTEBOOKLM_REMOTE_HOST to fetch from a remote machine.",
-                        }
-
-            params = json.dumps(params_dict)
-
-        cli_args = ["notebooklm-cli"]
-
-        if params:
-            cli_args.extend(["--body", params])
-        if fields:
-            cli_args.extend(["--fields", fields])
-
-        first_word = command.strip().split()[0] if command.strip() else ""
-        if first_word != "schema":
-            cli_args.extend(["--format", "json"])
-
-        cli_args.extend(shlex.split(command.strip()))
+        # Build CLI command with storage path
+        storage_path = os.environ.get("NOTEBOOKLM_STORAGE", "/notebooklm-auth/storage_state.json")
+        cli_args = ["notebooklm", "--storage", storage_path] + parts
 
         r = subprocess.run(cli_args, capture_output=True, text=True, timeout=timeout)
 
@@ -121,7 +141,8 @@ def run_notebooklm(command: str, params: Optional[str] = None,
                 pass
 
         if r.returncode != 0:
-            return {"status": "error", "error_message": r.stderr[:1000] if r.stderr else f"Exit code {r.returncode}"}
+            error = r.stderr.strip() or r.stdout.strip() or f"Exit code {r.returncode}"
+            return {"status": "error", "error_message": error[:2000]}
 
         output = r.stdout.strip()
         if not output:
@@ -134,7 +155,7 @@ def run_notebooklm(command: str, params: Optional[str] = None,
             return {"status": "ok", "result_text": output}
 
     except subprocess.TimeoutExpired:
-        return {"status": "error", "error_message": f"Command timed out after {timeout}s"}
+        return {"status": "error", "error_message": f"Command timed out after {timeout}s. Try increasing the timeout parameter."}
     except Exception as e:
         return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
 

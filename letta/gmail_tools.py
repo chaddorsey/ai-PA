@@ -19,60 +19,123 @@ Authentication:
 from typing import Dict, Any, Optional
 
 
-def run_gws(command: str, params: Optional[str] = None, body: Optional[str] = None, timeout: int = 30) -> Dict[str, Any]:
+def run_gws(command: str, params: Optional[str] = None, body: Optional[str] = None,
+            output_file: Optional[str] = None, format: Optional[str] = None,
+            page_all: bool = False, timeout: int = 30) -> Dict[str, Any]:
     """
-    Run any Google Workspace CLI command. Provides access to ALL Google APIs
-    including Gmail, Calendar, Drive, Docs, Sheets, and Admin.
+    Run any Google Workspace CLI command. Provides access to ALL Google APIs.
 
-    Commands follow the pattern: <service> <resource> <method>
-    Use "schema <dotted.path>" to discover API parameters and response shapes.
+    The gws CLI follows a consistent pattern: gws <service> <resource> <method>
+    Use "schema <dotted.path>" to discover any API's parameters and response shapes.
 
     IMPORTANT: All params values must be strings or numbers, NOT arrays. For multi-value
     fields like labelIds, use a comma-separated string: "INBOX,UNREAD" not ["INBOX","UNREAD"].
 
-    Gmail examples:
-      command="gmail users messages list", params='{"userId":"me","q":"is:unread","maxResults":5}'
-      command="gmail users messages list", params='{"userId":"me","labelIds":"INBOX","maxResults":20}'
-      command="gmail users messages get", params='{"userId":"me","id":"MSG_ID","format":"full"}'
-      command="gmail users threads get", params='{"userId":"me","id":"THREAD_ID","format":"metadata"}'
-      command="gmail users labels list", params='{"userId":"me"}'
-      command="gmail users labels get", params='{"userId":"me","id":"LABEL_ID"}'
+    Available services: gmail, calendar, drive, docs, sheets, slides, tasks, people,
+      chat, classroom, forms, keep, meet, events, admin-reports, workflow
 
-    Getting inbox message counts (use labels get, NOT messages list):
+    === SCHEMA DISCOVERY ===
+    Always start here when unsure of parameters for any API:
+      command="schema docs.documents.get"
+      command="schema drive.files.export"
+      command="schema gmail.users.messages.list"
+      command="schema calendar.events.list"
+      command="schema sheets.spreadsheets.get"
+
+    === DOCS ===
+    Read a document (first tab only):
+      command="docs documents get", params='{"documentId":"DOC_ID"}'
+    Read a document (ALL tabs — use this for multi-tab docs):
+      command="docs documents get", params='{"documentId":"DOC_ID","includeTabsContent":true}'
+      With tabs: content is in result.tabs[].documentTab.body (not result.body)
+    Create a document:
+      command="docs documents create", body='{"title":"My Doc"}'
+    Append text to a document:
+      command="docs +write --document DOC_ID --text 'Text to append'"
+    Update a document (batch operations):
+      command="docs documents batchUpdate", params='{"documentId":"DOC_ID"}', body='{"requests":[...]}'
+
+    === DRIVE ===
+    Export a Google Doc/Sheet/Slide as plain text, markdown, PDF, etc.:
+      command="drive files export", params='{"fileId":"DOC_ID","mimeType":"text/plain"}', output_file="/dev/stdout"
+      command="drive files export", params='{"fileId":"DOC_ID","mimeType":"text/markdown"}', output_file="/dev/stdout"
+      Supported mimeTypes: text/plain, text/markdown, application/pdf,
+        application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      IMPORTANT: Use output_file="/dev/stdout" to get the exported content returned directly.
+      Without output_file, export saves to a local file and returns metadata only.
+    List files:
+      command="drive files list", params='{"q":"name contains \\'report\\'","pageSize":10}'
+    Search for recent files:
+      command="drive files list", params='{"q":"modifiedTime > \\'2026-03-01T00:00:00\\'","orderBy":"modifiedTime desc","pageSize":10}'
+    Get file metadata:
+      command="drive files get", params='{"fileId":"FILE_ID","fields":"id,name,modifiedTime,mimeType"}'
+
+    === GMAIL ===
+    List messages:
+      command="gmail users messages list", params='{"userId":"me","q":"is:unread","maxResults":5}'
+    Get a message:
+      command="gmail users messages get", params='{"userId":"me","id":"MSG_ID","format":"full"}'
+    Get inbox counts (use labels get, NOT messages list):
       command="gmail users labels get", params='{"userId":"me","id":"INBOX"}'
       Returns messagesTotal and messagesUnread — these are exact counts.
-
-    WARNING: Gmail's "resultSizeEstimate" field (returned by messages.list) is NOT an
-    accurate count — it is a rough estimate often off by 10x. Never use it to report
-    message counts. Use labels.get instead for accurate totals.
-      command="gmail users messages modify", params='{"userId":"me","id":"MSG_ID"}', body='{"addLabelIds":["STARRED"],"removeLabelIds":["UNREAD"]}'
+      WARNING: Gmail's "resultSizeEstimate" from messages.list is inaccurate. Use labels.get.
+    Modify labels:
+      command="gmail users messages modify", params='{"userId":"me","id":"MSG_ID"}', body='{"addLabelIds":["STARRED"]}'
+    List/get drafts:
       command="gmail users drafts list", params='{"userId":"me"}'
       command="gmail users drafts get", params='{"userId":"me","id":"DRAFT_ID","format":"full"}'
-      command="gmail users drafts delete", params='{"userId":"me","id":"DRAFT_ID"}'
-      command="gmail users messages attachments get", params='{"userId":"me","messageId":"MSG_ID","id":"ATTACHMENT_ID"}'
-      command="gmail users getProfile", params='{"userId":"me"}'
 
-    Calendar examples:
+    === CALENDAR ===
+    List events:
       command="calendar events list", params='{"calendarId":"primary","timeMin":"2026-03-06T00:00:00Z","maxResults":10}'
+    Get event:
       command="calendar events get", params='{"calendarId":"primary","eventId":"EVENT_ID"}'
 
-    Drive examples:
-      command="drive files list", params='{"q":"name contains 'report'","pageSize":10}'
-      command="drive files get", params='{"fileId":"FILE_ID"}'
+    === SHEETS ===
+    Get spreadsheet metadata:
+      command="sheets spreadsheets get", params='{"spreadsheetId":"SHEET_ID"}'
+    Read cell values:
+      command="sheets spreadsheets.values get", params='{"spreadsheetId":"SHEET_ID","range":"Sheet1!A1:D10"}'
+    Read values (helper):
+      command="sheets +read --spreadsheet SHEET_ID --range Sheet1!A1:D10"
+    Append a row (helper):
+      command="sheets +append --spreadsheet SHEET_ID --range Sheet1 --values 'val1,val2,val3'"
 
-    Schema discovery (learn any API's parameters):
-      command="schema gmail.users.messages.list"
-      command="schema gmail.users.drafts.create"
-      command="schema calendar.events.list"
+    === SLIDES ===
+    Get presentation:
+      command="slides presentations get", params='{"presentationId":"PRES_ID"}'
+
+    === TASKS ===
+    List task lists:
+      command="tasks tasklists list"
+    List tasks:
+      command="tasks tasks list", params='{"tasklist":"TASKLIST_ID"}'
+
+    === WORKFLOW HELPERS ===
+    Cross-service productivity helpers:
+      command="workflow +standup-report"
+      command="workflow +meeting-prep"
+      command="workflow +weekly-digest"
+
+    === FLAGS ===
+    format: Override output format — "json" (default), "table", "yaml", "csv"
+    output_file: Write binary/text output to this path (use "/dev/stdout" to capture export content)
+    page_all: Auto-paginate through all results (for list operations with many pages)
+    timeout: Command timeout in seconds (default 30, increase for large docs/exports)
 
     Args:
-        command: The gws subcommand path (e.g. "gmail users messages list" or "schema gmail.users.messages.list")
-        params: JSON string of query/path parameters (optional). Passed as --params to gws.
-        body: JSON string of request body (optional). Passed as --json to gws. Used for modify, create, update operations.
+        command: The gws subcommand (e.g. "docs documents get" or "schema docs.documents.get")
+        params: JSON string of query/path parameters (optional)
+        body: JSON string of request body (optional). Used for create, update, modify operations.
+        output_file: File path for binary/export output (optional). Use "/dev/stdout" to return
+            content directly (essential for drive files export).
+        format: Output format override (optional). One of: json, table, yaml, csv.
+            Default is json. Use "table" or "yaml" for more readable output on complex responses.
+        page_all: Auto-paginate through all results (default False). Useful for list operations.
         timeout: Command timeout in seconds (default 30, increase for large operations)
 
     Returns:
-        Dictionary with status and the parsed JSON response, or raw output for non-JSON responses.
+        Dictionary with status and the parsed JSON response, or result_text for non-JSON output.
     """
     import json
     import subprocess
@@ -89,24 +152,34 @@ def run_gws(command: str, params: Optional[str] = None, body: Optional[str] = No
             cmd_parts.extend(["--params", params])
         if body:
             cmd_parts.extend(["--json", body])
+        if output_file:
+            cmd_parts.extend(["-o", output_file])
+        if page_all:
+            cmd_parts.append("--page-all")
 
-        # Add --format json unless this is a schema or auth command
+        # Determine output format
         first_word = command.strip().split()[0] if command.strip() else ""
-        if first_word not in ("schema", "auth"):
+        if format:
+            cmd_parts.extend(["--format", format])
+        elif first_word not in ("schema", "auth"):
             cmd_parts.extend(["--format", "json"])
 
+        # For export to /dev/stdout, capture stdout as binary-safe text
         r = subprocess.run(cmd_parts, capture_output=True, text=True, timeout=timeout)
 
         if r.returncode != 0:
-            # gws writes error JSON to stdout, not stderr
             error_detail = r.stderr.strip() or r.stdout.strip() or f"Exit code {r.returncode}"
-            return {"status": "error", "error_message": error_detail[:1000]}
+            return {"status": "error", "error_message": error_detail[:2000]}
 
-        # Try to parse as JSON; fall back to raw text (schema output is plain text)
         output = r.stdout.strip()
         if not output:
             return {"status": "ok", "result": {}}
 
+        # If output_file was /dev/stdout, return the raw content as text
+        if output_file == "/dev/stdout":
+            return {"status": "ok", "result_text": output}
+
+        # Try to parse as JSON; fall back to raw text (schema, table, yaml, csv output)
         try:
             parsed = json.loads(output)
             return {"status": "ok", "result": parsed}
@@ -114,7 +187,7 @@ def run_gws(command: str, params: Optional[str] = None, body: Optional[str] = No
             return {"status": "ok", "result_text": output}
 
     except subprocess.TimeoutExpired:
-        return {"status": "error", "error_message": f"Command timed out after {timeout}s"}
+        return {"status": "error", "error_message": f"Command timed out after {timeout}s. Try increasing the timeout parameter."}
     except Exception as e:
         return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
 
