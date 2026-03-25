@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 
 
-def run_notebooklm(command: str, timeout: int = 60) -> Dict[str, Any]:
+def run_notebooklm(command: str, output_file: Optional[str] = None, timeout: int = 60) -> Dict[str, Any]:
     """
     Run any NotebookLM CLI command. Manage notebooks, sources, chat, artifacts,
     research, and notes in Google NotebookLM.
@@ -96,8 +96,16 @@ def run_notebooklm(command: str, timeout: int = 60) -> Dict[str, Any]:
     - For large operations (artifact generation, research), increase timeout to 300
     - File paths that don't exist locally are auto-fetched from the laptop via SCP
 
+    === OUTPUT TO FILE ===
+    Use output_file to write large results directly to disk (avoids tool return truncation):
+      command="source list --notebook ID --json", output_file="/Users/dorseyhomeserver/Dropbox/letta-shared-files/sources.json"
+      command='ask "Summarize all sources" --notebook ID', output_file="/tmp/summary.txt"
+    The tool returns a confirmation with byte count instead of the full content.
+
     Args:
         command: The full CLI command with all flags (e.g. 'source list --notebook ID --json')
+        output_file: Write output to this file path instead of returning it (optional).
+            Use for large results that would be truncated in the tool return.
         timeout: Command timeout in seconds (default 60). Use 300 for artifact wait/generation.
 
     Returns:
@@ -155,6 +163,15 @@ def run_notebooklm(command: str, timeout: int = 60) -> Dict[str, Any]:
         output = r.stdout.strip()
         if not output:
             return {"status": "ok", "result": {}}
+
+        # If output_file specified, write to disk instead of returning content
+        if output_file:
+            out_dir = os.path.dirname(output_file)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            with open(output_file, "w") as f:
+                f.write(output)
+            return {"status": "ok", "wrote_file": output_file, "bytes": len(output)}
 
         try:
             parsed = json.loads(output)
