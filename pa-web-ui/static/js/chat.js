@@ -318,30 +318,29 @@ class ChatUI {
         card.innerHTML = `
             <div class="thread-user-message">
                 <span class="user-text">${this.escapeHtml(userMessage)}</span>
-                ${userTime ? `<span class="message-timestamp">${userTime}</span>` : ''}
-            </div>
-            ${hasResponse ? `
-                <div class="thread-response" style="display: block;">
-                    <div class="response-header">
-                        <div class="agent-header">
-                            <span class="agent-icon">🤖</span>
-                            <span class="agent-name">${this.escapeHtml(agentName)}</span>
+                <div class="user-message-meta">
+                    ${hasResponse ? `
+                    <div class="response-meta-row">
+                        <span class="agent-name">${this.escapeHtml(agentName)}</span>
+                        <div class="feedback-buttons">
+                            <button class="feedback-btn thumbs-up" title="Good response">👍</button>
+                            <button class="feedback-btn thumbs-down" title="Poor response">👎</button>
                         </div>
-                        <div class="response-feedback">
-                            <div class="feedback-buttons">
-                                <button class="feedback-btn thumbs-up" title="Good response">👍</button>
-                                <button class="feedback-btn thumbs-down" title="Poor response">👎</button>
-                            </div>
-                            <div class="agent-correction">
-                                <a href="#" class="agent-correction-link">Agent?</a>
-                                <div class="agent-dropdown" style="display: none;">
-                                    <select class="intended-agent-select">
-                                        <option value="">Select intended agent...</option>
-                                    </select>
-                                </div>
+                        <div class="agent-correction">
+                            <a href="#" class="agent-correction-link">Agent?</a>
+                            <div class="agent-dropdown" style="display: none;">
+                                <select class="intended-agent-select">
+                                    <option value="">Select intended agent...</option>
+                                </select>
                             </div>
                         </div>
                     </div>
+                    ` : ''}
+                    ${userTime ? `<span class="message-timestamp">${userTime}</span>` : ''}
+                </div>
+            </div>
+            ${hasResponse ? `
+                <div class="thread-response" style="display: block;">
                     <div class="response-content">${this.renderMarkdown(assistantResponse)}</div>
                     ${assistantTime ? `<span class="message-timestamp response-timestamp">${assistantTime}</span>` : ''}
                 </div>
@@ -537,23 +536,9 @@ class ChatUI {
         card.innerHTML = `
             <div class="thread-user-message">
                 <span class="user-text">${this.escapeHtml(userMessage)}</span>
-                <span class="message-timestamp">${timestamp}</span>
-            </div>
-            <div class="thread-status">
-                <div class="dots">
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                    <div class="dot"></div>
-                </div>
-                <span class="status-text">Connecting...</span>
-            </div>
-            <div class="thread-response" style="display: none;">
-                <div class="response-header">
-                    <div class="agent-header">
-                        <span class="agent-icon">🤖</span>
+                <div class="user-message-meta">
+                    <div class="response-meta-row" style="display: none;">
                         <span class="agent-name"></span>
-                    </div>
-                    <div class="response-feedback">
                         <div class="feedback-buttons">
                             <button class="feedback-btn thumbs-up" title="Good response">👍</button>
                             <button class="feedback-btn thumbs-down" title="Poor response">👎</button>
@@ -567,7 +552,18 @@ class ChatUI {
                             </div>
                         </div>
                     </div>
+                    <span class="message-timestamp">${timestamp}</span>
                 </div>
+            </div>
+            <div class="thread-status">
+                <div class="dots">
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                    <div class="dot"></div>
+                </div>
+                <span class="status-text">Connecting...</span>
+            </div>
+            <div class="thread-response" style="display: none;">
                 <div class="response-content"></div>
                 <span class="message-timestamp response-timestamp"></span>
             </div>
@@ -621,7 +617,7 @@ class ChatUI {
         let accordion = contentEl.querySelector('.thinking-accordion');
         if (!accordion) {
             accordion = document.createElement('div');
-            accordion.className = 'thinking-accordion';
+            accordion.className = 'thinking-accordion thinking-active expanded';
             accordion.innerHTML = `
                 <div class="thinking-accordion-header">
                     <span class="thinking-accordion-icon">💭</span>
@@ -799,6 +795,12 @@ class ChatUI {
         card.dataset.agentId = agentId;
         card.dataset.agentName = agentName;
 
+        // Stop thinking animation but keep accordion for review
+        card.querySelectorAll('.thinking-accordion').forEach(acc => {
+            acc.classList.remove('thinking-active');
+            acc.classList.remove('expanded');  // collapse by default
+        });
+
         // Hide ALL status indicators (tool call spinners, etc.)
         card.querySelectorAll('.thread-status').forEach(el => {
             el.style.display = 'none';
@@ -819,14 +821,18 @@ class ChatUI {
             }
         }
 
-        // Wire up feedback buttons for the active response
-        // Check for active follow-up first, then initial response
-        const activeFollowup = card.querySelector('.thread-followup-response.active-exchange');
-        const initialResponse = card.querySelector(':scope > .thread-response');
-        const targetResponse = activeFollowup || initialResponse;
+        // Show response meta row (agent name + feedback) in user message header
+        const metaRow = card.querySelector('.thread-user-message .response-meta-row');
+        if (metaRow) {
+            metaRow.style.display = 'flex';
+            const nameEl = metaRow.querySelector('.agent-name');
+            if (nameEl && agentName) nameEl.textContent = agentName;
+        }
 
-        if (targetResponse) {
-            this.setupFeedbackButtons(card, targetResponse);
+        // Wire up feedback buttons (now in user message area)
+        const userMsg = card.querySelector('.thread-user-message');
+        if (userMsg) {
+            this.setupFeedbackButtons(card, userMsg);
         }
     }
 

@@ -141,6 +141,8 @@ GWS_BRIDGE_URL = os.getenv("GWS_BRIDGE_URL", "http://gws-bridge:8098")
 MISSION_CONTROL_AGENT_ID = os.environ.get(
     "MISSION_CONTROL_AGENT_ID", "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
 )
+LETTABOT_API_URL = os.environ.get("LETTABOT_API_URL", "http://host.docker.internal:8080")
+LETTABOT_API_KEY = os.environ.get("LETTABOT_API_KEY", "")
 
 # Database configuration
 import psycopg2
@@ -687,9 +689,9 @@ def get_mc_usage():
         # Query LiteLLM spend logs for the most recent MC call
         resp = http_client.get(
             f"{LITELLM_URL}/spend/logs",
-            params={"limit": 1, "start_date": "2026-03-01"},
+            params={"limit": 1},
             headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-            timeout=5,
+            timeout=20,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -970,7 +972,11 @@ def stream_coordination(
 
 
 def stream_mission_control(message: str, session_id: str) -> Generator[str, None, None]:
-    """Stream a message directly to Mission Control via Letta API."""
+    """Stream a message to Mission Control via LettaBot's OpenAI-compatible API.
+
+    LettaBot handles the tool execution loop (Write, Edit, Bash, etc.) internally
+    and returns the final response. This preserves MC's full tool access.
+    """
     import uuid
 
     request_id = str(uuid.uuid4())
@@ -988,83 +994,110 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
         request_id=request_id,
     )
 
-    letta_url = f"{LETTA_BASE_URL}/v1/agents/{MISSION_CONTROL_AGENT_ID}/messages/stream"
-    letta_payload = {"messages": [
-        {"role": "system", "content": build_web_ui_system_reminder()},
-        {"role": "user", "content": message},
-    ]}
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if LETTABOT_API_KEY:
+        headers["Authorization"] = f"Bearer {LETTABOT_API_KEY}"
+
+    lettabot_payload = {
+        "messages": [
+            {"role": "system", "content": build_web_ui_system_reminder()},
+            {"role": "user", "content": message},
+        ],
+        "stream": True,
+    }
 
     assistant_content = ""
 
-    try:
-        with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
-            with client.stream("POST", letta_url, json=letta_payload) as response:
-                if response.status_code != 200:
-                    yield f"data: {json.dumps({'type': 'error', 'message': f'Mission Control returned {response.status_code}'})}\n\n"
-                    return
+    # Use a queue-based approach with keepalive pings to prevent
+    # connection drops during long tool executions (e.g., Rover calls)
+    event_queue = queue.Queue()
 
-                buffer = ""
-                for chunk in response.iter_text():
-                    buffer += chunk
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        line = line.strip()
+    def run_lettabot_stream():
+        """Background thread to stream from LettaBot and put events in queue."""
+        try:
+            with httpx.Client(timeout=httpx.Timeout(300.0, connect=10.0)) as client:
+                with client.stream(
+                    "POST",
+                    f"{LETTABOT_API_URL}/v1/chat/completions",
+                    json=lettabot_payload,
+                    headers=headers,
+                ) as response:
+                    if response.status_code != 200:
+                        event_queue.put({"type": "error", "message": f"Mission Control returned {response.status_code}"})
+                        event_queue.put(None)  # Signal done
+                        return
 
-                        if not line:
+                    for line in response.iter_lines():
+                        if not line or line.startswith(":"):
                             continue
-
                         if line.startswith("data: "):
                             data_str = line[6:]
                             if data_str == "[DONE]":
                                 continue
-
                             try:
                                 event = json.loads(data_str)
-                                msg_type = event.get("message_type", "")
-
-                                if msg_type == "assistant_message":
-                                    content = event.get("content", "")
-                                    if content:
-                                        cleaned = clean_response_for_user(content)
-                                        if cleaned:
-                                            assistant_content += cleaned
-                                            yield f"data: {json.dumps({'type': 'text', 'content': cleaned})}\n\n"
-
-                                elif msg_type == "tool_call_message":
-                                    tool_name = event.get("tool_call", {}).get("name", "unknown")
-                                    tool_args = event.get("tool_call", {}).get("arguments", "")
-                                    try:
-                                        tool_input = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
-                                    except json.JSONDecodeError:
-                                        tool_input = tool_args
-                                    yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_input})}\n\n"
-
-                                elif msg_type == "tool_return":
-                                    tool_content = event.get("content", "")
-                                    status = event.get("status", "ok")
-                                    yield f"data: {json.dumps({'type': 'tool_result', 'content': tool_content, 'is_error': status != 'ok'})}\n\n"
-
-                                elif msg_type == "reasoning_message":
-                                    content = event.get("content", "")
-                                    if content:
-                                        yield f"data: {json.dumps({'type': 'thinking', 'content': content})}\n\n"
-
-                                elif msg_type == "error_message":
-                                    error_msg = event.get("message", "Unknown error")
-                                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
-
-                                elif msg_type == "usage_statistics":
-                                    # Forward usage stats to frontend for cache monitoring
-                                    yield f"data: {json.dumps({'type': 'usage', 'data': event})}\n\n"
-
+                                event_queue.put(event)
                             except json.JSONDecodeError:
                                 pass
 
-    except httpx.TimeoutException:
-        yield f"data: {json.dumps({'type': 'error', 'message': 'Mission Control request timed out'})}\n\n"
-    except Exception as e:
-        logger.error("mission_control_stream_error", error=str(e))
-        yield f"data: {json.dumps({'type': 'error', 'message': f'Mission Control error: {str(e)}'})}\n\n"
+        except httpx.TimeoutException:
+            event_queue.put({"type": "error", "message": "Mission Control request timed out"})
+        except Exception as e:
+            logger.error("mission_control_stream_error", error=str(e))
+            event_queue.put({"type": "error", "message": f"Mission Control error: {str(e)}"})
+        finally:
+            event_queue.put(None)  # Signal done
+
+    stream_thread = threading.Thread(target=run_lettabot_stream, daemon=True)
+    stream_thread.start()
+
+    try:
+        while True:
+            try:
+                event = event_queue.get(timeout=15)  # 15s keepalive interval
+            except queue.Empty:
+                # No event — send keepalive ping to prevent connection drop
+                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                continue
+
+            if event is None:
+                break  # Stream done
+
+            event_type = event.get("type", "")
+
+            # OpenAI chat completion format
+            choices = event.get("choices", [])
+            if choices:
+                delta = choices[0].get("delta", {})
+                finish_reason = choices[0].get("finish_reason")
+
+                content = delta.get("content", "")
+                if content:
+                    assistant_content += content
+                    yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
+
+                # Forward tool calls
+                tool_calls = delta.get("tool_calls", [])
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    tool_name = fn.get("name", "")
+                    tool_args = fn.get("arguments", "")
+                    if tool_name:
+                        try:
+                            tool_input = json.loads(tool_args) if tool_args else {}
+                        except json.JSONDecodeError:
+                            tool_input = tool_args
+                        yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_input})}\n\n"
+
+            # Error objects
+            if "error" in event:
+                error_msg = event["error"].get("message", "Unknown error")
+                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+
+    except GeneratorExit:
+        pass  # Client disconnected
 
     # Save assistant response
     if assistant_content:
@@ -1077,7 +1110,7 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
             request_id=request_id,
         )
 
-    # Emit done
+    # Emit done immediately — usage stats fetched async by frontend via /api/mc-usage-latest
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 

@@ -202,6 +202,27 @@ header h1 {
     line-height: 1.5;
 }
 
+.thread-card .thread-user-message .user-message-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.15rem;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.thread-card .response-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.thread-card .response-meta-row .agent-name {
+    font-size: 0.7rem;
+    color: var(--accent);
+    font-weight: 500;
+}
+
 /* Timestamps for messages */
 .message-timestamp {
     font-size: 0.7rem;
@@ -211,8 +232,7 @@ header h1 {
 }
 
 .thread-card .thread-user-message .message-timestamp {
-    align-self: flex-end;
-    margin-left: 0.5rem;
+    margin-left: 0;
 }
 
 .thread-card .thread-response .response-timestamp,
@@ -234,16 +254,15 @@ header h1 {
 .thread-card .thread-response .agent-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: 0.35rem;
 }
 
 .thread-card .thread-response .agent-icon {
-    font-size: 1rem;
+    font-size: 0.85rem;
 }
 
 .thread-card .thread-response .agent-name {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--accent);
     font-weight: 500;
 }
@@ -326,32 +345,34 @@ header h1 {
 .thread-card .response-header,
 .thread-card .followup-response-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 0.5rem;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
 }
 
 .thread-card .response-feedback {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.4rem;
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 /* Feedback buttons */
 .thread-card .feedback-buttons {
     display: flex;
-    gap: 0.1rem;
+    gap: 0;
 }
 
 .thread-card .feedback-btn {
-    padding: 0.1rem 0.25rem;
+    padding: 0 0.15rem;
     background-color: transparent;
     border: none;
-    font-size: 0.75rem;
+    font-size: 0.65rem;
     cursor: pointer;
-    opacity: 0.4;
+    opacity: 0.3;
     transition: opacity 0.2s, transform 0.2s;
+    line-height: 1;
 }
 
 .thread-card .feedback-btn:hover {
@@ -370,10 +391,10 @@ header h1 {
 }
 
 .thread-card .agent-correction-link {
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     color: var(--text-secondary);
     text-decoration: none;
-    opacity: 0.5;
+    opacity: 0.3;
     transition: opacity 0.2s;
 }
 
@@ -794,6 +815,35 @@ header h1 {
 
 .thinking-accordion-content p:last-child {
     margin-bottom: 0;
+}
+
+/* Thinking animation — shimmer while agent is actively thinking */
+@keyframes thinkingShimmer {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+}
+
+.thinking-accordion.thinking-active .thinking-accordion-header {
+    background: linear-gradient(90deg,
+        var(--bg-tertiary) 0%,
+        var(--border) 25%,
+        var(--bg-tertiary) 50%,
+        var(--border) 75%,
+        var(--bg-tertiary) 100%);
+    background-size: 200% 100%;
+    animation: thinkingShimmer 2s ease-in-out infinite;
+}
+
+.thinking-accordion.thinking-active .thinking-accordion-header span:nth-child(2)::after {
+    content: '...';
+    animation: thinkingDots 1.5s steps(4, end) infinite;
+}
+
+@keyframes thinkingDots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
 }
 
 /* ─── Task Review Sidebar ─── */

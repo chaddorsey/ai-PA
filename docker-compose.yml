@@ -813,63 +813,10 @@ services:
       - "com.ai-pa.component=completion-service"
       - "com.ai-pa.network=internal"
 
-  # Open WebUI is the front-end UI to Letta
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:0.6.22
-    container_name: open-webui
-    volumes:
-     - open-webui:/app/backend/data
-    networks: [pa-internal]
-    ports:
-      - "8080:8080"
-    environment:
-      # https://docs.openwebui.com/getting-started/env-configuration/
-      - GLOBAL_LOG_LEVEL=${OPENWEBUI_LOG_LEVEL:-INFO}
-      # Disable admin login
-      - WEBUI_AUTH=false
-      - WEBUI_BASE_URL=https://webui.cd-ai-pa.work
-      # Enable the /docs endpoint for OpenAPI viewing
-      #- ENV=dev
-      # Prevent a langchain warning
-      - USER_AGENT=openwebui
-      # Set tags and titles explictly
-      - ENABLE_TAGS_GENERATION=$ENABLE_TAGS_GENERATION
-      - ENABLE_TITLE_GENERATION=$ENABLE_TITLE_GENERATION
-      - TASK_MODEL=$TASK_MODEL
-      - TASK_MODEL_EXTERNAL=$TASK_MODEL_EXTERNAL
-      # Disable some meaningless options
-      - ENABLE_EVALUATION_ARENA_MODELS=false
-      - ENABLE_AUTOCOMPLETE_GENERATION=false
-      - ENABLE_RETRIEVAL_QUERY_GENERATION=false
-      - ENABLE_FOLLOW_UP_GENERATION=false
-      # OpenAI selection should go to Hayhooks to show agents
-      - ENABLE_OPENAI_API=true
-      - OPENAI_API_BASE_URL=http://hayhooks:1416
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # Ollama Options
-      - ENABLE_OLLAMA_API=$ENABLE_OLLAMA_API
-      - OLLAMA_BASE_URL=$OLLAMA_BASE_URL
-      # RAG options can be transformers, ollama, or openai 
-      - RAG_EMBEDDING_ENGINE=$RAG_EMBEDDING_ENGINE
-      - RAG_EMBEDDING_MODEL=$RAG_EMBEDDING_MODEL
-      - RAG_OPENAI_API_BASE_URL=http://litellm:4000
-      - RAG_OPENAI_API_KEY=$LITELLM_MASTER_KEY
-      - RAG_OLLAMA_BASE_URL=$OLLAMA_BASE_URL
-      # Tavily Web Search in Open WebUI
-      - ENABLE_WEB_SEARCH=$ENABLE_WEB_SEARCH
-      - WEB_SEARCH_ENGINE=$WEB_SEARCH_ENGINE
-      - TAVILY_API_KEY=$TAVILY_API_KEY
-      # Audio options
-      - AUDIO_STT_ENGINE=$AUDIO_STT_ENGINE
-    restart: unless-stopped
-    # https://docs.openwebui.com/getting-started/advanced-topics/monitoring/#basic-health-check-endpoint
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 18
-      start_period: 5s
-
+  # Open WebUI — DEPRECATED (removed 2026-03-24)
+  # Was used as a chat UI proxy to Letta. pa-web-ui now talks to Letta directly.
+  # Volume 'open-webui' retained in case data recovery is needed.
+  # To fully remove: docker volume rm ai-pa_open-webui
 
   slack-mcp-server:
     image: ghcr.io/korotovsky/slack-mcp-server:latest
@@ -1453,6 +1400,9 @@ services:
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       - GWS_BRIDGE_URL=http://gws-bridge:8098
       - MISSION_CONTROL_AGENT_ID=${MISSION_CONTROL_AGENT_ID:-agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef}
+      - LETTABOT_API_URL=http://host.docker.internal:8080
+      - LETTABOT_API_KEY=${LETTABOT_API_KEY:-}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
       - OMNIFOCUS_BRIDGE_URL=http://host.docker.internal:8889
       - FOLLOWUP_QUEUE=/data/timer-logs/pending-followups.jsonl
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
