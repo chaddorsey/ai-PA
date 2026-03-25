@@ -121,9 +121,17 @@ def run_notebooklm(command: str, timeout: int = 60) -> Dict[str, Any]:
                 # Could be a file path on the remote laptop — try SCP fetch
                 remote_host = os.environ.get("NOTEBOOKLM_REMOTE_HOST", "")
                 if remote_host:
-                    local_staging = _scp_fetch(remote_host, part)
-                    if isinstance(local_staging, dict):
-                        return local_staging
+                    staging_dir = "/tmp/notebooklm-staging"
+                    os.makedirs(staging_dir, exist_ok=True)
+                    basename = os.path.basename(part)
+                    local_staging = os.path.join(staging_dir, basename)
+                    scp_result = subprocess.run(
+                        ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
+                         f"{remote_host}:{part}", local_staging],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if scp_result.returncode != 0:
+                        return {"status": "error", "error_message": f"Failed to fetch {part} from {remote_host}: {scp_result.stderr[:300]}"}
                     parts[i] = local_staging
                     staging_files.append(local_staging)
 
@@ -160,31 +168,4 @@ def run_notebooklm(command: str, timeout: int = 60) -> Dict[str, Any]:
         return {"status": "error", "error_message": f"{str(e)}\n{traceback.format_exc()}"}
 
 
-def _scp_fetch(host: str, remote_path: str):
-    """Fetch a file from a remote host via SCP. Returns local path or error dict.
-
-    Args:
-        host: Tailscale hostname or IP.
-        remote_path: Absolute path on the remote machine.
-
-    Returns:
-        Local staging path (str) on success, or error dict on failure.
-    """
-    import os
-    import subprocess
-
-    staging_dir = "/tmp/notebooklm-staging"
-    os.makedirs(staging_dir, exist_ok=True)
-    basename = os.path.basename(remote_path)
-    local_staging = os.path.join(staging_dir, basename)
-    scp_result = subprocess.run(
-        ["scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-         f"{host}:{remote_path}", local_staging],
-        capture_output=True, text=True, timeout=30,
-    )
-    if scp_result.returncode != 0:
-        return {
-            "status": "error",
-            "error_message": f"Failed to fetch file from {host}:{remote_path} — {scp_result.stderr[:500]}",
-        }
-    return local_staging
+    # _scp_fetch was here — inlined into run_notebooklm to avoid Letta extraction issues
