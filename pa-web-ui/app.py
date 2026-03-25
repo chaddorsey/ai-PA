@@ -686,31 +686,40 @@ LITELLM_KEY = os.getenv("LITELLM_MASTER_KEY", "")
 def get_mc_usage():
     """Get the most recent LLM usage stats for MC, including cache info."""
     try:
-        # Query LiteLLM spend logs for the most recent MC call
-        resp = http_client.get(
-            f"{LITELLM_URL}/spend/logs",
-            params={"limit": 1},
-            headers={"Authorization": f"Bearer {LITELLM_KEY}"},
-            timeout=20,
+        # Query litellm DB directly (much faster than litellm's spend API)
+        litellm_db_url = os.getenv(
+            "LITELLM_DATABASE_URL",
+            "postgresql://litellm:litellm_secret@supabase-db:5432/litellm"
         )
-        resp.raise_for_status()
-        data = resp.json()
-        if not data or not isinstance(data, list):
+        import psycopg2 as _pg
+        conn = _pg.connect(litellm_db_url)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT model, spend,
+                           (metadata::json->'usage_object'->>'prompt_tokens')::int as prompt_tokens,
+                           (metadata::json->'usage_object'->>'completion_tokens')::int as completion_tokens,
+                           (metadata::json->'usage_object'->>'total_tokens')::int as total_tokens,
+                           (metadata::json->'usage_object'->'prompt_tokens_details'->>'cached_tokens')::int as cached_tokens,
+                           (metadata::json->'usage_object'->'completion_tokens_details'->>'reasoning_tokens')::int as reasoning_tokens,
+                           "startTime" as timestamp
+                    FROM "LiteLLM_SpendLogs"
+                    ORDER BY "startTime" DESC
+                    LIMIT 1
+                """)
+                row = cur.fetchone()
+        finally:
+            conn.close()
+
+        if not row:
             return jsonify({"error": "no data"})
 
-        entry = data[0]
-        meta = entry.get("metadata", {})
-        usage = meta.get("usage_object", {})
-        prompt_details = usage.get("prompt_tokens_details", {})
-        completion_details = usage.get("completion_tokens_details", {})
-
-        prompt_tokens = usage.get("prompt_tokens", 0) or entry.get("prompt_tokens", 0)
-        cached_tokens = prompt_details.get("cached_tokens", 0) or 0
-        completion_tokens = usage.get("completion_tokens", 0) or entry.get("completion_tokens", 0)
-        reasoning_tokens = completion_details.get("reasoning_tokens", 0) or 0
-        spend = entry.get("spend", 0)
-        model = entry.get("model_group", entry.get("model", ""))
-
+        prompt_tokens = row["prompt_tokens"] or 0
+        cached_tokens = row["cached_tokens"] or 0
+        completion_tokens = row["completion_tokens"] or 0
+        reasoning_tokens = row["reasoning_tokens"] or 0
+        spend = row["spend"] or 0
+        model = (row["model"] or "").replace("openai/", "")
         cache_pct = round(cached_tokens / prompt_tokens * 100) if prompt_tokens > 0 else 0
 
         return jsonify({
@@ -719,10 +728,10 @@ def get_mc_usage():
             "cache_pct": cache_pct,
             "completion_tokens": completion_tokens,
             "reasoning_tokens": reasoning_tokens,
-            "total_tokens": usage.get("total_tokens", 0),
-            "spend": round(spend, 4),
+            "total_tokens": row["total_tokens"] or 0,
+            "spend": round(float(spend), 4),
             "model": model,
-            "timestamp": entry.get("startTime", ""),
+            "timestamp": str(row["timestamp"] or ""),
         })
     except Exception as e:
         return jsonify({"error": str(e)})
@@ -1078,7 +1087,8 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
                     assistant_content += content
                     yield f"data: {json.dumps({'type': 'text', 'content': content})}\n\n"
 
-                # Forward tool calls
+                # Forward tool calls — OpenAI streams these in chunks:
+                # first chunk has name+args, subsequent chunks may only have args fragments
                 tool_calls = delta.get("tool_calls", [])
                 for tc in tool_calls:
                     fn = tc.get("function", {})
@@ -1088,7 +1098,7 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
                         try:
                             tool_input = json.loads(tool_args) if tool_args else {}
                         except json.JSONDecodeError:
-                            tool_input = tool_args
+                            tool_input = {"raw": tool_args} if tool_args else {}
                         yield f"data: {json.dumps({'type': 'tool_call', 'tool': tool_name, 'args': tool_input})}\n\n"
 
             # Error objects
@@ -1110,7 +1120,37 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
             request_id=request_id,
         )
 
-    # Emit done immediately — usage stats fetched async by frontend via /api/mc-usage-latest
+    # Fetch per-response usage stats from litellm DB (fast direct query)
+    try:
+        litellm_db_url = os.getenv(
+            "LITELLM_DATABASE_URL",
+            "postgresql://litellm:litellm_secret@supabase-db:5432/litellm"
+        )
+        usage_conn = psycopg2.connect(litellm_db_url)
+        try:
+            with usage_conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT model, spend,
+                           (metadata::json->'usage_object'->>'prompt_tokens')::int as prompt_tokens,
+                           (metadata::json->'usage_object'->>'completion_tokens')::int as completion_tokens,
+                           (metadata::json->'usage_object'->>'total_tokens')::int as total_tokens,
+                           (metadata::json->'usage_object'->'prompt_tokens_details'->>'cached_tokens')::int as cached_tokens,
+                           (metadata::json->'usage_object'->'completion_tokens_details'->>'reasoning_tokens')::int as reasoning_tokens
+                    FROM "LiteLLM_SpendLogs"
+                    ORDER BY "startTime" DESC
+                    LIMIT 1
+                """)
+                row = cur.fetchone()
+        finally:
+            usage_conn.close()
+        if row:
+            prompt = row["prompt_tokens"] or 0
+            cached = row["cached_tokens"] or 0
+            cache_pct = round(cached / prompt * 100) if prompt > 0 else 0
+            yield f"data: {json.dumps({'type': 'usage', 'data': {'prompt_tokens': prompt, 'completion_tokens': row['completion_tokens'] or 0, 'total_tokens': row['total_tokens'] or 0, 'cached_input_tokens': cached, 'reasoning_tokens': row['reasoning_tokens'] or 0, 'step_count': 1, 'cache_pct': cache_pct, 'spend': float(row['spend'] or 0), 'model': (row['model'] or '').replace('openai/', '')}})}\n\n"
+    except Exception:
+        pass  # Usage is optional
+
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 

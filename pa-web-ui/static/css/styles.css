@@ -145,16 +145,21 @@ header h1 {
 .usage-bar .cache-poor, .message-usage-stats .cache-poor { color: #FF9500; }
 .usage-bar .cache-none, .message-usage-stats .cache-none { color: #FF3B30; }
 
+.response-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+}
+
 .message-usage-stats {
     display: flex;
     gap: 0.75rem;
-    padding: 0.2rem 0.5rem;
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     font-family: 'IBM Plex Mono', monospace;
     color: var(--text-secondary);
-    opacity: 0.75;
-    border-top: 1px solid var(--border);
-    margin-top: 0.25rem;
+    opacity: 0.7;
 }
 
 /* Chat container */

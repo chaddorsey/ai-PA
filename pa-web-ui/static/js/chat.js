@@ -780,11 +780,32 @@ class ChatUI {
         statsHtml += `<span>completion: ${fmtK(completion)}</span>`;
         if (reasoningTokens > 0) statsHtml += `<span>reasoning: ${fmtK(reasoningTokens)}</span>`;
         if (steps > 1) statsHtml += `<span>steps: ${steps}</span>`;
+        const model = usageData.model;
+        if (model) statsHtml += `<span>${model}</span>`;
 
-        const statsEl = document.createElement('div');
-        statsEl.className = 'message-usage-stats';
-        statsEl.innerHTML = statsHtml;
-        card.appendChild(statsEl);
+        // Insert usage stats next to the response timestamp
+        const responseEl = card.querySelector('.thread-followup-response.active-exchange') || card.querySelector(':scope > .thread-response');
+        const timestampEl = responseEl?.querySelector('.response-timestamp');
+        if (timestampEl) {
+            // Wrap timestamp and stats in a flex row
+            let row = timestampEl.parentElement.querySelector('.response-footer-row');
+            if (!row) {
+                row = document.createElement('div');
+                row.className = 'response-footer-row';
+                timestampEl.parentNode.insertBefore(row, timestampEl);
+                row.appendChild(timestampEl);
+            }
+            const statsEl = document.createElement('span');
+            statsEl.className = 'message-usage-stats';
+            statsEl.innerHTML = statsHtml;
+            row.appendChild(statsEl);
+        } else {
+            // Fallback: append to card
+            const statsEl = document.createElement('div');
+            statsEl.className = 'message-usage-stats';
+            statsEl.innerHTML = statsHtml;
+            card.appendChild(statsEl);
+        }
 
         // Also update the global usage bar
         if (window.fetchUsageStats) window.fetchUsageStats();
@@ -1084,6 +1105,11 @@ class ChatUI {
                             this.updateThinkingContent(threadCard, thinkingContent);
                             this.scrollToBottom();
                         } else if (event.type === 'text') {
+                            // Filter out LettaBot's "[Error: error]" placeholder
+                            if (event.content && event.content.replace(/\s/g, '') === '[Error:error]') {
+                                console.debug('[SSE] Filtered LettaBot error placeholder');
+                                continue;
+                            }
                             hasReceivedContent = true;
                             content += event.content;
                             console.log('[SSE] *** TEXT EVENT RECEIVED ***', {
