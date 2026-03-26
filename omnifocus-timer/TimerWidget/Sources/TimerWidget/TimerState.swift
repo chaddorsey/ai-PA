@@ -41,7 +41,6 @@ final class TimerState: ObservableObject {
     private var cachedTaskName: String = ""
     private var pollCancellable: AnyCancellable?
     private var userActionGraceUntil: Date = .distantPast
-    private var consecutiveIdlePolls: Int = 0
     private var suppressCompletionUntil: Date = .distantPast
     var dismissedByInactivity: Bool = false
     private var collapseTimer: AnyCancellable?
@@ -92,9 +91,10 @@ final class TimerState: ObservableObject {
     }
 
     /// Suppress poll-driven state changes for a grace period after user actions.
+    /// During grace, poll updates task info but does NOT update previousPollState,
+    /// so the first post-grace poll can't see a false state transition.
     private func beginUserActionGrace() {
         userActionGraceUntil = Date().addingTimeInterval(4.0)
-        consecutiveIdlePolls = 0
         dismissedByInactivity = false
     }
 
@@ -106,13 +106,30 @@ final class TimerState: ObservableObject {
         let newState = status?.state ?? "idle"
         print("[poll] state=\(newState) widget=\(widgetState) queue=\(queue.taskIds.count) grace=\(isInGracePeriod)")
 
-        // During grace period, or while docked/collapsed, only update task info
-        if isInGracePeriod || widgetState == .docked || widgetState == .collapsed {
+        // During grace period, only update task info. Do NOT update previousPollState
+        // so the first post-grace poll can't see a false running→idle transition.
+        if isInGracePeriod {
+            if let id = status?.taskId { cachedTaskId = id }
+            if let name = status?.taskName { cachedTaskName = name }
+            if let est = status?.originalEstimate { currentEstimateMin = est }
+            // Exception: if a timer starts while docked, undock
+            if newState == "running" && widgetState == .docked {
+                cancelCollapseTimer()
+                widgetState = .running
+                if let id = status?.taskId { currentTaskId = id; cachedTaskId = id }
+                if let name = status?.taskName { currentTaskName = name; cachedTaskName = name }
+                autoQueueRunningTask()
+                previousPollState = newState
+            }
+            return
+        }
+
+        // Docked/collapsed — update info but don't change state
+        if widgetState == .docked || widgetState == .collapsed {
             if let id = status?.taskId { cachedTaskId = id }
             if let name = status?.taskName { cachedTaskName = name }
             if let est = status?.originalEstimate { currentEstimateMin = est }
             previousPollState = newState
-            // Exception: if a timer starts while docked, undock
             if newState == "running" && widgetState == .docked {
                 cancelCollapseTimer()
                 widgetState = .running
@@ -121,11 +138,6 @@ final class TimerState: ObservableObject {
                 autoQueueRunningTask()
             }
             return
-        }
-
-        // Reset idle debounce on any non-idle state
-        if newState != "idle" {
-            consecutiveIdlePolls = 0
         }
 
         switch newState {
@@ -150,17 +162,10 @@ final class TimerState: ObservableObject {
             showUndo = false
 
         case "idle":
-            consecutiveIdlePolls += 1
             let wasActive = (previousPollState == "running" || previousPollState == "paused")
             let suppressCompletion = Date() < suppressCompletionUntil
 
-            // Require 2 consecutive idle polls to confirm timer truly stopped,
-            // but only when widget thinks it's still running. This prevents
-            // false completion when OmniFocus briefly reports idle between
-            // play press and timer actually starting. Once widget is already
-            // in completing/lastCompleted state, skip the debounce.
-            let needsDebounce = (widgetState == .running) && consecutiveIdlePolls < 2
-            if wasActive && !suppressCompletion && !needsDebounce && widgetState != .completing && widgetState != .lastCompleted {
+            if wasActive && !suppressCompletion && widgetState != .completing && widgetState != .lastCompleted {
                 // Timer stopped externally (Caps Lock, CLI, etc.) — trigger completion
                 currentTaskId = cachedTaskId
                 currentTaskName = cachedTaskName
@@ -174,8 +179,8 @@ final class TimerState: ObservableObject {
                     queue.removeTask(id: cachedTaskId)
                 }
 
-                // After confetti, transition to next state
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                // Transition to next state after brief delay for confetti
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                     guard let self = self, self.widgetState == .completing else { return }
                     if !self.queue.taskIds.isEmpty {
                         self.transitionToQueued(index: 0)
@@ -309,7 +314,8 @@ final class TimerState: ObservableObject {
 
     func donePressed() {
         guard widgetState == .running || widgetState == .paused else { return }
-        beginUserActionGrace()
+        // Suppress poll-driven completion detection while we handle it ourselves
+        suppressCompletionUntil = Date().addingTimeInterval(6.0)
         widgetState = .completing
         let taskId = currentTaskId
         undoTaskId = taskId

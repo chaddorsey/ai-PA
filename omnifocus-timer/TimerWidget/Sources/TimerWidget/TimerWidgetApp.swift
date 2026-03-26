@@ -167,6 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             self.state.queue.loadQueueSync()
             self.state.dismissedByInactivity = false
+            self.state.queueCount = self.state.queue.taskIds.count
             DispatchQueue.global(qos: .userInitiated).async {
                 self.state.queue.resolveFromOmniFocus(bridge: self.state.bridge)
                 DispatchQueue.main.async {
