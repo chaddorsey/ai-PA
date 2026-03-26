@@ -41,6 +41,7 @@ final class TimerState: ObservableObject {
     private var cachedTaskName: String = ""
     private var pollCancellable: AnyCancellable?
     private var userActionGraceUntil: Date = .distantPast
+    private var consecutiveIdlePolls: Int = 0
     private var suppressCompletionUntil: Date = .distantPast
     var dismissedByInactivity: Bool = false
     private var collapseTimer: AnyCancellable?
@@ -93,6 +94,7 @@ final class TimerState: ObservableObject {
     /// Suppress poll-driven state changes for a grace period after user actions.
     private func beginUserActionGrace() {
         userActionGraceUntil = Date().addingTimeInterval(4.0)
+        consecutiveIdlePolls = 0
         dismissedByInactivity = false
     }
 
@@ -121,6 +123,11 @@ final class TimerState: ObservableObject {
             return
         }
 
+        // Reset idle debounce on any non-idle state
+        if newState != "idle" {
+            consecutiveIdlePolls = 0
+        }
+
         switch newState {
         case "running":
             dismissedByInactivity = false
@@ -143,10 +150,14 @@ final class TimerState: ObservableObject {
             showUndo = false
 
         case "idle":
+            consecutiveIdlePolls += 1
             let wasActive = (previousPollState == "running" || previousPollState == "paused")
             let suppressCompletion = Date() < suppressCompletionUntil
 
-            if wasActive && !suppressCompletion && widgetState != .completing && widgetState != .lastCompleted {
+            // Require 2 consecutive idle polls to confirm timer truly stopped.
+            // Prevents false completion when OmniFocus briefly reports idle
+            // between user pressing play and the timer actually starting.
+            if wasActive && !suppressCompletion && consecutiveIdlePolls >= 2 && widgetState != .completing && widgetState != .lastCompleted {
                 // Timer stopped externally (Caps Lock, CLI, etc.) — trigger completion
                 currentTaskId = cachedTaskId
                 currentTaskName = cachedTaskName
