@@ -29,6 +29,12 @@ if [ -f "$PID_FILE" ]; then
     fi
 fi
 
+# Environment variables (match launchd plist com.omnifocus.bridge)
+export TIMER_LOG_DIR="${TIMER_LOG_DIR:-$PROJECT_ROOT/omnifocus-timer/logs}"
+export LETTA_URL="${LETTA_URL:-http://localhost:8283}"
+export MC_AGENT_ID="${MC_AGENT_ID:-agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef}"
+export ROVER_AGENT_ID="${ROVER_AGENT_ID:-agent-76ee5448-68ec-4fdd-b102-d4895d44e090}"
+
 # Start the bridge
 echo "Starting OmniFocus host bridge..."
 cd "$BRIDGE_DIR"
