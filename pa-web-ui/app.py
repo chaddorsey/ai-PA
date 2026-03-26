@@ -252,9 +252,16 @@ def save_conversation_message(
     agent_id: str = None,
     agent_name: str = None,
     request_id: str = None,
+    extra_metadata: dict = None,
 ) -> None:
     """Save a conversation message to the database."""
     try:
+        meta = {}
+        if request_id:
+            meta["request_id"] = request_id
+        if extra_metadata:
+            meta.update(extra_metadata)
+
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -269,7 +276,7 @@ def save_conversation_message(
                         message,
                         agent_id or "",
                         agent_name or "",
-                        json.dumps({"request_id": request_id}) if request_id else None,
+                        json.dumps(meta) if meta else None,
                         datetime.utcnow(),
                     ),
                 )
@@ -1109,18 +1116,8 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
     except GeneratorExit:
         pass  # Client disconnected
 
-    # Save assistant response
-    if assistant_content:
-        save_conversation_message(
-            session_id=session_id,
-            role="assistant",
-            message=assistant_content,
-            agent_id=MISSION_CONTROL_AGENT_ID,
-            agent_name="Mission Control",
-            request_id=request_id,
-        )
-
     # Fetch per-response usage stats from litellm DB (fast direct query)
+    usage_data = None
     try:
         litellm_db_url = os.getenv(
             "LITELLM_DATABASE_URL",
@@ -1147,9 +1144,31 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
             prompt = row["prompt_tokens"] or 0
             cached = row["cached_tokens"] or 0
             cache_pct = round(cached / prompt * 100) if prompt > 0 else 0
-            yield f"data: {json.dumps({'type': 'usage', 'data': {'prompt_tokens': prompt, 'completion_tokens': row['completion_tokens'] or 0, 'total_tokens': row['total_tokens'] or 0, 'cached_input_tokens': cached, 'reasoning_tokens': row['reasoning_tokens'] or 0, 'step_count': 1, 'cache_pct': cache_pct, 'spend': float(row['spend'] or 0), 'model': (row['model'] or '').replace('openai/', '')}})}\n\n"
+            usage_data = {
+                "prompt_tokens": prompt,
+                "completion_tokens": row["completion_tokens"] or 0,
+                "total_tokens": row["total_tokens"] or 0,
+                "cached_input_tokens": cached,
+                "reasoning_tokens": row["reasoning_tokens"] or 0,
+                "cache_pct": cache_pct,
+                "spend": float(row["spend"] or 0),
+                "model": (row["model"] or "").replace("openai/", ""),
+            }
+            yield f"data: {json.dumps({'type': 'usage', 'data': usage_data})}\n\n"
     except Exception:
         pass  # Usage is optional
+
+    # Save assistant response with usage metadata
+    if assistant_content:
+        save_conversation_message(
+            session_id=session_id,
+            role="assistant",
+            message=assistant_content,
+            agent_id=MISSION_CONTROL_AGENT_ID,
+            agent_name="Mission Control",
+            request_id=request_id,
+            extra_metadata={"usage": usage_data} if usage_data else None,
+        )
 
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
@@ -2283,6 +2302,27 @@ def api_omnifocus_create():
         return jsonify({"status": "ok", "omnifocus_task_id": task_id})
     except Exception as e:
         logger.error("api_omnifocus_create_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/widget-queue', methods=['POST'])
+def api_widget_queue():
+    """Proxy widget queue commands to the host bridge -> laptop SSH."""
+    try:
+        data = request.get_json()
+        action = data.get('action')
+        if not action:
+            return jsonify({"error": "action required"}), 400
+
+        resp = http_client.post(
+            f"{OMNIFOCUS_BRIDGE_URL}/widget-queue",
+            json=data,
+            timeout=25.0,
+        )
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except Exception as e:
+        logger.error("api_widget_queue_error", error=str(e))
         return jsonify({"error": str(e)}), 500
 
 
