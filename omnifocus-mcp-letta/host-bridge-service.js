@@ -25,6 +25,11 @@ const ROVER_AGENT_ID = process.env.ROVER_AGENT_ID || '';
 const DEFAULT_PLUGIN_ID = 'omnifocus-mcp';
 const DEFAULT_LIBRARY_ID = 'omnifocus-mcp';
 
+// Widget queue SSH config (laptop)
+const LAPTOP_SSH_HOST = process.env.LAPTOP_SSH_HOST || 'chaddorsey@100.95.213.46';
+const LAPTOP_SSH_KEY = process.env.LAPTOP_SSH_KEY || path.join(os.homedir(), '.ssh', 'id_ed25519');
+const WIDGET_QUEUE_SCRIPT = process.env.WIDGET_QUEUE_SCRIPT || '~/Dropbox/dev/omnifocus-timer/widget-queue.sh';
+
 // Inline base64 decoder safe for embedding in AppleScript strings.
 const B64_DECODE_JS =
   "var C='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'," +
@@ -415,6 +420,48 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+    if (req.url === '/widget-queue') {
+      req.on('end', () => {
+        try {
+          const { action, taskId, position } = JSON.parse(body);
+          if (!action) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'action required' }));
+            return;
+          }
+
+          // Build remote command
+          const parts = [WIDGET_QUEUE_SCRIPT, action];
+          if (action === 'next' && taskId) {
+            parts.push(taskId);
+          } else if (action === 'push' && taskId) {
+            parts.push(...taskId.split(',').map(s => s.trim()).filter(Boolean));
+          } else if (action === 'insert' && position !== undefined && taskId) {
+            parts.push(String(position), taskId);
+          } else if (action === 'remove' && taskId) {
+            parts.push(taskId);
+          }
+          // 'list' and 'clear' need no extra args
+
+          const remoteCmd = parts.join(' ');
+          const result = execSync(
+            `ssh -i "${LAPTOP_SSH_KEY}" -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${LAPTOP_SSH_HOST} '${remoteCmd}'`,
+            { timeout: 20000, encoding: 'utf-8' }
+          );
+
+          let parsed;
+          try { parsed = JSON.parse(result); } catch { parsed = { raw: result.trim() }; }
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(parsed));
+        } catch (err) {
+          console.error('🟥 widget-queue error:', err.message);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
   }
 
   // Fallback — not found
@@ -426,6 +473,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`OmniFocus Host Bridge Service listening on port ${PORT}`);
   console.log(`   /execute      — OmniFocus plugin commands`);
   console.log(`   /timer-event  — timer event logging`);
+  console.log(`   /widget-queue — laptop timer widget queue (SSH → ${LAPTOP_SSH_HOST})`);
   console.log(`   Timer log:    ${TIMER_LOG_DIR}/timer-events.jsonl`);
   console.log(`   Completions:  ${TIMER_LOG_DIR}/completions.jsonl`);
   if (MC_AGENT_ID) {
