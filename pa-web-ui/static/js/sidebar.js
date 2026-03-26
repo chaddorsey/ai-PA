@@ -45,6 +45,7 @@ class TaskSidebar {
     document.getElementById('of-dialog-cancel')?.addEventListener('click', () => this.closeOFDialog());
     document.getElementById('of-dialog-cancel-btn')?.addEventListener('click', () => this.closeOFDialog());
     document.getElementById('of-dialog-confirm-btn')?.addEventListener('click', () => this.confirmOFDialog());
+    document.getElementById('of-dialog-go-btn')?.addEventListener('click', () => this.confirmAndGo());
     document.getElementById('of-inbox-btn')?.addEventListener('click', () => this.selectProject(null, 'Inbox'));
 
     // Merge dialog
@@ -622,98 +623,147 @@ class TaskSidebar {
     }
   }
 
+  async createOFTaskFromDialog() {
+    const refId = this.pendingConfirmRefId;
+
+    // Fetch full passage details for note
+    let details = this.taskDetails[refId];
+    if (!details) {
+      const detResp = await fetch(`/api/tasks/${refId}`);
+      if (detResp.ok) details = await detResp.json();
+    }
+
+    // Build OmniFocus note from passage context
+    const note = this.buildOFNote(refId, details);
+
+    // Read (possibly edited) task name from dialog input
+    const taskName = document.getElementById('of-dialog-task-input').value.trim();
+    if (!taskName) throw new Error('Task name cannot be empty');
+
+    // If name was edited, persist to backend
+    const task = this.tasks.find(t => t.ref_id === refId);
+    if (task && taskName !== task.description) {
+      await fetch(`/api/tasks/${refId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_description: taskName }),
+      });
+      task.description = taskName;
+      const card = this.taskList.querySelector(`.task-card[data-ref-id="${refId}"]`);
+      const descEl = card?.querySelector('.task-card-description');
+      if (descEl) descEl.textContent = taskName;
+    }
+
+    // Create OmniFocus task
+    const createResp = await fetch('/api/tasks/omnifocus-create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: taskName,
+        projectId: this.selectedProjectId,
+        note: note,
+        estimatedMinutes: task ? task.estimate_minutes : null,
+      }),
+    });
+
+    if (!createResp.ok) {
+      const err = await createResp.json();
+      throw new Error(err.error || 'Failed to create OmniFocus task');
+    }
+
+    const createData = await createResp.json();
+    const omnifocusTaskId = createData.omnifocus_task_id;
+
+    // Transition to confirmed
+    const transResp = await fetch(`/api/tasks/${refId}/transition`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'confirm',
+        omnifocus_task_id: omnifocusTaskId,
+      }),
+    });
+
+    if (!transResp.ok) {
+      const err = await transResp.json();
+      throw new Error(err.error || 'Failed to confirm task');
+    }
+
+    return omnifocusTaskId;
+  }
+
+  cleanupAfterConfirm(refId) {
+    this.closeOFDialog();
+    const card = this.taskList.querySelector(`.task-card[data-ref-id="${refId}"]`);
+    if (card) this.removeCard(card);
+    this.tasks = this.tasks.filter(t => t.ref_id !== refId);
+    this.selectedRefIds.delete(refId);
+    delete this.taskDetails[refId];
+    this.updateBadge(this.tasks.length);
+    this.updateBulkBar();
+  }
+
   async confirmOFDialog() {
     const refId = this.pendingConfirmRefId;
     if (!refId) return;
 
     const confirmBtn = document.getElementById('of-dialog-confirm-btn');
+    const goBtn = document.getElementById('of-dialog-go-btn');
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Loading details\u2026';
+    if (goBtn) goBtn.disabled = true;
+    confirmBtn.textContent = 'Creating\u2026';
 
     try {
-      // 0. Fetch full passage details for note
-      let details = this.taskDetails[refId];
-      if (!details) {
-        const detResp = await fetch(`/api/tasks/${refId}`);
-        if (detResp.ok) details = await detResp.json();
-      }
-
-      // Build OmniFocus note from passage context
-      const note = this.buildOFNote(refId, details);
-
-      // Read (possibly edited) task name from dialog input
-      const taskInput = document.getElementById('of-dialog-task-input');
-      const taskName = taskInput.value.trim();
-      if (!taskName) { alert('Task name cannot be empty'); return; }
-
-      // If name was edited, persist to backend
-      const task = this.tasks.find(t => t.ref_id === refId);
-      if (task && taskName !== task.description) {
-        await fetch(`/api/tasks/${refId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ task_description: taskName }),
-        });
-        task.description = taskName;
-        // Update card text in sidebar
-        const card = this.taskList.querySelector(`.task-card[data-ref-id="${refId}"]`);
-        const descEl = card?.querySelector('.task-card-description');
-        if (descEl) descEl.textContent = taskName;
-      }
-
-      confirmBtn.textContent = 'Creating\u2026';
-
-      // 1. Create OmniFocus task
-      const createResp = await fetch('/api/tasks/omnifocus-create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: taskName,
-          projectId: this.selectedProjectId,
-          note: note,
-          estimatedMinutes: task ? task.estimate_minutes : null,
-        }),
-      });
-
-      if (!createResp.ok) {
-        const err = await createResp.json();
-        throw new Error(err.error || 'Failed to create OmniFocus task');
-      }
-
-      const createData = await createResp.json();
-      const omnifocusTaskId = createData.omnifocus_task_id;
-
-      // 2. Transition to confirmed
-      const transResp = await fetch(`/api/tasks/${refId}/transition`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'confirm',
-          omnifocus_task_id: omnifocusTaskId,
-        }),
-      });
-
-      if (!transResp.ok) {
-        const err = await transResp.json();
-        throw new Error(err.error || 'Failed to confirm task');
-      }
-
-      // 3. Close dialog & remove card
-      this.closeOFDialog();
-      const card = this.taskList.querySelector(`.task-card[data-ref-id="${refId}"]`);
-      if (card) this.removeCard(card);
-
-      this.tasks = this.tasks.filter(t => t.ref_id !== refId);
-      this.selectedRefIds.delete(refId);
-      delete this.taskDetails[refId];
-      this.updateBadge(this.tasks.length);
-      this.updateBulkBar();
-
+      await this.createOFTaskFromDialog();
+      this.cleanupAfterConfirm(refId);
     } catch (e) {
       alert(`Confirm failed: ${e.message}`);
     } finally {
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Confirm';
+      if (goBtn) goBtn.disabled = false;
+    }
+  }
+
+  async confirmAndGo() {
+    const refId = this.pendingConfirmRefId;
+    if (!refId) return;
+
+    const goBtn = document.getElementById('of-dialog-go-btn');
+    const confirmBtn = document.getElementById('of-dialog-confirm-btn');
+    goBtn.disabled = true;
+    confirmBtn.disabled = true;
+    goBtn.textContent = 'Creating\u2026';
+
+    try {
+      // Create the OmniFocus task
+      const omnifocusTaskId = await this.createOFTaskFromDialog();
+
+      // Queue it via the 'next' command
+      goBtn.textContent = 'Queueing\u2026';
+      const queueResp = await fetch('/api/tasks/widget-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'next', taskId: omnifocusTaskId }),
+      });
+
+      if (!queueResp.ok) {
+        const err = await queueResp.json();
+        throw new Error(err.error || `Queue failed: HTTP ${queueResp.status}`);
+      }
+
+      const queueData = await queueResp.json();
+      const pos = queueData.position === 0 ? 'first' : 'next up';
+      console.log(`[sidebar] Task queued ${pos} in widget:`, queueData);
+
+      this.cleanupAfterConfirm(refId);
+
+    } catch (e) {
+      alert(`Add & Go failed: ${e.message}`);
+    } finally {
+      goBtn.textContent = 'Add & Go';
+      goBtn.disabled = false;
+      confirmBtn.disabled = false;
     }
   }
 
