@@ -446,8 +446,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queuedGlowOpacity = 0.0
             completingPhase = .inactive
             updateView()
-            widgetFade.startFade()
-            undoFade.startFade()
+            // Dismiss immediately — confetti is the celebration, no lingering card
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self = self, self.state.widgetState == .lastCompleted else { return }
+                self.state.widgetState = .idle
+            }
 
         case .idle:
             widgetFade.stopFade()
