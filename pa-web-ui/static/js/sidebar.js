@@ -742,24 +742,23 @@ class TaskSidebar {
       // Create the OmniFocus task
       const omnifocusTaskId = await this.createOFTaskFromDialog();
 
-      // Queue it via the 'next' command
-      goBtn.textContent = 'Queueing\u2026';
-      const queueResp = await fetch('/api/tasks/widget-queue', {
+      // Dismiss dialog immediately — queue call runs in background
+      this.cleanupAfterConfirm(refId);
+
+      // Fire-and-forget: queue it via the 'next' command (includes OmniFocus sync)
+      fetch('/api/tasks/widget-queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'next', taskId: omnifocusTaskId }),
+      }).then(resp => {
+        if (resp.ok) return resp.json();
+        throw new Error(`Queue HTTP ${resp.status}`);
+      }).then(data => {
+        const pos = data.position === 0 ? 'first' : 'next up';
+        console.log(`[sidebar] Task queued ${pos} in widget:`, data);
+      }).catch(err => {
+        console.error('[sidebar] Background queue failed:', err);
       });
-
-      if (!queueResp.ok) {
-        const err = await queueResp.json();
-        throw new Error(err.error || `Queue failed: HTTP ${queueResp.status}`);
-      }
-
-      const queueData = await queueResp.json();
-      const pos = queueData.position === 0 ? 'first' : 'next up';
-      console.log(`[sidebar] Task queued ${pos} in widget:`, queueData);
-
-      this.cleanupAfterConfirm(refId);
 
     } catch (e) {
       alert(`Add & Go failed: ${e.message}`);
