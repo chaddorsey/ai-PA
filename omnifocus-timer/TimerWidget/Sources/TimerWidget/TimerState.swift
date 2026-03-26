@@ -218,7 +218,7 @@ final class TimerState: ObservableObject {
         }
     }
 
-    private func transitionToQueued(index: Int) {
+    func transitionToQueued(index: Int) {
         let resolved = queue.resolvedTasks
         guard !resolved.isEmpty else { return }
         let clamped = min(index, resolved.count - 1)

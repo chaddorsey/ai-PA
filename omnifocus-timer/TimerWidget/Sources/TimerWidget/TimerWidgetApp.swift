@@ -49,6 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var inactivityTimer: AnyCancellable?
     private let inactivityFade = FadeManager(totalDuration: 60)
     private var hostingView: NSHostingView<WidgetView>?
+    private var sighupSource: DispatchSourceSignal?
 
     // Caps Lock LED control
     private var capsBlinkTimer: AnyCancellable?
@@ -159,6 +160,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+
+        // Handle SIGHUP as queue reload signal (sent by widget-queue.sh after mutations)
+        let sighupSource = DispatchSource.makeSignalSource(signal: SIGHUP, queue: .main)
+        sighupSource.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            self.state.queue.loadQueue()
+            self.state.dismissedByInactivity = false
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.state.queue.resolveFromOmniFocus(bridge: self.state.bridge)
+                DispatchQueue.main.async {
+                    // Transition to queued if idle and queue is non-empty
+                    if self.state.widgetState == .idle && !self.state.queue.taskIds.isEmpty {
+                        self.state.transitionToQueued(index: 0)
+                    }
+                }
+            }
+        }
+        sighupSource.resume()
+        signal(SIGHUP, SIG_IGN)  // Prevent default termination
+        self.sighupSource = sighupSource
 
         // Initial visibility
         if isVisible(for: state.widgetState) {
