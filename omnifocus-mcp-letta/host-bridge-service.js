@@ -430,6 +430,17 @@ const server = http.createServer((req, res) => {
             return;
           }
 
+          // For queue additions, sync server OmniFocus first so the task
+          // is available when the laptop syncs to pull it down
+          if ((action === 'next' || action === 'push') && taskId) {
+            try {
+              execSync('osascript -e \'tell application "OmniFocus" to synchronize\'', { timeout: 10000 });
+              console.log('[widget-queue] Server OmniFocus sync triggered');
+            } catch (syncErr) {
+              console.error('[widget-queue] Server sync failed:', syncErr.message);
+            }
+          }
+
           // Build remote command
           const parts = [WIDGET_QUEUE_SCRIPT, action];
           if (action === 'next' && taskId) {
@@ -446,7 +457,7 @@ const server = http.createServer((req, res) => {
           const remoteCmd = parts.join(' ');
           const result = execSync(
             `ssh -i "${LAPTOP_SSH_KEY}" -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${LAPTOP_SSH_HOST} '${remoteCmd}'`,
-            { timeout: 20000, encoding: 'utf-8' }
+            { timeout: 45000, encoding: 'utf-8' }
           );
 
           let parsed;

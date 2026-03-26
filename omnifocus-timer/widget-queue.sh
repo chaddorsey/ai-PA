@@ -121,6 +121,29 @@ else:
       echo '{"status": "error", "message": "next requires a task ID"}'
       exit 1
     fi
+
+    # Sync laptop OmniFocus and wait for task to appear (server syncs first via bridge)
+    osascript -e 'tell application "OmniFocus" to synchronize' 2>/dev/null
+    RETRIES=0
+    while [ $RETRIES -lt 10 ]; do
+      FOUND=$(osascript -e "
+        tell application \"OmniFocus\"
+          try
+            set t to task id \"$ID\" of default document
+            return name of t
+          end try
+          return \"\"
+        end tell
+      " 2>/dev/null)
+      if [ -n "$FOUND" ]; then
+        break
+      fi
+      RETRIES=$((RETRIES + 1))
+      sleep 1
+      # Re-sync each retry
+      osascript -e 'tell application "OmniFocus" to synchronize' 2>/dev/null
+    done
+
     # Check OmniFocus timer state via AppleScript
     TIMER_RUNNING=$(osascript -e '
       tell application "OmniFocus"

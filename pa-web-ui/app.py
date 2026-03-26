@@ -2317,7 +2317,7 @@ def api_widget_queue():
         resp = http_client.post(
             f"{OMNIFOCUS_BRIDGE_URL}/widget-queue",
             json=data,
-            timeout=25.0,
+            timeout=50.0,
         )
         resp.raise_for_status()
         return jsonify(resp.json())
