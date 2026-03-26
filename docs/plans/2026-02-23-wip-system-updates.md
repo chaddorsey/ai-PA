@@ -553,4 +553,63 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
-**Completed:** Items 1-7, 12, 15, 18 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling.
+## 24. Add & Go — Sidebar Task Queue Integration (DEPLOYED)
+
+**Status:** Deployed (2026-03-26), functional with known widget animation issues
+**Plan:** [../superpowers/plans/2026-03-26-add-and-go.md](../superpowers/plans/2026-03-26-add-and-go.md)
+**Risk:** Low (additive feature, no existing behavior changes)
+
+**What was built:**
+- `widget-queue.sh next` command — smart-inserts task behind running timer or at front of queue. Syncs laptop OmniFocus and waits for task to appear before writing queue.
+- Bridge `/widget-queue` endpoint — SSHes to laptop to run queue commands. Syncs server OmniFocus before SSH so task is available when laptop pulls.
+- pa-web-ui `/api/tasks/widget-queue` proxy + green "Add & Go" button in OmniFocus dialog
+- Fire-and-forget queue call — dialog dismisses instantly after task creation, sync/queue runs in background
+- SIGHUP-based widget notification — `widget-queue.sh` sends SIGHUP after mutations, widget catches it in-process and reloads queue without restarting
+
+**Key files:**
+- `omnifocus-timer/widget-queue.sh` — `next` command + `notify_widget` helper
+- `omnifocus-mcp-letta/host-bridge-service.js` — `/widget-queue` route + SSH constants + server OmniFocus sync
+- `pa-web-ui/app.py` — `/api/tasks/widget-queue` proxy endpoint
+- `pa-web-ui/static/js/sidebar.js` — `createOFTaskFromDialog()`, `cleanupAfterConfirm()`, `confirmAndGo()`
+- `pa-web-ui/templates/index.html` — "Add & Go" button
+- `omnifocus-timer/TimerWidget/Sources/TimerWidget/TimerWidgetApp.swift` — SIGHUP handler
+- `omnifocus-timer/TimerWidget/Sources/TimerWidget/QueueManager.swift` — `loadQueueSync()`
+
+---
+
+## 25. Timer Widget Animation & State Machine Fixes (IN PROGRESS)
+
+**Status:** Partially fixed (2026-03-26) — core functionality works but animation/state issues remain
+**Risk:** Low (widget-only changes, no server-side impact)
+
+**Problem:** The timer widget's state machine has several overlapping and potentially legacy animations that produce visual glitches during state transitions. These were exposed and partially addressed during Add & Go development but need a dedicated cleanup pass.
+
+**What was fixed (2026-03-26):**
+- Grace period redesign — no longer corrupts `previousPollState`, preventing false running→idle completion detection
+- `donePressed()` uses `suppressCompletionUntil` instead of grace period (handles its own transition via callback)
+- SIGHUP handler doesn't call `beginUserActionGrace()` (not a user action)
+- Immediate dismiss after last task completion (removed 30s fade-out)
+- `transitionToQueued` sets `currentTaskId` from `taskIds` even before resolve completes (fixes navigation)
+- Poll loop refreshes `currentTaskName` from resolved data when in queued state
+
+**Known remaining issues:**
+1. **Play button card flicker** — card still briefly disappears for 1-2s when pressing play before reappearing in running state. Grace period (4s) should prevent this but something is still triggering a visual reset. May be the `startCompletingAnimation` 4.5s timer conflicting, or the view's `completingPhase` / `slideOutOffset` not being reset cleanly on queued→running transition.
+2. **Completion card persistence** — after Done button, confetti fires but the card sometimes stays in active (running) appearance instead of sliding out and dismissing. The `donePressed` callback sets `.lastCompleted` but the completing animation's 4.5s timer may be overriding the state, or the `startCompletingAnimation` slide-out phases aren't coordinating with the state machine's transition timing.
+3. **Overlapping animation timers** — `startCompletingAnimation` (4.5s, 30fps timer), `handleStateTransition` completion delay (1.5s asyncAfter), and `donePressed` callback all compete to manage the completing→lastCompleted→idle transition. These need to be unified into a single completion flow.
+4. **Legacy `widgetFade` (30s) and `undoFade` (15s)** — `.lastCompleted` previously triggered a 30-second fade-out. This was replaced with a 0.5s dismiss, but the FadeManager infrastructure and undo overlay system are still wired up and may cause unexpected visual artifacts.
+5. **`resolvedTasks` timing** — `transitionToQueued` can fire before `resolveFromOmniFocus` completes, showing "Loading…" or "Unknown task". The poll refreshes the name, but there's a visible flash of placeholder text for 2-4s.
+
+**Recommended approach:** A dedicated cleanup pass that:
+1. Removes or simplifies `startCompletingAnimation` — the slide-out/fade-in phases (designed for multi-task queue transitions) are overkill for single-task completion. Replace with a simple confetti + dismiss.
+2. Unifies the completion state machine — one code path for Done button AND external completion (Caps Lock/CLI). Both should: set `.completing` → fire confetti → wait 1-2s → transition to next queued task or `.idle`.
+3. Removes `lastCompleted` state and `widgetFade`/`undoFade` if the undo feature is no longer needed, or integrates undo into a simpler flow.
+4. Addresses `resolvedTasks` timing by either (a) blocking `transitionToQueued` until resolve completes, or (b) passing task name through the queue file so no OmniFocus lookup is needed on the widget side.
+
+**Key files:**
+- `omnifocus-timer/TimerWidget/Sources/TimerWidget/TimerState.swift` — state machine, `handlePollResult`, `donePressed`, `playPressed`
+- `omnifocus-timer/TimerWidget/Sources/TimerWidget/TimerWidgetApp.swift` — `handleStateTransition`, `startCompletingAnimation`, animation timers
+- `omnifocus-timer/TimerWidget/Sources/TimerWidget/WidgetView.swift` — view rendering per state
+
+---
+
+**Completed:** Items 1-7, 12, 15, 18, 24 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling, Add & Go sidebar queue integration.
