@@ -13,6 +13,11 @@
 QUEUE_FILE="$HOME/.omnifocus-timer-widget/queue.json"
 mkdir -p "$(dirname "$QUEUE_FILE")"
 
+# Signal widget to reload queue (SIGHUP restarts it, picking up new file contents)
+notify_widget() {
+  pkill -HUP -f 'TimerWidget' 2>/dev/null || true
+}
+
 # Ensure file exists
 if [ ! -f "$QUEUE_FILE" ]; then
   echo '{"tasks":[]}' > "$QUEUE_FILE"
@@ -30,6 +35,7 @@ ids = sys.argv[1:]
 json.dump({'tasks': ids}, open('$QUEUE_FILE', 'w'))
 print(json.dumps({'status': 'ok', 'queue': ids}))
 " "$@"
+    notify_widget
     ;;
 
   push)
@@ -44,6 +50,7 @@ for i in ids:
 json.dump(data, open('$QUEUE_FILE', 'w'))
 print(json.dumps({'status': 'ok', 'queue': data['tasks']}))
 " "$@"
+    notify_widget
     ;;
 
   insert)
@@ -61,6 +68,7 @@ data['tasks'].insert(pos, task_id)
 json.dump(data, open('$QUEUE_FILE', 'w'))
 print(json.dumps({'status': 'ok', 'queue': data['tasks']}))
 "
+    notify_widget
     ;;
 
   remove)
@@ -73,6 +81,7 @@ data['tasks'] = [t for t in data['tasks'] if t != task_id]
 json.dump(data, open('$QUEUE_FILE', 'w'))
 print(json.dumps({'status': 'ok', 'queue': data['tasks']}))
 "
+    notify_widget
     ;;
 
   move)
@@ -92,11 +101,13 @@ if task_id in data['tasks']:
 else:
     print(json.dumps({'status': 'error', 'message': 'Task not in queue'}))
 "
+    notify_widget
     ;;
 
   clear)
     echo '{"tasks":[]}' > "$QUEUE_FILE"
     echo '{"status": "ok", "queue": []}'
+    notify_widget
     ;;
 
   list)
@@ -140,6 +151,7 @@ data['tasks'].insert(pos, task_id)
 json.dump(data, open('$QUEUE_FILE', 'w'))
 print(json.dumps({'status': 'ok', 'queue': data['tasks'], 'position': pos, 'timer_running': timer_running}))
 "
+    notify_widget
     ;;
 
   *)
