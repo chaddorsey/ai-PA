@@ -154,10 +154,13 @@ final class TimerState: ObservableObject {
             let wasActive = (previousPollState == "running" || previousPollState == "paused")
             let suppressCompletion = Date() < suppressCompletionUntil
 
-            // Require 2 consecutive idle polls to confirm timer truly stopped.
-            // Prevents false completion when OmniFocus briefly reports idle
-            // between user pressing play and the timer actually starting.
-            if wasActive && !suppressCompletion && consecutiveIdlePolls >= 2 && widgetState != .completing && widgetState != .lastCompleted {
+            // Require 2 consecutive idle polls to confirm timer truly stopped,
+            // but only when widget thinks it's still running. This prevents
+            // false completion when OmniFocus briefly reports idle between
+            // play press and timer actually starting. Once widget is already
+            // in completing/lastCompleted state, skip the debounce.
+            let needsDebounce = (widgetState == .running) && consecutiveIdlePolls < 2
+            if wasActive && !suppressCompletion && !needsDebounce && widgetState != .completing && widgetState != .lastCompleted {
                 // Timer stopped externally (Caps Lock, CLI, etc.) — trigger completion
                 currentTaskId = cachedTaskId
                 currentTaskName = cachedTaskName
