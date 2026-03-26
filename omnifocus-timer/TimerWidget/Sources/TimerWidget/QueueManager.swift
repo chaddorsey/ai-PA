@@ -63,6 +63,25 @@ final class QueueManager: ObservableObject {
         }
     }
 
+    /// Synchronous load — updates taskIds immediately on the calling thread.
+    /// Use from the SIGHUP handler where resolve must see the new IDs.
+    func loadQueueSync() {
+        guard FileManager.default.fileExists(atPath: queueURL.path) else {
+            taskIds = []
+            return
+        }
+        do {
+            let attrs = try FileManager.default.attributesOfItem(atPath: queueURL.path)
+            lastModDate = attrs[.modificationDate] as? Date
+
+            let data = try Data(contentsOf: queueURL)
+            let file = try JSONDecoder().decode(QueueFile.self, from: data)
+            taskIds = file.tasks
+        } catch {
+            taskIds = []
+        }
+    }
+
     /// Resolve task details from OmniFocus for all queued IDs.
     /// Called from the poll loop with the bridge.
     func resolveFromOmniFocus(bridge: OmniFocusBridge) {

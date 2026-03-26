@@ -165,7 +165,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let sighupSource = DispatchSource.makeSignalSource(signal: SIGHUP, queue: .main)
         sighupSource.setEventHandler { [weak self] in
             guard let self = self else { return }
-            self.state.queue.loadQueue()
+            self.state.queue.loadQueueSync()
             self.state.dismissedByInactivity = false
             DispatchQueue.global(qos: .userInitiated).async {
                 self.state.queue.resolveFromOmniFocus(bridge: self.state.bridge)
