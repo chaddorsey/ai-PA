@@ -188,13 +188,21 @@ final class TimerState: ObservableObject {
                 if widgetState == .lastCompleted || widgetState == .completing {
                     // Stay in current state
                 } else if widgetState == .queued {
-                    // Stay queued — but refresh task name if resolve has updated it
+                    // Stay queued — but refresh task info if resolve has updated it
                     let resolved = queue.resolvedTasks
                     let idx = min(queueIndex, resolved.count - 1)
-                    if idx >= 0 && idx < resolved.count && resolved[idx].taskName != "Unknown task" {
-                        if currentTaskName != resolved[idx].taskName {
-                            currentTaskName = resolved[idx].taskName
-                            currentEstimateMin = resolved[idx].estimateMin
+                    if idx >= 0 && idx < resolved.count {
+                        let task = resolved[idx]
+                        // Always keep currentTaskId in sync
+                        if currentTaskId != task.taskId {
+                            currentTaskId = task.taskId
+                            cachedTaskId = task.taskId
+                        }
+                        // Update name once resolved (replaces "Unknown task")
+                        if task.taskName != "Unknown task" && currentTaskName != task.taskName {
+                            currentTaskName = task.taskName
+                            cachedTaskName = task.taskName
+                            currentEstimateMin = task.estimateMin
                         }
                     }
                 } else if widgetState == .idle && !queue.taskIds.isEmpty && !dismissedByInactivity {
@@ -233,10 +241,21 @@ final class TimerState: ObservableObject {
 
     func transitionToQueued(index: Int) {
         let resolved = queue.resolvedTasks
-        guard !resolved.isEmpty else { return }
-        let clamped = min(index, resolved.count - 1)
-        queueIndex = clamped
-        applyQueueItem(resolved[clamped])
+        if !resolved.isEmpty {
+            let clamped = min(index, resolved.count - 1)
+            queueIndex = clamped
+            applyQueueItem(resolved[clamped])
+        } else if !queue.taskIds.isEmpty {
+            // Resolve hasn't completed yet — set ID so navigation works,
+            // name will be refreshed by poll once resolve finishes
+            let clamped = min(index, queue.taskIds.count - 1)
+            queueIndex = clamped
+            currentTaskId = queue.taskIds[clamped]
+            cachedTaskId = currentTaskId
+            currentTaskName = "Loading…"
+        } else {
+            return
+        }
         widgetState = .queued
         startCollapseTimer()
     }
