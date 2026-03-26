@@ -159,16 +159,32 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                     continue
                 marker = m.group(1).strip()
                 text = m.group(2).strip()
-                item = {"marker": marker, "text": text, "line": line_num}
 
-                if marker.lower().startswith("[") and "c" in marker.lower():
-                    my_tasks.append(item)
-                elif marker == "[;]":
-                    their_tasks.append(item)
-                elif marker == ">":
-                    pointers.append(item)
-                elif marker in ("D:", "Decision:"):
-                    decisions.append(item)
+                # Split on inline [;] markers within the captured text.
+                # Users often write: [c] task1[;] task2[;] task3
+                # Handle typos like [;[ and [;} as well
+                INLINE_SPLIT = re.compile(r'\[;\]|\[;\[|\[;\}')
+                segments = INLINE_SPLIT.split(text)
+
+                first_marker = marker
+                for idx, seg in enumerate(segments):
+                    seg = seg.strip()
+                    if not seg:
+                        continue
+                    if idx == 0:
+                        cur_marker = first_marker
+                    else:
+                        cur_marker = "[;]"
+                    item = {"marker": cur_marker, "text": seg, "line": line_num}
+
+                    if cur_marker.lower().startswith("[") and "c" in cur_marker.lower():
+                        my_tasks.append(item)
+                    elif cur_marker == "[;]":
+                        their_tasks.append(item)
+                    elif cur_marker == ">":
+                        pointers.append(item)
+                    elif cur_marker in ("D:", "Decision:"):
+                        decisions.append(item)
 
         # ── Scan for deadline hints on each action item ──
         # Patterns: "by Friday", "by EOD Tuesday", "by March 15", "by 3/18",

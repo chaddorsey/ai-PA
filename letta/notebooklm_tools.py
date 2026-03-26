@@ -121,12 +121,31 @@ def run_notebooklm(command: str, output_file: Optional[str] = None, timeout: int
         if not command or not command.strip():
             return {"status": "error", "error_message": "command is required"}
 
-        # Parse command to check for file paths that need SCP fetch
+        # Parse command to check for file paths that need staging
         parts = shlex.split(command.strip())
         staging_files = []
+
+        # Server paths → container paths via volume mounts
+        VOLUME_MAPS = [
+            ("/Volumes/main-drive/ai-PA/letta/", "/app/tools/letta/"),
+            ("/Users/dorseyhomeserver/Dropbox/letta-shared-files/", "/data/shared/"),
+        ]
+
         for i, part in enumerate(parts):
             if part.startswith("/") and not part.startswith("/dev/") and not os.path.exists(part):
-                # Could be a file path on the remote laptop — try SCP fetch
+                # Try volume mount path mapping first
+                mapped = False
+                for server_prefix, container_prefix in VOLUME_MAPS:
+                    if part.startswith(server_prefix):
+                        container_path = container_prefix + part[len(server_prefix):]
+                        if os.path.exists(container_path):
+                            parts[i] = container_path
+                            mapped = True
+                            break
+                if mapped:
+                    continue
+
+                # Try SCP from remote host (for laptop files)
                 remote_host = os.environ.get("NOTEBOOKLM_REMOTE_HOST", "")
                 if remote_host:
                     staging_dir = "/tmp/notebooklm-staging"

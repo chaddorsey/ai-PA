@@ -74,6 +74,22 @@ model_list:
       model: "openai/gpt-5.4-nano"
       api_key: "os.environ/OPENAI_KEY_MAIN"
 
+  # --- Anthropic models ---
+  - model_name: "claude-sonnet-4-6"
+    litellm_params:
+      model: "anthropic/claude-sonnet-4-6"
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  - model_name: "claude-opus-4-6"
+    litellm_params:
+      model: "anthropic/claude-opus-4-6"
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  - model_name: "claude-haiku-4-5"
+    litellm_params:
+      model: "anthropic/claude-haiku-4-5-20251001"
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
   # --- companion-sleeptime_copy (Anthropic model, but embedding goes through here) ---
   # Note: This agent uses Claude, not OpenAI for chat. Embedding only.
 
