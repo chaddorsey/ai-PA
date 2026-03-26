@@ -147,6 +147,7 @@ header h1 {
 
 .response-footer-row {
     display: flex;
+    flex-direction: row-reverse;
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
@@ -2057,6 +2058,20 @@ header h1 {
 
 .dialog-btn-confirm:hover:not(:disabled) {
     background: #00eebb;
+}
+
+.dialog-btn-go {
+    background: #34C759;
+    color: #fff;
+    border: none;
+    font-weight: 600;
+}
+.dialog-btn-go:hover:not(:disabled) {
+    background: #2db84e;
+}
+.dialog-btn-go:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 /* ── OmniFocus Dialog ── */

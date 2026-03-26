@@ -611,15 +611,18 @@ class TaskSidebar {
   updateOFFooter() {
     const label = document.querySelector('.of-selected-project');
     const confirmBtn = document.getElementById('of-dialog-confirm-btn');
+    const goBtn = document.getElementById('of-dialog-go-btn');
 
     if (this.selectedProjectId !== null || this.selectedProjectName === 'Inbox') {
       label.textContent = this.selectedProjectName || 'Inbox';
       label.classList.add('has-selection');
       confirmBtn.disabled = false;
+      if (goBtn) goBtn.disabled = false;
     } else {
       label.textContent = 'No project selected';
       label.classList.remove('has-selection');
       confirmBtn.disabled = true;
+      if (goBtn) goBtn.disabled = true;
     }
   }
 
@@ -842,6 +845,11 @@ class TaskSidebar {
 
   closeOFDialog() {
     document.getElementById('of-dialog-overlay')?.classList.remove('visible');
+    const goBtn = document.getElementById('of-dialog-go-btn');
+    if (goBtn) {
+      goBtn.disabled = true;
+      goBtn.textContent = 'Add & Go';
+    }
     this.pendingConfirmRefId = null;
     this.selectedProjectId = null;
     this.selectedProjectName = null;
