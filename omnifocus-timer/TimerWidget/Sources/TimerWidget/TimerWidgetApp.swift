@@ -170,9 +170,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.global(qos: .userInitiated).async {
                 self.state.queue.resolveFromOmniFocus(bridge: self.state.bridge)
                 DispatchQueue.main.async {
-                    // Transition to queued if idle and queue is non-empty
+                    // Transition to queued after resolve completes with task names
                     if self.state.widgetState == .idle && !self.state.queue.taskIds.isEmpty {
                         self.state.transitionToQueued(index: 0)
+                    } else if self.state.widgetState == .queued {
+                        // Already queued — refresh the displayed task name from resolved data
+                        let resolved = self.state.queue.resolvedTasks
+                        let idx = min(self.state.queueIndex, resolved.count - 1)
+                        if idx >= 0 && idx < resolved.count {
+                            self.state.currentTaskName = resolved[idx].taskName
+                            self.state.currentEstimateMin = resolved[idx].estimateMin
+                        }
                     }
                 }
             }

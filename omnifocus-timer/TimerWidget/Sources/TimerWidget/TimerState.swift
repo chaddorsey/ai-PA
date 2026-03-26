@@ -185,8 +185,18 @@ final class TimerState: ObservableObject {
                 }
             } else {
                 // Already idle or suppressed
-                if widgetState == .lastCompleted || widgetState == .completing || widgetState == .queued {
-                    // Stay in current state — don't reset queue index or re-trigger transitions
+                if widgetState == .lastCompleted || widgetState == .completing {
+                    // Stay in current state
+                } else if widgetState == .queued {
+                    // Stay queued — but refresh task name if resolve has updated it
+                    let resolved = queue.resolvedTasks
+                    let idx = min(queueIndex, resolved.count - 1)
+                    if idx >= 0 && idx < resolved.count && resolved[idx].taskName != "Unknown task" {
+                        if currentTaskName != resolved[idx].taskName {
+                            currentTaskName = resolved[idx].taskName
+                            currentEstimateMin = resolved[idx].estimateMin
+                        }
+                    }
                 } else if widgetState == .idle && !queue.taskIds.isEmpty && !dismissedByInactivity {
                     transitionToQueued(index: 0)
                 }
