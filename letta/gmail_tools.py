@@ -71,9 +71,21 @@ def run_gws(command: str, params: Optional[str] = None, body: Optional[str] = No
       command="drive files get", params='{"fileId":"FILE_ID","fields":"id,name,modifiedTime,mimeType"}'
 
     === GMAIL ===
-    List messages:
+    Helpers (recommended — handle MIME, threading, attachments automatically):
+      command="gmail +send --to alice@example.com --subject 'Hello' --body 'Hi!'"
+      command="gmail +send --to alice@example.com --subject 'Hello' --body 'Hi!' --draft"
+      command="gmail +send --to a@x.com --subject 'Report' --body 'See attached' -a report.pdf"
+      command="gmail +reply --message-id MSG_ID --body 'Thanks!'"
+      command="gmail +reply --message-id MSG_ID --body 'Draft reply' --draft"
+      command="gmail +reply-all --message-id MSG_ID --body 'Noted, thanks all'"
+      command="gmail +forward --message-id MSG_ID --to bob@example.com --body 'FYI'"
+      command="gmail +forward --message-id MSG_ID --to bob@example.com --draft"
+      command="gmail +read --message-id MSG_ID"
+      command="gmail +triage"
+      command="gmail +watch"
+      Use --html flag for HTML body content. Use --draft to save instead of sending.
+    Raw API (for operations not covered by helpers):
       command="gmail users messages list", params='{"userId":"me","q":"is:unread","maxResults":5}'
-    Get a message:
       command="gmail users messages get", params='{"userId":"me","id":"MSG_ID","format":"full"}'
     Get inbox counts (use labels get, NOT messages list):
       command="gmail users labels get", params='{"userId":"me","id":"INBOX"}'
@@ -86,9 +98,11 @@ def run_gws(command: str, params: Optional[str] = None, body: Optional[str] = No
       command="gmail users drafts get", params='{"userId":"me","id":"DRAFT_ID","format":"full"}'
 
     === CALENDAR ===
-    List events:
+    Helpers:
+      command="calendar +agenda"
+      command="calendar +insert --title 'Meeting' --start '2026-04-01T10:00' --end '2026-04-01T11:00'"
+    Raw API:
       command="calendar events list", params='{"calendarId":"primary","timeMin":"2026-03-06T00:00:00Z","maxResults":10}'
-    Get event:
       command="calendar events get", params='{"calendarId":"primary","eventId":"EVENT_ID"}'
 
     === SHEETS ===
