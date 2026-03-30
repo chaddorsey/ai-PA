@@ -133,92 +133,168 @@ async def execute_script_action(action_config: Dict[str, Any]) -> Dict[str, Any]
 
 
 async def execute_agent_message_action(action_config: Dict[str, Any]) -> Dict[str, Any]:
-    """Send message to Letta agent via REST API."""
-    agent_id = action_config.get("agent_id")
+    """Send message to a Letta agent.
+
+    Routing:
+      - route="lettabot" (recommended): Routes through a LettaBot instance's
+        OpenAI-compatible API. The agent gets full client-side tools (Bash, Read,
+        Write, Edit, Glob, Grep, Task, etc.) in addition to server-side tools.
+        Requires lettabot_url and lettabot_api_key in config.
+      - route="letta" (default): Routes directly to the Letta server API.
+        The agent gets server-side tools only (no Bash/Read/Write).
+
+    Config fields:
+      agent_id:         Letta agent UUID (required for route=letta)
+      message:          Message content (required)
+      role:             "system" or "user" (default "system")
+      route:            "lettabot" or "letta" (default "letta")
+      lettabot_url:     LettaBot base URL (e.g. http://host.docker.internal:8080)
+      lettabot_api_key: LettaBot API key
+      timeout:          Request timeout in seconds (default from settings)
+    """
     message = action_config.get("message")
-    
-    if not agent_id:
-        raise ActionExecutionError("agent_message action requires 'agent_id'")
     if not message:
         raise ActionExecutionError("agent_message action requires 'message'")
-    
-    # Get Letta API URL from settings
+
+    route = action_config.get("route", "letta")
+    role = action_config.get("role", "system")
+    timeout_seconds = action_config.get("timeout", settings.agent_message_timeout_seconds)
+    started_at = datetime.utcnow()
+
+    if route == "lettabot":
+        return await _send_via_lettabot(action_config, message, role, timeout_seconds, started_at)
+    else:
+        return await _send_via_letta(action_config, message, role, timeout_seconds, started_at)
+
+
+async def _send_via_lettabot(
+    config: Dict[str, Any], message: str, role: str,
+    timeout_seconds: float, started_at: datetime,
+) -> Dict[str, Any]:
+    """Route through LettaBot's OpenAI-compatible API (full tool access)."""
+    lettabot_url = config.get("lettabot_url")
+    lettabot_api_key = config.get("lettabot_api_key")
+
+    if not lettabot_url:
+        raise ActionExecutionError(
+            "route=lettabot requires 'lettabot_url' "
+            "(e.g. http://host.docker.internal:8080)"
+        )
+
+    url = f"{lettabot_url.rstrip('/')}/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if lettabot_api_key:
+        headers["Authorization"] = f"Bearer {lettabot_api_key}"
+
+    payload = {
+        "messages": [{"role": role, "content": message}],
+        "stream": False,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+
+            logger.info(
+                "Agent message delivered via LettaBot",
+                lettabot_url=lettabot_url,
+                status_code=response.status_code,
+            )
+
+            # Extract response content
+            try:
+                data = response.json()
+                agent_response = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                )
+            except (json.JSONDecodeError, IndexError, KeyError):
+                agent_response = ""
+
+            return {
+                "status": "success",
+                "output": {
+                    "route": "lettabot",
+                    "message": message,
+                    "agent_response": agent_response[:500],
+                    "status_code": response.status_code,
+                    "started_at": started_at.isoformat(),
+                    "completed_at": datetime.utcnow().isoformat(),
+                },
+            }
+
+    except Exception as exc:
+        logger.error(
+            "Failed to deliver agent message via LettaBot",
+            lettabot_url=lettabot_url,
+            error=str(exc),
+        )
+        raise ActionExecutionError(
+            f"Failed to send message via LettaBot: {exc}"
+        ) from exc
+
+
+async def _send_via_letta(
+    config: Dict[str, Any], message: str, role: str,
+    timeout_seconds: float, started_at: datetime,
+) -> Dict[str, Any]:
+    """Route directly to Letta server API (server-side tools only)."""
+    agent_id = config.get("agent_id")
+    if not agent_id:
+        raise ActionExecutionError(
+            "agent_message with route=letta requires 'agent_id'"
+        )
+
     letta_url = settings.letta_callback_url
     if not letta_url:
         logger.warning("LETTA_CALLBACK_URL not configured, logging message instead")
-        logger.info(
-            "Agent message (would send to Letta)",
-            agent_id=agent_id,
-            message=message,
-            category=action_config.get("category"),
-        )
         return {
             "status": "success",
             "output": {
                 "method": "log_only",
+                "route": "letta",
                 "agent_id": agent_id,
                 "message": message,
                 "note": "LETTA_CALLBACK_URL not configured",
             },
         }
-    
-    # Construct Letta API endpoint
-    # Supports multiple placeholder formats:
-    # - %agent_id% (preferred)
-    # - {agent_id} (fallback)
-    # - URL-encoded versions
-    # Convert Pydantic URL to string
+
     letta_url_str = str(letta_url)
-    
-    # Handle various placeholder formats
+
     if "%agent_id%" in letta_url_str:
-        # Preferred format: %agent_id%
         url = letta_url_str.replace("%agent_id%", agent_id)
     elif "%7Bagent_id%7D" in letta_url_str:
-        # URL-encoded {agent_id}
         url = letta_url_str.replace("%7Bagent_id%7D", agent_id)
     elif "{agent_id}" in letta_url_str:
-        # Plain text {agent_id}
         url = letta_url_str.replace("{agent_id}", agent_id)
     else:
-        # No template, construct full URL
-        base_url = letta_url_str.rstrip('/')
-        # If base_url already has /api/agents or /v1/agents, don't add it again
+        base_url = letta_url_str.rstrip("/")
         if "/agents" in base_url:
             url = f"{base_url}/{agent_id}/messages"
         else:
-            # Assume we need to add the full path
             url = f"{base_url}/v1/agents/{agent_id}/messages"
-    
-    # Send message to Letta
-    # Letta API expects: {"messages": [{"role": "user"|"system", "content": "text"}]}
-    started_at = datetime.utcnow()
+
     try:
-        timeout_seconds = action_config.get("timeout", settings.agent_message_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(
                 url,
-                json={
-                    "messages": [
-                        {
-                            "role": "system",  # Scheduler messages come as system messages
-                            "content": message,
-                        }
-                    ]
-                },
+                json={"messages": [{"role": role, "content": message}]},
             )
             response.raise_for_status()
-            
+
             logger.info(
-                "Agent message delivered",
+                "Agent message delivered via Letta API",
                 agent_id=agent_id,
                 url=url,
                 status_code=response.status_code,
             )
-            
+
             return {
                 "status": "success",
                 "output": {
+                    "route": "letta",
                     "agent_id": agent_id,
                     "message": message,
                     "status_code": response.status_code,
@@ -226,15 +302,17 @@ async def execute_agent_message_action(action_config: Dict[str, Any]) -> Dict[st
                     "completed_at": datetime.utcnow().isoformat(),
                 },
             }
-    
+
     except Exception as exc:
         logger.error(
-            "Failed to deliver agent message",
+            "Failed to deliver agent message via Letta API",
             agent_id=agent_id,
             url=url,
             error=str(exc),
         )
-        raise ActionExecutionError(f"Failed to send message to agent {agent_id}: {exc}") from exc
+        raise ActionExecutionError(
+            f"Failed to send message to agent {agent_id}: {exc}"
+        ) from exc
 
 
 ACTION_EXECUTORS = {
