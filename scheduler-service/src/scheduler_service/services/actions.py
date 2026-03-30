@@ -347,6 +347,7 @@ async def execute_lettabot_heartbeat_action(action_config: Dict[str, Any]) -> Di
       lettabot_url:      Override LettaBot URL (optional — auto-resolved from registry)
       lettabot_api_key:  Override API key (optional — auto-resolved from registry)
       model:             Override model for this message (optional, e.g. "gpt-5.4-mini")
+      skip_if_busy:      Skip if agent has an active run (default True). Prevents overlap.
     """
     message = action_config.get("message")
     if not message:
@@ -355,6 +356,36 @@ async def execute_lettabot_heartbeat_action(action_config: Dict[str, Any]) -> Di
     # Resolve LettaBot endpoint from registry or explicit config
     agent_id = action_config.get("agent_id", "")
     lb_entry = settings.lettabot_agents.get(agent_id, {})
+
+    # Skip if agent has an active run (simple mutex to prevent overlap)
+    skip_if_busy = action_config.get("skip_if_busy", True)
+    if skip_if_busy and agent_id and settings.letta_callback_url:
+        try:
+            letta_base = str(settings.letta_callback_url).split("/v1/")[0]
+            async with httpx.AsyncClient(timeout=5) as check_client:
+                resp = await check_client.get(
+                    f"{letta_base}/v1/runs/",
+                    params={"agent_id": agent_id, "limit": 1},
+                )
+                if resp.status_code == 200:
+                    runs = resp.json()
+                    if runs and runs[0].get("status") in ("running", "pending", "queued"):
+                        logger.info(
+                            "Skipping heartbeat — agent has active run",
+                            agent_id=agent_id,
+                            run_id=runs[0].get("id"),
+                            run_status=runs[0].get("status"),
+                        )
+                        return {
+                            "status": "skipped",
+                            "output": {
+                                "reason": "agent_busy",
+                                "active_run": runs[0].get("id"),
+                                "active_status": runs[0].get("status"),
+                            },
+                        }
+        except Exception as e:
+            logger.warning("Run check failed, proceeding with heartbeat", error=str(e))
     lettabot_url = action_config.get("lettabot_url") or lb_entry.get("url")
     lettabot_api_key = action_config.get("lettabot_api_key") or lb_entry.get("api_key")
 
