@@ -414,6 +414,7 @@ services:
       SCHEDULER_DB_PASSWORD: ${SCHEDULER_DB_PASSWORD:-scheduler_secret}
       SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
       LETTA_CALLBACK_URL: ${LETTA_CALLBACK_URL:-http://letta:8283/v1/agents/%agent_id%/messages}
+      LETTABOT_AGENTS: '{"agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef":{"url":"http://host.docker.internal:8080","api_key":"${LETTABOT_API_KEY}"}}'
       ALLOWLIST_SCRIPT_DIR: /app/scripts
       LETTA_BASE_URL: http://letta:8283
       SCHEDULER_TIMEZONE: America/New_York

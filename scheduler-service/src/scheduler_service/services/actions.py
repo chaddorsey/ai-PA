@@ -156,10 +156,24 @@ async def execute_agent_message_action(action_config: Dict[str, Any]) -> Dict[st
     if not message:
         raise ActionExecutionError("agent_message action requires 'message'")
 
-    route = action_config.get("route", "letta")
     role = action_config.get("role", "system")
     timeout_seconds = action_config.get("timeout", settings.agent_message_timeout_seconds)
     started_at = datetime.utcnow()
+
+    # Auto-resolve routing: check if the agent has a LettaBot endpoint registered.
+    # Explicit route in config overrides auto-detection.
+    route = action_config.get("route")
+    if route is None:
+        agent_id = action_config.get("agent_id", "")
+        lb_entry = settings.lettabot_agents.get(agent_id)
+        if lb_entry:
+            route = "lettabot"
+            # Inject registry values as defaults (config overrides registry)
+            action_config.setdefault("lettabot_url", lb_entry.get("url"))
+            action_config.setdefault("lettabot_api_key", lb_entry.get("api_key"))
+            logger.info("Auto-routed agent via LettaBot", agent_id=agent_id)
+        else:
+            route = "letta"
 
     if route == "lettabot":
         return await _send_via_lettabot(action_config, message, role, timeout_seconds, started_at)
@@ -315,11 +329,132 @@ async def _send_via_letta(
         ) from exc
 
 
+async def execute_lettabot_heartbeat_action(action_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Fire-and-forget message to a LettaBot agent.
+
+    Uses LettaBot's /api/v1/chat/async endpoint — returns 202 immediately,
+    agent processes in background with full client-side tools, silent by default
+    (agent must explicitly call lettabot-message to notify user).
+
+    Optionally sets conversation routing before sending.
+
+    Config fields:
+      agent_id:          Letta agent UUID (used to look up LettaBot from registry)
+      agent_name:        LettaBot agent name (e.g. "Mission Control")
+      message:           Prompt to send
+      conversation_id:   Target conversation UUID (optional — sets routing before send)
+      conversation_key:  Conversation key for routing (optional, e.g. "heartbeat", "scheduler")
+      lettabot_url:      Override LettaBot URL (optional — auto-resolved from registry)
+      lettabot_api_key:  Override API key (optional — auto-resolved from registry)
+      model:             Override model for this message (optional, e.g. "gpt-5.4-mini")
+    """
+    message = action_config.get("message")
+    if not message:
+        raise ActionExecutionError("lettabot_heartbeat requires 'message'")
+
+    # Resolve LettaBot endpoint from registry or explicit config
+    agent_id = action_config.get("agent_id", "")
+    lb_entry = settings.lettabot_agents.get(agent_id, {})
+    lettabot_url = action_config.get("lettabot_url") or lb_entry.get("url")
+    lettabot_api_key = action_config.get("lettabot_api_key") or lb_entry.get("api_key")
+
+    if not lettabot_url:
+        raise ActionExecutionError(
+            "lettabot_heartbeat requires lettabot_url or agent_id in LETTABOT_AGENTS registry"
+        )
+
+    agent_name = action_config.get("agent_name", "Mission Control")
+    base_url = lettabot_url.rstrip("/")
+    headers = {"Content-Type": "application/json"}
+    if lettabot_api_key:
+        headers["X-Api-Key"] = lettabot_api_key
+
+    started_at = datetime.utcnow()
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # Step 1 (optional): Set conversation routing
+            conv_id = action_config.get("conversation_id")
+            conv_key = action_config.get("conversation_key")
+            if conv_id:
+                conv_payload = {
+                    "conversationId": conv_id,
+                    "agent": agent_name,
+                }
+                if conv_key:
+                    conv_payload["key"] = conv_key
+                conv_resp = await client.post(
+                    f"{base_url}/api/v1/conversation",
+                    json=conv_payload,
+                    headers=headers,
+                )
+                if conv_resp.status_code != 200:
+                    logger.warning(
+                        "Conversation routing failed",
+                        status=conv_resp.status_code,
+                        body=conv_resp.text[:200],
+                    )
+
+            # Step 2: Fire-and-forget async message
+            payload: Dict[str, Any] = {
+                "message": message,
+                "agent": agent_name,
+            }
+            # Optional model override
+            model = action_config.get("model")
+            if model:
+                payload["model"] = model
+
+            response = await client.post(
+                f"{base_url}/api/v1/chat/async",
+                json=payload,
+                headers=headers,
+            )
+
+            if response.status_code != 202:
+                raise ActionExecutionError(
+                    f"Expected 202, got {response.status_code}: {response.text[:200]}"
+                )
+
+            logger.info(
+                "LettaBot heartbeat queued",
+                agent_name=agent_name,
+                agent_id=agent_id,
+            )
+
+            return {
+                "status": "success",
+                "output": {
+                    "route": "lettabot_heartbeat",
+                    "agent_name": agent_name,
+                    "agent_id": agent_id,
+                    "message": message[:200],
+                    "conversation_id": conv_id,
+                    "model": model,
+                    "started_at": started_at.isoformat(),
+                    "completed_at": datetime.utcnow().isoformat(),
+                },
+            }
+
+    except ActionExecutionError:
+        raise
+    except Exception as exc:
+        logger.error(
+            "LettaBot heartbeat failed",
+            agent_name=agent_name,
+            error=str(exc),
+        )
+        raise ActionExecutionError(
+            f"LettaBot heartbeat failed for {agent_name}: {exc}"
+        ) from exc
+
+
 ACTION_EXECUTORS = {
     "http": execute_http_action,
     "webhook": execute_http_action,
     "script": execute_script_action,
     "agent_message": execute_agent_message_action,
+    "lettabot_heartbeat": execute_lettabot_heartbeat_action,
 }
 
 

@@ -55,6 +55,14 @@ class Settings(BaseSettings):
         default=300.0, alias="AGENT_MESSAGE_TIMEOUT_SECONDS"
     )
 
+    # LettaBot agent registry: JSON mapping agent IDs to LettaBot endpoints.
+    # Format: {"agent-UUID": {"url": "http://...:8080", "api_key": "..."}}
+    # Agents in this registry auto-route through LettaBot (full tool access).
+    # Agents NOT in this registry route through the Letta API directly.
+    lettabot_agents: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict, alias="LETTABOT_AGENTS"
+    )
+
     script_env_defaults: Dict[str, str] = Field(default_factory=dict)
 
     scheduler_db_password: SecretStr = Field(
