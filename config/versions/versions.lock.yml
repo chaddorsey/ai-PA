@@ -110,6 +110,19 @@ infrastructure:
     upgrade_path: "patch"
     notes: "Built from health-monitor directory, version from package.json"
 
+# CLI Tools
+cli_tools:
+  gws:
+    source: "github.com/googleworkspace/cli"
+    version: "0.22.5"
+    locked: false
+    locations:
+      - "~/bin/gws (server host)"
+      - "/usr/local/bin/gws (letta container)"
+      - "@googleworkspace/cli (gws-bridge, npm)"
+    upgrade_path: "auto"
+    notes: "Auto-updated weekly via scripts/update-gws.sh (cron Monday 3am)"
+
 # Supabase Services
 supabase_services:
   postgrest:
@@ -154,7 +167,7 @@ supabase_services:
 
 # Version Management Metadata
 metadata:
-  total_services: 15
+  total_services: 16
   locked_services: 14
   unlocked_services: 1
   critical_services_unlocked: 0  # All critical services locked
