@@ -35,25 +35,12 @@ if [ -d "/app/tools/slack-cli" ]; then
         2>&1 | tail -3
 fi
 
-# Install gws CLI (Google Workspace) for Gmail/Calendar/Drive API access
-GWS_VERSION=0.7.0
-ARCH=$(uname -m)
-if [ "$ARCH" = "aarch64" ]; then
-    TARGET="aarch64-unknown-linux-gnu"
-elif [ "$ARCH" = "x86_64" ]; then
-    TARGET="x86_64-unknown-linux-gnu"
-else
-    echo "[entrypoint-wrapper] Unsupported arch for gws: $ARCH"
-    TARGET=""
-fi
-
-if [ -n "$TARGET" ] && ! command -v gws &>/dev/null; then
-    echo "[entrypoint-wrapper] Installing gws ${GWS_VERSION} (${TARGET})..."
-    curl -fsSL "https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/gws-${TARGET}.tar.gz" \
-        | tar -xz --strip-components=1 -C /usr/local/bin/ \
-        && chmod +x /usr/local/bin/gws \
-        && echo "[entrypoint-wrapper] gws ${GWS_VERSION} installed" \
-        || echo "[entrypoint-wrapper] WARNING: Failed to download gws binary"
+# Install/update gws CLI (Google Workspace) for Gmail/Calendar/Drive API access
+if [ -f "/app/tools/scripts/update-gws.sh" ]; then
+    GWS_INSTALL_DIR=/usr/local/bin bash /app/tools/scripts/update-gws.sh || \
+        echo "[entrypoint-wrapper] WARNING: gws update failed, continuing with existing version"
+elif ! command -v gws &>/dev/null; then
+    echo "[entrypoint-wrapper] WARNING: update-gws.sh not found and gws not installed"
 fi
 
 # Install SSH client for laptop access via Tailscale
