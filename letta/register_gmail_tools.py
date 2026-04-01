@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Register Google Workspace CLI tools with Letta.
 
-Registers two general-purpose tools that provide full Google Workspace API access:
+Registers two tools that provide full Google Workspace API access:
   - run_gws: General-purpose tool for ANY gws CLI command
-  - compose_gmail: Email composition with MIME construction
+  - fetch_gmail_messages: Batch-fetch Gmail messages with configurable fields
 
 Usage:
     LETTA_BASE_URL=http://localhost:8283 python register_gmail_tools.py
@@ -24,7 +24,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gmail_tools import (
     run_gws,
     fetch_gmail_messages,
-    compose_gmail,
 )
 
 LETTA_BASE_URL = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
@@ -37,7 +36,6 @@ def register_tools():
     tools = [
         (run_gws, ["gws", "google", "gmail", "calendar", "drive"]),
         (fetch_gmail_messages, ["gws", "gmail", "email", "batch", "inbox"]),
-        (compose_gmail, ["gws", "gmail", "email", "send", "draft"]),
     ]
 
     registered = []
