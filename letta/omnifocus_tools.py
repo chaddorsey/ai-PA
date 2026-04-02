@@ -9,42 +9,110 @@ def run_omnifocus(command: str, fields: Optional[str] = None, timeout: int = 30)
     Commands follow the pattern: <group> <action> [OPTIONS] [ARGS]
     All options are CLI flags passed directly in the command string.
     Use "schema --list" to see all available commands.
+    Use "schema <group>.<action>" to discover parameters for any command.
 
-    Task examples:
+    Task CRUD:
       command="task list"
       command="task list --flagged"
       command="task list --include-completed"
       command="task list --project PROJECT_ID"
-      command="task create --name 'Buy groceries' --flag --due 2026-03-10"
       command="task get TASK_ID"
+      command="task create --name 'Buy groceries' --flag --due 2026-03-10"
+      command="task create --name 'Plan meeting' --project PROJECT_ID --defer 2026-04-01"
       command="task update TASK_ID --name 'New name' --flag --due 2026-03-15"
       command="task complete TASK_ID"
+      command="task delete TASK_ID"
+      command="task count"
       command="task batch-status"
 
-    Project examples:
-      command="project list"
-      command="project create --name 'Q2 Planning' --folder FOLDER_ID"
-      command="project get PROJECT_ID"
+    Subtask / hierarchy (create child tasks, inspect tree, flatten):
+      command="task add-subtask PARENT_TASK_ID --name 'Child task'"
+      command="task add-subtask PARENT_TASK_ID --name 'Step 1' --flag --due 2026-04-01"
+      command="task subtasks TASK_ID"
+      command="task hierarchy TASK_ID"
+      command="task flatten TASK_ID"
+      command="task set-group-type TASK_ID --type parallel"
+      command="task set-group-type TASK_ID --type sequential"
+      command="task group-type TASK_ID"
 
-    Search examples (all filters are CLI flags):
+    Rich text in notes (styled text, hyperlinks, tables):
+      Segments: plain strings or objects with any combo of:
+        text (required), url, bold, italic, weight (1-9), size, font,
+        underline, strikethrough, color:[r,g,b,a], backgroundColor:[r,g,b,a],
+        align (left/right/center/justified), tabStops ("150L,300R"),
+        headIndent, firstLineIndent, lineSpacing, lineHeight, paragraphSpacing
+      Links: command="task append-rich-text TASK_ID", body='{"segments":["See: ",{"text":"Doc","url":"openfile:///path/to/file.pdf"}]}'
+      Styled: command="task append-rich-text TASK_ID", body='{"segments":[{"text":"IMPORTANT","bold":true,"color":[1,0,0,1]},": review by Friday"]}'
+      Table:  command="task append-rich-text TASK_ID", body='{"segments":[{"text":"Name\\tStatus\\n","bold":true,"tabStops":"150L"},{"text":"Task 1\\tDone\\n","tabStops":"150L"}]}'
+      Use openfile:// URLs for local file links (clickable from OmniFocus).
+
+    Task movement (re-parent, reorder):
+      command="task move TASK_ID --project PROJECT_ID"
+      command="task move TASK_ID --parent PARENT_TASK_ID"
+      command="task move TASK_ID --parent PARENT_TASK_ID --position 0"
+
+    Project management:
+      command="project list"
+      command="project list --folder FOLDER_ID"
+      command="project get PROJECT_ID"
+      command="project create --name 'Q2 Planning' --folder FOLDER_ID"
+      command="project update PROJECT_ID --name 'Renamed'"
+      command="project complete PROJECT_ID"
+      command="project move PROJECT_ID --folder FOLDER_ID"
+      command="project convert TASK_ID"
+      command="project set-group-type PROJECT_ID --type sequential"
+
+    Folder management:
+      command="folder list"
+      command="folder tree"
+      command="folder get FOLDER_ID"
+      command="folder create --name 'Work'"
+      command="folder delete FOLDER_ID"
+
+    Tag management:
+      command="tags list"
+      command="tags get TAG_ID"
+      command="tags create --name 'urgent'"
+      command="tags rename TAG_ID --name 'high-priority'"
+      command="tags delete TAG_ID"
+
+    Search (filters are CLI flags, returns active tasks only):
       command="search --flagged"
       command="search --overdue"
-      command="search --due-before 2026-03-08T23:59:59"
-      command="search --due-before 2026-03-08T23:59:59 --due-after 2026-03-08T00:00:00"
-      command="search --text 'meeting notes' --limit 10"
       command="search --available"
+      command="search --text 'meeting notes' --limit 10"
       command="search --tag TAG_ID"
-      Note: search only returns active tasks. For completed tasks, use "task list --include-completed".
+      command="search --due-before 2026-03-08T23:59:59"
+      command="search --due-after 2026-03-08T00:00:00 --due-before 2026-03-08T23:59:59"
+      For completed tasks use: command="task list --include-completed"
 
-    Inbox examples:
+    Inbox processing:
       command="inbox list"
-      command="inbox list --include-completed"
+      command="inbox context TASK_ID"
+      command="inbox process TASK_ID --project PROJECT_ID --tag TAG_ID --due 2026-04-01"
+      command="inbox bulk --project PROJECT_ID"
 
-    Other groups: folder, tag, inbox, perspective, review, analytics, transaction
+    Perspectives:
+      command="perspective list"
+      command="perspective get PERSPECTIVE_ID"
+      command="perspective switch PERSPECTIVE_ID"
+
+    Review:
+      command="review list"
+      command="review next PROJECT_ID"
+      command="review mark PROJECT_ID"
+
+    Analytics:
+      command="analytics summary"
+      command="analytics health"
+      command="analytics workload"
+      command="analytics trends"
 
     Schema discovery:
       command="schema --list"
       command="schema task.create"
+      command="schema task.add-subtask"
+      command="schema task.move"
       command="schema project.list"
 
     Args:
@@ -80,7 +148,9 @@ def run_omnifocus(command: str, fields: Optional[str] = None, timeout: int = 30)
         r = subprocess.run(cmd_parts, capture_output=True, text=True, timeout=timeout)
 
         if r.returncode != 0:
-            return {"status": "error", "error_message": r.stderr[:1000] if r.stderr else f"Exit code {r.returncode}"}
+            # Validation errors (exit 2) go to stdout as JSON; execution errors go to stderr
+            detail = r.stdout.strip() or r.stderr.strip() or f"Exit code {r.returncode}"
+            return {"status": "error", "error_message": detail[:2000]}
 
         output = r.stdout.strip()
         if not output:

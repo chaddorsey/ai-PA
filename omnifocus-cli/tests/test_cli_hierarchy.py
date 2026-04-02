@@ -19,7 +19,7 @@ def test_task_add_subtask(mock_call):
     result = runner.invoke(cli, ["task", "add-subtask", "t-1", "--name", "Do sub-thing"])
     assert result.exit_code == 0
     params = mock_call.call_args[0][1]
-    assert params["taskId"] == "t-1"
+    assert params["parentTaskId"] == "t-1"
     assert params["name"] == "Do sub-thing"
 
 

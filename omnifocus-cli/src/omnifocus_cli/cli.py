@@ -544,7 +544,7 @@ def task_add_subtask(ctx, task_id, name, note, flagged, due_date, defer_date,
         _run(ctx, "task.add-subtask", "createSubtask", {}, had_convenience_flags=had_flags)
     else:
         params = {
-            "taskId": task_id,
+            "parentTaskId": task_id,
             "name": name,
             "note": note,
             "flagged": flagged,
@@ -555,6 +555,38 @@ def task_add_subtask(ctx, task_id, name, note, flagged, due_date, defer_date,
         }
         cleaned = {k: v for k, v in params.items() if v is not None}
         _run(ctx, "task.add-subtask", "createSubtask", cleaned)
+
+
+@task.command("append-rich-text")
+@click.argument("task_id")
+@click.pass_context
+def task_append_rich_text(ctx, task_id):
+    """Append styled rich text to a task note. Requires --body with segments array.
+
+    Each segment is a plain string or an object with styling:
+      {text, url, bold, italic, size, font, underline, strikethrough, color:[r,g,b,a]}
+
+    Examples:
+      omnifocus-cli task append-rich-text TASK_ID --body '{"segments":["See: ",{"text":"Doc","url":"openfile:///path"}]}'
+      omnifocus-cli task append-rich-text TASK_ID --body '{"segments":[{"text":"IMPORTANT","bold":true,"color":[1,0,0,1]},": review before Friday"]}'
+    """
+    body = ctx.obj.get("body")
+    if body is None:
+        click.echo(json.dumps({"ok": False, "error": "validation_failed",
+                                "errors": ["--body with segments array is required"]}))
+        sys.exit(2)
+        return
+    # Inject taskId into the body JSON so _run picks it up
+    import json as _json
+    try:
+        parsed = _json.loads(body)
+    except _json.JSONDecodeError as e:
+        click.echo(json.dumps({"ok": False, "error": "invalid_json", "detail": str(e)}))
+        sys.exit(2)
+        return
+    parsed["taskId"] = task_id
+    ctx.obj["body"] = _json.dumps(parsed)
+    _run(ctx, "task.append-rich-text", "appendRichText", parsed)
 
 
 @task.command("hierarchy")

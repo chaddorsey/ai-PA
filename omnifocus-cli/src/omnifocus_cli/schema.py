@@ -117,7 +117,7 @@ SCHEMAS: dict[str, dict] = {
         "method": "createSubtask",
         "description": "Create a subtask under a parent task",
         "params": {
-            "taskId": {"type": "string", "required": True, "description": "Parent task ID"},
+            "parentTaskId": {"type": "string", "required": True, "description": "Parent task ID"},
             "name": {"type": "string", "required": True, "description": "Subtask name"},
             "note": {"type": "string", "required": False, "description": "Subtask note"},
             "flagged": {"type": "boolean", "required": False, "description": "Whether the subtask is flagged"},
@@ -146,6 +146,15 @@ SCHEMAS: dict[str, dict] = {
         "description": "Batch check completion/dropped status of multiple tasks",
         "params": {
             "taskIds": {"type": "array[string]", "required": True, "description": "List of OmniFocus task IDs to check"},
+        },
+    },
+    "task.append-rich-text": {
+        "method": "appendRichText",
+        "description": "Append styled rich text to a task note. Supports links, bold, italic, size, font, underline, strikethrough, color, alignment, tab stops, indentation, and paragraph spacing.",
+        "params": {
+            "taskId": {"type": "string", "required": True, "description": "Task ID to append to"},
+            "segments": {"type": "array", "required": True, "description": "Array of styled segments. Each is a plain string or object with: text (required), url, bold, italic, weight (1-9), size, font, underline, strikethrough, color:[r,g,b,a], backgroundColor:[r,g,b,a], align (left/right/center/justified), tabStops ('150L,300R,450C'), headIndent, firstLineIndent, lineSpacing, lineHeight, paragraphSpacing, kerning, baseline"},
+            "separator": {"type": "boolean", "required": False, "description": "Add newline before appending (default true)"},
         },
     },
     "search": {
