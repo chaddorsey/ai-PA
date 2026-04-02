@@ -612,4 +612,21 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
+---
+
+## 26. Task Extraction Pipeline Revision — Standardized Initiation + Enrichment
+
+**Status:** Plan drafted, pending review
+**Plan:** [2026-04-01-task-extraction-pipeline-revision-full.md](2026-04-01-task-extraction-pipeline-revision-full.md)
+**Risk:** Medium-high (touches all four extraction pipelines, but phased and backward-compatible)
+**Estimated effort:** 6 phases, ~3-4 weeks incremental
+
+**Problem:** Four task extraction pipelines (Slack, email, meetings, Google Docs comments) each have different architectures, context capture levels, and agent routing. The email pipeline is broken (drops full body, queue was overflowing). Google Docs comments pipeline partially built but disconnected. No standardized enrichment layer or "work packet" concept. No separation between initiation (automatable) and enrichment (reasoning-heavy).
+
+**Solution:** Standardize all pipelines around a four-stage model: CAPTURE → FORMULATE → ENRICH → CONFIRM/ACT. Introduce a "Spark Record" as a uniform intermediate format. Separate enrichment into Phase A (formulation-time, tasks agent) and Phase B (work packet assembly, MC/sleeptime). Gate enrichment depth by confidence (user-indicated vs agent-identified). Work packet primary interface is the OmniFocus task note, assembled at confirmation.
+
+**Key architectural decisions:** Single `spark_queue` block; reference-and-fetch pattern for large content; tasks agent as sole formulator; MC for deep enrichment; backward-compatible archival format additions.
+
+---
+
 **Completed:** Items 1-7, 12, 15, 18, 24 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling, Add & Go sidebar queue integration.
