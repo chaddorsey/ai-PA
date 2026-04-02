@@ -11,6 +11,16 @@
 export PATH="/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 export PYTHONPATH="/Users/chaddorsey/Dropbox/dev/omnifocus-cli/src:$PYTHONPATH"
 
+# Debounce: ignore if toggled within the last 2 seconds
+LOCKFILE="/tmp/.omnifocus-timer-toggle.lock"
+if [ -f "$LOCKFILE" ]; then
+  LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCKFILE") ))
+  if [ "$LOCK_AGE" -lt 2 ]; then
+    exit 0
+  fi
+fi
+touch "$LOCKFILE"
+
 STATUS=$(python3 -c "from omnifocus_cli.cli import cli; cli()" --format json timer status 2>/dev/null)
 STATE=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','idle'))" 2>/dev/null)
 TASK_ID=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('taskId',''))" 2>/dev/null)

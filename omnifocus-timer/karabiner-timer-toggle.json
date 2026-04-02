@@ -14,7 +14,8 @@
           },
           "to": [
             {
-              "shell_command": "/Users/chaddorsey/Dropbox/dev/omnifocus-timer/toggle-timer.sh &"
+              "shell_command": "/Users/chaddorsey/Dropbox/dev/omnifocus-timer/toggle-timer.sh &",
+              "repeat": false
             }
           ]
         }
