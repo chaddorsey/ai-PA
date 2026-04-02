@@ -448,9 +448,9 @@ def run_sync() -> dict:
                     "projectName": "",
                 }
                 try:
-                    import subprocess
+                    import subprocess, sys as _sys
                     proc = subprocess.run(
-                        [sys.executable, str(followup_script)],
+                        [_sys.executable, str(followup_script)],
                         input=json.dumps(event_data),
                         capture_output=True, text=True, timeout=30,
                     )
