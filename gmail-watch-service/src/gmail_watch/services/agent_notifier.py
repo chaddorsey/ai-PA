@@ -213,14 +213,17 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
                 lines.append(f"- **{subject}** from {from_addr}{notes_tag}")
 
         lines.append(
-            "\nProcess queued_tasks_from_email entries using "
-            "task_extraction_process_email rules. "
+            "\nIMPORTANT: Do NOT call process_email_task_queue — the entries are "
+            "already queued in your queued_tasks_from_email memory block. "
+            "Read each entry from the block, then call trigger_task_extraction() "
+            "for each one with source_type='email' and the entry's message_id, "
+            "subject, and snippet. "
             "Use origin='user-indicated' (these tasks were explicitly queued by the user "
             "via forward-to-tasks or TaskQueue label). "
             'For "explicit" marker entries, the task_hint IS the task description. '
             'For "pointer" marker entries, read the full email and expand the hint '
             "into a complete task. "
-            "Remove each entry from the block after extraction."
+            "Remove each entry from the block after successful extraction."
         )
 
         message = "\n".join(lines)

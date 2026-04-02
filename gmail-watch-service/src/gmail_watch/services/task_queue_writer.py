@@ -22,8 +22,8 @@ FORWARD_DELIMITER = re.compile(r"-{5,}\s*Forwarded message\s*-{5,}")
 FORWARDED_HEADER = re.compile(r"^(From|Date|Subject|To):\s*(.+)$", re.MULTILINE)
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w.-]+")
 
-# Task marker pattern: lines starting with [] or [ ] (explicit) or > (pointer)
-MARKER_RE = re.compile(r"^\s*(?:[-*]\s*)?(\[\s?\]|>)\s+(.+)$", re.MULTILINE)
+# Task marker pattern: lines starting with [] or [ ] or [c] (explicit) or > (pointer)
+MARKER_RE = re.compile(r"^\s*(?:[-*]\s*)?(\[\s?\]|\[\s*c\s*[\]\[]|>)\s+(.+)$", re.MULTILINE)
 
 
 class TaskQueueWriter:
@@ -218,7 +218,7 @@ class TaskQueueWriter:
             if m:
                 marker = m.group(1).strip()
                 text = m.group(2).strip()
-                marker_type = "explicit" if marker in ("[]", "[ ]") else "pointer"
+                marker_type = "pointer" if marker == ">" else "explicit"
                 markers.append({"marker_type": marker_type, "task_hint": text})
             else:
                 context_lines.append(stripped)
