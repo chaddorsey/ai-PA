@@ -606,6 +606,7 @@ class WatchManager:
                 return {"status": "ok", "processed": 0}
 
             processed = []
+            spark_records = []
             errors = []
 
             for msg_ref in messages:
@@ -717,6 +718,7 @@ class WatchManager:
 
                         # Also write Spark Record to spark_queue (new pipeline)
                         if settings.spark_queue_block_id:
+                            import json as _json
                             spark_json = self.task_queue_writer.format_spark_record(
                                 message_id=original_message_id,
                                 thread_id=original_thread_id,
@@ -740,6 +742,8 @@ class WatchManager:
                                     error=spark_result.get("error"),
                                     message_id=msg_id,
                                 )
+                            elif not spark_result.get("dedup"):
+                                spark_records.append(_json.loads(spark_json))
 
                         if write_result.get("status") != "ok":
                             errors.append({
@@ -797,10 +801,11 @@ class WatchManager:
 
             # Notify tasks agent via spark queue (new pipeline)
             # Old email agent notification disabled during transition.
-            if processed and settings.spark_queue_agent_id:
+            if spark_records and settings.spark_queue_agent_id:
                 try:
                     await self.notifier.notify_spark_queue(
-                        processed, settings.spark_queue_agent_id
+                        processed, settings.spark_queue_agent_id,
+                        spark_records=spark_records,
                     )
                 except Exception as spark_err:
                     log.error("spark_queue_notify_error", error=str(spark_err))
@@ -907,6 +912,7 @@ class WatchManager:
                 return {"status": "ok", "processed": 0}
 
             processed = []
+            spark_records = []
             errors = []
 
             for msg_ref in messages:
@@ -1069,6 +1075,9 @@ class WatchManager:
                                     error=spark_result.get("error"),
                                     doc_id=doc_id,
                                 )
+                            elif not spark_result.get("dedup"):
+                                import json as _json
+                                spark_records.append(_json.loads(spark_json))
 
                         if write_result.get("status") != "ok":
                             errors.append({
@@ -1139,10 +1148,11 @@ class WatchManager:
 
             # Notify tasks agent via spark queue (new pipeline)
             # Old docs-and-transcripts agent notification disabled during transition.
-            if processed and settings.spark_queue_agent_id:
+            if spark_records and settings.spark_queue_agent_id:
                 try:
                     await self.notifier.notify_spark_queue(
-                        processed, settings.spark_queue_agent_id
+                        processed, settings.spark_queue_agent_id,
+                        spark_records=spark_records,
                     )
                 except Exception as spark_err:
                     log.error(

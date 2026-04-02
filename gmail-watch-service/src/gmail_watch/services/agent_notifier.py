@@ -233,44 +233,70 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         self,
         entries: list[dict[str, Any]],
         agent_id: str,
+        spark_records: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Notify tasks agent that new Spark Records are ready in spark_queue.
+        """Notify tasks agent with inline Spark Record data for extraction.
 
         Args:
             entries: List of dicts with message_id, subject, from, marker_type, task_hint.
             agent_id: Tasks agent ID.
+            spark_records: Full Spark Record dicts to include inline (avoids agent needing to read block).
         """
+        import json as _json
+
         if not entries:
             return {"status": "ok", "message": "no entries"}
 
-        lines = ["[Spark Queue] New email task sparks queued for extraction\n"]
-        for entry in entries:
-            from_addr = entry.get("from", "unknown")
-            marker_type = entry.get("marker_type")
-            task_hint = entry.get("task_hint")
+        lines = [f"[Spark Queue] {len(entries)} new task spark(s) for extraction\n"]
 
-            if marker_type and task_hint:
-                tag = (
-                    "explicit task — use task_hint as description"
-                    if marker_type == "explicit"
-                    else "pointer — expand using fetch_hint to read full email"
-                )
-                lines.append(f"- **{task_hint}** from {from_addr} ({tag})")
-            else:
-                subject = entry.get("subject", "(no subject)")
-                lines.append(f"- **{subject}** from {from_addr}")
+        # Include full spark data inline so agent doesn't need to read block
+        if spark_records:
+            for i, spark in enumerate(spark_records, 1):
+                source_type = spark.get("source_type", "unknown")
+                location = spark.get("location", "")
+                from_person = spark.get("from_person", "")
+                task_hint = spark.get("task_hint")
+                reference_id = spark.get("reference_id", "")
+                origin = spark.get("origin", "user-indicated")
+                fetch_hint = spark.get("fetch_hint")
+                source_text = spark.get("source_text", "")
+
+                lines.append(f"--- SPARK {i} ---")
+                lines.append(f"source_type: {source_type}")
+                lines.append(f"location: {location}")
+                lines.append(f"from_person: {from_person}")
+                lines.append(f"reference_id: {reference_id}")
+                lines.append(f"origin: {origin}")
+                if task_hint:
+                    lines.append(f"task_hint: {task_hint}")
+                if fetch_hint:
+                    lines.append(f"fetch_hint: {fetch_hint}")
+                if source_text:
+                    lines.append(f"source_text: {source_text[:500]}")
+                lines.append("")
+        else:
+            # Fallback: summary only
+            for entry in entries:
+                from_addr = entry.get("from", "unknown")
+                marker_type = entry.get("marker_type")
+                task_hint = entry.get("task_hint")
+                if marker_type and task_hint:
+                    lines.append(f"- **{task_hint}** from {from_addr}")
+                else:
+                    subject = entry.get("subject", "(no subject)")
+                    lines.append(f"- **{subject}** from {from_addr}")
 
         lines.append(
-            "\nProcess your spark_queue memory block. Each entry is a JSON Spark Record. "
-            "For each spark:\n"
-            "1. Parse the JSON record\n"
-            "2. If task_hint is present and self-contained, use it as the task description\n"
-            "3. If task_hint is absent or a fragment, use fetch_hint to load the full email "
-            "via run_gws (e.g. run_gws('gmail get MESSAGE_ID')) and formulate the task\n"
-            "4. Call add_extracted_tasks() with the formulated task, using the spark's "
-            "reference_id, from_person, location, location_id, and origin fields\n"
-            "5. Remove the processed spark entry from the spark_queue block\n"
-            "Use origin from the spark record (user-indicated for forwarded/TaskQueue emails)."
+            "\nFor EACH spark above, call add_extracted_tasks() with:\n"
+            "- task_description: use task_hint if self-contained, otherwise formulate from source_text\n"
+            "- If fetch_hint is present (e.g. gmail:MSG_ID), fetch full content first via run_gws\n"
+            "- source_type, reference_id, from_person, location, origin: use values from spark above\n"
+            "- location_id: extract from reference_id\n"
+            "- source_text: the source_text from above (verbatim)\n"
+            "- source_timestamp: use current time if not specified\n"
+            "\nAfter ALL extractions, set your spark_queue block to:\n"
+            "# Spark Queue\n(empty)\n"
+            "\nIMPORTANT: Each spark is a DIFFERENT task. Do not conflate them."
         )
 
         message = "\n".join(lines)

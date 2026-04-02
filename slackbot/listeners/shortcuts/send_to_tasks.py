@@ -258,18 +258,33 @@ def _trigger_extraction(entry: dict, logger: Logger,
         patch_resp.raise_for_status()
         logger.info(f"Spark record written for {ref_id}")
 
-        # Notify tasks agent
-        subject = text[:80] + ("..." if len(text) > 80 else "")
+        # Notify tasks agent with inline spark data
         notify_lines = [
-            "[Spark Queue] New Slack task spark queued for extraction\n",
-            f"- **{subject}** from {from_id} in #{channel}",
-            "\nProcess the new entry in your spark_queue memory block. "
-            "Parse the JSON, apply the Context Enrichment Protocol, "
-            "call add_extracted_tasks(), then remove the entry. "
+            "[Spark Queue] 1 new Slack task spark for extraction\n",
+            "--- SPARK 1 ---",
+            f"source_type: slack",
+            f"location: #{channel}",
+            f"from_person: {from_id}",
+            f"reference_id: {ref_id}",
+            f"origin: user-indicated",
+            f"source_text: {text[:500]}",
+        ]
+        if notes:
+            notify_lines.append(f"user_notes: {notes}")
+        if thread_ts:
+            notify_lines.append(f"thread_ts: {thread_ts}")
+        if urls:
+            notify_lines.append(f"related_urls: {', '.join(urls)}")
+        notify_lines.append(
+            "\nCall add_extracted_tasks() using the fields above. "
+            "If source_text is ambiguous, fetch thread context via run_slack. "
             "Use origin='user-indicated'. "
             "This message may contain MULTIPLE tasks — extract each as a "
-            "separate add_extracted_tasks call.",
-        ]
+            "separate add_extracted_tasks call.\n"
+            "After extraction, set your spark_queue block to:\n"
+            "# Spark Queue\n(empty)\n"
+            "\nIMPORTANT: Extract from the data ABOVE, not from memory."
+        )
         notify_msg = "\n".join(notify_lines)
 
         resp = requests.post(
