@@ -269,7 +269,15 @@ These cycles are best run as periodic sleeptime or scheduled analysis tasks — 
 
 ## Phased Implementation
 
-### Phase 1: Fix Email Pipeline (immediate)
+### Phase 0: Deterministic Spark Processing Tool (COMPLETED 2026-04-02)
+- Created `process_spark_queue` Letta tool — reads block, parses JSON, calls `add_extracted_tasks` via API, clears queue
+- No LLM reasoning for parsing/field mapping — fully deterministic
+- All notifications updated to instruct agent to "Call process_spark_queue() now"
+- Eliminates the reliability gap where agents hallucinated from conversation context
+- Cron drain script (`~/bin/spark-queue-drain.sh`) fires every 2 minutes as fallback
+- **Files**: `letta/process_spark_queue_tool.py`, `scripts/spark-queue-drain.sh`
+
+### Phase 1: Fix Email Pipeline (COMPLETED 2026-04-02)
 - Increase snippet from 150 to 500 chars; add `fetch_hint` field with Gmail message ID for full retrieval during formulation
 - Route notification to tasks agent instead of email agent
 - Add `[c]` marker support (already done in gmail-watch-service)
