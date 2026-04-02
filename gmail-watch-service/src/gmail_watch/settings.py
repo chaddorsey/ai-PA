@@ -115,6 +115,18 @@ class Settings(BaseSettings):
         description="Plus-address prefix for task queue (without domain)",
     )
 
+    # Spark queue settings (standardized task extraction pipeline)
+    spark_queue_block_id: Optional[str] = Field(
+        default=None,
+        alias="SPARK_QUEUE_BLOCK_ID",
+        description="Letta memory block ID for spark_queue (tasks agent)",
+    )
+    spark_queue_agent_id: Optional[str] = Field(
+        default=None,
+        alias="SPARK_QUEUE_AGENT_ID",
+        description="Tasks agent ID for spark queue notifications",
+    )
+
     # Drive comment task queue settings
     drive_task_queue_enabled: bool = Field(
         default=False,

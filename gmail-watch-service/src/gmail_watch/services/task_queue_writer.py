@@ -150,6 +150,111 @@ class TaskQueueWriter:
             logger.error("task_queue_write_failed", error=str(e))
             return {"status": "error", "error": str(e)}
 
+    def format_spark_record(
+        self,
+        message_id: str,
+        thread_id: str,
+        subject: str,
+        from_address: str,
+        date: str,
+        snippet: str,
+        trigger: str,
+        source_type: str = "email",
+        notes: Optional[str] = None,
+        forwarded_message_id: Optional[str] = None,
+        marker_type: Optional[str] = None,
+        task_hint: Optional[str] = None,
+        context: Optional[str] = None,
+    ) -> str:
+        """Format a Spark Record for the spark_queue block.
+
+        JSON format with fetch_hint for deferred full-content retrieval.
+        """
+        import json
+        import uuid
+
+        now = datetime.now(EASTERN_TZ)
+        gmail_link = f"https://mail.google.com/mail/u/0/#inbox/{thread_id}"
+
+        # Build source_text: user notes + extended snippet (500 chars)
+        source_text_parts = []
+        if notes:
+            source_text_parts.append(notes)
+        if snippet:
+            source_text_parts.append(snippet[:500])
+        source_text = "\n---\n".join(source_text_parts) if source_text_parts else ""
+
+        origin = "user-indicated" if trigger in ("forwarded", "TaskQueue") else "agent-identified"
+
+        record = {
+            "spark_id": uuid.uuid4().hex[:8],
+            "captured_at": now.isoformat(),
+            "source_type": source_type,
+            "origin": origin,
+            "reference_id": f"email-{message_id}",
+            "source_text": source_text,
+            "from_person": from_address,
+            "location": subject,
+            "location_id": message_id,
+            "permalink": gmail_link,
+            "related_urls": [],
+            "marker_type": marker_type,
+            "task_hint": task_hint,
+            "user_notes": notes,
+            "fetch_hint": f"gmail:{message_id}",
+        }
+        if context:
+            record["surrounding_context"] = context
+        if forwarded_message_id:
+            record["forwarded_message_id"] = forwarded_message_id
+
+        return json.dumps(record)
+
+    async def write_to_spark_queue(self, spark_json: str) -> dict[str, Any]:
+        """Write a Spark Record to the spark_queue block.
+
+        Uses the spark_queue_block_id from settings.
+        """
+        spark_block_id = settings.spark_queue_block_id
+        if not spark_block_id:
+            return {"status": "error", "error": "No spark_queue_block_id configured"}
+        if not self.letta_base_url:
+            return {"status": "error", "error": "No letta_base_url configured"}
+
+        block_url = f"{self.letta_base_url}/v1/blocks/{spark_block_id}"
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(block_url)
+                resp.raise_for_status()
+                block_data = resp.json()
+                current_value = block_data.get("value", "").rstrip()
+
+                # Strip "(empty)" placeholder
+                if "(empty)" in current_value:
+                    current_value = current_value.replace("(empty)", "").strip()
+                    if not current_value:
+                        current_value = "# Spark Queue"
+
+                updated = f"{current_value}\n{spark_json}\n---"
+
+                patch_resp = await client.patch(
+                    block_url,
+                    json={"value": updated},
+                )
+                patch_resp.raise_for_status()
+
+            logger.info("spark_queue_entry_written", block_id=spark_block_id)
+            return {"status": "ok"}
+
+        except httpx.HTTPStatusError as e:
+            error = f"HTTP {e.response.status_code}: {e.response.text}"
+            logger.error("spark_queue_write_failed", error=error)
+            return {"status": "error", "error": error}
+        except Exception as e:
+            logger.error("spark_queue_write_failed", error=str(e))
+            return {"status": "error", "error": str(e)}
+
     @staticmethod
     def parse_forward(body: str) -> dict[str, Any]:
         """Parse a forwarded email body into components.

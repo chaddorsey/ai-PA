@@ -714,6 +714,32 @@ class WatchManager:
                             entry
                         )
 
+                        # Also write Spark Record to spark_queue (new pipeline)
+                        if settings.spark_queue_block_id:
+                            spark_json = self.task_queue_writer.format_spark_record(
+                                message_id=original_message_id,
+                                thread_id=original_thread_id,
+                                subject=subject,
+                                from_address=from_address,
+                                date=date,
+                                snippet=snippet,
+                                trigger=trigger,
+                                notes=notes if not entry_def["marker_type"] else None,
+                                forwarded_message_id=forwarded_message_id,
+                                marker_type=entry_def["marker_type"],
+                                task_hint=entry_def["task_hint"],
+                                context=entry_def["context"],
+                            )
+                            spark_result = await self.task_queue_writer.write_to_spark_queue(
+                                spark_json
+                            )
+                            if spark_result.get("status") != "ok":
+                                log.warning(
+                                    "spark_queue_write_failed",
+                                    error=spark_result.get("error"),
+                                    message_id=msg_id,
+                                )
+
                         if write_result.get("status") != "ok":
                             errors.append({
                                 "message_id": msg_id,
@@ -768,12 +794,20 @@ class WatchManager:
                     )
                     errors.append({"message_id": msg_id, "error": str(msg_err)})
 
-            # Notify agent to process queue entries
+            # Notify agents to process queue entries
             if processed:
                 try:
                     await self.notifier.notify_task_queued(processed)
                 except Exception as notify_err:
                     log.error("task_queue_notify_error", error=str(notify_err))
+                # Also notify tasks agent via spark queue (new pipeline)
+                if settings.spark_queue_agent_id:
+                    try:
+                        await self.notifier.notify_spark_queue(
+                            processed, settings.spark_queue_agent_id
+                        )
+                    except Exception as spark_err:
+                        log.error("spark_queue_notify_error", error=str(spark_err))
 
             result = {
                 "status": "ok",

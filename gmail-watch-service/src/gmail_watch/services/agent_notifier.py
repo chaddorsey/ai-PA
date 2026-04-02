@@ -229,6 +229,59 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         message = "\n".join(lines)
         return await self._send_to_agent(message)
 
+    async def notify_spark_queue(
+        self,
+        entries: list[dict[str, Any]],
+        agent_id: str,
+    ) -> dict[str, Any]:
+        """Notify tasks agent that new Spark Records are ready in spark_queue.
+
+        Args:
+            entries: List of dicts with message_id, subject, from, marker_type, task_hint.
+            agent_id: Tasks agent ID.
+        """
+        if not entries:
+            return {"status": "ok", "message": "no entries"}
+
+        lines = ["[Spark Queue] New email task sparks queued for extraction\n"]
+        for entry in entries:
+            from_addr = entry.get("from", "unknown")
+            marker_type = entry.get("marker_type")
+            task_hint = entry.get("task_hint")
+
+            if marker_type and task_hint:
+                tag = (
+                    "explicit task — use task_hint as description"
+                    if marker_type == "explicit"
+                    else "pointer — expand using fetch_hint to read full email"
+                )
+                lines.append(f"- **{task_hint}** from {from_addr} ({tag})")
+            else:
+                subject = entry.get("subject", "(no subject)")
+                lines.append(f"- **{subject}** from {from_addr}")
+
+        lines.append(
+            "\nProcess your spark_queue memory block. Each entry is a JSON Spark Record. "
+            "For each spark:\n"
+            "1. Parse the JSON record\n"
+            "2. If task_hint is present and self-contained, use it as the task description\n"
+            "3. If task_hint is absent or a fragment, use fetch_hint to load the full email "
+            "via run_gws (e.g. run_gws('gmail get MESSAGE_ID')) and formulate the task\n"
+            "4. Call add_extracted_tasks() with the formulated task, using the spark's "
+            "reference_id, from_person, location, location_id, and origin fields\n"
+            "5. Remove the processed spark entry from the spark_queue block\n"
+            "Use origin from the spark record (user-indicated for forwarded/TaskQueue emails)."
+        )
+
+        message = "\n".join(lines)
+
+        original_agent_id = self.agent_id
+        self.agent_id = agent_id
+        try:
+            return await self._send_to_agent(message)
+        finally:
+            self.agent_id = original_agent_id
+
     async def notify_drive_task_queued(
         self,
         entries: list[dict[str, Any]],
