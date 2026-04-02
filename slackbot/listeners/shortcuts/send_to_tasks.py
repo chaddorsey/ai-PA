@@ -258,50 +258,20 @@ def _trigger_extraction(entry: dict, logger: Logger,
         patch_resp.raise_for_status()
         logger.info(f"Spark record written for {ref_id}")
 
-        # Notify tasks agent with inline spark data
-        notify_lines = [
-            "[Spark Queue] 1 new Slack task spark for extraction\n",
-            "--- SPARK 1 ---",
-            f"source_type: slack",
-            f"location: #{channel}",
-            f"from_person: {from_id}",
-            f"reference_id: {ref_id}",
-            f"origin: user-indicated",
-            f"source_text: {text[:500]}",
-        ]
-        if notes:
-            notify_lines.append(f"user_notes: {notes}")
-        if thread_ts:
-            notify_lines.append(f"thread_ts: {thread_ts}")
-        if urls:
-            notify_lines.append(f"related_urls: {', '.join(urls)}")
-        notify_lines.append(
-            "\nCall add_extracted_tasks() using the fields above. "
-            "If source_text is ambiguous, fetch thread context via run_slack. "
-            "Use origin='user-indicated'. "
-            "This message may contain MULTIPLE tasks — extract each as a "
-            "separate add_extracted_tasks call.\n"
-            "After extraction, set your spark_queue block to:\n"
-            "# Spark Queue\n(empty)\n"
-            "\nIMPORTANT: Extract from the data ABOVE, not from memory."
-        )
-        notify_msg = "\n".join(notify_lines)
+        # Notify tasks agent (lightweight — agent reads block for content)
+        notify_msg = "[Spark Queue] 1 new spark in your spark_queue block. Read and process it now."
 
-        # Retry notification with backoff (agent may be mid-run → 400)
-        notify_url = f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/"
-        notify_payload = {"messages": [{"role": "user", "content": notify_msg}]}
-        import time
-        for attempt in range(4):
-            resp = requests.post(notify_url, json=notify_payload, timeout=120)
-            if resp.status_code == 200:
-                logger.info(f"Tasks agent notified for {ref_id}")
-                break
-            if resp.status_code == 400 and attempt < 3:
-                wait = 10 * (attempt + 1)
-                logger.warning(f"Agent busy (400), retrying in {wait}s (attempt {attempt+1}/4)")
-                time.sleep(wait)
-            else:
-                resp.raise_for_status()
+        resp = requests.post(
+            f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",
+            json={"messages": [{"role": "user", "content": notify_msg}]},
+            timeout=120,
+        )
+        if resp.status_code == 400:
+            # Agent busy — spark is in block, polling fallback will catch it
+            logger.warning(f"Agent busy (400) for {ref_id}, spark in block for polling pickup")
+        else:
+            resp.raise_for_status()
+            logger.info(f"Tasks agent notified for {ref_id}")
 
     except Exception as e:
         logger.error(f"Failed to trigger extraction: {e}", exc_info=True)

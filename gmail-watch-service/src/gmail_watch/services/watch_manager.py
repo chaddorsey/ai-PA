@@ -801,11 +801,10 @@ class WatchManager:
 
             # Notify tasks agent via spark queue (new pipeline)
             # Old email agent notification disabled during transition.
-            if spark_records and settings.spark_queue_agent_id:
+            if processed and settings.spark_queue_agent_id:
                 try:
                     await self.notifier.notify_spark_queue(
                         processed, settings.spark_queue_agent_id,
-                        spark_records=spark_records,
                     )
                 except Exception as spark_err:
                     log.error("spark_queue_notify_error", error=str(spark_err))
@@ -1148,11 +1147,10 @@ class WatchManager:
 
             # Notify tasks agent via spark queue (new pipeline)
             # Old docs-and-transcripts agent notification disabled during transition.
-            if spark_records and settings.spark_queue_agent_id:
+            if processed and settings.spark_queue_agent_id:
                 try:
                     await self.notifier.notify_spark_queue(
                         processed, settings.spark_queue_agent_id,
-                        spark_records=spark_records,
                     )
                 except Exception as spark_err:
                     log.error(
