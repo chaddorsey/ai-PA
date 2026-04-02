@@ -2595,6 +2595,58 @@ def api_send_followup(followup_id):
             _mark_followup_sent(followup_id)
             return jsonify({"status": "sent"})
 
+        elif fu_type == "email":
+            # Create Gmail draft reply via gws bridge
+            message_id = routing.get("message_id", "")
+            if not message_id:
+                return jsonify({"error": "No message_id in routing"}), 400
+
+            import base64
+            from email.mime.text import MIMEText
+
+            with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
+                # Get original message headers for reply
+                orig_resp = client.get(
+                    f"{GWS_BRIDGE_URL}/gmail/messages/{message_id}",
+                    params={"format": "metadata"},
+                )
+                if orig_resp.status_code == 200:
+                    orig = orig_resp.json()
+                    headers_list = orig.get("payload", {}).get("headers", [])
+                    headers = {h["name"]: h["value"] for h in headers_list}
+                    thread_id = orig.get("threadId", "")
+                else:
+                    headers = {}
+                    thread_id = ""
+
+                subject = headers.get("Subject", "")
+                if subject and not subject.startswith("Re:"):
+                    subject = f"Re: {subject}"
+                reply_to = headers.get("From", item.get("from_person", ""))
+                orig_msg_id_header = headers.get("Message-ID", "")
+
+                mime = MIMEText(final_message)
+                mime["To"] = reply_to
+                mime["Subject"] = subject
+                if orig_msg_id_header:
+                    mime["In-Reply-To"] = orig_msg_id_header
+                    mime["References"] = orig_msg_id_header
+
+                raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
+
+                # Create draft via gws bridge proxy to Gmail API
+                draft_resp = client.post(
+                    f"{GWS_BRIDGE_URL}/gmail/drafts",
+                    json={"message": {"raw": raw, "threadId": thread_id}},
+                )
+                if draft_resp.status_code >= 400:
+                    return jsonify({
+                        "error": f"Draft creation failed: {draft_resp.text[:200]}"
+                    }), 500
+
+            _mark_followup_sent(followup_id)
+            return jsonify({"status": "drafted", "detail": "Gmail draft reply created"})
+
         else:
             return jsonify({"error": f"Unknown follow-up type: {fu_type}"}), 400
 

@@ -248,6 +248,37 @@ app.delete('/gmail/drafts/:id', (req, res) => {
   }
 });
 
+// Get a Gmail message by ID (for reply headers)
+app.get('/gmail/messages/:id', (req, res) => {
+  try {
+    const params = { userId: 'me', id: req.params.id };
+    if (req.query.format) params.format = req.query.format;
+    const data = runGws([
+      'gmail', 'users', 'messages', 'get',
+      '--params', JSON.stringify(params),
+      '--format', 'json',
+    ]);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: `gws error: ${(err.stderr || err.message || '').slice(0, 300)}` });
+  }
+});
+
+// Create a Gmail draft (for reply drafts from follow-up pipeline)
+app.post('/gmail/drafts', (req, res) => {
+  try {
+    const data = runGws([
+      'gmail', 'users', 'drafts', 'create',
+      '--params', JSON.stringify({ userId: 'me' }),
+      '--json', JSON.stringify(req.body),
+      '--format', 'json',
+    ]);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: `gws error: ${(err.stderr || err.message || '').slice(0, 300)}` });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`gws-bridge listening on :${PORT}`);
 });
