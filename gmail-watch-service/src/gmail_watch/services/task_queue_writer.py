@@ -106,10 +106,13 @@ class TaskQueueWriter:
         except Exception:
             return ""
 
-    async def write_to_block(self, entry_text: str) -> dict[str, Any]:
+    async def write_to_block(
+        self, entry_text: str, dedup_key: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Append a queue entry to the Letta memory block.
 
         Reads current block value, appends entry with separator, writes back.
+        If dedup_key is provided, skips write if key already exists in block.
 
         Returns:
             Dict with status and details.
@@ -128,6 +131,15 @@ class TaskQueueWriter:
                 resp.raise_for_status()
                 block_data = resp.json()
                 current_value = block_data.get("value", "").rstrip()
+
+                # Deduplicate if key provided
+                if dedup_key and dedup_key in current_value:
+                    logger.info(
+                        "task_queue_dedup_skip",
+                        dedup_key=dedup_key,
+                        block_id=self.block_id,
+                    )
+                    return {"status": "ok", "dedup": True}
 
                 # Append entry
                 updated = f"{current_value}\n{entry_text}\n---"
@@ -214,7 +226,10 @@ class TaskQueueWriter:
         """Write a Spark Record to the spark_queue block.
 
         Uses the spark_queue_block_id from settings.
+        Deduplicates by reference_id — skips if the same reference already exists.
         """
+        import json as _json
+
         spark_block_id = settings.spark_queue_block_id
         if not spark_block_id:
             return {"status": "error", "error": "No spark_queue_block_id configured"}
@@ -223,12 +238,28 @@ class TaskQueueWriter:
 
         block_url = f"{self.letta_base_url}/v1/blocks/{spark_block_id}"
 
+        # Extract reference_id for dedup check
+        try:
+            spark_data = _json.loads(spark_json)
+            ref_id = spark_data.get("reference_id", "")
+        except Exception:
+            ref_id = ""
+
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(block_url)
                 resp.raise_for_status()
                 block_data = resp.json()
                 current_value = block_data.get("value", "").rstrip()
+
+                # Deduplicate: skip if reference_id already in block
+                if ref_id and ref_id in current_value:
+                    logger.info(
+                        "spark_queue_dedup_skip",
+                        reference_id=ref_id,
+                        block_id=spark_block_id,
+                    )
+                    return {"status": "ok", "dedup": True}
 
                 # Strip "(empty)" placeholder
                 if "(empty)" in current_value:

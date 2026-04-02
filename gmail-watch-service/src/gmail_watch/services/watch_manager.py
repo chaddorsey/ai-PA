@@ -711,7 +711,8 @@ class WatchManager:
                         )
 
                         write_result = await self.task_queue_writer.write_to_block(
-                            entry
+                            entry,
+                            dedup_key=f"message_id: {original_message_id}",
                         )
 
                         # Also write Spark Record to spark_queue (new pipeline)
