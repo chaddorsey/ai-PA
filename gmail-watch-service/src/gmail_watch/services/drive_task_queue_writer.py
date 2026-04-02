@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
+import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 import structlog
@@ -300,3 +302,69 @@ class DriveTaskQueueWriter(TaskQueueWriter):
         )
 
         return "\n".join(lines)
+
+    def format_spark_record_drive(
+        self,
+        comment_id: str,
+        doc_id: str,
+        doc_title: str,
+        doc_type: str,
+        comment_author: str,
+        triggered_by: str,
+        comment_date: str,
+        comment_text: str,
+        gmail_message_id: str,
+        quoted_passage: Optional[str] = None,
+        surrounding_context: Optional[str] = None,
+        urls: Optional[list[str]] = None,
+        marker_type: Optional[str] = None,
+        task_hint: Optional[str] = None,
+        context: Optional[str] = None,
+    ) -> str:
+        """Format a Spark Record for a Google Docs comment.
+
+        Docs comments are already enriched by DriveEnricher (comment text,
+        quoted passage, surrounding context) so no fetch_hint is needed.
+        """
+        now = datetime.now(EASTERN_TZ)
+        path_segment = DOC_TYPE_TO_PATH.get(doc_type, "document")
+        doc_link = (
+            f"https://docs.google.com/{path_segment}/d/{doc_id}/edit"
+            f"?disco={comment_id}"
+        )
+
+        # Build source_text from enriched content
+        source_parts = []
+        if comment_text:
+            source_parts.append(f"Comment: {comment_text}")
+        if quoted_passage:
+            source_parts.append(f"Quoted passage: {quoted_passage[:300]}")
+        if surrounding_context:
+            source_parts.append(f"Surrounding context: {surrounding_context[:500]}")
+        source_text = "\n".join(source_parts)
+
+        record: dict[str, Any] = {
+            "spark_id": uuid.uuid4().hex[:8],
+            "captured_at": now.isoformat(),
+            "source_type": "google-docs-comment",
+            "origin": "user-indicated",
+            "reference_id": f"gdocs-comment-{doc_id}-{comment_id}",
+            "source_text": source_text,
+            "from_person": f"{comment_author} ({triggered_by})" if triggered_by else comment_author,
+            "location": doc_title,
+            "location_id": doc_id,
+            "permalink": doc_link,
+            "related_urls": urls or [],
+            "marker_type": marker_type,
+            "task_hint": task_hint,
+            "user_notes": context,
+            "surrounding_context": surrounding_context,
+            "fetch_hint": None,
+            "document_metadata": {
+                "title": doc_title,
+                "type": doc_type,
+                "link": doc_link,
+            },
+        }
+
+        return json.dumps(record)

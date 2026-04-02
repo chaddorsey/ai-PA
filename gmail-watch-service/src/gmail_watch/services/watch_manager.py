@@ -1045,6 +1045,35 @@ class WatchManager:
                             entry
                         )
 
+                        # Also write Spark Record to spark_queue (new pipeline)
+                        if settings.spark_queue_block_id:
+                            spark_json = self.drive_task_queue_writer.format_spark_record_drive(
+                                comment_id=comment_id or "",
+                                doc_id=doc_id,
+                                doc_title=doc_title,
+                                doc_type=enriched_doc_type,
+                                comment_author=comment_author,
+                                triggered_by=triggered_by,
+                                comment_date=enriched_date,
+                                comment_text=enriched_comment_text,
+                                gmail_message_id=msg_id,
+                                quoted_passage=enriched.get("quoted_passage"),
+                                surrounding_context=enriched.get("surrounding_context"),
+                                urls=enriched.get("urls"),
+                                marker_type=entry_def["marker_type"],
+                                task_hint=entry_def["task_hint"],
+                                context=entry_def["context"],
+                            )
+                            spark_result = await self.drive_task_queue_writer.write_to_spark_queue(
+                                spark_json
+                            )
+                            if spark_result.get("status") != "ok":
+                                log.warning(
+                                    "spark_queue_drive_write_failed",
+                                    error=spark_result.get("error"),
+                                    doc_id=doc_id,
+                                )
+
                         if write_result.get("status") != "ok":
                             errors.append({
                                 "message_id": msg_id,
@@ -1123,6 +1152,17 @@ class WatchManager:
                     log.error(
                         "drive_task_queue_notify_error", error=str(notify_err)
                     )
+                # Also notify tasks agent via spark queue (new pipeline)
+                if settings.spark_queue_agent_id:
+                    try:
+                        await self.notifier.notify_spark_queue(
+                            processed, settings.spark_queue_agent_id
+                        )
+                    except Exception as spark_err:
+                        log.error(
+                            "spark_queue_drive_notify_error",
+                            error=str(spark_err),
+                        )
 
             result = {
                 "status": "ok",

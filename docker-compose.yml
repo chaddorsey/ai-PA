@@ -908,6 +908,8 @@ services:
       # Owner Slack user ID for agent-initiated DM notifications
       OWNER_SLACK_USER_ID: ${OWNER_SLACK_USER_ID}
       HEALTH_CHECK_PORT: "8081"
+      # Spark queue for task extraction pipeline
+      SPARK_QUEUE_BLOCK_ID: "block-534bb56d-f7f1-4ea4-b2d9-20dc75eca03a"
     ports:
       - "8083:8081"  # Health check port - external 8083, internal 8081
     healthcheck:
