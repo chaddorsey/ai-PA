@@ -144,7 +144,7 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
         # Note: Granola auto-converts [ ] into its own checkboxes,
         # so we use [c] for "Chad" tasks instead.
         MARKER_RE = re.compile(
-            r"^\s*(?:[-*]\s*)?(\[;\]|\[\s*c\s*\]|>|D:|Decision:)\s+(.+)$",
+            r"^\s*(?:[-*]\s*)?(\[;\]|\[\s*c\s*[\]\[]|>|D:|Decision:)\s+(.+)$",
             re.MULTILINE | re.IGNORECASE,
         )
         my_tasks = []
