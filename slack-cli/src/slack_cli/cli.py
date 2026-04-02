@@ -790,6 +790,61 @@ def files_delete(ctx, file_id):
     _run(ctx, "files.delete", params, had_convenience_flags=had_flags and ctx.obj.get("body") is not None)
 
 
+@files.command("+download")
+@click.option("--file", "file_id", required=True, help="File ID to download (e.g. F0123ABCDEF)")
+@click.option("--save-to", "save_dir", default=None, help="Directory to save the file (default: current dir)")
+@click.pass_context
+def files_download_helper(ctx, file_id, save_dir):
+    """Download a file from Slack by file ID."""
+    import os
+    import requests as req
+
+    as_user = ctx.obj.get("as_user", False)
+    as_bot = ctx.obj.get("as_bot", False)
+    format_flag = ctx.obj.get("format")
+
+    try:
+        client = SlackClient(force_user=as_user, force_bot=as_bot)
+        result = client.call("files.info", {"file": file_id})
+        file_obj = result.get("file", {})
+        url = file_obj.get("url_private_download") or file_obj.get("url_private")
+        if not url:
+            click.echo(json.dumps({"ok": False, "error": "no_download_url", "detail": "File has no downloadable URL"}))
+            sys.exit(EXIT_EXECUTION)
+            return
+
+        token = client._get_client("user").token
+        resp = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+        if resp.status_code != 200:
+            click.echo(json.dumps({"ok": False, "error": "download_failed", "http_status": resp.status_code}))
+            sys.exit(EXIT_EXECUTION)
+            return
+
+        filename = file_obj.get("name", f"slack_file_{file_id}")
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+            path = os.path.join(save_dir, filename)
+        else:
+            path = filename
+
+        with open(path, "wb") as f:
+            f.write(resp.content)
+
+        out = {
+            "ok": True,
+            "file_id": file_id,
+            "filename": filename,
+            "path": os.path.abspath(path),
+            "size_bytes": len(resp.content),
+            "mimetype": file_obj.get("mimetype"),
+        }
+        click.echo(format_output(out, format_flag or "json"))
+
+    except SlackCliError as e:
+        click.echo(e.to_json())
+        sys.exit(e.exit_code)
+
+
 # ── search command group ─────────────────────────────────────────────────────
 
 

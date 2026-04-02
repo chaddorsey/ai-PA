@@ -44,6 +44,8 @@ def run_slack(command: str, body: Optional[str] = None, fields: Optional[str] = 
 
     Files, pins, bookmarks, reminders:
       command="files list", body='{"channel":"C0123ABCDEF"}'
+      command="files info", body='{"file":"F0123ABCDEF"}'
+      command="files +download --file F0123ABCDEF --save-to /data/shared"
       command="pins list", body='{"channel":"C0123ABCDEF"}'
       command="reminders add", body='{"text":"Check reports","time":"tomorrow at 9am"}'
       command="reminders list"

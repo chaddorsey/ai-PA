@@ -659,7 +659,7 @@ SCHEMAS: dict[str, dict] = {
     "files.list": {
         "method": "files.list",
         "description": "List files shared in a team.",
-        "token_type": "bot",
+        "token_type": "user",
         "scopes": ["files:read"],
         "params": {
             "channel": {
@@ -689,7 +689,7 @@ SCHEMAS: dict[str, dict] = {
     "files.upload": {
         "method": "files.upload",
         "description": "Upload a file to Slack.",
-        "token_type": "bot",
+        "token_type": "user",
         "scopes": ["files:write"],
         "params": {
             "channels": {
@@ -722,7 +722,7 @@ SCHEMAS: dict[str, dict] = {
     "files.info": {
         "method": "files.info",
         "description": "Get information about a file.",
-        "token_type": "bot",
+        "token_type": "user",
         "scopes": ["files:read"],
         "params": {
             "file": {
@@ -736,7 +736,7 @@ SCHEMAS: dict[str, dict] = {
     "files.delete": {
         "method": "files.delete",
         "description": "Delete a file.",
-        "token_type": "bot",
+        "token_type": "user",
         "scopes": ["files:write"],
         "params": {
             "file": {
