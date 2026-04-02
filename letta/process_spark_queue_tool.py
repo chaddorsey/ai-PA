@@ -58,7 +58,15 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
             return {"status": "ok", "message": "Spark queue is empty", "extracted": 0, "details": []}
 
         # ── Parse JSON entries ──
-        raw_entries = [e.strip() for e in block_value.split("---") if e.strip() and not e.strip().startswith("#")]
+        # Split by --- separator, strip header lines (# Spark Queue)
+        segments = [e.strip() for e in block_value.split("---") if e.strip()]
+        raw_entries = []
+        for seg in segments:
+            # Strip header lines starting with #
+            lines = [l for l in seg.split("\n") if l.strip() and not l.strip().startswith("#")]
+            content = "\n".join(lines).strip()
+            if content:
+                raw_entries.append(content)
 
         sparks = []
         parse_errors = []
@@ -111,7 +119,7 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
         year_month = now.strftime("%Y-%m")
 
         # Get agent name and ID
-        AGENT_ID = os.environ.get("LETTA_AGENT_ID", "")
+        AGENT_ID = os.environ.get("LETTA_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
         agent_name = "tasks-agent"
         if AGENT_ID:
             try:
