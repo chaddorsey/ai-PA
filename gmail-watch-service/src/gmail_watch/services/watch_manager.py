@@ -795,20 +795,15 @@ class WatchManager:
                     )
                     errors.append({"message_id": msg_id, "error": str(msg_err)})
 
-            # Notify agents to process queue entries
-            if processed:
+            # Notify tasks agent via spark queue (new pipeline)
+            # Old email agent notification disabled during transition.
+            if processed and settings.spark_queue_agent_id:
                 try:
-                    await self.notifier.notify_task_queued(processed)
-                except Exception as notify_err:
-                    log.error("task_queue_notify_error", error=str(notify_err))
-                # Also notify tasks agent via spark queue (new pipeline)
-                if settings.spark_queue_agent_id:
-                    try:
-                        await self.notifier.notify_spark_queue(
-                            processed, settings.spark_queue_agent_id
-                        )
-                    except Exception as spark_err:
-                        log.error("spark_queue_notify_error", error=str(spark_err))
+                    await self.notifier.notify_spark_queue(
+                        processed, settings.spark_queue_agent_id
+                    )
+                except Exception as spark_err:
+                    log.error("spark_queue_notify_error", error=str(spark_err))
 
             result = {
                 "status": "ok",
@@ -1142,28 +1137,18 @@ class WatchManager:
                     )
                     errors.append({"message_id": msg_id, "error": str(msg_err)})
 
-            # Notify Docs & Transcripts agent
-            if processed and settings.drive_task_queue_agent_id:
+            # Notify tasks agent via spark queue (new pipeline)
+            # Old docs-and-transcripts agent notification disabled during transition.
+            if processed and settings.spark_queue_agent_id:
                 try:
-                    await self.notifier.notify_drive_task_queued(
-                        entries=processed,
-                        agent_id=settings.drive_task_queue_agent_id,
+                    await self.notifier.notify_spark_queue(
+                        processed, settings.spark_queue_agent_id
                     )
-                except Exception as notify_err:
+                except Exception as spark_err:
                     log.error(
-                        "drive_task_queue_notify_error", error=str(notify_err)
+                        "spark_queue_drive_notify_error",
+                        error=str(spark_err),
                     )
-                # Also notify tasks agent via spark queue (new pipeline)
-                if settings.spark_queue_agent_id:
-                    try:
-                        await self.notifier.notify_spark_queue(
-                            processed, settings.spark_queue_agent_id
-                        )
-                    except Exception as spark_err:
-                        log.error(
-                            "spark_queue_drive_notify_error",
-                            error=str(spark_err),
-                        )
 
             result = {
                 "status": "ok",
