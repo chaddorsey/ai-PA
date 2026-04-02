@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-DEFAULT_PORT = 8092
+DEFAULT_PORT = 8093  # 8092 conflicts with task-completion-service container
 STATE_DIR = Path.home() / ".omnifocus-sync"
 
 LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
@@ -430,12 +430,41 @@ def run_sync() -> dict:
                 "reference_id": info.get("reference_id", ""),
             })
 
-        # ── Step 5: Send Slack notifications for external-origin completions ──
+        # ── Step 5: Queue follow-ups for external-origin completions ──
+        # Write to JSONL queue (sidebar displays these for user review/send/dismiss)
+        # Replaces Slack DM notifications — user reviews in sidebar instead.
         notified_count = 0
+        followup_script = Path(__file__).parent / "prepare_follow_up.py"
         for detail in details:
             if detail.get("has_external_origin"):
-                if _send_slack_notification(detail):
-                    notified_count += 1
+                if _is_already_notified(detail["ref_id"]):
+                    continue
+                # Pipe completion data to prepare_follow_up.py (same as bridge does)
+                event_data = {
+                    "taskId": detail.get("omnifocus_id", ""),
+                    "taskName": detail.get("task_description", ""),
+                    "refId": detail["ref_id"],
+                    "event": "timer.auto-stopped",
+                    "projectName": "",
+                }
+                try:
+                    import subprocess
+                    proc = subprocess.run(
+                        [sys.executable, str(followup_script)],
+                        input=json.dumps(event_data),
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if proc.returncode == 0:
+                        _mark_notified(detail["ref_id"])
+                        notified_count += 1
+                        logger.info("Follow-up queued: ref_id=%s", detail["ref_id"])
+                    else:
+                        logger.warning(
+                            "Follow-up script failed: ref_id=%s stderr=%s",
+                            detail["ref_id"], proc.stderr[:200],
+                        )
+                except Exception as e:
+                    logger.error("Follow-up script error: ref_id=%s %s", detail["ref_id"], e)
             else:
                 logger.info(
                     "Skipping notification for self-originated task: ref_id=%s",
