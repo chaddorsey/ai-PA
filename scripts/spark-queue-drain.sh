@@ -38,21 +38,12 @@ if [ "$ENTRY_COUNT" -eq 0 ]; then
     exit 0
 fi
 
-# Check if agent is currently processing (has active runs)
-ACTIVE=$(curl -s -L "$LETTA_BASE/v1/runs/?agent_id=$TASKS_AGENT&status=running&limit=1" 2>/dev/null \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else 0)" 2>/dev/null)
-
-if [ "$ACTIVE" != "0" ] && [ -n "$ACTIVE" ]; then
-    echo "[$TS] Agent busy ($ACTIVE active runs), skipping nudge"
-    exit 0
-fi
-
-# Queue is non-empty and agent is free — nudge
+# Nudge the agent — if busy (400), next cron cycle will retry
 echo "[$TS] Nudging tasks agent: $ENTRY_COUNT spark(s) pending"
 
 RESULT=$(curl -s -L -o /dev/null -w "%{http_code}" -X POST "$LETTA_BASE/v1/agents/$TASKS_AGENT/messages/" \
     -H "Content-Type: application/json" \
-    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s) in your spark_queue block. Read and process each one separately using add_extracted_tasks, then clear the queue.\"}]}" \
+    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s). Call process_spark_queue() now.\"}]}" \
     --max-time 120 2>/dev/null)
 
 echo "[$TS] Agent response: HTTP $RESULT"

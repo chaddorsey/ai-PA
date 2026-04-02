@@ -259,7 +259,7 @@ def _trigger_extraction(entry: dict, logger: Logger,
         logger.info(f"Spark record written for {ref_id}")
 
         # Notify tasks agent (lightweight — agent reads block for content)
-        notify_msg = "[Spark Queue] 1 new spark in your spark_queue block. Read and process it now."
+        notify_msg = "[Spark Queue] 1 new spark. Call process_spark_queue() now."
 
         resp = requests.post(
             f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",

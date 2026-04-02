@@ -243,8 +243,8 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
             return {"status": "ok", "message": "no entries"}
 
         message = (
-            f"[Spark Queue] {len(entries)} new spark(s) in your spark_queue block. "
-            "Read and process them now."
+            f"[Spark Queue] {len(entries)} new spark(s). "
+            "Call process_spark_queue() now."
         )
 
         original_agent_id = self.agent_id
