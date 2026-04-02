@@ -287,13 +287,21 @@ def _trigger_extraction(entry: dict, logger: Logger,
         )
         notify_msg = "\n".join(notify_lines)
 
-        resp = requests.post(
-            f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",
-            json={"messages": [{"role": "user", "content": notify_msg}]},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        logger.info(f"Tasks agent notified for {ref_id}")
+        # Retry notification with backoff (agent may be mid-run → 400)
+        notify_url = f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/"
+        notify_payload = {"messages": [{"role": "user", "content": notify_msg}]}
+        import time
+        for attempt in range(4):
+            resp = requests.post(notify_url, json=notify_payload, timeout=120)
+            if resp.status_code == 200:
+                logger.info(f"Tasks agent notified for {ref_id}")
+                break
+            if resp.status_code == 400 and attempt < 3:
+                wait = 10 * (attempt + 1)
+                logger.warning(f"Agent busy (400), retrying in {wait}s (attempt {attempt+1}/4)")
+                time.sleep(wait)
+            else:
+                resp.raise_for_status()
 
     except Exception as e:
         logger.error(f"Failed to trigger extraction: {e}", exc_info=True)

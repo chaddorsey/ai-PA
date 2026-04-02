@@ -364,8 +364,12 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         finally:
             self.agent_id = original_agent_id
 
-    async def _send_to_agent(self, message: str) -> dict[str, Any]:
-        """Send a message to the Letta agent."""
+    async def _send_to_agent(
+        self, message: str, max_retries: int = 3,
+    ) -> dict[str, Any]:
+        """Send a message to the Letta agent with retry on 400 (agent busy)."""
+        import asyncio
+
         url = f"{self.letta_base_url}/v1/agents/{self.agent_id}/messages"
 
         payload = {
@@ -377,23 +381,46 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
             ],
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
+        for attempt in range(max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(url, json=payload)
+                    if response.status_code == 400 and attempt < max_retries:
+                        wait = 10 * (attempt + 1)
+                        logger.warning(
+                            "agent_busy_retrying",
+                            agent_id=self.agent_id,
+                            attempt=attempt + 1,
+                            wait_seconds=wait,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    response.raise_for_status()
 
+                    return {
+                        "status": "ok",
+                        "agent_id": self.agent_id,
+                        "response": response.json(),
+                    }
+            except httpx.HTTPStatusError as e:
+                if attempt < max_retries and e.response.status_code == 400:
+                    wait = 10 * (attempt + 1)
+                    logger.warning(
+                        "agent_busy_retrying",
+                        agent_id=self.agent_id,
+                        attempt=attempt + 1,
+                        wait_seconds=wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
                 return {
-                    "status": "ok",
-                    "agent_id": self.agent_id,
-                    "response": response.json(),
+                    "status": "error",
+                    "error": f"HTTP {e.response.status_code}: {e.response.text}",
                 }
-        except httpx.HTTPStatusError as e:
-            return {
-                "status": "error",
-                "error": f"HTTP {e.response.status_code}: {e.response.text}",
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-            }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "error": str(e),
+                }
+
+        return {"status": "error", "error": "Max retries exceeded"}
