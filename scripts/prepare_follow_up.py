@@ -338,14 +338,27 @@ def main():
         log(f"No ref_id for '{task_name}' — time tracking only")
         return
 
-    # Look up the archival passage
-    passage = find_archival_passage(ref_id)
-    if not passage:
-        log(f"No archival passage for ref_id {ref_id}")
-        return
+    # Check if event data includes pre-resolved fields (from sync service)
+    # These override archival lookup since the passage may already be replaced
+    if event.get("fromPerson") and event.get("sourceType"):
+        fields = {
+            "source_type": event["sourceType"],
+            "from_person": event["fromPerson"],
+            "reference_id": event.get("referenceId", ""),
+            "task_description": event.get("taskName", ""),
+            "location": event.get("location", ""),
+            "source_text": event.get("sourceText", ""),
+            "source_context": event.get("sourceContext", ""),
+        }
+        log(f"Using pre-resolved fields from event data for {ref_id}")
+    else:
+        # Look up the archival passage
+        passage = find_archival_passage(ref_id)
+        if not passage:
+            log(f"No archival passage for ref_id {ref_id}")
+            return
+        fields = parse_passage_fields(passage)
 
-    # Parse fields
-    fields = parse_passage_fields(passage)
     source_type = fields.get("source_type", "")
     from_person = fields.get("from_person", "")
 

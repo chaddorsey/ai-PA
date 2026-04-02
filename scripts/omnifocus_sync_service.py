@@ -439,13 +439,22 @@ def run_sync() -> dict:
             if detail.get("has_external_origin"):
                 if _is_already_notified(detail["ref_id"]):
                     continue
-                # Pipe completion data to prepare_follow_up.py (same as bridge does)
+                # Pipe completion data to prepare_follow_up.py
+                # Include full context since archival passage may already be
+                # replaced with COMPLETION record by this point
                 event_data = {
                     "taskId": detail.get("omnifocus_id", ""),
                     "taskName": detail.get("task_description", ""),
                     "refId": detail["ref_id"],
                     "event": "timer.auto-stopped",
                     "projectName": "",
+                    # Extra fields so script doesn't need archival lookup
+                    "fromPerson": detail.get("from_person", ""),
+                    "sourceType": detail.get("source_type", ""),
+                    "referenceId": detail.get("reference_id", ""),
+                    "location": detail.get("location", ""),
+                    "sourceText": detail.get("source_text", ""),
+                    "sourceContext": detail.get("source_context", ""),
                 }
                 try:
                     import subprocess, sys as _sys
