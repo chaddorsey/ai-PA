@@ -5,12 +5,13 @@ Two shortcuts:
   - send_to_tasks: Silent send, ephemeral confirmation
   - send_to_tasks_modal: Opens modal for optional notes before sending
 
-Messages are sent directly to the Tasks agent for extraction via the
-formulate → enrich pipeline. No intermediate queue block.
+Messages are written as Spark Records to the tasks agent's spark_queue block,
+then the tasks agent is notified to process them.
 """
 import json
 import os
 import threading
+import uuid
 from datetime import datetime, timezone
 from logging import Logger
 
@@ -22,6 +23,10 @@ LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
 EXTRACTION_AGENT_ID = os.getenv(
     "LETTA_EXTRACTION_AGENT_ID",
     "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
+)
+SPARK_QUEUE_BLOCK_ID = os.getenv(
+    "SPARK_QUEUE_BLOCK_ID",
+    "block-534bb56d-f7f1-4ea4-b2d9-20dc75eca03a",
 )
 
 
@@ -182,9 +187,8 @@ def _resolve_slack_user(user_id: str, client) -> str:
 
 def _trigger_extraction(entry: dict, logger: Logger,
                         slack_client: WebClient = None) -> None:
-    """Send task directly to the Tasks agent for extraction.
+    """Write Spark Record to spark_queue and notify tasks agent.
 
-    Passes all context in the message — no intermediate queue block.
     Runs in a background thread.
     """
     try:
@@ -196,63 +200,85 @@ def _trigger_extraction(entry: dict, logger: Logger,
             from_id = _resolve_slack_user(from_id, slack_client)
         text = entry.get("text", "")
 
-        # Resolve channel mentions <#C0AA0HMDW3W> → #channel-name (with permalink)
-        # and user mentions <@U02V91KU8> → @realname
+        # Resolve channel mentions and user mentions
         if slack_client and text:
             text = _resolve_mentions(text, slack_client)
         link = entry.get("link", "")
         message_ts = entry.get("message_ts", "")
         notes = entry.get("notes", "")
+        thread_ts = entry.get("thread_ts", "")
 
         urls = entry.get("urls", [])
-        urls_str = "\n".join(f"  - {u}" for u in urls) if urls else "(none)"
-
         files = entry.get("files", [])
-        files_str = "\n".join(
-            f"  - {f['name']} ({f['type']})" for f in files
-        ) if files else ""
 
-        # Build reference_id from channel + timestamp
+        # Build reference_id
         ref_id = f"slack-{channel_id}-{message_ts}"
-        thread_ts = entry.get("thread_ts", "")
         if thread_ts:
             ref_id += f"-t{thread_ts}"
 
-        parts = [
-            "[TASK EXTRACTION]",
-            "Source: slack",
-            "Trigger: intentional",
-            "",
-            f"Channel: #{channel}",
-            f"From: {from_id}",
-            f"Text: {text}",
-            f"URLs:\n{urls_str}",
-            f"Permalink: {link}",
-            f"reference_id: {ref_id}",
-        ]
-        if files_str:
-            parts.append(f"Files:\n{files_str}")
+        # Build Spark Record (Slack messages are short — inline full text, no fetch_hint)
+        spark = {
+            "spark_id": uuid.uuid4().hex[:8],
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "source_type": "slack",
+            "origin": "user-indicated",
+            "reference_id": ref_id,
+            "source_text": text,
+            "from_person": from_id,
+            "location": f"#{channel}",
+            "location_id": channel_id,
+            "permalink": link,
+            "related_urls": urls,
+            "marker_type": None,
+            "task_hint": None,
+            "user_notes": notes if notes else None,
+            "surrounding_context": None,
+            "fetch_hint": None,
+        }
         if thread_ts:
-            parts.append(f"Thread TS: {thread_ts}")
-        if notes:
-            parts.append(f"User notes: {notes}")
-        parts.append(
-            "\nFollow the task_extraction_process_slack guidelines "
-            "including the Context Enrichment Protocol. "
+            spark["thread_ts"] = thread_ts
+        if files:
+            spark["files"] = [{"name": f["name"], "type": f["type"]} for f in files]
+
+        spark_json = json.dumps(spark)
+
+        # Write to spark_queue block
+        block_url = f"{LETTA_BASE_URL}/v1/blocks/{SPARK_QUEUE_BLOCK_ID}"
+        block_resp = requests.get(block_url, timeout=10)
+        block_resp.raise_for_status()
+        current_value = block_resp.json().get("value", "").rstrip()
+
+        if "(empty)" in current_value:
+            current_value = current_value.replace("(empty)", "").strip()
+            if not current_value:
+                current_value = "# Spark Queue"
+
+        updated = f"{current_value}\n{spark_json}\n---"
+        patch_resp = requests.patch(block_url, json={"value": updated}, timeout=10)
+        patch_resp.raise_for_status()
+        logger.info(f"Spark record written for {ref_id}")
+
+        # Notify tasks agent
+        subject = text[:80] + ("..." if len(text) > 80 else "")
+        notify_lines = [
+            "[Spark Queue] New Slack task spark queued for extraction\n",
+            f"- **{subject}** from {from_id} in #{channel}",
+            "\nProcess the new entry in your spark_queue memory block. "
+            "Parse the JSON, apply the Context Enrichment Protocol, "
+            "call add_extracted_tasks(), then remove the entry. "
             "Use origin='user-indicated'. "
-            "This message may contain MULTIPLE tasks — extract each one as a "
-            "separate add_extracted_tasks call with its own estimate and relevant URLs. "
-            "Use the same reference_id for all tasks from this message."
-        )
-        message = "\n".join(parts)
+            "This message may contain MULTIPLE tasks — extract each as a "
+            "separate add_extracted_tasks call.",
+        ]
+        notify_msg = "\n".join(notify_lines)
 
         resp = requests.post(
             f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",
-            json={"messages": [{"role": "user", "content": message}]},
+            json={"messages": [{"role": "user", "content": notify_msg}]},
             timeout=120,
         )
         resp.raise_for_status()
-        logger.info(f"Triggered extraction for {ref_id}")
+        logger.info(f"Tasks agent notified for {ref_id}")
 
     except Exception as e:
         logger.error(f"Failed to trigger extraction: {e}", exc_info=True)
