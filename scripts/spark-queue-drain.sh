@@ -33,7 +33,14 @@ fi
 # Queue is non-empty — nudge the agent
 logger -t spark-drain "Nudging tasks agent: $ENTRY_COUNT spark(s) pending"
 
-curl -s -L -X POST "$LETTA_BASE/v1/agents/$TASKS_AGENT/messages/" \
+# Use role:user (Letta may reject system messages via API)
+RESULT=$(curl -s -L -o /dev/null -w "%{http_code}" -X POST "$LETTA_BASE/v1/agents/$TASKS_AGENT/messages/" \
     -H "Content-Type: application/json" \
-    -d "{\"messages\":[{\"role\":\"system\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s) in your spark_queue block. Read and process them now.\"}]}" \
-    --max-time 120 > /dev/null 2>&1
+    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s) in your spark_queue block. Read and process them now.\"}]}" \
+    --max-time 120)
+
+if [ "$RESULT" = "200" ]; then
+    logger -t spark-drain "Agent notified successfully"
+else
+    logger -t spark-drain "Agent notification failed: HTTP $RESULT"
+fi
