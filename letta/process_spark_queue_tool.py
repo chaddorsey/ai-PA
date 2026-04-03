@@ -158,28 +158,43 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
 
             # Priority 3: Extract meaningful content from source_text
             if not task_desc and source_text:
-                # Strip boilerplate prefixes and @mentions
-                clean_lines = []
-                for line in source_text.split("\n"):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    # Skip metadata-only lines
-                    if line.startswith(("Quoted passage:", "Surrounding context:", "---")):
-                        continue
-                    # Strip "Comment: " prefix
-                    if line.startswith("Comment: "):
-                        line = line[9:].strip()
+                # If message mentions Chad/@Chad, focus on text after/around the mention
+                # This is the content directed specifically at the user
+                chad_mention = re.search(
+                    r'@(?:Chad(?:\s+Dorsey)?|cdorsey)\s+(.*)',
+                    source_text, re.IGNORECASE | re.DOTALL,
+                )
+                if chad_mention:
+                    directed_text = chad_mention.group(1).strip()
+                    # Clean up: take first sentence/clause, strip other @mentions
+                    directed_text = re.sub(r'@\w+(?:\s+\w+)?\s*', '', directed_text).strip()
+                    # Take first meaningful chunk (up to first newline or 120 chars)
+                    first_line = directed_text.split("\n")[0].strip()[:120]
+                    if first_line and len(first_line) > 10:
+                        task_desc = first_line
+
+                # Fallback: general source text cleaning
+                if not task_desc:
+                    clean_lines = []
+                    for line in source_text.split("\n"):
+                        line = line.strip()
                         if not line:
                             continue
-                    # Strip @mentions inline (handle "@First Last" and "@First")
-                    line = re.sub(r'@\w+(?:\s+\w+)?\s*', '', line).strip()
-                    if line:
-                        clean_lines.append(line)
+                        # Skip metadata-only lines
+                        if line.startswith(("Quoted passage:", "Surrounding context:", "---")):
+                            continue
+                        # Strip "Comment: " prefix
+                        if line.startswith("Comment: "):
+                            line = line[9:].strip()
+                            if not line:
+                                continue
+                        # Strip @mentions inline (handle "@First Last" and "@First")
+                        line = re.sub(r'@\w+(?:\s+\w+)?\s*', '', line).strip()
+                        if line:
+                            clean_lines.append(line)
 
-                if clean_lines:
-                    # Use first meaningful line, capped at 120 chars
-                    task_desc = clean_lines[0][:120]
+                    if clean_lines:
+                        task_desc = clean_lines[0][:120]
 
             # Priority 4: Location-based fallback
             if not task_desc:
