@@ -2128,23 +2128,151 @@ def api_transition_task(ref_id):
             omnifocus_id=omnifocus_task_id,
         )
 
-        # Trigger Phase B backtrace on confirmation if not already done
-        if action == "confirm" and "PACKET INFO" not in old_text:
+        # On confirmation: assemble work packet + trigger backtrace if needed
+        if action == "confirm":
             import threading
 
-            def _trigger_backtrace():
-                """Fire-and-forget backtrace via tasks agent."""
+            def _assemble_work_packet():
+                """Build OmniFocus task note from archival passage context."""
                 try:
-                    httpx.Client(timeout=120.0).post(
-                        f"{LETTA_BASE_URL}/v1/agents/"
-                        "agent-dd15479e-6543-400e-8463-b2a48b13cd4a/messages/",
-                        json={"messages": [{"role": "user",
-                              "content": f"Run backtrace_task(ref_id='{ref_id}') now."}]},
+                    omnifocus_bridge = os.getenv(
+                        "OMNIFOCUS_BRIDGE_URL", "http://host.docker.internal:8889"
                     )
+
+                    # Re-read the passage (it was just updated with confirmation)
+                    with httpx.Client(timeout=15.0) as c:
+                        p_resp = c.get(
+                            f"{LETTA_BASE_URL}/v1/agents/"
+                            "agent-dd15479e-6543-400e-8463-b2a48b13cd4a"
+                            f"/archival-memory/?search={ref_id}&limit=1",
+                        )
+                        passages = p_resp.json()
+
+                    passage_text = ""
+                    for p in (passages if isinstance(passages, list) else []):
+                        if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
+                            passage_text = p["text"]
+                            break
+
+                    if not passage_text:
+                        return
+
+                    # Build note segments
+                    segments = []
+
+                    # Source context line
+                    source_ctx = re.search(r"- Context: (.+)$", passage_text, re.MULTILINE)
+                    from_p = re.search(r"- From: (.+)$", passage_text, re.MULTILINE)
+                    location_p = re.search(r"- Location: (.+)$", passage_text, re.MULTILINE)
+
+                    if source_ctx:
+                        segments.append({"text": f"Source: {source_ctx.group(1).strip()}\n", "italic": True, "size": 11})
+                    if from_p:
+                        segments.append({"text": f"From: {from_p.group(1).strip()}\n", "italic": True, "size": 11})
+
+                    # Ref ID for traceability
+                    segments.append({"text": f"ref_id: {ref_id}\n\n", "size": 10, "color": [0.5, 0.5, 0.5, 1]})
+
+                    # Mismatch flag (prominent)
+                    mismatch = re.search(r">>> (.+?) <<<", passage_text)
+                    if mismatch:
+                        segments.append({"text": f"⚠ {mismatch.group(1)}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
+
+                    # PACKET INFO context brief
+                    packet_match = re.search(r"PACKET INFO\n(.+?)(?=\nSOURCE TEXT|\nFETCH|\Z)", passage_text, re.DOTALL)
+                    if packet_match:
+                        packet_text = packet_match.group(1).strip()
+
+                        # Context brief section
+                        brief_match = re.search(r"Context brief:\n(.+?)(?=\nRelated|\nKnowns|\Z)", packet_text, re.DOTALL)
+                        if brief_match:
+                            segments.append({"text": "Context\n", "bold": True, "size": 13})
+                            for bline in brief_match.group(1).strip().split("\n"):
+                                bline = bline.strip().lstrip("- ")
+                                if bline:
+                                    segments.append(f"  • {bline}\n")
+
+                        # Related tasks
+                        related_match = re.search(r"Related tasks:\n(.+?)(?=\nRelated Slack|\nKnowns|\Z)", packet_text, re.DOTALL)
+                        if related_match:
+                            segments.append("\n")
+                            segments.append({"text": "Related Tasks\n", "bold": True, "size": 13})
+                            for rline in related_match.group(1).strip().split("\n"):
+                                rline = rline.strip().lstrip("- ")
+                                if rline:
+                                    segments.append(f"  • {rline}\n")
+
+                        # Knowns / Unknowns
+                        ku_match = re.search(r"Knowns / Assumptions / Unknowns:\n(.+?)(?=\n\n|\Z)", packet_text, re.DOTALL)
+                        if ku_match:
+                            segments.append("\n")
+                            segments.append({"text": "Knowns / Unknowns\n", "bold": True, "size": 13})
+                            for kline in ku_match.group(1).strip().split("\n"):
+                                kline = kline.strip()
+                                if kline.startswith("Known:"):
+                                    segments.append(f"  ✓ {kline[6:].strip()}\n")
+                                elif kline.startswith("Unknown:"):
+                                    segments.append({"text": f"  ? {kline[8:].strip()}\n", "italic": True})
+                                elif kline.startswith("Assumption:"):
+                                    segments.append(f"  ~ {kline[11:].strip()}\n")
+
+                    # Source text (collapsed to first 200 chars)
+                    source_text_match = re.search(r"SOURCE TEXT\n(.+?)(?=\n\nFETCH|\n\nENRICH|\Z)", passage_text, re.DOTALL)
+                    if source_text_match:
+                        src = source_text_match.group(1).strip()[:200]
+                        segments.append("\n")
+                        segments.append({"text": "Source\n", "bold": True, "size": 13})
+                        segments.append({"text": f"{src}\n", "size": 11, "color": [0.4, 0.4, 0.4, 1]})
+
+                    # Related URLs as openfile:// links
+                    urls_match = re.search(r"RELATED URLS\n(.+?)(?=\n\n|\Z)", passage_text, re.DOTALL)
+                    if urls_match:
+                        segments.append("\n")
+                        segments.append({"text": "Links\n", "bold": True, "size": 13})
+                        for uline in urls_match.group(1).strip().split("\n"):
+                            url = uline.strip().lstrip("- ").strip()
+                            if url.startswith("http"):
+                                segments.append({"text": f"  {url[:50]}...\n", "url": url, "underline": True})
+
+                    if segments:
+                        try:
+                            import json as _json
+                            with httpx.Client(timeout=15.0) as c:
+                                c.post(
+                                    f"{omnifocus_bridge}/execute",
+                                    json={
+                                        "command": "appendRichText",
+                                        "args": {
+                                            "taskId": omnifocus_task_id,
+                                            "segments": segments,
+                                            "separator": False,
+                                        },
+                                    },
+                                )
+                        except Exception:
+                            pass  # OmniFocus note is best-effort
+
                 except Exception:
                     pass
 
-            threading.Thread(target=_trigger_backtrace, daemon=True).start()
+            # Fire work packet assembly in background
+            threading.Thread(target=_assemble_work_packet, daemon=True).start()
+
+            # Also trigger backtrace if not already done
+            if "PACKET INFO" not in old_text:
+                def _trigger_backtrace():
+                    """Fire-and-forget backtrace via tasks agent."""
+                    try:
+                        httpx.Client(timeout=120.0).post(
+                            f"{LETTA_BASE_URL}/v1/agents/"
+                            "agent-dd15479e-6543-400e-8463-b2a48b13cd4a/messages/",
+                            json={"messages": [{"role": "user",
+                                  "content": f"Run backtrace_task(ref_id='{ref_id}') now."}]},
+                        )
+                    except Exception:
+                        pass
+
+                threading.Thread(target=_trigger_backtrace, daemon=True).start()
 
         return jsonify({"status": "ok", "ref_id": ref_id, "action": action})
     except Exception as e:
