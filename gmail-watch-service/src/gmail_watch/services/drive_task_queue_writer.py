@@ -147,27 +147,31 @@ class DriveTaskQueueWriter(TaskQueueWriter):
 
         return result
 
+    # Pattern to match the @user+dtasks@domain.com mention (inline, not whole line)
+    TRIGGER_MENTION_RE = re.compile(
+        r"@?\S*\+dtasks@\S+", re.IGNORECASE
+    )
+
     @staticmethod
     def strip_trigger_address(text: Optional[str]) -> str:
-        """Remove lines matching the +dtasks trigger address pattern.
+        """Remove +dtasks trigger address mentions from text.
 
-        Handles:
-        - +cdorsey+dtasks@concord.org
-        - Any +dtasks variant (case insensitive)
-        - Lines with just the trigger address
+        Strips the @user+dtasks@domain.com mention inline, preserving
+        any other content on the same line (like [c] markers).
 
         Args:
             text: The reply text to clean.
 
         Returns:
-            Text with trigger address lines removed.
+            Text with trigger address mentions removed.
         """
         if not text:
             return ""
 
-        lines = text.split("\n")
-        filtered = [line for line in lines if not TRIGGER_ADDRESS_RE.match(line)]
-        return "\n".join(filtered).strip()
+        cleaned = DriveTaskQueueWriter.TRIGGER_MENTION_RE.sub("", text)
+        # Clean up extra whitespace
+        lines = [line.strip() for line in cleaned.split("\n")]
+        return "\n".join(line for line in lines if line).strip()
 
     @staticmethod
     def extract_doc_and_comment_ids(
@@ -189,16 +193,22 @@ class DriveTaskQueueWriter(TaskQueueWriter):
         if not body:
             return (None, None)
 
-        doc_match = DOC_URL_RE.search(body)
-        if not doc_match:
-            return (None, None)
+        # Find all doc URLs and prefer the one with a disco (comment_id) param
+        doc_id = None
+        comment_id = None
 
-        doc_id = doc_match.group(1)
+        for doc_match in DOC_URL_RE.finditer(body):
+            matched_id = doc_match.group(1)
+            full_match = doc_match.group(0)
+            disco_match = DISCO_PARAM_RE.search(full_match)
 
-        # Extract disco (comment_id) from the query string portion
-        full_match = doc_match.group(0)
-        disco_match = DISCO_PARAM_RE.search(full_match)
-        comment_id = disco_match.group(1) if disco_match else None
+            if disco_match:
+                # Found a URL with disco param — use this one
+                return (matched_id, disco_match.group(1))
+
+            # Track first doc_id as fallback
+            if doc_id is None:
+                doc_id = matched_id
 
         return (doc_id, comment_id)
 
