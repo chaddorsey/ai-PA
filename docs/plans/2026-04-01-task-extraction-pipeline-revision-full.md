@@ -269,13 +269,33 @@ These cycles are best run as periodic sleeptime or scheduled analysis tasks — 
 
 ## Phased Implementation
 
-### Phase 0: Deterministic Spark Processing Tool (COMPLETED 2026-04-02)
-- Created `process_spark_queue` Letta tool — reads block, parses JSON, calls `add_extracted_tasks` via API, clears queue
-- No LLM reasoning for parsing/field mapping — fully deterministic
-- All notifications updated to instruct agent to "Call process_spark_queue() now"
-- Eliminates the reliability gap where agents hallucinated from conversation context
+### Phase 0: Deterministic Spark Processing (COMPLETED 2026-04-02/03)
+
+Fully deterministic pre-processing — no LLM reasoning. Guarantees every spark produces a task in the sidebar quickly and reliably.
+
+**Tool**: `process_spark_queue` — reads block, parses JSON, extracts tasks via API, clears queue.
+
+**Task formulation priority** (deterministic, applied in order):
+1. `user_notes` — user's explicit intent (Slack shortcut notes, email forward notes)
+2. `task_hint` — from marker parsing (`[c]`, `[]`, `>`, or implicit comment text)
+3. Comment text — extracted from Docs comment source_text (strips boilerplate)
+4. Source text first line — for bare Slack messages
+5. Location fallback — last resort
+
+**Short fragment enrichment**: Task descriptions <40 chars get the quoted passage and document location appended (e.g. "Add citation" → "Add citation — 'Systems conveners...' in Proposal Draft").
+
+**Marker types** (set at capture time, inform Phase A enrichment depth):
+- `explicit` — user used `[c]` or `[]` convention. Self-contained task statement. Phase A: skip.
+- `pointer` — user used `>` convention. Fragment needing expansion from document context. Phase A: mandatory enrichment.
+- `implicit` — user wrote free-form text (Docs comment without marker, Slack notes, email notes). Usually passable. Phase A: light review.
+- `None` — no notes provided (bare Slack message, email forward without notes). Phase A: full formulation needed.
+
+**Infrastructure**:
+- All notifications instruct agent to "Call process_spark_queue() now"
 - Cron drain script (`~/bin/spark-queue-drain.sh`) fires every 2 minutes as fallback
-- **Files**: `letta/process_spark_queue_tool.py`, `scripts/spark-queue-drain.sh`
+- JSON parsing uses line-by-line detection (avoids `---` in source_text breaking splits)
+
+**Files**: `letta/process_spark_queue_tool.py`, `scripts/spark-queue-drain.sh`
 
 ### Phase 1: Fix Email Pipeline (COMPLETED 2026-04-02)
 - Increase snippet from 150 to 500 chars; add `fetch_hint` field with Gmail message ID for full retrieval during formulation
@@ -284,34 +304,13 @@ These cycles are best run as periodic sleeptime or scheduled analysis tasks — 
 - Ensure tasks agent persona/protocol includes: "When `fetch_hint` is present, fetch full content before formulating"
 - **Files**: `task_queue_writer.py`, `agent_notifier.py`, `watch_manager.py`, tasks agent persona block
 
-### Phase 1.5: Task Formulation Quality (NEXT PRIORITY)
+### Phase 1.5: Task Formulation Quality (COMPLETED 2026-04-03)
 
-The `process_spark_queue` tool produces poor task descriptions in many cases. The deterministic extraction is reliable but the formulation logic is too simplistic.
+Deterministic task naming improvements — folded into Phase 0. All fixes applied to `process_spark_queue_tool.py` and upstream capture code.
 
-**Known problems:**
+**Fixed**: user_notes priority, marker parsing in all pipelines, trigger address inline stripping, short fragment context enrichment, multi-comment notification parsing, implicit marker type for unstructured comments.
 
-| Source | Issue |
-|--------|-------|
-| Slack shortcut with user notes | `user_notes` field ignored — raw message text used as task name instead of user's intent |
-| Email with notes above forward | User notes exist in spark but not prioritized for task description |
-| Docs comment with `[c]` marker | After trigger-strip fix, `task_hint` should work — needs verification |
-| Docs comment without `[c]` | Falls to generic "Process task from google-docs-comment" |
-| Multi-comment notification | Position-dependent — some comments may have markers, others not |
-
-**Current task description priority in `process_spark_queue`:**
-1. `task_hint` (from `[c]` marker) if >10 chars
-2. `fetch_hint` → generic "Review and process: {location}"
-3. First line of `source_text`
-
-**Needed priority:**
-1. `user_notes` (Slack shortcut notes, email forward notes) — user's explicit intent
-2. `task_hint` (from marker parsing) — user's explicit task description
-3. Comment text (for Docs comments without markers) — meaningful content
-4. Location + source_type description — last resort, but better than raw text
-
-**Implementation**: Update `process_spark_queue_tool.py` task description logic. This is deterministic — no LLM needed. For ambiguous cases where none of the above produces a clear task, flag for agent review (the tasks agent can refine via Context Enrichment Protocol).
-
-**Files**: `letta/process_spark_queue_tool.py`
+**Remaining (Phase A)**: LLM-based refinement for `pointer` and `None` marker types where the deterministic formulation produces a passable but rough task name.
 
 ### Phases 2-3: Spark Record Format + Pipeline Migration (COMPLETED 2026-04-02)
 - Define JSON schema, create block on tasks agent
