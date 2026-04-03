@@ -236,6 +236,15 @@ def prepare_docs_followup(ref_id, fields, event):
 
     first_name = _resolve_first_name(fields["from_person"])
     task_desc = re.sub(r"^\[(COMPLETED|DROPPED)\]\s*", "", fields["task_description"])
+    is_self = USER_NAME in fields.get("from_person", "")
+
+    if is_self:
+        draft_msg = "Done."
+    else:
+        draft_msg = f"Done — {task_desc.lower()}. Thanks, {first_name}!"
+
+    # For self-originated comments, note that in the follow-up
+    is_self_comment = is_self
 
     return {
         "id": f"fu-{ref_id}",
@@ -246,8 +255,9 @@ def prepare_docs_followup(ref_id, fields, event):
         "task_description": task_desc,
         "from_person": fields["from_person"],
         "source_context": fields.get("source_context", ""),
-        "draft_message": f"Done — {task_desc.lower()}. Thanks, {first_name}!",
+        "draft_message": draft_msg,
         "source_text": fields.get("source_text", ""),
+        "self_originated": is_self_comment,
         "routing": {
             "tool": "run_gws",
             "reply_command": "drive replies create",
@@ -362,10 +372,14 @@ def main():
     source_type = fields.get("source_type", "")
     from_person = fields.get("from_person", "")
 
-    # Check if follow-up is appropriate (external origin only)
-    if not from_person or USER_NAME in from_person:
+    # Check if follow-up is appropriate
+    is_self = not from_person or USER_NAME in from_person
+    if is_self and source_type not in ("google-docs-comment", "google-drive-comment"):
         log(f"Task from self — no follow-up needed for {ref_id}")
         return
+    if is_self:
+        # Self-originated Docs comment — still create follow-up to resolve the comment
+        log(f"Self-originated docs comment — creating resolve follow-up for {ref_id}")
 
     # Route by source type
     followup = None
