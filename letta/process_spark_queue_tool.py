@@ -304,12 +304,19 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
             if fetch_hint:
                 passage_text += f"\n\nFETCH HINT: {fetch_hint}"
 
+            # Add enrichment tracking
+            marker_type = spark.get("marker_type")
+            enrichment_needed = marker_type in ("pointer", None, "implicit")
+            enrichment_status = "none" if enrichment_needed else "phase0-complete"
+            passage_text += f"\n\nENRICHMENT\n- Status: {enrichment_status}\n- Marker Type: {marker_type or 'none'}"
+
             tags = [
                 f"source:{source_type}",
                 year_month,
                 "status:extracted",
                 f"origin:{origin}",
                 f"agent:{AGENT_ID}",
+                f"enrichment:{enrichment_status}",
             ]
 
             try:
@@ -337,6 +344,8 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
                 "ref_id": ref_id,
                 "task": task_desc,
                 "source_type": source_type,
+                "marker_type": marker_type or "none",
+                "enrichment_needed": enrichment_needed,
                 "fetch_hint": fetch_hint,
             })
 
