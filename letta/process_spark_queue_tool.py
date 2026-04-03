@@ -147,35 +147,35 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
 
             task_desc = None
 
-            # Priority 1: user_notes — the user typed this explicitly
-            if user_notes and user_notes.strip() and len(user_notes.strip()) > 5:
-                task_desc = user_notes.strip()
-
-            # Priority 2: task_hint from marker ([c] text)
-            if not task_desc and task_hint and len(task_hint.strip()) > 3:
+            # Priority 1: task_hint from marker parsing — already cleaned
+            # Takes precedence over raw user_notes which may still contain [c] prefix
+            if task_hint and len(task_hint.strip()) > 3:
                 task_desc = task_hint.strip()
+
+            # Priority 2: user_notes (when no marker was parsed)
+            if not task_desc and user_notes and user_notes.strip() and len(user_notes.strip()) > 5:
+                task_desc = user_notes.strip()
 
             # Priority 3: Extract meaningful content from source_text
             if not task_desc and source_text:
-                # Strip boilerplate prefixes from Docs comment format
+                # Strip boilerplate prefixes and @mentions
                 clean_lines = []
                 for line in source_text.split("\n"):
                     line = line.strip()
                     if not line:
                         continue
-                    # Skip metadata lines
-                    if line.startswith(("Comment:", "Quoted passage:", "Surrounding context:", "---")):
-                        # But extract content after "Comment: " prefix
-                        if line.startswith("Comment: "):
-                            content = line[9:].strip()
-                            # Skip if it's just an @mention
-                            if content and not content.startswith("@"):
-                                clean_lines.append(content)
+                    # Skip metadata-only lines
+                    if line.startswith(("Quoted passage:", "Surrounding context:", "---")):
                         continue
-                    # Skip raw @mentions
-                    if line.startswith("@"):
-                        continue
-                    clean_lines.append(line)
+                    # Strip "Comment: " prefix
+                    if line.startswith("Comment: "):
+                        line = line[9:].strip()
+                        if not line:
+                            continue
+                    # Strip @mentions inline (handle "@First Last" and "@First")
+                    line = re.sub(r'@\w+(?:\s+\w+)?\s*', '', line).strip()
+                    if line:
+                        clean_lines.append(line)
 
                 if clean_lines:
                     # Use first meaningful line, capped at 120 chars
