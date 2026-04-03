@@ -298,17 +298,21 @@ app.post('/drive/replies/create', (req, res) => {
   }
 });
 
-// Resolve/unresolve a Google Docs/Drive comment
+// Resolve a Google Docs/Drive comment (via reply with action=resolve)
 app.patch('/drive/comments/update', (req, res) => {
   try {
     const { fileId, commentId, resolved } = req.body;
     if (!fileId || !commentId) {
       return res.status(400).json({ error: 'fileId and commentId required' });
     }
+    if (!resolved) {
+      return res.status(400).json({ error: 'Only resolve (resolved=true) is supported' });
+    }
+    // Google Drive resolves comments via a reply with action="resolve"
     const data = runGws([
-      'drive', 'comments', 'update',
-      '--params', JSON.stringify({ fileId, commentId, fields: 'id,resolved' }),
-      '--json', JSON.stringify({ resolved: !!resolved }),
+      'drive', 'replies', 'create',
+      '--params', JSON.stringify({ fileId, commentId, fields: 'id,action,content,createdTime' }),
+      '--json', JSON.stringify({ content: '', action: 'resolve' }),
       '--format', 'json',
     ]);
     res.json(data);
