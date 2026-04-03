@@ -43,7 +43,7 @@ echo "[$TS] Nudging tasks agent: $ENTRY_COUNT spark(s) pending"
 
 RESULT=$(curl -s -L -o /dev/null -w "%{http_code}" -X POST "$LETTA_BASE/v1/agents/$TASKS_AGENT/messages/" \
     -H "Content-Type: application/json" \
-    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s). Call process_spark_queue() now.\"}]}" \
+    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s). Call process_spark_queue() now. After extraction, check the results for enrichment_needed tasks and refine their descriptions per Phase A.\"}]}" \
     --max-time 120 2>/dev/null)
 
 echo "[$TS] Agent response: HTTP $RESULT"
