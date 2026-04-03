@@ -78,74 +78,108 @@ class DriveTaskQueueWriter(TaskQueueWriter):
     ) -> dict[str, str]:
         """Parse a Google Docs comment notification email body.
 
-        Extracts the comment author, their email, and the actual comment
-        text from the notification boilerplate.
+        Returns the FIRST comment for backward compat.
+        Use parse_all_comments() for multi-comment notifications.
 
-        Google Docs notification format:
-            {Author} ({email}) mentioned you in a comment in the following document
-            {Doc Title}
-            ({url})
-            ...
-            {N} comment(s)
+        Returns:
+            Dict with keys: author_name, author_email, comment_text.
+        """
+        comments = DriveTaskQueueWriter.parse_all_comments(body)
+        if comments:
+            return comments[0]
+        return {"author_name": "", "author_email": "", "comment_text": ""}
+
+    @staticmethod
+    def parse_all_comments(
+        body: Optional[str],
+    ) -> list[dict[str, str]]:
+        """Parse ALL comments from a Google Docs notification email.
+
+        Google batches multiple comments into a single notification.
+        Each comment section follows this pattern:
 
             .
-            [{N} comment hidden]     (optional)
-
             {Author Name}
             {comment content lines...}
 
             Open
-            ({url})
-            ...
-
-        Args:
-            body: The full notification email body text.
+            ({URL with disco=COMMENT_ID})
 
         Returns:
-            Dict with keys: author_name, author_email, comment_text.
-            All values default to empty string if not found.
+            List of dicts, each with: author_name, author_email,
+            comment_text, comment_id, doc_url.
         """
-        result = {"author_name": "", "author_email": "", "comment_text": ""}
         if not body:
-            return result
+            return []
 
-        # Extract author from first line
+        # Extract author/email from the opening line (if present)
+        default_author = ""
+        default_email = ""
         author_match = AUTHOR_RE.match(body.strip())
         if author_match:
-            result["author_name"] = author_match.group(1).strip()
-            result["author_email"] = author_match.group(2).strip()
+            default_author = author_match.group(1).strip()
+            default_email = author_match.group(2).strip()
 
-        # Extract comment section between "." separator and "Open" link
-        dot_match = COMMENT_SECTION_START_RE.search(body)
-        open_match = COMMENT_SECTION_END_RE.search(body)
+        # Split into comment sections using "." as section start
+        # and "Open" as section end
+        comments = []
+        dot_positions = [m.start() for m in COMMENT_SECTION_START_RE.finditer(body)]
+        open_positions = [m.start() for m in COMMENT_SECTION_END_RE.finditer(body)]
 
-        if dot_match and open_match and open_match.start() > dot_match.end():
-            raw_comment = body[dot_match.end():open_match.start()].strip()
+        for dot_pos in dot_positions:
+            # Find the next "Open" after this dot
+            next_open = None
+            for op in open_positions:
+                if op > dot_pos:
+                    next_open = op
+                    break
+            if next_open is None:
+                continue
 
-            # The first non-empty line after "." is usually the author name
-            # or "[N comment hidden]" — skip those
+            raw_section = body[dot_pos:next_open + 4]  # include "Open"
+            raw_comment = body[dot_pos + 1:next_open].strip()  # after the "."
+
+            # Extract comment_id from the URL after "Open"
+            url_start = body.find("(", next_open)
+            url_end = body.find(")", url_start) if url_start > 0 else -1
+            comment_id = None
+            doc_url = ""
+            if url_start > 0 and url_end > url_start:
+                doc_url = body[url_start + 1:url_end].strip()
+                disco_match = DISCO_PARAM_RE.search(doc_url)
+                if disco_match:
+                    comment_id = disco_match.group(1)
+
+            # Parse the comment section
             lines = raw_comment.split("\n")
+            author_name = ""
             comment_lines = []
-            skip_author_line = True
+            found_author = False
+
             for line in lines:
                 stripped = line.strip()
                 if not stripped:
-                    if skip_author_line and comment_lines:
-                        skip_author_line = False
                     continue
-                # Skip "[N comment hidden]" lines
                 if re.match(r"^\[.*comment.*hidden\]$", stripped, re.IGNORECASE):
                     continue
-                # Skip the author name line (first non-empty content line)
-                if skip_author_line and stripped == result["author_name"]:
-                    skip_author_line = False
+                if stripped == "_Assigned to you_":
                     continue
-                skip_author_line = False
+                if not found_author:
+                    # First non-empty line is the author name
+                    author_name = stripped
+                    found_author = True
+                    continue
                 comment_lines.append(stripped)
 
-            result["comment_text"] = "\n".join(comment_lines)
+            comments.append({
+                "author_name": author_name or default_author,
+                "author_email": default_email,
+                "comment_text": "\n".join(comment_lines),
+                "comment_id": comment_id,
+                "doc_url": doc_url,
+            })
 
-        return result
+        return comments
 
     # Pattern to match the @user+dtasks@domain.com mention (inline, not whole line)
     TRIGGER_MENTION_RE = re.compile(

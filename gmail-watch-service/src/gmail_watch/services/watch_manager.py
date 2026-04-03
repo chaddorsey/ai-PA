@@ -933,122 +933,99 @@ class WatchManager:
                         continue
 
                     # Extract doc_id and comment_id from notification URL
-                    doc_id, comment_id = (
+                    # Extract doc_id from email body (fallback)
+                    doc_id_fallback, _ = (
                         DriveTaskQueueWriter.extract_doc_and_comment_ids(body)
                     )
-                    if not doc_id:
+                    if not doc_id_fallback:
                         errors.append({
                             "message_id": msg_id,
                             "error": "no doc_id found in email body",
                         })
                         continue
 
-                    # Parse notification body for author and comment text
-                    notif = DriveTaskQueueWriter.parse_notification_body(body)
-
-                    # Use parsed comment text (clean, no boilerplate)
-                    comment_content = DriveTaskQueueWriter.strip_trigger_address(
-                        notif["comment_text"]
-                    )
-
-                    # Parse for task markers from comment text only
-                    marker_entries = TaskQueueWriter.parse_markers(comment_content)
+                    # Parse ALL comments from notification (Google batches them)
+                    all_comments = DriveTaskQueueWriter.parse_all_comments(body)
+                    if not all_comments:
+                        # Fallback to single-comment parsing
+                        notif = DriveTaskQueueWriter.parse_notification_body(body)
+                        all_comments = [notif]
 
                     # Extract doc title from email subject
                     doc_title = subject.replace("Comment on ", "").replace(
                         "Re: Comment on ", ""
                     ).strip(' "')
 
-                    # Use real author email if available, fallback to From header
-                    triggered_by = notif["author_email"] or from_address
-                    comment_author = notif["author_name"]
-
-                    if marker_entries:
-                        entry_defs = [
-                            {
-                                "marker_type": me["marker_type"],
-                                "task_hint": me["task_hint"],
-                                "context": me["context"],
-                            }
-                            for me in marker_entries
-                        ]
-                    else:
-                        notes = (
-                            comment_content.strip()
-                            if comment_content.strip()
-                            else None
-                        )
-                        entry_defs = [{
-                            "marker_type": None,
-                            "task_hint": None,
-                            "context": None,
-                            "notes": notes,
-                        }]
-
-                    # ── Drive API enrichment (best-effort) ──
-                    enriched: dict[str, Any] = {}
-                    if self.drive_enricher:
-                        try:
-                            enriched = self.drive_enricher.enrich(
-                                doc_id, comment_id
-                            )
-                        except Exception as enrich_err:
-                            log.warning(
-                                "drive_enrichment_failed",
-                                doc_id=doc_id,
-                                error=str(enrich_err),
-                            )
-
-                    # Override with enriched data when available
-                    if enriched.get("doc_title"):
-                        doc_title = enriched["doc_title"]
-                    enriched_doc_type = enriched.get("doc_type", "unknown")
-                    enriched_comment_text = enriched.get(
-                        "comment_text", comment_content
-                    )
-                    if enriched.get("comment_author"):
-                        author_name = enriched["comment_author"]
-                        author_email = enriched.get(
-                            "comment_author_email", ""
-                        )
-                        if author_email:
-                            comment_author = (
-                                f"{author_name} ({author_email})"
-                            )
-                        else:
-                            comment_author = author_name
-                    enriched_date = enriched.get("comment_date", date)
-
+                    # Process each comment as a separate task
                     msg_had_error = False
-                    for entry_def in entry_defs:
-                        entry = self.drive_task_queue_writer.format_drive_queue_entry(
-                            comment_id=comment_id or "",
-                            doc_id=doc_id,
-                            doc_title=doc_title,
-                            doc_type=enriched_doc_type,
-                            comment_author=comment_author,
-                            triggered_by=triggered_by,
-                            comment_date=enriched_date,
-                            comment_text=enriched_comment_text,
-                            gmail_message_id=msg_id,
-                            quoted_passage=enriched.get("quoted_passage"),
-                            surrounding_context=enriched.get(
-                                "surrounding_context"
-                            ),
-                            urls=enriched.get("urls"),
-                            notes=entry_def.get("notes"),
-                            marker_type=entry_def["marker_type"],
-                            task_hint=entry_def["task_hint"],
-                            context=entry_def["context"],
-                        )
+                    for comment_entry in all_comments:
+                        comment_id = comment_entry.get("comment_id")
+                        doc_id = doc_id_fallback
 
-                        write_result = await self.drive_task_queue_writer.write_to_block(
-                            entry
+                        comment_content = DriveTaskQueueWriter.strip_trigger_address(
+                            comment_entry.get("comment_text", "")
                         )
+                        triggered_by = comment_entry.get("author_email") or from_address
+                        comment_author = comment_entry.get("author_name", "")
 
-                        # Also write Spark Record to spark_queue (new pipeline)
-                        if settings.spark_queue_block_id:
-                            spark_json = self.drive_task_queue_writer.format_spark_record_drive(
+                        # Parse for task markers from comment text
+                        marker_entries = TaskQueueWriter.parse_markers(comment_content)
+
+                        if marker_entries:
+                            entry_defs = [
+                                {
+                                    "marker_type": me["marker_type"],
+                                    "task_hint": me["task_hint"],
+                                    "context": me["context"],
+                                }
+                                for me in marker_entries
+                            ]
+                        else:
+                            if not comment_content.strip():
+                                continue  # Skip empty/assigned-only comments
+                            entry_defs = [{
+                                "marker_type": None,
+                                "task_hint": None,
+                                "context": None,
+                                "notes": comment_content.strip(),
+                            }]
+
+                        # ── Drive API enrichment (best-effort) ──
+                        enriched: dict[str, Any] = {}
+                        if self.drive_enricher and comment_id:
+                            try:
+                                enriched = self.drive_enricher.enrich(
+                                    doc_id, comment_id
+                                )
+                            except Exception as enrich_err:
+                                log.warning(
+                                    "drive_enrichment_failed",
+                                    doc_id=doc_id,
+                                    error=str(enrich_err),
+                                )
+
+                        # Override with enriched data when available
+                        if enriched.get("doc_title"):
+                            doc_title = enriched["doc_title"]
+                        enriched_doc_type = enriched.get("doc_type", "unknown")
+                        enriched_comment_text = enriched.get(
+                            "comment_text", comment_content
+                        )
+                        if enriched.get("comment_author"):
+                            enriched_author = enriched["comment_author"]
+                            author_email = enriched.get(
+                                "comment_author_email", ""
+                            )
+                            if author_email:
+                                comment_author = (
+                                    f"{enriched_author} ({author_email})"
+                                )
+                            else:
+                                comment_author = enriched_author
+                        enriched_date = enriched.get("comment_date", date)
+
+                        for entry_def in entry_defs:
+                            entry = self.drive_task_queue_writer.format_drive_queue_entry(
                                 comment_id=comment_id or "",
                                 doc_id=doc_id,
                                 doc_title=doc_title,
@@ -1059,50 +1036,74 @@ class WatchManager:
                                 comment_text=enriched_comment_text,
                                 gmail_message_id=msg_id,
                                 quoted_passage=enriched.get("quoted_passage"),
-                                surrounding_context=enriched.get("surrounding_context"),
+                                surrounding_context=enriched.get(
+                                    "surrounding_context"
+                                ),
                                 urls=enriched.get("urls"),
+                                notes=entry_def.get("notes"),
                                 marker_type=entry_def["marker_type"],
                                 task_hint=entry_def["task_hint"],
                                 context=entry_def["context"],
                             )
-                            spark_result = await self.drive_task_queue_writer.write_to_spark_queue(
-                                spark_json
+
+                            write_result = await self.drive_task_queue_writer.write_to_block(
+                                entry
                             )
-                            if spark_result.get("status") != "ok":
-                                log.warning(
-                                    "spark_queue_drive_write_failed",
-                                    error=spark_result.get("error"),
+
+                            # Also write Spark Record to spark_queue (new pipeline)
+                            if settings.spark_queue_block_id:
+                                spark_json = self.drive_task_queue_writer.format_spark_record_drive(
+                                    comment_id=comment_id or "",
                                     doc_id=doc_id,
+                                    doc_title=doc_title,
+                                    doc_type=enriched_doc_type,
+                                    comment_author=comment_author,
+                                    triggered_by=triggered_by,
+                                    comment_date=enriched_date,
+                                    comment_text=enriched_comment_text,
+                                    gmail_message_id=msg_id,
+                                    quoted_passage=enriched.get("quoted_passage"),
+                                    surrounding_context=enriched.get("surrounding_context"),
+                                    urls=enriched.get("urls"),
+                                    marker_type=entry_def["marker_type"],
+                                    task_hint=entry_def["task_hint"],
+                                    context=entry_def["context"],
                                 )
-                            elif not spark_result.get("dedup"):
-                                import json as _json
-                                spark_records.append(_json.loads(spark_json))
+                                spark_result = await self.drive_task_queue_writer.write_to_spark_queue(
+                                    spark_json
+                                )
+                                if spark_result.get("status") != "ok":
+                                    log.warning(
+                                        "spark_queue_drive_write_failed",
+                                        error=spark_result.get("error"),
+                                        doc_id=doc_id,
+                                    )
 
-                        if write_result.get("status") != "ok":
-                            errors.append({
-                                "message_id": msg_id,
-                                "error": write_result.get("error", "write failed"),
+                            if write_result.get("status") != "ok":
+                                errors.append({
+                                    "message_id": msg_id,
+                                    "error": write_result.get("error", "write failed"),
+                                })
+                                msg_had_error = True
+                                continue
+
+                            processed.append({
+                                "comment_id": comment_id,
+                                "doc_id": doc_id,
+                                "doc_title": doc_title,
+                                "comment_text": comment_content,
+                                "triggered_by": triggered_by,
+                                "marker_type": entry_def["marker_type"],
+                                "task_hint": entry_def.get("task_hint"),
                             })
-                            msg_had_error = True
-                            continue
 
-                        processed.append({
-                            "comment_id": comment_id,
-                            "doc_id": doc_id,
-                            "doc_title": doc_title,
-                            "comment_text": comment_content,
-                            "triggered_by": triggered_by,
-                            "marker_type": entry_def["marker_type"],
-                            "task_hint": entry_def.get("task_hint"),
-                        })
-
-                        log.info(
-                            "drive_task_queued",
-                            doc_title=doc_title,
-                            doc_id=doc_id,
-                            comment_id=comment_id,
-                            marker_type=entry_def["marker_type"],
-                        )
+                            log.info(
+                                "drive_task_queued",
+                                doc_title=doc_title,
+                                doc_id=doc_id,
+                                comment_id=comment_id,
+                                marker_type=entry_def["marker_type"],
+                            )
 
                     if not msg_had_error:
                         # Swap DTaskQueue → DTaskQueueDone to prevent
