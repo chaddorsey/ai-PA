@@ -232,6 +232,7 @@ def refine_task_description(ref_id: str, new_description: str) -> Dict[str, Any]
 
         # ── Step 5: Conditional backtrace for user-indicated tasks ──
         backtrace_result = None
+        backtrace_summary = None
         if origin == "user-indicated":
             try:
                 # Extract fields from passage for backtrace
@@ -455,6 +456,39 @@ def refine_task_description(ref_id: str, new_description: str) -> Dict[str, Any]
                     "search_terms_used": search_terms,
                     "total_archival_hits": len(archival_hits),
                 }
+                # Store full backtrace materials in archival for write_packet_info to retrieve
+                try:
+                    store_data = json.dumps(backtrace_result)
+                    store_text = f"BACKTRACE_MATERIALS ref_id:{ref_id}\n{store_data}"
+                    store_tags = [f"backtrace-materials:{ref_id}", "transient"]
+                    store_body = json.dumps({"text": store_text, "tags": store_tags}).encode("utf-8")
+                    store_req = urllib.request.Request(
+                        f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages",
+                        data=store_body, headers={"Content-Type": "application/json"}, method="POST",
+                    )
+                    urllib.request.urlopen(store_req, timeout=15)
+                except Exception:
+                    pass  # Storage is best-effort; summary still returned
+
+                # Build compact summary for the return value (keeps chaining momentum)
+                n_artifacts = len(artifact_candidates)
+                n_intents = len(intent_candidates)
+                n_related = len(related_tasks)
+                n_warnings = len(mismatch_warnings)
+                n_urls = len(urls_filtered)
+                warning_text = ""
+                if mismatch_warnings:
+                    warning_text = " Warnings: " + "; ".join(w["message"] for w in mismatch_warnings) + "."
+
+                backtrace_summary = (
+                    f"Backtrace complete for {ref_id}: "
+                    f"{n_artifacts} artifact candidate(s), "
+                    f"{n_intents} intent candidate(s), "
+                    f"{n_related} related task(s), "
+                    f"{n_urls} URL(s).{warning_text} "
+                    f"Full materials stored. "
+                    f"Call write_packet_info(ref_id='{ref_id}') to synthesize."
+                )
             except Exception:
                 pass  # Backtrace is best-effort; refinement still succeeds
 
@@ -465,8 +499,8 @@ def refine_task_description(ref_id: str, new_description: str) -> Dict[str, Any]
             "new_description": new_description.strip(),
             "created": created,
         }
-        if backtrace_result:
-            result["backtrace"] = backtrace_result
+        if backtrace_summary:
+            result["backtrace_summary"] = backtrace_summary
         return result
 
     except Exception as e:

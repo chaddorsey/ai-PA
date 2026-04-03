@@ -95,6 +95,52 @@ def write_packet_info(
         if not task_passage:
             return {"status": "error", "error_message": f"No archival passage found for ref_id {ref_id}"}
 
+        # ── Retrieve stored backtrace materials (from refine_task_description) ──
+        stored_materials = None
+        try:
+            mat_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search=backtrace-materials:{ref_id}&limit=3"
+            mat_req = urllib.request.Request(mat_url)
+            with urllib.request.urlopen(mat_req, timeout=10) as mat_resp:
+                mat_passages = json.loads(mat_resp.read().decode("utf-8"))
+            for mp in (mat_passages if isinstance(mat_passages, list) else []):
+                if isinstance(mp, dict) and f"BACKTRACE_MATERIALS ref_id:{ref_id}" in mp.get("text", ""):
+                    mat_text = mp.get("text", "")
+                    json_start = mat_text.find("\n")
+                    if json_start >= 0:
+                        stored_materials = json.loads(mat_text[json_start + 1:])
+                    # Clean up the transient passage
+                    mat_pid = mp.get("id", "")
+                    if mat_pid:
+                        try:
+                            urllib.request.urlopen(urllib.request.Request(
+                                f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{mat_pid}",
+                                method="DELETE",
+                            ), timeout=10)
+                        except Exception:
+                            pass
+                    break
+        except Exception:
+            pass  # Retrieval is best-effort
+
+        # Auto-populate fields from stored materials when agent didn't provide them
+        if stored_materials:
+            if not resources:
+                urls = stored_materials.get("anchors", {}).get("urls", [])
+                if urls:
+                    resource_lines = []
+                    for u in urls[:5]:
+                        resource_lines.append(f"[primary] {u}")
+                    resources = "\n".join(resource_lines)
+            if not related_tasks:
+                rt_list = stored_materials.get("related_tasks", [])
+                if rt_list:
+                    rt_lines = [f"[{rt['ref_id']}] {rt['task'][:60]}" for rt in rt_list[:5]]
+                    related_tasks = "\n".join(rt_lines)
+            if not mismatch_warnings:
+                mw_list = stored_materials.get("mismatch_warnings", [])
+                if mw_list:
+                    mismatch_warnings = "; ".join(w["message"] for w in mw_list)
+
         # ── Build PACKET INFO section ──
         lines = ["\nPACKET INFO"]
 
