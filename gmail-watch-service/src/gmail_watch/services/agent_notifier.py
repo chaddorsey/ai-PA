@@ -244,8 +244,9 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
 
         message = (
             f"[Spark Queue] {len(entries)} new spark(s). "
-            "Call process_spark_queue() now. After extraction, check results "
-            "for enrichment_needed tasks and refine their descriptions per Phase A."
+            "Call process_spark_queue() now. After extraction: "
+            "(1) refine enrichment_needed tasks per Phase A, "
+            "(2) for sparks with fetch_hint, discover additional tasks per Phase A-discover."
         )
 
         original_agent_id = self.agent_id
