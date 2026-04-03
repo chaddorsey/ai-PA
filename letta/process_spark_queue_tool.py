@@ -190,6 +190,15 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
 
             # Clean up
             task_desc = re.sub(r"^(Fwd:|Re:|FW:)\s*", "", task_desc).strip()
+
+            # For short/fragment task descriptions, add context from quoted passage
+            # and location to make them actionable
+            if task_desc and len(task_desc) < 40 and source_text:
+                quoted = re.search(r'Quoted passage:\s*(.+)', source_text)
+                if quoted:
+                    passage = quoted.group(1).strip()[:60]
+                    task_desc = f"{task_desc} — \"{passage}\" in {location}" if location else f"{task_desc} — \"{passage}\""
+
             # Capitalize first letter
             if task_desc and task_desc[0].islower():
                 task_desc = task_desc[0].upper() + task_desc[1:]
