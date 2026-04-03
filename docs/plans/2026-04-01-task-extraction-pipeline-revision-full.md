@@ -415,6 +415,21 @@ Deterministic task naming improvements — folded into Phase 0. All fixes applie
 7. **No Big Bang**: Each pipeline migrates independently. Tasks agent handles both old `[TASK EXTRACTION]` messages and new spark queue reads during transition.
 8. **Immediate action bypass**: "Rush" bypasses background enrichment. Exact UX specified during Phase 4 implementation.
 
+## Future Refinements
+
+**Operational reliability (Gaps #1, #2)**:
+- Phase A execution depends on notification wording and agent following through. `gpt-5.2 medium` is much better than `4.1-mini` but not 100% consistent. May improve with conversation resets, model updates, or a more structured orchestration approach (e.g., a dedicated Phase A tool that chains the calls internally).
+- Cron drain already includes Phase A instruction, but timing issues can skip it.
+
+**Cost optimization (Gap #6)**:
+- `gpt-5.2 medium` is more expensive per call. Could gate Phase A at the tool level: `process_spark_queue` checks `enrichment_needed` and only triggers the agent notification for sparks that need it. Explicit tasks would skip the LLM call entirely.
+
+**Gmail self-forward filter**:
+- Forwarding to yourself (`cdorsey+tasks@concord.org`) doesn't trigger Gmail inbox filters (message goes to Sent, not Inbox). Workaround: gmail-watch-service fallback scan catches these, or user manually applies TaskQueue label.
+
+**OmniFocus backup rsync**:
+- Symlink to external volume broke due to sandbox restrictions. Need cron job to rsync `~/Library/Containers/.../Backups/` to `/Volumes/main-filestore/omnifocus-backups/` periodically.
+
 ## Verification
 
 After each phase:

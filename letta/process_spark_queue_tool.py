@@ -156,7 +156,13 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
             if not task_desc and user_notes and user_notes.strip() and len(user_notes.strip()) > 5:
                 task_desc = user_notes.strip()
 
-            # Priority 3: Extract meaningful content from source_text
+            # Priority 3a: For emails without notes/hints, use subject line
+            if not task_desc and source_type == "email" and location:
+                subj = re.sub(r"^(Fwd:|Re:|FW:)\s*", "", location).strip()
+                if subj and len(subj) > 5:
+                    task_desc = f"Review: {subj}"
+
+            # Priority 3b: Extract meaningful content from source_text
             if not task_desc and source_text:
                 # If message mentions Chad/@Chad, focus on text after/around the mention
                 # This is the content directed specifically at the user
