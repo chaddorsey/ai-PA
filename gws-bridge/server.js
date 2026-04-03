@@ -288,7 +288,7 @@ app.post('/drive/replies/create', (req, res) => {
     }
     const data = runGws([
       'drive', 'replies', 'create',
-      '--params', JSON.stringify({ fileId, commentId }),
+      '--params', JSON.stringify({ fileId, commentId, fields: 'id,content,createdTime,author' }),
       '--json', JSON.stringify({ content }),
       '--format', 'json',
     ]);
@@ -307,7 +307,7 @@ app.patch('/drive/comments/update', (req, res) => {
     }
     const data = runGws([
       'drive', 'comments', 'update',
-      '--params', JSON.stringify({ fileId, commentId }),
+      '--params', JSON.stringify({ fileId, commentId, fields: 'id,resolved' }),
       '--json', JSON.stringify({ resolved: !!resolved }),
       '--format', 'json',
     ]);
