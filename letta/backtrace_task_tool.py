@@ -249,6 +249,62 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
             for rs in related_slack[:3]:
                 packet_info_lines.append(f"  - {rs['text'][:80]}")
 
+        # Knowns / Assumptions / Unknowns
+        knowns = []
+        assumptions = []
+        unknowns = []
+
+        if from_person:
+            knowns.append(f"Requested by {from_person}")
+        if artifact_provenance:
+            knowns.append("Primary artifact identified")
+        else:
+            unknowns.append("Primary artifact/deliverable location not identified")
+        if intent_genesis:
+            knowns.append(f"{len(intent_genesis)} prior decision/meeting passage(s) found")
+        else:
+            unknowns.append("No prior meetings or decisions found — intent/strategy context missing")
+        if related_tasks:
+            knowns.append(f"{len(related_tasks)} related task(s) in system")
+        if not related_passages:
+            unknowns.append("No related archival passages found — task may be novel or poorly indexed")
+
+        packet_info_lines.append("")
+        packet_info_lines.append("Knowns / Assumptions / Unknowns:")
+        for k in knowns:
+            packet_info_lines.append(f"  Known: {k}")
+        for a in assumptions:
+            packet_info_lines.append(f"  Assumption: {a}")
+        for u in unknowns:
+            packet_info_lines.append(f"  Unknown: {u}")
+
+        # ── Formulation mismatch check ──
+        # If backtrace reveals context that contradicts the task formulation,
+        # flag prominently. Check if related tasks suggest a different action.
+        mismatch_flag = None
+        if related_tasks:
+            completed_related = [rt for rt in related_tasks
+                                 if "[COMPLETED]" in rt.get("task", "")]
+            if completed_related:
+                mismatch_flag = (
+                    f"⚠ POSSIBLE OVERLAP: {len(completed_related)} related task(s) already "
+                    f"completed. The current task may be a duplicate or the scope may have "
+                    f"shifted. Review: {completed_related[0]['task'][:60]}"
+                )
+            rejected_related = [rt for rt in related_tasks
+                                if "[REJECTED]" in rt.get("task", "")]
+            if rejected_related and not mismatch_flag:
+                mismatch_flag = (
+                    f"⚠ NOTE: A similar task was previously rejected: "
+                    f"{rejected_related[0]['task'][:60]}. "
+                    f"Verify this is a distinct action."
+                )
+
+        if mismatch_flag:
+            packet_info_lines.insert(1, "")
+            packet_info_lines.insert(2, f">>> {mismatch_flag} <<<")
+            packet_info_lines.insert(3, "")
+
         packet_info_text = "\n".join(packet_info_lines)
 
         # Update the archival passage
@@ -298,6 +354,8 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
                 "intent_genesis": intent_genesis[:3],
             },
             "context_brief": context_brief,
+            "knowns_unknowns": {"knowns": knowns, "assumptions": assumptions, "unknowns": unknowns},
+            "mismatch_flag": mismatch_flag,
             "related_tasks": related_tasks[:5],
             "related_slack": len(related_slack),
             "related_passages_found": len(related_passages),
