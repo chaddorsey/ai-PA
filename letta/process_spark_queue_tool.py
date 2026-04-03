@@ -239,55 +239,63 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
             elif source_type == "google-docs-comment":
                 estimate = 10
 
-            # ── Write to extracted_tasks block ──
-            try:
-                # Get current block
-                et_block_id = None
-                areq2 = urllib.request.Request(f"{LETTA_BASE}/v1/agents/{AGENT_ID}/")
-                with urllib.request.urlopen(areq2, timeout=10) as aresp2:
-                    adata2 = json.loads(aresp2.read().decode("utf-8"))
-                    for blk in adata2.get("memory", {}).get("blocks", []):
-                        if blk.get("label") == "extracted_tasks":
-                            et_block_id = blk["id"]
-                            current_val = blk["value"]
-                            break
+            # ── Write to extracted_tasks block (phase0-complete only) ──
+            # Tasks needing enrichment (enrichment:none) are NOT written to the block
+            # here — they become visible only when refine_task_description runs
+            # during Phase A. This prevents half-baked task names in the sidebar.
+            # Explicit-marker tasks (phase0-complete) have user-provided descriptions
+            # that are already good enough, so they appear immediately.
+            marker_type_for_gate = spark.get("marker_type")
+            enrichment_will_be = "none" if marker_type_for_gate in ("pointer", None, "implicit") else "phase0-complete"
 
-                if not et_block_id:
-                    results.append({"spark_id": spark_id, "status": "error", "error": "extracted_tasks block not found"})
+            if enrichment_will_be == "phase0-complete":
+                try:
+                    et_block_id = None
+                    areq2 = urllib.request.Request(f"{LETTA_BASE}/v1/agents/{AGENT_ID}/")
+                    with urllib.request.urlopen(areq2, timeout=10) as aresp2:
+                        adata2 = json.loads(aresp2.read().decode("utf-8"))
+                        for blk in adata2.get("memory", {}).get("blocks", []):
+                            if blk.get("label") == "extracted_tasks":
+                                et_block_id = blk["id"]
+                                current_val = blk["value"]
+                                break
+
+                    if not et_block_id:
+                        results.append({"spark_id": spark_id, "status": "error", "error": "extracted_tasks block not found"})
+                        continue
+
+                    origin_part = f"; origin: {origin}" if origin else ""
+                    task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}{origin_part}; est: {estimate}] {task_desc}\n"
+
+                    section_header = f"=== {agent_name} ({AGENT_ID}) ==="
+                    section_pattern = re.compile(
+                        rf'({re.escape(section_header)})(.*?)(?=(===\s+.+?\s+\(agent-[a-f0-9-]+\)\s+===)|$)',
+                        re.DOTALL,
+                    )
+                    section_match = section_pattern.search(current_val)
+
+                    if section_match:
+                        insert_pos = section_match.end()
+                        before = current_val[:insert_pos]
+                        after = current_val[insert_pos:]
+                        if before and not before.endswith("\n"):
+                            before += "\n"
+                        new_val = before + task_line + after
+                    else:
+                        new_val = current_val + f"\n{section_header}\n{task_line}"
+
+                    update_data = json.dumps({"value": new_val}).encode("utf-8")
+                    update_req = urllib.request.Request(
+                        f"{LETTA_BASE}/v1/blocks/{et_block_id}",
+                        data=update_data,
+                        headers={"Content-Type": "application/json"},
+                        method="PATCH",
+                    )
+                    urllib.request.urlopen(update_req, timeout=10)
+
+                except Exception as e:
+                    results.append({"spark_id": spark_id, "status": "error", "error": f"Block write failed: {str(e)}"})
                     continue
-
-                origin_part = f"; origin: {origin}" if origin else ""
-                task_line = f"[extracted_time: {timestamp_str}; ref_id: {ref_id}{origin_part}; est: {estimate}] {task_desc}\n"
-
-                section_header = f"=== {agent_name} ({AGENT_ID}) ==="
-                section_pattern = re.compile(
-                    rf'({re.escape(section_header)})(.*?)(?=(===\s+.+?\s+\(agent-[a-f0-9-]+\)\s+===)|$)',
-                    re.DOTALL,
-                )
-                section_match = section_pattern.search(current_val)
-
-                if section_match:
-                    insert_pos = section_match.end()
-                    before = current_val[:insert_pos]
-                    after = current_val[insert_pos:]
-                    if before and not before.endswith("\n"):
-                        before += "\n"
-                    new_val = before + task_line + after
-                else:
-                    new_val = current_val + f"\n{section_header}\n{task_line}"
-
-                update_data = json.dumps({"value": new_val}).encode("utf-8")
-                update_req = urllib.request.Request(
-                    f"{LETTA_BASE}/v1/blocks/{et_block_id}",
-                    data=update_data,
-                    headers={"Content-Type": "application/json"},
-                    method="PATCH",
-                )
-                urllib.request.urlopen(update_req, timeout=10)
-
-            except Exception as e:
-                results.append({"spark_id": spark_id, "status": "error", "error": f"Block write failed: {str(e)}"})
-                continue
 
             # ── Write archival passage ──
             urls_section = ""

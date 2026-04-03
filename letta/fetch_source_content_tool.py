@@ -12,38 +12,104 @@ from typing import Dict, Any, Optional
 
 
 def fetch_source_content(
-    source_type: str,
-    fetch_hint: str,
+    source_type: Optional[str] = None,
+    fetch_hint: Optional[str] = None,
     source_ref: Optional[str] = None,
+    ref_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Fetch full content for a source, using fetch_hint to determine how.
 
-    Used by Phase A-discover to load the complete email, meeting transcript,
+    Used by Phase A to load the complete email, meeting transcript,
     or comment thread for scanning beyond what Phase 0 captured.
 
+    Can be called two ways:
+    1. With explicit source_type + fetch_hint (original interface)
+    2. With ref_id only — looks up the archival passage to extract source_type
+       and fetch_hint automatically. Simpler for enrichment pipeline callers.
+
     Args:
-        source_type: One of "email", "meeting", "slack", "google-docs-comment".
-        fetch_hint: Retrieval instruction from the spark record.
+        source_type: One of "email", "meeting", "slack", "google-docs-comment". Optional if ref_id provided.
+        fetch_hint: Retrieval instruction from the spark record. Optional if ref_id provided.
             Format: "gmail:MESSAGE_ID" for email, "granola:MEETING_ID" for meetings.
             For slack/docs-comment, pass the reference_id instead.
         source_ref: Optional reference_id for additional context lookup.
+        ref_id: The 8-char hex reference ID of the task. If provided, looks up the archival passage to extract source_type and fetch_hint automatically.
 
     Returns:
         Dictionary with status, content text, and metadata.
     """
     import json
     import os
+    import re
     import subprocess
     import traceback
     import urllib.request
+    import urllib.error
 
     try:
         LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
         AGENT_ID = os.environ.get("LETTA_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
 
+        # If ref_id provided, look up archival passage to extract source_type and fetch_hint
+        if ref_id:
+            search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={ref_id}&limit=3"
+            req = urllib.request.Request(search_url)
+            try:
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    passages = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                if e.code in (301, 302, 307, 308):
+                    req2 = urllib.request.Request(e.headers.get("Location", ""))
+                    with urllib.request.urlopen(req2, timeout=15) as resp2:
+                        passages = json.loads(resp2.read().decode("utf-8"))
+                else:
+                    raise
+            if not isinstance(passages, list):
+                passages = []
+
+            task_passage = None
+            for p in passages:
+                if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
+                    task_passage = p
+                    break
+
+            if not task_passage:
+                return {"status": "error", "error_message": f"No archival passage found for ref_id {ref_id}"}
+
+            p_text = task_passage.get("text", "")
+
+            # Extract source_type from passage
+            type_match = re.search(r"- Type: (.+)$", p_text, re.MULTILINE)
+            if type_match and not source_type:
+                source_type = type_match.group(1).strip()
+
+            # Extract fetch_hint from passage
+            hint_match = re.search(r"FETCH HINT: (.+)$", p_text, re.MULTILINE)
+            if hint_match and not fetch_hint:
+                fetch_hint = hint_match.group(1).strip()
+
+            # Extract reference_id as source_ref fallback
+            ref_match = re.search(r"- Reference ID: (.+)$", p_text, re.MULTILINE)
+            if ref_match and not source_ref:
+                source_ref = ref_match.group(1).strip()
+
+            # If no fetch_hint found, fall back to source text from passage
+            if not fetch_hint and not source_ref:
+                st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\nFETCH HINT:|\nENRICH|\nPACKET INFO|\Z)", p_text, re.DOTALL)
+                if st_match:
+                    return {
+                        "status": "ok",
+                        "source_type": source_type or "unknown",
+                        "content": st_match.group(1).strip(),
+                        "metadata": {"source": "passage_text", "ref_id": ref_id},
+                        "content_length": len(st_match.group(1).strip()),
+                    }
+
+        if not source_type:
+            return {"status": "error", "error_message": "source_type required (provide directly or via ref_id)"}
         if not fetch_hint and not source_ref:
-            return {"status": "error", "error_message": "fetch_hint or source_ref required"}
+            return {"status": "error", "error_message": "fetch_hint or source_ref required (provide directly or via ref_id)"}
 
         content = ""
         metadata = {}
