@@ -983,11 +983,12 @@ class WatchManager:
                         else:
                             if not comment_content.strip():
                                 continue  # Skip empty/assigned-only comments
+                            # No marker — use cleaned comment text as task_hint
+                            # so the spark tool uses it as the task description
                             entry_defs = [{
-                                "marker_type": None,
-                                "task_hint": None,
+                                "marker_type": "explicit",
+                                "task_hint": comment_content.strip(),
                                 "context": None,
-                                "notes": comment_content.strip(),
                             }]
 
                         # ── Drive API enrichment (best-effort) ──
