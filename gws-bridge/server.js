@@ -279,6 +279,44 @@ app.post('/gmail/drafts', (req, res) => {
   }
 });
 
+// Reply to a Google Docs/Drive comment
+app.post('/drive/replies/create', (req, res) => {
+  try {
+    const { fileId, commentId, content } = req.body;
+    if (!fileId || !commentId || !content) {
+      return res.status(400).json({ error: 'fileId, commentId, and content required' });
+    }
+    const data = runGws([
+      'drive', 'replies', 'create',
+      '--params', JSON.stringify({ fileId, commentId }),
+      '--json', JSON.stringify({ content }),
+      '--format', 'json',
+    ]);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: `gws error: ${(err.stderr || err.message || '').slice(0, 300)}` });
+  }
+});
+
+// Resolve/unresolve a Google Docs/Drive comment
+app.patch('/drive/comments/update', (req, res) => {
+  try {
+    const { fileId, commentId, resolved } = req.body;
+    if (!fileId || !commentId) {
+      return res.status(400).json({ error: 'fileId and commentId required' });
+    }
+    const data = runGws([
+      'drive', 'comments', 'update',
+      '--params', JSON.stringify({ fileId, commentId }),
+      '--json', JSON.stringify({ resolved: !!resolved }),
+      '--format', 'json',
+    ]);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: `gws error: ${(err.stderr || err.message || '').slice(0, 300)}` });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`gws-bridge listening on :${PORT}`);
 });
