@@ -685,11 +685,11 @@ class WatchManager:
                             for me in marker_entries
                         ]
                     else:
-                        # Single task: use notes as-is
+                        # No markers in notes — use notes text as implicit task hint
                         entry_defs = [
                             {
-                                "marker_type": None,
-                                "task_hint": None,
+                                "marker_type": "implicit" if notes and notes.strip() else None,
+                                "task_hint": notes.strip() if notes and notes.strip() else None,
                                 "context": None,
                             }
                         ]

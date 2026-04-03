@@ -217,6 +217,25 @@ def _trigger_extraction(entry: dict, logger: Logger,
             ref_id += f"-t{thread_ts}"
 
         # Build Spark Record (Slack messages are short — inline full text, no fetch_hint)
+        # Parse markers from user notes if present
+        import re as _re
+        marker_type = None
+        task_hint = None
+        if notes:
+            # Check for [c] or [] marker
+            m = _re.match(r'^\s*(?:[-*]\s*)?(\[\s*c?\s*[\]\[])\s+(.+)$', notes.strip(), _re.IGNORECASE)
+            if m:
+                marker_type = "explicit"
+                task_hint = m.group(2).strip()
+            # Check for > pointer
+            elif _re.match(r'^\s*>\s+(.+)$', notes.strip()):
+                marker_type = "pointer"
+                task_hint = _re.match(r'^\s*>\s+(.+)$', notes.strip()).group(1).strip()
+            else:
+                # No marker — notes are implicit task intent
+                marker_type = "implicit"
+                task_hint = notes.strip()
+
         spark = {
             "spark_id": uuid.uuid4().hex[:8],
             "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -229,8 +248,8 @@ def _trigger_extraction(entry: dict, logger: Logger,
             "location_id": channel_id,
             "permalink": link,
             "related_urls": urls,
-            "marker_type": None,
-            "task_hint": None,
+            "marker_type": marker_type,
+            "task_hint": task_hint,
             "user_notes": notes if notes else None,
             "surrounding_context": None,
             "fetch_hint": None,
