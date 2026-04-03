@@ -58,24 +58,20 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
             return {"status": "ok", "message": "Spark queue is empty", "extracted": 0, "details": []}
 
         # ── Parse JSON entries ──
-        # Split by --- separator, strip header lines (# Spark Queue)
-        segments = [e.strip() for e in block_value.split("---") if e.strip()]
-        raw_entries = []
-        for seg in segments:
-            # Strip header lines starting with #
-            lines = [l for l in seg.split("\n") if l.strip() and not l.strip().startswith("#")]
-            content = "\n".join(lines).strip()
-            if content:
-                raw_entries.append(content)
-
+        # Each spark is a JSON object. Find lines that parse as JSON.
+        # Avoids issues with --- appearing inside source_text values.
         sparks = []
         parse_errors = []
-        for i, raw in enumerate(raw_entries):
+        for line in block_value.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#") or line == "---" or line == "(empty)":
+                continue
             try:
-                spark = json.loads(raw)
-                sparks.append(spark)
-            except json.JSONDecodeError as e:
-                parse_errors.append({"index": i, "error": str(e), "text": raw[:100]})
+                spark = json.loads(line)
+                if isinstance(spark, dict) and "spark_id" in spark:
+                    sparks.append(spark)
+            except (json.JSONDecodeError, ValueError):
+                continue  # Not a JSON line — skip (headers, separators, etc.)
 
         if not sparks and parse_errors:
             return {
@@ -137,33 +133,66 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
             source_type = spark.get("source_type", "unknown")
             origin = spark.get("origin", "agent-identified")
 
-            # Determine task description
+            # Determine task description — priority order:
+            # 1. user_notes (Slack shortcut notes, email forward notes) — user's explicit intent
+            # 2. task_hint (from [c] marker parsing) — user's explicit task description
+            # 3. Comment text (for Docs comments) — meaningful content from the comment
+            # 4. Source text first line — fallback
+            # 5. Location-based description — last resort
             task_hint = spark.get("task_hint")
+            user_notes = spark.get("user_notes", "")
             source_text = spark.get("source_text", "")
             fetch_hint = spark.get("fetch_hint")
+            location = spark.get("location", "")
 
-            if task_hint and len(task_hint) > 10:
-                # User provided explicit task hint — use it
-                task_desc = task_hint
-                # Capitalize first letter
-                if task_desc and task_desc[0].islower():
-                    task_desc = task_desc[0].upper() + task_desc[1:]
-            elif fetch_hint:
-                # Need full content — extract a placeholder from what we have
-                location = spark.get("location", "")
-                task_desc = f"Review and process: {location}" if location else "Process email task (fetch full content)"
-            else:
-                # Use source_text to formulate
-                # Take first meaningful line
-                lines = [l.strip() for l in source_text.split("\n") if l.strip() and not l.startswith("Comment:") and not l.startswith("Quoted")]
-                if lines:
-                    first_line = lines[0][:120]
-                    task_desc = f"Review: {first_line}" if not first_line[0].isupper() else first_line
+            task_desc = None
+
+            # Priority 1: user_notes — the user typed this explicitly
+            if user_notes and user_notes.strip() and len(user_notes.strip()) > 5:
+                task_desc = user_notes.strip()
+
+            # Priority 2: task_hint from marker ([c] text)
+            if not task_desc and task_hint and len(task_hint.strip()) > 3:
+                task_desc = task_hint.strip()
+
+            # Priority 3: Extract meaningful content from source_text
+            if not task_desc and source_text:
+                # Strip boilerplate prefixes from Docs comment format
+                clean_lines = []
+                for line in source_text.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Skip metadata lines
+                    if line.startswith(("Comment:", "Quoted passage:", "Surrounding context:", "---")):
+                        # But extract content after "Comment: " prefix
+                        if line.startswith("Comment: "):
+                            content = line[9:].strip()
+                            # Skip if it's just an @mention
+                            if content and not content.startswith("@"):
+                                clean_lines.append(content)
+                        continue
+                    # Skip raw @mentions
+                    if line.startswith("@"):
+                        continue
+                    clean_lines.append(line)
+
+                if clean_lines:
+                    # Use first meaningful line, capped at 120 chars
+                    task_desc = clean_lines[0][:120]
+
+            # Priority 4: Location-based fallback
+            if not task_desc:
+                if location:
+                    task_desc = f"Review: {location}"
                 else:
                     task_desc = f"Process task from {source_type}"
 
-            # Strip common prefixes
+            # Clean up
             task_desc = re.sub(r"^(Fwd:|Re:|FW:)\s*", "", task_desc).strip()
+            # Capitalize first letter
+            if task_desc and task_desc[0].islower():
+                task_desc = task_desc[0].upper() + task_desc[1:]
 
             ref_id = uuid.uuid4().hex[:8]
             from_person = spark.get("from_person", "")
