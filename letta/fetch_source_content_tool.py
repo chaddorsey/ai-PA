@@ -166,7 +166,8 @@ def fetch_source_content(
                 message_ts = slack_match.group(2)
                 thread_ts = slack_match.group(3) or message_ts
 
-                slack_token = os.environ.get("SLACK_BOT_TOKEN", "")
+                # Prefer user token (xoxp) for broader channel access
+                slack_token = os.environ.get("SLACK_MCP_XOXP_TOKEN", "") or os.environ.get("SLACK_BOT_TOKEN", "")
                 if not slack_token:
                     # Sandbox may not inherit env — try reading from .env
                     try:
@@ -174,9 +175,11 @@ def fetch_source_content(
                             if os.path.exists(env_path):
                                 with open(env_path) as ef:
                                     for eline in ef:
-                                        if eline.startswith("SLACK_BOT_TOKEN="):
+                                        if eline.startswith("SLACK_MCP_XOXP_TOKEN="):
                                             slack_token = eline.split("=", 1)[1].strip()
                                             break
+                                        if not slack_token and eline.startswith("SLACK_BOT_TOKEN="):
+                                            slack_token = eline.split("=", 1)[1].strip()
                             if slack_token:
                                 break
                     except Exception:
