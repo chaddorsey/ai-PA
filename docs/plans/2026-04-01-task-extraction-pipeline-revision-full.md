@@ -132,6 +132,10 @@ These are real tasks directed at Chad but not captured by marker parsing.
 - Do NOT spend excessive time — if discovery takes more than 2-3 tool calls, stop
 - The `scan_meeting_notes` proposed actions system already handles meeting discovery at a basic level; Phase A-discover should not duplicate it but can refine/supplement its output
 
+### Future: Passive Scan / Automated Capture
+
+The current pipeline requires explicit user action to capture tasks (shortcut, forward, comment tag). A future evolution would add a passive scan layer that automatically monitors @-mentions across Slack, email, and Drive, writes sparks for new candidates with `origin: "agent-identified"`, and lets Phase 0 + Phase A handle extraction and refinement. This would run as a scheduled job or sleeptime task, with dedup against existing reference_ids. Candidates would appear at lower confidence in the sidebar for user review.
+
 ### Phase B: Work Packet Assembly (after FORMULATE, before or after CONFIRM)
 
 The work packet is the full "execution-ready" bundle. It involves reasoning-heavy backtracing that goes beyond the immediate source.
