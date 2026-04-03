@@ -43,7 +43,7 @@ echo "[$TS] Nudging tasks agent: $ENTRY_COUNT spark(s) pending"
 
 RESULT=$(curl -s -L -o /dev/null -w "%{http_code}" -X POST "$LETTA_BASE/v1/agents/$TASKS_AGENT/messages/" \
     -H "Content-Type: application/json" \
-    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s). Call process_spark_queue() now. After extraction: (1) refine enrichment_needed tasks per Phase A, (2) for sparks with fetch_hint, call fetch_source_content and discover additional tasks per Phase A-discover.\"}]}" \
+    -d "{\"messages\":[{\"role\":\"user\",\"content\":\"[Spark Queue Poll] $ENTRY_COUNT unprocessed spark(s). Call process_spark_queue(). Then: Phase A (refine + discover), then Phase B (backtrace_task for user-indicated tasks only).\"}]}" \
     --max-time 120 2>/dev/null)
 
 echo "[$TS] Agent response: HTTP $RESULT"

@@ -2128,6 +2128,24 @@ def api_transition_task(ref_id):
             omnifocus_id=omnifocus_task_id,
         )
 
+        # Trigger Phase B backtrace on confirmation if not already done
+        if action == "confirm" and "PACKET INFO" not in old_text:
+            import threading
+
+            def _trigger_backtrace():
+                """Fire-and-forget backtrace via tasks agent."""
+                try:
+                    httpx.Client(timeout=120.0).post(
+                        f"{LETTA_BASE_URL}/v1/agents/"
+                        "agent-dd15479e-6543-400e-8463-b2a48b13cd4a/messages/",
+                        json={"messages": [{"role": "user",
+                              "content": f"Run backtrace_task(ref_id='{ref_id}') now."}]},
+                    )
+                except Exception:
+                    pass
+
+            threading.Thread(target=_trigger_backtrace, daemon=True).start()
+
         return jsonify({"status": "ok", "ref_id": ref_id, "action": action})
     except Exception as e:
         logger.error(
