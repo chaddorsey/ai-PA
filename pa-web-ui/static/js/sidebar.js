@@ -450,6 +450,80 @@ class TaskSidebar {
   renderAccordionContent(container, data) {
     const sections = [];
 
+    // PACKET INFO (backtrace results) — top section
+    if (data.packet_info) {
+      const pi = data.packet_info;
+      let html = '<div class="detail-section packet-info-section">';
+      html += '<div class="detail-label">Backtrace</div>';
+
+      // Mismatch warning (prominent)
+      if (pi.mismatch_warning) {
+        html += `<div class="packet-warning">⚠ ${this.escapeHtml(pi.mismatch_warning)}</div>`;
+      }
+
+      // Three-node model
+      if (pi.direct_action) {
+        html += `<div class="packet-node"><span class="packet-node-label">Action:</span> ${this.escapeHtml(pi.direct_action)}</div>`;
+      }
+      if (pi.artifact_provenance && pi.artifact_provenance !== '(not identified)') {
+        html += `<div class="packet-node"><span class="packet-node-label">Artifact:</span> ${this.linkifyUrls(pi.artifact_provenance)}</div>`;
+      }
+      if (pi.intent_genesis && pi.intent_genesis !== '(not identified)') {
+        html += `<div class="packet-node"><span class="packet-node-label">Intent:</span> ${this.escapeHtml(pi.intent_genesis)}</div>`;
+      }
+
+      // Context brief
+      if (pi.context_brief && pi.context_brief.length > 0) {
+        html += '<div class="packet-brief">';
+        pi.context_brief.forEach(item => {
+          html += `<div class="packet-brief-item">• ${this.escapeHtml(item)}</div>`;
+        });
+        html += '</div>';
+      }
+
+      // Resources
+      if (pi.resources && pi.resources.length > 0) {
+        html += '<div class="packet-resources"><span class="packet-node-label">Resources:</span>';
+        pi.resources.forEach(item => {
+          html += `<div class="packet-resource-item">${this.linkifyUrls(item)}</div>`;
+        });
+        html += '</div>';
+      }
+
+      // Related tasks
+      if (pi.related_tasks && pi.related_tasks.length > 0) {
+        html += '<div class="packet-related"><span class="packet-node-label">Related:</span>';
+        pi.related_tasks.forEach(item => {
+          html += `<div class="packet-related-item">${this.escapeHtml(item)}</div>`;
+        });
+        html += '</div>';
+      }
+
+      // Knowns / Unknowns
+      if (pi.knowns || pi.unknowns) {
+        html += '<div class="packet-knowns">';
+        if (pi.knowns) {
+          pi.knowns.forEach(k => {
+            html += `<div class="packet-known">✓ ${this.escapeHtml(k)}</div>`;
+          });
+        }
+        if (pi.unknowns) {
+          pi.unknowns.forEach(u => {
+            html += `<div class="packet-unknown">? ${this.escapeHtml(u)}</div>`;
+          });
+        }
+        html += '</div>';
+      }
+
+      // Agent notes
+      if (pi.agent_notes) {
+        html += `<div class="packet-notes">${this.escapeHtml(pi.agent_notes)}</div>`;
+      }
+
+      html += '</div>';
+      sections.push(html);
+    }
+
     if (data.source_reference) {
       const sr = data.source_reference;
       let html = '<div class="detail-section"><div class="detail-label">Source</div>';

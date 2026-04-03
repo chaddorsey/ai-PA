@@ -1,11 +1,15 @@
 """
 Backtrace Task Tool for Letta
 
-Phase B: Cross-source backtracing to build PACKET INFO for a task.
-Searches archival, Slack, email, and meetings for related context
-beyond the immediate source. Produces the three-node model + context brief.
+Phase B materials preparation: fetches full source content, extracts structured
+anchors, searches archival for related passages, and returns raw materials for
+agent synthesis. Does NOT write PACKET INFO — that's write_packet_info's job.
 
-Can be called by any agent (tasks agent, MC, sleeptime).
+The agent (MC, tasks-agent, or sleeptime) drives the backtrace loop:
+  1. backtrace_task(ref_id) → returns hard center (source content, anchors, hits, hop candidates)
+  2. Agent reviews, decides whether to chase hop candidates
+  3. Agent calls fetch_source_content for selected hops
+  4. Agent synthesizes and calls write_packet_info when satisfied
 
 Tool: backtrace_task
 """
@@ -15,22 +19,22 @@ from typing import Dict, Any, Optional
 
 def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any]:
     """
-    Perform cross-source backtracing for a task to build PACKET INFO.
+    Fetch and search materials for cross-source backtracing of a task.
 
-    Searches archival memory for related passages, identifies the three-node
-    model (direct-action, artifact provenance, intent genesis), and produces
-    a context brief. Writes results to the archival passage's PACKET INFO section.
+    Returns structured raw materials: full source content, extracted anchors,
+    archival hits classified by type, and hop candidates for the agent to
+    evaluate. Does NOT write to archival — use write_packet_info for that.
 
-    This is Phase B enrichment — runs after Phase A has produced a good task
-    statement. The backtrace crosses source boundaries to understand WHY the
-    task exists and WHAT is needed to execute it.
+    The return value is the "hard center" that's immediately usable regardless
+    of whether the agent does further hops.
 
     Args:
         ref_id: The 8-char hex reference ID of the task to backtrace.
-        max_hops: Maximum search hops (default 3). Higher = more thorough but slower.
+        max_hops: Maximum iterative search rounds (default 3).
 
     Returns:
-        Dictionary with status, three-node model, context brief, and related items found.
+        Dictionary with source_content, anchors, archival_hits,
+        three_node_candidates, hop_candidates, and node_coverage.
     """
     import json
     import os
@@ -42,7 +46,6 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
     try:
         LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
         AGENT_ID = os.environ.get("LETTA_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
-        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
         hops = max_hops or 3
 
         if not ref_id:
@@ -75,15 +78,9 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
         if not task_passage:
             return {"status": "error", "error_message": f"No archival passage found for ref_id {ref_id}"}
 
-        # Parse fields from passage (inline, no nested functions)
-        task_desc = ""
-        source_type = ""
-        from_person = ""
-        location = ""
-        location_id = ""
-        reference_id = ""
-        source_text_field = ""
-        for pattern, field_name in [
+        # Parse fields from passage
+        fields = {}
+        for pattern, key in [
             (r"^TASK: (.+)$", "task_desc"),
             (r"- Type: (.+)$", "source_type"),
             (r"- From: (.+)$", "from_person"),
@@ -93,273 +90,374 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
         ]:
             m = re.search(pattern, task_text, re.MULTILINE)
             if m:
-                if field_name == "task_desc": task_desc = m.group(1).strip()
-                elif field_name == "source_type": source_type = m.group(1).strip()
-                elif field_name == "from_person": from_person = m.group(1).strip()
-                elif field_name == "location": location = m.group(1).strip()
-                elif field_name == "location_id": location_id = m.group(1).strip()
-                elif field_name == "reference_id": reference_id = m.group(1).strip()
-        st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\n\nFETCH|\n\nENRICH|\Z)", task_text, re.DOTALL)
-        if st_match:
-            source_text_field = st_match.group(1).strip()
+                fields[key] = m.group(1).strip()
 
-        # ── Step 2: Build search queries from task context ──
-        # Extract key terms for searching
-        search_terms = []
+        task_desc = fields.get("task_desc", "")
+        source_type = fields.get("source_type", "")
+        from_person = fields.get("from_person", "")
+        location = fields.get("location", "")
+        location_id = fields.get("location_id", "")
+        reference_id = fields.get("reference_id", "")
 
-        # Person name (without email/ID)
+        # Extract source text and fetch hint
+        st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\nFETCH HINT:|\nENRICH|\nPACKET INFO|\Z)", task_text, re.DOTALL)
+        source_text_field = st_match.group(1).strip() if st_match else ""
+
+        fetch_hint_match = re.search(r"FETCH HINT: (.+)$", task_text, re.MULTILINE)
+        fetch_hint = fetch_hint_match.group(1).strip() if fetch_hint_match else ""
+
+        # Extract participants from passage
+        participants = []
         if from_person:
-            name_only = re.sub(r"\s*[\(<].*", "", from_person).strip()
-            if name_only and name_only != "Chad Dorsey":
-                search_terms.append(name_only)
+            email_match = re.search(r"<([^>]+)>", from_person)
+            if email_match:
+                participants.append(email_match.group(1))
 
-        # Key nouns from task description (crude but effective)
-        if task_desc:
-            # Remove common verbs and articles
-            stop_words = {"review", "check", "send", "draft", "complete", "update",
-                          "the", "a", "an", "for", "to", "in", "on", "with", "and",
-                          "of", "from", "by", "at", "is", "are", "was", "this", "that"}
-            words = [w for w in re.findall(r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*|[A-Z]{2,}", task_desc)
-                     if w.lower() not in stop_words and len(w) > 2]
-            search_terms.extend(words[:3])
-
-        # Location/channel
-        if location and not location.startswith("#"):
-            search_terms.append(location[:40])
-
-        # ── Step 3: Search archival for related passages ──
-        related_passages = []
-        seen_ids = {task_passage.get("id", "")}
-
-        for term in search_terms[:hops]:
+        # ── Step 2: Fetch full source content ──
+        full_content = ""
+        if fetch_hint:
             try:
-                s_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={urllib.request.quote(term)}&limit=5"
-                s_req = urllib.request.Request(s_url)
-                with urllib.request.urlopen(s_req, timeout=15) as s_resp:
-                    results = json.loads(s_resp.read().decode("utf-8"))
-                for p in (results if isinstance(results, list) else []):
-                    if not isinstance(p, dict):
-                        continue
-                    pid = p.get("id", "")
-                    if pid in seen_ids:
-                        continue
-                    seen_ids.add(pid)
-                    p_text = p.get("text", "")
-                    # Skip if it's just the same task
-                    if f"REF_ID: {ref_id}" in p_text:
-                        continue
-                    related_passages.append({
-                        "id": pid,
-                        "text_preview": p_text[:200],
-                        "tags": p.get("tags", []),
-                        "search_term": term,
-                    })
-            except Exception:
-                continue
+                import subprocess
+                if fetch_hint.startswith("gmail:"):
+                    msg_id = fetch_hint.split(":", 1)[1]
+                    result = subprocess.run(
+                        ["gws", "gmail", "users", "messages", "get",
+                         "--params", json.dumps({"userId": "me", "id": msg_id, "format": "full"}),
+                         "--format", "json"],
+                        capture_output=True, text=True, timeout=15,
+                    )
+                    if result.returncode == 0:
+                        import base64
+                        raw = "\n".join(l for l in result.stdout.split("\n") if not l.startswith("Using keyring"))
+                        msg = json.loads(raw)
+                        payload = msg.get("payload", {})
+                        parts_to_check = [payload]
+                        while parts_to_check:
+                            part = parts_to_check.pop(0)
+                            if part.get("mimeType") == "text/plain" and part.get("body", {}).get("data"):
+                                full_content = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", "replace")
+                                break
+                            parts_to_check.extend(part.get("parts", []))
+            except (FileNotFoundError, Exception):
+                pass
 
-        # ── Step 4: Build three-node model ──
-        direct_action = {
-            "source": f"{source_type} from {from_person}",
-            "location": location,
-            "reference_id": reference_id,
+        if not full_content:
+            full_content = source_text_field
+
+        # ── Step 3: Extract structured anchors ──
+        all_text = f"{task_desc} {full_content}".replace("\r\n", "\n").replace("\r", "\n")
+
+        # Minimal stopwords — only function words and ever-present scaffolding
+        STOP = {
+            "a", "an", "the", "and", "or", "but", "for", "of", "in", "on",
+            "to", "at", "by", "is", "it", "be", "as", "do", "if", "so",
+            "no", "not", "we", "us", "my", "me", "he", "hi",
+            "this", "that", "with", "from", "have", "has", "had", "are",
+            "was", "will", "can", "our", "all", "also", "just", "been",
+            "about", "some", "into", "your", "you", "its",
+            "chad", "dorsey", "chad dorsey",
+            "re", "cc", "am", "pm", "ok", "id",
+            "sent", "subject", "external", "use", "caution",
+            "best", "thanks", "regards", "sincerely", "dear",
         }
 
-        # Classify related passages into three-node model
-        artifact_provenance = None
-        intent_genesis = []
+        # --- Anchor extraction ---
+        anchors_urls = []
+        anchors_doc_ids = []
+        anchors_proper_nouns = []
+        anchors_distinctive = []
+        anchors_acronyms = []
+
+        # URLs + domains + doc IDs
+        urls_found = re.findall(r"https?://[^\s<>\"]+", all_text)
+        for u in urls_found:
+            anchors_urls.append(u)
+            # Extract Drive doc IDs
+            drive_match = re.search(r"docs\.google\.com/[^/]+/d/([a-zA-Z0-9_-]+)", u)
+            if drive_match:
+                anchors_doc_ids.append(drive_match.group(1))
+
+        # Multi-word proper nouns (single line only)
+        seen_nouns = set()
+        for pn in re.findall(r"[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+", all_text):
+            first_word = pn.split()[0].lower()
+            if first_word in STOP or pn.lower() in STOP:
+                continue
+            if pn.lower() not in seen_nouns and len(pn) > 4:
+                seen_nouns.add(pn.lower())
+                anchors_proper_nouns.append(pn)
+
+        # CamelCase project names (PhET, TechNexus)
+        for cc in re.findall(r"\b([A-Z][a-z]+[A-Z][a-zA-Z]*)\b", all_text):
+            if cc.lower() not in STOP and cc not in anchors_proper_nouns:
+                anchors_proper_nouns.append(cc)
+
+        # Single capitalized words >3 chars
+        for sc in re.findall(r"\b([A-Z][a-z]{3,})\b", all_text):
+            if sc.lower() not in STOP and sc.lower() not in seen_nouns:
+                seen_nouns.add(sc.lower())
+                anchors_proper_nouns.append(sc)
+
+        # Person name from source
+        person_name = ""
+        if from_person:
+            person_name = re.sub(r"\s*[\(<].*", "", from_person).strip()
+            if person_name and person_name.lower() not in STOP:
+                anchors_proper_nouns.append(person_name)
+
+        # Acronyms (2+ uppercase)
+        for a in re.findall(r"\b([A-Z]{2,})\b", all_text):
+            if a.lower() not in STOP and a not in anchors_acronyms:
+                anchors_acronyms.append(a)
+
+        # Compound acronym phrases (CC BY, CC BY-NC)
+        for ca in re.findall(r"\b([A-Z]{2,}\s+[A-Z]{2,}(?:[-][A-Z]{2,})?)\b", all_text):
+            if ca not in anchors_acronyms:
+                anchors_acronyms.append(ca)
+
+        # Distinctive phrases from task description (multi-word, lowercase included)
+        desc_words = task_desc.split()
+        for i in range(len(desc_words)):
+            w = desc_words[i]
+            w_clean = w.lower().rstrip(".,;:!?'s")
+            if len(w_clean) > 5 and w_clean not in STOP:
+                if w_clean not in anchors_distinctive:
+                    anchors_distinctive.append(w_clean)
+            if w[0:1].isupper() and len(w) > 3 and w.lower() not in STOP:
+                if w not in anchors_proper_nouns and w not in anchors_distinctive:
+                    anchors_distinctive.append(w)
+
+        # Build search term list (flattened, deduplicated, priority-ordered)
+        search_terms = []
+        seen = set()
+        for term_list in [anchors_distinctive, anchors_proper_nouns, anchors_acronyms]:
+            for t in term_list:
+                t_clean = t.strip()
+                if t_clean and t_clean.lower() not in seen and len(t_clean) > 1:
+                    seen.add(t_clean.lower())
+                    search_terms.append(t_clean)
+        # Add domains from URLs
+        for u in anchors_urls[:5]:
+            domain_match = re.search(r"https?://([^/\s]+)", u)
+            if domain_match:
+                d = domain_match.group(1)
+                if d not in ("mail.google.com", "docs.google.com", "slack.com",
+                             "www.google.com", "www.linkedin.com") and d.lower() not in seen:
+                    seen.add(d.lower())
+                    search_terms.append(d)
+
+        search_terms = search_terms[:20]
+
+        # ── Step 4: Archival search ──
+        archival_hits = []
+        seen_ids = {task_passage.get("id", "")}
+        searched_terms = set()
+        new_anchors = []
+
+        for iteration in range(min(hops, 3)):
+            terms_this_round = search_terms if iteration == 0 else new_anchors
+            new_anchors = []
+
+            for term in terms_this_round:
+                if term.lower() in searched_terms:
+                    continue
+                searched_terms.add(term.lower())
+
+                try:
+                    s_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={urllib.request.quote(term)}&limit=5"
+                    s_req = urllib.request.Request(s_url)
+                    with urllib.request.urlopen(s_req, timeout=15) as s_resp:
+                        results = json.loads(s_resp.read().decode("utf-8"))
+                    for p in (results if isinstance(results, list) else []):
+                        if not isinstance(p, dict):
+                            continue
+                        pid = p.get("id", "")
+                        if pid in seen_ids:
+                            continue
+                        seen_ids.add(pid)
+                        p_text = p.get("text", "")
+                        if f"REF_ID: {ref_id}" in p_text:
+                            continue
+                        tags = p.get("tags", []) or []
+                        archival_hits.append({
+                            "id": pid,
+                            "text_preview": p_text[:300],
+                            "tags": tags,
+                            "matched_anchor": term,
+                        })
+                        # Extract new anchors for next iteration
+                        for new_pn in re.findall(r"[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+", p_text[:300]):
+                            if (new_pn.lower() not in searched_terms
+                                    and new_pn.split()[0].lower() not in STOP):
+                                new_anchors.append(new_pn)
+                except Exception:
+                    continue
+
+            if not new_anchors:
+                break
+
+        # ── Step 5: Classify hits into three-node candidates ──
+        relevance_terms = [t.lower() for t in search_terms[:10]]
+
+        artifact_candidates = []
+        intent_candidates = []
         related_tasks = []
-        related_slack = []
+        other_hits = []
 
-        for rp in related_passages:
-            text = rp.get("text_preview", "")
-            tags = rp.get("tags", []) or []
+        for hit in archival_hits:
+            text = hit.get("text_preview", "")
+            tags = hit.get("tags", []) or []
+            text_lower = text.lower()
+            is_relevant = any(rt in text_lower for rt in relevance_terms)
 
-            # Artifact provenance: Drive docs, files, links
-            if (any(t.startswith("source:google") for t in tags)
-                    or "drive.google.com" in text
-                    or "docs.google.com" in text):
-                if not artifact_provenance:
-                    artifact_provenance = {"text": text[:150], "tags": tags}
-
-            # Intent genesis: meetings, decisions, strategy discussions
-            if (any(t.startswith("source:meeting") for t in tags)
-                    or "Decision" in text
-                    or "agreed" in text.lower()
-                    or "strategy" in text.lower()):
-                intent_genesis.append({"text": text[:150], "tags": tags})
-
-            # Related tasks: other extracted tasks
-            if "TASK:" in text and "REF_ID:" in text:
+            # Related tasks (other extracted tasks sharing search terms)
+            if "TASK:" in text and "REF_ID:" in text and is_relevant:
                 task_match = re.search(r"TASK: (.+)", text)
                 ref_match = re.search(r"REF_ID: (\S+)", text)
+                status_match = re.search(r"\[(COMPLETED|REJECTED)\]", text)
                 if task_match and ref_match:
                     related_tasks.append({
                         "ref_id": ref_match.group(1),
-                        "task": task_match.group(1)[:80],
+                        "task": task_match.group(1).strip()[:100],
+                        "status": status_match.group(1).lower() if status_match else "active",
+                        "matched_anchor": hit.get("matched_anchor", ""),
                     })
+                continue
 
-            # Slack context: related channel discussions
-            if any(t.startswith("source:slack") for t in tags):
-                related_slack.append({"text": text[:150], "tags": tags})
+            # Artifact candidates: Drive/Docs sources, relevant to task
+            if is_relevant and (
+                any(t.startswith("source:google") for t in tags)
+                or "drive.google.com" in text
+                or "docs.google.com" in text
+            ):
+                artifact_candidates.append({
+                    "preview": text[:200],
+                    "tags": tags,
+                    "matched_anchor": hit.get("matched_anchor", ""),
+                })
+                continue
 
-        # ── Step 5: Build context brief ──
-        context_brief = []
-        if task_desc:
-            context_brief.append(f"Task: {task_desc}")
-        if from_person:
-            context_brief.append(f"Requested by: {from_person}")
-        if location:
-            context_brief.append(f"Source: {location}")
-        if artifact_provenance:
-            context_brief.append(f"Primary artifact: {artifact_provenance['text'][:80]}")
-        if intent_genesis:
-            context_brief.append(f"Prior context: {len(intent_genesis)} related meeting/decision passage(s)")
-        context_brief.append(f"Related passages found: {len(related_passages)}")
+            # Intent candidates: meetings, decisions, strategy
+            if (any(t.startswith("source:meeting") for t in tags)
+                    or "Decision" in text
+                    or "agreed" in text_lower
+                    or "strategy" in text_lower):
+                intent_candidates.append({
+                    "preview": text[:200],
+                    "tags": tags,
+                    "matched_anchor": hit.get("matched_anchor", ""),
+                })
+                continue
 
-        # ── Step 6: Write PACKET INFO to archival passage ──
-        packet_info_lines = [
-            "\nPACKET INFO",
-            f"- Direct-action node: {source_type} — {from_person} in {location}",
-        ]
-        if artifact_provenance:
-            packet_info_lines.append(f"- Artifact provenance: {artifact_provenance['text'][:100]}")
-        else:
-            packet_info_lines.append("- Artifact provenance: (not identified)")
+            # Everything else
+            if is_relevant:
+                other_hits.append({
+                    "preview": text[:200],
+                    "tags": tags,
+                    "matched_anchor": hit.get("matched_anchor", ""),
+                })
 
-        if intent_genesis:
-            for ig in intent_genesis[:3]:
-                packet_info_lines.append(f"- Intent genesis: {ig['text'][:100]}")
-        else:
-            packet_info_lines.append("- Intent genesis: (not identified)")
+        # ── Step 6: Build hop candidates ──
+        hop_candidates = []
 
-        packet_info_lines.append("")
-        packet_info_lines.append("Context brief:")
-        for cb in context_brief:
-            packet_info_lines.append(f"  - {cb}")
+        # URLs from source content → potential artifact hops
+        for u in anchors_urls[:5]:
+            if "drive.google.com" in u or "docs.google.com" in u:
+                hop_candidates.append({
+                    "ref": u,
+                    "type": "drive_doc",
+                    "node_likelihood": "artifact_provenance",
+                    "reason": "Drive/Docs link found in source content",
+                })
+            elif "slack.com/archives" in u:
+                hop_candidates.append({
+                    "ref": u,
+                    "type": "slack_thread",
+                    "node_likelihood": "direct_action",
+                    "reason": "Slack permalink found in source content",
+                })
 
-        if related_tasks:
-            packet_info_lines.append("")
-            packet_info_lines.append("Related tasks:")
-            for rt in related_tasks[:5]:
-                packet_info_lines.append(f"  - [{rt['ref_id']}] {rt['task']}")
+        # Intent genesis candidates from meeting hits
+        for ic in intent_candidates[:3]:
+            meeting_match = re.search(r"- Context: (.+?)$", ic["preview"], re.MULTILINE)
+            hop_candidates.append({
+                "ref": meeting_match.group(1) if meeting_match else ic["preview"][:60],
+                "type": "meeting",
+                "node_likelihood": "intent_genesis",
+                "reason": f"Meeting passage matched anchor '{ic['matched_anchor']}'",
+            })
 
-        if related_slack:
-            packet_info_lines.append("")
-            packet_info_lines.append("Related Slack context:")
-            for rs in related_slack[:3]:
-                packet_info_lines.append(f"  - {rs['text'][:80]}")
+        # ── Step 7: Assess node coverage ──
+        node_coverage = {
+            "direct_action": True,  # Always filled from passage metadata
+            "artifact_provenance": len(artifact_candidates) > 0,
+            "intent_genesis": len(intent_candidates) > 0,
+        }
 
-        # Knowns / Assumptions / Unknowns
-        knowns = []
-        assumptions = []
-        unknowns = []
-
-        if from_person:
-            knowns.append(f"Requested by {from_person}")
-        if artifact_provenance:
-            knowns.append("Primary artifact identified")
-        else:
-            unknowns.append("Primary artifact/deliverable location not identified")
-        if intent_genesis:
-            knowns.append(f"{len(intent_genesis)} prior decision/meeting passage(s) found")
-        else:
-            unknowns.append("No prior meetings or decisions found — intent/strategy context missing")
-        if related_tasks:
-            knowns.append(f"{len(related_tasks)} related task(s) in system")
-        if not related_passages:
-            unknowns.append("No related archival passages found — task may be novel or poorly indexed")
-
-        packet_info_lines.append("")
-        packet_info_lines.append("Knowns / Assumptions / Unknowns:")
-        for k in knowns:
-            packet_info_lines.append(f"  Known: {k}")
-        for a in assumptions:
-            packet_info_lines.append(f"  Assumption: {a}")
-        for u in unknowns:
-            packet_info_lines.append(f"  Unknown: {u}")
-
-        # ── Formulation mismatch check ──
-        # If backtrace reveals context that contradicts the task formulation,
-        # flag prominently. Check if related tasks suggest a different action.
-        mismatch_flag = None
-        if related_tasks:
-            completed_related = [rt for rt in related_tasks
-                                 if "[COMPLETED]" in rt.get("task", "")]
-            if completed_related:
-                mismatch_flag = (
-                    f"⚠ POSSIBLE OVERLAP: {len(completed_related)} related task(s) already "
-                    f"completed. The current task may be a duplicate or the scope may have "
-                    f"shifted. Review: {completed_related[0]['task'][:60]}"
-                )
-            rejected_related = [rt for rt in related_tasks
-                                if "[REJECTED]" in rt.get("task", "")]
-            if rejected_related and not mismatch_flag:
-                mismatch_flag = (
-                    f"⚠ NOTE: A similar task was previously rejected: "
-                    f"{rejected_related[0]['task'][:60]}. "
-                    f"Verify this is a distinct action."
-                )
-
-        if mismatch_flag:
-            packet_info_lines.insert(1, "")
-            packet_info_lines.insert(2, f">>> {mismatch_flag} <<<")
-            packet_info_lines.insert(3, "")
-
-        packet_info_text = "\n".join(packet_info_lines)
-
-        # Update the archival passage
-        new_text = task_text
-        # Remove existing PACKET INFO if present
-        new_text = re.sub(r"\nPACKET INFO\n.*?(?=\n\n[A-Z]|\Z)", "", new_text, flags=re.DOTALL)
-        # Update enrichment status
-        new_text = re.sub(r"- Status: (?:none|phase-a-complete|phase0-complete)",
-                          "- Status: packet-info", new_text)
-        # Append packet info before SOURCE TEXT
-        source_text_idx = new_text.find("\nSOURCE TEXT\n")
-        if source_text_idx > 0:
-            new_text = new_text[:source_text_idx] + packet_info_text + new_text[source_text_idx:]
-        else:
-            new_text += packet_info_text
-
-        # Update tags
-        tags = task_passage.get("tags", []) or []
-        tags = [t for t in tags if not t.startswith("enrichment:")]
-        tags.append("enrichment:packet-info")
-
-        # Delete old passage, insert new
-        passage_id = task_passage.get("id", "")
-        try:
-            del_req = urllib.request.Request(
-                f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}",
-                method="DELETE",
-            )
-            urllib.request.urlopen(del_req, timeout=10)
-
-            ins_data = json.dumps({"text": new_text, "tags": tags}).encode("utf-8")
-            ins_req = urllib.request.Request(
-                f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages",
-                data=ins_data, headers={"Content-Type": "application/json"}, method="POST",
-            )
-            urllib.request.urlopen(ins_req, timeout=15)
-        except Exception:
-            pass  # Archival update is best-effort
+        # ── Build mismatch warnings ──
+        mismatch_warnings = []
+        completed_related = [rt for rt in related_tasks if rt["status"] == "completed"]
+        rejected_related = [rt for rt in related_tasks if rt["status"] == "rejected"]
+        if completed_related:
+            mismatch_warnings.append({
+                "type": "overlap",
+                "message": f"{len(completed_related)} related task(s) already completed",
+                "examples": [f"[{rt['ref_id']}] {rt['task'][:60]}" for rt in completed_related[:3]],
+            })
+        if rejected_related:
+            mismatch_warnings.append({
+                "type": "prior_rejection",
+                "message": f"{len(rejected_related)} similar task(s) previously rejected",
+                "examples": [f"[{rt['ref_id']}] {rt['task'][:60]}" for rt in rejected_related[:3]],
+            })
 
         return {
             "status": "ok",
             "ref_id": ref_id,
             "task": task_desc,
-            "three_node_model": {
-                "direct_action": direct_action,
-                "artifact_provenance": artifact_provenance,
-                "intent_genesis": intent_genesis[:3],
+            "passage_id": task_passage.get("id", ""),
+
+            # Hard center — source material
+            "source_content": full_content[:3000],
+            "source_type": source_type,
+            "fetch_hint": fetch_hint,
+
+            # Structured anchors
+            "anchors": {
+                "urls": anchors_urls[:10],
+                "doc_ids": anchors_doc_ids,
+                "proper_nouns": anchors_proper_nouns[:15],
+                "distinctive_phrases": anchors_distinctive[:10],
+                "acronyms": anchors_acronyms[:10],
+                "participants": participants,
             },
-            "context_brief": context_brief,
-            "knowns_unknowns": {"knowns": knowns, "assumptions": assumptions, "unknowns": unknowns},
-            "mismatch_flag": mismatch_flag,
-            "related_tasks": related_tasks[:5],
-            "related_slack": len(related_slack),
-            "related_passages_found": len(related_passages),
-            "search_terms_used": search_terms[:hops],
+
+            # Direct-action node (always filled from passage metadata)
+            "direct_action": {
+                "source": f"{source_type} from {from_person}",
+                "location": location,
+                "location_id": location_id,
+                "reference_id": reference_id,
+            },
+
+            # Three-node candidates (for agent to evaluate, not pre-selected)
+            "artifact_candidates": artifact_candidates[:5],
+            "intent_candidates": intent_candidates[:5],
+
+            # Related items
+            "related_tasks": related_tasks[:10],
+            "other_hits": other_hits[:10],
+
+            # Hop candidates (for agent to chase or skip)
+            "hop_candidates": hop_candidates[:10],
+
+            # Coverage + warnings
+            "node_coverage": node_coverage,
+            "mismatch_warnings": mismatch_warnings,
+
+            # Search metadata
+            "search_terms_used": list(searched_terms),
+            "total_archival_hits": len(archival_hits),
         }
 
     except Exception as e:

@@ -1825,6 +1825,101 @@ def parse_archival_passage(text):
     if omnifocus:
         result['omnifocus'] = omnifocus
 
+    # PACKET INFO
+    packet_match = re.search(
+        r'PACKET INFO\n(.+?)(?=\nSOURCE TEXT\n|\nFETCH HINT:|\Z)',
+        text, re.DOTALL,
+    )
+    if packet_match:
+        packet = {}
+        ptext = packet_match.group(1).strip()
+
+        # Three-node model
+        da = re.search(r'- Direct-action:\s*(.+)', ptext)
+        if da:
+            packet['direct_action'] = da.group(1).strip()
+        ap = re.search(r'- Artifact provenance:\s*(.+)', ptext)
+        if ap:
+            packet['artifact_provenance'] = ap.group(1).strip()
+        ig = re.search(r'- Intent genesis:\s*(.+)', ptext)
+        if ig:
+            packet['intent_genesis'] = ig.group(1).strip()
+
+        # Context brief
+        brief_match = re.search(
+            r'Context brief:\n(.+?)(?=\nResources:|\nRelated|\nKnowns|\nAgent notes|\Z)',
+            ptext, re.DOTALL,
+        )
+        if brief_match:
+            items = []
+            for line in brief_match.group(1).strip().split('\n'):
+                line = line.strip().lstrip('- ')
+                if line:
+                    items.append(line)
+            packet['context_brief'] = items
+
+        # Resources
+        resources_match = re.search(
+            r'Resources:\n(.+?)(?=\nRelated|\nKnowns|\nAgent notes|\Z)',
+            ptext, re.DOTALL,
+        )
+        if resources_match:
+            items = []
+            for line in resources_match.group(1).strip().split('\n'):
+                line = line.strip().lstrip('- ')
+                if line:
+                    items.append(line)
+            packet['resources'] = items
+
+        # Related tasks
+        related_match = re.search(
+            r'Related tasks:\n(.+?)(?=\nKnowns|\nAgent notes|\Z)',
+            ptext, re.DOTALL,
+        )
+        if related_match:
+            items = []
+            for line in related_match.group(1).strip().split('\n'):
+                line = line.strip().lstrip('- ')
+                if line:
+                    items.append(line)
+            packet['related_tasks'] = items
+
+        # Knowns / Unknowns
+        knowns_match = re.search(
+            r'Knowns / (?:Assumptions / )?Unknowns:\n(.+?)(?=\nAgent notes|\Z)',
+            ptext, re.DOTALL,
+        )
+        if knowns_match:
+            knowns = []
+            unknowns = []
+            for line in knowns_match.group(1).strip().split('\n'):
+                line = line.strip()
+                if line.startswith('Known:'):
+                    knowns.append(line[6:].strip())
+                elif line.startswith('Unknown:'):
+                    unknowns.append(line[8:].strip())
+            if knowns:
+                packet['knowns'] = knowns
+            if unknowns:
+                packet['unknowns'] = unknowns
+
+        # Agent notes
+        notes_match = re.search(r'Agent notes:\n(.+?)(?=\Z)', ptext, re.DOTALL)
+        if notes_match:
+            packet['agent_notes'] = notes_match.group(1).strip()
+
+        # Mismatch warnings
+        mismatch = re.search(r'>>> ⚠ (.+?) <<<', ptext)
+        if mismatch:
+            packet['mismatch_warning'] = mismatch.group(1).strip()
+
+        result['packet_info'] = packet
+
+    # ENRICHMENT status
+    enrich_match = re.search(r'ENRICHMENT\n- Status:\s*(.+)', text)
+    if enrich_match:
+        result['enrichment_status'] = enrich_match.group(1).strip()
+
     # SOURCE TEXT
     m = re.search(r'SOURCE TEXT\n(.+)', text, re.DOTALL)
     if m:
