@@ -123,7 +123,15 @@ def extract_timestamp(text):
 
 
 def dispatch_enrichment(ref_id):
-    """Send enrichment message to the dedicated conversation."""
+    """Send enrichment message to the dedicated conversation.
+
+    Uses the conversations endpoint (POST /v1/conversations/{id}/messages/)
+    which correctly routes to the dedicated conversation. The agent messages
+    endpoint does NOT support conversation routing despite accepting the param.
+
+    The conversations endpoint returns an SSE stream. We fire-and-forget —
+    the scanner doesn't need to parse the response.
+    """
     message = (
         f"Enrich task ref_id {ref_id}.\n"
         f'Step 1: Call fetch_source_content(ref_id="{ref_id}") to get the full source content.\n'
@@ -135,13 +143,27 @@ def dispatch_enrichment(ref_id):
         f"If no backtrace materials are returned, you are done after Step 2."
     )
 
-    payload = {
-        "messages": [{"role": "user", "content": message}],
-    }
-    if CONV_ID:
-        payload["conversation_id"] = CONV_ID
+    if not CONV_ID:
+        # Fallback: use agent messages endpoint (no conversation isolation)
+        return letta_post(f"/v1/agents/{AGENT_ID}/messages/", {
+            "messages": [{"role": "user", "content": message}],
+        })
 
-    return letta_post(f"/v1/agents/{AGENT_ID}/messages/", payload)
+    # Use conversations endpoint with the full SSE stream.
+    # The stream blocks until the agent finishes all tool calls.
+    # We must read the full response — closing early cancels processing.
+    url = f"{LETTA_BASE}/v1/conversations/{CONV_ID}/messages"
+    body = json.dumps({"input": message}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            # Read the full SSE stream (agent processes during this time)
+            response_data = resp.read().decode("utf-8", "replace")
+            # Check if any tool calls were made
+            tool_calls = response_data.count('"tool_call_message"')
+            return {"status": "dispatched", "tool_calls": tool_calls}
+    except urllib.error.HTTPError as e:
+        raise
 
 
 def dispatch_backtrace_only(ref_id):
@@ -152,13 +174,20 @@ def dispatch_backtrace_only(ref_id):
         f"with your synthesis of the results."
     )
 
-    payload = {
-        "messages": [{"role": "user", "content": message}],
-    }
-    if CONV_ID:
-        payload["conversation_id"] = CONV_ID
+    if not CONV_ID:
+        return letta_post(f"/v1/agents/{AGENT_ID}/messages/", {
+            "messages": [{"role": "user", "content": message}],
+        })
 
-    return letta_post(f"/v1/agents/{AGENT_ID}/messages/", payload)
+    url = f"{LETTA_BASE}/v1/conversations/{CONV_ID}/messages"
+    body = json.dumps({"input": message}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            resp.read()
+            return {"status": "dispatched"}
+    except urllib.error.HTTPError as e:
+        raise
 
 
 def read_pending_block():
