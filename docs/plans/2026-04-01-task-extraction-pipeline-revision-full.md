@@ -93,7 +93,23 @@ Even with user-indicated tasks, the spark often needs contextual scanning to pro
 
 This protocol already exists in the tasks agent's persona as the "Context Enrichment Protocol." The change is to **codify it as mandatory for non-self-contained sparks** rather than optional, and to ensure email/meeting sparks carry enough raw material for it to work.
 
-### Phase A-discover: Contextual Task Discovery (after Phase A-refine)
+### Phase A: Unified Enrichment + Discovery (IMPLEMENTED 2026-04-03)
+
+**Boundary principle** (from MC): First-pass enrichment ends at "task-definition sufficiency" — when you can answer: (1) what's the deliverable, (2) who is it for, (3) what's the done test, (4) what inputs are needed to begin. Everything upstream is backtrace (Phase B).
+
+**Single pass per spark**: fetch full content once, then in the same scan: refine the primary task AND discover source-local siblings (0-2 max). No backtracing.
+
+**Discovery rules**: Only source-implied siblings needed for correctness. "Revise 2-pager" + "send to Andrew by Friday" = 2 tasks from same source. Context-derived tasks (prerequisites, parallel threads, follow-ons) are Phase B candidates, not first-pass extractions.
+
+**Toolchain**: `process_spark_queue` → `fetch_source_content` → `refine_task_description` + `add_extracted_tasks` (for siblings)
+
+**Model**: `gpt-5.2` with `reasoning_effort: medium` — reliable tool calling for the refine→discover chain.
+
+### Phase A-discover (legacy section, superseded by unified Phase A above)
+
+The below is retained for reference but the implementation follows the unified model above.
+
+#### Original Phase A-discover spec:
 
 Phase 0 extracts only explicitly marked tasks (`[c]`, `[]`, `>`) and user-noted tasks. But source content — especially email bodies and meeting transcripts — often contains additional tasks embedded in natural language that aren't explicitly marked:
 
