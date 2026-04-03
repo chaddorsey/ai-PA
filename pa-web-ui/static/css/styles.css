@@ -1626,6 +1626,15 @@ header h1 {
     border-color: var(--sb-teal-dim);
 }
 
+.draft-btn-resolve {
+    font-size: 14px;
+    font-weight: bold;
+}
+.draft-btn-resolve:hover {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+    border-color: #4caf50;
+}
 .draft-btn-send:hover {
     background: rgba(0, 212, 170, 0.15);
     color: var(--sb-teal);

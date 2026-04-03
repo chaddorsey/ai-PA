@@ -254,14 +254,20 @@ class DraftsSidebar {
 
     const clockSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 4v4.5l3 1.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+    const isDocsComment = draft.followup_type === 'docs_comment';
+    const resolveBtn = isDocsComment
+      ? `<button class="draft-btn draft-btn-resolve" title="Resolve comment">&#10003;</button>`
+      : '';
+
     card.innerHTML = `
       <div class="draft-card-header">
         ${badgeHtml}
         <span class="draft-time">${this.escapeHtml(timeLabel)}</span>
         <div class="draft-card-actions">
+          ${resolveBtn}
           <button class="draft-btn draft-btn-edit" title="Edit">&#9998;</button>
           <button class="draft-btn draft-btn-schedule" title="Schedule">${clockSvg}</button>
-          <button class="draft-btn draft-btn-send" title="Send">&#10148;</button>
+          <button class="draft-btn draft-btn-send" title="Send reply">&#10148;</button>
           <button class="draft-btn draft-btn-discard" title="Dismiss">&#10005;</button>
         </div>
       </div>
@@ -294,8 +300,27 @@ class DraftsSidebar {
       }
     });
     card.querySelector('.draft-btn-discard').addEventListener('click', () => this.discardDraft(draft.id, card));
+    card.querySelector('.draft-btn-resolve')?.addEventListener('click', () => this.resolveComment(draft.id, card));
 
     return card;
+  }
+
+  async resolveComment(followupId, card) {
+    const btn = card?.querySelector('.draft-btn-resolve');
+    if (btn) { btn.disabled = true; btn.textContent = '\u2026'; }
+    try {
+      const resp = await fetch(`/api/followups/${followupId}/resolve`, { method: 'POST' });
+      if (!resp.ok) {
+        const data = await resp.json();
+        throw new Error(data.error || `HTTP ${resp.status}`);
+      }
+      this.drafts = this.drafts.filter(d => d.id !== followupId);
+      this.updateBadge(this.drafts.length);
+      this.renderDraftList();
+    } catch (e) {
+      alert(`Resolve failed: ${e.message}`);
+      if (btn) { btn.disabled = false; btn.textContent = '\u2713'; }
+    }
   }
 
   formatTime(date) {

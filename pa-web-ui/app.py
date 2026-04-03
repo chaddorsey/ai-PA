@@ -2584,14 +2584,7 @@ def api_send_followup(followup_id):
                     json={**reply_params, "content": final_message},
                 )
                 resp.raise_for_status()
-            # Optionally resolve
-            if item.get("resolve_after_reply"):
-                resolve_params = routing.get("resolve_params", {})
-                with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
-                    client.patch(
-                        f"{GWS_BRIDGE_URL}/drive/comments/update",
-                        json={**resolve_params, "resolved": True},
-                    )
+            # Reply only — resolve is a separate action via /resolve endpoint
             _mark_followup_sent(followup_id)
             return jsonify({"status": "sent"})
 
@@ -2652,6 +2645,33 @@ def api_send_followup(followup_id):
 
     except Exception as e:
         logger.error("api_send_followup_error", error=str(e))
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/followups/<followup_id>/resolve', methods=['POST'])
+def api_resolve_followup(followup_id):
+    """Resolve a Google Docs comment without replying."""
+    try:
+        item = _find_followup(followup_id)
+        if not item:
+            return jsonify({"error": "Follow-up not found"}), 404
+
+        routing = item.get("routing", {})
+        resolve_params = routing.get("resolve_params", {})
+        if not resolve_params:
+            return jsonify({"error": "No resolve params in routing"}), 400
+
+        with httpx.Client(timeout=GWS_BRIDGE_TIMEOUT) as client:
+            client.patch(
+                f"{GWS_BRIDGE_URL}/drive/comments/update",
+                json={**resolve_params, "resolved": True},
+            )
+
+        _mark_followup_sent(followup_id)
+        return jsonify({"status": "resolved"})
+
+    except Exception as e:
+        logger.error("api_resolve_followup_error", error=str(e))
         return jsonify({"error": str(e)}), 500
 
 
