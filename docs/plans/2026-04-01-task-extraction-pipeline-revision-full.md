@@ -93,6 +93,45 @@ Even with user-indicated tasks, the spark often needs contextual scanning to pro
 
 This protocol already exists in the tasks agent's persona as the "Context Enrichment Protocol." The change is to **codify it as mandatory for non-self-contained sparks** rather than optional, and to ensure email/meeting sparks carry enough raw material for it to work.
 
+### Phase A-discover: Contextual Task Discovery (after Phase A-refine)
+
+Phase 0 extracts only explicitly marked tasks (`[c]`, `[]`, `>`) and user-noted tasks. But source content — especially email bodies and meeting transcripts — often contains additional tasks embedded in natural language that aren't explicitly marked:
+
+- "Chad, can you also reach out to the NSF program officer about the timeline?"
+- "Also, when you get a chance, could you review the attached budget?"
+- "We agreed that Chad would draft a response by Friday"
+
+These are real tasks directed at Chad but not captured by marker parsing.
+
+**Flow** (runs after Phase A-refine, same agent turn):
+
+1. For each spark with a `fetch_hint`, the tasks agent fetches the full content (if not already fetched during refinement)
+2. Scans the full content for additional task-like segments directed at Chad:
+   - Explicit requests/asks directed at Chad (by name or @-mention)
+   - Action items assigned in meeting summaries
+   - Commitments ("Chad will...", "Chad agreed to...")
+   - Questions requiring Chad's action or decision
+3. For each discovered task, calls `add_extracted_tasks` with `origin: "agent-identified"`
+4. Agent-identified tasks appear in the sidebar alongside user-indicated tasks but are distinguishable by origin
+
+**Confidence gating**:
+- `origin: "user-indicated"` — user explicitly marked or forwarded. High confidence.
+- `origin: "agent-identified"` — agent discovered in content scan. Lower confidence, may be noise.
+- Sidebar could display agent-identified tasks with lower visual weight or in a separate subsection.
+- Enrichment depth for agent-identified: minimal at extraction. Full enrichment deferred until user confirms.
+
+**Source-specific scanning**:
+- **Email**: Fetch full body via `fetch_hint: gmail:MESSAGE_ID`. Scan for asks/requests directed at Chad. Also scan thread for follow-up obligations.
+- **Meeting**: Fetch full meeting passage from archival via `fetch_hint: granola:MEETING_ID`. Scan AI summary and transcript for action items beyond `[c]` markers. Note: `scan_meeting_notes` already does keyword-based proposed action extraction — Phase A-discover would complement this with LLM-driven extraction.
+- **Slack**: Fetch thread via `run_slack`. Scan for asks in thread replies that aren't the original shortcut message.
+- **Drive comments**: Fetch comment reply chain. Scan for tasks in replies to the original comment.
+
+**Guard rails**:
+- Only discover from sparks that have `fetch_hint` (don't re-scan content already fully captured in Phase 0)
+- Cap at ~3 discovered tasks per source to avoid over-extraction
+- Do NOT spend excessive time — if discovery takes more than 2-3 tool calls, stop
+- The `scan_meeting_notes` proposed actions system already handles meeting discovery at a basic level; Phase A-discover should not duplicate it but can refine/supplement its output
+
 ### Phase B: Work Packet Assembly (after FORMULATE, before or after CONFIRM)
 
 The work packet is the full "execution-ready" bundle. It involves reasoning-heavy backtracing that goes beyond the immediate source.
