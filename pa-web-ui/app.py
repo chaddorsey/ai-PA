@@ -2252,82 +2252,89 @@ def api_transition_task(ref_id):
                     if not passage_text:
                         return
 
+                    parsed = parse_archival_passage(passage_text)
+                    pi = parsed.get("packet_info", {})
+
                     # Build note segments
                     segments = []
 
                     # Source context line
-                    source_ctx = re.search(r"- Context: (.+)$", passage_text, re.MULTILINE)
-                    from_p = re.search(r"- From: (.+)$", passage_text, re.MULTILINE)
-                    location_p = re.search(r"- Location: (.+)$", passage_text, re.MULTILINE)
-
-                    if source_ctx:
-                        segments.append({"text": f"Source: {source_ctx.group(1).strip()}\n", "italic": True, "size": 11})
-                    if from_p:
-                        segments.append({"text": f"From: {from_p.group(1).strip()}\n", "italic": True, "size": 11})
+                    sr = parsed.get("source_reference", {})
+                    sm = parsed.get("source_metadata", {})
+                    if sr.get("context"):
+                        segments.append({"text": f"Source: {sr['context']}\n", "italic": True, "size": 11})
+                    if sm.get("from"):
+                        segments.append({"text": f"From: {sm['from']}\n", "italic": True, "size": 11})
 
                     # Ref ID for traceability
                     segments.append({"text": f"ref_id: {ref_id}\n\n", "size": 10, "color": [0.5, 0.5, 0.5, 1]})
 
-                    # Mismatch flag (prominent)
-                    mismatch = re.search(r">>> (.+?) <<<", passage_text)
-                    if mismatch:
-                        segments.append({"text": f"⚠ {mismatch.group(1)}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
+                    # Mismatch warning (prominent)
+                    if pi.get("mismatch_warning"):
+                        segments.append({"text": f"⚠ {pi['mismatch_warning']}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
 
-                    # PACKET INFO context brief
-                    packet_match = re.search(r"PACKET INFO\n(.+?)(?=\nSOURCE TEXT|\nFETCH|\Z)", passage_text, re.DOTALL)
-                    if packet_match:
-                        packet_text = packet_match.group(1).strip()
+                    # Context brief
+                    if pi.get("context_brief"):
+                        segments.append({"text": "Context\n", "bold": True, "size": 13})
+                        for item in pi["context_brief"]:
+                            segments.append(f"  • {item}\n")
 
-                        # Context brief section
-                        brief_match = re.search(r"Context brief:\n(.+?)(?=\nRelated|\nKnowns|\Z)", packet_text, re.DOTALL)
-                        if brief_match:
-                            segments.append({"text": "Context\n", "bold": True, "size": 13})
-                            for bline in brief_match.group(1).strip().split("\n"):
-                                bline = bline.strip().lstrip("- ")
-                                if bline:
-                                    segments.append(f"  • {bline}\n")
+                    # Resources (with clickable links)
+                    if pi.get("resources"):
+                        segments.append("\n")
+                        segments.append({"text": "Resources\n", "bold": True, "size": 13})
+                        for item in pi["resources"]:
+                            # Extract URL from resource line
+                            url_match = re.search(r"(https?://\S+)", item)
+                            if url_match:
+                                url = url_match.group(1).rstrip(")")
+                                # Label is everything before the URL
+                                label = item[:item.find(url_match.group(0))].strip().rstrip("—").strip()
+                                # Role is in parens after URL
+                                role_match = re.search(r"\((\w+)\)\s*$", item)
+                                role = f" ({role_match.group(1)})" if role_match else ""
+                                segments.append({"text": f"  {label}{role}: ", "size": 11})
+                                display_url = url[:60] + ("..." if len(url) > 60 else "")
+                                segments.append({"text": f"{display_url}\n", "url": url, "underline": True, "size": 11})
+                            else:
+                                segments.append(f"  • {item}\n")
 
-                        # Related tasks
-                        related_match = re.search(r"Related tasks:\n(.+?)(?=\nRelated Slack|\nKnowns|\Z)", packet_text, re.DOTALL)
-                        if related_match:
-                            segments.append("\n")
-                            segments.append({"text": "Related Tasks\n", "bold": True, "size": 13})
-                            for rline in related_match.group(1).strip().split("\n"):
-                                rline = rline.strip().lstrip("- ")
-                                if rline:
-                                    segments.append(f"  • {rline}\n")
+                    # Related tasks
+                    if pi.get("related_tasks"):
+                        segments.append("\n")
+                        segments.append({"text": "Related Tasks\n", "bold": True, "size": 13})
+                        for item in pi["related_tasks"]:
+                            segments.append(f"  • {item}\n")
 
-                        # Knowns / Unknowns
-                        ku_match = re.search(r"Knowns / Assumptions / Unknowns:\n(.+?)(?=\n\n|\Z)", packet_text, re.DOTALL)
-                        if ku_match:
-                            segments.append("\n")
-                            segments.append({"text": "Knowns / Unknowns\n", "bold": True, "size": 13})
-                            for kline in ku_match.group(1).strip().split("\n"):
-                                kline = kline.strip()
-                                if kline.startswith("Known:"):
-                                    segments.append(f"  ✓ {kline[6:].strip()}\n")
-                                elif kline.startswith("Unknown:"):
-                                    segments.append({"text": f"  ? {kline[8:].strip()}\n", "italic": True})
-                                elif kline.startswith("Assumption:"):
-                                    segments.append(f"  ~ {kline[11:].strip()}\n")
+                    # Knowns / Unknowns
+                    if pi.get("knowns") or pi.get("unknowns"):
+                        segments.append("\n")
+                        segments.append({"text": "Knowns / Unknowns\n", "bold": True, "size": 13})
+                        for k in (pi.get("knowns") or []):
+                            segments.append(f"  ✓ {k}\n")
+                        for u in (pi.get("unknowns") or []):
+                            segments.append({"text": f"  ? {u}\n", "italic": True})
+
+                    # Agent notes
+                    if pi.get("agent_notes"):
+                        segments.append("\n")
+                        segments.append({"text": f"{pi['agent_notes']}\n", "size": 10, "italic": True, "color": [0.5, 0.5, 0.5, 1]})
 
                     # Source text (collapsed to first 200 chars)
-                    source_text_match = re.search(r"SOURCE TEXT\n(.+?)(?=\n\nFETCH|\n\nENRICH|\Z)", passage_text, re.DOTALL)
-                    if source_text_match:
-                        src = source_text_match.group(1).strip()[:200]
+                    if parsed.get("source_text"):
+                        src = parsed["source_text"][:200]
                         segments.append("\n")
                         segments.append({"text": "Source\n", "bold": True, "size": 13})
                         segments.append({"text": f"{src}\n", "size": 11, "color": [0.4, 0.4, 0.4, 1]})
 
-                    # Related URLs as openfile:// links
-                    urls_match = re.search(r"RELATED URLS\n(.+?)(?=\n\n|\Z)", passage_text, re.DOTALL)
-                    if urls_match:
+                    # Related URLs as clickable links (from passage, separate from resources)
+                    if parsed.get("related_urls"):
                         segments.append("\n")
                         segments.append({"text": "Links\n", "bold": True, "size": 13})
-                        for uline in urls_match.group(1).strip().split("\n"):
-                            url = uline.strip().lstrip("- ").strip()
+                        for url in parsed["related_urls"]:
                             if url.startswith("http"):
-                                segments.append({"text": f"  {url[:50]}...\n", "url": url, "underline": True})
+                                display = url[:60] + ("..." if len(url) > 60 else "")
+                                segments.append({"text": f"  {display}\n", "url": url, "underline": True})
 
                     if segments:
                         try:
