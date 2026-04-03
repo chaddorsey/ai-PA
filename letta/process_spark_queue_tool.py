@@ -297,6 +297,42 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
                     results.append({"spark_id": spark_id, "status": "error", "error": f"Block write failed: {str(e)}"})
                     continue
 
+            # ── Queue for enrichment (non-explicit tasks) ──
+            if enrichment_will_be == "none":
+                try:
+                    pe_block_id = None
+                    for blk in adata2.get("memory", {}).get("blocks", []) if 'adata2' in dir() else []:
+                        if blk.get("label") == "pending_enrichment":
+                            pe_block_id = blk["id"]
+                            pe_val = blk["value"]
+                            break
+                    if not pe_block_id:
+                        # Fetch agent data if not already fetched (non-explicit path skips block fetch)
+                        pe_areq = urllib.request.Request(f"{LETTA_BASE}/v1/agents/{AGENT_ID}/")
+                        with urllib.request.urlopen(pe_areq, timeout=10) as pe_resp:
+                            pe_adata = json.loads(pe_resp.read().decode("utf-8"))
+                        for blk in pe_adata.get("memory", {}).get("blocks", []):
+                            if blk.get("label") == "pending_enrichment":
+                                pe_block_id = blk["id"]
+                                pe_val = blk["value"]
+                                break
+                    if pe_block_id:
+                        if "(empty)" in pe_val:
+                            pe_val = ""
+                        pe_val = pe_val.strip()
+                        if pe_val:
+                            pe_val += f"\n{ref_id}"
+                        else:
+                            pe_val = ref_id
+                        pe_data = json.dumps({"value": pe_val}).encode("utf-8")
+                        pe_req = urllib.request.Request(
+                            f"{LETTA_BASE}/v1/blocks/{pe_block_id}",
+                            data=pe_data, headers={"Content-Type": "application/json"}, method="PATCH",
+                        )
+                        urllib.request.urlopen(pe_req, timeout=10)
+                except Exception:
+                    pass  # Best-effort
+
             # ── Write archival passage ──
             urls_section = ""
             if related_urls:

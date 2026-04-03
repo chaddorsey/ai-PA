@@ -33,6 +33,7 @@ LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
 AGENT_ID = os.environ.get("TASKS_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
 CONV_ID = os.environ.get("ENRICHMENT_CONV_ID", "")
 ARCHIVE_ID = os.environ.get("ARCHIVE_ID", "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26")
+PENDING_BLOCK_ID = os.environ.get("PENDING_ENRICHMENT_BLOCK_ID", "block-266ccbfc-4c8d-41ee-aedf-da8019daa387")
 TIMEOUT_MINUTES = 10
 
 
@@ -160,125 +161,75 @@ def dispatch_backtrace_only(ref_id):
     return letta_post(f"/v1/agents/{AGENT_ID}/messages/", payload)
 
 
+def read_pending_block():
+    """Read the pending_enrichment block for ref_ids needing enrichment."""
+    try:
+        data = letta_get(f"/v1/blocks/{PENDING_BLOCK_ID}")
+        value = data.get("value", "").strip()
+        if not value or value == "(empty)":
+            return []
+        return [line.strip() for line in value.split("\n") if line.strip() and line.strip() != "(empty)"]
+    except Exception as e:
+        log.error(f"Failed to read pending_enrichment block: {e}")
+        return []
+
+
+def remove_from_pending(ref_id):
+    """Remove a ref_id from the pending_enrichment block."""
+    try:
+        data = letta_get(f"/v1/blocks/{PENDING_BLOCK_ID}")
+        value = data.get("value", "")
+        lines = [l.strip() for l in value.split("\n") if l.strip() and l.strip() != ref_id]
+        new_value = "\n".join(lines) if lines else "(empty)"
+        body = json.dumps({"value": new_value}).encode("utf-8")
+        url = f"{LETTA_BASE}/v1/blocks/{PENDING_BLOCK_ID}"
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="PATCH")
+        try:
+            urllib.request.urlopen(req, timeout=10)
+        except urllib.error.HTTPError as e:
+            if e.code in (307, 308):
+                loc = e.headers.get("Location", "")
+                req2 = urllib.request.Request(loc, data=body, headers={"Content-Type": "application/json"}, method="PATCH")
+                urllib.request.urlopen(req2, timeout=10)
+    except Exception as e:
+        log.warning(f"Failed to remove {ref_id} from pending block: {e}")
+
+
 def main():
     now = datetime.now(timezone.utc)
 
-    # ── Query 1: Find tasks needing enrichment ──
-    try:
-        none_results = search_archival("enrichment:none", limit=10)
-    except Exception as e:
-        log.error(f"Archival search failed: {e}")
-        sys.exit(1)
+    # ── Read pending enrichment ref_ids from block ──
+    pending_ref_ids = read_pending_block()
 
-    # Filter to actual enrichment:none passages (substring search may return false positives)
-    none_passages = []
-    for p in (none_results if isinstance(none_results, list) else []):
-        if not isinstance(p, dict):
-            continue
-        text = p.get("text", "")
-        if "enrichment:none" not in text and "enrichment: none" not in text:
-            continue
-        if "REF_ID:" not in text:
-            continue
-        none_passages.append(p)
-
-    # ── Query 2: Check for stuck in-progress tasks ──
-    try:
-        progress_results = search_archival("enrichment:in-progress", limit=5)
-    except Exception:
-        progress_results = []
-
-    in_progress_recent = False
-    for p in (progress_results if isinstance(progress_results, list) else []):
-        if not isinstance(p, dict):
-            continue
-        text = p.get("text", "")
-        if "enrichment:in-progress" not in text:
-            continue
-
-        # Check passage age via created_at (reflects when tag was set)
-        created_at = p.get("created_at")
-        if created_at:
-            try:
-                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                age_minutes = (now - created).total_seconds() / 60
-                if age_minutes > TIMEOUT_MINUTES:
-                    ref_id = extract_ref_id(text)
-                    log.info(f"Resetting stuck in-progress task {ref_id} (age: {age_minutes:.0f}m)")
-                    update_passage_tag(p, "none")
-                else:
-                    in_progress_recent = True
-            except (ValueError, TypeError):
-                in_progress_recent = True
-
-    # ── Pipeline busy guard ──
-    if in_progress_recent:
-        log.debug("Pipeline busy — recent in-progress task exists, skipping cycle")
-        return
-
-    # ── Query 3: Check for stuck phase-a-complete user-indicated tasks ──
-    try:
-        phase_a_results = search_archival("enrichment:phase-a-complete", limit=5)
-    except Exception:
-        phase_a_results = []
-
-    for p in (phase_a_results if isinstance(phase_a_results, list) else []):
-        if not isinstance(p, dict):
-            continue
-        text = p.get("text", "")
-        if "enrichment:phase-a-complete" not in text:
-            continue
-        if "user-indicated" not in text:
-            continue
-        # Check if PACKET INFO already exists
-        if "PACKET INFO" in text:
-            continue
-
-        created_at = p.get("created_at")
-        if created_at:
-            try:
-                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                age_minutes = (now - created).total_seconds() / 60
-                if age_minutes > TIMEOUT_MINUTES:
-                    ref_id = extract_ref_id(text)
-                    if ref_id:
-                        log.info(f"Dispatching backtrace-only for stuck phase-a-complete task {ref_id}")
-                        try:
-                            dispatch_backtrace_only(ref_id)
-                        except Exception as e:
-                            log.warning(f"Backtrace dispatch failed for {ref_id}: {e}")
-            except (ValueError, TypeError):
-                pass
-
-    # ── Dispatch enrichment for oldest none task ──
-    if not none_passages:
+    if not pending_ref_ids:
         log.debug("No tasks needing enrichment")
         return
 
-    # Sort by extracted timestamp (oldest first)
-    oldest = None
-    oldest_ts = None
-    for p in none_passages:
-        ts = extract_timestamp(p.get("text", ""))
-        if ts and (oldest_ts is None or ts < oldest_ts):
-            oldest_ts = ts
-            oldest = p
+    log.info(f"Found {len(pending_ref_ids)} pending enrichment ref_id(s): {pending_ref_ids}")
 
-    if not oldest:
-        oldest = none_passages[0]
+    # ── Pipeline busy guard: check if agent is currently processing ──
+    # Look for any ref_id that was dispatched recently (track via a simple state approach)
+    # For now, process one at a time: take the first ref_id
+    ref_id = pending_ref_ids[0]
 
-    ref_id = extract_ref_id(oldest.get("text", ""))
-    if not ref_id:
-        log.error("Could not extract ref_id from passage")
-        return
+    # Remove from pending block BEFORE dispatching (prevents duplicate dispatch on next cycle)
+    remove_from_pending(ref_id)
 
-    # Set in-progress tag before dispatching
-    log.info(f"Setting enrichment:in-progress for {ref_id}")
+    # Update archival passage tag to in-progress
     try:
-        update_passage_tag(oldest, "in-progress")
+        results = search_archival(ref_id, limit=3)
+        passage = None
+        for p in (results if isinstance(results, list) else []):
+            if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
+                passage = p
+                break
+        if passage:
+            update_passage_tag(passage, "in-progress")
+            log.info(f"Set enrichment:in-progress for {ref_id}")
+        else:
+            log.warning(f"Archival passage not found for {ref_id}, dispatching anyway")
     except Exception as e:
-        log.error(f"Failed to set in-progress tag for {ref_id}: {e}")
-        return
+        log.warning(f"Failed to update tag for {ref_id}: {e}")
 
     # Dispatch enrichment message
     log.info(f"Dispatching enrichment for {ref_id}")
@@ -288,6 +239,20 @@ def main():
     except urllib.error.HTTPError as e:
         if e.code == 400:
             log.warning(f"Agent busy (400) for {ref_id}, will retry next cycle")
+            # Re-add to pending block for retry
+            try:
+                data = letta_get(f"/v1/blocks/{PENDING_BLOCK_ID}")
+                value = data.get("value", "").strip()
+                if value == "(empty)":
+                    value = ref_id
+                else:
+                    value += f"\n{ref_id}"
+                body = json.dumps({"value": value}).encode("utf-8")
+                url = f"{LETTA_BASE}/v1/blocks/{PENDING_BLOCK_ID}"
+                req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="PATCH")
+                urllib.request.urlopen(req, timeout=10)
+            except Exception:
+                pass
         else:
             log.error(f"Dispatch failed for {ref_id}: HTTP {e.code}")
     except Exception as e:
