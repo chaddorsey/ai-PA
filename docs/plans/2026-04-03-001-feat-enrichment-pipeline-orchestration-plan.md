@@ -77,13 +77,13 @@ The task extraction pipeline's Phase 0 (deterministic spark processing) works re
 
 ### Resolved During Planning
 
-- **How does the scanner route messages to a specific conversation?** Via `POST /v1/conversations/{conversation_id}/messages` — the Letta conversations API supports this directly. No LettaBot infrastructure needed.
+- **How does the scanner route messages to a specific conversation?** Via `POST /v1/agents/{agent_id}/messages/` with `conversation_id` in the JSON payload. The conversations-specific endpoint (`/v1/conversations/{id}/messages/`) returns SSE streams only. The agent messages endpoint with `conversation_id` returns normal JSON and routes to the dedicated conversation. Verified via spike test.
 - **How does the scanner prevent duplicate dispatch?** `enrichment:in-progress` intermediate tag set before dispatch, with 10-minute timeout reset.
 - **What about `phase0-complete` tasks?** They continue to appear immediately in the sidebar — their user-provided descriptions are sufficient without refinement.
 
 ### Deferred to Implementation
 
-- **Exact mechanism for `refine_task_description` to call `backtrace_task` internally:** Either inline the archival search loop or call via Letta tool execution API. Depends on what the sandbox environment supports for HTTP calls to self.
+- **Exact mechanism for `refine_task_description` to call `backtrace_task` internally:** Sandbox can reach `localhost:8283` via `urllib.request` (verified via spike test). The tool can replicate the backtrace archival search loop using the same HTTP calls `backtrace_task` uses. No need for Letta tool execution API — direct HTTP to archival endpoints.
 - **Scanner batch size:** Start with 1 task per cycle. If queue depth regularly exceeds 3, increase batch size. Monitor after deployment.
 - **Conversation reset automation:** Initially manual (weekly). Could become a scheduler job if operationally needed.
 
@@ -287,7 +287,7 @@ sequenceDiagram
   5. **Pipeline busy guard:** Before dispatching, check if any passage currently has `enrichment:in-progress` AND is less than 10 minutes old. If so, skip this cycle entirely — the agent is still processing the previous task. This prevents message queue buildup in the conversation.
   6. Pick the oldest `enrichment:none` passage (by extracted timestamp)
   7. Update its enrichment tag from `none` to `in-progress` via passage delete + re-insert (same pattern as `backtrace_task_tool.py` lines 417-432)
-  8. Send focused message to `POST /v1/conversations/{ENRICHMENT_CONV_ID}/messages`:
+  8. Send focused message via `POST /v1/agents/{TASKS_AGENT_ID}/messages/` with `conversation_id` in payload (NOT the conversations endpoint, which only returns SSE):
      ```
      Enrich task ref_id {X}.
      Step 1: Call fetch_source_content(ref_id="{X}") to get the full source content.
