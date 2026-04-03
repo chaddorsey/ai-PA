@@ -983,10 +983,10 @@ class WatchManager:
                         else:
                             if not comment_content.strip():
                                 continue  # Skip empty/assigned-only comments
-                            # No marker — use cleaned comment text as task_hint
-                            # so the spark tool uses it as the task description
+                            # No marker — user indicated task via +dtasks but
+                            # didn't use [c] or > convention. Mark as "implicit".
                             entry_defs = [{
-                                "marker_type": "explicit",
+                                "marker_type": "implicit",
                                 "task_hint": comment_content.strip(),
                                 "context": None,
                             }]
