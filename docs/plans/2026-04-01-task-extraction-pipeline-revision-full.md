@@ -336,10 +336,14 @@ Deterministic task naming improvements — folded into Phase 0. All fixes applie
 - Implement backtracing logic (archival search by person, project, domain)
 - **Files**: New letta tool, sleeptime agent persona update
 
-### Phase 6: Migrate Meeting Pipeline
-- `scan_meeting_notes` writes Spark Records for `[c]` markers
-- Keep draft email creation inline (separate concern)
-- **Files**: `meeting_scan_tool.py`, `granola-ingest/ingest.py`
+### Phase 6: Migrate Meeting Pipeline (COMPLETED 2026-04-03)
+- `scan_meeting_notes` writes Spark Records for `[c]` markers instead of inline extraction
+- Inline extraction code removed (~219 lines), replaced with spark writes (~48 lines)
+- Falls back to error reporting if spark write fails
+- Draft email creation unchanged (separate concern)
+- Smoke tested: spark write → process_spark_queue → extracted task with fetch_hint
+- Meeting tasks have `fetch_hint: "granola:MEETING_ID"` for Phase A to access full meeting context
+- **Files**: `letta/meeting_scan_tool.py`
 
 ## Key Design Decisions
 
