@@ -1,7 +1,7 @@
 ---
 title: "feat: Enrichment pipeline orchestration via scheduler + dedicated conversation"
 type: feat
-status: active
+status: complete
 date: 2026-04-03
 origin: docs/plans/2026-04-03-enrichment-pipeline-orchestration-design.md
 ---
@@ -129,7 +129,7 @@ sequenceDiagram
 
 ## Implementation Units
 
-- [ ] **Unit 1: Extend `fetch_source_content` with `ref_id` overload**
+- [x] **Unit 1: Extend `fetch_source_content` with `ref_id` overload**
 
 **Goal:** Allow `fetch_source_content` to accept a `ref_id` and internally look up the archival passage to extract `source_type` and `fetch_hint`, removing a decision point from the agent's enrichment turn.
 
@@ -162,7 +162,7 @@ sequenceDiagram
 
 ---
 
-- [ ] **Unit 2a: Extend `refine_task_description` — block write + enrichment tag**
+- [x] **Unit 2a: Extend `refine_task_description` — block write + enrichment tag**
 
 **Goal:** Move sidebar visibility from Phase 0 to Phase A by having `refine_task_description` write the task line to the `extracted_tasks` block and update the enrichment tag. This is the critical visibility fix and ships independently of backtrace integration.
 
@@ -198,7 +198,7 @@ sequenceDiagram
 
 ---
 
-- [ ] **Unit 2b: Add conditional backtrace to `refine_task_description`**
+- [x] **Unit 2b: Add conditional backtrace to `refine_task_description`**
 
 **Goal:** For user-indicated tasks, have `refine_task_description` internally run backtrace and return the materials so the agent can immediately call `write_packet_info` without an additional tool call.
 
@@ -232,7 +232,7 @@ sequenceDiagram
 
 ---
 
-- [ ] **Unit 3: Remove `extracted_tasks` block write from `process_spark_queue`**
+- [x] **Unit 3: Remove `extracted_tasks` block write from `process_spark_queue`**
 
 **Goal:** Defer sidebar visibility to Phase A by removing the block write from Phase 0. Tasks remain invisible until enrichment completes.
 
@@ -265,7 +265,7 @@ sequenceDiagram
 
 ---
 
-- [ ] **Unit 4: Create enrichment scanner script**
+- [x] **Unit 4: Create enrichment scanner script**
 
 **Goal:** Build the Python script that queries archival for tasks needing enrichment and dispatches focused messages to the enrichment conversation via the Letta conversations API.
 
@@ -322,7 +322,7 @@ sequenceDiagram
 
 ---
 
-- [ ] **Unit 5: Create enrichment conversation + register scheduler job**
+- [x] **Unit 5: Create enrichment conversation + register scheduler job**
 
 **Goal:** Set up the dedicated Letta conversation for enrichment and register the scanner as a recurring scheduler job, replacing the spark-queue-drain cron.
 
@@ -365,7 +365,7 @@ sequenceDiagram
 
 ---
 
-- [ ] **Unit 6: Update tasks agent persona**
+- [x] **Unit 6: Update tasks agent persona**
 
 **Goal:** Remove the Phase A/B chaining instructions from the tasks agent persona. The agent no longer needs to self-chain — the scanner drives it. Add awareness of the enrichment conversation pattern.
 
