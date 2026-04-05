@@ -812,8 +812,9 @@ class TaskSidebar {
     goBtn.textContent = 'Creating\u2026';
 
     try {
-      // Create the OmniFocus task
-      const omnifocusTaskId = await this.createOFTaskFromDialog();
+      // Create the OmniFocus task with rush flag — "Add and Go" signals
+      // immediate action, so MC prioritizes (skips deeper backtrace, ships fast)
+      const omnifocusTaskId = await this.createOFTaskFromDialog(true);
 
       // Dismiss dialog immediately — queue call runs in background
       this.cleanupAfterConfirm(refId);
