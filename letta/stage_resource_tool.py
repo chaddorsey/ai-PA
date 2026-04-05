@@ -83,7 +83,10 @@ def stage_resource(
                 "error_message": f"Staging directory {CONTAINER_BASE} is not writable",
             }
 
-        # Determine category and fetch strategy from URL
+        # Determine category and fetch strategy from URL.
+        # v1 policy: stage real files for user access. Don't snapshot Google-native
+        # docs (user wants the live version) or web pages (usually not needed offline).
+        # For agent-driven consumption (future), a separate tool will stage as markdown.
         category = "other"
         fetch_strategy = "http"
         extension = "bin"
@@ -93,25 +96,44 @@ def stage_resource(
             fetch_strategy = "gmail"
             extension = "txt"
         elif "docs.google.com" in url or "drive.google.com" in url:
+            # Google-native docs/sheets/slides: keep live URL, don't snapshot.
+            # For actual files shared via Drive (PDFs, Word docs), try alt=media.
             category = "drive"
             fetch_strategy = "drive"
-            extension = "html"
         elif url.startswith("http://") or url.startswith("https://"):
-            # Determine category from URL extension
             path_part = urllib.parse.urlparse(url).path.lower()
             if path_part.endswith(".pdf"):
                 category = "pdf"
                 extension = "pdf"
-            elif path_part.endswith(".html") or path_part.endswith(".htm"):
-                category = "html"
-                extension = "html"
+                fetch_strategy = "http"
             elif path_part.endswith((".doc", ".docx")):
-                category = "other"
+                category = "doc"
                 extension = path_part.rsplit(".", 1)[1]
+                fetch_strategy = "http"
+            elif path_part.endswith((".xls", ".xlsx")):
+                category = "sheet"
+                extension = path_part.rsplit(".", 1)[1]
+                fetch_strategy = "http"
+            elif path_part.endswith((".ppt", ".pptx")):
+                category = "slides"
+                extension = path_part.rsplit(".", 1)[1]
+                fetch_strategy = "http"
+            elif path_part.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")):
+                category = "image"
+                extension = path_part.rsplit(".", 1)[1]
+                fetch_strategy = "http"
+            elif path_part.endswith((".zip", ".tar", ".gz", ".tgz")):
+                category = "archive"
+                extension = path_part.rsplit(".", 1)[1]
+                fetch_strategy = "http"
             else:
-                category = "other"
-                extension = "html"  # default for web pages
-            fetch_strategy = "http"
+                # Not a recognized file extension — don't stage web pages.
+                # User will click through to the live URL.
+                return {
+                    "status": "skipped",
+                    "reason": "Web page URL not staged (click-through to live URL recommended)",
+                    "url": url,
+                }
         else:
             return {
                 "status": "error",
@@ -192,32 +214,104 @@ def stage_resource(
 
             elif fetch_strategy == "drive":
                 # Google Drive/Docs URL — extract file ID and fetch via gws
-                doc_id_match = re.search(r"/document/d/([a-zA-Z0-9_-]+)", url)
-                if not doc_id_match:
-                    doc_id_match = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
-                if not doc_id_match:
+                # Try multiple URL patterns
+                file_id = None
+                for pat in [
+                    r"/document/d/([a-zA-Z0-9_-]+)",
+                    r"/file/d/([a-zA-Z0-9_-]+)",
+                    r"/spreadsheets/d/([a-zA-Z0-9_-]+)",
+                    r"/presentation/d/([a-zA-Z0-9_-]+)",
+                    r"[?&]id=([a-zA-Z0-9_-]+)",
+                    r"/d/([a-zA-Z0-9_-]+)",
+                ]:
+                    m = re.search(pat, url)
+                    if m:
+                        file_id = m.group(1)
+                        break
+                if not file_id:
                     return {
                         "status": "error",
                         "error_message": f"Could not extract Drive file ID from URL: {url[:80]}",
                     }
-                file_id = doc_id_match.group(1)
-                # Try exporting as HTML (for Google Docs)
-                result = subprocess.run(
-                    ["gws", "drive", "files", "export",
-                     "--params", json.dumps({"fileId": file_id, "mimeType": "text/html"}),
-                     "--format", "raw"],
-                    capture_output=True, text=True, timeout=30,
+
+                # Determine export MIME by probing file metadata first
+                meta_result = subprocess.run(
+                    ["gws", "drive", "files", "get",
+                     "--params", json.dumps({"fileId": file_id, "fields": "mimeType,name"}),
+                     "--format", "json"],
+                    capture_output=True, text=True, timeout=15,
                 )
-                if result.returncode == 0:
-                    # Strip any "Using keyring" header lines
-                    lines = result.stdout.split("\n")
-                    html = "\n".join(l for l in lines if not l.startswith("Using keyring"))
-                    content = html.encode("utf-8")
-                else:
+                source_mime = None
+                if meta_result.returncode == 0:
+                    try:
+                        meta_raw = "\n".join(l for l in meta_result.stdout.split("\n") if not l.startswith("Using keyring"))
+                        meta = json.loads(meta_raw)
+                        source_mime = meta.get("mimeType")
+                    except Exception:
+                        pass
+
+                if not source_mime:
                     return {
                         "status": "error",
-                        "error_message": f"gws drive export failed: {result.stderr[:200]}",
+                        "error_message": f"Drive file not accessible via API (file_id={file_id}). File may be shared-with-user but not owned.",
                     }
+
+                # Google-native docs: don't stage, user should click through to live URL
+                if source_mime.startswith("application/vnd.google-apps"):
+                    return {
+                        "status": "skipped",
+                        "reason": f"Google-native {source_mime.split('.')[-1]} — click-through to live URL recommended",
+                        "url": url,
+                    }
+
+                # Non-Google file shared via Drive (PDF, Word, etc.) — download via alt=media
+                export_mime = None
+                # Map mimeType to extension for filename
+                mime_to_ext = {
+                    "application/pdf": "pdf",
+                    "application/msword": "doc",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+                    "application/vnd.ms-excel": "xls",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+                    "application/vnd.ms-powerpoint": "ppt",
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+                    "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
+                }
+                extension = mime_to_ext.get(source_mime, "bin")
+
+                # Rebuild target path with resolved extension
+                filename = f"{safe_label}.{extension}"
+                target_path = os.path.join(target_dir, filename)
+
+                # Native file — use files.get with alt=media (relative path, cd to target dir)
+                output_filename = filename
+                result = subprocess.run(
+                    ["gws", "drive", "files", "get",
+                     "--params", json.dumps({"fileId": file_id, "alt": "media"}),
+                     "--output", output_filename],
+                    capture_output=True, text=True, timeout=60,
+                    cwd=target_dir,
+                )
+                if result.returncode != 0:
+                    return {
+                        "status": "error",
+                        "error_message": f"gws drive get (alt=media) failed: {result.stderr[:200]}",
+                    }
+                if os.path.exists(target_path):
+                    size = os.path.getsize(target_path)
+                    host_path = target_path.replace(CONTAINER_BASE, HOST_BASE, 1)
+                    return {
+                        "status": "ok",
+                        "local_path": target_path,
+                        "openfile_url": f"openfile://{host_path}",
+                        "filename": filename,
+                        "size_bytes": size,
+                        "category": category,
+                        "priority": priority,
+                        "reused": False,
+                    }
+                else:
+                    return {"status": "error", "error_message": "gws download produced no file"}
 
             elif fetch_strategy == "http":
                 # Direct HTTP(S) download

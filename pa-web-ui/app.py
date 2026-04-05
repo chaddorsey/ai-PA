@@ -2446,24 +2446,61 @@ def api_transition_task(ref_id):
                         )
 
                         # Send via conversations endpoint (SSE, read full stream)
-                        with httpx.Client(timeout=300.0) as c:
-                            resp = c.post(
-                                f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/messages",
-                                json={"input": message},
-                            )
-                            if resp.status_code != 200:
-                                logger.warning(
-                                    "mc_work_packet_dispatch_failed",
-                                    ref_id=ref_id,
-                                    status=resp.status_code,
-                                    rush=rush,
-                                )
-                            else:
-                                logger.info(
-                                    "mc_work_packet_dispatched",
-                                    ref_id=ref_id,
-                                    rush=rush,
-                                )
+                        # Retry on 409 (MC busy with prior task) with exponential backoff
+                        import time as _time
+                        max_retries = 8
+                        backoff_seconds = 15  # first retry in 15s, then 30s, 60s, 120s...
+                        last_status = None
+
+                        for attempt in range(max_retries + 1):
+                            try:
+                                with httpx.Client(timeout=600.0) as c:
+                                    resp = c.post(
+                                        f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/messages",
+                                        json={"input": message},
+                                    )
+                                    last_status = resp.status_code
+                                    if resp.status_code == 200:
+                                        logger.info(
+                                            "mc_work_packet_dispatched",
+                                            ref_id=ref_id,
+                                            rush=rush,
+                                            attempts=attempt + 1,
+                                        )
+                                        return
+                                    elif resp.status_code == 409 and attempt < max_retries:
+                                        # MC busy with prior task — wait and retry
+                                        wait = min(backoff_seconds * (2 ** attempt), 300)
+                                        logger.info(
+                                            "mc_work_packet_retry",
+                                            ref_id=ref_id,
+                                            attempt=attempt + 1,
+                                            wait_seconds=wait,
+                                        )
+                                        _time.sleep(wait)
+                                        continue
+                                    else:
+                                        logger.warning(
+                                            "mc_work_packet_dispatch_failed",
+                                            ref_id=ref_id,
+                                            status=resp.status_code,
+                                            rush=rush,
+                                            attempts=attempt + 1,
+                                        )
+                                        return
+                            except Exception as e:
+                                if attempt < max_retries:
+                                    _time.sleep(backoff_seconds * (2 ** attempt))
+                                    continue
+                                raise
+
+                        # Exhausted retries
+                        logger.warning(
+                            "mc_work_packet_retry_exhausted",
+                            ref_id=ref_id,
+                            last_status=last_status,
+                            rush=rush,
+                        )
                     except Exception as e:
                         logger.warning(
                             "mc_work_packet_dispatch_error",
