@@ -251,11 +251,32 @@ def write_packet_info(
         )
         urllib.request.urlopen(ins_req, timeout=15)
 
+        # Trigger OmniFocus note re-assembly if task is confirmed.
+        # Baked in so worker agents don't need an HTTP tool.
+        reassemble_status = "skipped"
+        reassemble_detail = ""
+        if "- Status: confirmed" in new_text and "- Task ID:" in new_text:
+            pa_web_url = os.environ.get("PA_WEB_UI_URL", "http://pa-web-ui:5200")
+            reassemble_url = f"{pa_web_url}/api/tasks/{ref_id}/reassemble-work-packet"
+            try:
+                r_req = urllib.request.Request(reassemble_url, method="POST")
+                with urllib.request.urlopen(r_req, timeout=30) as r_resp:
+                    reassemble_status = "ok"
+                    reassemble_detail = f"HTTP {r_resp.status}"
+            except urllib.error.HTTPError as he:
+                reassemble_status = "failed"
+                reassemble_detail = f"HTTP {he.code}"
+            except Exception as re_err:
+                reassemble_status = "failed"
+                reassemble_detail = str(re_err)[:100]
+
         return {
             "status": "ok",
             "ref_id": ref_id,
             "enrichment_status": "packet-info",
             "packet_info_preview": packet_info_text[:500],
+            "reassemble": reassemble_status,
+            "reassemble_detail": reassemble_detail,
         }
 
     except Exception as e:
