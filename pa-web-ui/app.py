@@ -2412,37 +2412,26 @@ def api_transition_task(ref_id):
 
             if should_dispatch_mc:
                 def _dispatch_mc_work_packet():
-                    """Dispatch work packet assembly to MC via mc-work-packets conversation.
+                    """Dispatch work packet assembly to the work-packet-assembler worker.
 
-                    MC looks up the task, optionally runs deeper backtrace, stages
-                    resources, writes enriched PACKET INFO, and triggers re-assembly
-                    of the OmniFocus note.
+                    Worker executes the 4-step protocol: fetch_source_content,
+                    backtrace_task, stage_resource (for real files), write_packet_info.
+                    write_packet_info auto-triggers the reassemble endpoint.
                     """
-                    MC_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
+                    WORKER_AGENT_ID = os.environ.get(
+                        "WORK_PACKET_WORKER_AGENT_ID",
+                        "agent-06a5b4a8-1e63-4cc6-a8bd-5a026518a763",
+                    )
 
                     try:
-                        # Letta API doesn't persist conversation labels (v0.16),
-                        # so we use an env var with the conversation ID.
-                        conv_id = os.getenv("MC_WORK_PACKET_CONV_ID", "").strip()
-
-                        if not conv_id:
-                            logger.warning(
-                                "mc_work_packet_no_conversation",
-                                ref_id=ref_id,
-                                message="MC_WORK_PACKET_CONV_ID not set",
-                            )
-                            return
-
-                        # Build focused message
+                        # Build focused message for the worker agent
                         priority_line = "PRIORITY: rush\n" if rush else ""
                         message = (
                             f"{priority_line}"
                             f"Work packet assembly for ref_id {ref_id}. "
-                            f"Follow the Work Packet Assembly Protocol in your conventions block. "
-                            f"The task is confirmed in OmniFocus and has a first-pass note. "
-                            f"Enrich PACKET INFO with deeper context, stage resources as needed, "
-                            f"then trigger re-assembly at "
-                            f"http://pa-web-ui:5200/api/tasks/{ref_id}/reassemble-work-packet"
+                            f"Execute the 4-step protocol from your persona: "
+                            f"fetch_source_content, backtrace_task, stage_resource (real files only), "
+                            f"write_packet_info. write_packet_info auto-triggers reassemble."
                         )
 
                         # Send via conversations endpoint (SSE, read full stream)
@@ -2456,8 +2445,8 @@ def api_transition_task(ref_id):
                             try:
                                 with httpx.Client(timeout=600.0) as c:
                                     resp = c.post(
-                                        f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/messages",
-                                        json={"input": message},
+                                        f"{LETTA_BASE_URL}/v1/agents/{WORKER_AGENT_ID}/messages/",
+                                        json={"messages": [{"role": "user", "content": message}]},
                                     )
                                     last_status = resp.status_code
                                     if resp.status_code == 200:
