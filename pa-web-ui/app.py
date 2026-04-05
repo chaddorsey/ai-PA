@@ -2401,6 +2401,15 @@ def api_transition_task(ref_id):
             )
             should_dispatch_mc = rush or not has_complete_enrichment
 
+            logger.info(
+                "mc_work_packet_gate",
+                ref_id=ref_id,
+                has_packet_info=has_packet_info,
+                has_complete_enrichment=has_complete_enrichment,
+                rush=rush,
+                should_dispatch=should_dispatch_mc,
+            )
+
             if should_dispatch_mc:
                 def _dispatch_mc_work_packet():
                     """Dispatch work packet assembly to MC via mc-work-packets conversation.
@@ -2410,25 +2419,17 @@ def api_transition_task(ref_id):
                     of the OmniFocus note.
                     """
                     MC_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
-                    CONV_LABEL = "mc-work-packets"
 
                     try:
-                        # Look up conversation by label at runtime
-                        with httpx.Client(timeout=10.0) as c:
-                            resp = c.get(f"{LETTA_BASE_URL}/v1/conversations/?agent_id={MC_AGENT_ID}")
-                            convs = resp.json() if resp.status_code == 200 else []
-
-                        conv_id = None
-                        for cv in (convs if isinstance(convs, list) else []):
-                            if cv.get("label") == CONV_LABEL:
-                                conv_id = cv["id"]
-                                break
+                        # Letta API doesn't persist conversation labels (v0.16),
+                        # so we use an env var with the conversation ID.
+                        conv_id = os.getenv("MC_WORK_PACKET_CONV_ID", "").strip()
 
                         if not conv_id:
                             logger.warning(
                                 "mc_work_packet_no_conversation",
                                 ref_id=ref_id,
-                                message="mc-work-packets conversation not found",
+                                message="MC_WORK_PACKET_CONV_ID not set",
                             )
                             return
 
