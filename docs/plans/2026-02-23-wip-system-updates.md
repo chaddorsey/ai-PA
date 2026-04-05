@@ -629,4 +629,49 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
-**Completed:** Items 1-7, 12, 15, 18, 24 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling, Add & Go sidebar queue integration.
+---
+
+## 27. Enrichment Pipeline Orchestration (IMPLEMENTED)
+
+**Status:** Implemented and running (2026-04-03 through 2026-04-04)
+**Plan:** [2026-04-03-001-feat-enrichment-pipeline-orchestration-plan.md](2026-04-03-001-feat-enrichment-pipeline-orchestration-plan.md)
+**Design:** [2026-04-03-enrichment-pipeline-orchestration-design.md](2026-04-03-enrichment-pipeline-orchestration-design.md)
+**Risk:** Medium (cross-service orchestration, novel conversation routing)
+
+**Problem:** Tasks agent's LLM reasoning drifts between tool calls in noisy conversation context. Phases A (refinement) and B (backtracing) fail inconsistently. Tasks appear in sidebar with unrefined names before enrichment.
+
+**Solution:** Scheduler-driven single-purpose messages to a dedicated Letta enrichment conversation. Scanner every 30s detects enrichment:none tasks, dispatches focused messages. Compact backtrace return keeps chaining momentum. Tasks only appear in sidebar after Phase A refinement.
+
+**Key infrastructure:** Enrichment scanner (scheduler job), pending_enrichment block, dedicated enrichment conversation, conversations API (no trailing slash), weekly conversation reset job.
+
+---
+
+## 28. Work Packet Assembly at Confirmation (IMPLEMENTED)
+
+**Status:** Implemented (2026-04-04 through 2026-04-05)
+**Plan:** [2026-04-04-001-feat-work-packet-assembly-plan.md](2026-04-04-001-feat-work-packet-assembly-plan.md)
+**Risk:** Medium (cross-agent coordination, file system writes from sandbox)
+
+**Problem:** Current confirmation handler mechanically formats PACKET INFO without deeper enrichment, resource staging, or organizational context. MC was tried but drifts due to 28-tool surface area.
+
+**Solution:** Dedicated work-packet-assembler worker agent (`agent-06a5b4a8-...`) with 4 tools only (fetch_source_content, backtrace_task, stage_resource, write_packet_info). Dispatched on every confirmation. write_packet_info auto-triggers OmniFocus note re-assembly via setRichText (atomic replace). Rush flag via Add-and-Go button.
+
+**Key infrastructure:** setRichText bridge command, stage_resource tool (downloads to /data/shared/staged with openfile:// URLs), reassemble-work-packet endpoint, TASKS_AGENT_ID env var for cross-agent archival access.
+
+---
+
+## 29. Self-Regulating Backtrace with Depth Tiers (PLANNED)
+
+**Status:** Plan ready, soaking before implementation
+**Plan:** [2026-04-05-001-refactor-backtrace-self-regulating-plan.md](2026-04-05-001-refactor-backtrace-self-regulating-plan.md)
+**Risk:** Low-medium (single tool refactor, well-understood heuristics)
+
+**Problem:** backtrace_task uses fixed max_hops regardless of task complexity. Simple tasks get over-searched, high-stakes tasks get under-searched. No risk awareness.
+
+**Solution:** Tool internally selects depth tier (0-3) based on risk/impact tokens + node coverage goals + yield-based iteration. Risk tokens (legal, licensing, confidential, board, budget, partner, deadline, business development) force minimum tier 2. Yield-based stop prevents over-search. Hard budgets per tier. Worker protocol unchanged — all intelligence inside the tool. Also adds suggested_subtasks field to write_packet_info.
+
+**Based on:** MC's analysis of risk-aware heuristics for backtrace depth (session 2026-04-05).
+
+---
+
+**Completed:** Items 1-7, 12, 15, 18, 24, 27, 28 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling, Add & Go sidebar queue integration, enrichment pipeline orchestration, work packet assembly.
