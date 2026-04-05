@@ -37,7 +37,7 @@ def refine_task_description(ref_id: str, new_description: str) -> Dict[str, Any]
 
     try:
         LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
-        AGENT_ID = os.environ.get("LETTA_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
+        AGENT_ID = os.environ.get("TASKS_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
         ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
 
         if not ref_id or not new_description:

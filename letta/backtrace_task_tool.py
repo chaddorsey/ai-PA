@@ -45,7 +45,7 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
 
     try:
         LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
-        AGENT_ID = os.environ.get("LETTA_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
+        AGENT_ID = os.environ.get("TASKS_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
         hops = max_hops or 3
 
         if not ref_id:
