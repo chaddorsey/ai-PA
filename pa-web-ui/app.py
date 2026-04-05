@@ -1966,6 +1966,140 @@ def _find_archival_passage(client, ref_id):
     return None, (jsonify({"error": f"No passage found for {ref_id}"}), 404)
 
 
+def _build_work_packet_segments(ref_id, passage_text):
+    """Build rich-text segments for an OmniFocus work packet note.
+
+    Shared by both first-pass assembly (in confirm handler) and
+    re-assembly endpoint (for MC-enriched updates).
+
+    Returns a list of segment dicts/strings for the setRichText bridge call.
+    """
+    parsed = parse_archival_passage(passage_text)
+    pi = parsed.get("packet_info", {})
+
+    segments = []
+
+    # Source context line
+    sr = parsed.get("source_reference", {})
+    sm = parsed.get("source_metadata", {})
+    if sr.get("context"):
+        segments.append({"text": f"Source: {sr['context']}\n", "italic": True, "size": 11})
+    if sm.get("from"):
+        segments.append({"text": f"From: {sm['from']}\n", "italic": True, "size": 11})
+
+    # Ref ID for traceability
+    segments.append({"text": f"ref_id: {ref_id}\n\n", "size": 10, "color": [0.5, 0.5, 0.5, 1]})
+
+    # Mismatch warning (prominent)
+    if pi.get("mismatch_warning"):
+        segments.append({"text": f"⚠ {pi['mismatch_warning']}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
+
+    # Context brief
+    if pi.get("context_brief"):
+        segments.append({"text": "Context\n", "bold": True, "size": 13})
+        for item in pi["context_brief"]:
+            segments.append(f"  • {item}\n")
+
+    # Resources (with clickable links)
+    if pi.get("resources"):
+        segments.append("\n")
+        segments.append({"text": "Resources\n", "bold": True, "size": 13})
+        for item in pi["resources"]:
+            url_match = re.search(r"(openfile://\S+|https?://\S+)", item)
+            if url_match:
+                url = url_match.group(1).rstrip(")")
+                label = item[:item.find(url_match.group(0))].strip().rstrip("—").strip()
+                role_match = re.search(r"\((\w+)\)\s*$", item)
+                role = f" ({role_match.group(1)})" if role_match else ""
+                segments.append({"text": f"  {label}{role}: ", "size": 11})
+                display_url = url[:60] + ("..." if len(url) > 60 else "")
+                segments.append({"text": f"{display_url}\n", "url": url, "underline": True, "size": 11})
+            else:
+                segments.append(f"  • {item}\n")
+
+    # Related tasks
+    if pi.get("related_tasks"):
+        segments.append("\n")
+        segments.append({"text": "Related Tasks\n", "bold": True, "size": 13})
+        for item in pi["related_tasks"]:
+            segments.append(f"  • {item}\n")
+
+    # Knowns / Unknowns
+    if pi.get("knowns") or pi.get("unknowns"):
+        segments.append("\n")
+        segments.append({"text": "Knowns / Unknowns\n", "bold": True, "size": 13})
+        for k in (pi.get("knowns") or []):
+            segments.append(f"  ✓ {k}\n")
+        for u in (pi.get("unknowns") or []):
+            segments.append({"text": f"  ? {u}\n", "italic": True})
+
+    # Agent notes
+    if pi.get("agent_notes"):
+        segments.append("\n")
+        segments.append({"text": f"{pi['agent_notes']}\n", "size": 10, "italic": True, "color": [0.5, 0.5, 0.5, 1]})
+
+    # Source text (collapsed)
+    if parsed.get("source_text"):
+        src = parsed["source_text"][:200]
+        segments.append("\n")
+        segments.append({"text": "Source\n", "bold": True, "size": 13})
+        segments.append({"text": f"{src}\n", "size": 11, "color": [0.4, 0.4, 0.4, 1]})
+
+    # Related URLs (separate from resources)
+    if parsed.get("related_urls"):
+        segments.append("\n")
+        segments.append({"text": "Links\n", "bold": True, "size": 13})
+        for url in parsed["related_urls"]:
+            if url.startswith("http"):
+                display = url[:60] + ("..." if len(url) > 60 else "")
+                segments.append({"text": f"  {display}\n", "url": url, "underline": True})
+
+    return segments
+
+
+# Per-ref_id locks to serialize first-pass assembly and MC re-assembly.
+# Short-lived — only held around the bridge call.
+import threading as _threading
+_work_packet_locks = {}
+_work_packet_locks_guard = _threading.Lock()
+
+
+def _get_work_packet_lock(ref_id):
+    """Get or create a threading lock for a ref_id's work packet writes."""
+    with _work_packet_locks_guard:
+        if ref_id not in _work_packet_locks:
+            _work_packet_locks[ref_id] = _threading.Lock()
+        return _work_packet_locks[ref_id]
+
+
+def _write_work_packet_note(ref_id, omnifocus_task_id, passage_text):
+    """Write the work packet note to OmniFocus via setRichText (atomic replace).
+
+    Uses per-ref_id lock to prevent races between first-pass and re-assembly.
+    """
+    segments = _build_work_packet_segments(ref_id, passage_text)
+    if not segments:
+        return False
+
+    lock = _get_work_packet_lock(ref_id)
+    with lock:
+        try:
+            with httpx.Client(timeout=15.0) as c:
+                c.post(
+                    f"{OMNIFOCUS_BRIDGE_URL}/execute",
+                    json={
+                        "command": "setRichText",
+                        "args": {
+                            "taskId": omnifocus_task_id,
+                            "segments": segments,
+                        },
+                    },
+                )
+            return True
+        except Exception:
+            return False
+
+
 def _replace_passage(client, passage_id, new_text, tags):
     """Delete old passage and insert replacement in shared archive."""
     client.delete(
@@ -2120,6 +2254,7 @@ def api_transition_task(ref_id):
         data = request.get_json()
         action = data.get('action')
         omnifocus_task_id = data.get('omnifocus_task_id')
+        rush = bool(data.get('rush', False))
 
         valid_actions = {"confirm", "reject", "complete"}
         if action not in valid_actions:
@@ -2228,17 +2363,16 @@ def api_transition_task(ref_id):
             import threading
 
             def _assemble_work_packet():
-                """Build OmniFocus task note from archival passage context."""
-                try:
-                    omnifocus_bridge = os.getenv(
-                        "OMNIFOCUS_BRIDGE_URL", "http://host.docker.internal:8889"
-                    )
+                """Build OmniFocus task note from archival passage context.
 
+                Uses setRichText (atomic clear+replace) via the shared helper,
+                so re-invocations are idempotent and won't duplicate content.
+                """
+                try:
                     # Re-read the passage (it was just updated with confirmation)
                     with httpx.Client(timeout=15.0) as c:
                         p_resp = c.get(
-                            f"{LETTA_BASE_URL}/v1/agents/"
-                            "agent-dd15479e-6543-400e-8463-b2a48b13cd4a"
+                            f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}"
                             f"/archival-memory/?search={ref_id}&limit=1",
                         )
                         passages = p_resp.json()
@@ -2249,132 +2383,94 @@ def api_transition_task(ref_id):
                             passage_text = p["text"]
                             break
 
-                    if not passage_text:
-                        return
-
-                    parsed = parse_archival_passage(passage_text)
-                    pi = parsed.get("packet_info", {})
-
-                    # Build note segments
-                    segments = []
-
-                    # Source context line
-                    sr = parsed.get("source_reference", {})
-                    sm = parsed.get("source_metadata", {})
-                    if sr.get("context"):
-                        segments.append({"text": f"Source: {sr['context']}\n", "italic": True, "size": 11})
-                    if sm.get("from"):
-                        segments.append({"text": f"From: {sm['from']}\n", "italic": True, "size": 11})
-
-                    # Ref ID for traceability
-                    segments.append({"text": f"ref_id: {ref_id}\n\n", "size": 10, "color": [0.5, 0.5, 0.5, 1]})
-
-                    # Mismatch warning (prominent)
-                    if pi.get("mismatch_warning"):
-                        segments.append({"text": f"⚠ {pi['mismatch_warning']}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
-
-                    # Context brief
-                    if pi.get("context_brief"):
-                        segments.append({"text": "Context\n", "bold": True, "size": 13})
-                        for item in pi["context_brief"]:
-                            segments.append(f"  • {item}\n")
-
-                    # Resources (with clickable links)
-                    if pi.get("resources"):
-                        segments.append("\n")
-                        segments.append({"text": "Resources\n", "bold": True, "size": 13})
-                        for item in pi["resources"]:
-                            # Extract URL from resource line
-                            url_match = re.search(r"(https?://\S+)", item)
-                            if url_match:
-                                url = url_match.group(1).rstrip(")")
-                                # Label is everything before the URL
-                                label = item[:item.find(url_match.group(0))].strip().rstrip("—").strip()
-                                # Role is in parens after URL
-                                role_match = re.search(r"\((\w+)\)\s*$", item)
-                                role = f" ({role_match.group(1)})" if role_match else ""
-                                segments.append({"text": f"  {label}{role}: ", "size": 11})
-                                display_url = url[:60] + ("..." if len(url) > 60 else "")
-                                segments.append({"text": f"{display_url}\n", "url": url, "underline": True, "size": 11})
-                            else:
-                                segments.append(f"  • {item}\n")
-
-                    # Related tasks
-                    if pi.get("related_tasks"):
-                        segments.append("\n")
-                        segments.append({"text": "Related Tasks\n", "bold": True, "size": 13})
-                        for item in pi["related_tasks"]:
-                            segments.append(f"  • {item}\n")
-
-                    # Knowns / Unknowns
-                    if pi.get("knowns") or pi.get("unknowns"):
-                        segments.append("\n")
-                        segments.append({"text": "Knowns / Unknowns\n", "bold": True, "size": 13})
-                        for k in (pi.get("knowns") or []):
-                            segments.append(f"  ✓ {k}\n")
-                        for u in (pi.get("unknowns") or []):
-                            segments.append({"text": f"  ? {u}\n", "italic": True})
-
-                    # Agent notes
-                    if pi.get("agent_notes"):
-                        segments.append("\n")
-                        segments.append({"text": f"{pi['agent_notes']}\n", "size": 10, "italic": True, "color": [0.5, 0.5, 0.5, 1]})
-
-                    # Source text (collapsed to first 200 chars)
-                    if parsed.get("source_text"):
-                        src = parsed["source_text"][:200]
-                        segments.append("\n")
-                        segments.append({"text": "Source\n", "bold": True, "size": 13})
-                        segments.append({"text": f"{src}\n", "size": 11, "color": [0.4, 0.4, 0.4, 1]})
-
-                    # Related URLs as clickable links (from passage, separate from resources)
-                    if parsed.get("related_urls"):
-                        segments.append("\n")
-                        segments.append({"text": "Links\n", "bold": True, "size": 13})
-                        for url in parsed["related_urls"]:
-                            if url.startswith("http"):
-                                display = url[:60] + ("..." if len(url) > 60 else "")
-                                segments.append({"text": f"  {display}\n", "url": url, "underline": True})
-
-                    if segments:
-                        try:
-                            import json as _json
-                            with httpx.Client(timeout=15.0) as c:
-                                c.post(
-                                    f"{omnifocus_bridge}/execute",
-                                    json={
-                                        "command": "appendRichText",
-                                        "args": {
-                                            "taskId": omnifocus_task_id,
-                                            "segments": segments,
-                                            "separator": False,
-                                        },
-                                    },
-                                )
-                        except Exception:
-                            pass  # OmniFocus note is best-effort
-
+                    if passage_text:
+                        _write_work_packet_note(ref_id, omnifocus_task_id, passage_text)
                 except Exception:
-                    pass
+                    pass  # Work packet assembly is best-effort
 
-            # Fire work packet assembly in background
+            # Fire work packet assembly in background (first-pass, uses current PACKET INFO)
             threading.Thread(target=_assemble_work_packet, daemon=True).start()
 
-            # Also trigger backtrace if not already done
-            if "PACKET INFO" not in old_text:
-                def _trigger_backtrace():
-                    """Fire-and-forget backtrace via tasks agent."""
-                    try:
-                        httpx.Client(timeout=120.0).post(
-                            f"{LETTA_BASE_URL}/v1/agents/"
-                            "agent-dd15479e-6543-400e-8463-b2a48b13cd4a/messages/",
-                            json={"messages": [{"role": "user",
-                                  "content": f"Run backtrace_task(ref_id='{ref_id}') now."}]},
-                        )
-                    except Exception:
-                        pass
+            # Deterministic gate: only dispatch MC if PACKET INFO is missing/incomplete
+            # OR if Rush was clicked. This keeps MC invocations targeted.
+            has_packet_info = "PACKET INFO" in old_text
+            has_complete_enrichment = (
+                has_packet_info
+                and "Context brief:" in old_text
+                and "Resources:" in old_text
+            )
+            should_dispatch_mc = rush or not has_complete_enrichment
 
-                threading.Thread(target=_trigger_backtrace, daemon=True).start()
+            if should_dispatch_mc:
+                def _dispatch_mc_work_packet():
+                    """Dispatch work packet assembly to MC via mc-work-packets conversation.
+
+                    MC looks up the task, optionally runs deeper backtrace, stages
+                    resources, writes enriched PACKET INFO, and triggers re-assembly
+                    of the OmniFocus note.
+                    """
+                    MC_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
+                    CONV_LABEL = "mc-work-packets"
+
+                    try:
+                        # Look up conversation by label at runtime
+                        with httpx.Client(timeout=10.0) as c:
+                            resp = c.get(f"{LETTA_BASE_URL}/v1/conversations/?agent_id={MC_AGENT_ID}")
+                            convs = resp.json() if resp.status_code == 200 else []
+
+                        conv_id = None
+                        for cv in (convs if isinstance(convs, list) else []):
+                            if cv.get("label") == CONV_LABEL:
+                                conv_id = cv["id"]
+                                break
+
+                        if not conv_id:
+                            logger.warning(
+                                "mc_work_packet_no_conversation",
+                                ref_id=ref_id,
+                                message="mc-work-packets conversation not found",
+                            )
+                            return
+
+                        # Build focused message
+                        priority_line = "PRIORITY: rush\n" if rush else ""
+                        message = (
+                            f"{priority_line}"
+                            f"Work packet assembly for ref_id {ref_id}. "
+                            f"Follow the Work Packet Assembly Protocol in your conventions block. "
+                            f"The task is confirmed in OmniFocus and has a first-pass note. "
+                            f"Enrich PACKET INFO with deeper context, stage resources as needed, "
+                            f"then trigger re-assembly at "
+                            f"http://pa-web-ui:5200/api/tasks/{ref_id}/reassemble-work-packet"
+                        )
+
+                        # Send via conversations endpoint (SSE, read full stream)
+                        with httpx.Client(timeout=300.0) as c:
+                            resp = c.post(
+                                f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/messages",
+                                json={"input": message},
+                            )
+                            if resp.status_code != 200:
+                                logger.warning(
+                                    "mc_work_packet_dispatch_failed",
+                                    ref_id=ref_id,
+                                    status=resp.status_code,
+                                    rush=rush,
+                                )
+                            else:
+                                logger.info(
+                                    "mc_work_packet_dispatched",
+                                    ref_id=ref_id,
+                                    rush=rush,
+                                )
+                    except Exception as e:
+                        logger.warning(
+                            "mc_work_packet_dispatch_error",
+                            ref_id=ref_id,
+                            error=str(e)[:200],
+                        )
+
+                threading.Thread(target=_dispatch_mc_work_packet, daemon=True).start()
 
         return jsonify({"status": "ok", "ref_id": ref_id, "action": action})
     except Exception as e:
@@ -2382,6 +2478,74 @@ def api_transition_task(ref_id):
             "api_transition_task_error",
             ref_id=ref_id, error=str(e),
         )
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/tasks/<ref_id>/reassemble-work-packet', methods=['POST'])
+def api_reassemble_work_packet(ref_id):
+    """Re-assemble the OmniFocus work packet note from current PACKET INFO.
+
+    Called by MC after it updates PACKET INFO via write_packet_info.
+    Uses setRichText to atomically clear and replace the note with
+    fresh segments based on the updated archival passage.
+
+    Per-ref_id lock prevents races with the first-pass assembly thread.
+    """
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            passage, err = _find_archival_passage(client, ref_id)
+            if err:
+                return err
+
+            passage_text = passage.get("text", "")
+
+        # Extract OmniFocus task ID from passage
+        of_match = re.search(r"- Task ID: (\S+)", passage_text)
+        if not of_match:
+            return jsonify({
+                "status": "error",
+                "error": f"Task {ref_id} has no OmniFocus ID (not confirmed?)",
+            }), 400
+
+        omnifocus_task_id = of_match.group(1).strip()
+        if omnifocus_task_id in ("pending", ""):
+            return jsonify({
+                "status": "error",
+                "error": f"Task {ref_id} has not been confirmed yet",
+            }), 400
+
+        # Check task is actually confirmed (not rejected/completed)
+        if "status:confirmed" not in (passage.get("tags") or []):
+            # Still allow if the passage text shows confirmed status
+            if "- Status: confirmed" not in passage_text:
+                return jsonify({
+                    "status": "error",
+                    "error": f"Task {ref_id} is not in confirmed state",
+                }), 400
+
+        # Re-assemble using shared helper (uses setRichText atomically)
+        success = _write_work_packet_note(ref_id, omnifocus_task_id, passage_text)
+
+        if not success:
+            return jsonify({
+                "status": "error",
+                "error": "OmniFocus bridge write failed",
+            }), 500
+
+        log_lifecycle(
+            "reassemble-work-packet",
+            ref_id=ref_id,
+            omnifocus_id=omnifocus_task_id,
+        )
+
+        return jsonify({
+            "status": "ok",
+            "ref_id": ref_id,
+            "omnifocus_task_id": omnifocus_task_id,
+        })
+
+    except Exception as e:
+        logger.error("api_reassemble_work_packet_error", ref_id=ref_id, error=str(e))
         return jsonify({"error": str(e)}), 500
 
 

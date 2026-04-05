@@ -426,21 +426,19 @@ class TaskSidebar {
     card.classList.add('accordion-open');
     this.openAccordions.add(refId);
 
-    // Load if not cached
-    if (!this.taskDetails[refId]) {
-      content.innerHTML = '<div class="accordion-loading">Loading details&hellip;</div>';
-      content.style.maxHeight = content.scrollHeight + 'px';
+    // Always fetch fresh (PACKET INFO may have been added since last load)
+    content.innerHTML = '<div class="accordion-loading">Loading details&hellip;</div>';
+    content.style.maxHeight = content.scrollHeight + 'px';
 
-      try {
-        const resp = await fetch(`/api/tasks/${refId}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        this.taskDetails[refId] = data;
-      } catch {
-        content.innerHTML = '<div class="accordion-error">Failed to load details</div>';
-        content.style.maxHeight = content.scrollHeight + 'px';
-        return;
-      }
+    try {
+      const resp = await fetch(`/api/tasks/${refId}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      this.taskDetails[refId] = data;
+    } catch {
+      content.innerHTML = '<div class="accordion-error">Failed to load details</div>';
+      content.style.maxHeight = content.scrollHeight + 'px';
+      return;
     }
 
     this.renderAccordionContent(content, this.taskDetails[refId]);
@@ -700,7 +698,7 @@ class TaskSidebar {
     }
   }
 
-  async createOFTaskFromDialog() {
+  async createOFTaskFromDialog(rush = false) {
     const refId = this.pendingConfirmRefId;
 
     // Fetch full passage details for note
@@ -758,6 +756,7 @@ class TaskSidebar {
       body: JSON.stringify({
         action: 'confirm',
         omnifocus_task_id: omnifocusTaskId,
+        rush: rush,
       }),
     });
 
