@@ -2443,7 +2443,7 @@ def api_transition_task(ref_id):
 
                         for attempt in range(max_retries + 1):
                             try:
-                                with httpx.Client(timeout=600.0) as c:
+                                with httpx.Client(timeout=600.0, follow_redirects=True) as c:
                                     resp = c.post(
                                         f"{LETTA_BASE_URL}/v1/agents/{WORKER_AGENT_ID}/messages/",
                                         json={"messages": [{"role": "user", "content": message}]},
