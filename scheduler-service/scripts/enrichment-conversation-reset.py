@@ -102,6 +102,37 @@ def main():
         log.error(f"Failed to create new conversation: {e}")
         sys.exit(1)
 
+    # Update the enrichment scanner job with the new conversation ID.
+    # Letta doesn't persist labels, so the scanner relies on the env var.
+    SCHEDULER_BASE = os.environ.get("SCHEDULER_URL", "http://localhost:8087/v1")
+    SCANNER_JOB_ID = os.environ.get("SCANNER_JOB_ID", "3f93c9a4-2fbf-4547-8325-8b66e241e92e")
+
+    try:
+        # Read current job to get existing env vars
+        job_url = f"{SCHEDULER_BASE}/jobs/{SCANNER_JOB_ID}"
+        job_req = urllib.request.Request(job_url)
+        with urllib.request.urlopen(job_req, timeout=15) as resp:
+            job = json.loads(resp.read())
+
+        actions = job.get("actions", [])
+        if actions:
+            env = actions[0].get("config", {}).get("env", {})
+            env["ENRICHMENT_CONV_ID"] = new_id
+            actions[0]["config"]["env"] = env
+
+            update_data = json.dumps({"actions": actions}).encode()
+            update_req = urllib.request.Request(
+                job_url,
+                data=update_data,
+                headers={"Content-Type": "application/json"},
+                method="PATCH",
+            )
+            urllib.request.urlopen(update_req, timeout=15)
+            log.info(f"Updated scanner job {SCANNER_JOB_ID} with new ENRICHMENT_CONV_ID={new_id}")
+    except Exception as e:
+        log.error(f"Failed to update scanner job with new conversation ID: {e}")
+        log.error("Scanner will use stale conversation ID until manually updated!")
+
     log.info("Enrichment conversation reset complete")
 
 
