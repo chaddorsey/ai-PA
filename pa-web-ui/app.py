@@ -2370,7 +2370,7 @@ def api_transition_task(ref_id):
                 """
                 try:
                     # Re-read the passage (it was just updated with confirmation)
-                    with httpx.Client(timeout=15.0) as c:
+                    with httpx.Client(timeout=15.0, follow_redirects=True) as c:
                         p_resp = c.get(
                             f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}"
                             f"/archival-memory/?search={ref_id}&limit=1",
