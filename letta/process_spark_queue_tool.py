@@ -320,7 +320,10 @@ def process_spark_queue(dry_run: Optional[str] = None) -> Dict[str, Any]:
                         if "(empty)" in pe_val:
                             pe_val = ""
                         pe_val = pe_val.strip()
-                        if pe_val:
+                        # Dedup: don't add if ref_id already in pending block
+                        if ref_id in pe_val.split("\n"):
+                            pass  # Already pending
+                        elif pe_val:
                             pe_val += f"\n{ref_id}"
                         else:
                             pe_val = ref_id

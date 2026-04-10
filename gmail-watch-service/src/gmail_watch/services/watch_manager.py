@@ -694,29 +694,9 @@ class WatchManager:
                             }
                         ]
 
-                    msg_had_error = False
+                    spark_ok = False
                     for entry_def in entry_defs:
-                        entry = self.task_queue_writer.format_queue_entry(
-                            message_id=original_message_id,
-                            thread_id=original_thread_id,
-                            subject=subject,
-                            from_address=from_address,
-                            date=date,
-                            snippet=snippet,
-                            trigger=trigger,
-                            notes=notes if not entry_def["marker_type"] else None,
-                            forwarded_message_id=forwarded_message_id,
-                            marker_type=entry_def["marker_type"],
-                            task_hint=entry_def["task_hint"],
-                            context=entry_def["context"],
-                        )
-
-                        write_result = await self.task_queue_writer.write_to_block(
-                            entry,
-                            dedup_key=f"message_id: {original_message_id}",
-                        )
-
-                        # Also write Spark Record to spark_queue (new pipeline)
+                        # Write Spark Record to spark_queue (primary pipeline)
                         if settings.spark_queue_block_id:
                             import json as _json
                             spark_json = self.task_queue_writer.format_spark_record(
@@ -742,17 +722,15 @@ class WatchManager:
                                     error=spark_result.get("error"),
                                     message_id=msg_id,
                                 )
-                            elif not spark_result.get("dedup"):
-                                spark_records.append(_json.loads(spark_json))
+                            else:
+                                spark_ok = True
+                                if not spark_result.get("dedup"):
+                                    spark_records.append(_json.loads(spark_json))
 
-                        if write_result.get("status") != "ok":
-                            errors.append({
-                                "message_id": msg_id,
-                                "error": write_result.get("error", "write failed"),
-                                "task_hint": entry_def.get("task_hint"),
-                            })
-                            msg_had_error = True
-                            continue
+                        # Legacy queue block write disabled — spark queue is the
+                        # primary pipeline. Old blocks are full and cause label-swap
+                        # failures that produce duplicate re-processing loops.
+                        # (Disabled 2026-04-09)
 
                         processed.append({
                             "message_id": original_message_id,
@@ -773,8 +751,8 @@ class WatchManager:
                             task_hint=entry_def.get("task_hint"),
                         )
 
-                    if not msg_had_error:
-                        # Remove TaskQueue label only if all entries wrote OK
+                    if spark_ok or processed:
+                        # Remove TaskQueue label if spark wrote OK (or any entry processed)
                         self._gmail_client.remove_label(msg_id, label_id)
 
                     # Log notification
@@ -1025,33 +1003,9 @@ class WatchManager:
                                 comment_author = enriched_author
                         enriched_date = enriched.get("comment_date", date)
 
+                        spark_ok = False
                         for entry_def in entry_defs:
-                            entry = self.drive_task_queue_writer.format_drive_queue_entry(
-                                comment_id=comment_id or "",
-                                doc_id=doc_id,
-                                doc_title=doc_title,
-                                doc_type=enriched_doc_type,
-                                comment_author=comment_author,
-                                triggered_by=triggered_by,
-                                comment_date=enriched_date,
-                                comment_text=enriched_comment_text,
-                                gmail_message_id=msg_id,
-                                quoted_passage=enriched.get("quoted_passage"),
-                                surrounding_context=enriched.get(
-                                    "surrounding_context"
-                                ),
-                                urls=enriched.get("urls"),
-                                notes=entry_def.get("notes"),
-                                marker_type=entry_def["marker_type"],
-                                task_hint=entry_def["task_hint"],
-                                context=entry_def["context"],
-                            )
-
-                            write_result = await self.drive_task_queue_writer.write_to_block(
-                                entry
-                            )
-
-                            # Also write Spark Record to spark_queue (new pipeline)
+                            # Write Spark Record to spark_queue (primary pipeline)
                             if settings.spark_queue_block_id:
                                 spark_json = self.drive_task_queue_writer.format_spark_record_drive(
                                     comment_id=comment_id or "",
@@ -1079,14 +1033,13 @@ class WatchManager:
                                         error=spark_result.get("error"),
                                         doc_id=doc_id,
                                     )
+                                else:
+                                    spark_ok = True
 
-                            if write_result.get("status") != "ok":
-                                errors.append({
-                                    "message_id": msg_id,
-                                    "error": write_result.get("error", "write failed"),
-                                })
-                                msg_had_error = True
-                                continue
+                            # Legacy drive queue block write disabled — spark queue
+                            # is the primary pipeline. Old blocks are full and cause
+                            # label-swap failures that produce duplicate re-processing.
+                            # (Disabled 2026-04-09)
 
                             processed.append({
                                 "comment_id": comment_id,
@@ -1106,14 +1059,12 @@ class WatchManager:
                                 marker_type=entry_def["marker_type"],
                             )
 
-                    if not msg_had_error:
-                        # Swap DTaskQueue → DTaskQueueDone to prevent
-                        # fallback query from re-processing
+                    if spark_ok or processed:
+                        # Swap DTaskQueue → DTaskQueueDone
                         modify_body: dict[str, Any] = {
                             "removeLabelIds": [label_id],
                         }
                         if not done_label_id:
-                            # Auto-create done label on first use
                             try:
                                 created = (
                                     self._gmail_client.service.users()
