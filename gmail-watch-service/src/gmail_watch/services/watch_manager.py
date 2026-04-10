@@ -935,6 +935,12 @@ class WatchManager:
                     ).strip(' "')
 
                     # Process each comment as a separate task
+                    # Only queue comments authored by the account owner.
+                    # Others get a warning reply.
+                    OWNER_EMAILS = {
+                        settings.gmail_address.lower(),
+                    }
+
                     msg_had_error = False
                     for comment_entry in all_comments:
                         comment_id = comment_entry.get("comment_id")
@@ -945,6 +951,45 @@ class WatchManager:
                         )
                         triggered_by = comment_entry.get("author_email") or from_address
                         comment_author = comment_entry.get("author_name", "")
+
+                        # ── Owner gate: only queue self-authored comments ──
+                        author_email_lower = (
+                            comment_entry.get("author_email") or from_address
+                        ).lower().strip()
+                        if author_email_lower not in OWNER_EMAILS:
+                            log.info(
+                                "drive_comment_skipped_not_owner",
+                                author=author_email_lower,
+                                doc_title=doc_title,
+                                comment_id=comment_id,
+                            )
+                            # Post a warning reply (best-effort)
+                            if self.drive_enricher and comment_id and doc_id:
+                                try:
+                                    self.drive_enricher._ensure_auth()
+                                    self.drive_enricher._drive_service.replies().create(
+                                        fileId=doc_id,
+                                        commentId=comment_id,
+                                        body={
+                                            "content": (
+                                                "This comment was not queued as a task. "
+                                                "Only the document owner can queue tasks "
+                                                "via the +dtasks address."
+                                            ),
+                                        },
+                                        fields="id",
+                                    ).execute()
+                                    log.info(
+                                        "drive_comment_warning_reply_posted",
+                                        doc_id=doc_id,
+                                        comment_id=comment_id,
+                                    )
+                                except Exception as reply_err:
+                                    log.warning(
+                                        "drive_comment_warning_reply_failed",
+                                        error=str(reply_err)[:200],
+                                    )
+                            continue
 
                         # Parse for task markers from comment text
                         marker_entries = TaskQueueWriter.parse_markers(comment_content)
