@@ -251,7 +251,12 @@ async def sync_changes_api(
                         force=False,
                     )
 
-                    if ingest_result.status == "success":
+                    # NOTE: ingest_document returns status="indexed" on the
+                    # success path (see ingestion.py:542). Previously this
+                    # check looked for "success", so every real ingest was
+                    # miscounted as skipped — including ~130 real new docs
+                    # during the Apr 2026 backfill.
+                    if ingest_result.status == "indexed":
                         result.ingested += 1
                         logger.info(
                             "document_ingested",

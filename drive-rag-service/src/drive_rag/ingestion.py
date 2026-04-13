@@ -46,13 +46,20 @@ GOOGLE_SLIDES_MIME_TYPE = "application/vnd.google-apps.presentation"
 
 # MIME type for PDF files
 PDF_MIME_TYPE = "application/pdf"
+TEXT_PLAIN_MIME_TYPE = "text/plain"
+TEXT_MARKDOWN_MIME_TYPE = "text/markdown"
 
-# All supported MIME types for ingestion
+# All supported MIME types for ingestion.
+# Must stay in sync with change_monitor.SUPPORTED_MIME_TYPES — a mismatch
+# causes change_monitor to classify files as "new"/"modified" and queue them,
+# only for ingest_document to reject them as unsupported.
 SUPPORTED_MIME_TYPES = [
     GOOGLE_DOCS_MIME_TYPE,
     GOOGLE_SHEETS_MIME_TYPE,
     GOOGLE_SLIDES_MIME_TYPE,
     PDF_MIME_TYPE,
+    TEXT_PLAIN_MIME_TYPE,
+    TEXT_MARKDOWN_MIME_TYPE,
 ]
 
 
@@ -295,6 +302,13 @@ async def ingest_document(
             # PDF files - download and extract text
             pdf_content = google.download_file_content(file_id)
             snapshot = normalize_pdf_document(file_id, head_revision_id, pdf_content)
+
+        elif mime_type in (TEXT_PLAIN_MIME_TYPE, TEXT_MARKDOWN_MIME_TYPE):
+            # Plain text / markdown - download raw bytes and decode.
+            # errors="replace" matches the pattern used in main.py for
+            # the /v1/fetch endpoint's text handling.
+            plain_text = google.download_file_content(file_id).decode("utf-8", errors="replace")
+            snapshot = normalize_plain_text_document(file_id, head_revision_id, plain_text)
 
         # Check content hash for deeper comparison
         if not force and existing_state:
