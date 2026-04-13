@@ -36,5 +36,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "drive_rag.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application.
+# Two workers: one can be pinned by a long-running sync_changes_api sweep
+# (which is async-in-name-only — google-api-python-client blocks the loop)
+# while the other still answers /health and other requests.
+CMD ["uvicorn", "drive_rag.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
