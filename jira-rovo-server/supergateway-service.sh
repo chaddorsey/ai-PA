@@ -56,60 +56,31 @@ check_token_validity() {
 }
 
 refresh_token_using_stored() {
-    log "Attempting to refresh token using stored refresh token..."
-    
-    # Check if we have stored tokens
+    # mcp-remote refreshes the stored access token lazily, on 401, during a
+    # real MCP request. This function's job is NOT to force a refresh
+    # (the previous "run mcp-remote for 6s and grep stdout" approach was
+    # unreliable — normal startup output contained "authorize" which
+    # triggered false-positive "expired" detection every 50 minutes).
+    #
+    # Instead: re-sync the cached $TOKEN_FILE from mcp-remote's own
+    # tokens.json. If mcp-remote has refreshed during normal traffic,
+    # this pulls in the fresh access token. If it hasn't, we rely on
+    # the lazy refresh happening on the next real Letta tool call.
+
     if [ ! -d "$HOME/.mcp-auth" ]; then
         log "ERROR: No mcp-auth directory - need manual OAuth"
         return 1
     fi
-    
-    # mcp-remote should automatically use stored refresh token
-    # Run it briefly to trigger refresh
-    log "Running mcp-remote to refresh token (should use stored refresh token)..."
-    
-    # Start mcp-remote in background, redirect output
-    TEMP_LOG="/tmp/mcp-remote-refresh-$$.log"
-    npx mcp-remote "$MCP_URL" > "$TEMP_LOG" 2>&1 &
-    MCP_PID=$!
-    
-    # Wait for it to attempt refresh
-    sleep 6
-    
-    # Check if it's waiting for OAuth (means refresh token expired)
-    if grep -q "OAuth callback server" "$TEMP_LOG" 2>/dev/null || \
-       grep -q "authorize" "$TEMP_LOG" 2>/dev/null; then
-        log "Refresh token expired - need manual OAuth"
-        kill $MCP_PID 2>/dev/null
-        rm -f "$TEMP_LOG"
-        return 1
-    fi
-    
-    # Give it a bit more time if still running
-    if kill -0 "$MCP_PID" 2>/dev/null; then
-        sleep 3
-    fi
-    
-    # Stop it
-    kill $MCP_PID 2>/dev/null
-    sleep 1
-    
-    # Extract new token
+
+    log "Re-syncing cached token from mcp-remote storage..."
     if "$SCRIPT_DIR/extract-token-from-mcp-auth.js" >> "$LOG_FILE" 2>&1; then
-        log "Token refreshed successfully using stored refresh token"
-        rm -f "$TEMP_LOG"
+        log "Cached token file synced"
         return 0
-    else
-        log "Failed to extract refreshed token"
-        if [ -f "$TEMP_LOG" ]; then
-            log "mcp-remote output:"
-            tail -5 "$TEMP_LOG" | while read line; do
-                log "  $line"
-            done
-        fi
-        rm -f "$TEMP_LOG"
-        return 1
     fi
+
+    log "ERROR: Failed to extract token — may need manual OAuth:"
+    log "  cd $SCRIPT_DIR && npx mcp-remote \"$MCP_URL\""
+    return 1
 }
 
 start_supergateway() {
@@ -237,35 +208,32 @@ check_status() {
     fi
 }
 
-# Auto-refresh loop (for daemon mode)
+# Daemon loop: start supergateway, then periodically health-check and
+# keep the cached token file in sync with mcp-remote's internal storage.
+# We no longer restart supergateway on every interval — mcp-remote
+# refreshes tokens lazily on 401 during normal MCP traffic, so the
+# restart was both wasteful and (historically) triggered by a broken
+# heuristic check.
 run_with_refresh() {
-    log "Starting supergateway with auto-refresh (every $TOKEN_REFRESH_INTERVAL seconds)..."
-    
+    log "Starting supergateway (mcp-remote handles token refresh on demand, health checks every ${TOKEN_REFRESH_INTERVAL}s)..."
+
     if ! start_supergateway; then
         log "ERROR: Failed to start supergateway"
         return 1
     fi
-    
+
     while true; do
         sleep $TOKEN_REFRESH_INTERVAL
-        
-        log "Scheduled token refresh (proactive refresh before expiration)..."
-        
-        # Check if token is still valid
+
         if check_token_validity; then
-            log "Token is still valid, refreshing proactively..."
+            log "Health check: token valid ✓"
+            # Re-sync cached $TOKEN_FILE with whatever mcp-remote has
+            # refreshed during traffic since last check. Non-fatal on fail.
+            "$SCRIPT_DIR/extract-token-from-mcp-auth.js" >> "$LOG_FILE" 2>&1 || true
         else
-            log "Token expired, refreshing now..."
-        fi
-        
-        # Attempt refresh
-        if refresh_token_using_stored; then
-            log "Token refreshed, restarting supergateway..."
-            restart_supergateway
-        else
-            log "WARNING: Token refresh failed, but continuing with current token"
-            log "Supergateway will continue running, but may fail when token expires"
-            log "Run refresh-atlassian-token.sh manually if needed"
+            log "WARNING: health check failed — token may need refresh"
+            log "  mcp-remote should refresh lazily on next Letta tool call."
+            log "  If Letta calls are failing, run manually: $0 refresh"
         fi
     done
 }

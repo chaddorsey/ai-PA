@@ -29,64 +29,57 @@ if (!fs.existsSync(MCP_AUTH_DIR)) {
 console.log(`✓ Found mcp-remote config directory: ${MCP_AUTH_DIR}`);
 console.log();
 
-// Check for versioned subdirectories (e.g., mcp-remote-0.1.36)
+// mcp-remote derives the cache filename from md5(server URL).
+// We MUST target the Atlassian hash specifically — the cache may also hold
+// tokens for other MCP servers (Granola, etc.), and a naive "pick any
+// _tokens.json" scan can happily hand Letta a wrong-issuer token.
+const serverUrlHash = crypto.createHash('md5').update(ROVO_MCP_URL).digest('hex');
+const tokenFileName = `${serverUrlHash}_tokens.json`;
+
+// Find the mcp-remote versioned subdir that contains the target file.
 const subdirs = fs.readdirSync(MCP_AUTH_DIR).filter(f => {
   const fullPath = path.join(MCP_AUTH_DIR, f);
   return fs.statSync(fullPath).isDirectory() && f.startsWith('mcp-remote-');
 });
 
-let tokenFiles = [];
-
-// Search in versioned subdirectories
+let targetFilePath = null;
 for (const subdir of subdirs) {
-  const subdirPath = path.join(MCP_AUTH_DIR, subdir);
-  const files = fs.readdirSync(subdirPath);
-  const subdirTokenFiles = files
-    .filter(f => f.endsWith('_tokens.json'))
-    .map(f => path.join(subdir, f));
-  tokenFiles.push(...subdirTokenFiles);
+  const candidate = path.join(MCP_AUTH_DIR, subdir, tokenFileName);
+  if (fs.existsSync(candidate)) {
+    targetFilePath = candidate;
+    break;
+  }
+}
+// Legacy fallback: root of .mcp-auth (very old mcp-remote versions)
+if (!targetFilePath) {
+  const candidate = path.join(MCP_AUTH_DIR, tokenFileName);
+  if (fs.existsSync(candidate)) {
+    targetFilePath = candidate;
+  }
 }
 
-// Also check root directory
-const rootFiles = fs.readdirSync(MCP_AUTH_DIR);
-const rootTokenFiles = rootFiles.filter(f => f.endsWith('_tokens.json'));
-tokenFiles.push(...rootTokenFiles);
-
-if (tokenFiles.length === 0) {
-  console.log('❌ No token files found');
-  console.log('\nMake sure you\'ve completed OAuth with mcp-remote.');
+if (!targetFilePath) {
+  console.log(`❌ No token file found for ${ROVO_MCP_URL}`);
+  console.log(`   Expected: */${tokenFileName}`);
+  console.log('\nMake sure you\'ve completed OAuth for the Atlassian MCP server.');
+  console.log('Run: npx mcp-remote "' + ROVO_MCP_URL + '" interactively.');
   process.exit(1);
 }
 
-console.log(`Found ${tokenFiles.length} token file(s):`);
-tokenFiles.forEach(f => console.log(`  - ${f}`));
-console.log();
-
-// Try to find the one for Rovo MCP
-// The serverUrlHash is calculated from the server URL
-// Let's check all token files and find the one that works
+console.log(`✓ Found Atlassian token file: ${targetFilePath}`);
 
 let foundToken = null;
-
-for (const tokenFile of tokenFiles) {
-  const filePath = path.join(MCP_AUTH_DIR, tokenFile);
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const tokens = JSON.parse(content);
-    
-    if (tokens.access_token) {
-      console.log(`✓ Found token in: ${tokenFile}`);
-      console.log(`  Token: ${tokens.access_token.substring(0, 50)}...`);
-      console.log(`  Token type: ${tokens.token_type || 'Bearer'}`);
-      console.log(`  Expires in: ${tokens.expires_in || 'unknown'} seconds`);
-      
-      if (!foundToken) {
-        foundToken = tokens.access_token;
-      }
-    }
-  } catch (e) {
-    console.log(`⚠️  Error reading ${tokenFile}: ${e.message}`);
+try {
+  const tokens = JSON.parse(fs.readFileSync(targetFilePath, 'utf8'));
+  if (tokens.access_token) {
+    console.log(`  Token: ${tokens.access_token.substring(0, 20)}... (${tokens.access_token.length} chars)`);
+    console.log(`  Token type: ${tokens.token_type || 'Bearer'}`);
+    console.log(`  Expires in: ${tokens.expires_in || 'unknown'} seconds`);
+    console.log(`  Refresh token present: ${tokens.refresh_token ? 'yes' : 'no'}`);
+    foundToken = tokens.access_token;
   }
+} catch (e) {
+  console.log(`⚠️  Error reading ${targetFilePath}: ${e.message}`);
 }
 
 if (foundToken) {
