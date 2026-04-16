@@ -9,10 +9,18 @@
  */
 
 import http from 'http';
-import { execSync, spawn } from 'child_process';
+import { exec, execSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+
+// Prevent any unhandled error from crashing the process
+process.on('uncaughtException', (err) => {
+  console.error('🟥 Uncaught exception (process kept alive):', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('🟥 Unhandled rejection (process kept alive):', reason);
+});
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -453,6 +461,34 @@ const server = http.createServer((req, res) => {
             parts.push(taskId);
           }
           // 'list' and 'clear' need no extra args
+
+          // When queuing a newly-created task, the laptop needs time to
+          // sync from the OmniFocus cloud. Fire the SSH command async so
+          // the HTTP response returns immediately (no perceived latency).
+          // The widget appears ~15s later once the laptop has the task.
+          //
+          // Quote escaping: the SSH wrapper uses single quotes, so inner
+          // single quotes use the '"'"' shell idiom.
+          const needsSync = (action === 'next' || action === 'push') && taskId;
+
+          if (needsSync) {
+            const syncPrefix = `osascript -e '"'"'tell application "OmniFocus" to synchronize'"'"' && sleep 15 && `;
+            const remoteCmd = syncPrefix + parts.join(' ');
+            const sshCmd = `ssh -i "${LAPTOP_SSH_KEY}" -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${LAPTOP_SSH_HOST} '${remoteCmd}'`;
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: 'queued', async: true }));
+
+            exec(sshCmd, { timeout: 60000 }, (err, stdout, stderr) => {
+              if (err) {
+                console.error('[widget-queue] Async laptop queue failed:', err.message);
+              } else {
+                console.log('[widget-queue] Async laptop queue succeeded');
+                try { console.log('[widget-queue]', JSON.parse(stdout)); } catch { /* */ }
+              }
+            });
+            return;
+          }
 
           const remoteCmd = parts.join(' ');
           const result = execSync(
