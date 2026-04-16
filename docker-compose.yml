@@ -758,7 +758,10 @@ services:
       OPENAI_KEY_FALLBACK: ${OPENAI_KEY_FALLBACK}
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:4000/health/liveliness"]
+      # The litellm image doesn't ship curl — use python3 (which IS installed)
+      # via urllib. urlopen() raises on non-2xx, so the script exits non-zero
+      # on failure and zero on success.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).read()"]
       interval: 10s
       timeout: 5s
       retries: 5
