@@ -674,4 +674,21 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 
 ---
 
+## 30. Drive Watch — Targeted Document Monitoring (PLANNED)
+
+**Status:** Plan ready
+**Plan:** [2026-04-16-drive-watch-targeted-monitoring.md](2026-04-16-drive-watch-targeted-monitoring.md)
+**Risk:** Low (additive — no changes to existing sync pipeline)
+**Estimated effort:** 4-6 hours
+
+**Problem:** The drive-rag sync pipeline monitors all 44K+ indexed documents via a global 10-minute cron. There's no way to watch a specific file (e.g., a shared spreadsheet) at higher frequency and get notified with the exact diff when it changes.
+
+**Solution:** A lightweight "watchlist" layer on top of the existing ingest + snapshot + diff infrastructure. New `rag.watched_files` table, 4 CRUD endpoints, a 2-minute cron poller that checks only watched files via a single `files.get` metadata call (~100ms each), and a Slack/Letta notification with cell-level diffs for spreadsheets. Builds on `ingest_document`, snapshot storage, and `differ.py` — all of which already exist. A `diff_csv()` addition to `differ.py` handles spreadsheet-specific row/cell comparison.
+
+**Key new components:** `watch_poller.py`, `/v1/watch` CRUD endpoints, `diff_csv()` in `differ.py`, Slack Block Kit notification template, one scheduler cron job.
+
+**Future (Phase B):** Google Drive webhooks for sub-minute detection, conditional alerts (only notify when specific columns change), digest mode, pa-web-ui watchlist dashboard.
+
+---
+
 **Completed:** Items 1-7, 12, 15, 18, 24, 27, 28 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling, Add & Go sidebar queue integration, enrichment pipeline orchestration, work packet assembly.
