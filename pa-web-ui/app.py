@@ -495,6 +495,26 @@ def subprocess_status():
     })
 
 
+@app.route("/api/subprocess/events/<conv_id>", methods=["GET"])
+def subprocess_events(conv_id: str):
+    """Temporary debug endpoint: dump the last N events from a conv's ring buffer.
+
+    Used during Phase-1 live smoke to verify the actual stream-json event
+    shapes letta-code emits. Will be removed before the 7-day burn window
+    or kept behind a debug-only flag.
+    """
+    n = int(request.args.get("n", "20"))
+    handle = subprocess_registry._handles.get(conv_id)
+    if handle is None:
+        return jsonify({"error": "no handle", "conv_id": conv_id}), 404
+    events, _ = handle.ring_buffer.events_since(0)
+    return jsonify({
+        "conv_id": conv_id,
+        "total": len(events),
+        "tail": events[-n:],
+    })
+
+
 @app.route("/api/agents")
 def get_agents():
     """Proxy to routing handler to get available agents."""
@@ -1238,6 +1258,100 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
+def _translate_letta_code_event(ev: dict) -> Optional[dict]:
+    """Translate letta-code 0.23.8 native stream-json into the event shape
+    chat.js's existing handlers already understand.
+
+    letta-code wraps most content in `{type: "message", message_type: ...}`.
+    chat.js handlers are keyed on the outer `type` field
+    (`text`, `tool_call`, `tool_result`, `thinking`, `usage`, etc.) —
+    these are the shapes LettaBot used to emit after translating from
+    the same underlying letta-code output.
+
+    Returns None for events we deliberately drop from the client stream
+    (e.g., stop_reason, which is redundant with the subsequent result event).
+    """
+    t = ev.get("type")
+
+    # Preserve server-side envelope metadata on the translated event.
+    envelope = {k: v for k, v in ev.items() if k.startswith("_")}
+
+    if t == "message":
+        mt = ev.get("message_type")
+        if mt == "assistant_message":
+            content = ev.get("content") or ""
+            if not content:
+                return None
+            return {"type": "text", "content": content, **envelope}
+        if mt == "reasoning_message":
+            content = ev.get("reasoning") or ev.get("content") or ""
+            if not content:
+                return None
+            return {"type": "thinking", "content": content, **envelope}
+        if mt == "tool_call_message":
+            tc = ev.get("tool_call") or {}
+            tool_name = tc.get("name") or ev.get("name") or ""
+            raw_args = tc.get("arguments", ev.get("arguments"))
+            if isinstance(raw_args, str):
+                try:
+                    args = json.loads(raw_args) if raw_args else {}
+                except (ValueError, json.JSONDecodeError):
+                    args = {"raw": raw_args}
+            else:
+                args = raw_args or {}
+            return {
+                "type": "tool_call",
+                "tool": tool_name,
+                "args": args,
+                **envelope,
+            }
+        if mt in ("tool_return_message", "tool_response_message"):
+            content = ev.get("content") or ev.get("tool_return") or ev.get("result") or ""
+            is_error = (
+                ev.get("is_err") is True
+                or ev.get("status") == "error"
+                or ev.get("tool_return_status") == "error"
+            )
+            return {
+                "type": "tool_result",
+                "content": content if isinstance(content, str) else json.dumps(content),
+                "is_error": is_error,
+                **envelope,
+            }
+        if mt == "usage_statistics":
+            data = {
+                "prompt_tokens": ev.get("prompt_tokens") or 0,
+                "completion_tokens": ev.get("completion_tokens") or 0,
+                "total_tokens": ev.get("total_tokens") or 0,
+                "cached_input_tokens": ev.get("cached_input_tokens") or 0,
+                "reasoning_tokens": ev.get("reasoning_tokens") or 0,
+                "model": ev.get("model") or "",
+            }
+            prompt = data["prompt_tokens"]
+            cached = data["cached_input_tokens"]
+            data["cache_pct"] = round(cached / prompt * 100) if prompt else 0
+            return {"type": "usage", "data": data, **envelope}
+        if mt == "stop_reason":
+            # Drop — result event carries the terminal signal.
+            return None
+        # Unknown message_type — forward untouched so the frontend can log
+        # it and we don't lose data.
+        return ev
+
+    if t == "result":
+        # Map to `done` for chat.js's existing terminal handler.
+        return {
+            "type": "done",
+            "result": ev.get("result"),
+            "run_ids": ev.get("run_ids") or [],
+            **envelope,
+        }
+
+    # routing, ping, error, resync_required, slow_subscriber, turn_locked,
+    # and anything else already in chat.js-compatible shape — pass through.
+    return ev
+
+
 def _stream_direct_generator(
     subscriber,
     session_id: str,
@@ -1245,23 +1359,24 @@ def _stream_direct_generator(
 ) -> Generator[str, None, None]:
     """SSE generator reading from a subprocess-pool subscriber queue.
 
-    Keepalive pings on queue.Empty. Unsubscribes on GeneratorExit OR on
-    a terminal event (result / done) so the reader thread stops fanning
-    events to a client that won't read them.
+    Translates letta-code's native stream-json event shapes into the
+    forms chat.js already renders. Keepalive pings on queue.Empty.
+    Exits on terminal event (result / done) OR GeneratorExit.
     """
     assistant_accumulator = ""
     try:
         while True:
             try:
-                event = subscriber.get(timeout=KEEPALIVE_PING_INTERVAL)
+                raw_event = subscriber.get(timeout=KEEPALIVE_PING_INTERVAL)
             except queue.Empty:
                 yield f"data: {json.dumps({'type': 'ping'})}\n\n"
                 continue
 
-            # Accumulate text events so we can save the final assistant
-            # turn to the DB on completion. Other event types (tool_call,
-            # tool_result, reasoning, etc.) pass through untouched — the
-            # frontend already renders them.
+            event = _translate_letta_code_event(raw_event)
+            if event is None:
+                continue
+
+            # Accumulate text for DB save on completion.
             if event.get("type") == "text":
                 piece = event.get("content") or ""
                 if piece:
