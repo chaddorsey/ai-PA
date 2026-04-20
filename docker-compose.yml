@@ -670,9 +670,6 @@ services:
       # Letta API configuration (for agent-to-agent communication)
       LETTA_API_KEY: "${LETTA_API_KEY:-}"  # Optional: API key for authenticated requests
       LETTA_BASE_URL: "http://localhost:8283"  # Base URL for Letta API (used by tools)
-      # Rover LettaBot on laptop (for message_rover_local tool)
-      ROVER_LETTABOT_URL: "${ROVER_LETTABOT_URL:-http://100.95.213.46:8080}"
-      ROVER_LETTABOT_API_KEY: "${ROVER_LETTABOT_API_KEY:-}"
       NOTEBOOKLM_STORAGE: "/notebooklm-auth/storage_state.json"  # NotebookLM auth path inside container
       NOTEBOOKLM_REMOTE_HOST: "${NOTEBOOKLM_REMOTE_HOST:-cc-tn2wdg94p2}"  # Tailscale host for remote file fetch
       # https://docs.letta.com/guides/server/providers/anthropic
