@@ -728,11 +728,13 @@ services:
     image: docker.litellm.ai/berriai/litellm:main-latest
     container_name: litellm
     restart: unless-stopped
-    # Cap to catch the slow-growing working set that crept to 686 MB before
-    # a stray restart reset it to ~210 MB (observed 2026-04-18 → 2026-04-20).
-    # Docker will SIGKILL + restart if breached; baseline is ~220 MB.
-    mem_limit: 400m
-    mem_reservation: 200m
+    # Cap to catch runaway growth while allowing normal load.
+    # Historical observations: steady-state ~220 MB, peak under load ~686 MB
+    # (pre-restart). 400m was too tight — killed litellm during MC's first
+    # real request, breaking the upgrade smoke test. 1g gives headroom above
+    # the observed peak while still catching clear leaks (e.g. unbounded 2+ GB).
+    mem_limit: 1g
+    mem_reservation: 256m
     depends_on:
       supabase-db:
         condition: service_healthy
