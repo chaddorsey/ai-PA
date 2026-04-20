@@ -82,7 +82,7 @@ otherwise wording is preserved.
 - **R17.** `/btw` invocation via chat-input slash command and `Cmd+/` keyboard shortcut.
 
 ### Device sync + default view (R18–R19)
-- **R18.** Cold PWA open → most-recently-active conversation for MC (via Letta `conversations.list` ordered by `last_run_completion`).
+- **R18.** Cold PWA open → most-recently-active conversation for MC (via Letta `conversations.list` ordered by `last_message_at`). (Revised 2026-04-20: original wording said `last_run_completion`; Phase 2's Unit 2.0 probe confirmed `last_message_at` is the operative field on Letta 0.16.7. If the probe surfaces a different stable field, both plans update together.)
 - **R19.** Server owns conversation state; devices are thin clients; no active-device concept.
 
 ### PWA mobile (R20–R22, Phase 4)
@@ -654,7 +654,7 @@ phone wakes up, POST /stream {conversation_id:"default", device_id:..., since:42
 Execution-ready plan for Phase 2 will be written as `docs/plans/YYYY-MM-DD-002-feat-pa-web-ui-conversation-switcher-plan.md` when Phase 1 is stable. High-level unit sketches:
 
 - **Unit 2.1: Letta fork API reference + schema migration.** Probe `POST /v1/conversations/{id}/fork`, document request/response in `docs/reference/letta-conversations-fork.md`. Add `conversation_id` column to `pa_web.conversations`, `pa_web.routing_signals`, `pa_web.thread_exchanges`, `pa_web.response_feedback`. Backfill with a default "main" conversation per existing session_id.
-- **Unit 2.2: Conversation list + switcher UI.** Left rail on desktop, hamburger drawer on mobile. `GET /api/conversations` (Letta `conversations.list?agent_id=MC&order_by=last_run_completion`). Create / rename / soft-delete actions.
+- **Unit 2.2: Conversation list + switcher UI.** Left rail on desktop, hamburger drawer on mobile. `GET /api/conversations` (Letta `conversations.list?agent_id=MC&order_by=last_message_at`). Create / rename / soft-delete actions.
 - **Unit 2.3: Per-message "Fork from here" action.** Menu on every assistant message; calls `POST /v1/conversations/{id}/fork?agent_id=MC`. Stores parent link in `pa_web.conversations`. Adds to switcher with parent indicator.
 - **Unit 2.4: Conversation-history rehydration on switch.** `loadConversationHistory()` takes `conversation_id` parameter; frontend's `pa_chat_session_id` becomes `pa_chat_device_id`; conversation_id separately tracked in URL.
 

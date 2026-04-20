@@ -67,20 +67,28 @@ force and are noted where Phase 2 touches them.
   (via Letta `conversations.list` ordered by `last_message_at`).
 
 ### Carried forward from Phase 1 (constraints Phase 2 honors)
-- **R1–R3** subprocess model: Phase 2 passes real conv UUIDs to
-  `SubprocessRegistry.ensure(agent_id, conv_id)`. No registry changes.
-- **R4/R4b** disallowed tools: unchanged.
-- **R6/R7/R7b** event fidelity + seq_id resume: each conversation has
-  its own ring buffer already (Phase 1). Phase 2's conversation switch
-  resets `lastSeqId` and refetches history — no resume across switches.
-- **R7c** turn-lock: Phase 2's "Fork from here" check the parent
-  conversation's in_flight flag; fork is rejected with HTTP 409 if the
-  parent is streaming.
-- **R19** server owns state, devices are thin: Phase 2 still reads
-  from `pa_web.conversations` for history display (pragmatic —
-  migrating display to Letta's messages API is Phase 3 or later).
-- **R29/R30** ingress + env hardening: all new routes pass through the
-  Phase 1 `ingress_guard`. No new secrets in env.
+
+**Subprocess model (R1–R3):**
+- Phase 2 passes real conv UUIDs to `SubprocessRegistry.ensure(agent_id, conv_id)`.
+  No registry changes — verified against `test_distinct_convs_spawn_distinct_subprocesses`.
+
+**Disallowed tools (R4, R4b):** unchanged.
+
+**Event fidelity + seq_id resume (R6, R7, R7b):**
+- Each conversation has its own ring buffer already (Phase 1). Phase 2's
+  conversation switch resets `lastSeqId` and refetches history — no resume
+  across switches.
+
+**Turn-lock (R7c):**
+- Phase 2's "Fork from here" checks the parent conversation's in_flight
+  flag; fork is rejected with HTTP 409 if the parent is streaming.
+
+**Server owns state, devices are thin (R19):**
+- Phase 2 still reads from `pa_web.conversations` for history display
+  (pragmatic — migrating display to Letta's messages API is Phase 3 or later).
+
+**Ingress + env hardening (R29, R30):**
+- All new routes pass through the Phase 1 `ingress_guard`. No new secrets in env.
 
 ## Scope Boundaries
 
@@ -206,21 +214,75 @@ standard-enough SPA convention.
 ## Key Technical Decisions
 
 - **Schema extension strategy: add nullable TEXT `conversation_id` to
-  all four `pa_web` tables; rename the dead `response_feedback.conversation_id
-  INTEGER` to `local_conversation_pk` in the same migration step.**
-  Rationale: existing column is unused by frontend (grep-verified) and
-  would type-collide with the new TEXT Letta conv UUID. Renaming is
-  reversible (down-migration is `ALTER TABLE RENAME`); drop is not
-  (loses whatever future ORMs might have written). Nullable +
-  backfilled-to-"main" means old code paths continue to work while
-  new paths populate.
+  all four `pa_web` tables; handle the `response_feedback.conversation_id
+  INTEGER` collision via coordinated rename PLUS code update in the same
+  commit.** Post-review correction: initial plan claimed the INTEGER
+  column was "grep-verified unused by the frontend" — which was true but
+  INCOMPLETE. `app.py:417, 427, 438, 867` actively write this column via
+  `save_response_feedback()` and `/api/feedback`. A standalone rename
+  would silently break feedback ingestion on Phase 1. Unit 2.1 therefore
+  performs three coordinated changes in one commit: (1) `ALTER TABLE ...
+  RENAME COLUMN conversation_id TO local_conversation_pk` **wrapped in
+  an `information_schema.columns` type-check guard** (RENAME has no
+  `IF EXISTS` form and must not fail on re-run — startup bootstrap
+  runs every boot); (2) update `save_response_feedback()` signature and
+  the `/api/feedback` route to reference `local_conversation_pk`; (3) add
+  the new TEXT `conversation_id` column across all four tables.
 - **Fix the `ensure_pa_web_schema()` short-circuit bug.** The existing
   function at app.py L185–187 returns early if the `pa_web` schema
   already exists. This means Phase 2's new DDL (ALTER TABLE ADD
   COLUMN, new `pa_web.conversation_meta` table) would never run on
   existing deployments. Fix: remove the early-return; rely on `IF NOT
-  EXISTS` idempotency throughout. The existing CREATE TABLE statements
-  already use `IF NOT EXISTS`, so this is safe.
+  EXISTS` idempotency for CREATE TABLE / ADD COLUMN / CREATE INDEX, and
+  wrap the one non-idempotent operation (RENAME COLUMN) in an explicit
+  `information_schema.columns` type-check `DO $$ ... END $$` guard
+  so double-execution is a no-op.
+- **Backfill: resolve MC's `default` alias to its real Letta conv UUID
+  ONCE at migration time; use THAT UUID as the backfill value.** Post-
+  review correction. Original plan proposed backfilling with the literal
+  string `"default"`, which is a letta-code CLI alias — not a UUID.
+  `GET /v1/conversations/?agent_id=MC` returns real UUIDs; a
+  `"default"` local row would never match under LEFT JOIN. Creating a
+  fresh Letta conv and migrating history into it causes split-brain
+  (local pa_web.conversations has messages; Letta's new conv has zero
+  message records from its perspective — forks would carry no context).
+  **Solution: resolve the alias.** letta-code already stores its idea
+  of MC's "default" conv as a real UUID on the Letta server
+  (`/v1/agents/{MC}/` or a one-shot `letta -p '' --conversation
+  default --output-format stream-json` init event exposes it). Unit
+  2.1's probe captures this UUID and uses it as the backfill value:
+  ```
+  default_uuid = <probed from Letta>
+  UPDATE pa_web.conversations SET conversation_id = <default_uuid>
+    WHERE conversation_id IS NULL
+  -- repeat for routing_signals, thread_exchanges, response_feedback
+  INSERT INTO pa_web.conversation_meta
+    (conversation_id=<default_uuid>, agent_id=MC, label='Main',
+     session_id=NULL, created_at=<min(pa_web.conversations.created_at)>)
+    ON CONFLICT DO NOTHING
+  ```
+  Invariant preserved: pa_web.conversations messages and Letta's server
+  conv converge on the same UUID. Fork from Main works. Telegram
+  continues writing to MC's `default` alias — same server-side conv,
+  visible alongside web UI's activity.
+- **Backfill runs in a bounded background thread, not on the Flask
+  startup path.** Post-review correction. Original plan put the UPDATE
+  inside `ensure_pa_web_schema()` at startup. Risk: UPDATE on a loaded
+  `pa_web.conversations` could exceed the Docker healthcheck window
+  (30s), triggering restart loops. Revised sequence:
+  1. At bootstrap: schema DDL only (ADD COLUMN, CREATE TABLE, RENAME
+     with guard). These are metadata operations; fast.
+  2. Flask starts serving.
+  3. A one-shot background thread runs the backfill in batches of
+     1000 rows per commit: `UPDATE ... WHERE conversation_id IS NULL
+     AND id < (SELECT MIN(id)+1000 FROM ... WHERE ...)`. Logs row
+     count pre/post. Expected: minuscule for this deployment, finishes
+     in seconds.
+  4. The `conversation_meta` INSERT runs after the backfill completes.
+  5. Phase-2 UI/routes remain feature-flag-gated until backfill is
+     complete (check via a `PA_WEB_UI_BACKFILL_COMPLETE` flag stored
+     in-memory; flag-on routes return 503 "migration in progress" if
+     backfill hasn't finished).
 - **New `pa_web.conversation_meta` table for conv-level metadata.**
   Separate from `pa_web.conversations` (which stores per-message
   records) to avoid overloading. Columns: `conversation_id TEXT PK`,
@@ -257,12 +319,50 @@ standard-enough SPA convention.
   `conv=` URL and reload history. User stays in context of "I wanted
   to explore this branch" — forking and immediately staying on the
   parent would be surprising.
-- **Fork turn-lock (R7c) check is server-side.** Before calling
-  Letta's fork endpoint, the backend checks the parent conversation's
-  Phase-1 `handle.in_flight` flag. If the parent is streaming, fork
-  returns HTTP 409 with `{"error": "parent_conversation_streaming",
-  "conv_id": <parent>}`. Rationale: forking mid-stream creates a child
-  with partial state; safer to require the parent's turn to complete.
+- **Fork turn-lock (R7c) check is server-side AND atomic.** Post-
+  review correction. Original plan said "check handle.in_flight, then
+  POST to Letta" — leaving a TOCTOU window where the reader thread
+  can flip `in_flight` mid-check and a concurrent tab can start a new
+  turn before the Letta POST completes. Revised critical section:
+  ```
+  with handle.state_lock:           # held across the full fork call
+      if handle.in_flight:
+          raise ParentStreamingException  # → HTTP 409
+      handle.forking = True          # new guard flag; prevents
+                                     # concurrent send() from flipping
+                                     # in_flight while we're POSTing
+  try:
+      fork_response = letta.post(f'/v1/conversations/{parent}/fork/')
+      INSERT INTO conversation_meta ...
+  finally:
+      with handle.state_lock:
+          handle.forking = False
+  ```
+  `SubprocessHandle.send()` in subprocess_pool.py must check `forking`
+  alongside `in_flight` and raise `TurnLockedException` if either is
+  true. The nil-handle case (parent is cold / never warmed / LRU-
+  evicted) treats as "not in flight, proceed" — safe because within a
+  single pa-web-ui instance, the registry is the only in-flight
+  authority. Handle is missing → no turn can be in flight.
+- **Letta fork copy semantics: PROBED AS UNIT 2.0 PRE-PLAN GATE.** Post-
+  review correction. Original plan deferred the probe to Unit 2.1's
+  "first step" — but adversarial reviewer flagged this as a design-
+  load-bearing unknown. MC has shared memory blocks (`block-90300b77`
+  extracted_tasks, calendar, preferences, etc.). If Letta fork
+  deep-copies blocks: fork's edits don't propagate — user sees diverged
+  world-state without warning. If Letta fork shares block IDs by
+  reference: fork mutations pollute the parent — defeats the
+  exploratory-branch UX. Neither is acceptable silently. Unit 2.0
+  (new, documented below) runs the probe BEFORE any plan commitment
+  to Unit 2.1's UI surface, with three pre-planned branches:
+  - Branch A (deep-copy blocks): ship as-is; fork is a genuine
+    isolated state snapshot; document this in the fork banner
+    ("This fork has its own copy of shared memory").
+  - Branch B (shared block IDs): fork UI requires an explicit block
+    detachment step before any write is accepted, OR we block fork
+    on MC and limit to other agents.
+  - Branch C (no block context at all): fork is essentially a new
+    conv with only the message history — reframe UX to set expectations.
 - **Conversation label: user-provided at create time OR auto-generated
   "New conversation <local-time>".** Rename endpoint lets the user
   fix it. No LLM-based auto-naming in Phase 2 (keeps the switcher
@@ -276,17 +376,17 @@ standard-enough SPA convention.
   `ensure_pa_web_schema()`. The feature flag (new
   `PA_WEB_UI_PHASE_2_ENABLED`) gates the UI and backend routes;
   rollback is flag-off + container restart. Backfilled `conversation_id
-  = 'main-<session_id>'` remains harmlessly in the tables even after
-  flag-off.
-- **Phase-1 → Phase-2 migration path for existing Phase-1 users.**
-  After Unit 2.1, every row in `pa_web.conversations` with a null
-  `conversation_id` gets backfilled to a sentinel value (e.g.,
-  `"default"` — matching Phase 1's shared conv). A one-shot
-  `INSERT INTO pa_web.conversation_meta` creates the corresponding
-  `default` meta row with `label="default"`. Users see "default" as
-  their first conversation in the switcher; any new conv they create
-  gets a real Letta UUID. Over time the `default` becomes a legacy
-  bucket and can be archived.
+  = <default_uuid>` remains correctly populated even after flag-off —
+  it's a valid UUID matching a real Letta conversation.
+- **Phase-1 → Phase-2 migration path resolves the `default` alias.**
+  (See "Backfill" decision above for the procedure.) The result is
+  that Phase-1 history appears in the switcher as a single conversation
+  labeled "Main" corresponding to MC's real `default` conv on the Letta
+  server. Telegram continues writing to the same conv via the alias —
+  no surface divergence. Subsequent conversations users create get
+  their own real Letta UUIDs. There is NO synthetic bucket and NO
+  legacy namespace; everything routes through a single UUID-keyed
+  space from migration onward.
 
 ## Open Questions
 
@@ -309,7 +409,21 @@ standard-enough SPA convention.
 - **INTEGER / TEXT conversation_id collision?** Resolved: rename
   existing `response_feedback.conversation_id` to `local_conversation_pk`,
   reserve the `conversation_id` name for the new TEXT Letta UUID column
-  across all four tables.
+  across all four tables. **Coordinated code update in the same commit**
+  (`save_response_feedback` + `/api/feedback` route in app.py) — the
+  column is actively written (app.py:417, 427, 438, 867), so a
+  standalone rename silently breaks feedback ingestion.
+- **Backfill value?** Resolved: the real UUID behind MC's `default`
+  alias, probed once during Unit 2.0. `"default"` as a literal TEXT
+  value would never match the Letta list's UUIDs under LEFT JOIN.
+  Creating a fresh Letta conv for backfill causes split-brain
+  (pa_web.conversations has messages; Letta's new conv doesn't).
+  Resolving the existing alias preserves Phase-1 invariant and
+  converges both sides on one UUID.
+- **Fork copy semantics probe scheduling?** Resolved: moved from Unit
+  2.1's first step to a dedicated Unit 2.0 pre-plan gate. Probe
+  outcome branches Unit 2.3 scope (see "Letta fork copy semantics"
+  decision above).
 - **URL convention?** Resolved: query param `?conv=<uuid>` with
   `replaceState`. Deep-linkable, refresh-safe, no hash collision.
 - **Soft-delete retention?** Resolved: 30-day via `deleted_at`
@@ -323,24 +437,11 @@ standard-enough SPA convention.
 
 ### Deferred to Implementation
 
-- **[Affects Unit 2.1][Needs research]** Exact response shape of
-  `POST /v1/conversations/{id}/fork` on Letta 0.16.7. The plan
-  assumes `.id`, `.label`, `.agent_id`, `.parent_conversation_id`
-  (optional). First step of Unit 2.1: `curl -v -X POST
-  http://letta:8283/v1/conversations/<existing-conv>/fork?agent_id=MC`
-  against a test conversation; capture the response; write
-  `docs/reference/letta-conversations-fork.md`. If fields differ,
-  adjust `pa_web.conversation_meta` schema accordingly.
-- **[Affects Unit 2.1][Technical]** Does
-  `GET /v1/conversations/?order_by=last_message_at` work on 0.16.7?
-  Test during the same probe session; if not, fall back to
-  `order_by=created_at` and document.
-- **[Affects Unit 2.1][Technical]** Does Letta's fork copy memory
-  blocks, archival memory, or neither? The origin doc says "verified
-  HTTP 200" but the exact copy semantics aren't documented. Unit 2.1
-  verifies: create a test conv with a memory block, fork it, inspect
-  whether the fork sees the block. Matters for the UX expectation of
-  "fork from here carries context forward".
+- **[Affects Unit 2.0][Needs research — pre-plan gate]** Fork response
+  shape + memory-block copy semantics + `order_by=last_message_at`
+  support on Letta 0.16.7 + `default` alias resolution path. All
+  probed together in Unit 2.0; outputs drive Unit 2.1's Branch A/B/C
+  choice and the backfill UUID. See Unit 2.0 details below.
 - **[Affects Unit 2.2][Technical]** Mobile left-rail UX: slide-in
   from the left edge (mirroring the right sidebar)? Or a hamburger
   menu? Mirroring is simpler (one pattern, two positions); hamburger
@@ -462,6 +563,71 @@ user clicks "…" → "Fork from here" on message M in conv-A
 
 ## Implementation Units
 
+### Unit 2.0: Letta fork + "default" alias probe (pre-plan gate)
+
+**Goal:** Empirically determine two Letta 0.16.7 behaviors that are
+load-bearing for the rest of Phase 2. No code changes ship from this
+unit — the output is a reference document that may revise Unit 2.1's
+scope.
+
+**Requirements:** R10 (fork), R18 (MRU ordering)
+
+**Dependencies:** None (runs before Unit 2.1)
+
+**Files:**
+- Create: `docs/reference/letta-conversations-fork.md` — empirical
+  reference.
+- Create: `docs/reference/letta-default-alias-resolution.md` — how
+  "default" on an agent maps to a real UUID.
+
+**Approach:**
+1. **Resolve MC's `default` conv to a UUID.** Several candidate paths:
+   ```bash
+   # Path A: agent metadata may expose current conv
+   curl -s "http://letta:8283/v1/agents/<MC>/" | jq
+   # Path B: one-shot letta-code prompt captures init event with UUID
+   docker compose exec pa-web-ui bash -lc \
+     'letta --agent <MC> --conversation default --output-format stream-json -p "" 2>/dev/null | head -1 | jq'
+   # Path C: conversations.list with agent filter
+   curl -s "http://letta:8283/v1/conversations/?agent_id=<MC>&limit=20" | jq
+   ```
+   Record the UUID, its stability (does resolving the alias twice
+   return the same UUID?), and the preferred resolution path for
+   Unit 2.1's migration.
+2. **Probe fork semantics.** Fork MC's `default` conv to a test conv:
+   ```bash
+   curl -v -X POST \
+     "http://letta:8283/v1/conversations/<default_uuid>/fork/?agent_id=<MC>"
+   ```
+   Capture the response body exactly. Then inspect the fork vs the
+   parent:
+   - Does the fork have its own message history (`GET
+     /v1/conversations/{fork_id}/messages`)? Does it match the
+     parent's history at fork time, or is it empty?
+   - Does the fork see the parent's memory blocks (`GET
+     /v1/agents/{MC}/core-memory/blocks` viewed via the fork)?
+   - If the fork mutates a shared block (e.g., extracted_tasks),
+     does the parent see the mutation?
+   - Does `order_by=last_message_at` work on `GET /v1/conversations/`?
+     If not, what values does the server accept?
+3. **Write both reference docs.** Include observed request/response
+   JSON verbatim, the stability characteristics, and — for fork —
+   classify into Branch A / B / C per the "Letta fork copy semantics"
+   decision above. Unit 2.1 then executes the matching plan.
+
+**Test scenarios:**
+- Probe is a notebook-style investigation, not a pytest suite.
+  Reference docs are the deliverable. If Unit 2.1 discovers schema
+  drift later (e.g., fork response shape changed in a 0.16.8 upgrade),
+  re-run the probe; bump version notes.
+
+**Verification:**
+- `docs/reference/letta-conversations-fork.md` and
+  `docs/reference/letta-default-alias-resolution.md` exist and are
+  reviewed by the user before Unit 2.1 opens.
+
+---
+
 ### Unit 2.1: Schema extension + conversation list/CRUD backend + fork API reference
 
 **Goal:** `pa_web` schema supports per-conversation data; backend
@@ -493,35 +659,87 @@ Letta fork API's actual response shape. Phase-2 feature flag added
 
 **Approach:**
 
-1. **Probe the fork API.** Inside the pa-web-ui container:
-   `curl -v -X POST
-   "http://letta:8283/v1/conversations/<existing-default-conv-uuid>/fork/?agent_id=<MC>"`.
-   Capture request + response. Write
-   `docs/reference/letta-conversations-fork.md` with the observed
-   shape, copy semantics (do memory blocks carry forward? archival
-   memory?), and any 0.16.7 quirks.
+1. **Consume Unit 2.0's probe output.** Unit 2.0 wrote the fork
+   reference doc and the default-alias-resolution doc. Use those as
+   input — do NOT re-probe during Unit 2.1. If Unit 2.0 classified
+   the fork as Branch B or C, adjust Unit 2.3 scope accordingly
+   (see Unit 2.0's branches under "Letta fork copy semantics" in
+   Key Decisions).
 
 2. **Fix schema bootstrap.** Remove the early-return at
    `ensure_pa_web_schema()` L185–187. Replace with a comment
-   explaining the IF NOT EXISTS idempotency. All existing CREATE
-   statements already use IF NOT EXISTS; no downstream change needed.
+   explaining the idempotency convention. Existing CREATE TABLE /
+   CREATE INDEX statements already use IF NOT EXISTS.
 
-3. **Extend DDL.** Add ALTER TABLE ADD COLUMN IF NOT EXISTS blocks
-   for the four `conversation_id TEXT` additions. Add ALTER TABLE
-   RENAME COLUMN for the response_feedback rename. Add CREATE TABLE
-   IF NOT EXISTS for `pa_web.conversation_meta`. All idempotent.
+3. **Extend DDL.** New statements inside `ensure_pa_web_schema()`:
+   - `ALTER TABLE pa_web.conversations ADD COLUMN IF NOT EXISTS
+     conversation_id TEXT;` (and three more for the sibling tables).
+   - `CREATE TABLE IF NOT EXISTS pa_web.conversation_meta (...);`
+   - **Guarded RENAME (not idempotent without the guard):**
+     ```sql
+     DO $$
+     BEGIN
+       IF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='pa_web'
+                  AND table_name='response_feedback'
+                  AND column_name='conversation_id'
+                  AND data_type='integer') THEN
+         ALTER TABLE pa_web.response_feedback
+           RENAME COLUMN conversation_id TO local_conversation_pk;
+       END IF;
+     END $$;
+     ```
+     This guard ensures the second container startup is a no-op —
+     ensure_pa_web_schema() runs every boot.
 
-4. **Backfill.** After DDL, run
-   `UPDATE pa_web.conversations SET conversation_id = 'default' WHERE
-   conversation_id IS NULL` (and repeat for the other three tables).
-   Insert a `pa_web.conversation_meta` row with
-   `conversation_id='default', label='default', agent_id=MC,
-   session_id=NULL`. Idempotent — `INSERT ... ON CONFLICT DO NOTHING`.
+4. **Coordinated code update for response_feedback.** In the SAME
+   commit as the DDL:
+   - `save_response_feedback()` in app.py:417 renames its parameter
+     from `conversation_id: int` → `local_conversation_pk: int`,
+     updates the INSERT column list at app.py:427 (and VALUES slot
+     at app.py:438) to use `local_conversation_pk`.
+   - `/api/feedback` route at app.py:867 renames the call kwarg to
+     match. Also inspects the request body for EITHER
+     `local_conversation_pk` (new field) OR legacy `conversation_id`
+     (back-compat for any stale tab); if both present, new takes
+     precedence.
+   - Add a pytest that POSTs to `/api/feedback` with a legacy body
+     and asserts row insert succeeds under the renamed column.
+   - **Without this coordination the feedback path breaks silently
+     on deploy.** Grep confirms references at app.py:417, 427, 438,
+     867 — all must update together.
 
-5. **CRUD routes.** All gated by ingress_guard (Phase 1) AND the new
+5. **Backfill (runs in a background thread AFTER Flask starts
+   serving).** Sequence:
+   - On startup, `ensure_pa_web_schema()` completes DDL only.
+   - A separate thread `_run_phase2_backfill()` fires with a small
+     delay (5s) to let Flask bind, then:
+     ```python
+     default_uuid = _resolve_mc_default_conv()
+     # See docs/reference/letta-default-alias-resolution.md for
+     # which endpoint populates this.
+     for table in ("conversations", "routing_signals",
+                   "thread_exchanges", "response_feedback"):
+         batch_update(table, where="conversation_id IS NULL",
+                      set_=f"conversation_id = '{default_uuid}'",
+                      batch_size=1000)
+     _insert_conversation_meta_default(default_uuid)
+     _mark_backfill_complete()
+     ```
+   - `_resolve_mc_default_conv()` uses the resolution path Unit 2.0
+     identified (likely `GET /v1/agents/{MC}/` or a zero-prompt
+     letta-code one-shot).
+   - A module-level flag `_BACKFILL_COMPLETE` gates Phase-2 routes:
+     POST/PATCH/DELETE/fork return HTTP 503
+     `{"error": "backfill_in_progress"}` until the thread finishes.
+   - GET/list routes can serve during backfill (read-only).
+
+6. **CRUD routes.** All gated by ingress_guard (Phase 1) AND the new
    `PA_WEB_UI_PHASE_2_ENABLED` flag. When flag is OFF, routes return
-   HTTP 404 (not 501 — we don't want to leak the feature's existence
-   to non-Tailnet probes that somehow bypass the ingress guard).
+   HTTP 503 `{"error": "feature_disabled", "flag":
+   "PA_WEB_UI_PHASE_2_ENABLED"}` — 503 is clearer for debugging than
+   404; Tailscale is the real perimeter, so information hiding at
+   the app layer is paranoid.
    - `GET /api/conversations`: fetch Letta list → LEFT JOIN with
      `pa_web.conversation_meta` → filter out `deleted_at IS NOT NULL`
      unless `?include_deleted=true`. Returns `{conversations: [{id,
@@ -535,13 +753,49 @@ Letta fork API's actual response shape. Phase-2 feature flag added
      locally; does NOT call Letta for rename (Letta server doesn't
      expose conversation label in the way we care about; local is
      SoT for labels).
-   - `DELETE /api/conversations/<id>`: sets `deleted_at = now()` on
-     `conversation_meta`. Does NOT call Letta (soft-delete).
+   - `DELETE /api/conversations/<id>`: atomic sequence:
+     1. UPDATE `conversation_meta` SET `deleted_at = now()`.
+     2. If a live handle exists in the subprocess_registry for this
+        conv_id, walk `handle.subscribers` and push
+        `{"type": "conversation_deleted", "conv_id": <id>}` into each
+        subscriber's queue BEFORE calling `invalidate()`. This gives
+        attached SSE clients a clean terminal event; chat.js handles
+        it by redirecting to MRU. Without this step, subscribers
+        time out silently and chat.js may auto-retry into a fresh
+        subprocess on a deleted conv.
+     3. `subprocess_registry.invalidate(conv_id)` — kills the handle
+        + subprocess.
+     4. (`/stream` dispatch in Phase 1 must also check
+        `conversation_meta.deleted_at` on each new request; if set,
+        return HTTP 410 Gone `{"error": "conversation_deleted"}`.
+        Prevents reconnect races.)
+     Does NOT call Letta (soft-delete — Letta copy survives until
+     Phase 2.5 purge).
    - `POST /api/conversations/<id>/fork`: body `{label?: string,
-     parent_request_id?: string}`. Turn-lock check against
-     `subprocess_registry._handles[<id>].in_flight`; 409 if locked.
-     Calls Letta fork; inserts conversation_meta row with
-     `parent_conversation_id=<id>`. Returns the created conv.
+     parent_request_id?: string}`. Flow:
+     1. Check `conversation_meta.deleted_at` on parent — if set,
+        return HTTP 410 Gone.
+     2. Acquire parent's `handle.state_lock` (if handle exists);
+        nil handle = parent is cold, proceed. Under the lock:
+        ```
+        if handle.in_flight or handle.forking:
+            raise HTTP 409 {"error": "parent_conversation_streaming"}
+        handle.forking = True
+        ```
+     3. Call Letta fork (POST to `/v1/conversations/{id}/fork/`).
+        The `forking` flag prevents concurrent `send()` from starting
+        a new turn during the Letta network round-trip.
+     4. Validate Letta response shape: assert `id` present and
+        UUID-shaped; reject 200-with-bad-shape as HTTP 502 Bad
+        Gateway `{"error": "letta_malformed_fork_response"}`.
+     5. INSERT `conversation_meta` row with
+        `parent_conversation_id=<id>`, label defaulted/explicit,
+        session_id = requesting device, created_at = now.
+     6. Release `handle.forking = False` under the lock.
+     7. Return HTTP 201 with the new conv.
+     `SubprocessHandle.send()` in subprocess_pool.py must be updated
+     (in the same commit) to check both `in_flight` AND `forking` and
+     raise `TurnLockedException` on either.
 
 6. **History filter.** Extend
    `GET /api/conversations/<session_id>` with `?conversation_id=`:
@@ -858,6 +1112,40 @@ refresh lands on the correct conversation with the correct history.
    d. switchConversation calls `loadConversationHistory(conv_id)`
    This sequencing avoids a double history fetch.
 
+5. **switchConversation explicitly closes the previous SSE stream.**
+   Without this, the old conversation's EventSource / fetch reader
+   keeps consuming events that are then silently dropped by the
+   now-wrong `conversationId` check — wasted bandwidth and potential
+   UI races. Revised:
+   ```
+   async switchConversation(newConvId) {
+     // 1. Close any in-flight SSE reader for the old conv.
+     if (this._currentStreamAbort) {
+       this._currentStreamAbort.abort();
+       this._currentStreamAbort = null;
+     }
+     // 2. Reset state.
+     this.conversationId = newConvId;
+     this.lastSeqId = null;
+     this._resetUIForConversationSwitch();
+     // 3. Load durable history from pa_web.conversations.
+     await this.loadConversationHistory(newConvId);
+     // 4. If the new conv is currently streaming (handle.in_flight),
+     //    re-subscribe with since=<current_seq_id> to pick up the
+     //    live continuation. Checked via the subscribe endpoint;
+     //    /api/subprocess/status exposes in_flight per conv.
+     const status = await fetch(
+       `/api/subprocess/status?conv=${newConvId}`).then(r => r.json());
+     if (status.handles?.[0]?.in_flight) {
+       this._resumeStream(newConvId, status.handles[0].current_seq_id);
+     }
+     // 5. URL sync (replaceState, no nav stack pollution).
+     history.replaceState({}, '', `?conv=${newConvId}`);
+   }
+   ```
+   `streamResponse()` stores its `AbortController` on
+   `this._currentStreamAbort` so switchConversation can cancel cleanly.
+
 **Patterns to follow:**
 - Existing localStorage migration patterns (none in repo — this is
   the first; convention established here).
@@ -901,9 +1189,32 @@ refresh lands on the correct conversation with the correct history.
   No external dependencies. Service worker deferred to Phase 4.
 - **Task Review Sidebar:** untouched. The right overlay and left
   rail coexist by distinct z-index + non-overlapping fixed positions.
-- **Security posture:** Unchanged. All new routes gated by Phase 1's
-  `ingress_guard` (CSRF + Origin + Host). R30 env scrub on
-  subprocesses unchanged.
+- **Security posture:** All new routes gated by Phase 1's
+  `ingress_guard` (CSRF + Origin + Host). R30 env scrub on subprocesses
+  unchanged. Phase 2 adds four guardrails documented in
+  `docs/security/pa-web-ui-threat-model.md` (to be updated as part of
+  Unit 2.1):
+  - **Conversation list is SHARED across the user's Tailnet devices.**
+    `session_id` on `conversation_meta` records the creating device
+    for attribution/debug only, NOT for access control. Any Tailnet
+    device can read, rename, delete, or fork any conversation — this
+    is intentional for single-user multi-device UX and consistent
+    with the Phase 1 threat model.
+  - **Conversation labels are rendered with `textContent`,
+    not `innerHTML`.** Rail entries, "Forked from <label>" banners,
+    and any other consumer-facing label surface use DOM
+    `createTextNode` / `textContent` to ensure HTML metacharacters
+    in labels are treated as text. Server-side cap: label ≤ 200 chars
+    (enforced in POST/PATCH handlers).
+  - **Conversation IDs are treated as non-secret identifiers.** Letta
+    UUIDs in URL query params (`?conv=<uuid>`) rely on the Tailscale
+    perimeter for confidentiality. Within the Tailnet, all conversations
+    are mutually visible by design. Outside the Tailnet, ingress_guard
+    blocks access regardless of whether an attacker knows a conv_id.
+  - **All new SQL writes use psycopg2 `%s` parameterization — no
+    string formatting.** Plan explicitly requires this for every
+    new route in Unit 2.1; existing `save_conversation_message` and
+    friends already follow this convention.
 - **LettaBot Telegram:** unaffected. Telegram continues to use
   LettaBot's own `default` conversation. Phase 2's web-UI
   conversations diverge from Telegram's thread — the origin-doc
@@ -959,15 +1270,32 @@ refresh lands on the correct conversation with the correct history.
 ## Phased Delivery
 
 ### Phase 2 (this plan)
-Units 2.1 through 2.4. Ships: first-class conversations, switcher UI,
-per-message fork, deep-link. Rollback: `PA_WEB_UI_PHASE_2_ENABLED=false`
-hides UI and returns 404 on new routes. Backfilled
-`conversation_id='default'` remains inert.
+Units 2.0 through 2.4. Ships: Letta probe references, first-class
+conversations, switcher UI, per-message fork, deep-link. Rollback:
+`PA_WEB_UI_PHASE_2_ENABLED=false` hides UI and returns HTTP 503 on new
+routes. Backfilled `conversation_id=<default_uuid>` remains valid
+(a real Letta UUID matching MC's `default` alias).
 
 ### Phase 2.5 (follow-up commit)
 Soft-delete purge cron — 30-day retention. Pure Python self-scheduled
 inside pa-web-ui; no new service. Ships only after Phase 2 stable
 (same 7-day burn pattern as Phase 1).
+
+**Purge scope is the full data footprint, not just metadata.** For
+each conv_id with `conversation_meta.deleted_at < now() - interval
+'30 days'`:
+1. `DELETE FROM pa_web.conversations WHERE conversation_id = <id>`
+2. `DELETE FROM pa_web.thread_exchanges WHERE conversation_id = <id>`
+3. `DELETE FROM pa_web.routing_signals WHERE conversation_id = <id>`
+4. `DELETE FROM pa_web.response_feedback WHERE conversation_id = <id>`
+5. `DELETE FROM pa_web.conversation_meta WHERE conversation_id = <id>`
+6. `DELETE http://letta:8283/v1/conversations/<id>/` (Letta server copy)
+All six in a single transaction; log the row counts deleted.
+Operational caveat: nightly backups at `/Volumes/main-filestore/
+ai-PA-backups/` retain purged data for the backup retention window.
+Documented in `docs/security/pa-web-ui-threat-model.md` as part of
+Unit 1.6's threat-model update (expected retention = 30 days + backup
+window, not 30 days absolute).
 
 ### Phase 3 (future plan)
 `/btw` ephemeral BtwPane. Depends on Unit 2.1 fork API knowledge;
