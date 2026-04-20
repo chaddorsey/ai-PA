@@ -222,6 +222,8 @@ pgdata*/
 # Reference files
 omnifocus-mcp-letta/docs/reference/
 docs/reference/*
+# Exceptions: probe results + API references we want versioned as project artifacts
+!docs/reference/letta-*.md
 
 #Backups
 deployment/backups/*
