@@ -197,14 +197,20 @@
         row.classList.add('fork-child');
       }
 
+      // Whole-row click → switch. Single click anywhere on the row works;
+      // the label, timestamp, and empty-space all count. The ⋯ menu and
+      // in-place rename stop propagation below so they don't trigger a
+      // switch when the user is interacting with them.
+      row.addEventListener('click', (ev) => {
+        if (row.dataset.editing) return;
+        // Interactive children stop propagation themselves; if this
+        // handler fires, it's a row-level intent.
+        this.switchTo(c.id);
+      });
+
       const labelEl = document.createElement('span');
       labelEl.className = 'conv-row-label';
       labelEl.textContent = c.label || '(untitled)';
-      labelEl.addEventListener('click', (ev) => {
-        if (row.dataset.editing) return;
-        ev.stopPropagation();
-        this.switchTo(c.id);
-      });
       labelEl.addEventListener('dblclick', (ev) => {
         ev.stopPropagation();
         this._enterRenameMode(row, labelEl, c.id);
@@ -509,6 +515,20 @@
           if (window.matchMedia('(max-width: 768px)').matches) this.close();
         }
       });
+      // Auto-close when the user interacts with the main window (chat
+      // area, reply box, header controls). Signals: "I've picked a conv
+      // and I'm moving on." Capture-phase so we fire before any focus
+      // shifts or other handlers. No-op when the rail is already closed.
+      const mainContainer = document.querySelector('.page-layout > .container');
+      if (mainContainer) {
+        mainContainer.addEventListener('mousedown', () => {
+          if (this.rail.classList.contains('open')) this.close();
+        }, true);
+        // Focus events cover keyboard tabbing into main controls.
+        mainContainer.addEventListener('focusin', () => {
+          if (this.rail.classList.contains('open')) this.close();
+        }, true);
+      }
     }
 
     _bindNewButton() {
