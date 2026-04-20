@@ -1,20 +1,23 @@
 ---
 title: pa-web-ui direct letta-code subprocess — threat model and security posture
 date: 2026-04-20
+last-updated: 2026-04-20 (Phase 2 flag-on)
 status: active
 owner: single-user PA operator
 review-cadence: whenever the bind-mount inventory changes, whenever a new credentialed service lands in the repo, or whenever Letta-code itself adds a new capability that shifts the authority model
 related-plans:
   - docs/plans/2026-04-20-001-feat-pa-web-ui-letta-code-migration-plan.md
+  - docs/plans/2026-04-20-002-feat-pa-web-ui-conversation-switcher-plan.md
   - docs/brainstorms/2026-04-20-pa-web-ui-letta-code-migration-requirements.md
 ---
 
 # pa-web-ui → letta-code threat model
 
 This document captures the threat model for pa-web-ui's Phase-1 direct
-letta-code subprocess integration. It is the concrete security contract that
-Unit 1.0's ingress hardening, Unit 1.1's curated bind mount, and the
-`env=`-scrubbed subprocess spawn (R30) enforce.
+letta-code subprocess integration and Phase-2 first-class conversations.
+It is the concrete security contract that Unit 1.0's ingress hardening,
+Unit 1.1's curated bind mount, the `env=`-scrubbed subprocess spawn
+(R30), and Phase 2's CRUD + fork API surface enforce.
 
 Phase 1 migrates pa-web-ui from POSTing to LettaBot's HTTP gateway to
 spawning letta-code subprocesses directly. The subprocess runs with
@@ -217,6 +220,148 @@ same agent; compromise of one is effectively compromise of the other.
 Mitigation: MC's memory should not be used to persist privileged
 instructions to self; follow the conversation-scoped-instructions pattern
 where possible.
+
+## Phase 2 additions — first-class conversations
+
+Phase 2 added CRUD + fork routes for user-managed conversations. All
+routes sit behind the same ingress_guard as `/stream`; no new auth
+surface. Phase-1 guarantees (bind-mount scope, env scrub, ingress
+gate) carry forward unchanged.
+
+### New routes and their authorization shape
+
+| Route | Method | Ingress guard | Phase-2 gate |
+|---|---|---|---|
+| `/api/conversations` | GET | Origin allowlist | `PA_WEB_UI_PHASE_2_ENABLED` |
+| `/api/conversations` | POST | Full (CSRF + Origin + Host) | Flag + backfill |
+| `/api/conversations/<id>` | PATCH | Full | Flag + backfill |
+| `/api/conversations/<id>` | DELETE | Full | Flag + backfill |
+| `/api/conversations/<id>/fork` | POST | Full | Flag + backfill |
+| `/api/csrf-token` | GET | Origin allowlist | n/a (always on) |
+
+All mutation routes receive CSRF double-submit validation from the
+Phase-1 ingress_guard before the handler runs. Flag-off returns
+HTTP 503 `{"error": "feature_disabled"}` with the flag name echoed
+back (debugging clarity; the Tailscale perimeter is the real
+information-hiding layer, not HTTP 404 paranoia).
+
+### Shared-list-across-devices invariant
+
+The conversation list is SHARED across the user's Tailnet devices.
+`conversation_meta.session_id` records the creating device for
+attribution/debug ONLY, not for access control. Any Tailnet device
+can read, rename, delete, or fork any conversation — this is
+intentional for the single-user multi-device UX (laptop and phone
+are the same user).
+
+Consequence: a compromised Tailnet device has full authority over
+every conversation the user has ever had. This is the same
+invariant as Phase 1; Phase 2 does not introduce new access
+surfaces within the Tailnet.
+
+### Conversation label rendering — output-encoding rule
+
+Labels originate from three sources:
+- User input via `POST /api/conversations` body field.
+- User input via `PATCH /api/conversations/<id>` body field.
+- LLM-generated auto-name response (Unit 2.5).
+
+All three sources land in `pa_web.conversation_meta.label` (TEXT,
+server-side capped at 200 chars) and render in the left rail + fork
+banner.
+
+**Guardrail (enforced by code review):** The rail and fork banner
+use DOM `textContent` / `createTextNode`, never `innerHTML` or
+template-literal string concatenation, for label content. HTML
+metacharacters in a label are treated as text. The same rule applies
+to the "Forked from `<label>`" banner in chat.js's `_renderForkBanner`.
+
+Server-side, `POST` and `PATCH` truncate to 200 chars. LLM-generated
+labels are truncated to 80 chars at the edge of the auto-naming
+helper (`_maybe_autoname_conversation`).
+
+### Conversation IDs are non-secret identifiers
+
+Letta conversation UUIDs (`conv-<uuid>`) flow through:
+- SSE events (`_seq_id`, `_request_id`, event payloads)
+- JSON request/response bodies
+- NOT in URLs (Phase 2 decided against `?conv=` deep-links).
+
+They are treated as non-secret. Confidentiality within the Tailnet
+relies on the Tailscale perimeter. Outside the Tailnet, the
+ingress_guard blocks access regardless of whether an attacker knows
+a UUID.
+
+### SQL parameterization convention
+
+All new Phase-2 SQL writes use psycopg2 `%s` parameterization. No
+string formatting / f-strings in SQL. Existing
+`save_conversation_message` etc. already follow this convention; the
+new `/api/conversations` handlers extend it. A malicious label
+containing SQL metacharacters is inserted verbatim; no injection
+surface.
+
+### Fork memory-share caveat
+
+Per `docs/reference/letta-conversations-fork.md` (Unit 2.0 probe):
+Letta's fork API copies message history but NOT memory blocks.
+Blocks are agent-scoped; parent and fork read the same five MC
+blocks (`extracted_tasks`, `important_people`, etc.). Mutations in
+the fork propagate to the parent.
+
+This is NOT a security gap — it's an expected outcome of Letta's
+agent model. The UX consequence is that forks are "conversation
+branches with shared agent state", not sandboxed explorations. A
+banner at the top of any forked conversation (`.fork-banner` in
+chat.js's `_renderForkBanner`) warns the user: *"Memory and tools
+are shared with the parent — changes to task lists, calendar, or
+other persistent state will be visible in both conversations."*
+
+### Hard-delete semantics
+
+`DELETE /api/conversations/<id>` removes the conversation in a
+single server-side transaction across five pa_web tables
+(`conversations`, `thread_exchanges`, `routing_signals`,
+`response_feedback`, `conversation_meta`) plus a best-effort
+`DELETE /v1/conversations/<id>/` on the Letta server. Client-side
+protection is a 10-second undo toast; if the user closes the tab
+before the toast expires, the server never sees the DELETE and the
+conversation survives. Nightly backups at
+`/Volumes/main-filestore/ai-PA-backups/` provide a further recovery
+layer outside the UI.
+
+### Subprocess handling on delete
+
+The DELETE handler pushes a `{"type": "conversation_deleted"}` SSE
+event to any attached subscribers BEFORE calling
+`subprocess_registry.invalidate(conv_id)`. chat.js handles the
+event by removing the conv from the rail and switching to MRU.
+Without this step, a client with an open stream would see timeouts
+and potentially auto-retry into a fresh subprocess on a deleted
+conv.
+
+### LLM auto-naming — Unit 2.5
+
+On the first `result` event in a new conversation (where
+`user_renamed=FALSE` and label matches `^(New conversation|Fork)
+YYYY-MM-DD`), the server fires a one-shot call to litellm at
+`http://litellm:4000/v1/chat/completions` with the first user
+message as prompt. Cost: ~$0.00004 per rename.
+
+- **Model pinning:** `PA_WEB_UI_AUTONAME_MODEL` env var (default
+  `gpt-5.4-mini`). Changing the model is a single-env-var change.
+- **Race safety:** `UPDATE ... WHERE user_renamed = FALSE` — if a
+  user rename lands between the litellm call and our UPDATE, the
+  user wins.
+- **Killswitch:** `PA_WEB_UI_AUTONAME_ENABLED=false` disables the
+  litellm call entirely. Label stays as timestamp default.
+- **Silent fail:** any litellm error (timeout, 5xx, malformed
+  response) logs a warning and skips the UPDATE + SSE event. No
+  user-visible failure surface.
+
+The auto-name does NOT inspect message content for sensitivity.
+For a single-user PA this is acceptable; a future multi-tenant
+scenario would require redaction.
 
 ## HTTP ingress posture
 

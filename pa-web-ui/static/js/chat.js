@@ -1627,14 +1627,41 @@ class ChatUI {
         if (this.messagesContainer) this.messagesContainer.innerHTML = '';
         this.threads = new Map();
         this.inFlightRequests = new Set();
-        // 4. Rehydrate history from pa_web.conversations filtered by conv.
+        // 4. Render fork memory-share banner if this conversation is a fork.
+        this._renderForkBanner(newConvId);
+        // 5. Rehydrate history from pa_web.conversations filtered by conv.
         try {
             await this.loadConversationHistory(newConvId);
         } catch (err) {
             console.warn('[chat] history load failed on switch', err);
         }
-        // 5. Persist last-used per device.
+        // 6. Persist last-used per device.
         try { localStorage.setItem('pa_last_conv_id', newConvId); } catch (_) {}
+    }
+
+    _renderForkBanner(convId) {
+        // Look up parent via the conversation rail's cached list.
+        if (!window.conversationRail) return;
+        const conv = window.conversationRail.conversations.find(c => c.id === convId);
+        if (!conv || !conv.parent_conversation_id) return;
+        const parent = window.conversationRail.conversations.find(
+            c => c.id === conv.parent_conversation_id
+        );
+        const parentLabel = parent?.label || 'parent conversation';
+        const banner = document.createElement('div');
+        banner.className = 'fork-banner';
+        banner.innerHTML = `
+            <span class="fork-banner-icon">↳</span>
+            <span class="fork-banner-text">
+                Forked from <strong></strong>.
+                Memory and tools are shared with the parent —
+                changes to task lists, calendar, or other persistent
+                state will be visible in both conversations.
+            </span>
+        `;
+        // textContent-safe label injection (SEC-P2-004).
+        banner.querySelector('strong').textContent = parentLabel;
+        this.messagesContainer.appendChild(banner);
     }
 }
 

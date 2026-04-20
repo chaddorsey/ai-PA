@@ -613,9 +613,14 @@ def get_conversation_history(
 ) -> list:
     """Get conversation history for a session.
 
-    Phase 2: optional `conversation_id` filter restricts to rows from
-    the given Letta conv UUID. Back-compat: when None, returns all rows
-    for the session (original Phase-1 behavior).
+    Phase 2: when `conversation_id` is provided, it is the source of
+    truth — the conversation thread is shared across all of the user's
+    Tailnet devices/sessions (threat-model "shared-list-across-devices"
+    invariant). session_id is IGNORED in that case so history from
+    every device shows up.
+
+    Back-compat: when conversation_id is None, filter by session_id
+    only (original Phase-1 behavior — individual device's history).
     """
     try:
         with get_db_connection() as conn:
@@ -628,13 +633,13 @@ def get_conversation_history(
                             SELECT id, session_id, role, message, agent_id, agent_name,
                                    metadata, created_at, conversation_id
                             FROM pa_web.conversations
-                            WHERE session_id = %s AND conversation_id = %s
+                            WHERE conversation_id = %s
                             ORDER BY created_at DESC
                             LIMIT %s
                         ) sub
                         ORDER BY created_at ASC
                         """,
-                        (session_id, conversation_id, limit),
+                        (conversation_id, limit),
                     )
                 else:
                     cur.execute(
@@ -829,24 +834,12 @@ def subprocess_status():
     })
 
 
-@app.route("/api/subprocess/events/<conv_id>", methods=["GET"])
-def subprocess_events(conv_id: str):
-    """Temporary debug endpoint: dump the last N events from a conv's ring buffer.
-
-    Used during Phase-1 live smoke to verify the actual stream-json event
-    shapes letta-code emits. Will be removed before the 7-day burn window
-    or kept behind a debug-only flag.
-    """
-    n = int(request.args.get("n", "20"))
-    handle = subprocess_registry._handles.get(conv_id)
-    if handle is None:
-        return jsonify({"error": "no handle", "conv_id": conv_id}), 404
-    events, _ = handle.ring_buffer.events_since(0)
-    return jsonify({
-        "conv_id": conv_id,
-        "total": len(events),
-        "tail": events[-n:],
-    })
+# NOTE: /api/subprocess/events/<conv_id> was a temporary debug endpoint
+# used during Phase-1 live smoke to inspect the actual stream-json event
+# shapes letta-code 0.23.8 emits. It was wired to help land the native-
+# event → chat.js-event translator (commit 00b62fc). Removed now that
+# Phase 1 + Phase 2 are stable. The ring buffer is still introspectable
+# via /api/subprocess/status (Unit 1.6 endpoint).
 
 
 # =====================================================================

@@ -3066,3 +3066,27 @@ header h1 {
     opacity: 0.6;
     pointer-events: none;
 }
+
+/* Phase 2: Fork memory-share banner (rendered at top of forked conversations) */
+.fork-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    margin: 8px 0 16px;
+    background: rgba(91, 192, 190, 0.08);
+    border-left: 3px solid var(--sb-teal, #5bc0be);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+.fork-banner-icon {
+    flex-shrink: 0;
+    color: var(--sb-teal, #5bc0be);
+    font-size: 1rem;
+    font-weight: 600;
+}
+.fork-banner-text strong {
+    color: var(--text-primary);
+}

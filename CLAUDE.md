@@ -395,7 +395,7 @@ Environment variables are defined in `.env` (gitignored). Key categories:
 | scheduler-service | 8001 | Scheduling API |
 | slackbot | 8081/8083 | Slack bot (health/main) |
 | pa-routing-handler | 5201 | Agent conversation routing |
-| pa-web-ui | 5200 | Web interface |
+| pa-web-ui | 5200 | Web interface (spawns its own letta-code subprocesses per conversation — see `pa-web-ui/README.md`) |
 | open-webui | 8080 | Chat UI for Letta |
 
 ### Sports & Media
