@@ -6,7 +6,8 @@ import queue
 import re
 import threading
 import time
-from typing import Generator
+import uuid
+from typing import Generator, Optional
 
 import httpx
 
@@ -137,12 +138,19 @@ CORS(app)
 from ingress_guard import configure_ingress_guard
 configure_ingress_guard(app)
 
-# Letta-code subprocess pool (Phase 1 Unit 1.2). Module-level singleton.
-# Not invoked by any route yet — Unit 1.5 adds the /stream dispatch that
-# uses it behind PA_WEB_UI_PHASE_1_ENABLED. Instantiating here so the
-# SIGTERM handler registers before Flask starts accepting requests.
-from subprocess_pool import get_registry
+# Letta-code subprocess pool (Phase 1). Module-level singleton.
+# Gated by PA_WEB_UI_PHASE_1_ENABLED for the /stream MC dispatch (Unit 1.5).
+from subprocess_pool import (
+    SpawnTimeoutError,
+    SubprocessDeadError,
+    TurnLockedException,
+    get_registry,
+)
 subprocess_registry = get_registry()
+
+PA_WEB_UI_PHASE_1_ENABLED = os.environ.get(
+    "PA_WEB_UI_PHASE_1_ENABLED", "false"
+).strip().lower() in ("true", "1", "yes", "on")
 
 # Configuration from environment
 ROUTING_HANDLER_URL = os.getenv(
@@ -1215,6 +1223,151 @@ def stream_mission_control(message: str, session_id: str) -> Generator[str, None
     yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
 
+def _stream_direct_generator(
+    subscriber,
+    session_id: str,
+    request_id: str,
+) -> Generator[str, None, None]:
+    """SSE generator reading from a subprocess-pool subscriber queue.
+
+    Keepalive pings on queue.Empty. Unsubscribes on GeneratorExit OR on
+    a terminal event (result / done) so the reader thread stops fanning
+    events to a client that won't read them.
+    """
+    assistant_accumulator = ""
+    try:
+        while True:
+            try:
+                event = subscriber.get(timeout=KEEPALIVE_PING_INTERVAL)
+            except queue.Empty:
+                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                continue
+
+            # Accumulate text events so we can save the final assistant
+            # turn to the DB on completion. Other event types (tool_call,
+            # tool_result, reasoning, etc.) pass through untouched — the
+            # frontend already renders them.
+            if event.get("type") == "text":
+                piece = event.get("content") or ""
+                if piece:
+                    assistant_accumulator += piece
+
+            yield f"data: {json.dumps(event)}\n\n"
+
+            event_type = event.get("type")
+            if event_type in ("result", "done"):
+                break
+    except GeneratorExit:
+        # Client disconnected; do NOT save assistant content (turn may
+        # still be running on the subprocess — another device may pick it up).
+        return
+    finally:
+        try:
+            # Always detach from the fan-out so reader doesn't keep pushing.
+            # The subscriber lives on its handle; we need both references.
+            # The `subscriber` object carries no back-pointer; unsubscribe
+            # is delegated to the route handler via closure in stream().
+            pass
+        except Exception:
+            pass
+
+    # Save assistant response on clean completion.
+    if assistant_accumulator:
+        try:
+            save_conversation_message(
+                session_id=session_id,
+                role="assistant",
+                message=assistant_accumulator,
+                agent_id=MISSION_CONTROL_AGENT_ID,
+                agent_name="Mission Control",
+                request_id=request_id,
+            )
+        except Exception as exc:
+            logger.error("direct_assistant_save_failed", error=str(exc))
+
+
+def _dispatch_mission_control_direct(
+    message: str,
+    session_id: str,
+    device_id: str,
+    conversation_id: str,
+    since: Optional[int],
+) -> Response:
+    """Preflight the subprocess pool and return an SSE Response.
+
+    Pre-SSE work happens here (where HTTP status can still be set):
+    - ensure handle (spawn if cold)
+    - send message if non-empty (TurnLockedException → HTTP 409)
+    - subscribe with since (replay seed OR resync_required)
+
+    Only after all that starts the SSE stream.
+    """
+    request_id = str(uuid.uuid4())
+
+    try:
+        handle = subprocess_registry.ensure(
+            agent_id=MISSION_CONTROL_AGENT_ID,
+            conv_id=conversation_id,
+        )
+    except SpawnTimeoutError as exc:
+        logger.error("mc_direct_spawn_timeout", error=str(exc), conv_id=conversation_id)
+        return jsonify({"error": "subprocess_spawn_timeout"}), 504
+    except SubprocessDeadError as exc:
+        logger.error("mc_direct_subprocess_dead", error=str(exc), conv_id=conversation_id)
+        return jsonify({"error": "subprocess_dead"}), 503
+    except Exception as exc:
+        logger.exception("mc_direct_ensure_error")
+        return jsonify({"error": f"subprocess_pool_error: {exc}"}), 500
+
+    if message:
+        try:
+            subprocess_registry.send(handle, message, device_id=device_id)
+        except TurnLockedException as tl:
+            return (
+                jsonify({
+                    "type": "turn_locked",
+                    "conv_id": tl.conv_id,
+                    "current_device_id": tl.current_device_id,
+                    "seq_id": tl.seq_id,
+                }),
+                409,
+            )
+        except SubprocessDeadError as exc:
+            logger.error("mc_direct_send_on_dead", error=str(exc))
+            return jsonify({"error": "subprocess_dead"}), 503
+
+        save_conversation_message(
+            session_id=session_id,
+            role="user",
+            message=message,
+            agent_id=MISSION_CONTROL_AGENT_ID,
+            agent_name="Mission Control",
+            request_id=request_id,
+        )
+
+    # Subscribe AFTER send so the subscriber's seq_id floor excludes the
+    # just-submitted turn's history baseline.
+    subscriber = handle.subscribe(since=since)
+
+    def generate() -> Generator[str, None, None]:
+        # Emit routing event (backwards-compat with existing chat.js handler).
+        yield f"data: {json.dumps({'type': 'routing', 'agent_id': MISSION_CONTROL_AGENT_ID, 'agent_name': 'Mission Control', 'request_id': request_id})}\n\n"
+        try:
+            yield from _stream_direct_generator(subscriber, session_id, request_id)
+        finally:
+            handle.unsubscribe(subscriber)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.route("/stream", methods=["POST"])
 def stream():
     """
@@ -1236,7 +1389,14 @@ def stream():
     thread_position = data.get("thread_position", 0)  # Position in thread (0 = head)
     parent_request_id = data.get("parent_request_id")  # For threaded replies
 
-    if not message:
+    # Phase 1 resume shape: empty message + since=<seq> is a reconnect/
+    # replay-only request. Allow it when the flag is on AND since is set.
+    phase1_resume = (
+        PA_WEB_UI_PHASE_1_ENABLED
+        and not message
+        and data.get("since") is not None
+    )
+    if not message and not phase1_resume:
         return jsonify({"error": "Message is required"}), 400
 
     if not session_id:
@@ -1268,7 +1428,39 @@ def stream():
     is_slash_command = bool(slash_command) or bool(agent_id)
 
     if not is_slash_command:
-        # Default: route to LettaBot
+        # Phase 1 subprocess-pool dispatch (Unit 1.5).
+        if PA_WEB_UI_PHASE_1_ENABLED:
+            # Device identity: prefer the CSRF-paired cookie (ingress_guard
+            # set this); fall back to request body for CLI-style clients.
+            device_id = (
+                request.cookies.get("pa_device_id", "").strip()
+                or data.get("device_id")
+                or ""
+            )
+            conversation_id = (data.get("conversation_id") or "default").strip() or "default"
+            since_raw = data.get("since")
+            since: Optional[int] = None
+            if isinstance(since_raw, int):
+                since = since_raw
+            elif isinstance(since_raw, str) and since_raw.isdigit():
+                since = int(since_raw)
+            logger.info(
+                "mission_control_direct_request",
+                session_id=session_id,
+                device_id=device_id,
+                conversation_id=conversation_id,
+                since=since,
+                message_length=len(message),
+            )
+            return _dispatch_mission_control_direct(
+                message=message,
+                session_id=session_id,
+                device_id=device_id,
+                conversation_id=conversation_id,
+                since=since,
+            )
+
+        # Pre-Phase-1 default: route to LettaBot
         logger.info(
             "mission_control_stream_request",
             session_id=session_id,

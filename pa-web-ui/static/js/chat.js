@@ -109,6 +109,14 @@ class ChatUI {
         this.csrfToken = null;
         this.csrfReady = this.loadCsrfToken();
 
+        // Phase 1 subprocess-pool dispatch state.
+        // conversationId is set per-conversation via URL fragment in Phase 2;
+        // in Phase 1 we always use the MC agent's built-in "default" alias.
+        this.conversationId = 'default';
+        // lastSeqId tracks the highest _seq_id we've seen on /stream events,
+        // so a reconnect after network interruption can resume via ?since=.
+        this.lastSeqId = null;
+
         // Thread tracking for contextual routing and threaded UI
         this.threads = new Map(); // request_id -> { userMessage, agentId, agentName, response, status, element }
 
@@ -178,6 +186,13 @@ class ChatUI {
         const headers = { ...extra };
         if (token) headers['X-CSRF-Token'] = token;
         return headers;
+    }
+
+    _readCookie(name) {
+        const match = document.cookie.match(
+            new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&') + '=([^;]*)')
+        );
+        return match ? decodeURIComponent(match[1]) : '';
     }
 
     generateSessionId() {
@@ -1027,14 +1042,24 @@ class ChatUI {
     }
 
     async streamResponse(message, explicitAgentId, threadCard, tempId, learningSignals = {}) {
+        // Fresh fetch per request; NO automatic retries on the client side.
+        // Per `memory/project_drive_rag_sync.md` — implicit retries during a
+        // cold subprocess spawn cause duplicate spawns under the Phase 1 path.
         const response = await fetch('/stream', {
             method: 'POST',
             credentials: 'same-origin',
+            cache: 'no-store',
             headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message,
                 agent_id: explicitAgentId,
                 session_id: this.sessionId,
+                // Phase 1: device-scoped turn lock + per-conversation routing.
+                // `device_id` is also available via the pa_device_id cookie;
+                // the server prefers the cookie and falls back to this body field.
+                device_id: this._readCookie('pa_device_id') || undefined,
+                conversation_id: this.conversationId || 'default',
+                since: this.lastSeqId || undefined,
                 // Learning signals for improving routing
                 slash_command: learningSignals.slashCommand,
                 original_message: learningSignals.originalMessage,
@@ -1042,6 +1067,21 @@ class ChatUI {
                 parent_request_id: learningSignals.parentRequestId,
             })
         });
+
+        // Phase 1 R7c turn-lock contract: 409 → another device is composing.
+        // For now: surface a clear error to the thread card; Phase 2 adds a
+        // banner with "Take over" affordance.
+        if (response.status === 409) {
+            const body = await response.json().catch(() => ({}));
+            console.warn('[turn-locked]', body);
+            if (threadCard) {
+                this.updateThreadCardStatus(
+                    threadCard,
+                    `Another device is composing on this conversation. Please wait.`,
+                );
+            }
+            return;
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -1083,6 +1123,30 @@ class ChatUI {
                     try {
                         const event = JSON.parse(line.slice(6));
                         console.log('[SSE] Parsed event type:', event.type);
+
+                        // Phase 1: track the highest seq_id we've seen so
+                        // a reconnect can pass ?since=<seq> for replay.
+                        if (typeof event._seq_id === 'number' && event._seq_id > (this.lastSeqId || 0)) {
+                            this.lastSeqId = event._seq_id;
+                        }
+
+                        // Phase 1: resync_required comes from the subprocess
+                        // pool when our ?since is below the ring buffer floor.
+                        // Refetch conversation history and clear lastSeqId so
+                        // the next stream starts fresh.
+                        if (event.type === 'resync_required') {
+                            console.warn('[SSE] resync_required:', event);
+                            this.lastSeqId = null;
+                            this.loadConversationHistory();
+                            continue;
+                        }
+
+                        // Phase 1: slow_subscriber marker — our queue filled.
+                        // Log only; frontend UX affordance is Phase 4 scope.
+                        if (event.type === 'slow_subscriber') {
+                            console.warn('[SSE] slow_subscriber:', event);
+                            continue;
+                        }
 
                         if (event.type === 'routing') {
                             agentName = event.agent_name;
