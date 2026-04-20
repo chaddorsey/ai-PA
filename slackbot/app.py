@@ -43,16 +43,6 @@ def probe_bot_permissions():
         except Exception as users_error:
             logger.error(f"❌ users:read scope - EXCEPTION: {users_error}")
             
-        # Test im.list (requires im:read scope if it exists)
-        try:
-            im_response = app.client.im_list()
-            if im_response.get('ok'):
-                logger.error(f"✅ im:read scope - WORKING")
-            else:
-                logger.error(f"❌ im:read scope - FAILED: {im_response.get('error')}")
-        except Exception as im_error:
-            logger.error(f"❌ im:read scope - EXCEPTION: {im_error}")
-            
     except Exception as auth_error:
         logger.error(f"❌ AUTH TEST FAILED: {auth_error}")
 

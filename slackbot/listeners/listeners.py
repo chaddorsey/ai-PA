@@ -1,5 +1,5 @@
 from slack_bolt import App
-# from listeners.app_home.app_home_opened import register as reg_home
+from listeners.app_home.app_home_opened import register as reg_home
 from listeners.actions.provider_changed import register as reg_action
 from listeners.actions.proposal_actions import register as reg_proposal_actions
 from listeners.actions.notification_actions import register as reg_notification_actions
@@ -17,7 +17,7 @@ from listeners.views.notification_modify import register as reg_notification_mod
 from listeners.workflows.summarize_function import register as reg_wf
 
 def register_listeners(app: App):
-    # reg_home(app)  # Disabled to reduce views.publish noise
+    reg_home(app)  # silent no-op; acks app_home_opened without publishing a view
     reg_action(app)
     reg_proposal_actions(app)
     reg_notification_actions(app)
