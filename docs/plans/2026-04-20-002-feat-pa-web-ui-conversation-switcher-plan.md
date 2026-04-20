@@ -21,12 +21,14 @@ persistent conversation. Each conversation spawns its own letta-code
 subprocess via the Phase 1 pool (which is already keyed by `conv_id`
 and needs no changes).
 
-Phase 2 also introduces the project's first URL-state convention
-(`?conv=conv-abc…` deep-links), the first multi-pane layout (left
-rail + main + right Task Review Sidebar), and the first backfill
-migration on `pa_web` tables.
+Phase 2 also introduces the project's first multi-pane layout (left
+rail + main + right Task Review Sidebar), the first backfill migration
+on `pa_web` tables, and the first LLM-based auto-naming feature.
 
-Covers requirements **R9–R11** and **R18** from the origin doc.
+Covers origin-doc requirements **R9** (amended during planning from
+30-day trash to hard-delete-with-undo), **R10**, **R11**, **R18**
+(amended from URL deep-link to per-device localStorage), and adds
+**R-auto-name** (LLM rename on first turn).
 
 ## Problem Frame
 
@@ -55,16 +57,31 @@ All origin-doc requirements are carried forward. Phase 2 primarily
 resolves R9, R10, R11, and R18; other Phase 1 requirements remain in
 force and are noted where Phase 2 touches them.
 
-### Multi-conversation + persistent fork UX (R9–R11, R18)
-- **R9.** Conversations are first-class; user can create, switch,
-  rename, soft-delete (30-day trash).
+### Multi-conversation + persistent fork UX (R9–R11, R18, R-auto-name)
+- **R9 (amended during planning).** Conversations are first-class;
+  user can create, switch, rename, delete. Delete is **hard-delete
+  with 10s client-side undo toast**, NOT 30-day soft-delete trash.
+  Amendment rationale: product + scope reviewers converged — a
+  single-user PA with nightly backups doesn't need trash-tier
+  recovery; 10s toast covers the real mis-click case and eliminates
+  a trash tab + restore flow + purge cron + Phase 2.5 follow-up.
 - **R10.** "Fork from here" per-message action →
-  `POST /v1/conversations/{id}/fork?agent_id=...` (response shape
-  verified empirically in Unit 2.1).
+  `POST /v1/conversations/{id}/fork?agent_id=...` (probed in Unit 2.0).
 - **R11.** No archive tier, no full-text search, no pinned-primary
   concept in v1.
-- **R18.** Cold PWA open → most-recently-active conversation for MC
-  (via Letta `conversations.list` ordered by `last_message_at`).
+- **R18 (amended).** Cold PWA open → most-recently-active conversation
+  for MC. Resolution order: (1) `localStorage['pa_last_conv_id']` per
+  device if the value is still valid in the current conv list; (2)
+  otherwise, MRU from Letta `conversations.list?agent_id=MC&order_by=last_message_at`.
+  Amendment rationale: scope reviewer — URL deep-link (`?conv=<uuid>`
+  + replaceState + popstate) was overbuilt for a single user. Per-
+  device localStorage preserves the within-device "last I was in conv
+  B" experience without URL machinery.
+- **R-auto-name (new in Phase 2).** Conversations auto-rename to an
+  LLM-generated summary after the first turn completes, unless the
+  user has manually set a label. Fired in-band on the existing SSE
+  event pipeline; cheap (~$0.00004 per rename via gpt-4.1-mini);
+  gated by `PA_WEB_UI_AUTONAME_ENABLED` (default true) for killswitch.
 
 ### Carried forward from Phase 1 (constraints Phase 2 honors)
 
@@ -93,16 +110,22 @@ force and are noted where Phase 2 touches them.
 ## Scope Boundaries
 
 **In scope:**
-- Conversation CRUD (create, rename, soft-delete with 30-day trash)
+- Conversation CRUD (create, rename, **hard-delete with 10s undo toast**)
 - Conversation switcher UI (left rail + mobile drawer)
 - Per-message "Fork from here" action
 - Per-conversation subprocess isolation (leveraging Phase 1's pool)
-- URL deep-link convention (`?conv=<uuid>`)
+- **LLM auto-naming** after first turn (in-band on the SSE pipeline;
+  user rename wins via `user_renamed` flag)
+- **Per-device last-used conv** via `localStorage['pa_last_conv_id']`
+  (R18 resolution; no URL state)
 - Database schema extension on 4 `pa_web` tables
-- Backfill: existing conversations get assigned a "main" conv per
-  session_id
+- Backfill: existing Phase-1 history points at MC's real `default`
+  Letta conv UUID (resolved in Unit 2.0)
 
 **Out of scope:**
+- Soft-delete / trash / restore / 30-day purge — removed per R9 amendment
+- URL deep-link (`?conv=<uuid>`) + `replaceState` + `popstate` —
+  removed per R18 amendment
 - `/btw` ephemeral side-queries (**Phase 3**)
 - PWA manifest / service worker / offline (**Phase 4**)
 - Archive tier, full-text search, pinned-primary (**v1 non-goal per R11**)
@@ -284,16 +307,21 @@ standard-enough SPA convention.
      in-memory; flag-on routes return 503 "migration in progress" if
      backfill hasn't finished).
 - **New `pa_web.conversation_meta` table for conv-level metadata.**
-  Separate from `pa_web.conversations` (which stores per-message
-  records) to avoid overloading. Columns: `conversation_id TEXT PK`,
-  `agent_id TEXT`, `session_id TEXT`, `label TEXT`, `parent_conversation_id
-  TEXT NULL`, `created_at`, `renamed_at NULL`, `deleted_at NULL`
-  (soft-delete + 30-day purge). `session_id` links conversations to
-  devices so phone/desktop can share a conversation list.
+  Separate from `pa_web.conversations` (the per-message log) because
+  per-conversation attributes are 1:N with message rows. Columns:
+  `conversation_id TEXT PK`, `agent_id TEXT`, `session_id TEXT`,
+  `label TEXT`, `parent_conversation_id TEXT NULL`, `user_renamed
+  BOOLEAN NOT NULL DEFAULT FALSE`, `created_at`, `renamed_at NULL`,
+  `metadata JSONB`. `user_renamed` is the gate for LLM auto-naming
+  (see R-auto-name decision below) — once the user manually renames,
+  auto-name never fires again on that conversation. No `deleted_at`
+  column — delete is hard per R9 amendment. `session_id` records the
+  creating device for attribution only (list is shared across the
+  user's Tailnet devices).
 - **Source of truth for conversation LIST is Letta server.**
   `GET /v1/conversations/?agent_id=MC&order_by=last_message_at&limit=100`
   is authoritative. `pa_web.conversation_meta` caches local metadata
-  (label, parent link, soft-delete flag) that Letta doesn't track.
+  (label, parent link, `user_renamed` flag) that Letta doesn't track.
   Listing endpoint is a JOIN: hit Letta for the canonical list, then
   enrich with local metadata.
 - **Source of truth for conversation CONTENT stays in `pa_web.conversations`
@@ -301,24 +329,40 @@ standard-enough SPA convention.
   filtered by `conversation_id`. Migrating to Letta's messages API is
   Phase 3 or later — out of Phase 2 scope because the event shapes
   would require another translation layer.
-- **URL convention: query param `?conv=<uuid>` + `history.replaceState`.**
-  Query param is standard SPA, survives refresh, doesn't conflict
-  with the hash (already empty). `replaceState` on switcher click
-  (no nav stack pollution); `popstate` handler reacts to browser
-  back/forward. Deep-links are shareable across Tailscale devices.
-- **Soft-delete: `deleted_at` column + daily cron purge.** UI hides
-  deleted conversations by default but shows them in a "Trash" tab.
-  Purge cron (Phase 2.5 or manual script) removes rows with
-  `deleted_at < now() - interval '30 days'`. Letta server's own
-  conversation isn't deleted at soft-delete time — only at purge
-  (so un-delete within 30 days restores everything). Purge calls
-  `DELETE /v1/conversations/{id}/` on the Letta server in addition
-  to local DDL cleanup.
+- **Per-device last-used conv via `localStorage['pa_last_conv_id']`.**
+  No URL state. On page load: read the localStorage key; if it's a
+  valid UUID in the current list, open that conv; else fall back to
+  Letta's MRU. On rail switch: write the new UUID to localStorage.
+  Rationale: product + scope reviewers pushed back on URL deep-link
+  as vanity for a single-user PA; localStorage gives the "where I
+  was yesterday" experience per device without the replaceState +
+  popstate + URLSearchParams + deep-link-to-deleted edge cases. If
+  cross-device URL sharing ever becomes a real workflow, adding
+  `?conv=<uuid>` back later is a 20-line follow-up.
+- **Delete is hard-delete with client-side 10s undo toast.** R9
+  amended — no soft-delete, no trash, no purge cron. Flow:
+  1. User clicks `⋯` → Delete on a rail row.
+  2. chat.js: optimistically hides the row, shows a toast
+     "Deleted <label>. Undo." with a 10s visible countdown.
+  3. If user clicks Undo within 10s: cancel the pending server call;
+     rail re-adds the row at its original position.
+  4. If 10s expires OR toast is dismissed (click-X, tab-close): fire
+     `DELETE /api/conversations/<id>` to the server, which in one
+     transaction DELETEs from all 4 pa_web tables + conversation_meta
+     + the Letta server copy (`DELETE /v1/conversations/{id}/`).
+  5. If the user closes the tab BEFORE the 10s expires, the server
+     never sees the delete — conversation survives. Acceptable for a
+     single-user PA; user can delete again. Backups at
+     `/Volumes/main-filestore/ai-PA-backups/` provide a further
+     recovery layer outside the UI.
 - **Fork UI: auto-switch to the new fork.** After `POST
-  /api/conversations/:id/fork` succeeds, `pushState` to the new
-  `conv=` URL and reload history. User stays in context of "I wanted
-  to explore this branch" — forking and immediately staying on the
-  parent would be surprising.
+  /api/conversations/:id/fork` succeeds, write the new conv_id to
+  localStorage and re-render the rail with the new conv selected.
+  User stays in the context of "I wanted to explore this branch" —
+  forking and staying on the parent would be surprising. A 5s toast
+  "Switched to fork. Back to parent." lets the user undo the switch
+  (client-only — no server call; just updates localStorage and
+  reloads history).
 - **Fork turn-lock (R7c) check is server-side AND atomic.** Post-
   review correction. Original plan said "check handle.in_flight, then
   POST to Letta" — leaving a TOCTOU window where the reader thread
@@ -363,10 +407,48 @@ standard-enough SPA convention.
     on MC and limit to other agents.
   - Branch C (no block context at all): fork is essentially a new
     conv with only the message history — reframe UX to set expectations.
-- **Conversation label: user-provided at create time OR auto-generated
-  "New conversation <local-time>".** Rename endpoint lets the user
-  fix it. No LLM-based auto-naming in Phase 2 (keeps the switcher
-  free of backend round-trips for a cosmetic concern).
+- **Conversation label: auto-timestamp on create; LLM-renamed after
+  first turn; manual rename wins forever.** (R-auto-name.) Flow:
+  1. `POST /api/conversations` creates with label = `"New conversation
+     <YYYY-MM-DD HH:MM>"` (local timezone, client-submitted since
+     client knows user's TZ). `user_renamed=FALSE`. No LLM call yet.
+  2. On the first `result` event in the conversation, the Phase-1
+     translation layer (`app.py::_stream_direct_generator`) checks:
+     `user_renamed IS FALSE AND label matches the timestamp pattern`.
+     If so, it fires an in-band one-shot to litellm:
+     ```
+     model     = "gpt-4.1-mini"
+     prompt    = f"Summarize this in 3-6 words as a conversation title: "
+                 f"{first_user_message}"
+     max_tokens = 20
+     timeout   = 3s (silent fail on timeout)
+     ```
+  3. On success: `UPDATE conversation_meta SET label=<new>,
+     renamed_at=now() WHERE conversation_id=<id> AND user_renamed=FALSE`
+     (the predicate makes it race-safe: a user rename between the LLM
+     call and the UPDATE wins). Then emit a NEW SSE event BEFORE the
+     `done` event:
+     `{"type": "conversation_label_updated", "conv_id": <id>, "label": <new>}`.
+  4. chat.js handles the event by calling
+     `window.conversationRail.updateLabel(conv_id, new_label)` — the
+     rail row's text flips live within ~1s of first turn completing.
+  5. If the user renames manually (via rail `⋯` → Rename), `PATCH
+     /api/conversations/<id>` sets `user_renamed=TRUE`. Auto-name
+     never fires again on this conversation.
+  6. Feature-flagged: `PA_WEB_UI_AUTONAME_ENABLED` (default true).
+     If false, skip the litellm call entirely; labels stay as
+     timestamps. If litellm is unreachable / slow / errors, silent
+     fail; labels stay as timestamps. No user-visible error surface.
+  7. Cost: gpt-4.1-mini at ~200 input + 20 output tokens per rename
+     ≈ $0.00004. At 50 new conversations/month ≈ $0.002/month. Already
+     in litellm infra — no new API key.
+  8. Integration posture: this is first-class, not a bolt-on. It
+     reuses the existing event pipeline (new event type joins `text`,
+     `tool_call`, `done`), the existing `conversation_meta` schema
+     (adds `user_renamed`), and the existing rename UX (user rename
+     wins via the same flag). Unit 2.5 implements it; tests in
+     `test_stream_direct.py` cover the schema-drift-safe predicate
+     and the skipped-when-flag-off path.
 - **Left-rail UI mirrors the right-sidebar pattern.** Same
   fixed-position `<aside>` + `.open` class toggling + tabbed inner
   content. Rationale: consistent UX vocabulary and no CSS grid
@@ -424,14 +506,20 @@ standard-enough SPA convention.
   2.1's first step to a dedicated Unit 2.0 pre-plan gate. Probe
   outcome branches Unit 2.3 scope (see "Letta fork copy semantics"
   decision above).
-- **URL convention?** Resolved: query param `?conv=<uuid>` with
-  `replaceState`. Deep-linkable, refresh-safe, no hash collision.
-- **Soft-delete retention?** Resolved: 30-day via `deleted_at`
-  timestamp + daily purge cron. Purge propagates to Letta server
-  (DELETE /v1/conversations/{id}/).
+- **URL convention?** Resolved: NO URL state. Per-device
+  `localStorage['pa_last_conv_id']` handles the "where was I last"
+  experience; MRU from Letta fallback for fresh browsers. If cross-
+  device URL sharing becomes a real workflow, adding it back is a
+  ~20-line follow-up.
+- **Delete semantics?** Resolved: hard-delete with 10s client-side
+  undo toast. No soft-delete, no trash tier, no purge cron, no
+  Phase 2.5. On confirmed delete, server transaction removes all 4
+  pa_web tables + conversation_meta + Letta server copy.
 - **Fork mid-stream?** Resolved: HTTP 409 if parent handle in_flight.
-- **Conversation label auto-naming?** Resolved: `"New conversation
-  <timestamp>"` default; user can rename. No LLM call.
+- **Conversation label auto-naming?** Resolved: LLM-auto-name on
+  first turn completion (R-auto-name). gpt-4.1-mini in-band on the
+  SSE pipeline; `user_renamed` column gates replays; feature-flagged
+  for killswitch. See Unit 2.5.
 - **Left rail z-index vs right sidebar?** Resolved: 99 vs 100
   respectively; explicit in CSS.
 
@@ -455,16 +543,17 @@ standard-enough SPA convention.
   `pa_chat_session_id` localStorage key to `pa_chat_device_id`
   (semantic rename; value unchanged). Execute in Unit 2.4; read old
   key as fallback so already-open tabs don't lose state.
-- **[Affects Phase 2.5][Technical]** Daily soft-delete purge cron.
-  Options: pa-web-ui at startup checks once per day; scheduler-service
-  job; systemd timer on the host. Default: pa-web-ui self-schedules
-  (pure Python, no new service). Deferred to a Phase 2.5 follow-up
-  commit once the core switcher is stable.
 - **[Affects Phase 2 observability][Technical]** `/api/subprocess/status`
   currently reports handles across all conversations. With per-conv
   subprocesses, that list grows. Unit 1.6's endpoint already handles
   this correctly via `list_handles()`, but UX may want to group by
   "active" vs "idle".
+- **[Affects Unit 2.5][Technical]** Exact litellm endpoint URL and
+  model name for the auto-name one-shot. Default: `gpt-4.1-mini`
+  via the existing litellm proxy at `http://litellm:4000` (already
+  wired up for Phase 1 MC). Revisit if the model deprecates or if
+  a Haiku-tier model turns out to give better titles — small
+  experimentation budget during Unit 2.5.
 
 ## High-Level Technical Design
 
@@ -501,12 +590,12 @@ pa_web.response_feedback
 pa_web.conversation_meta          -- NEW
   conversation_id TEXT PK         -- Letta UUID
   agent_id TEXT
-  session_id TEXT                 -- creating device
+  session_id TEXT                 -- creating device (attribution only)
   label TEXT
   parent_conversation_id TEXT NULL
+  user_renamed BOOLEAN NOT NULL DEFAULT FALSE  -- gates auto-rename
   created_at TIMESTAMP
   renamed_at TIMESTAMP NULL
-  deleted_at TIMESTAMP NULL
   metadata JSONB                  -- reserved
 ```
 
@@ -515,14 +604,65 @@ pa_web.conversation_meta          -- NEW
 ```
 user clicks sidebar entry for conv-B
   → chat.js: conversationRail.switchTo("conv-B")
+  → chat.js: abort current EventSource/fetch reader if any
   → chat.js: this.conversationId = "conv-B"; this.lastSeqId = null
-  → chat.js: history.replaceState({}, "", "?conv=conv-B")
+  → chat.js: localStorage.setItem('pa_last_conv_id', 'conv-B')
   → chat.js: loadConversationHistory("conv-B")
      → GET /api/conversations/<session_id>?conversation_id=conv-B
      → renders thread-cards from pa_web.conversations rows
+  → if /api/subprocess/status shows conv-B in_flight:
+     → re-subscribe with since=<current_seq_id> to resume live tokens
   → next message send includes conversation_id=conv-B
      → POST /stream routes to SubprocessRegistry.ensure(MC, "conv-B")
      → pool spawns a new subprocess if conv-B is cold; else reuses
+```
+
+### Request flow — auto-rename after first turn
+
+```
+first user message in conv-C (label still the timestamp default)
+  → letta-code subprocess streams events through the Phase-1 pipeline
+  → reader thread emits: text, text, text, ..., result
+  → app.py::_stream_direct_generator translator layer, on seeing `result`:
+     if PA_WEB_UI_AUTONAME_ENABLED
+        AND conversation_meta.user_renamed = FALSE
+        AND conversation_meta.label matches '^New conversation \d{4}-\d{2}-\d{2}':
+       → litellm.complete(model=gpt-4.1-mini, prompt=<summarize first user msg>, 3s timeout)
+       → on success: UPDATE conversation_meta SET label=<new>, renamed_at=now()
+                     WHERE conversation_id=<id> AND user_renamed=FALSE
+       → emit SSE: {"type": "conversation_label_updated", "conv_id": ..., "label": ...}
+     → emit SSE: {"type": "done", ...}
+  → chat.js.handleEvent('conversation_label_updated', ev):
+     → window.conversationRail.updateLabel(ev.conv_id, ev.label)
+     → rail DOM's row text flips in place
+  → chat.js.handleEvent('done', ev):
+     → existing terminal handler (no change)
+```
+
+### Request flow — hard-delete with undo toast
+
+```
+user clicks ⋯ → Delete on conv-X row
+  → chat.js: conversationRail.softHide(conv-X)  # visual only
+  → chat.js: show toast "Deleted <label>. Undo. [■■■■■■■■■□] 10s"
+  → chat.js: schedule DELETE call at T=10s via setTimeout
+  → if user clicks Undo within 10s:
+     → clearTimeout; conversationRail.unHide(conv-X)
+     → no server call; conv still exists
+  → if 10s expires OR toast dismissed OR user sends next message:
+     → DELETE /api/conversations/conv-X
+        → backend transaction:
+          DELETE FROM pa_web.conversations WHERE conversation_id = conv-X
+          DELETE FROM pa_web.thread_exchanges WHERE ...
+          DELETE FROM pa_web.routing_signals WHERE ...
+          DELETE FROM pa_web.response_feedback WHERE ...
+          DELETE FROM pa_web.conversation_meta WHERE conversation_id = conv-X
+          DELETE http://letta:8283/v1/conversations/conv-X/
+        → invalidate subprocess handle (if any) after pushing
+          {type:"conversation_deleted"} to attached subscribers
+  → if user closes tab before 10s expires:
+     → server never sees the delete; conv survives
+     → acceptable for a single-user PA; backups provide further recovery
 ```
 
 ### Request flow — fork from assistant message
@@ -531,16 +671,21 @@ user clicks sidebar entry for conv-B
 user clicks "…" → "Fork from here" on message M in conv-A
   → chat.js: fetch POST /api/conversations/conv-A/fork
      with body {"parent_request_id": M.request_id, "label": optional}
-  → backend: check SubprocessRegistry handle for conv-A:
-     - if handle.in_flight: return 409 {error: "parent_conversation_streaming"}
+  → backend: acquire handle.state_lock for conv-A (if handle exists)
+     - if handle.in_flight OR handle.forking: 409 parent_conversation_streaming
+     - else set handle.forking = True (releases lock)
   → backend: POST http://letta:8283/v1/conversations/conv-A/fork/?agent_id=MC
+     - validate response: id present and UUID-shaped else 502 Bad Gateway
      - response: {id: "conv-C", label: "...", parent_conversation_id: "conv-A"}
   → backend: INSERT INTO pa_web.conversation_meta
        (conversation_id="conv-C", parent_conversation_id="conv-A",
         agent_id=MC, session_id=<caller>, label=<from body or autogen>,
-        created_at=now())
+        user_renamed=FALSE, created_at=now())
+  → backend: re-acquire handle.state_lock, set handle.forking = False
   → backend: return 201 {conversation_id: "conv-C", label: "...", parent_conversation_id: "conv-A"}
   → chat.js: conversationRail.add(new conv); auto-switch to conv-C
+  → chat.js: localStorage.setItem('pa_last_conv_id', 'conv-C')
+  → chat.js: 5s toast "Switched to fork. Back to parent." (undo)
 ```
 
 ### Layout
@@ -548,12 +693,14 @@ user clicks "…" → "Fork from here" on message M in conv-A
 ```
 ┌─ page-layout (flex) ──────────────────────────────────────────┐
 │ ┌─ conv-rail (aside, fixed-left, z=99) ─┐  ┌─ container ────┐ │
-│ │ Conversations                         │  │ chat main pane │ │
-│ │ ▸ Active                              │  │                │ │
-│ │   • Fork #3                           │  │                │ │
-│ │   • Grocery planning                  │  │                │ │
-│ │   • default                           │  │                │ │
-│ │ ▸ Trash (7)                           │  │                │ │
+│ │ Conversations                  [+New] │  │ chat main pane │ │
+│ │ • Main                                │  │                │ │
+│ │ • DSLP draft review                   │  │                │ │
+│ │ • ↳ Fork of DSLP draft review         │  │                │ │
+│ │ • Grocery planning                    │  │                │ │
+│ │                                       │  │                │ │
+│ │ (no Trash section — hard-delete + 10s │  │                │ │
+│ │  undo toast replaces soft-delete)     │  │                │ │
 │ └──────────────────────────────────────┘   └────────────────┘ │
 │                                        ┌─ task-sidebar (z=100)┐│
 │                                        │ Tasks (right overlay)││
@@ -741,40 +888,49 @@ Letta fork API's actual response shape. Phase-2 feature flag added
    404; Tailscale is the real perimeter, so information hiding at
    the app layer is paranoid.
    - `GET /api/conversations`: fetch Letta list → LEFT JOIN with
-     `pa_web.conversation_meta` → filter out `deleted_at IS NOT NULL`
-     unless `?include_deleted=true`. Returns `{conversations: [{id,
-     label, agent_id, last_message_at, parent_conversation_id,
-     created_at, deleted_at}]}`.
+     `pa_web.conversation_meta`. Returns `{conversations: [{id, label,
+     agent_id, last_message_at, parent_conversation_id, created_at,
+     user_renamed}]}`. No deleted-filter branch — hard-delete removes
+     rows entirely; there's nothing to filter.
    - `POST /api/conversations`: body `{label?: string}`. Calls
      `POST /v1/conversations/` on Letta with `agent_id=MC, label=...`.
-     Inserts `conversation_meta` row. Returns the created conv.
-   - `PATCH /api/conversations/<id>`: body `{label?: string,
-     deleted_at?: "clear"|<ISO-8601>}`. Updates `conversation_meta`
-     locally; does NOT call Letta for rename (Letta server doesn't
-     expose conversation label in the way we care about; local is
-     SoT for labels).
-   - `DELETE /api/conversations/<id>`: atomic sequence:
-     1. UPDATE `conversation_meta` SET `deleted_at = now()`.
-     2. If a live handle exists in the subprocess_registry for this
-        conv_id, walk `handle.subscribers` and push
+     Inserts `conversation_meta` row with `user_renamed=FALSE` (since
+     label is either the default timestamp or user-provided at create).
+     Note: if body includes a label, `user_renamed=TRUE` (user
+     explicitly named it — auto-name must not overwrite). Returns the
+     created conv.
+   - `PATCH /api/conversations/<id>`: body `{label: string}`. Updates
+     `conversation_meta.label` and sets `user_renamed=TRUE` + bumps
+     `renamed_at`. Does NOT call Letta (local is SoT for labels).
+     Emits `{"type": "conversation_label_updated"}` to any attached
+     subscribers so other tabs on the same conv see the rename live.
+   - `DELETE /api/conversations/<id>`: **hard-delete in a single
+     transaction.** Atomic sequence:
+     1. If a live handle exists in subprocess_registry, walk
+        `handle.subscribers` and push
         `{"type": "conversation_deleted", "conv_id": <id>}` into each
-        subscriber's queue BEFORE calling `invalidate()`. This gives
-        attached SSE clients a clean terminal event; chat.js handles
-        it by redirecting to MRU. Without this step, subscribers
-        time out silently and chat.js may auto-retry into a fresh
-        subprocess on a deleted conv.
-     3. `subprocess_registry.invalidate(conv_id)` — kills the handle
-        + subprocess.
-     4. (`/stream` dispatch in Phase 1 must also check
-        `conversation_meta.deleted_at` on each new request; if set,
-        return HTTP 410 Gone `{"error": "conversation_deleted"}`.
-        Prevents reconnect races.)
-     Does NOT call Letta (soft-delete — Letta copy survives until
-     Phase 2.5 purge).
+        queue.
+     2. `subprocess_registry.invalidate(conv_id)` — kills the
+        subprocess.
+     3. Begin transaction:
+        - `DELETE FROM pa_web.conversations WHERE conversation_id = <id>`
+        - `DELETE FROM pa_web.thread_exchanges WHERE conversation_id = <id>`
+        - `DELETE FROM pa_web.routing_signals WHERE conversation_id = <id>`
+        - `DELETE FROM pa_web.response_feedback WHERE conversation_id = <id>`
+        - `DELETE FROM pa_web.conversation_meta WHERE conversation_id = <id>`
+     4. Commit.
+     5. `DELETE http://letta:8283/v1/conversations/<id>/` (Letta
+        server copy). This is outside the transaction — if it fails,
+        log it and continue (the local DELETE already succeeded;
+        orphan Letta conv can be cleaned up via a reconciliation job).
+     `/stream` dispatch in Phase 1 must also check for a nonexistent
+     conv_id on each new request; if `conversation_meta` has no row,
+     return HTTP 410 Gone `{"error": "conversation_deleted"}`.
+     Prevents reconnect races.
    - `POST /api/conversations/<id>/fork`: body `{label?: string,
      parent_request_id?: string}`. Flow:
-     1. Check `conversation_meta.deleted_at` on parent — if set,
-        return HTTP 410 Gone.
+     1. Check that parent `conversation_meta` row still exists —
+        if not (user hard-deleted it), return HTTP 410 Gone.
      2. Acquire parent's `handle.state_lock` (if handle exists);
         nil handle = parent is cold, proceed. Under the lock:
         ```
@@ -823,18 +979,35 @@ Letta fork API's actual response shape. Phase-2 feature flag added
   INTEGER conversation_id has those values preserved in the renamed
   `local_conversation_pk` column.
 - Happy path: `GET /api/conversations` returns Letta list JOINed
-  with local meta; `deleted_at` filter works.
+  with local meta.
 - Happy path: `POST /api/conversations` creates conv on Letta AND
-  inserts local meta; returns `{id, label, agent_id, created_at}`.
+  inserts local meta; returns `{id, label, agent_id, created_at,
+  user_renamed}`; `user_renamed=FALSE` when no label supplied;
+  `user_renamed=TRUE` when label supplied.
 - Edge case: `POST /api/conversations` — Letta returns 500; local
   meta is NOT inserted (no ghost rows).
-- Happy path: `PATCH` renames, `DELETE` soft-deletes, subsequent
-  `GET` filters appropriately.
+- Happy path: `PATCH /api/conversations/<id>` with `label` sets
+  `user_renamed=TRUE`; subsequent auto-name skips this conv.
+- Happy path: `DELETE /api/conversations/<id>` removes rows from all
+  5 tables + Letta; subsequent `GET /api/conversations/<sid>?conversation_id=<id>`
+  returns empty list (nothing to rehydrate); subsequent `GET
+  /api/conversations` does not include the deleted conv.
+- Edge case: `DELETE` on a conv with an active subprocess handle —
+  subscriber receives `{type: "conversation_deleted"}` SSE event
+  before handle.invalidate fires.
+- Edge case: `DELETE` where Letta server DELETE returns 500 — local
+  tables still cleared; log written; Letta orphan flagged for
+  reconciliation.
 - Happy path: `POST /api/conversations/<id>/fork` creates a fork
   with parent link; subsequent `GET /api/conversations` shows both.
 - Error path: `POST /api/conversations/<id>/fork` when parent is
   streaming → HTTP 409 `{error: "parent_conversation_streaming"}`.
-- Flag OFF: every new route returns HTTP 404.
+- Error path: `POST /api/conversations/<id>/fork` when parent is
+  deleted → HTTP 410 Gone.
+- Error path: `POST /api/conversations/<id>/fork` when Letta returns
+  a 200 with a malformed body (no `id`) → HTTP 502 Bad Gateway;
+  no conversation_meta row inserted.
+- Flag OFF: every new route returns HTTP 503.
 - Integration: end-to-end fork smoke with a live Letta server —
   verifies the fork API reference doc is accurate.
 
@@ -849,14 +1022,14 @@ Letta fork API's actual response shape. Phase-2 feature flag added
 
 ---
 
-### Unit 2.2: Conversation switcher UI + left rail
+### Unit 2.2: Conversation switcher UI + left rail + undo toast
 
-**Goal:** User-facing conversation list rail, with create / rename /
-soft-delete actions and a Trash view. Mirrors the right Task Review
-sidebar's visual vocabulary. URL deep-link support (`?conv=<uuid>`).
-Feature-flagged.
+**Goal:** User-facing conversation list rail with create / rename /
+hard-delete (with 10s undo toast) actions. Mirrors the right Task
+Review sidebar's visual vocabulary. Per-device last-used selection via
+localStorage. Feature-flagged.
 
-**Requirements:** R9, R11, R18
+**Requirements:** R9 (amended), R11, R18 (amended)
 
 **Dependencies:** Unit 2.1
 
@@ -864,16 +1037,19 @@ Feature-flagged.
 - Modify: `pa-web-ui/templates/index.html` — add `<aside
   id="conversation-rail" class="conversation-rail">` sibling BEFORE
   `.container`; add a toggle button (`#conversation-rail-toggle`).
+  Add `<div id="undo-toast-container">` near the bottom for toast
+  rendering.
 - Modify: `pa-web-ui/static/css/styles.css` — `.conversation-rail`
   styles mirroring `.task-sidebar` pattern with `left: -380px` and
-  z-index=99 (right sidebar stays at 100).
+  z-index=99 (right sidebar stays at 100). `.undo-toast` styles for
+  the 10s countdown toast.
 - Create: `pa-web-ui/static/js/conversation_rail.js` — standalone
   class `ConversationRail` handling list fetch, render, switch,
-  create, rename, soft-delete, restore, URL-state sync.
+  create, rename, hard-delete (with 10s client-side timer).
 - Modify: `pa-web-ui/static/js/chat.js` — initialize
   `window.conversationRail` on DOMContentLoaded; on conv switch,
-  update `this.conversationId`, clear `lastSeqId`, refetch history,
-  replaceState.
+  abort current EventSource, update `this.conversationId`, clear
+  `lastSeqId`, refetch history, write `pa_last_conv_id` to localStorage.
 - Modify: `pa-web-ui/templates/index.html` — add
   `<script src="/static/js/conversation_rail.js?v=1"></script>` before
   chat.js script tag (load order matters — chat.js references
@@ -884,43 +1060,60 @@ Feature-flagged.
 1. **CSS layout.** Add `.conversation-rail` with fixed-left
    positioning, 360px wide, `left: -380px` slide-in. Toggle button
    on the outer edge (mirror of right sidebar's toggle). Z-index 99.
-   Mobile: full-width overlay above 640px, same slide-in below.
+   Mobile (≤768px): full-width overlay; opening the right Task
+   Review sidebar auto-closes the left rail and vice versa (mutually
+   exclusive on narrow viewports). Desktop (>768px): both can
+   coexist.
 
 2. **Rail component.** `ConversationRail` class:
-   - `init()`: fetch `/api/conversations`, parse URL `?conv=<uuid>`,
-     select the matching entry if present else most-recently-active
-     (per R18). Bind click handlers.
-   - `render(list)`: two sections — "Active" and "Trash (N)".
-     Each entry shows label, last-activity timestamp, and a `⋯`
-     menu for Rename / Delete / Restore / Permanently delete.
+   - `init()`: fetch `/api/conversations`. Select conv via resolution
+     order: (a) `localStorage['pa_last_conv_id']` if valid in the
+     fetched list, (b) MRU from the list per R18. Bind click handlers.
+   - `render(list)`: ONE flat list (no Active/Trash split — hard-
+     delete means no trash exists). Each row shows label, last-activity
+     timestamp, parent indicator if forked (`↳` prefix, 1-level only),
+     and a `⋯` menu for Rename / Delete / Fork-from-here.
    - `switchTo(conv_id)`: updates rail highlight, calls
-     `window.chatUI.switchConversation(conv_id)`, pushes URL state.
-   - `create()`: prompts for label (or auto-generates), calls
-     `POST /api/conversations`, re-renders, auto-switches.
-   - `rename(conv_id, label)`: `PATCH /api/conversations/<id>`.
-   - `softDelete(conv_id)`: `DELETE /api/conversations/<id>`;
-     re-renders (entry moves to Trash tab).
-   - `restore(conv_id)`: `PATCH` with `deleted_at: "clear"`.
+     `window.chatUI.switchConversation(conv_id)`, writes
+     `localStorage['pa_last_conv_id']`.
+   - `create()`: inline-insert a new row in edit mode; on Enter/blur,
+     POST `/api/conversations` with the typed label (or the default
+     timestamp if empty), then auto-switch. If POST fails, remove the
+     row and show a toast.
+   - `rename(conv_id)`: inline-edit the row's label (double-click or
+     ⋯ → Rename enters edit mode). On commit, PATCH
+     `/api/conversations/<id>` with the new label; server sets
+     `user_renamed=TRUE`.
+   - `updateLabel(conv_id, new_label)`: external-source label change
+     (e.g., Unit 2.5's auto-rename event) — update DOM in place.
+   - `delete(conv_id)`: optimistic UI (hide row), show 10s undo toast,
+     schedule `DELETE /api/conversations/<id>` at T=10s. If Undo is
+     clicked, clearTimeout + un-hide. If another Delete is clicked on
+     a different conv within the first toast's window, the first
+     toast's DELETE fires immediately (no queue).
+   - `addAndSwitch(conv)`: used by Unit 2.3 post-fork — inserts new
+     conv into list, switches to it.
 
-3. **URL state.** On rail switch:
-   `history.replaceState({}, '', '?conv=<uuid>')`.
-   On boot: `const params = new URLSearchParams(window.location.search);
-   const conv = params.get('conv');`. If present AND valid, select
-   that conversation. On `popstate`: re-parse URL and switch.
+3. **Undo toast component.** A small `<div class="undo-toast">`
+   floating bottom-right: `Deleted "<label>". [Undo] [■■■■■■□□□□]`.
+   Progress bar animates over 10s via CSS transition. Click Undo
+   fires `clearTimeout` + removes toast + unhides row. Click the ✕
+   dismisses the toast AND fires the DELETE immediately (user
+   explicitly committed). Dismiss on tab close is acceptable — server
+   never hears about it, so conv survives.
 
 4. **chat.js integration.**
-   `ChatUI.switchConversation(conv_id)`:
-   - `this.conversationId = conv_id`
-   - `this.lastSeqId = null` (ring-buffer floor is per-conv; new conv
-     has no replay state)
-   - `this.loadConversationHistory(conv_id)` — pass conv_id (Unit
-     2.4 wires loadConversationHistory to accept this)
+   `ChatUI.switchConversation(newConvId)`:
+   - Abort any active EventSource via `this._currentStreamAbort.abort()`.
+   - `this.conversationId = newConvId`
+   - `this.lastSeqId = null`
    - `this._resetUIForConversationSwitch()` — clear thread cards,
      reset `threads` Map
-   - NOTE: does NOT cancel any in-flight subprocess turn on the OLD
-     conversation; that conv keeps streaming, user simply isn't
-     watching. If they switch back before `done`, Phase-1's subscribe
-     mechanism catches them up via `since=lastSeqIdAtLeave`.
+   - `localStorage.setItem('pa_last_conv_id', newConvId)`
+   - `await this.loadConversationHistory(newConvId)` (Unit 2.4)
+   - Check `/api/subprocess/status?conv=<newConvId>` — if in_flight,
+     re-subscribe with `since=<current_seq_id>` to continue live
+     rendering.
 
 5. **CSRF token scope.** All new routes continue to require CSRF
    double-submit. The existing `paCsrfHeaders()` helper handles it.
@@ -929,33 +1122,47 @@ Feature-flagged.
 - `pa-web-ui/static/js/sidebar.js` — structural template for the
   class-based sidebar.
 - Existing `#task-sidebar` DOM and CSS — visual vocabulary.
-- `pa-web-ui/static/js/chat.js::ensureThinkingAccordion` — collapse
-  pattern if needed for Active/Trash sections.
+- `pa-web-ui/static/js/chat.js::ensureThinkingAccordion` — inline-
+  edit pattern for rename.
 
 **Test scenarios:**
-- Happy path: rail renders on page load with Active and Trash
-  sections; URL `?conv=<uuid>` selects correctly.
+- Happy path: rail renders on page load with a single flat list.
+  `localStorage['pa_last_conv_id']` selects correctly if valid.
 - Happy path: click an entry → conversationId updates, history
-  reloads, URL updates.
-- Happy path: Create → prompt → new conv appears, auto-switches.
-- Happy path: Rename → label updates inline; refresh persists.
-- Happy path: Soft-delete → moves to Trash; restore moves back.
-- Edge case: deep-link to a soft-deleted conv → select the
-  conv and show a banner "This conversation is in trash — restore?".
-- Edge case: deep-link to a non-existent conv → fall back to MRU
-  conv, log a console warning.
-- Error path: `/api/conversations` returns 500 → rail shows an
-  error state with a retry button.
+  reloads, EventSource aborts cleanly, new one subscribes if in_flight.
+- Happy path: Create → inline edit → Enter → new conv appears and
+  auto-switches.
+- Happy path: Rename → inline edit → Enter → server PATCH → label
+  updates; `user_renamed=TRUE` persists.
+- Happy path: Delete → row hides, toast shows 10s countdown. Wait
+  out → DELETE fires → row is permanently gone.
+- Undo: Delete → click Undo within 10s → row re-appears; no server
+  call.
+- Dismiss-forces-commit: Delete → click toast ✕ → DELETE fires
+  immediately.
+- Tab close: Delete → close tab → no server call; conv survives.
+- Label update: server pushes `conversation_label_updated` SSE (from
+  Unit 2.5) → rail row label flips in place.
+- Edge case: `localStorage['pa_last_conv_id']` points at a conv that
+  no longer exists → fall back to MRU, log console warning.
+- Error path: `/api/conversations` returns 500 → rail shows error
+  state with retry.
+- Error path: DELETE returns 500 on fire — toast shows "Delete
+  failed. Retry?"; row re-appears.
 - Integration: open on phone + desktop with same session — switching
-  on one device does NOT force the other to switch (per-device state).
+  on one device does NOT force the other to switch (per-device
+  `localStorage`).
+- Mobile: tapping a row auto-closes the rail after 150ms.
+- Mobile: opening the right Task Review sidebar auto-closes the left
+  rail.
 
 **Verification:**
-- Manually create, rename, delete, restore a conversation. Refresh
-  the page. State persists.
-- Deep-link URL works on both desktop and phone within the Tailnet.
+- Manually create, rename, delete a conversation. Refresh the page.
+  State persists (create + rename survives; delete is gone).
+- `localStorage['pa_last_conv_id']` visible in DevTools and matches
+  current selection.
 - Task Review Sidebar still opens/closes without collision with the
   left rail.
-- Lighthouse/performance: rail fetch is non-blocking for chat.
 
 ---
 
@@ -1045,31 +1252,31 @@ surfaces as a card error.
 
 **Goal:** `loadConversationHistory()` correctly rehydrates per
 conversation. Frontend `pa_chat_session_id` localStorage key is
-renamed to `pa_chat_device_id` semantically. URL deep-link on
-refresh lands on the correct conversation with the correct history.
+renamed to `pa_chat_device_id` semantically. Per-device last-used
+conv selection via `localStorage['pa_last_conv_id']`. No URL state.
 
-**Requirements:** R9, R18, R19
+**Requirements:** R9, R18 (amended), R19
 
 **Dependencies:** Unit 2.2
 
 **Files:**
 - Modify: `pa-web-ui/static/js/chat.js`:
   - Rename `pa_chat_session_id` localStorage key to
-    `pa_chat_device_id`. Read-fallback: if `pa_chat_session_id`
-    exists and `pa_chat_device_id` does not, migrate the value and
-    delete the old key (one-shot).
-  - `loadConversationHistory(conversation_id)` takes a conv_id; when
-    null/undefined, omits the filter (back-compat with flag-OFF).
-  - `popstate` handler parses URL and switches conv.
+    `pa_chat_device_id` (one-shot migration; preserves UUID value).
+  - `loadConversationHistory(conversation_id)` takes a conv_id;
+    when null/undefined, omits the filter (back-compat with flag-OFF).
+  - `switchConversation` writes `pa_last_conv_id` on every switch.
+  - AbortController-based cancellation of the previous `/stream`
+    fetch reader.
 - Modify: `pa-web-ui/app.py` — `GET /api/conversations/<session_id>`
-  already accepts `?conversation_id=` (from Unit 2.1); this unit just
-  consumes it.
+  already accepts `?conversation_id=` (Unit 2.1); this unit consumes it.
 - Modify: `pa-web-ui/tests/test_stream_direct.py` — add test for
   per-conv history filter.
 
 **Approach:**
-1. **device_id rename.** In chat.js:
-   ```
+
+1. **device_id rename (one-shot, idempotent).**
+   ```js
    const OLD_KEY = 'pa_chat_session_id';
    const NEW_KEY = 'pa_chat_device_id';
    let deviceId = localStorage.getItem(NEW_KEY);
@@ -1079,10 +1286,10 @@ refresh lands on the correct conversation with the correct history.
      localStorage.removeItem(OLD_KEY);
    }
    ```
-   This keeps existing users' IDs stable (they don't lose state).
+   Keeps existing users' IDs stable across the rename.
 
 2. **loadConversationHistory parameterized.**
-   ```
+   ```js
    async loadConversationHistory(conv_id = this.conversationId) {
      const url = conv_id
        ? `/api/conversations/${this.sessionId}?conversation_id=${conv_id}`
@@ -1091,35 +1298,10 @@ refresh lands on the correct conversation with the correct history.
    }
    ```
 
-3. **URL popstate.**
-   ```
-   window.addEventListener('popstate', () => {
-     const params = new URLSearchParams(window.location.search);
-     const conv = params.get('conv') || 'default';
-     if (conv !== this.conversationId) {
-       this.switchConversation(conv);
-     }
-   });
-   ```
-
-4. **Initial load order.** On DOMContentLoaded:
-   a. ChatUI constructor reads device_id (migrating from
-      session_id if needed)
-   b. ConversationRail.init() fetches `/api/conversations` AND
-      parses URL
-   c. Rail resolves the "which conv to select" decision (URL param
-      > MRU fallback) and calls `switchConversation()` ONCE
-   d. switchConversation calls `loadConversationHistory(conv_id)`
-   This sequencing avoids a double history fetch.
-
-5. **switchConversation explicitly closes the previous SSE stream.**
-   Without this, the old conversation's EventSource / fetch reader
-   keeps consuming events that are then silently dropped by the
-   now-wrong `conversationId` check — wasted bandwidth and potential
-   UI races. Revised:
-   ```
+3. **switchConversation (no URL state).**
+   ```js
    async switchConversation(newConvId) {
-     // 1. Close any in-flight SSE reader for the old conv.
+     // 1. Abort any active EventSource/fetch reader for old conv.
      if (this._currentStreamAbort) {
        this._currentStreamAbort.abort();
        this._currentStreamAbort = null;
@@ -1128,63 +1310,250 @@ refresh lands on the correct conversation with the correct history.
      this.conversationId = newConvId;
      this.lastSeqId = null;
      this._resetUIForConversationSwitch();
-     // 3. Load durable history from pa_web.conversations.
+     // 3. Persist per-device last-used.
+     localStorage.setItem('pa_last_conv_id', newConvId);
+     // 4. Load durable history.
      await this.loadConversationHistory(newConvId);
-     // 4. If the new conv is currently streaming (handle.in_flight),
-     //    re-subscribe with since=<current_seq_id> to pick up the
-     //    live continuation. Checked via the subscribe endpoint;
-     //    /api/subprocess/status exposes in_flight per conv.
+     // 5. If the new conv is streaming, resume live.
      const status = await fetch(
-       `/api/subprocess/status?conv=${newConvId}`).then(r => r.json());
+       `/api/subprocess/status?conv=${newConvId}`
+     ).then(r => r.json());
      if (status.handles?.[0]?.in_flight) {
        this._resumeStream(newConvId, status.handles[0].current_seq_id);
      }
-     // 5. URL sync (replaceState, no nav stack pollution).
-     history.replaceState({}, '', `?conv=${newConvId}`);
    }
    ```
    `streamResponse()` stores its `AbortController` on
-   `this._currentStreamAbort` so switchConversation can cancel cleanly.
+   `this._currentStreamAbort` so switchConversation cancels cleanly.
+
+4. **Initial load order (DOMContentLoaded):**
+   a. ChatUI constructor reads `pa_chat_device_id` (with one-shot
+      migration from `pa_chat_session_id`).
+   b. ConversationRail.init() fetches `/api/conversations`.
+   c. Rail resolves selection: read `pa_last_conv_id` from
+      localStorage; if valid in the fetched list, use it; otherwise
+      fall back to MRU from the Letta list.
+   d. Rail calls `switchConversation(selected_conv_id)` ONCE.
+   This avoids a double history fetch.
 
 **Patterns to follow:**
-- Existing localStorage migration patterns (none in repo — this is
-  the first; convention established here).
+- `fetch` + `AbortController` pattern — standard browser API, no
+  library dependency.
 
 **Test scenarios:**
-- Happy path: fresh browser → device_id minted, default conv
-  selected, default history rendered.
+- Happy path: fresh browser → device_id minted; no
+  `pa_last_conv_id`; rail picks MRU from Letta list.
 - Migration: existing `pa_chat_session_id` → `pa_chat_device_id`
-  (same value); old key removed.
-- Deep-link: `?conv=<uuid>` → correct history rendered on load.
-- Popstate: back button from conv-B to conv-A swaps history cleanly.
+  (same UUID value); old key removed.
+- Happy path: `pa_last_conv_id` points at valid conv → selected on
+  load.
+- Edge case: `pa_last_conv_id` points at deleted/nonexistent conv
+  → fall back to MRU, console warning.
 - Integration: switch conv-A → send message → switch to conv-B →
-  switch back to conv-A → message is still there.
+  switch back to conv-A → message is still there (from
+  pa_web.conversations history).
+- AbortController: switch mid-stream → old EventSource is aborted;
+  no stale `onmessage` fires on the new conv.
 
 **Verification:**
-- DevTools localStorage inspection shows only the new key name.
+- DevTools: localStorage shows `pa_chat_device_id` (not
+  `pa_chat_session_id`) and `pa_last_conv_id` reflects current
+  selection.
+- Network tab: on switch, the old `/stream` connection closes; the
+  new one subscribes if in_flight.
 - History for three distinct convs rendered correctly on refresh.
-- Browser back/forward navigates conversations without full reload.
+
+---
+
+### Unit 2.5: LLM auto-naming on first turn
+
+**Goal:** Conversations get useful LLM-generated titles after their
+first turn completes. Ships in Phase 2 as a first-class feature
+(not a dangling follow-up). User manual rename wins forever via
+`user_renamed` gate.
+
+**Requirements:** R-auto-name (new in Phase 2)
+
+**Dependencies:** Unit 2.1 (schema + conversation_meta row exists),
+Phase 1 translation layer in `_stream_direct_generator`.
+
+**Files:**
+- Modify: `pa-web-ui/app.py`:
+  - In `_stream_direct_generator`: after the terminal `result`
+    event is translated but BEFORE the `done` event is yielded,
+    check auto-name preconditions and fire the litellm call inline.
+  - Add `_autoname_conversation(conv_id, first_user_message)` helper
+    that calls litellm and updates `conversation_meta` race-safely.
+  - Emit a new `{"type": "conversation_label_updated"}` event on
+    success.
+- Modify: `pa-web-ui/static/js/chat.js`:
+  - Add event handler for `conversation_label_updated` that calls
+    `window.conversationRail.updateLabel(conv_id, new_label)`.
+- Modify: `docker-compose.yml` — add
+  `PA_WEB_UI_AUTONAME_ENABLED=${PA_WEB_UI_AUTONAME_ENABLED:-true}`
+  env var.
+- Create: `pa-web-ui/tests/test_autoname.py` — unit tests with
+  litellm mocked.
+
+**Approach:**
+
+1. **Trigger point.** In `_stream_direct_generator`, after the
+   `result` event is translated to `done`:
+   ```python
+   if event_type == "result":
+       # Existing: map to done event.
+       done_event = {"type": "done", "result": ..., ...}
+       # NEW: auto-name check before yielding done.
+       if PA_WEB_UI_AUTONAME_ENABLED and conv_id and first_user_message:
+           new_label = _autoname_conversation(conv_id, first_user_message)
+           if new_label:
+               yield f"data: {json.dumps({'type':'conversation_label_updated',
+                                          'conv_id': conv_id,
+                                          'label': new_label})}\n\n"
+       yield f"data: {json.dumps(done_event)}\n\n"
+   ```
+   `first_user_message` is captured by the route handler before
+   calling `send()` and carried into the generator as a closure.
+
+2. **`_autoname_conversation` helper (psycopg2-parameterized).**
+   ```python
+   def _autoname_conversation(conv_id: str, first_user_message: str) -> Optional[str]:
+       # Race-safe precondition check.
+       with get_db_connection() as conn, conn.cursor() as cur:
+           cur.execute("""
+             SELECT label, user_renamed FROM pa_web.conversation_meta
+              WHERE conversation_id = %s
+           """, (conv_id,))
+           row = cur.fetchone()
+           if not row:
+               return None
+           label, user_renamed = row
+           if user_renamed:
+               return None
+           if not re.match(r'^New conversation \d{4}-\d{2}-\d{2}', label or ''):
+               return None  # label is not the default pattern — treat as user-set
+       # Call litellm (3s timeout; swallow failures silently).
+       try:
+           resp = httpx.post(
+               f"{LITELLM_URL}/v1/chat/completions",
+               json={
+                   "model": "gpt-4.1-mini",
+                   "messages": [{
+                       "role": "user",
+                       "content": f"Summarize this in 3-6 words as a "
+                                  f"conversation title (no quotes, no "
+                                  f"period): {first_user_message[:500]}"
+                   }],
+                   "max_tokens": 20,
+                   "temperature": 0.3,
+               },
+               timeout=3.0,
+           )
+           resp.raise_for_status()
+           new_label = resp.json()["choices"][0]["message"]["content"].strip()
+           new_label = new_label.strip('"\'').strip()[:80]  # cap + clean
+       except Exception as exc:
+           logger.warning("autoname_litellm_failed", conv_id=conv_id, error=str(exc))
+           return None
+       # Race-safe UPDATE: user_renamed predicate guards against a
+       # user rename happening between our SELECT and UPDATE.
+       with get_db_connection() as conn, conn.cursor() as cur:
+           cur.execute("""
+             UPDATE pa_web.conversation_meta
+                SET label = %s, renamed_at = %s
+              WHERE conversation_id = %s AND user_renamed = FALSE
+           """, (new_label, datetime.utcnow(), conv_id))
+           conn.commit()
+           if cur.rowcount == 0:
+               return None  # lost the race; user wins
+       return new_label
+   ```
+
+3. **Frontend handler in chat.js (alongside existing event
+   translations):**
+   ```js
+   } else if (event.type === 'conversation_label_updated') {
+     if (window.conversationRail) {
+       window.conversationRail.updateLabel(event.conv_id, event.label);
+     }
+     continue;  // don't render in the chat pane
+   }
+   ```
+
+4. **Feature flag.** `PA_WEB_UI_AUTONAME_ENABLED` (default `true`).
+   If false, skip the litellm call entirely. No user-visible
+   difference beyond titles staying as timestamps.
+
+5. **Cost accounting.** Each call: ~200 input + ~20 output tokens
+   via gpt-4.1-mini through the existing litellm proxy. At
+   ~$0.00004/call and 50 new conversations/month, ~$0.002/month
+   incremental. Cost is visible in the existing litellm spend logs.
+
+**Patterns to follow:**
+- Phase 1's `_translate_letta_code_event` and
+  `_stream_direct_generator` — insert the auto-name path in the
+  same flow, same commit style.
+- Existing psycopg2 parameterized-write pattern.
+- httpx timeout pattern from existing app.py.
+
+**Test scenarios:**
+- Happy path: new conv with timestamp label + user_renamed=FALSE →
+  fires litellm mock → label updates → SSE event emitted → chat.js
+  calls updateLabel.
+- Flag off: PA_WEB_UI_AUTONAME_ENABLED=false → no litellm call, no
+  SSE event, label stays as timestamp.
+- User rename wins race: concurrent PATCH sets user_renamed=TRUE
+  between SELECT and UPDATE → UPDATE WHERE user_renamed=FALSE
+  touches 0 rows; no SSE event emitted.
+- User rename wins pre-check: user_renamed=TRUE when the auto-name
+  fires → SELECT returns user_renamed=True → skip; no litellm call.
+- Custom label at create: POST /api/conversations with a user-
+  supplied label sets `user_renamed=TRUE`; first-turn auto-name
+  skips.
+- litellm timeout: mock returns after 5s → our 3s timeout fires →
+  warning logged, no label update, done event still emits normally.
+- litellm 500: mock raises → warning logged, no label update, done
+  event still emits normally.
+- Malformed response: mock returns {choices: []} → warning logged,
+  no label update.
+- Second turn on already-renamed conv: label no longer matches
+  timestamp pattern → skip (belt-and-suspenders even without
+  user_renamed).
+
+**Verification:**
+- Manually: create a new conversation, send a first message about a
+  specific topic, observe the rail label flip to an LLM-generated
+  title within ~1s after the response completes.
+- Rename manually via the rail; send another message; verify label
+  doesn't change.
+- Toggle flag off, restart, create a conv, send a message; verify
+  label stays as the timestamp.
+- Inspect litellm spend logs: per-rename cost ≈ $0.00004.
 
 ---
 
 ## System-Wide Impact
 
 - **DB schema:** one new table (`conversation_meta`), four column
-  additions, one column rename. Forward-only. Nullable new columns
-  default to `'default'` after backfill. Flag-OFF rollback leaves
-  these present but inert.
+  additions (`conversation_id TEXT`), one column rename
+  (`response_feedback.conversation_id INTEGER → local_conversation_pk`
+  with coordinated code update). Forward-only. Nullable `conversation_id`
+  columns backfilled to the real UUID behind MC's `default` alias.
+  Flag-OFF rollback leaves schema in place but the UI hidden.
 - **Letta server load:** additional `GET /v1/conversations/` on page
-  load + `POST /v1/conversations/{id}/fork/` per fork action.
-  Self-hosted Letta 0.16.7 is single-instance; load increase is
-  negligible (single user).
+  load + `POST /v1/conversations/{id}/fork/` per fork + `DELETE
+  /v1/conversations/{id}/` per hard-delete. Self-hosted 0.16.7 is
+  single-instance and single-user; load increase is negligible.
+- **litellm load (new in Phase 2 Unit 2.5):** one completion call per
+  new conversation's first turn via the existing litellm proxy
+  (gpt-4.1-mini, ~200 input + ~20 output tokens, ~$0.00004 per call).
+  Fire-and-forget-on-failure — a down litellm doesn't block chat.
 - **Subprocess pool load:** per-conversation subprocesses replace
   the shared `default` pool. With max_concurrent=5 (Phase 1
   default), users with >5 active conversations trigger LRU
-  eviction. Cold-start for an evicted conv is ~10s on next activity
-  (same as Phase 1 cold spawn). Consider raising max_concurrent or
-  adding per-user configuration if this becomes painful.
-- **URL space:** introduces `?conv=` as the first query param. Any
-  future query-param addition should check for namespace collision.
+  eviction. Cold-start for an evicted conv is ~10s on next activity.
+  Consider raising `PA_WEB_UI_MAX_SUBPROCESSES` to 8–10 if the
+  ceiling bites.
 - **Frontend load:** one new JS file (~5KB) + CSS additions (~2KB).
   No external dependencies. Service worker deferred to Phase 4.
 - **Task Review Sidebar:** untouched. The right overlay and left
@@ -1207,10 +1576,11 @@ refresh lands on the correct conversation with the correct history.
     in labels are treated as text. Server-side cap: label ≤ 200 chars
     (enforced in POST/PATCH handlers).
   - **Conversation IDs are treated as non-secret identifiers.** Letta
-    UUIDs in URL query params (`?conv=<uuid>`) rely on the Tailscale
-    perimeter for confidentiality. Within the Tailnet, all conversations
-    are mutually visible by design. Outside the Tailnet, ingress_guard
-    blocks access regardless of whether an attacker knows a conv_id.
+    UUIDs are not in URLs (Phase 2 dropped deep-links); they flow
+    through JSON bodies and SSE events protected by the ingress guard.
+    Within the Tailnet, all conversations are mutually visible by
+    design. Outside the Tailnet, ingress_guard blocks access regardless
+    of whether an attacker knows a conv_id.
   - **All new SQL writes use psycopg2 `%s` parameterization — no
     string formatting.** Plan explicitly requires this for every
     new route in Unit 2.1; existing `save_conversation_message` and
@@ -1222,83 +1592,81 @@ refresh lands on the correct conversation with the correct history.
 
 ## Risk Analysis & Mitigation
 
-- **Risk: Schema migration breaks Phase 1 deploys.** `ensure_pa_web_schema()`
-  short-circuit bug means existing deployments skip the new DDL.
-  Mitigation: Unit 2.1 removes the short-circuit; all new DDL is
-  `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` idempotent. Verified
-  by `test_pa_web_schema.py` against both fresh and Phase-1-era DBs.
+- **Risk: Schema migration breaks on re-run.** `ALTER TABLE RENAME
+  COLUMN` has no `IF EXISTS` form, and `ensure_pa_web_schema()` runs
+  on every boot. Mitigation: Unit 2.1 wraps the RENAME in a
+  `information_schema.columns` type-check `DO $$ ... END $$` guard
+  so the second boot is a no-op. All other new DDL uses `IF NOT
+  EXISTS` idempotency.
+- **Risk: `response_feedback.conversation_id` rename silently breaks
+  `/api/feedback`.** The column is actively written by `save_response_feedback`
+  + the `/api/feedback` route. Mitigation: Unit 2.1 does RENAME + code
+  update in the same commit; pytest exercises the endpoint under the
+  new column name.
+- **Risk: Backfill UPDATE exceeds healthcheck window.** Mitigation:
+  backfill runs in a background thread after Flask starts serving,
+  not on the synchronous startup path. Batched at 1000 rows per
+  commit. Phase-2 mutation routes return 503 until backfill completes.
 - **Risk: Fork API response shape differs from plan assumptions.**
-  Plan assumes `.id`, `.label`, `.agent_id`, optional
-  `.parent_conversation_id`. Mitigation: Unit 2.1's first step is
-  a live probe; plan explicitly adjusts if fields differ. Low
-  severity — the probe is 1 hour of work, not a week.
+  Mitigation: Unit 2.0 probes live before Unit 2.1 commits; plan has
+  three pre-framed branches (A/B/C) for block-copy semantics.
 - **Risk: Letta `order_by=last_message_at` rejects on 0.16.7.**
-  0.16.6 → 0.16.7 upgrade had a column drift that broke this.
-  Mitigation: Unit 2.1 smokes `order_by=last_message_at`; falls back
-  to `order_by=created_at` with a warning log if it fails.
+  Mitigation: Unit 2.0 smokes it; fallback to `order_by=created_at`
+  with a warning log if it fails.
 - **Risk: User creates >5 active conversations; LRU eviction causes
   cold-starts.** Mitigation: document in operational notes.
-  Consider `PA_WEB_UI_MAX_SUBPROCESSES=8` or `=10` as a user-tunable
-  if the ceiling bites.
-- **Risk: Fork UI auto-switch surprises the user.** They may want
-  to stay in the parent to verify, then go to the fork. Mitigation:
-  add a subtle toast "Switched to fork: <label>. Click to undo."
-  with a 5s window to switch back to parent. Defer to post-feedback
-  iteration if UX surfaces the need.
-- **Risk: URL deep-link shared between devices without Tailscale
-  device auth context.** The CSRF cookie is device-scoped; a URL
-  shared from phone to laptop works because both Tailnet devices
-  hit the server, each with their own cookie. Mitigation: existing
-  — R21 already documents Tailscale as perimeter; sharing URLs is
-  a first-party, single-user action.
+  `PA_WEB_UI_MAX_SUBPROCESSES=8` or `=10` as a user-tunable if the
+  ceiling bites in practice.
+- **Risk: Fork UI auto-switch surprises the user.** Mitigation:
+  5s undo toast on auto-switch; part of Unit 2.3 spec (not deferred).
 - **Risk: Concurrent forks from two devices on the same parent.**
-  Two fork requests race; both succeed; the user ends up with two
-  new convs. Mitigation: document behavior. Not a race condition
-  in the harmful sense — just a duplication the user can delete
-  one of. Fix in Phase 3 if reported.
-- **Risk: Soft-deleted conversation's subprocess keeps running.**
-  Mitigation: on `DELETE /api/conversations/<id>`,
-  `subprocess_registry.invalidate(conv_id)` to kill the handle.
-  Document in Unit 2.1 approach.
-- **Risk: Trash purge cron deletes conversations users wanted.**
-  Mitigation: 30-day window is generous; purge is opt-in-gated by a
-  separate flag; Phase 2.5 follow-up rather than initial ship.
-- **Risk: `pa_web.conversations.conversation_id` backfill
-  overwrites data.** Mitigation: `UPDATE ... WHERE conversation_id
-  IS NULL` — only nulls; idempotent.
+  Mitigation: `handle.forking` flag + per-handle state_lock prevent
+  the parent from flipping in_flight mid-fork. Two genuinely
+  concurrent forks both succeed and create two children — acceptable
+  duplication the user can delete one of.
+- **Risk: Auto-name fires concurrent with user manual rename.**
+  Mitigation: `UPDATE ... WHERE user_renamed=FALSE` predicate; if
+  the user renamed between the auto-name's SELECT and UPDATE, the
+  UPDATE touches 0 rows and no SSE event fires. User rename wins.
+- **Risk: Auto-name adds user-visible latency.** Mitigation: the
+  litellm call fires AFTER the `result` event is translated but
+  BEFORE `done` — so the assistant reply is already complete on
+  screen. The extra ~1s shifts only the "done" indicator, not the
+  reply. 3s timeout on the litellm call caps the worst case.
+- **Risk: litellm outage fails auto-name silently.** Mitigation:
+  try/except around the httpx call; on any failure, log a warning,
+  skip the SSE event, let `done` fire normally. Label stays as
+  timestamp — user can rename manually. No user-visible error.
+- **Risk: 10s undo window is too short / too long.** Mitigation:
+  starts at 10s; if user feedback surfaces friction, bump to 15s
+  via a single constant. Tab-close-before-expiry leaves the conv
+  intact — acceptable for a single-user PA with nightly backups.
+- **Risk: Hard-delete of an actively-streaming conversation
+  orphans the SSE client.** Mitigation: DELETE route pushes
+  `{type: "conversation_deleted"}` to every attached subscriber
+  BEFORE `invalidate()` kills the handle. chat.js handles the
+  event by redirecting to MRU.
 
 ## Phased Delivery
 
 ### Phase 2 (this plan)
-Units 2.0 through 2.4. Ships: Letta probe references, first-class
-conversations, switcher UI, per-message fork, deep-link. Rollback:
-`PA_WEB_UI_PHASE_2_ENABLED=false` hides UI and returns HTTP 503 on new
-routes. Backfilled `conversation_id=<default_uuid>` remains valid
-(a real Letta UUID matching MC's `default` alias).
+Units 2.0 through 2.5. Ships: Letta probe references (2.0),
+first-class conversations + hard-delete with undo toast + response_feedback
+rename (2.1), switcher UI with left rail (2.2), per-message fork
+(2.3), per-device last-used history rehydration (2.4), LLM
+auto-naming (2.5). Rollback: `PA_WEB_UI_PHASE_2_ENABLED=false`
+hides UI and returns HTTP 503 on new routes.
+`PA_WEB_UI_AUTONAME_ENABLED=false` separately kills auto-naming if
+needed. Schema stays forward; backfilled `conversation_id=<default_uuid>`
+is valid regardless of flag state.
 
-### Phase 2.5 (follow-up commit)
-Soft-delete purge cron — 30-day retention. Pure Python self-scheduled
-inside pa-web-ui; no new service. Ships only after Phase 2 stable
-(same 7-day burn pattern as Phase 1).
-
-**Purge scope is the full data footprint, not just metadata.** For
-each conv_id with `conversation_meta.deleted_at < now() - interval
-'30 days'`:
-1. `DELETE FROM pa_web.conversations WHERE conversation_id = <id>`
-2. `DELETE FROM pa_web.thread_exchanges WHERE conversation_id = <id>`
-3. `DELETE FROM pa_web.routing_signals WHERE conversation_id = <id>`
-4. `DELETE FROM pa_web.response_feedback WHERE conversation_id = <id>`
-5. `DELETE FROM pa_web.conversation_meta WHERE conversation_id = <id>`
-6. `DELETE http://letta:8283/v1/conversations/<id>/` (Letta server copy)
-All six in a single transaction; log the row counts deleted.
-Operational caveat: nightly backups at `/Volumes/main-filestore/
-ai-PA-backups/` retain purged data for the backup retention window.
-Documented in `docs/security/pa-web-ui-threat-model.md` as part of
-Unit 1.6's threat-model update (expected retention = 30 days + backup
-window, not 30 days absolute).
+No Phase 2.5 follow-up. The auto-naming that originally would have
+lived there ships in Phase 2 core as Unit 2.5; the soft-delete purge
+that also would have lived there is no longer needed (hard-delete +
+undo toast replaces it).
 
 ### Phase 3 (future plan)
-`/btw` ephemeral BtwPane. Depends on Unit 2.1 fork API knowledge;
+`/btw` ephemeral BtwPane. Depends on Unit 2.0 fork probe knowledge;
 otherwise independent.
 
 ### Phase 4 (future plan)
@@ -1307,39 +1675,50 @@ PWA manifest, service worker, mobile polish, threat-model addendum.
 ## Documentation / Operational Notes
 
 - **Docs to write / update:**
-  - `docs/reference/letta-conversations-fork.md` — Unit 2.1 deliverable.
-  - Update `docs/security/pa-web-ui-threat-model.md` — add new routes
-    to the ingress-guard scope documentation.
-  - Update `pa-web-ui/README.md` — document the left-rail UX, deep-link
-    URL convention, conversation-meta table.
+  - `docs/reference/letta-conversations-fork.md` — Unit 2.0 deliverable.
+  - `docs/reference/letta-default-alias-resolution.md` — Unit 2.0
+    deliverable.
+  - Update `docs/security/pa-web-ui-threat-model.md` — add new routes,
+    the shared-list-across-devices invariant, textContent rendering
+    rule, and psycopg2 parameterization convention to the ingress-
+    guard scope documentation.
+  - Update `pa-web-ui/README.md` — document the left-rail UX,
+    per-device `pa_last_conv_id` convention, conversation_meta schema,
+    hard-delete semantics, auto-naming behavior.
   - Update `CLAUDE.md` — note that pa-web-ui has per-conversation
-    subprocesses and a conversation switcher; the shared `default`
-    conversation is a legacy bucket.
-  - Update `MEMORY.md` — record the conversation-meta schema so
-    future debugging sessions know where to look for conversation
-    state.
+    subprocesses and a first-class conversation switcher with LLM
+    auto-naming.
+  - Update `MEMORY.md` — record the conversation_meta schema and
+    the `user_renamed` gate so future debugging sessions know where
+    to look.
 - **Operational notes:**
-  - Feature flag `PA_WEB_UI_PHASE_2_ENABLED` is the single UI
-    rollback; DB schema stays forward.
-  - `PA_WEB_UI_MAX_SUBPROCESSES` (Phase 1 env var) governs how many
-    concurrent conversations have warm subprocesses. Default 5.
-  - Daily cron for trash purge: deferred to Phase 2.5.
-  - Fork API response shape is captured in
-    `docs/reference/letta-conversations-fork.md`; treat that as the
-    source of truth for the shape the code depends on.
+  - `PA_WEB_UI_PHASE_2_ENABLED` — single rollback for UI + new
+    routes. Schema stays forward.
+  - `PA_WEB_UI_AUTONAME_ENABLED` (default true) — separate killswitch
+    for auto-naming if litellm misbehaves.
+  - `PA_WEB_UI_MAX_SUBPROCESSES` (Phase 1 env var, default 5) —
+    raise to 8–10 if >5 concurrent convs is a real workflow.
+  - Fork API response shape in `docs/reference/letta-conversations-fork.md`
+    is the source of truth.
+  - Auto-naming cost visible in existing litellm spend logs; budget
+    at ~$0.002/month at 50 new convs/month.
 - **Rollout sequence:**
-  1. Ship Unit 2.1 — schema + backend routes behind the flag (flag
-     OFF). Verify schema migration on the live DB.
-  2. Ship Units 2.2–2.4 — UI + frontend integration, still flag OFF.
-  3. Enable flag in a quiet window. Create a test conversation,
-     fork a message, verify both appear in the rail and on Letta.
-  4. Monitor `/api/subprocess/status` for per-conv subprocess count
-     growth.
-  5. After 48h of flag-on stability, remove the 404-on-flag-OFF
-     guard (code becomes permanent). Flag itself stays as an emergency
-     killswitch for a further 7 days.
-  6. After total 9–10 days, retire the flag entirely in a Phase 2.5
-     cleanup commit.
+  1. Run Unit 2.0 probes. Commit reference docs. Confirm fork
+     Branch A/B/C with user before opening Unit 2.1.
+  2. Ship Unit 2.1 — schema DDL + backend routes behind the flag
+     (flag OFF). Verify schema migration + backfill on the live DB.
+  3. Ship Units 2.2–2.5 — UI + frontend integration + auto-naming,
+     still flag OFF.
+  4. Enable flag in a quiet window. Create a test conversation, send
+     a message, verify auto-naming fires (or explicitly disable it
+     first via PA_WEB_UI_AUTONAME_ENABLED=false if you want to smoke
+     each piece independently). Fork a message; verify both appear
+     in the rail.
+  5. Monitor `/api/subprocess/status`, litellm spend logs, and the
+     crash log directory for 7 days.
+  6. After 7 days of flag-on stability, retire the flag in a small
+     cleanup commit. Keep PA_WEB_UI_AUTONAME_ENABLED as a permanent
+     runtime toggle (don't remove — useful killswitch).
 
 ## Sources & References
 
