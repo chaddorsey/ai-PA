@@ -728,6 +728,11 @@ services:
     image: docker.litellm.ai/berriai/litellm:main-latest
     container_name: litellm
     restart: unless-stopped
+    # Cap to catch the slow-growing working set that crept to 686 MB before
+    # a stray restart reset it to ~210 MB (observed 2026-04-18 → 2026-04-20).
+    # Docker will SIGKILL + restart if breached; baseline is ~220 MB.
+    mem_limit: 400m
+    mem_reservation: 200m
     depends_on:
       supabase-db:
         condition: service_healthy
