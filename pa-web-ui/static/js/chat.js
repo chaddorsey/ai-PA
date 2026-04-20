@@ -110,12 +110,16 @@ class ChatUI {
         this.csrfReady = this.loadCsrfToken();
 
         // Phase 1 subprocess-pool dispatch state.
-        // conversationId is set per-conversation via URL fragment in Phase 2;
-        // in Phase 1 we always use the MC agent's built-in "default" alias.
+        // Phase 2 overrides via the conversation rail (per-device last-used
+        // from localStorage['pa_last_conv_id']; MRU fallback from Letta).
+        // If Phase 2 is off or no rail selection lands, we stay on "default".
         this.conversationId = 'default';
         // lastSeqId tracks the highest _seq_id we've seen on /stream events,
         // so a reconnect after network interruption can resume via ?since=.
         this.lastSeqId = null;
+        // AbortController for the in-flight /stream fetch — switchConversation
+        // aborts it so the old conv's SSE doesn't leak events into the new UI.
+        this._currentStreamAbort = null;
 
         // Thread tracking for contextual routing and threaded UI
         this.threads = new Map(); // request_id -> { userMessage, agentId, agentName, response, status, element }
@@ -295,9 +299,15 @@ class ChatUI {
         ).join('');
     }
 
-    async loadConversationHistory() {
+    async loadConversationHistory(convId = this.conversationId) {
         try {
-            const response = await fetch(`/api/conversations/${this.sessionId}`);
+            // Phase 2: pass conversation_id filter if we have a real one
+            // (non-"default"). When undefined/"default", the server returns
+            // the whole session history (Phase-1 back-compat).
+            const url = (convId && convId !== 'default')
+                ? `/api/conversations/${this.sessionId}?conversation_id=${encodeURIComponent(convId)}`
+                : `/api/conversations/${this.sessionId}`;
+            const response = await fetch(url);
             if (!response.ok) return;
 
             const data = await response.json();
@@ -1045,10 +1055,16 @@ class ChatUI {
         // Fresh fetch per request; NO automatic retries on the client side.
         // Per `memory/project_drive_rag_sync.md` — implicit retries during a
         // cold subprocess spawn cause duplicate spawns under the Phase 1 path.
+        // Phase 2: store an AbortController so switchConversation() can
+        // cancel the prior stream cleanly and events from the old conv
+        // don't leak into the new UI.
+        const abort = new AbortController();
+        this._currentStreamAbort = abort;
         const response = await fetch('/stream', {
             method: 'POST',
             credentials: 'same-origin',
             cache: 'no-store',
+            signal: abort.signal,
             headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message,
@@ -1138,6 +1154,30 @@ class ChatUI {
                             console.warn('[SSE] resync_required:', event);
                             this.lastSeqId = null;
                             this.loadConversationHistory();
+                            continue;
+                        }
+
+                        // Phase 2: label updated by Unit 2.5 auto-namer
+                        // (or any other server-initiated rename). Update
+                        // the rail in place.
+                        if (event.type === 'conversation_label_updated') {
+                            if (window.conversationRail) {
+                                window.conversationRail.updateLabel(
+                                    event.conv_id, event.label
+                                );
+                            }
+                            continue;
+                        }
+
+                        // Phase 2: conversation deleted server-side (e.g.,
+                        // from another tab). Remove from rail and switch
+                        // away if we were viewing it.
+                        if (event.type === 'conversation_deleted') {
+                            if (window.conversationRail) {
+                                window.conversationRail.handleConversationDeleted(
+                                    event.conv_id
+                                );
+                            }
                             continue;
                         }
 
@@ -1492,6 +1532,31 @@ class ChatUI {
         container.scrollTop = container.scrollHeight;
         // Reset after browser processes the scroll event
         requestAnimationFrame(() => { this._programmaticScroll = false; });
+    }
+
+    // --- Phase 2: conversation switch ---
+    async switchConversation(newConvId) {
+        if (!newConvId || newConvId === this.conversationId) return;
+        // 1. Abort any in-flight /stream reader for the old conv.
+        if (this._currentStreamAbort) {
+            try { this._currentStreamAbort.abort(); } catch (_) {}
+            this._currentStreamAbort = null;
+        }
+        // 2. Reset state.
+        this.conversationId = newConvId;
+        this.lastSeqId = null;
+        // 3. Clear chat UI.
+        if (this.messagesContainer) this.messagesContainer.innerHTML = '';
+        this.threads = new Map();
+        this.inFlightRequests = new Set();
+        // 4. Rehydrate history from pa_web.conversations filtered by conv.
+        try {
+            await this.loadConversationHistory(newConvId);
+        } catch (err) {
+            console.warn('[chat] history load failed on switch', err);
+        }
+        // 5. Persist last-used per device.
+        try { localStorage.setItem('pa_last_conv_id', newConvId); } catch (_) {}
     }
 }
 

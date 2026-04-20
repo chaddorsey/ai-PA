@@ -7,12 +7,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=25">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=26">
     <!-- Marked.js for markdown rendering (pinned to v9 for stable API) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 </head>
 <body>
     <div class="page-layout">
+        <!-- Phase 2: Conversation switcher rail (left) -->
+        <button id="conversation-rail-toggle" class="conversation-rail-toggle">
+            <span class="rail-toggle-label">CONVS</span>
+        </button>
+        <aside id="conversation-rail" class="conversation-rail">
+            <div class="conv-rail-header">
+                <span class="conv-rail-title">Conversations</span>
+                <button id="conv-new-btn" class="conv-new-btn" title="New conversation">+</button>
+                <button id="conv-rail-close" class="conv-rail-close" title="Close">&times;</button>
+            </div>
+            <div id="conv-list" class="conv-list"></div>
+        </aside>
+
         <div class="container">
             <header>
                 <h1>Personal Assistant</h1>
@@ -237,10 +250,14 @@
         </div>
     </div>
 
+    <!-- Phase 2: floating undo toast container (absolutely positioned) -->
+    <div id="undo-toast-container" class="undo-toast-container"></div>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <script src="{{ url_for('static', filename='js/sidebar.js') }}?v=3"></script>
     <script src="{{ url_for('static', filename='js/drafts.js') }}?v=1"></script>
-    <script src="{{ url_for('static', filename='js/chat.js') }}?v=26"></script>
+    <script src="{{ url_for('static', filename='js/conversation_rail.js') }}?v=1"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=27"></script>
     <script>
     // MC Model Status & Switcher
     (function() {
