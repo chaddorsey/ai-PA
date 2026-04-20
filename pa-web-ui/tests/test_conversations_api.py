@@ -143,10 +143,11 @@ def fake_db():
                 ]
                 return
             if sql_upper.startswith("INSERT INTO PA_WEB.CONVERSATION_META"):
-                # Three INSERT shapes in app.py; disambiguate by param count:
-                # - create (5 params): conv_id, agent_id, session_id, label, user_renamed
-                # - fork  (7 params): conv_id, agent_id, session_id, label, parent_id, user_renamed, metadata
+                # Four INSERT shapes in app.py; disambiguate by param count:
+                # - create  (5 params): conv_id, agent_id, session_id, label, user_renamed
+                # - fork    (7 params): conv_id, agent_id, session_id, label, parent_id, user_renamed, metadata
                 # - backfill (3 params): conv_id, agent_id, label
+                # - rename upsert (4 params): conv_id, agent_id, session_id, label
                 if len(params) == 5:
                     store["meta"][params[0]] = {
                         "agent_id": params[1],
@@ -172,6 +173,21 @@ def fake_db():
                             "agent_id": params[1],
                             "session_id": None,
                             "label": params[2],
+                            "parent_conversation_id": None,
+                            "user_renamed": True,
+                            "metadata": None,
+                        }
+                elif len(params) == 4:
+                    # rename upsert: INSERT ... ON CONFLICT DO UPDATE
+                    existing = store["meta"].get(params[0])
+                    if existing:
+                        existing["label"] = params[3]
+                        existing["user_renamed"] = True
+                    else:
+                        store["meta"][params[0]] = {
+                            "agent_id": params[1],
+                            "session_id": params[2],
+                            "label": params[3],
                             "parent_conversation_id": None,
                             "user_renamed": True,
                             "metadata": None,
@@ -427,20 +443,46 @@ def test_create_502_on_malformed_response(app, client, csrf, fake_letta):
 # ---------------------------------------------------------- rename
 
 
-def test_patch_sets_user_renamed(app, client, csrf, fake_db):
+def test_patch_sets_user_renamed(app, client, csrf, fake_letta, fake_db):
     conv_id = "conv-exists1-aaaa-bbbb-cccc-dddddddddddd"
     fake_db["meta"][conv_id] = {"agent_id": "agent-MC", "session_id": None,
                                  "label": "Old", "parent_conversation_id": None,
                                  "user_renamed": False, "metadata": None}
+    # Rename handler first GETs the conv from Letta to verify existence.
+    fake_letta.default_get_response = _make_resp(200, {
+        "id": conv_id,
+        "agent_id": "agent-MC",
+    })
     resp = client.patch(f"/api/conversations/{conv_id}",
                         headers=_auth_headers(csrf),
                         data=json.dumps({"label": "New"}))
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.get_data(as_text=True)
     assert fake_db["meta"][conv_id]["label"] == "New"
     assert fake_db["meta"][conv_id]["user_renamed"] is True
 
 
-def test_patch_404_on_unknown_conv(app, client, csrf, fake_db):
+def test_patch_upserts_meta_for_preexisting_letta_conv(
+    app, client, csrf, fake_letta, fake_db
+):
+    """Pre-existing Letta convs have no local conversation_meta row; rename
+    must upsert rather than 404 (fixes the rename-doesn't-stick bug seen
+    during live Phase 2 smoke)."""
+    conv_id = "conv-newmeta-aaaa-bbbb-cccc-dddddddddddd"
+    # No meta row yet.
+    fake_letta.default_get_response = _make_resp(200, {
+        "id": conv_id,
+        "agent_id": "agent-MC",
+    })
+    resp = client.patch(f"/api/conversations/{conv_id}",
+                        headers=_auth_headers(csrf),
+                        data=json.dumps({"label": "Newly named"}))
+    assert resp.status_code == 200
+    assert fake_db["meta"][conv_id]["label"] == "Newly named"
+    assert fake_db["meta"][conv_id]["user_renamed"] is True
+
+
+def test_patch_404_when_letta_doesnt_know_conv(app, client, csrf, fake_letta):
+    fake_letta.default_get_response = _make_resp(404, {"error": "not_found"})
     resp = client.patch(
         "/api/conversations/conv-doesnot-aaaa-bbbb-cccc-dddddddddddd",
         headers=_auth_headers(csrf),

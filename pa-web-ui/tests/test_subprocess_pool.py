@@ -610,10 +610,40 @@ def test_env_scrub_in_default_spawn_factory(monkeypatch) -> None:
 
     args = captured["args"]
     assert "--yolo" in args
-    assert "--agent" in args and "agent-X" in args
+    # For UUID-shaped conv_id (anything other than "default"), --agent is
+    # intentionally OMITTED — letta-code 0.23.8 rejects that combination.
+    assert "--agent" not in args
     assert "--conversation" in args and "conv-X" in args
     assert "--output-format" in args and "stream-json" in args
     assert "Task,TodoWrite" in args
+
+
+def test_default_conv_id_keeps_agent_arg(monkeypatch) -> None:
+    """The "default" alias requires --agent alongside --conversation;
+    letta-code's server-side resolution depends on it. UUID convs
+    MUST NOT pass --agent (rejected). This test pins both branches.
+    """
+    captured: Dict[str, Any] = {}
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        return FakePopen()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    sp.SubprocessRegistry._default_spawn_factory(
+        agent_id="agent-MC",
+        conv_id="default",
+        cwd="/workspace-safe",
+        letta_binary="letta",
+        letta_base_url="http://letta:8283",
+        allowed_tools=("Bash",),
+        disallowed_tools=("Task",),
+        yolo=True,
+    )
+    assert "--agent" in captured["args"]
+    assert "agent-MC" in captured["args"]
+    assert "--conversation" in captured["args"]
+    assert "default" in captured["args"]
 
 
 def test_describe_reports_state(

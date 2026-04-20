@@ -1042,10 +1042,17 @@ class SubprocessRegistry:
         sees only the four vars listed here — no POSTGRES_PASSWORD,
         OPENAI_API_KEY, SLACK_BOT_TOKEN, etc.
         """
-        args: List[str] = [
-            letta_binary,
-            "--agent", agent_id,
-            "--conversation", conv_id,
+        # letta-code 0.23.8 quirk: --agent can only be combined with
+        # --conversation when conv_id is the "default" alias. For a real
+        # UUID, --conversation alone is sufficient (the conv already
+        # knows its agent); passing --agent triggers
+        # "Error: --conversation cannot be used with --agent".
+        args: List[str] = [letta_binary]
+        if conv_id == "default":
+            args += ["--agent", agent_id, "--conversation", "default"]
+        else:
+            args += ["--conversation", conv_id]
+        args += [
             "--output-format", "stream-json",
             "--input-format", "stream-json",
         ]

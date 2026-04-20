@@ -1040,21 +1040,45 @@ def rename_conversation(conv_id: str):
         return jsonify({"error": "label_required"}), 400
     new_label = new_label.strip()[:200]
 
+    # Verify the conversation exists on the Letta server before we
+    # mint a local meta row for it.
+    try:
+        letta_resp = http_client.get(
+            f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/",
+            timeout=10.0,
+        )
+        if letta_resp.status_code == 404:
+            return jsonify({"error": "not_found"}), 404
+        letta_resp.raise_for_status()
+        letta_conv = letta_resp.json()
+    except Exception as exc:
+        logger.error("rename_conversation_letta_lookup_failed",
+                     error=str(exc), conv_id=conv_id)
+        return jsonify({"error": "letta_unreachable"}), 502
+
+    conv_agent_id = letta_conv.get("agent_id") or MISSION_CONTROL_AGENT_ID
+    device_id = request.cookies.get("pa_device_id", "").strip() or None
+
+    # UPSERT the meta row. Covers two cases:
+    # 1. Row exists (pa-web-ui-created conv) → UPDATE label / user_renamed.
+    # 2. Row missing (pre-existing Letta conv with no local meta) → INSERT
+    #    with user_renamed=TRUE and the new label.
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    UPDATE pa_web.conversation_meta
-                       SET label = %s,
-                           user_renamed = TRUE,
-                           renamed_at = NOW()
-                     WHERE conversation_id = %s
+                    INSERT INTO pa_web.conversation_meta
+                    (conversation_id, agent_id, session_id, label,
+                     parent_conversation_id, user_renamed, created_at, renamed_at)
+                    VALUES (%s, %s, %s, %s, NULL, TRUE, NOW(), NOW())
+                    ON CONFLICT (conversation_id) DO UPDATE
+                      SET label = EXCLUDED.label,
+                          user_renamed = TRUE,
+                          renamed_at = NOW()
                     """,
-                    (new_label, conv_id),
+                    (conv_id, conv_agent_id, device_id, new_label),
                 )
-                if cur.rowcount == 0:
-                    return jsonify({"error": "not_found"}), 404
             conn.commit()
     except Exception as exc:
         logger.error("rename_conversation_failed", error=str(exc), conv_id=conv_id)
