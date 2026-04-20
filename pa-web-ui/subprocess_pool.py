@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import signal
 import subprocess
 import threading
@@ -26,7 +27,7 @@ import uuid
 from collections import deque
 from concurrent.futures import Future
 from dataclasses import dataclass, field
-from typing import Any, Callable, Deque, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Set, Tuple
 
 import structlog
 
@@ -117,6 +118,143 @@ def merge_tool_args(existing: str, incoming: str) -> str:
         return existing
     # Delta mode — concatenate.
     return existing + incoming
+
+
+# ---------------------------------------------------------------- redactor
+
+
+# Static regex patterns for common secret shapes. We compile once at module
+# load. Order matters: longer / more specific patterns first so they don't
+# get swallowed by the generic hex fallback.
+_REDACT_PATTERNS: List[Tuple[re.Pattern, str]] = [
+    # More-specific patterns FIRST so they win over generic ones.
+    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"), "[REDACTED:anthropic-key]"),
+    (re.compile(r"sk-[A-Za-z0-9_\-]{20,}"), "[REDACTED:openai-key]"),
+    (re.compile(r"xoxb-[A-Za-z0-9\-]{20,}"), "[REDACTED:slack-bot]"),
+    (re.compile(r"xapp-[A-Za-z0-9\-]{20,}"), "[REDACTED:slack-app]"),
+    (re.compile(r"xoxp-[A-Za-z0-9\-]{20,}"), "[REDACTED:slack-user]"),
+    (re.compile(r"ghp_[A-Za-z0-9]{20,}"), "[REDACTED:github-pat]"),
+    (re.compile(r"Bearer\s+[A-Za-z0-9._\-]{10,}"), "Bearer [REDACTED]"),
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "[REDACTED:aws-access]"),
+    (re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"), "[REDACTED:email]"),
+    # Fallback: long hex tokens (API keys, hashes). Keep last so specific
+    # patterns above match first.
+    (re.compile(r"\b[a-f0-9]{40,}\b"), "[REDACTED:hex]"),
+]
+
+
+def load_env_deny_set(env_path: str = "/app/.env") -> Set[str]:
+    """Read .env once at crash-log writer init and collect every NON-empty
+    value as a literal redaction target. Safe if .env is masked to empty
+    (container runs under R30 scrub); returns an empty set and logs nothing.
+    """
+    deny: Set[str] = set()
+    try:
+        with open(env_path, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                _key, _eq, value = line.partition("=")
+                value = value.strip().strip('"').strip("'")
+                if value and len(value) >= 8:
+                    # Ignore very short values — too many false positives.
+                    deny.add(value)
+    except (OSError, FileNotFoundError):
+        pass
+    return deny
+
+
+def redact_text(text: str, env_values: Optional[Iterable[str]] = None) -> str:
+    """Run a defensive redaction pass over `text`.
+
+    Applies in order:
+    1. Pattern redactions (API keys, tokens, emails, long hex)
+    2. Literal replacement of any known env-derived secret values
+
+    Returns the scrubbed text. Empty / None input passes through.
+    """
+    if not text:
+        return text
+    out = text
+    for pat, replacement in _REDACT_PATTERNS:
+        out = pat.sub(replacement, out)
+    if env_values:
+        for value in env_values:
+            if value and value in out:
+                out = out.replace(value, "[REDACTED:env]")
+    return out
+
+
+# ---------------------------------------------------------------- crash writer
+
+
+DEFAULT_CRASH_LOG_DIR = os.environ.get("PA_WEB_UI_CRASH_LOG_DIR", "/app/logs")
+DEFAULT_CRASH_LOG_KEEP_PER_CONV = int(
+    os.environ.get("PA_WEB_UI_CRASH_LOG_KEEP", "20")
+)
+DEFAULT_CRASH_LOG_TAIL_BYTES = int(
+    os.environ.get("PA_WEB_UI_CRASH_LOG_TAIL_BYTES", str(64 * 1024))
+)
+
+
+def write_crash_log(
+    *,
+    conv_id: str,
+    stdout_tail: str,
+    stderr_tail: str,
+    returncode: Optional[int],
+    env_values: Optional[Iterable[str]] = None,
+    log_dir: str = DEFAULT_CRASH_LOG_DIR,
+    keep_per_conv: int = DEFAULT_CRASH_LOG_KEEP_PER_CONV,
+) -> Optional[str]:
+    """Write a redacted crash log for a dead subprocess handle.
+
+    Returns the path written, or None on failure (IO errors are swallowed
+    so a crash-during-crash doesn't cascade).
+    """
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except OSError:
+        return None
+
+    safe_conv = re.sub(r"[^A-Za-z0-9._-]", "_", conv_id)
+    ts = time.strftime("%Y%m%dT%H%M%S")
+    path = os.path.join(log_dir, f"subprocess-{safe_conv}-{ts}.log")
+
+    body = (
+        f"conv_id: {conv_id}\n"
+        f"returncode: {returncode}\n"
+        f"timestamp: {ts}\n"
+        f"\n--- stdout tail ---\n"
+        f"{redact_text(stdout_tail, env_values)}\n"
+        f"\n--- stderr tail ---\n"
+        f"{redact_text(stderr_tail, env_values)}\n"
+    )
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(body)
+    except OSError:
+        return None
+
+    # Rotate: keep at most keep_per_conv most-recent files per conv_id.
+    try:
+        files = sorted(
+            (
+                f for f in os.listdir(log_dir)
+                if f.startswith(f"subprocess-{safe_conv}-") and f.endswith(".log")
+            ),
+            reverse=True,
+        )
+        for stale in files[keep_per_conv:]:
+            try:
+                os.remove(os.path.join(log_dir, stale))
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+    return path
 
 
 # ---------------------------------------------------------------- ring buffer
@@ -502,6 +640,11 @@ class SubprocessRegistry:
         self._creation_locks: Dict[str, Tuple[Future, int]] = {}
         self._generations: Dict[str, int] = {}
         self._shutting_down = False
+        # Load known env-secret values once so the crash-log redactor
+        # can do literal replacements. Empty set if .env isn't readable
+        # (e.g., under the R30 scrub — which is fine; pattern redactions
+        # still apply to anything the subprocess printed).
+        self._env_deny_values: Set[str] = load_env_deny_set()
 
     # ------------------------------------------------------------ ensure
 
@@ -947,29 +1090,31 @@ class SubprocessRegistry:
 
 
 def _reader_loop(handle: SubprocessHandle, registry: SubprocessRegistry) -> None:
-    """Unit 1.2 reader loop.
+    """Reader loop — parses stdout line-by-line and dispatches.
 
-    Handles:
-    - system/init event → populate init_state, signal init_event
-    - control_request → dispatch per subtype, emit control_response
-    - result/done → mark in_flight=False, absorb run_ids
-    - everything else → append to ring buffer for later subscriber fan-out
-
-    Unit 1.3 will refine this to include seq_id stamping, tool-arg merge,
-    per-subscriber fan-out, and byte-bounded ring buffer.
+    Keeps a rolling tail of parsed-and-raw output so that if the
+    subprocess crashes, Unit 1.6's crash-log writer can dump the last
+    ~64KB of stdout (redacted) alongside stderr for debugging.
     """
     stdout = handle.process.stdout
+    stderr = handle.process.stderr
     if stdout is None:
         logger.error("reader_no_stdout", conv_id=handle.conv_id)
         handle.alive = False
         handle.init_event.set()
         return
 
+    # Rolling tail buffer for crash logging. We keep raw lines (pre-parse)
+    # because the crash-time view is "what did the subprocess actually
+    # emit?", not the filtered event stream.
+    tail_lines: Deque[str] = deque(maxlen=512)
+
     for raw_line in iter(stdout.readline, b""):
         if not raw_line:
             break
-        line = raw_line.decode("utf-8", errors="replace").strip()
-        if not line:
+        line = raw_line.decode("utf-8", errors="replace").rstrip("\n")
+        tail_lines.append(line)
+        if not line.strip():
             continue
         try:
             event = json.loads(line)
@@ -986,16 +1131,50 @@ def _reader_loop(handle: SubprocessHandle, registry: SubprocessRegistry) -> None
 
     # Subprocess exited.
     handle.alive = False
-    # Unblock any callers waiting on init.
     handle.init_event.set()
-    # Unblock any outstanding control waiters.
     for req_id, future in list(handle.control_waiters.items()):
         if not future.done():
             future.set_exception(SubprocessDeadError("subprocess exited"))
+
+    returncode = handle.process.poll()
+
+    # Collect stderr non-blocking (won't wait if empty).
+    stderr_tail = ""
+    if stderr is not None:
+        try:
+            stderr_bytes = stderr.read() or b""
+            stderr_tail = stderr_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            stderr_tail = ""
+
+    stdout_tail = "\n".join(tail_lines)
+    # Cap to the configured tail byte budget to keep crash logs bounded.
+    if len(stdout_tail) > DEFAULT_CRASH_LOG_TAIL_BYTES:
+        stdout_tail = stdout_tail[-DEFAULT_CRASH_LOG_TAIL_BYTES:]
+    if len(stderr_tail) > DEFAULT_CRASH_LOG_TAIL_BYTES:
+        stderr_tail = stderr_tail[-DEFAULT_CRASH_LOG_TAIL_BYTES:]
+
+    # Only write a crash log for unclean exits (non-zero rc) or if we
+    # never got the init event (indicates spawn failure).
+    is_unclean = (returncode not in (None, 0)) or not handle.init_state
+    if is_unclean:
+        path = write_crash_log(
+            conv_id=handle.conv_id,
+            stdout_tail=stdout_tail,
+            stderr_tail=stderr_tail,
+            returncode=returncode,
+            env_values=registry._env_deny_values,
+        )
+        logger.warning(
+            "subprocess_crash_logged",
+            conv_id=handle.conv_id,
+            returncode=returncode,
+            path=path,
+        )
     logger.info(
         "reader_exit",
         conv_id=handle.conv_id,
-        returncode=handle.process.poll(),
+        returncode=returncode,
     )
 
 

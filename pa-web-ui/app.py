@@ -480,6 +480,21 @@ def health():
     return jsonify({"status": "healthy", "service": "pa-web-ui"})
 
 
+@app.route("/api/subprocess/status", methods=["GET"])
+def subprocess_status():
+    """Observability endpoint for the letta-code subprocess pool (Unit 1.6 / R26).
+
+    Gated by the ingress guard (R29) — same CSRF/Origin/Host check as
+    /stream. Prevents Tailnet-visible conversation-id enumeration from
+    non-allowlisted browsers.
+    """
+    return jsonify({
+        "phase_1_enabled": PA_WEB_UI_PHASE_1_ENABLED,
+        "mission_control_agent_id": MISSION_CONTROL_AGENT_ID,
+        "handles": subprocess_registry.list_handles(),
+    })
+
+
 @app.route("/api/agents")
 def get_agents():
     """Proxy to routing handler to get available agents."""
