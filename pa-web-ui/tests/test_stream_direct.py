@@ -218,7 +218,8 @@ def test_flag_on_dispatches_to_pool(app, client, fake_registry):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "hello from pool" in body
-    assert '"type": "result"' in body
+    # The translator maps letta-code `result` → chat.js-compatible `done`.
+    assert '"type": "done"' in body
 
     assert len(fake_registry.send_calls) == 1
     handle, message, device_id = fake_registry.send_calls[0]
@@ -353,3 +354,213 @@ def test_empty_message_without_since_still_rejected(app, client, fake_registry):
     """Pre-Phase-1 back-compat: empty message + no since → 400."""
     resp = _post_stream(client, {"message": "", "session_id": "s1"})
     assert resp.status_code == 400
+
+
+# ================================================================== translator
+
+
+class TestTranslateEvent:
+    """letta-code 0.23.8 stream-json → chat.js-compatible shape.
+
+    Based on live captures during Phase-1 smoke. Protects against silent
+    schema drift: if letta-code's wire format changes, these tests fail
+    with a clear "message_type X no longer translated" signal.
+    """
+
+    def _translate(self, ev, app_module):
+        return app_module._translate_letta_code_event(ev)
+
+    def test_assistant_message_becomes_text(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "assistant_message",
+                "content": "Hello there",
+                "_seq_id": 42,
+                "_emitted_at": 100.0,
+            },
+            m,
+        )
+        assert out["type"] == "text"
+        assert out["content"] == "Hello there"
+        assert out["_seq_id"] == 42
+        assert out["_emitted_at"] == 100.0
+
+    def test_assistant_message_empty_content_dropped(self, app):
+        import app as m
+        out = self._translate(
+            {"type": "message", "message_type": "assistant_message", "content": ""}, m
+        )
+        assert out is None
+
+    def test_reasoning_message_becomes_thinking(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "reasoning_message",
+                "reasoning": "Let me think about this...",
+                "_seq_id": 10,
+            },
+            m,
+        )
+        assert out["type"] == "thinking"
+        assert "Let me think" in out["content"]
+
+    def test_tool_call_message_becomes_tool_call(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "tool_call_message",
+                "tool_call": {"name": "Bash", "arguments": '{"command":"ls"}'},
+                "_seq_id": 5,
+            },
+            m,
+        )
+        assert out["type"] == "tool_call"
+        assert out["tool"] == "Bash"
+        assert out["args"] == {"command": "ls"}
+
+    def test_tool_call_with_dict_args(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "tool_call_message",
+                "tool_call": {"name": "Read", "arguments": {"path": "/a"}},
+            },
+            m,
+        )
+        assert out["args"] == {"path": "/a"}
+
+    def test_tool_call_with_malformed_json_args_preserves_raw(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "tool_call_message",
+                "tool_call": {"name": "Bash", "arguments": "{not-json"},
+            },
+            m,
+        )
+        assert out["args"] == {"raw": "{not-json"}
+
+    def test_tool_return_message_becomes_tool_result(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "tool_return_message",
+                "content": "hello\n",
+                "is_err": False,
+            },
+            m,
+        )
+        assert out["type"] == "tool_result"
+        assert out["content"] == "hello\n"
+        assert out["is_error"] is False
+
+    def test_tool_return_message_error_flagged(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "tool_return_message",
+                "content": "permission denied",
+                "is_err": True,
+            },
+            m,
+        )
+        assert out["is_error"] is True
+
+    def test_usage_statistics_becomes_usage(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "usage_statistics",
+                "prompt_tokens": 1000,
+                "completion_tokens": 50,
+                "total_tokens": 1050,
+                "cached_input_tokens": 800,
+                "reasoning_tokens": 10,
+                "model": "gpt-5.2",
+            },
+            m,
+        )
+        assert out["type"] == "usage"
+        data = out["data"]
+        assert data["prompt_tokens"] == 1000
+        assert data["completion_tokens"] == 50
+        assert data["cached_input_tokens"] == 800
+        assert data["cache_pct"] == 80  # 800/1000
+
+    def test_stop_reason_dropped(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "stop_reason",
+                "stop_reason": "end_turn",
+            },
+            m,
+        )
+        assert out is None
+
+    def test_result_becomes_done(self, app):
+        import app as m
+        out = self._translate(
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "Final answer",
+                "run_ids": ["run-1"],
+            },
+            m,
+        )
+        assert out["type"] == "done"
+        assert out["result"] == "Final answer"
+        assert out["run_ids"] == ["run-1"]
+
+    def test_routing_passes_through(self, app):
+        import app as m
+        ev = {"type": "routing", "agent_id": "a", "agent_name": "MC"}
+        out = self._translate(ev, m)
+        assert out is ev
+
+    def test_ping_passes_through(self, app):
+        import app as m
+        assert self._translate({"type": "ping"}, m) == {"type": "ping"}
+
+    def test_unknown_message_type_passes_through(self, app):
+        """Forward-compat: letta-code may add new message_types; we must
+        not drop them silently — frontend can then log and alert.
+        """
+        import app as m
+        ev = {
+            "type": "message",
+            "message_type": "brand_new_signal_2027",
+            "payload": {"x": 1},
+        }
+        out = self._translate(ev, m)
+        assert out is ev
+
+    def test_envelope_preserved_across_translation(self, app):
+        """_seq_id / _emitted_at / _request_id must survive so resume works."""
+        import app as m
+        out = self._translate(
+            {
+                "type": "message",
+                "message_type": "assistant_message",
+                "content": "hi",
+                "_seq_id": 99,
+                "_emitted_at": 123.456,
+                "_request_id": "run-xyz",
+            },
+            m,
+        )
+        assert out["_seq_id"] == 99
+        assert out["_emitted_at"] == 123.456
+        assert out["_request_id"] == "run-xyz"

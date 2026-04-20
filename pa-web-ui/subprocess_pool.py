@@ -1043,6 +1043,12 @@ class SubprocessRegistry:
             "--output-format", "stream-json",
             "--input-format", "stream-json",
         ]
+        # NOTE: --memfs is NOT passed. R5 in the plan assumed memfs was
+        # universally available, but letta-code 0.23.8 gates it on Letta
+        # Cloud (`--memfs is only available on Letta Cloud (api.letta.com)`).
+        # On self-hosted Letta 0.16.7 the flag causes immediate subprocess
+        # exit with returncode=1. Accept memfs_enabled=false and revisit
+        # when self-hosted gains the capability.
         if yolo:
             args.append("--yolo")
         if allowed_tools:
