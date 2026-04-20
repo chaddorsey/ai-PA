@@ -156,6 +156,21 @@ PA_WEB_UI_PHASE_2_ENABLED = os.environ.get(
     "PA_WEB_UI_PHASE_2_ENABLED", "false"
 ).strip().lower() in ("true", "1", "yes", "on")
 
+# Phase 2 Unit 2.5: LLM auto-naming. Fires once per conversation on its
+# first `result` event, unless the user has manually renamed it.
+PA_WEB_UI_AUTONAME_ENABLED = os.environ.get(
+    "PA_WEB_UI_AUTONAME_ENABLED", "true"
+).strip().lower() in ("true", "1", "yes", "on")
+PA_WEB_UI_AUTONAME_MODEL = os.environ.get(
+    "PA_WEB_UI_AUTONAME_MODEL", "gpt-5.4-mini"
+)
+LITELLM_URL = os.environ.get("LITELLM_URL", "http://litellm:4000")
+LITELLM_MASTER_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
+
+_AUTONAME_TIMESTAMP_RE = re.compile(
+    r"^(New conversation|Fork) \d{4}-\d{2}-\d{2}"
+)
+
 # Phase 2 backfill gate. Mutation routes (POST/PATCH/DELETE/fork) return
 # HTTP 503 "backfill_in_progress" until the background migration finishes.
 # Read routes serve during backfill (data pre-backfill is still valid history).
@@ -326,6 +341,109 @@ def ensure_pa_web_schema():
             conn.close()
     except Exception as e:
         logger.error("pa_web_schema_creation_failed", error=str(e))
+
+
+def _maybe_autoname_conversation(
+    conv_id: str, first_user_message: str
+) -> Optional[str]:
+    """Phase 2 Unit 2.5: LLM-rename a conversation after its first turn.
+
+    Returns the new label on success, None otherwise (flag-off, user
+    already renamed, label not-default-pattern, litellm failure, or a
+    race with a concurrent manual rename). Silent fail is intentional —
+    label stays as the timestamp default and chat still works.
+    """
+    if not PA_WEB_UI_AUTONAME_ENABLED:
+        return None
+    if not conv_id or conv_id == "default":
+        return None
+    if not first_user_message:
+        return None
+
+    # Pre-check: is this conversation still auto-nameable?
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT label, user_renamed
+                      FROM pa_web.conversation_meta
+                     WHERE conversation_id = %s
+                    """,
+                    (conv_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                label, user_renamed = row
+                if user_renamed:
+                    return None
+                if not label or not _AUTONAME_TIMESTAMP_RE.match(label):
+                    return None
+    except Exception as exc:
+        logger.warning("autoname_precheck_failed", conv_id=conv_id, error=str(exc))
+        return None
+
+    # Call litellm (3s timeout; swallow failures).
+    try:
+        resp = http_client.post(
+            f"{LITELLM_URL}/v1/chat/completions",
+            json={
+                "model": PA_WEB_UI_AUTONAME_MODEL,
+                "messages": [{
+                    "role": "user",
+                    "content": (
+                        "Summarize the following in 3-6 words as a short "
+                        "conversation title. No quotes, no period, no "
+                        "trailing punctuation.\n\n"
+                        + first_user_message[:500]
+                    ),
+                }],
+                "max_tokens": 20,
+                "temperature": 0.3,
+            },
+            headers={"Authorization": f"Bearer {LITELLM_MASTER_KEY}"} if LITELLM_MASTER_KEY else {},
+            timeout=3.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        new_label = (
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+        new_label = new_label.strip('"\'').strip().rstrip(".").strip()
+        if not new_label:
+            return None
+        new_label = new_label[:80]
+    except Exception as exc:
+        logger.warning("autoname_litellm_failed", conv_id=conv_id, error=str(exc))
+        return None
+
+    # Race-safe UPDATE: the user_renamed predicate guards against a
+    # manual rename landing between our pre-check and UPDATE.
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE pa_web.conversation_meta
+                       SET label = %s, renamed_at = %s
+                     WHERE conversation_id = %s
+                       AND user_renamed = FALSE
+                    """,
+                    (new_label, datetime.utcnow(), conv_id),
+                )
+                if cur.rowcount == 0:
+                    return None  # lost the race; user wins
+            conn.commit()
+    except Exception as exc:
+        logger.warning("autoname_update_failed", conv_id=conv_id, error=str(exc))
+        return None
+
+    logger.info("autoname_applied", conv_id=conv_id, new_label=new_label)
+    return new_label
 
 
 def _resolve_mc_default_conv_uuid() -> Optional[str]:
@@ -1977,12 +2095,19 @@ def _stream_direct_generator(
     subscriber,
     session_id: str,
     request_id: str,
+    conv_id: Optional[str] = None,
+    first_user_message: Optional[str] = None,
 ) -> Generator[str, None, None]:
     """SSE generator reading from a subprocess-pool subscriber queue.
 
     Translates letta-code's native stream-json event shapes into the
     forms chat.js already renders. Keepalive pings on queue.Empty.
     Exits on terminal event (result / done) OR GeneratorExit.
+
+    Phase 2 Unit 2.5: on the terminal `result`/`done`, if the conversation
+    qualifies for auto-naming, fire an in-band litellm call and emit a
+    `conversation_label_updated` SSE event BEFORE the terminal event so
+    the client's rail updates before the turn formally completes.
     """
     assistant_accumulator = ""
     try:
@@ -2003,11 +2128,28 @@ def _stream_direct_generator(
                 if piece:
                     assistant_accumulator += piece
 
-            yield f"data: {json.dumps(event)}\n\n"
-
             event_type = event.get("type")
             if event_type in ("result", "done"):
+                # Fire the auto-name probe BEFORE the terminal event so
+                # chat.js processes the label update first, then treats
+                # done as the turn close.
+                if conv_id and first_user_message:
+                    try:
+                        new_label = _maybe_autoname_conversation(
+                            conv_id, first_user_message
+                        )
+                        if new_label:
+                            yield f"data: {json.dumps({'type': 'conversation_label_updated', 'conv_id': conv_id, 'label': new_label})}\n\n"
+                    except Exception as exc:
+                        logger.warning(
+                            "autoname_inline_failed",
+                            conv_id=conv_id,
+                            error=str(exc),
+                        )
+                yield f"data: {json.dumps(event)}\n\n"
                 break
+            else:
+                yield f"data: {json.dumps(event)}\n\n"
     except GeneratorExit:
         # Client disconnected; do NOT save assistant content (turn may
         # still be running on the subprocess — another device may pick it up).
@@ -2104,7 +2246,15 @@ def _dispatch_mission_control_direct(
         # Emit routing event (backwards-compat with existing chat.js handler).
         yield f"data: {json.dumps({'type': 'routing', 'agent_id': MISSION_CONTROL_AGENT_ID, 'agent_name': 'Mission Control', 'request_id': request_id})}\n\n"
         try:
-            yield from _stream_direct_generator(subscriber, session_id, request_id)
+            # Phase 2 Unit 2.5: pass conv_id + first user message so the
+            # generator can fire LLM auto-naming on the terminal event.
+            yield from _stream_direct_generator(
+                subscriber,
+                session_id,
+                request_id,
+                conv_id=conversation_id,
+                first_user_message=message,
+            )
         finally:
             handle.unsubscribe(subscriber)
 

@@ -153,13 +153,20 @@ class ChatUI {
     }
 
     getOrCreateSessionId() {
-        const STORAGE_KEY = 'pa_chat_session_id';
-        let sessionId = localStorage.getItem(STORAGE_KEY);
-        if (!sessionId) {
-            sessionId = this.generateSessionId();
-            localStorage.setItem(STORAGE_KEY, sessionId);
+        // Phase 2: rename localStorage key from pa_chat_session_id →
+        // pa_chat_device_id (semantic — this is a per-device UUID, not a
+        // per-session identifier). One-shot migration preserves the UUID
+        // value for existing users; old key removed.
+        const NEW_KEY = 'pa_chat_device_id';
+        const OLD_KEY = 'pa_chat_session_id';
+        let deviceId = localStorage.getItem(NEW_KEY);
+        if (!deviceId) {
+            const legacy = localStorage.getItem(OLD_KEY);
+            deviceId = legacy || this.generateSessionId();
+            localStorage.setItem(NEW_KEY, deviceId);
+            if (legacy) localStorage.removeItem(OLD_KEY);
         }
-        return sessionId;
+        return deviceId;
     }
 
     async loadCsrfToken() {
@@ -392,6 +399,7 @@ class ChatUI {
                                 </select>
                             </div>
                         </div>
+                        <a href="#" class="fork-from-here-link" title="Fork a new conversation branched from this point (memory is shared)">Fork ↳</a>
                     </div>
                     ` : ''}
                     ${userTime ? `<span class="message-timestamp">${userTime}</span>` : ''}
@@ -422,9 +430,79 @@ class ChatUI {
             }
             // Wire up feedback buttons for the initial response
             this.setupFeedbackButtons(card, card.querySelector(':scope > .thread-response'));
+            // Phase 2: Fork-from-here
+            this.wireForkFromHere(card, requestId);
         }
 
         this.messagesContainer.appendChild(card);
+    }
+
+    // Phase 2: Fork a new conversation branched from this message.
+    // Server-side: Letta fork is conversation-level, but parent_request_id
+    // rides along as metadata for UX. Memory blocks are shared between
+    // parent and fork (Branch B per docs/reference/letta-conversations-fork.md);
+    // we surface that via the tooltip on the link.
+    wireForkFromHere(card, parentRequestId) {
+        const link = card.querySelector('.fork-from-here-link');
+        if (!link) return;
+        link.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            if (link.dataset.busy === '1') return;
+            link.dataset.busy = '1';
+            const originalText = link.textContent;
+            link.textContent = 'Forking…';
+            try {
+                const convId = this.conversationId || 'default';
+                if (convId === 'default') {
+                    alert('Fork requires a real conversation — create one first from the left rail.');
+                    return;
+                }
+                const resp = await fetch(
+                    `/api/conversations/${encodeURIComponent(convId)}/fork`,
+                    {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
+                        body: JSON.stringify({
+                            parent_request_id: parentRequestId || undefined,
+                        }),
+                    }
+                );
+                if (resp.status === 409) {
+                    alert("Can't fork while the parent conversation is still streaming.");
+                    return;
+                }
+                if (resp.status === 410) {
+                    alert('Parent conversation no longer exists.');
+                    return;
+                }
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const forkConv = await resp.json();
+                // Insert into the rail (if present) and auto-switch.
+                if (window.conversationRail) {
+                    window.conversationRail.conversations.unshift({
+                        id: forkConv.id,
+                        agent_id: forkConv.agent_id,
+                        label: forkConv.label,
+                        parent_conversation_id: forkConv.parent_conversation_id,
+                        user_renamed: forkConv.user_renamed,
+                        last_message_at: null,
+                        created_at: forkConv.created_at,
+                    });
+                    window.conversationRail.render();
+                    await window.conversationRail.switchTo(forkConv.id);
+                } else {
+                    // No rail available — still switch the chat view.
+                    await this.switchConversation(forkConv.id);
+                }
+            } catch (err) {
+                console.error('[fork-from-here] failed', err);
+                alert('Fork failed: ' + err.message);
+            } finally {
+                link.dataset.busy = '';
+                link.textContent = originalText;
+            }
+        });
     }
 
     /**

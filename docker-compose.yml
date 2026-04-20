@@ -1438,6 +1438,10 @@ services:
       # --- Phase 2 conversation switcher feature flag (Unit 2.1) ---
       # Default off; Units 2.1–2.5 add the switcher + fork + auto-naming.
       - PA_WEB_UI_PHASE_2_ENABLED=${PA_WEB_UI_PHASE_2_ENABLED:-false}
+      # --- Phase 2 Unit 2.5 — LLM auto-naming on first turn ---
+      - PA_WEB_UI_AUTONAME_ENABLED=${PA_WEB_UI_AUTONAME_ENABLED:-true}
+      - PA_WEB_UI_AUTONAME_MODEL=${PA_WEB_UI_AUTONAME_MODEL:-gpt-5.4-mini}
+      - LITELLM_URL=${LITELLM_URL:-http://litellm:4000}
     volumes:
       - ./pa-web-ui/static:/app/static
       - ./omnifocus-timer/logs:/data/timer-logs
