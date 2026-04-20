@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.pa-ecosystem-backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Volumes/main-drive/ai-PA/deployment/scripts/run-scheduled-backup.sh</string>
+    </array>
+
+    <!-- Run at 2:00 AM daily -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do not run at load; only on the calendar interval -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- If the Mac was asleep at 2am, run as soon as it wakes -->
+    <key>StartCalendarIntervalIgnoreCache</key>
+    <false/>
+
+    <!-- Capture stdout/stderr from the runner itself (run-scheduled-backup.sh
+         mirrors its own output to ~/Library/Logs/ai-pa-backup/scheduled-*.log;
+         these paths catch anything that happens before the runner opens its log) -->
+    <key>StandardOutPath</key>
+    <string>/tmp/pa-ecosystem-backup.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/pa-ecosystem-backup.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Avoid overlapping runs if a previous one is still going -->
+    <key>AbandonProcessGroup</key>
+    <false/>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+</dict>
+</plist>
