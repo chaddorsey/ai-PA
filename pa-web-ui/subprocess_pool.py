@@ -23,9 +23,10 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import deque
 from concurrent.futures import Future
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Deque, Dict, List, Optional, Set, Tuple
 
 import structlog
 
@@ -73,6 +74,140 @@ DEFAULT_ALLOWED_TOOLS: Tuple[str, ...] = (
 DEFAULT_CWD = os.environ.get("PA_WEB_UI_SUBPROCESS_CWD", "/workspace-safe")
 LETTA_BINARY = os.environ.get("PA_WEB_UI_LETTA_BINARY", "letta")
 LETTA_BASE_URL = os.environ.get("LETTA_BASE_URL", "http://letta:8283")
+
+# Ring buffer byte cap — Unit 1.3. Per the plan's R7b, retain events back to
+# the most recent completed turn or ~2MB whichever is smaller; clients below
+# the floor receive `resync_required` and refetch via loadConversationHistory.
+DEFAULT_RING_BUFFER_BYTES = int(
+    os.environ.get("PA_WEB_UI_RING_BUFFER_BYTES", str(2_000_000))
+)
+
+
+# ---------------------------------------------------------------- helpers
+
+
+def merge_tool_args(existing: str, incoming: str) -> str:
+    """Port of lettabot session-manager.ts:629-638 mergeToolArgs.
+
+    Handles both delta-style chunking (each chunk = bytes to append) and
+    cumulative-style chunking (each chunk = full string up to that point).
+    Exact semantics preserved so pa-web-ui renders tool_call args
+    identically to LettaBot for every model.
+    """
+    if not incoming:
+        return existing
+    if not existing:
+        return incoming
+    if incoming == existing:
+        return existing
+    if incoming.startswith(existing):
+        # Cumulative mode — new chunk contains all prior text plus more.
+        return incoming
+    if existing.endswith(incoming):
+        # Old chunk is already a superset (redundant delta).
+        return existing
+    # Delta mode — concatenate.
+    return existing + incoming
+
+
+# ---------------------------------------------------------------- ring buffer
+
+
+class RingBuffer:
+    """Byte-bounded event ring with turn-boundary awareness.
+
+    - Events are appended with a monotonic seq_id and tracked size.
+    - When total bytes exceed `max_bytes`, oldest events evict.
+    - Turn boundaries (`is_turn_boundary=True` on append) are tracked so
+      replay consumers can tell whether their requested `since` seq_id
+      still lands inside a complete turn, or has been truncated below
+      the buffer's retention window.
+
+    Per-conversation thread safety via an internal lock; the reader
+    thread is the single writer, Unit 1.4 subscribers are readers.
+    """
+
+    def __init__(self, max_bytes: int = DEFAULT_RING_BUFFER_BYTES) -> None:
+        self.max_bytes = max_bytes
+        self._items: Deque[Tuple[int, Dict[str, Any], int]] = deque()
+        self._bytes_total: int = 0
+        self._turn_boundary_seq_ids: List[int] = []
+        self._lock = threading.Lock()
+
+    def append(
+        self, seq_id: int, event: Dict[str, Any], is_turn_boundary: bool = False
+    ) -> None:
+        size = len(json.dumps(event, separators=(",", ":")).encode("utf-8"))
+        with self._lock:
+            self._items.append((seq_id, event, size))
+            self._bytes_total += size
+            if is_turn_boundary:
+                self._turn_boundary_seq_ids.append(seq_id)
+            # Evict until under cap.
+            while self._bytes_total > self.max_bytes and self._items:
+                _, _, popped_size = self._items.popleft()
+                self._bytes_total -= popped_size
+            # Clean up turn-boundary markers that fell out of the buffer.
+            if self._items:
+                oldest_in_buffer = self._items[0][0]
+                self._turn_boundary_seq_ids = [
+                    b for b in self._turn_boundary_seq_ids if b >= oldest_in_buffer
+                ]
+            else:
+                self._turn_boundary_seq_ids = []
+
+    def events_since(
+        self, since_seq: Optional[int]
+    ) -> Tuple[List[Dict[str, Any]], bool]:
+        """Return (events, resync_required).
+
+        - If since_seq is None: return a fresh subscriber seed (empty list,
+          no resync).
+        - If since_seq is before the oldest retained seq_id: return empty
+          and flag resync_required=True — client must refetch via
+          loadConversationHistory().
+        - Otherwise: return every event with seq_id > since_seq.
+        """
+        with self._lock:
+            if since_seq is None:
+                return [], False
+            if not self._items:
+                # Buffer empty: if client claims to be ahead, no replay needed.
+                return [], False
+            oldest_seq = self._items[0][0]
+            if since_seq < oldest_seq - 1:
+                # Client is behind the buffer's floor.
+                return [], True
+            return [ev for (s, ev, _sz) in self._items if s > since_seq], False
+
+    def oldest_seq(self) -> int:
+        with self._lock:
+            return self._items[0][0] if self._items else 0
+
+    def newest_seq(self) -> int:
+        with self._lock:
+            return self._items[-1][0] if self._items else 0
+
+    @property
+    def size_bytes(self) -> int:
+        with self._lock:
+            return self._bytes_total
+
+    @property
+    def count(self) -> int:
+        with self._lock:
+            return len(self._items)
+
+    def snapshot_for_status(self) -> Dict[str, Any]:
+        """Debug snapshot for /api/subprocess/status."""
+        with self._lock:
+            return {
+                "count": len(self._items),
+                "bytes": self._bytes_total,
+                "oldest_seq": self._items[0][0] if self._items else None,
+                "newest_seq": self._items[-1][0] if self._items else None,
+                "turn_boundaries": list(self._turn_boundary_seq_ids),
+            }
 
 
 # ---------------------------------------------------------------- exceptions
@@ -142,8 +277,14 @@ class SubprocessHandle:
     # Subscribers (Unit 1.4 populates).
     subscribers: List["queue.Queue"] = field(default_factory=list)
 
-    # Ring buffer (Unit 1.3 refines to byte-aware + turn-aware).
-    ring_buffer: List[Dict[str, Any]] = field(default_factory=list)
+    # Ring buffer (Unit 1.3: byte-aware, turn-aware).
+    ring_buffer: RingBuffer = field(default_factory=RingBuffer)
+
+    # Tool-call batching (Unit 1.3). Keyed by tool_call_id; each entry
+    # holds the partial accumulated args and the base event shape.
+    # Flushed on any non-stream_event boundary — mirrors the TS
+    # `mergeToolArgs` flush rule (session-manager.ts:691-694).
+    pending_tool_calls: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # Stale-run filtering. run_ids that have completed are dropped from
     # subsequent emissions (prevents late events from leaking across turns).
@@ -737,27 +878,30 @@ def _reader_loop(handle: SubprocessHandle, registry: SubprocessRegistry) -> None
 def _dispatch_event(
     handle: SubprocessHandle, registry: SubprocessRegistry, event: Dict[str, Any]
 ) -> None:
-    """Route one parsed event to its appropriate handler."""
+    """Route one parsed event to its appropriate handler.
+
+    Ordering rules (from SDK study + plan):
+    - system/init: populate init_state and signal init_event. Still emit
+      to subscribers (UI may surface "connected").
+    - control_request: dispatch + respond over stdin. Do NOT forward to
+      subscribers (internal protocol).
+    - control_response: match to a pending client-initiated request's
+      Future. Do NOT forward.
+    - stream_event: buffer tool-call chunks; do NOT emit until flush.
+    - any other event: first flush pending tool-calls (merged into a
+      single tool_call event), then emit the triggering event.
+    - result: turn boundary. Release turn lock, absorb run_ids into
+      last_completed_run_ids, mark a turn-boundary in the ring buffer.
+    - stale-run events (run_id in last_completed_run_ids): drop.
+    """
     event_type = event.get("type")
 
-    if event_type == "system" and event.get("subtype") == "init":
-        # Capture the full init payload for introspection.
-        init_fields = {
-            k: v for k, v in event.items()
-            if k not in ("type", "subtype")
-        }
-        handle.init_state.update(init_fields)
-        handle.init_event.set()
-        _append_to_ring(handle, event)
-        return
-
+    # --- control plane: never forwarded to subscribers ---
     if event_type == "control_request":
         _handle_control_request(handle, registry, event)
         return
 
     if event_type == "control_response":
-        # Response to a client-initiated control_request (e.g., our
-        # recover_pending_approvals probe). Match by request_id.
         resp = event.get("response", {})
         req_id = resp.get("request_id")
         waiter = handle.control_waiters.pop(req_id, None) if req_id else None
@@ -765,38 +909,154 @@ def _dispatch_event(
             waiter.set_result(resp)
         return
 
+    # --- init handshake: also forward to subscribers ---
+    if event_type == "system" and event.get("subtype") == "init":
+        init_fields = {
+            k: v for k, v in event.items() if k not in ("type", "subtype")
+        }
+        handle.init_state.update(init_fields)
+        handle.init_event.set()
+        _emit(handle, event, is_turn_boundary=False)
+        return
+
+    # --- stream_event: buffer tool-call deltas ---
+    if event_type == "stream_event":
+        _absorb_stream_event(handle, event)
+        return
+
+    # --- any non-stream_event: flush pending tool-calls first ---
+    if handle.pending_tool_calls:
+        _flush_pending_tool_calls(handle)
+
+    # --- stale-run filter ---
+    run_id = event.get("run_id")
+    if run_id and run_id in handle.last_completed_run_ids:
+        logger.debug("stale_event_dropped", conv_id=handle.conv_id, run_id=run_id)
+        return
+
+    # --- turn complete: mark boundary, release lock, absorb run_ids ---
     if event_type == "result":
-        # Turn complete — release turn lock and absorb run_ids.
         run_ids = event.get("run_ids") or []
         with handle.state_lock:
             handle.in_flight = False
             handle.in_flight_device_id = None
             for rid in run_ids:
                 handle.last_completed_run_ids.add(rid)
-        _append_to_ring(handle, event)
+        _emit(handle, event, is_turn_boundary=True)
         return
 
-    # Stale-run filter: drop events belonging to a completed run.
-    run_id = event.get("run_id")
-    if run_id and run_id in handle.last_completed_run_ids:
-        logger.debug(
-            "stale_event_dropped", conv_id=handle.conv_id, run_id=run_id
+    _emit(handle, event, is_turn_boundary=False)
+
+
+def _absorb_stream_event(handle: SubprocessHandle, event: Dict[str, Any]) -> None:
+    """Buffer a tool-call-shaped stream_event into pending_tool_calls.
+
+    letta-code's stream-json emits incremental `stream_event` wrappers that
+    contain per-delta fragments of a tool_call being composed. We buffer
+    those by tool_call_id and merge their argument chunks; a full tool_call
+    event is yielded to subscribers when the next non-stream_event arrives.
+
+    Event shape (best-effort inference from SDK; validated in Unit 1.3
+    fixture tests). Typical fields observed:
+      event.event_type == "tool_use_delta" | "tool_use_start" | ...
+      event.tool_call_id
+      event.tool_name
+      event.arguments_delta   (delta mode)
+      event.arguments         (cumulative mode)
+      event.run_id
+    Unknown shapes pass through untouched so we fail-safe on drift.
+    """
+    stream_inner = event.get("event") or event  # some emitters wrap
+    tool_call_id = stream_inner.get("tool_call_id")
+    if not tool_call_id:
+        # Not a tool_call-shaped stream event — emit as-is (unknown
+        # stream_event subtypes still go to subscribers so the frontend
+        # can surface novel signals).
+        _emit(handle, event, is_turn_boundary=False)
+        return
+
+    existing = handle.pending_tool_calls.get(tool_call_id)
+    incoming_args = (
+        stream_inner.get("arguments_delta")
+        or stream_inner.get("arguments")
+        or ""
+    )
+    if existing is None:
+        handle.pending_tool_calls[tool_call_id] = {
+            "type": "tool_call",
+            "tool_call_id": tool_call_id,
+            "tool_name": stream_inner.get("tool_name"),
+            "run_id": stream_inner.get("run_id"),
+            "arguments": incoming_args,
+        }
+    else:
+        existing["arguments"] = merge_tool_args(
+            existing.get("arguments", ""), incoming_args
         )
-        return
+        # Prefer a populated tool_name if we didn't have one yet.
+        if not existing.get("tool_name") and stream_inner.get("tool_name"):
+            existing["tool_name"] = stream_inner.get("tool_name")
 
-    _append_to_ring(handle, event)
+
+def _flush_pending_tool_calls(handle: SubprocessHandle) -> None:
+    """Emit accumulated tool_call events and clear the buffer.
+
+    Mirrors session-manager.ts:691-694's `flushPending()`. Each pending
+    tool-call becomes one tool_call event on the subscriber stream.
+    """
+    for tool_call_id, partial in list(handle.pending_tool_calls.items()):
+        _emit(handle, partial, is_turn_boundary=False)
+    handle.pending_tool_calls.clear()
 
 
-def _append_to_ring(handle: SubprocessHandle, event: Dict[str, Any]) -> None:
-    """Minimal ring-buffer append — Unit 1.3 will replace with byte-aware
-    turn-boundary ring.
+def _emit(
+    handle: SubprocessHandle,
+    event: Dict[str, Any],
+    *,
+    is_turn_boundary: bool,
+) -> None:
+    """Stamp the envelope, append to ring buffer, and (Unit 1.4) publish
+    to subscribers.
+
+    Envelope fields: seq_id (monotonic per handle), emitted_at (wall
+    clock), request_id (if the source event supplied one, otherwise
+    derived from run_id if available). These let the frontend correlate
+    events across a conversation and lets subscribers deduplicate on
+    resume.
     """
     seq = handle.bump_seq_id()
-    stamped = {**event, "_seq_id": seq}
-    handle.ring_buffer.append(stamped)
-    # Cap at 500 events for now — Unit 1.3 replaces with ~2MB byte cap.
-    if len(handle.ring_buffer) > 500:
-        handle.ring_buffer.pop(0)
+    stamped = dict(event)
+    stamped["_seq_id"] = seq
+    stamped.setdefault("_emitted_at", time.time())
+    # request_id: prefer event-supplied, else run_id, else empty.
+    request_id = event.get("request_id") or event.get("run_id") or ""
+    if request_id:
+        stamped.setdefault("_request_id", request_id)
+    handle.ring_buffer.append(seq, stamped, is_turn_boundary=is_turn_boundary)
+    _publish_to_subscribers(handle, stamped)
+
+
+def _publish_to_subscribers(
+    handle: SubprocessHandle, stamped: Dict[str, Any]
+) -> None:
+    """Best-effort fan-out to subscriber queues.
+
+    Unit 1.4 owns the subscriber contract; this function is a thin
+    placeholder that uses put_nowait and silently drops for slow
+    consumers. Unit 1.4 will add the slow-subscriber marker and
+    force-unsubscribe logic.
+    """
+    with handle.subscriber_lock:
+        subs = list(handle.subscribers)
+    for sub in subs:
+        try:
+            sub.put_nowait(stamped)
+        except queue.Full:
+            logger.debug(
+                "subscriber_full_drop",
+                conv_id=handle.conv_id,
+                seq_id=stamped.get("_seq_id"),
+            )
 
 
 def _handle_control_request(

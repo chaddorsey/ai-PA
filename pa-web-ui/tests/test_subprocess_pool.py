@@ -374,17 +374,17 @@ def test_stale_run_events_dropped(
             break
         time.sleep(0.01)
 
-    ring_before = len(handle.ring_buffer)
+    count_before = handle.ring_buffer.count
 
     # Late event from the completed run → should be dropped.
     proc.stdout.push_event({"type": "text", "run_id": "run-X", "content": "late"})
     time.sleep(0.1)
 
     # Ring buffer should NOT have grown for the stale event.
-    # (The result event did increase it; we compare post-result baseline.)
-    stale_events = [e for e in handle.ring_buffer if e.get("run_id") == "run-X"
-                    and e.get("type") == "text"]
-    assert not stale_events, "stale-run event should have been dropped"
+    count_after = handle.ring_buffer.count
+    assert count_after == count_before, (
+        f"stale-run event leaked into ring buffer: {count_before} -> {count_after}"
+    )
 
 
 def test_control_request_can_use_tool_allowed(
