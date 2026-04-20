@@ -576,8 +576,15 @@ def save_conversation_message(
     agent_name: str = None,
     request_id: str = None,
     extra_metadata: dict = None,
+    conversation_id: str = None,
 ) -> None:
-    """Save a conversation message to the database."""
+    """Save a conversation message to the database.
+
+    Phase 2: conversation_id is the Letta conv UUID the message belongs
+    to. When omitted (old Phase-1 call sites), the row is inserted with
+    NULL — the Phase-2 backfill thread sweeps NULL rows at startup and
+    fills them with the default conv UUID.
+    """
     try:
         meta = {}
         if request_id:
@@ -590,8 +597,9 @@ def save_conversation_message(
                 cur.execute(
                     """
                     INSERT INTO pa_web.conversations
-                    (session_id, role, message, agent_id, agent_name, metadata, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (session_id, role, message, agent_id, agent_name,
+                     metadata, created_at, conversation_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         session_id,
@@ -601,6 +609,7 @@ def save_conversation_message(
                         agent_name or "",
                         json.dumps(meta) if meta else None,
                         datetime.utcnow(),
+                        conversation_id,
                     ),
                 )
         logger.info("conversation_saved", session_id=session_id, role=role)
@@ -2191,6 +2200,7 @@ def _stream_direct_generator(
                 agent_id=MISSION_CONTROL_AGENT_ID,
                 agent_name="Mission Control",
                 request_id=request_id,
+                conversation_id=conv_id,
             )
         except Exception as exc:
             logger.error("direct_assistant_save_failed", error=str(exc))
@@ -2253,6 +2263,7 @@ def _dispatch_mission_control_direct(
             agent_id=MISSION_CONTROL_AGENT_ID,
             agent_name="Mission Control",
             request_id=request_id,
+            conversation_id=conversation_id,
         )
 
     # Subscribe AFTER send so the subscriber's seq_id floor excludes the
