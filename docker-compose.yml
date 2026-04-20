@@ -1432,9 +1432,68 @@ services:
       - PA_WEB_UI_INTERNAL_HOSTS=${PA_WEB_UI_INTERNAL_HOSTS:-pa-web-ui:5200,localhost:5200,127.0.0.1:5200}
       # CSRF signing secret (HMAC key). Persist across restarts to keep tokens valid.
       - PA_WEB_UI_CSRF_SECRET=${PA_WEB_UI_CSRF_SECRET:-}
+      # --- Phase 1 subprocess dispatch feature flag (Unit 1.1) ---
+      # Default off; Unit 1.5 adds the dispatch path that this gates.
+      - PA_WEB_UI_PHASE_1_ENABLED=${PA_WEB_UI_PHASE_1_ENABLED:-false}
     volumes:
       - ./pa-web-ui/static:/app/static
       - ./omnifocus-timer/logs:/data/timer-logs
+      # --- Crash-log path for the subprocess pool (Unit 1.6) ---
+      - ~/Library/Logs/pa-web-ui:/app/logs
+      # --- Curated workspace for the letta-code subprocess (Unit 1.1) ---
+      # Source-of-truth carve-out: docs/security/pa-web-ui-threat-model.md
+      # Approach: mount the repo root at /workspace-safe, then mask every
+      # secret-bearing path with either an anonymous volume (empties dirs)
+      # or a /dev/null read-only bind (empties files). Masks listed below
+      # are enforced by Docker at mount time — no secret listed here is
+      # visible to the subprocess regardless of what the agent attempts.
+      - .:/workspace-safe:rw
+      # ---- Mask secret directories (anonymous volumes present as empty) ----
+      - /workspace-safe/.git
+      - /workspace-safe/.letta
+      - /workspace-safe/.lteams
+      - /workspace-safe/auto-madden/credentials
+      - /workspace-safe/auto-madden/nfl-pro-scraper/credentials
+      - /workspace-safe/sports-and-media-tools/credentials
+      - /workspace-safe/sports-and-media-tools/fios-remote-control/.androidtvremote
+      - /workspace-safe/sports-and-media-tools/fios-remote-control/.androidtvremote2
+      - /workspace-safe/sports-and-media-tools/watch-history-service/credentials
+      - /workspace-safe/gmail-watch-service/credentials
+      - /workspace-safe/deployment/backups-tmpsave
+      - /workspace-safe/deployment/logs
+      - /workspace-safe/smaug-data/.state
+      - /workspace-safe/slackbot/state_store
+      - /workspace-safe/pa-web-ui/letta-credentials
+      - /workspace-safe/letta/exports
+      - /workspace-safe/letta/backups
+      - /workspace-safe/letta/env
+      # ---- Mask secret files (/dev/null overlay; reads return empty) ----
+      - /dev/null:/workspace-safe/.env:ro
+      - /dev/null:/workspace-safe/.env.bak:ro
+      - /dev/null:/workspace-safe/.env.backup:ro
+      - /dev/null:/workspace-safe/.env.backup.20251020_122035:ro
+      - /dev/null:/workspace-safe/cookies.txt:ro
+      - /dev/null:/workspace-safe/server.log:ro
+      - /dev/null:/workspace-safe/slack_auth_state.json:ro
+      - /dev/null:/workspace-safe/.granola-tokens.json:ro
+      - /dev/null:/workspace-safe/.granola-client.json:ro
+      - /dev/null:/workspace-safe/gws-bridge/credentials.json:ro
+      - /dev/null:/workspace-safe/lettabot/.env:ro
+      - /dev/null:/workspace-safe/scheduler-service/.env.test:ro
+      - /dev/null:/workspace-safe/letta/.granola_backfill_state.json:ro
+      - /dev/null:/workspace-safe/letta/.granola_cache_import_state.json:ro
+      - /dev/null:/workspace-safe/letta/.granola_mcp_import_state.json:ro
+      - /dev/null:/workspace-safe/letta/.granola_watcher_state.json:ro
+      - /dev/null:/workspace-safe/n8n_database_backup_20250924_224320.sql:ro
+      - /dev/null:/workspace-safe/n8n_backup_20250924_223949.tar.gz:ro
+      - /dev/null:/workspace-safe/n8n_data_backup_20250924_202545.tar.gz:ro
+      - /dev/null:/workspace-safe/workflows_backup_20250924_224358.json:ro
+      - /dev/null:/workspace-safe/docker-compose.yml.backup-20251208_085027:ro
+      # --- Memfs bind-mount (Unit 1.1) ---
+      # Host ~/.letta/agents/ holds MC's agent memory accumulated under LettaBot.
+      # Bind into the container at the letta-code resolver's $HOME-relative
+      # path so memfs hydrates from existing memory on first spawn.
+      - ${HOME}/.letta/agents:/root/.letta/agents:rw
     ports:
       - "5200:5200"
     healthcheck:
