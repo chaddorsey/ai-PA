@@ -1,0 +1,99 @@
+# .lettaignore — Letta Code file index exclusions
+#
+# Files and directories matching these patterns are excluded from the @ file
+# search index (cache). They won't appear in autocomplete results by default,
+# but can still be found if you type their path explicitly.
+#
+# Syntax: one pattern per line, supports globs (e.g. *.log, src/generated/**)
+# Lines starting with # are comments.
+#
+# The following are always excluded (even from explicit search) and do not need
+# to be listed here:
+#   node_modules  dist  build  out  coverage  target  bower_components
+#   .git  .cache  .next  .nuxt  venv  .venv  __pycache__  .tox
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Cargo.lock
+
+# Logs
+*.log
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# ----------------------------------------------------------------------
+# SECURITY EXCLUSIONS (Phase 1 — pa-web-ui direct letta-code migration)
+#
+# These patterns block Letta-code's file tools (Read / Edit / Write / Glob
+# / Grep) from accessing secret-bearing paths. Bash is NOT affected by
+# this file — the bind-mount scope in docker-compose.yml is the primary
+# defense for Bash. Keep this file in sync with the carve-out inventory
+# at docs/security/pa-web-ui-threat-model.md.
+# ----------------------------------------------------------------------
+
+# Environment / secrets
+.env
+.env.*
+.env.backup
+.env.bak
+.env.backup.*
+.env.local
+.env.production
+.env.test
+**/.env
+**/.env.*
+
+# OAuth tokens and API credentials
+.granola-tokens.json
+.granola-client.json
+**/credentials/
+**/*credentials*.json
+**/credentials.json
+pa-web-ui/letta-credentials/
+
+# Private keys and certificates
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+**/.androidtvremote/
+**/.androidtvremote2/
+
+# Session / OAuth state
+slack_auth_state.json
+.letta/settings.local.json
+smaug-data/.state/
+slackbot/state_store/
+letta/.granola_*_state.json
+
+# Database backups and dumps
+*.sql
+*.sql.gz
+*.dump
+deployment/backups-tmpsave/
+n8n_database_backup_*.sql
+
+# Browser / session persistence
+**/browser_states/
+
+# Exports and backups that may embed secrets
+letta/exports/
+letta/backups/
+deployment/logs/
+
+# SSH material (defense in depth)
+**/id_rsa*
+**/id_ed25519*
+**/known_hosts
+**/authorized_keys
+**/.ssh/
+
+# Generic wildcards
+**/*secret*
+**/*token*

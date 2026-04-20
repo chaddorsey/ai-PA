@@ -1,5 +1,28 @@
 // Task Review Sidebar — Mission Control for extracted tasks
 
+// CSRF token loader — shared with chat.js via window.__paCsrfReady / __paCsrfToken.
+// Idempotent: only fetches if chat.js hasn't already kicked it off.
+(function ensurePaCsrfReady() {
+  if (window.__paCsrfReady) return;
+  window.__paCsrfReady = fetch('/api/csrf-token', { credentials: 'same-origin' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (data && data.csrf_token) window.__paCsrfToken = data.csrf_token;
+      return window.__paCsrfToken;
+    })
+    .catch((err) => {
+      console.warn('[csrf] sidebar token fetch failed', err);
+      return null;
+    });
+})();
+
+async function paCsrfHeaders(extra) {
+  const base = Object.assign({}, extra || {});
+  try { await window.__paCsrfReady; } catch (_) { /* ignore */ }
+  if (window.__paCsrfToken) base['X-CSRF-Token'] = window.__paCsrfToken;
+  return base;
+}
+
 class TaskSidebar {
   constructor() {
     this.tasks = [];
@@ -383,7 +406,7 @@ class TaskSidebar {
         try {
           const resp = await fetch(`/api/tasks/${refId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ task_description: newText }),
           });
           if (!resp.ok) {
@@ -720,7 +743,7 @@ class TaskSidebar {
     if (task && taskName !== task.description) {
       await fetch(`/api/tasks/${refId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ task_description: taskName }),
       });
       task.description = taskName;
@@ -732,7 +755,7 @@ class TaskSidebar {
     // Create OmniFocus task
     const createResp = await fetch('/api/tasks/omnifocus-create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         name: taskName,
         projectId: this.selectedProjectId,
@@ -752,7 +775,7 @@ class TaskSidebar {
     // Transition to confirmed
     const transResp = await fetch(`/api/tasks/${refId}/transition`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         action: 'confirm',
         omnifocus_task_id: omnifocusTaskId,
@@ -822,7 +845,7 @@ class TaskSidebar {
       // Fire-and-forget: queue it via the 'next' command (includes OmniFocus sync)
       fetch('/api/tasks/widget-queue', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'next', taskId: omnifocusTaskId }),
       }).then(resp => {
         if (resp.ok) return resp.json();
@@ -937,7 +960,7 @@ class TaskSidebar {
     try {
       const resp = await fetch(`/api/tasks/${refId}/transition`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action: 'reject' }),
       });
 
@@ -988,7 +1011,7 @@ class TaskSidebar {
       try {
         const resp = await fetch(`/api/tasks/${refId}/transition`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ action: 'reject' }),
         });
         if (resp.ok) {
@@ -1044,7 +1067,7 @@ class TaskSidebar {
     try {
       const resp = await fetch('/api/tasks/merge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ref_ids: refIds,
           merged_task_description: description,
@@ -1119,7 +1142,7 @@ class TaskSidebar {
         try {
           await fetch(`/api/tasks/${refId}`, {
             method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
+            headers: await paCsrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({ estimate_minutes: parsed }),
           });
         } catch { /* silent */ }

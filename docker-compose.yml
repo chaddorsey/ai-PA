@@ -1423,6 +1423,15 @@ services:
       - FOLLOWUP_QUEUE=/data/timer-logs/pending-followups.jsonl
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
       - SLACK_USER_TOKEN=${SLACK_MCP_XOXP_TOKEN}
+      # --- Ingress guard (Unit 1.0 / R29) ---
+      # Browsers must present one of these Origins on POST/PATCH/DELETE.
+      - PA_WEB_UI_ALLOWED_ORIGINS=${PA_WEB_UI_ALLOWED_ORIGINS:-http://localhost:5200,http://pa-web-ui.local:5200}
+      # Host header allowlist (DNS-rebind mitigation).
+      - PA_WEB_UI_ALLOWED_HOSTS=${PA_WEB_UI_ALLOWED_HOSTS:-localhost:5200,pa-web-ui:5200,pa-web-ui.local:5200,127.0.0.1:5200}
+      # Internal traffic (pa-routing-handler -> pa-web-ui, healthcheck, etc.)
+      - PA_WEB_UI_INTERNAL_HOSTS=${PA_WEB_UI_INTERNAL_HOSTS:-pa-web-ui:5200,localhost:5200,127.0.0.1:5200}
+      # CSRF signing secret (HMAC key). Persist across restarts to keep tokens valid.
+      - PA_WEB_UI_CSRF_SECRET=${PA_WEB_UI_CSRF_SECRET:-}
     volumes:
       - ./pa-web-ui/static:/app/static
       - ./omnifocus-timer/logs:/data/timer-logs

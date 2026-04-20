@@ -132,6 +132,11 @@ def build_web_ui_system_reminder() -> str:
 app = Flask(__name__)
 CORS(app)
 
+# HTTP ingress guard: Origin allowlist + CSRF double-submit + Host allowlist.
+# Runs before route dispatch on all requests. See docs/security/pa-web-ui-threat-model.md.
+from ingress_guard import configure_ingress_guard
+configure_ingress_guard(app)
+
 # Configuration from environment
 ROUTING_HANDLER_URL = os.getenv(
     "PA_ROUTING_HANDLER_URL", "http://pa-routing-handler:5201"

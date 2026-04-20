@@ -106,6 +106,9 @@ class ChatUI {
         this.sessionId = this.getOrCreateSessionId();
         this.statusIndicator = null;
 
+        this.csrfToken = null;
+        this.csrfReady = this.loadCsrfToken();
+
         // Thread tracking for contextual routing and threaded UI
         this.threads = new Map(); // request_id -> { userMessage, agentId, agentName, response, status, element }
 
@@ -145,6 +148,36 @@ class ChatUI {
             localStorage.setItem(STORAGE_KEY, sessionId);
         }
         return sessionId;
+    }
+
+    async loadCsrfToken() {
+        try {
+            const resp = await fetch('/api/csrf-token', { credentials: 'same-origin' });
+            if (!resp.ok) {
+                console.warn('[csrf] token fetch returned', resp.status);
+                return;
+            }
+            const data = await resp.json();
+            this.csrfToken = data.csrf_token || null;
+            if (this.csrfToken) {
+                window.__paCsrfToken = this.csrfToken;
+            }
+        } catch (err) {
+            console.warn('[csrf] token fetch failed', err);
+        }
+    }
+
+    async getCsrfToken() {
+        if (this.csrfToken) return this.csrfToken;
+        await this.csrfReady;
+        return this.csrfToken;
+    }
+
+    async csrfHeaders(extra = {}) {
+        const token = await this.getCsrfToken();
+        const headers = { ...extra };
+        if (token) headers['X-CSRF-Token'] = token;
+        return headers;
     }
 
     generateSessionId() {
@@ -941,7 +974,8 @@ class ChatUI {
         try {
             await fetch('/api/feedback', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     session_id: this.sessionId,
                     request_id: requestId,
@@ -995,7 +1029,8 @@ class ChatUI {
     async streamResponse(message, explicitAgentId, threadCard, tempId, learningSignals = {}) {
         const response = await fetch('/stream', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
             body: JSON.stringify({
                 message,
                 agent_id: explicitAgentId,
@@ -1018,6 +1053,7 @@ class ChatUI {
         let hasReceivedContent = false;
         let lastUsageData = null;
         let toolCallsMade = [];  // Track tool calls for completion message
+        let hadNonTextEvent = false;  // Track if a non-text event occurred between text chunks
         let sseBuffer = '';  // Buffer for handling split SSE messages
 
         while (true) {
@@ -1076,6 +1112,7 @@ class ChatUI {
                             this.updateThreadCardStatus(threadCard, `Connected to ${agentName}...`);
                             this.scrollToBottom();
                         } else if (event.type === 'tool_call') {
+                            hadNonTextEvent = true;
                             // Show contextual status for tool calls
                             const toolName = event.tool || 'unknown';
                             toolCallsMade.push(toolName);  // Track for completion message
@@ -1086,6 +1123,7 @@ class ChatUI {
                                 this.scrollToBottom();
                             }
                         } else if (event.type === 'tool_result') {
+                            hadNonTextEvent = true;
                             // Tool result from LettaBot - show in collapsible detail
                             const toolContent = event.content || '';
                             const isError = event.is_error || false;
@@ -1111,6 +1149,16 @@ class ChatUI {
                                 continue;
                             }
                             hasReceivedContent = true;
+                            // Add separator between distinct message segments (after tool calls)
+                            // but NOT between streaming tokens within the same message
+                            if (hadNonTextEvent && content.length > 0 && event.content.length > 0) {
+                                const lastChar = content[content.length - 1];
+                                const firstChar = event.content[0];
+                                if (!/\s/.test(lastChar) && !/\s/.test(firstChar)) {
+                                    content += ' ';
+                                }
+                            }
+                            hadNonTextEvent = false;
                             content += event.content;
                             console.log('[SSE] *** TEXT EVENT RECEIVED ***', {
                                 contentLength: event.content?.length,
