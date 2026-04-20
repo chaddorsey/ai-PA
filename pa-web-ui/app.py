@@ -137,6 +137,13 @@ CORS(app)
 from ingress_guard import configure_ingress_guard
 configure_ingress_guard(app)
 
+# Letta-code subprocess pool (Phase 1 Unit 1.2). Module-level singleton.
+# Not invoked by any route yet — Unit 1.5 adds the /stream dispatch that
+# uses it behind PA_WEB_UI_PHASE_1_ENABLED. Instantiating here so the
+# SIGTERM handler registers before Flask starts accepting requests.
+from subprocess_pool import get_registry
+subprocess_registry = get_registry()
+
 # Configuration from environment
 ROUTING_HANDLER_URL = os.getenv(
     "PA_ROUTING_HANDLER_URL", "http://pa-routing-handler:5201"
