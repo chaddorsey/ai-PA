@@ -449,6 +449,11 @@ class SubprocessHandle:
     in_flight_device_id: Optional[str] = None
     in_flight_started_at: float = 0.0
 
+    # Fork lock (Phase 2 Unit 2.1). Set while a fork-from-this-conv
+    # Letta round-trip is in flight; send() treats as turn-locked so
+    # a concurrent tab can't start a new turn mid-fork (TOCTOU guard).
+    forking: bool = False
+
     # Activity tracking.
     last_used_at: float = field(default_factory=time.time)
     current_seq_id: int = 0
@@ -504,6 +509,7 @@ class SubprocessHandle:
                 "event_count": self.event_count,
                 "in_flight": self.in_flight,
                 "in_flight_device_id": self.in_flight_device_id,
+                "forking": self.forking,
                 "subscriber_count": len(self.subscribers),
                 "init_state": dict(self.init_state),
                 "ring_buffer": self.ring_buffer.snapshot_for_status(),
@@ -810,7 +816,7 @@ class SubprocessRegistry:
             raise SubprocessDeadError(f"handle for {handle.conv_id} is dead")
 
         with handle.state_lock:
-            if handle.in_flight:
+            if handle.in_flight or handle.forking:
                 raise TurnLockedException(
                     conv_id=handle.conv_id,
                     current_device_id=handle.in_flight_device_id,

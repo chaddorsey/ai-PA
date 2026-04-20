@@ -7,7 +7,7 @@ import re
 import threading
 import time
 import uuid
-from typing import Generator, Optional
+from typing import Any, Dict, Generator, Optional
 
 import httpx
 
@@ -152,6 +152,15 @@ PA_WEB_UI_PHASE_1_ENABLED = os.environ.get(
     "PA_WEB_UI_PHASE_1_ENABLED", "false"
 ).strip().lower() in ("true", "1", "yes", "on")
 
+PA_WEB_UI_PHASE_2_ENABLED = os.environ.get(
+    "PA_WEB_UI_PHASE_2_ENABLED", "false"
+).strip().lower() in ("true", "1", "yes", "on")
+
+# Phase 2 backfill gate. Mutation routes (POST/PATCH/DELETE/fork) return
+# HTTP 503 "backfill_in_progress" until the background migration finishes.
+# Read routes serve during backfill (data pre-backfill is still valid history).
+_PHASE2_BACKFILL_COMPLETE = threading.Event()
+
 # Configuration from environment
 ROUTING_HANDLER_URL = os.getenv(
     "PA_ROUTING_HANDLER_URL", "http://pa-routing-handler:5201"
@@ -177,15 +186,20 @@ DATABASE_URL = os.getenv(
 
 
 def ensure_pa_web_schema():
-    """Create pa_web schema and tables if they don't exist."""
+    """Create or migrate pa_web schema. Idempotent on every boot.
+
+    Phase 1 originally returned early if the schema existed. Phase 2's
+    DDL (ADD COLUMN, RENAME COLUMN, new conversation_meta table) must
+    run on existing deploys, so the early-return is gone. All statements
+    use `IF NOT EXISTS` idempotency; the one exception (RENAME COLUMN,
+    which has no IF EXISTS form) is wrapped in an information_schema
+    type-check guard so the second boot is a no-op.
+    """
     try:
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'pa_web'")
-                if cur.fetchone():
-                    return
-                logger.info("pa_web_schema_missing", action="creating")
+                # Phase-1 baseline DDL — every statement already idempotent.
                 cur.execute("""
                     CREATE SCHEMA IF NOT EXISTS pa_web;
 
@@ -243,12 +257,183 @@ def ensure_pa_web_schema():
                     CREATE INDEX IF NOT EXISTS idx_thread_exchanges_request ON pa_web.thread_exchanges(request_id);
                     CREATE INDEX IF NOT EXISTS idx_response_feedback_session ON pa_web.response_feedback(session_id);
                 """)
+
+                # --- Phase 2 Unit 2.1: schema extension (idempotent) ---
+
+                # Rename the dead INTEGER response_feedback.conversation_id
+                # to local_conversation_pk so we can reuse the conversation_id
+                # name for the new TEXT Letta-UUID column. The rename is
+                # guarded by information_schema: it only fires when the
+                # column still has its old INTEGER shape. After the first
+                # successful boot under Phase 2, this guard short-circuits.
+                cur.execute("""
+                    DO $$
+                    BEGIN
+                      IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                         WHERE table_schema='pa_web'
+                           AND table_name='response_feedback'
+                           AND column_name='conversation_id'
+                           AND data_type='integer'
+                      ) THEN
+                        ALTER TABLE pa_web.response_feedback
+                          RENAME COLUMN conversation_id TO local_conversation_pk;
+                      END IF;
+                    END $$;
+                """)
+
+                # Add new TEXT conversation_id to all four tables.
+                cur.execute("""
+                    ALTER TABLE pa_web.conversations
+                      ADD COLUMN IF NOT EXISTS conversation_id TEXT;
+                    ALTER TABLE pa_web.routing_signals
+                      ADD COLUMN IF NOT EXISTS conversation_id TEXT;
+                    ALTER TABLE pa_web.thread_exchanges
+                      ADD COLUMN IF NOT EXISTS conversation_id TEXT;
+                    ALTER TABLE pa_web.response_feedback
+                      ADD COLUMN IF NOT EXISTS conversation_id TEXT;
+                """)
+
+                # Conversation-level metadata table. See the Phase 2 plan
+                # Key Technical Decisions: per-conv attributes (label,
+                # parent link, user_renamed gate) live here 1:1 with
+                # Letta conversation UUIDs; per-message data stays in
+                # pa_web.conversations.
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS pa_web.conversation_meta (
+                        conversation_id TEXT PRIMARY KEY,
+                        agent_id TEXT NOT NULL,
+                        session_id TEXT,
+                        label TEXT,
+                        parent_conversation_id TEXT,
+                        user_renamed BOOLEAN NOT NULL DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        renamed_at TIMESTAMP,
+                        metadata JSONB
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_conversation_meta_agent
+                      ON pa_web.conversation_meta(agent_id);
+                    CREATE INDEX IF NOT EXISTS idx_conversations_conv_id
+                      ON pa_web.conversations(conversation_id);
+                    CREATE INDEX IF NOT EXISTS idx_thread_exchanges_conv_id
+                      ON pa_web.thread_exchanges(conversation_id);
+                """)
+
             conn.commit()
-            logger.info("pa_web_schema_created")
+            logger.info("pa_web_schema_ready")
         finally:
             conn.close()
     except Exception as e:
         logger.error("pa_web_schema_creation_failed", error=str(e))
+
+
+def _resolve_mc_default_conv_uuid() -> Optional[str]:
+    """Resolve MC's "default" alias to its real Letta conversation UUID.
+
+    See docs/reference/letta-default-alias-resolution.md. The resolver
+    uses the `order_by=last_message_at&limit=1` path; returns the conv
+    UUID of MC's most-recently-active conversation, which IS the one
+    letta-code's "default" alias routes to server-side.
+    """
+    try:
+        resp = http_client.get(
+            f"{LETTA_BASE_URL}/v1/conversations/",
+            params={
+                "agent_id": MISSION_CONTROL_AGENT_ID,
+                "order_by": "last_message_at",
+                "limit": 1,
+            },
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        convs = resp.json()
+        if not convs:
+            return None
+        return convs[0]["id"]
+    except Exception as exc:
+        logger.error("default_conv_resolve_failed", error=str(exc))
+        return None
+
+
+def _phase2_backfill_once() -> None:
+    """Background-thread backfill. Runs once after Flask starts serving.
+
+    1. Resolve MC's default conv UUID.
+    2. Batched UPDATE on the four pa_web tables — fill conversation_id
+       for rows where NULL.
+    3. INSERT conversation_meta row for the default conv (labeled "Main").
+    Sets _PHASE2_BACKFILL_COMPLETE when done; mutation routes gate on it.
+
+    Idempotent: re-running is a no-op (UPDATEs find no NULL rows; INSERT
+    uses ON CONFLICT DO NOTHING).
+    """
+    try:
+        default_uuid = _resolve_mc_default_conv_uuid()
+        if not default_uuid:
+            logger.warning("phase2_backfill_skipped_no_default_conv")
+            _PHASE2_BACKFILL_COMPLETE.set()
+            return
+
+        logger.info("phase2_backfill_begin", default_uuid=default_uuid)
+        batch = int(os.environ.get("PA_WEB_UI_BACKFILL_BATCH", "1000"))
+        total_updated = 0
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                for table in ("conversations", "routing_signals",
+                              "thread_exchanges", "response_feedback"):
+                    while True:
+                        cur.execute(f"""
+                            WITH todo AS (
+                              SELECT id FROM pa_web.{table}
+                               WHERE conversation_id IS NULL
+                               LIMIT %s
+                            )
+                            UPDATE pa_web.{table} t
+                               SET conversation_id = %s
+                              FROM todo
+                             WHERE t.id = todo.id
+                        """, (batch, default_uuid))
+                        n = cur.rowcount
+                        conn.commit()
+                        total_updated += n
+                        if n == 0:
+                            break
+
+                # Insert Main meta row (idempotent).
+                cur.execute("""
+                    INSERT INTO pa_web.conversation_meta
+                    (conversation_id, agent_id, session_id, label,
+                     parent_conversation_id, user_renamed, created_at, metadata)
+                    VALUES (%s, %s, NULL, %s, NULL, TRUE, NOW(), NULL)
+                    ON CONFLICT (conversation_id) DO NOTHING
+                """, (default_uuid, MISSION_CONTROL_AGENT_ID, "Main"))
+                conn.commit()
+
+        logger.info(
+            "phase2_backfill_complete",
+            default_uuid=default_uuid,
+            rows_updated=total_updated,
+        )
+    except Exception as exc:
+        logger.error("phase2_backfill_failed", error=str(exc))
+    finally:
+        _PHASE2_BACKFILL_COMPLETE.set()
+
+
+def _start_phase2_backfill_thread() -> None:
+    """Fire the backfill thread after Flask has bound. Called from
+    app startup after the HTTP server is ready.
+    """
+    def _run():
+        # Small delay to let Flask finish starting before we block the
+        # first DB connection on a potentially-slow UPDATE.
+        time.sleep(3)
+        _phase2_backfill_once()
+
+    t = threading.Thread(target=_run, name="phase2-backfill", daemon=True)
+    t.start()
 
 
 @contextmanager
@@ -305,26 +490,49 @@ def save_conversation_message(
         logger.error("conversation_save_failed", error=str(e))
 
 
-def get_conversation_history(session_id: str, limit: int = 100) -> list:
-    """Get conversation history for a session."""
+def get_conversation_history(
+    session_id: str, limit: int = 100, conversation_id: str = None
+) -> list:
+    """Get conversation history for a session.
+
+    Phase 2: optional `conversation_id` filter restricts to rows from
+    the given Letta conv UUID. Back-compat: when None, returns all rows
+    for the session (original Phase-1 behavior).
+    """
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 # Get most recent N messages, then order them chronologically for display
-                cur.execute(
-                    """
-                    SELECT * FROM (
-                        SELECT id, session_id, role, message, agent_id, agent_name,
-                               metadata, created_at
-                        FROM pa_web.conversations
-                        WHERE session_id = %s
-                        ORDER BY created_at DESC
-                        LIMIT %s
-                    ) sub
-                    ORDER BY created_at ASC
-                    """,
-                    (session_id, limit),
-                )
+                if conversation_id:
+                    cur.execute(
+                        """
+                        SELECT * FROM (
+                            SELECT id, session_id, role, message, agent_id, agent_name,
+                                   metadata, created_at, conversation_id
+                            FROM pa_web.conversations
+                            WHERE session_id = %s AND conversation_id = %s
+                            ORDER BY created_at DESC
+                            LIMIT %s
+                        ) sub
+                        ORDER BY created_at ASC
+                        """,
+                        (session_id, conversation_id, limit),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT * FROM (
+                            SELECT id, session_id, role, message, agent_id, agent_name,
+                                   metadata, created_at
+                            FROM pa_web.conversations
+                            WHERE session_id = %s
+                            ORDER BY created_at DESC
+                            LIMIT %s
+                        ) sub
+                        ORDER BY created_at ASC
+                        """,
+                        (session_id, limit),
+                    )
                 rows = cur.fetchall()
                 # Convert to list of dicts with proper serialization
                 result = []
@@ -414,9 +622,15 @@ def save_response_feedback(
     actual_agent_name: str = None,
     intended_agent_id: str = None,
     intended_agent_name: str = None,
-    conversation_id: int = None,
+    local_conversation_pk: int = None,
+    conversation_id: str = None,
 ) -> None:
-    """Save user feedback on a response (thumbs up/down or agent correction)."""
+    """Save user feedback on a response (thumbs up/down or agent correction).
+
+    Phase 2 renames of `response_feedback.conversation_id INTEGER`
+    → `local_conversation_pk`, and adds a new TEXT `conversation_id`
+    column for Letta conv UUIDs. Both are optional for back-compat.
+    """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -424,8 +638,9 @@ def save_response_feedback(
                     """
                     INSERT INTO pa_web.response_feedback
                     (session_id, request_id, feedback_type, actual_agent_id, actual_agent_name,
-                     intended_agent_id, intended_agent_name, conversation_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     intended_agent_id, intended_agent_name, local_conversation_pk,
+                     conversation_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         session_id,
@@ -435,6 +650,7 @@ def save_response_feedback(
                         actual_agent_name or "",
                         intended_agent_id,
                         intended_agent_name,
+                        local_conversation_pk,
                         conversation_id,
                         datetime.utcnow(),
                     ),
@@ -513,6 +729,392 @@ def subprocess_events(conv_id: str):
         "total": len(events),
         "tail": events[-n:],
     })
+
+
+# =====================================================================
+# Phase 2 — first-class conversations: list, create, rename, delete, fork
+# All routes gated by PA_WEB_UI_PHASE_2_ENABLED + ingress_guard.
+# See docs/plans/2026-04-20-002-feat-pa-web-ui-conversation-switcher-plan.md
+# =====================================================================
+
+
+def _phase2_precondition_check() -> Optional[tuple]:
+    """Shared gate for Phase-2 mutation routes. Returns None if ok;
+    else a (response, status) tuple to `return *` from the caller."""
+    if not PA_WEB_UI_PHASE_2_ENABLED:
+        return jsonify({
+            "error": "feature_disabled",
+            "flag": "PA_WEB_UI_PHASE_2_ENABLED",
+        }), 503
+    if not _PHASE2_BACKFILL_COMPLETE.is_set():
+        return jsonify({"error": "backfill_in_progress"}), 503
+    return None
+
+
+def _phase2_read_gate() -> Optional[tuple]:
+    """Read routes only gate on flag; backfill-in-progress is fine."""
+    if not PA_WEB_UI_PHASE_2_ENABLED:
+        return jsonify({
+            "error": "feature_disabled",
+            "flag": "PA_WEB_UI_PHASE_2_ENABLED",
+        }), 503
+    return None
+
+
+UUID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{3,100}$")
+
+
+def _is_valid_conv_id(conv_id: Any) -> bool:
+    return isinstance(conv_id, str) and bool(UUID_RE.match(conv_id))
+
+
+def _letta_conversations_list(agent_id: str, limit: int = 100) -> list:
+    """Fetch conv list from Letta, ordered most-recently-active first."""
+    resp = http_client.get(
+        f"{LETTA_BASE_URL}/v1/conversations/",
+        params={
+            "agent_id": agent_id,
+            "order_by": "last_message_at",
+            "limit": limit,
+        },
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _conversation_meta_rows(conv_ids: list) -> Dict[str, Dict[str, Any]]:
+    """Fetch pa_web.conversation_meta rows for a set of conv_ids."""
+    if not conv_ids:
+        return {}
+    with get_db_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT conversation_id, agent_id, session_id, label,
+                       parent_conversation_id, user_renamed,
+                       created_at, renamed_at, metadata
+                  FROM pa_web.conversation_meta
+                 WHERE conversation_id = ANY(%s)
+                """,
+                (conv_ids,),
+            )
+            return {row["conversation_id"]: dict(row) for row in cur.fetchall()}
+
+
+@app.route("/api/conversations", methods=["GET"])
+def list_conversations():
+    """List MC's conversations. Letta server is the canonical source;
+    we LEFT-JOIN pa_web.conversation_meta for local metadata (label,
+    parent link, user_renamed).
+    """
+    gate = _phase2_read_gate()
+    if gate is not None:
+        return gate
+    try:
+        letta_convs = _letta_conversations_list(MISSION_CONTROL_AGENT_ID, limit=100)
+    except Exception as exc:
+        logger.error("list_conversations_letta_failed", error=str(exc))
+        return jsonify({"error": "letta_unreachable"}), 502
+
+    conv_ids = [c["id"] for c in letta_convs]
+    meta_rows = _conversation_meta_rows(conv_ids)
+
+    result = []
+    for c in letta_convs:
+        cid = c["id"]
+        meta = meta_rows.get(cid, {})
+        result.append({
+            "id": cid,
+            "agent_id": c["agent_id"],
+            "label": meta.get("label"),
+            "parent_conversation_id": meta.get("parent_conversation_id"),
+            "user_renamed": meta.get("user_renamed", False),
+            "last_message_at": c.get("last_message_at"),
+            "created_at": c.get("created_at"),
+        })
+    return jsonify({"conversations": result})
+
+
+@app.route("/api/conversations", methods=["POST"])
+def create_conversation():
+    """Create a new Letta conversation + pa_web.conversation_meta row."""
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+
+    data = request.get_json(force=True, silent=True) or {}
+    label = data.get("label")
+    agent_id = data.get("agent_id") or MISSION_CONTROL_AGENT_ID
+
+    if label is not None:
+        if not isinstance(label, str):
+            return jsonify({"error": "label_must_be_string"}), 400
+        label = label.strip()[:200] or None
+
+    user_set = bool(label)
+    if not user_set:
+        label = f"New conversation {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+
+    try:
+        resp = http_client.post(
+            f"{LETTA_BASE_URL}/v1/conversations/",
+            params={"agent_id": agent_id},
+            json={"label": label},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        letta_conv = resp.json()
+    except Exception as exc:
+        logger.error("create_conversation_letta_failed", error=str(exc))
+        return jsonify({"error": "letta_create_failed"}), 502
+
+    conv_id = letta_conv.get("id")
+    if not _is_valid_conv_id(conv_id):
+        logger.error("create_conversation_malformed_response", response=letta_conv)
+        return jsonify({"error": "letta_malformed_response"}), 502
+
+    device_id = request.cookies.get("pa_device_id", "").strip() or None
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO pa_web.conversation_meta
+                    (conversation_id, agent_id, session_id, label,
+                     parent_conversation_id, user_renamed, created_at)
+                    VALUES (%s, %s, %s, %s, NULL, %s, NOW())
+                    """,
+                    (conv_id, agent_id, device_id, label, user_set),
+                )
+            conn.commit()
+    except Exception as exc:
+        logger.error("conversation_meta_insert_failed", error=str(exc), conv_id=conv_id)
+        # Roll back the Letta conv to avoid orphans.
+        try:
+            http_client.delete(f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/", timeout=5.0)
+        except Exception:
+            pass
+        return jsonify({"error": "conversation_meta_insert_failed"}), 500
+
+    return jsonify({
+        "id": conv_id,
+        "agent_id": agent_id,
+        "label": label,
+        "user_renamed": user_set,
+        "parent_conversation_id": None,
+        "created_at": letta_conv.get("created_at"),
+    }), 201
+
+
+@app.route("/api/conversations/<conv_id>", methods=["PATCH"])
+def rename_conversation(conv_id: str):
+    """Rename a conversation (sets user_renamed=TRUE)."""
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+    if not _is_valid_conv_id(conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_label = data.get("label")
+    if not isinstance(new_label, str) or not new_label.strip():
+        return jsonify({"error": "label_required"}), 400
+    new_label = new_label.strip()[:200]
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE pa_web.conversation_meta
+                       SET label = %s,
+                           user_renamed = TRUE,
+                           renamed_at = NOW()
+                     WHERE conversation_id = %s
+                    """,
+                    (new_label, conv_id),
+                )
+                if cur.rowcount == 0:
+                    return jsonify({"error": "not_found"}), 404
+            conn.commit()
+    except Exception as exc:
+        logger.error("rename_conversation_failed", error=str(exc), conv_id=conv_id)
+        return jsonify({"error": "rename_failed"}), 500
+
+    return jsonify({"id": conv_id, "label": new_label, "user_renamed": True})
+
+
+@app.route("/api/conversations/<conv_id>", methods=["DELETE"])
+def delete_conversation(conv_id: str):
+    """Hard-delete: remove from all pa_web tables + Letta server.
+
+    Client's 10s undo toast fires this after the timer expires.
+    """
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+    if not _is_valid_conv_id(conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+
+    # Notify any attached SSE subscribers before we kill their handle.
+    handle = subprocess_registry._handles.get(conv_id)
+    if handle is not None:
+        marker = {
+            "type": "conversation_deleted",
+            "conv_id": conv_id,
+            "_seq_id": 0,
+            "_emitted_at": time.time(),
+        }
+        with handle.subscriber_lock:
+            subs = list(handle.subscribers)
+        for sub in subs:
+            try:
+                sub.put_nowait(marker)
+            except queue.Full:
+                pass
+        subprocess_registry.invalidate(conv_id)
+
+    # Delete from all 5 pa_web tables in one transaction.
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM pa_web.conversations WHERE conversation_id = %s", (conv_id,))
+                cur.execute("DELETE FROM pa_web.thread_exchanges WHERE conversation_id = %s", (conv_id,))
+                cur.execute("DELETE FROM pa_web.routing_signals WHERE conversation_id = %s", (conv_id,))
+                cur.execute("DELETE FROM pa_web.response_feedback WHERE conversation_id = %s", (conv_id,))
+                cur.execute("DELETE FROM pa_web.conversation_meta WHERE conversation_id = %s", (conv_id,))
+            conn.commit()
+    except Exception as exc:
+        logger.error("delete_conversation_db_failed", error=str(exc), conv_id=conv_id)
+        return jsonify({"error": "db_delete_failed"}), 500
+
+    # Letta server copy — outside the transaction. If it fails, log and
+    # continue; the local delete has already committed.
+    try:
+        resp = http_client.delete(
+            f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/",
+            timeout=5.0,
+        )
+        if resp.status_code >= 400:
+            logger.warning(
+                "delete_conversation_letta_error",
+                conv_id=conv_id,
+                status=resp.status_code,
+            )
+    except Exception as exc:
+        logger.warning("delete_conversation_letta_exception", error=str(exc), conv_id=conv_id)
+
+    return jsonify({"id": conv_id, "status": "deleted"})
+
+
+@app.route("/api/conversations/<conv_id>/fork", methods=["POST"])
+def fork_conversation(conv_id: str):
+    """Fork a conversation via Letta. Atomic turn-lock check via
+    handle.state_lock + `forking` flag.
+
+    Memory-block caveat: Letta's fork shares agent-level blocks between
+    parent and fork (Branch B; see docs/reference/letta-conversations-fork.md).
+    The client UX is responsible for showing a banner — server doesn't
+    restrict the fork itself.
+    """
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+    if not _is_valid_conv_id(conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    raw_label = data.get("label")
+    label = raw_label.strip()[:200] if isinstance(raw_label, str) and raw_label.strip() else None
+    user_set_label = bool(label)
+    if not user_set_label:
+        label = f"Fork {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+    parent_request_id = data.get("parent_request_id") if isinstance(data.get("parent_request_id"), str) else None
+
+    # Verify parent exists in conversation_meta.
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT agent_id FROM pa_web.conversation_meta WHERE conversation_id = %s",
+                (conv_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return jsonify({"error": "parent_not_found"}), 410
+            parent_agent_id = row[0]
+
+    # Atomic turn-lock: under the parent handle's state_lock, verify
+    # not in_flight / not already forking, then set forking=True.
+    handle = subprocess_registry._handles.get(conv_id)
+    if handle is not None:
+        with handle.state_lock:
+            if handle.in_flight or handle.forking:
+                return jsonify({
+                    "error": "parent_conversation_streaming",
+                    "conv_id": conv_id,
+                    "current_device_id": handle.in_flight_device_id,
+                    "seq_id": handle.current_seq_id,
+                }), 409
+            handle.forking = True
+
+    try:
+        # Call Letta's fork endpoint.
+        try:
+            resp = http_client.post(
+                f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/fork/",
+                params={"agent_id": parent_agent_id},
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            letta_conv = resp.json()
+        except Exception as exc:
+            logger.error("fork_conversation_letta_failed", error=str(exc), conv_id=conv_id)
+            return jsonify({"error": "letta_fork_failed"}), 502
+
+        child_id = letta_conv.get("id")
+        if not _is_valid_conv_id(child_id):
+            logger.error("fork_conversation_malformed_response", response=letta_conv)
+            return jsonify({"error": "letta_malformed_fork_response"}), 502
+
+        device_id = request.cookies.get("pa_device_id", "").strip() or None
+        metadata = {"forked_at_request_id": parent_request_id} if parent_request_id else None
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO pa_web.conversation_meta
+                        (conversation_id, agent_id, session_id, label,
+                         parent_conversation_id, user_renamed, created_at, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s, NOW(), %s)
+                        """,
+                        (child_id, parent_agent_id, device_id, label,
+                         conv_id, user_set_label,
+                         json.dumps(metadata) if metadata else None),
+                    )
+                conn.commit()
+        except Exception as exc:
+            logger.error("fork_conversation_meta_insert_failed", error=str(exc), child_id=child_id)
+            # Best effort: tear down the orphan fork on Letta.
+            try:
+                http_client.delete(f"{LETTA_BASE_URL}/v1/conversations/{child_id}/", timeout=5.0)
+            except Exception:
+                pass
+            return jsonify({"error": "conversation_meta_insert_failed"}), 500
+
+        return jsonify({
+            "id": child_id,
+            "agent_id": parent_agent_id,
+            "label": label,
+            "parent_conversation_id": conv_id,
+            "user_renamed": user_set_label,
+            "created_at": letta_conv.get("created_at"),
+        }), 201
+    finally:
+        if handle is not None:
+            with handle.state_lock:
+                handle.forking = False
 
 
 @app.route("/api/agents")
@@ -831,10 +1433,17 @@ def get_mc_usage():
 
 @app.route("/api/conversations/<session_id>")
 def get_conversations(session_id):
-    """Get conversation history for a session."""
+    """Get conversation history for a session.
+
+    Phase 2: optional `?conversation_id=` filter restricts to a single
+    Letta conv. Without it, returns all session rows (back-compat).
+    """
     try:
         limit = request.args.get("limit", 100, type=int)
-        history = get_conversation_history(session_id, limit=limit)
+        conversation_id = request.args.get("conversation_id") or None
+        history = get_conversation_history(
+            session_id, limit=limit, conversation_id=conversation_id
+        )
         return jsonify({"conversations": history, "session_id": session_id})
     except Exception as e:
         logger.error("get_conversations_failed", error=str(e), session_id=session_id)
@@ -856,6 +1465,17 @@ def record_feedback():
     if feedback_type not in ("thumbs_up", "thumbs_down", "agent_correction"):
         return jsonify({"error": "Invalid feedback_type"}), 400
 
+    # Phase 2 column rename: old clients may still send an INTEGER
+    # `conversation_id` (= old pa_web.response_feedback.conversation_id);
+    # new clients send a TEXT UUID. Disambiguate by type.
+    raw_conv = data.get("conversation_id")
+    local_pk = data.get("local_conversation_pk")
+    conv_uuid = None
+    if isinstance(raw_conv, int):
+        local_pk = raw_conv
+    elif isinstance(raw_conv, str) and raw_conv:
+        conv_uuid = raw_conv
+
     save_response_feedback(
         session_id=session_id,
         request_id=request_id,
@@ -864,7 +1484,8 @@ def record_feedback():
         actual_agent_name=data.get("actual_agent_name"),
         intended_agent_id=data.get("intended_agent_id"),
         intended_agent_name=data.get("intended_agent_name"),
-        conversation_id=data.get("conversation_id"),
+        local_conversation_pk=local_pk,
+        conversation_id=conv_uuid,
     )
 
     return jsonify({"status": "ok", "feedback_type": feedback_type})
@@ -3726,6 +4347,7 @@ def _create_schedule_job(name, send_at, callback_url, callback_body):
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5200"))
     ensure_pa_web_schema()
+    _start_phase2_backfill_thread()
     logger.info("pa_web_ui_starting", port=port)
     # threaded=True enables concurrent request handling for SSE streams
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
