@@ -209,9 +209,7 @@ def test_stream_event_tool_call_delta_merged(live_handle):
     handle, proc, _ = live_handle
 
     # Attach a subscriber queue manually (Unit 1.4 will do this via API).
-    sub: "queue.Queue" = queue.Queue()
-    with handle.subscriber_lock:
-        handle.subscribers.append(sub)
+    sub = handle.subscribe()
 
     # Three incremental deltas for one tool call.
     proc.stdout.push_event({
@@ -256,9 +254,7 @@ def test_stream_event_tool_call_delta_merged(live_handle):
 
 def test_stream_event_cumulative_mode(live_handle):
     handle, proc, _ = live_handle
-    sub: "queue.Queue" = queue.Queue()
-    with handle.subscriber_lock:
-        handle.subscribers.append(sub)
+    sub = handle.subscribe()
 
     proc.stdout.push_event({
         "type": "stream_event",
@@ -292,9 +288,7 @@ def test_stream_event_cumulative_mode(live_handle):
 def test_stream_event_without_tool_call_id_pass_through(live_handle):
     """Unknown stream_event shapes fall through to subscribers unchanged."""
     handle, proc, _ = live_handle
-    sub: "queue.Queue" = queue.Queue()
-    with handle.subscriber_lock:
-        handle.subscribers.append(sub)
+    sub = handle.subscribe()
 
     proc.stdout.push_event({
         "type": "stream_event",
@@ -315,9 +309,7 @@ def test_stream_event_without_tool_call_id_pass_through(live_handle):
 def test_pending_flush_on_result(live_handle):
     """Pending tool-calls must flush before the result event fires."""
     handle, proc, _ = live_handle
-    sub: "queue.Queue" = queue.Queue()
-    with handle.subscriber_lock:
-        handle.subscribers.append(sub)
+    sub = handle.subscribe()
 
     proc.stdout.push_event({
         "type": "stream_event",

@@ -82,6 +82,15 @@ DEFAULT_RING_BUFFER_BYTES = int(
     os.environ.get("PA_WEB_UI_RING_BUFFER_BYTES", str(2_000_000))
 )
 
+# Per-subscriber queue depth. A subscriber that fails put_nowait this
+# many consecutive times is force-unsubscribed (Unit 1.4).
+DEFAULT_SUBSCRIBER_QUEUE_MAX = int(
+    os.environ.get("PA_WEB_UI_SUBSCRIBER_QUEUE_MAX", "1000")
+)
+SLOW_SUBSCRIBER_FAILURE_THRESHOLD = int(
+    os.environ.get("PA_WEB_UI_SLOW_SUBSCRIBER_THRESHOLD", "10")
+)
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -236,6 +245,39 @@ class SubprocessDeadError(Exception):
     """Raised when an operation targets a handle whose subprocess has exited."""
 
 
+# ---------------------------------------------------------------- subscriber
+
+
+@dataclass
+class Subscriber:
+    """One attached SSE client's queue + bookkeeping.
+
+    The reader thread publishes events to `queue` via put_nowait. On Full,
+    a `slow_subscriber` marker is emitted for this subscriber (not
+    silently dropped) and `failure_count` is incremented. After
+    SLOW_SUBSCRIBER_FAILURE_THRESHOLD consecutive failures, the
+    subscriber is force-unsubscribed so it cannot wedge the fan-out.
+    """
+
+    id: str
+    queue: "queue.Queue"
+    since_seq_id: Optional[int]
+    subscribed_at: float = field(default_factory=time.time)
+    failure_count: int = 0
+
+    def put_nowait(self, item: Dict[str, Any]) -> None:
+        self.queue.put_nowait(item)
+
+    def get(self, timeout: Optional[float] = None) -> Dict[str, Any]:
+        return self.queue.get(timeout=timeout)
+
+    def get_nowait(self) -> Dict[str, Any]:
+        return self.queue.get_nowait()
+
+    def qsize(self) -> int:
+        return self.queue.qsize()
+
+
 # ---------------------------------------------------------------- handle
 
 
@@ -274,8 +316,8 @@ class SubprocessHandle:
     current_seq_id: int = 0
     event_count: int = 0
 
-    # Subscribers (Unit 1.4 populates).
-    subscribers: List["queue.Queue"] = field(default_factory=list)
+    # Subscribers — one per attached SSE client (Unit 1.4).
+    subscribers: List[Subscriber] = field(default_factory=list)
 
     # Ring buffer (Unit 1.3: byte-aware, turn-aware).
     ring_buffer: RingBuffer = field(default_factory=RingBuffer)
@@ -326,7 +368,89 @@ class SubprocessHandle:
                 "in_flight_device_id": self.in_flight_device_id,
                 "subscriber_count": len(self.subscribers),
                 "init_state": dict(self.init_state),
+                "ring_buffer": self.ring_buffer.snapshot_for_status(),
             }
+
+    # --------------- subscriber surface (Unit 1.4) ---------------
+
+    def subscribe(
+        self,
+        since: Optional[int] = None,
+        subscriber_id: Optional[str] = None,
+        max_queue: int = DEFAULT_SUBSCRIBER_QUEUE_MAX,
+    ) -> Subscriber:
+        """Attach a new SSE subscriber.
+
+        - `since=None`: no replay; receive live events only.
+        - `since=<int>`: seed the queue with any ring-buffer events with
+          seq_id > since. If the ring buffer has evicted events below
+          `since`, seed the queue with a single `resync_required` marker
+          so the client knows to refetch via loadConversationHistory()
+          and resubscribe with since=None.
+        - Returned Subscriber should be passed to unsubscribe() on
+          disconnect (Flask GeneratorExit in Unit 1.5).
+        """
+        sub_id = subscriber_id or f"sub-{uuid.uuid4().hex[:8]}"
+        q: "queue.Queue" = queue.Queue(maxsize=max_queue)
+        subscriber = Subscriber(id=sub_id, queue=q, since_seq_id=since)
+
+        # Seed the queue BEFORE adding to the subscribers list so we hold
+        # the correct ordering: any live event that would publish to this
+        # subscriber will only arrive after the seed is complete.
+        with self.subscriber_lock:
+            if since is not None:
+                events, resync_required = self.ring_buffer.events_since(since)
+                if resync_required:
+                    try:
+                        q.put_nowait({
+                            "type": "resync_required",
+                            "reason": "ring_buffer_evicted",
+                            "oldest_available_seq_id": self.ring_buffer.oldest_seq(),
+                            "_seq_id": 0,
+                            "_emitted_at": time.time(),
+                        })
+                    except queue.Full:
+                        # Unreachable on a fresh Queue, but defensive.
+                        pass
+                else:
+                    for ev in events:
+                        try:
+                            q.put_nowait(ev)
+                        except queue.Full:
+                            break
+            self.subscribers.append(subscriber)
+        logger.info(
+            "subscriber_attached",
+            conv_id=self.conv_id,
+            subscriber_id=sub_id,
+            since=since,
+            seeded_count=q.qsize(),
+        )
+        return subscriber
+
+    def unsubscribe(self, subscriber: Subscriber) -> None:
+        """Detach a subscriber. Safe to call multiple times; safe to call
+        on a subscriber that was force-removed by slow-subscriber logic.
+        """
+        with self.subscriber_lock:
+            try:
+                self.subscribers.remove(subscriber)
+            except ValueError:
+                return
+        # Drain and close the queue so any final consumer loop exits.
+        drained = 0
+        while True:
+            try:
+                subscriber.queue.get_nowait()
+                drained += 1
+            except queue.Empty:
+                break
+        logger.info(
+            "subscriber_detached",
+            conv_id=self.conv_id,
+            subscriber_id=subscriber.id,
+            drained_count=drained,
+        )
 
 
 # ---------------------------------------------------------------- registry
@@ -1039,24 +1163,67 @@ def _emit(
 def _publish_to_subscribers(
     handle: SubprocessHandle, stamped: Dict[str, Any]
 ) -> None:
-    """Best-effort fan-out to subscriber queues.
+    """Fan out one stamped event to every attached subscriber.
 
-    Unit 1.4 owns the subscriber contract; this function is a thin
-    placeholder that uses put_nowait and silently drops for slow
-    consumers. Unit 1.4 will add the slow-subscriber marker and
-    force-unsubscribe logic.
+    Error isolation: one slow subscriber does NOT affect others.
+    On Queue.Full:
+      - a `slow_subscriber` marker is pushed FOR THAT SUBSCRIBER ONLY
+        (clients can surface "we're degrading")
+      - failure_count increments
+      - the event itself is dropped for that subscriber (but not others)
+    After SLOW_SUBSCRIBER_FAILURE_THRESHOLD consecutive failures, the
+    subscriber is force-unsubscribed so it cannot consume reader CPU
+    indefinitely.
     """
     with handle.subscriber_lock:
         subs = list(handle.subscribers)
+
+    to_unsubscribe: List[Subscriber] = []
+
     for sub in subs:
         try:
             sub.put_nowait(stamped)
+            sub.failure_count = 0
         except queue.Full:
+            sub.failure_count += 1
             logger.debug(
                 "subscriber_full_drop",
                 conv_id=handle.conv_id,
+                subscriber_id=sub.id,
+                failure_count=sub.failure_count,
                 seq_id=stamped.get("_seq_id"),
             )
+            # Best-effort: drop an earlier event to make room for the
+            # slow_subscriber marker so the client hears about the
+            # degradation. Tolerate further Full errors silently.
+            marker = {
+                "type": "slow_subscriber",
+                "subscriber_id": sub.id,
+                "conv_id": handle.conv_id,
+                "dropped_seq_id": stamped.get("_seq_id"),
+                "_seq_id": 0,
+                "_emitted_at": time.time(),
+            }
+            try:
+                # Drain one to make headroom, then push marker.
+                try:
+                    sub.queue.get_nowait()
+                except queue.Empty:
+                    pass
+                sub.queue.put_nowait(marker)
+            except queue.Full:
+                pass  # Truly stuck; unsubscribe below will handle.
+            if sub.failure_count >= SLOW_SUBSCRIBER_FAILURE_THRESHOLD:
+                to_unsubscribe.append(sub)
+
+    for sub in to_unsubscribe:
+        logger.warning(
+            "subscriber_force_unsubscribed",
+            conv_id=handle.conv_id,
+            subscriber_id=sub.id,
+            failure_count=sub.failure_count,
+        )
+        handle.unsubscribe(sub)
 
 
 def _handle_control_request(
