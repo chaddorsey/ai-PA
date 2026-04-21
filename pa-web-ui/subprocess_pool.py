@@ -654,11 +654,22 @@ class SubprocessRegistry:
 
     # ------------------------------------------------------------ ensure
 
-    def ensure(self, agent_id: str, conv_id: str) -> SubprocessHandle:
+    def ensure(
+        self,
+        agent_id: str,
+        conv_id: str,
+        disallowed_tools_override: Optional[Tuple[str, ...]] = None,
+    ) -> SubprocessHandle:
         """Return a live handle for (agent_id, conv_id) — spawn if needed.
 
         Coalesces concurrent callers so exactly one spawn happens per
         new conv. Retries cleanly if an invalidation races with the spawn.
+
+        Phase 3 (/btw): pass `disallowed_tools_override` to spawn this
+        conv's subprocess with a stricter tool set (e.g., strip
+        state-mutating tools from an ephemeral /btw fork so memory
+        writes don't propagate to the parent). Only honored on
+        first-spawn; existing handles keep their original tool list.
         """
         if self._shutting_down:
             raise SubprocessDeadError("registry is shutting down")
@@ -704,7 +715,12 @@ class SubprocessRegistry:
 
         # We are the holder — do the actual spawn.
         try:
-            handle = self._spawn_and_initialize(agent_id, conv_id, current_gen)
+            handle = self._spawn_and_initialize(
+                agent_id,
+                conv_id,
+                current_gen,
+                disallowed_tools_override=disallowed_tools_override,
+            )
             future.set_result(handle)
             return handle
         except Exception as exc:
@@ -717,7 +733,11 @@ class SubprocessRegistry:
                     self._creation_locks.pop(conv_id, None)
 
     def _spawn_and_initialize(
-        self, agent_id: str, conv_id: str, birth_gen: int
+        self,
+        agent_id: str,
+        conv_id: str,
+        birth_gen: int,
+        disallowed_tools_override: Optional[Tuple[str, ...]] = None,
     ) -> SubprocessHandle:
         """Spawn a fresh subprocess, send the initialize control_request,
         and wait for the system/init event.
@@ -736,6 +756,11 @@ class SubprocessRegistry:
                 )
                 raise SubprocessDeadError("generation changed before spawn")
 
+        effective_disallowed = (
+            disallowed_tools_override
+            if disallowed_tools_override is not None
+            else self.disallowed_tools
+        )
         process = self._spawn_factory(
             agent_id=agent_id,
             conv_id=conv_id,
@@ -743,7 +768,7 @@ class SubprocessRegistry:
             letta_binary=self.letta_binary,
             letta_base_url=self.letta_base_url,
             allowed_tools=self.allowed_tools,
-            disallowed_tools=self.disallowed_tools,
+            disallowed_tools=effective_disallowed,
             yolo=self.yolo,
         )
 

@@ -536,6 +536,20 @@ class ChatUI {
         // User is sending — reset scroll lock so streaming auto-scrolls
         this._userScrolledUp = false;
 
+        // Phase 3 /btw: inline ephemeral side-query fork. Rendered as an
+        // indented card in the main chat; does not switch conversations
+        // and does not contend for the parent's turn lock.
+        const btwMatch = rawMessage.match(/^\/btw\s+(.+)$/s);
+        if (btwMatch) {
+            const question = btwMatch[1].trim();
+            if (!question) return;
+            this.messageInput.value = '';
+            this.messageInput.style.height = 'auto';
+            this.sendBtwQuery(question);
+            this.messageInput.focus();
+            return;
+        }
+
         // Check for slash command routing
         const slashCommand = this.parseSlashCommand(rawMessage);
         const message = slashCommand ? slashCommand.cleanMessage : rawMessage;
@@ -711,6 +725,302 @@ class ChatUI {
         this.messagesContainer.appendChild(card);
         this.scrollToBottom(true);
         return card;
+    }
+
+    // ---------- Phase 3: inline /btw side-query ----------
+
+    createBtwCard(question) {
+        const card = document.createElement('div');
+        card.className = 'btw-card streaming';
+        card.innerHTML = `
+            <div class="btw-header">
+                <span class="btw-label">/btw</span>
+                <span class="btw-hint">side-query · ephemeral · memory shared</span>
+                <button class="btw-end-btn" type="button" title="End side-thread">End ×</button>
+            </div>
+            <div class="btw-exchanges"></div>
+            <div class="btw-reply" style="display: none;">
+                <textarea class="btw-reply-input" placeholder="Reply in this side-thread… (Shift+Enter for newline)" rows="1" autocomplete="off" spellcheck="true" tabindex="0"></textarea>
+                <button class="btw-reply-send" type="button">Send</button>
+            </div>
+        `;
+        this.messagesContainer.appendChild(card);
+        this.appendBtwExchange(card, question);
+        card.querySelector('.btw-end-btn').addEventListener('click', () => this.endBtwThread(card));
+        const ta = card.querySelector('.btw-reply-input');
+        const sendBtn = card.querySelector('.btw-reply-send');
+        const doSend = () => {
+            const q = ta.value.trim();
+            if (!q) return;
+            ta.value = '';
+            ta.style.height = 'auto';
+            this.continueBtwThread(card, q);
+        };
+        sendBtn.addEventListener('click', doSend);
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                doSend();
+            }
+        });
+        ta.addEventListener('input', () => {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+        });
+        this.scrollToBottom(true);
+        return card;
+    }
+
+    appendBtwExchange(card, question) {
+        const exchange = document.createElement('div');
+        exchange.className = 'btw-exchange streaming';
+        const timestamp = this.formatTimestamp();
+        exchange.innerHTML = `
+            <div class="btw-user">
+                <span class="user-text"></span>
+                <span class="message-timestamp">${timestamp}</span>
+            </div>
+            <div class="btw-status">
+                <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+                <span class="status-text">Forking…</span>
+            </div>
+            <div class="btw-response" style="display: none;">
+                <div class="response-content"></div>
+                <span class="message-timestamp response-timestamp"></span>
+            </div>
+        `;
+        exchange.querySelector('.btw-user .user-text').textContent = question;
+        card.querySelector('.btw-exchanges').appendChild(exchange);
+        // Hide reply input while a turn is streaming.
+        const reply = card.querySelector('.btw-reply');
+        if (reply) reply.style.display = 'none';
+        return exchange;
+    }
+
+    _btwActiveExchange(card) {
+        const list = card.querySelectorAll('.btw-exchange');
+        return list[list.length - 1] || null;
+    }
+
+    _btwSetStatus(card, text) {
+        const ex = this._btwActiveExchange(card);
+        if (!ex) return;
+        const el = ex.querySelector('.btw-status .status-text');
+        if (el) el.textContent = text;
+    }
+
+    _btwHideStatus(card) {
+        const ex = this._btwActiveExchange(card);
+        if (!ex) return;
+        const s = ex.querySelector('.btw-status');
+        if (s) s.style.display = 'none';
+        const r = ex.querySelector('.btw-response');
+        if (r) r.style.display = 'block';
+    }
+
+    _btwEnsureThinking(card) {
+        const ex = this._btwActiveExchange(card);
+        if (!ex) return null;
+        const resp = ex.querySelector('.btw-response');
+        if (!resp) return null;
+        const contentEl = resp.querySelector('.response-content');
+        let accordion = contentEl.querySelector('.thinking-accordion');
+        if (!accordion) {
+            accordion = document.createElement('div');
+            accordion.className = 'thinking-accordion thinking-active';
+            accordion.innerHTML = `
+                <div class="thinking-accordion-header">
+                    <span class="thinking-accordion-icon">💭</span>
+                    <span>Agent Thinking</span>
+                    <span class="thinking-accordion-toggle">▼</span>
+                </div>
+                <div class="thinking-accordion-content"></div>
+            `;
+            contentEl.insertBefore(accordion, contentEl.firstChild);
+            accordion.querySelector('.thinking-accordion-header')
+                .addEventListener('click', () => accordion.classList.toggle('expanded'));
+        }
+        return accordion;
+    }
+
+    _btwUpdateResponse(card, content) {
+        this._btwHideStatus(card);
+        const ex = this._btwActiveExchange(card);
+        if (!ex) return;
+        const resp = ex.querySelector('.btw-response');
+        const contentEl = resp.querySelector('.response-content');
+        let body = contentEl.querySelector('.btw-body');
+        if (!body) {
+            body = document.createElement('div');
+            body.className = 'btw-body';
+            contentEl.appendChild(body);
+        }
+        body.innerHTML = this.renderMarkdown(content);
+        const ts = resp.querySelector('.response-timestamp');
+        if (ts) ts.textContent = this.formatTimestamp();
+        this.scrollToBottom();
+    }
+
+    _btwUpdateThinking(card, thinking) {
+        if (!thinking) return;
+        this._btwHideStatus(card);
+        const accordion = this._btwEnsureThinking(card);
+        if (accordion) {
+            accordion.querySelector('.thinking-accordion-content')
+                .innerHTML = this.renderMarkdown(thinking);
+        }
+    }
+
+    _btwError(card, message) {
+        this._btwHideStatus(card);
+        const ex = this._btwActiveExchange(card);
+        if (!ex) return;
+        const contentEl = ex.querySelector('.btw-response .response-content');
+        contentEl.innerHTML = `<span style="color: var(--accent);"></span>`;
+        contentEl.querySelector('span').textContent = message || 'Side-query failed';
+        ex.classList.remove('streaming');
+        ex.classList.add('error');
+        card.classList.remove('streaming');
+    }
+
+    _btwShowReply(card) {
+        const reply = card.querySelector('.btw-reply');
+        if (reply) {
+            reply.style.display = '';
+            const ta = reply.querySelector('.btw-reply-input');
+            if (ta) ta.focus();
+        }
+    }
+
+    async _btwStream(card, url, bodyObj) {
+        let content = '';
+        let thinking = '';
+        let hadText = false;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(bodyObj),
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                this._btwError(card, body.error || `HTTP ${response.status}`);
+                return;
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let sseBuffer = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                sseBuffer += chunk;
+                const lines = sseBuffer.split('\n');
+                if (!chunk.endsWith('\n')) { sseBuffer = lines.pop(); } else { sseBuffer = ''; }
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    let event;
+                    try { event = JSON.parse(line.slice(6)); } catch { continue; }
+
+                    if (event.type === 'btw_start') {
+                        card.dataset.forkConvId = event.fork_conv_id || '';
+                        this._btwSetStatus(card, 'Connected…');
+                    } else if (event.type === 'btw_continue') {
+                        this._btwSetStatus(card, 'Connected…');
+                    } else if (event.type === 'routing') {
+                        this._btwSetStatus(card, `Connected to ${event.agent_name || 'agent'}…`);
+                    } else if (event.type === 'tool_call') {
+                        const toolName = event.tool || 'tool';
+                        if (toolName !== 'send_message' && toolName !== 'report_refs') {
+                            this._btwSetStatus(card, TOOL_STATUS_MAP[toolName] || `Running ${toolName}…`);
+                        }
+                    } else if (event.type === 'thinking') {
+                        thinking += event.content || '';
+                        this._btwUpdateThinking(card, thinking);
+                    } else if (event.type === 'text') {
+                        if (event.content && event.content.replace(/\s/g, '') === '[Error:error]') continue;
+                        hadText = true;
+                        content += event.content || '';
+                        this._btwUpdateResponse(card, content);
+                    } else if (event.type === 'token') {
+                        hadText = true;
+                        content += event.token || '';
+                        this._btwUpdateResponse(card, content);
+                    } else if (event.type === 'tool_result') {
+                        const prefix = event.is_error ? '\u274c Error: ' : '\u2705 Result: ';
+                        thinking += `\n\n${prefix}${event.content || ''}`;
+                        this._btwUpdateThinking(card, thinking);
+                    } else if (event.type === 'error') {
+                        this._btwError(card, event.message);
+                        return;
+                    } else if (event.type === 'done') {
+                        if (!hadText) {
+                            this._btwUpdateResponse(card, content || '✓ Done');
+                        }
+                        const ex = this._btwActiveExchange(card);
+                        if (ex) {
+                            ex.classList.remove('streaming');
+                            ex.classList.add('complete');
+                        }
+                        card.classList.remove('streaming');
+                        this._btwShowReply(card);
+                        return;
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[btw] stream error:', err);
+            this._btwError(card, 'Side-query failed');
+        }
+    }
+
+    async sendBtwQuery(question) {
+        const parentConvId = this.conversationId || 'default';
+        const card = this.createBtwCard(question);
+        card.classList.add('streaming');
+        if (!this._btwCards) this._btwCards = new Set();
+        this._btwCards.add(card);
+        await this._btwStream(
+            card,
+            `/api/conversations/${encodeURIComponent(parentConvId)}/btw`,
+            { question, device_id: this._readCookie('pa_device_id') || undefined },
+        );
+    }
+
+    async continueBtwThread(card, question) {
+        const forkId = card.dataset.forkConvId;
+        if (!forkId) {
+            this._btwError(card, 'Side-thread has no fork id');
+            return;
+        }
+        card.classList.add('streaming');
+        this.appendBtwExchange(card, question);
+        await this._btwStream(
+            card,
+            `/api/conversations/${encodeURIComponent(forkId)}/btw/continue`,
+            { question, device_id: this._readCookie('pa_device_id') || undefined },
+        );
+    }
+
+    endBtwThread(card) {
+        const forkId = card.dataset.forkConvId;
+        card.classList.add('ended');
+        const reply = card.querySelector('.btw-reply');
+        if (reply) reply.style.display = 'none';
+        const endBtn = card.querySelector('.btw-end-btn');
+        if (endBtn) endBtn.disabled = true;
+        if (this._btwCards) this._btwCards.delete(card);
+        if (!forkId) return;
+        // Fire-and-forget; we don't block on the response.
+        this.csrfHeaders({ 'Content-Type': 'application/json' }).then((headers) => {
+            fetch(`/api/conversations/${encodeURIComponent(forkId)}/btw/end`, {
+                method: 'POST', credentials: 'same-origin', cache: 'no-store',
+                headers, body: '{}',
+            }).catch(() => {});
+        });
     }
 
     updateThreadCardStatus(card, statusText) {
@@ -1668,4 +1978,27 @@ class ChatUI {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     window.chatUI = new ChatUI();
+});
+
+// Best-effort: tear down any live /btw forks on page unload. Uses
+// sendBeacon so the request survives navigation. CSRF is skipped via
+// text/plain content-type — the /btw/end route is idempotent + only
+// removes an ephemeral fork that the client already knew about.
+window.addEventListener('pagehide', () => {
+    if (!window.chatUI || !window.chatUI._btwCards) return;
+    // sendBeacon can't set X-CSRF-Token — include the token in the body
+    // so ingress_guard's _extract_csrf_claim picks it up.
+    const m = document.cookie.match(/(?:^|; )pa_csrf_cookie=([^;]*)/);
+    const csrf = m ? decodeURIComponent(m[1]) : '';
+    const payload = JSON.stringify({ csrf_token: csrf });
+    for (const card of window.chatUI._btwCards) {
+        const forkId = card.dataset.forkConvId;
+        if (!forkId) continue;
+        try {
+            navigator.sendBeacon(
+                `/api/conversations/${encodeURIComponent(forkId)}/btw/end`,
+                new Blob([payload], { type: 'application/json' }),
+            );
+        } catch (_) { /* best-effort */ }
+    }
 });

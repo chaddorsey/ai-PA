@@ -3090,3 +3090,131 @@ header h1 {
 .fork-banner-text strong {
     color: var(--text-primary);
 }
+
+/* ---------- Phase 3: inline /btw side-query card ---------- */
+.btw-card {
+    position: relative;
+    margin: 0.75rem 0 0.75rem 2.5rem;
+    padding: 0.75rem 1rem 0.75rem 1rem;
+    border-left: 3px solid var(--sb-teal, #5bc0be);
+    background: rgba(91, 192, 190, 0.06);
+    border-radius: 0 8px 8px 0;
+    font-size: 0.95rem;
+}
+.btw-card::before {
+    content: "";
+    position: absolute;
+    left: -1.25rem;
+    top: 1rem;
+    width: 1rem;
+    height: 1px;
+    background: var(--sb-teal, #5bc0be);
+    opacity: 0.5;
+}
+.btw-card.streaming { box-shadow: 0 0 0 1px rgba(91, 192, 190, 0.25); }
+.btw-card.error { border-left-color: var(--accent, #e07856); background: rgba(224, 120, 86, 0.06); }
+.btw-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    margin-bottom: 0.4rem;
+}
+.btw-label {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    color: var(--sb-teal, #5bc0be);
+    background: rgba(91, 192, 190, 0.12);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+}
+.btw-hint { color: var(--text-secondary); opacity: 0.75; font-style: italic; }
+.btw-user {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+    color: var(--text-primary);
+}
+.btw-user .user-text { white-space: pre-wrap; word-break: break-word; }
+.btw-user .message-timestamp { flex-shrink: 0; font-size: 0.75rem; color: var(--text-secondary); }
+.btw-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 0.3rem 0;
+}
+.btw-response .response-content { line-height: 1.5; }
+.btw-response .btw-body { margin-top: 0.25rem; }
+.btw-response .response-timestamp { display: block; margin-top: 0.4rem; font-size: 0.75rem; color: var(--text-secondary); }
+@media (max-width: 600px) {
+    .btw-card { margin-left: 1rem; }
+    .btw-card::before { display: none; }
+}
+
+/* ---------- Phase 3 (follow-ups): btw reply + end ---------- */
+.btw-header { justify-content: space-between; }
+.btw-end-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid rgba(91, 192, 190, 0.4);
+    color: var(--sb-teal, #5bc0be);
+    font-size: 0.7rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    line-height: 1.2;
+}
+.btw-end-btn:hover:not(:disabled) { background: rgba(91, 192, 190, 0.12); }
+.btw-end-btn:disabled { opacity: 0.4; cursor: default; }
+.btw-card.ended { opacity: 0.72; }
+.btw-card.ended .btw-reply { display: none !important; }
+.btw-exchange + .btw-exchange {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed rgba(91, 192, 190, 0.25);
+}
+.btw-reply {
+    display: flex;
+    gap: 0.4rem;
+    align-items: flex-end;
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(91, 192, 190, 0.2);
+}
+.btw-reply-input {
+    flex: 1;
+    display: block;
+    width: 100%;
+    background: var(--bg-tertiary);
+    border: 1px solid rgba(91, 192, 190, 0.35);
+    border-radius: 6px;
+    color: var(--text-primary);
+    caret-color: var(--text-primary);
+    padding: 0.4rem 0.6rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: none;
+    min-height: 2rem;
+    max-height: 10rem;
+    line-height: 1.4;
+    pointer-events: auto;
+    user-select: text;
+}
+.btw-reply-input:focus {
+    outline: none;
+    border-color: var(--sb-teal, #5bc0be);
+}
+.btw-reply-send {
+    background: var(--sb-teal, #5bc0be);
+    color: #0a1a1c;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+}
+.btw-reply-send:hover { filter: brightness(1.1); }

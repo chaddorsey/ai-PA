@@ -1261,6 +1261,372 @@ def fork_conversation(conv_id: str):
                 handle.forking = False
 
 
+# ---------------------------------------------------------------------
+# Inline /btw — ephemeral side-question fork rendered inline in the
+# parent conversation's chat view. See the Letta support agent's Q&A
+# (2026-04-20): fork message rows are SHARED-not-copied, concurrent
+# streams are safe at the lock layer (different conv_ids), no server-
+# side TTL or tool-restriction primitive exists, so we own cleanup +
+# tool restriction client-side.
+# ---------------------------------------------------------------------
+
+# Tools we strip from a /btw subprocess. Phase 1's R4b set is extended
+# with memory-mutating tools so an ephemeral side-question can't leave
+# state behind in the agent's shared memory blocks (Branch B propagation
+# risk; see docs/reference/letta-conversations-fork.md).
+BTW_DISALLOWED_TOOLS: tuple = (
+    "Task", "TodoWrite", "EnterPlanMode", "AskUserQuestion",
+    "manage_todo", "Write", "Edit",
+)
+
+# Idle TTL for a btw fork. The sliding timer is reset on every turn
+# (initial + each continue). When it fires, the Letta fork is DELETEd
+# and the subprocess handle is invalidated.
+BTW_IDLE_TTL_S = float(os.environ.get("PA_WEB_UI_BTW_IDLE_TTL_S", "300"))
+
+# Registry of live btw forks: fork_conv_id → {"agent_id", "parent_conv_id",
+# "timer": threading.Timer}. Protected by _btw_lock.
+_btw_forks: Dict[str, Dict[str, Any]] = {}
+_btw_lock = threading.Lock()
+
+
+def _btw_perform_delete(conv_id: str) -> None:
+    """DELETE the fork on Letta and invalidate its subprocess. Called
+    from the sliding-TTL timer or from an explicit /btw/end request.
+    """
+    try:
+        resp = http_client.delete(
+            f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/",
+            timeout=5.0,
+        )
+        if resp.status_code >= 400:
+            logger.warning(
+                "btw_fork_delete_non_2xx",
+                conv_id=conv_id,
+                status=resp.status_code,
+            )
+        else:
+            logger.info("btw_fork_deleted", conv_id=conv_id)
+    except Exception as exc:
+        logger.warning("btw_fork_delete_failed", conv_id=conv_id, error=str(exc))
+    try:
+        subprocess_registry.invalidate(conv_id)
+    except Exception as exc:
+        logger.debug("btw_fork_invalidate_failed", conv_id=conv_id, error=str(exc))
+
+
+def _btw_register_fork(fork_conv_id: str, agent_id: str, parent_conv_id: str) -> None:
+    """Record a new btw fork and arm/reset its idle TTL timer."""
+    with _btw_lock:
+        entry = _btw_forks.get(fork_conv_id)
+        if entry and entry.get("timer"):
+            try:
+                entry["timer"].cancel()
+            except Exception:
+                pass
+        _btw_forks[fork_conv_id] = {
+            "agent_id": agent_id,
+            "parent_conv_id": parent_conv_id,
+            "timer": None,
+        }
+
+
+def _btw_reset_idle_timer(fork_conv_id: str, ttl_s: Optional[float] = None) -> None:
+    """(Re)arm the sliding idle timer for a btw fork. No-op if fork is
+    not registered (already torn down)."""
+    delay = BTW_IDLE_TTL_S if ttl_s is None else ttl_s
+    with _btw_lock:
+        entry = _btw_forks.get(fork_conv_id)
+        if not entry:
+            return
+        old = entry.get("timer")
+        if old:
+            try:
+                old.cancel()
+            except Exception:
+                pass
+        timer = threading.Timer(delay, _btw_fire_expiry, args=(fork_conv_id,))
+        timer.daemon = True
+        entry["timer"] = timer
+        timer.start()
+
+
+def _btw_fire_expiry(fork_conv_id: str) -> None:
+    """Timer callback: remove the fork from the registry and tear it down."""
+    with _btw_lock:
+        entry = _btw_forks.pop(fork_conv_id, None)
+    if entry is not None:
+        _btw_perform_delete(fork_conv_id)
+
+
+def _btw_force_end(fork_conv_id: str) -> bool:
+    """Cancel any pending timer and tear the fork down now. Returns True
+    if the fork was known; False otherwise."""
+    with _btw_lock:
+        entry = _btw_forks.pop(fork_conv_id, None)
+        if entry and entry.get("timer"):
+            try:
+                entry["timer"].cancel()
+            except Exception:
+                pass
+    if entry is None:
+        return False
+    _btw_perform_delete(fork_conv_id)
+    return True
+
+
+def _btw_get(fork_conv_id: str) -> Optional[Dict[str, Any]]:
+    with _btw_lock:
+        entry = _btw_forks.get(fork_conv_id)
+        if entry is None:
+            return None
+        return {"agent_id": entry["agent_id"], "parent_conv_id": entry["parent_conv_id"]}
+
+
+# Legacy shim — kept for the existing tests that patch this name. New
+# code should use the sliding-timer helpers above.
+def _schedule_letta_delete(conv_id: str, delay_s: float) -> None:
+    def _run():
+        try:
+            time.sleep(delay_s)
+            _btw_perform_delete(conv_id)
+        except Exception as exc:
+            logger.warning("btw_fork_delete_failed", conv_id=conv_id, error=str(exc))
+
+    threading.Thread(target=_run, name=f"btw-delete-{conv_id[:8]}", daemon=True).start()
+
+
+@app.route("/api/conversations/<parent_conv_id>/btw", methods=["POST"])
+def btw_conversation(parent_conv_id: str):
+    """Ephemeral /btw side-question. Forks the parent, streams the
+    reply from a fresh subprocess (with state-mutating tools stripped),
+    then deletes the fork on the Letta server after a brief delay.
+
+    No local persistence: no conversation_meta row, no
+    pa_web.conversations save. The exchange lives only in the live
+    SSE stream + the client's DOM. On page reload, it's gone.
+    """
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+    if not _is_valid_conv_id(parent_conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    question = (data.get("question") or data.get("message") or "").strip()
+    if not question:
+        return jsonify({"error": "question_required"}), 400
+
+    # Verify parent exists; extract agent_id (fork endpoint needs it
+    # when path-param is "default" — and conv_meta is the SoT anyway).
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT agent_id FROM pa_web.conversation_meta WHERE conversation_id = %s",
+                (parent_conv_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                # Allow parents that aren't in conversation_meta (pre-existing
+                # Letta convs) — look up via the Letta server.
+                try:
+                    letta_resp = http_client.get(
+                        f"{LETTA_BASE_URL}/v1/conversations/{parent_conv_id}/",
+                        timeout=5.0,
+                    )
+                    if letta_resp.status_code == 404:
+                        return jsonify({"error": "parent_not_found"}), 410
+                    letta_resp.raise_for_status()
+                    parent_agent_id = letta_resp.json().get("agent_id") or MISSION_CONTROL_AGENT_ID
+                except Exception as exc:
+                    logger.error("btw_parent_lookup_failed",
+                                 error=str(exc), parent=parent_conv_id)
+                    return jsonify({"error": "letta_unreachable"}), 502
+            else:
+                parent_agent_id = row[0]
+
+    # Create the fork on Letta.
+    try:
+        fork_resp = http_client.post(
+            f"{LETTA_BASE_URL}/v1/conversations/{parent_conv_id}/fork/",
+            params={"agent_id": parent_agent_id},
+            timeout=15.0,
+        )
+        fork_resp.raise_for_status()
+        fork_body = fork_resp.json()
+    except Exception as exc:
+        logger.error("btw_fork_create_failed", error=str(exc), parent=parent_conv_id)
+        return jsonify({"error": "letta_fork_failed"}), 502
+
+    fork_conv_id = fork_body.get("id")
+    if not _is_valid_conv_id(fork_conv_id):
+        logger.error("btw_fork_malformed", response=fork_body)
+        return jsonify({"error": "letta_malformed_fork_response"}), 502
+
+    # Register the fork in the btw tracker so /btw/continue + /btw/end
+    # can find it, then spawn the restricted subprocess.
+    _btw_register_fork(fork_conv_id, parent_agent_id, parent_conv_id)
+    try:
+        handle = subprocess_registry.ensure(
+            agent_id=parent_agent_id,
+            conv_id=fork_conv_id,
+            disallowed_tools_override=BTW_DISALLOWED_TOOLS,
+        )
+    except SpawnTimeoutError as exc:
+        logger.error("btw_spawn_timeout", error=str(exc), fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "subprocess_spawn_timeout"}), 504
+    except SubprocessDeadError as exc:
+        logger.error("btw_subprocess_dead", error=str(exc), fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "subprocess_dead"}), 503
+
+    # Send the question. No turn-lock fight here — the fork is fresh.
+    device_id = request.cookies.get("pa_device_id", "").strip() or None
+    try:
+        subprocess_registry.send(handle, question, device_id=device_id)
+    except TurnLockedException:
+        logger.error("btw_send_turn_locked_unexpected", fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "turn_locked_on_fresh_handle"}), 500
+    except SubprocessDeadError as exc:
+        logger.error("btw_send_on_dead", error=str(exc), fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "subprocess_dead"}), 503
+
+    request_id = str(uuid.uuid4())
+    subscriber = handle.subscribe(since=None)
+    return _btw_stream_response(
+        fork_conv_id=fork_conv_id,
+        parent_conv_id=parent_conv_id,
+        request_id=request_id,
+        handle=handle,
+        subscriber=subscriber,
+        is_initial=True,
+    )
+
+
+def _btw_stream_response(
+    *,
+    fork_conv_id: str,
+    parent_conv_id: str,
+    request_id: str,
+    handle,
+    subscriber,
+    is_initial: bool,
+) -> Response:
+    """Shared SSE generator for the initial /btw turn and /btw/continue
+    turns. Rearms the sliding idle timer on stream completion."""
+
+    def generate() -> Generator[str, None, None]:
+        if is_initial:
+            yield f"data: {json.dumps({'type': 'btw_start', 'fork_conv_id': fork_conv_id, 'parent_conv_id': parent_conv_id, 'request_id': request_id})}\n\n"
+        else:
+            yield f"data: {json.dumps({'type': 'btw_continue', 'fork_conv_id': fork_conv_id, 'request_id': request_id})}\n\n"
+        try:
+            yield from _stream_direct_generator(
+                subscriber,
+                session_id="__btw__",
+                request_id=request_id,
+                conv_id=None,
+                first_user_message=None,
+            )
+        finally:
+            handle.unsubscribe(subscriber)
+            # Arm sliding idle timer. If fork was force-ended mid-stream,
+            # this is a no-op.
+            _btw_reset_idle_timer(fork_conv_id)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.route("/api/conversations/<fork_conv_id>/btw/continue", methods=["POST"])
+def btw_continue(fork_conv_id: str):
+    """Follow-up turn on an existing btw fork. Reuses the same subprocess
+    handle and resets the fork's sliding idle TTL."""
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+    if not _is_valid_conv_id(fork_conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+
+    entry = _btw_get(fork_conv_id)
+    if entry is None:
+        return jsonify({"error": "btw_fork_expired"}), 410
+
+    data = request.get_json(force=True, silent=True) or {}
+    question = (data.get("question") or data.get("message") or "").strip()
+    if not question:
+        return jsonify({"error": "question_required"}), 400
+
+    # Cancel the idle timer while this turn is in flight; it's rearmed
+    # when the stream finishes.
+    _btw_reset_idle_timer(fork_conv_id, ttl_s=3600)
+
+    try:
+        handle = subprocess_registry.ensure(
+            agent_id=entry["agent_id"],
+            conv_id=fork_conv_id,
+            disallowed_tools_override=BTW_DISALLOWED_TOOLS,
+        )
+    except SpawnTimeoutError as exc:
+        logger.error("btw_continue_spawn_timeout", error=str(exc), fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "subprocess_spawn_timeout"}), 504
+    except SubprocessDeadError as exc:
+        logger.error("btw_continue_subprocess_dead", error=str(exc), fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "subprocess_dead"}), 503
+
+    device_id = request.cookies.get("pa_device_id", "").strip() or None
+    try:
+        subprocess_registry.send(handle, question, device_id=device_id)
+    except TurnLockedException as exc:
+        current = getattr(exc, "current_device_id", None)
+        seq = getattr(exc, "seq_id", None)
+        return jsonify({
+            "error": "turn_locked",
+            "current_device_id": current,
+            "seq_id": seq,
+        }), 409
+    except SubprocessDeadError as exc:
+        logger.error("btw_continue_send_on_dead", error=str(exc), fork=fork_conv_id)
+        _btw_force_end(fork_conv_id)
+        return jsonify({"error": "subprocess_dead"}), 503
+
+    request_id = str(uuid.uuid4())
+    subscriber = handle.subscribe(since=None)
+    return _btw_stream_response(
+        fork_conv_id=fork_conv_id,
+        parent_conv_id=entry["parent_conv_id"],
+        request_id=request_id,
+        handle=handle,
+        subscriber=subscriber,
+        is_initial=False,
+    )
+
+
+@app.route("/api/conversations/<fork_conv_id>/btw/end", methods=["POST"])
+def btw_end(fork_conv_id: str):
+    """Force-end a btw fork: cancel the idle timer, DELETE on Letta, and
+    invalidate the subprocess handle. Idempotent."""
+    gate = _phase2_precondition_check()
+    if gate is not None:
+        return gate
+    if not _is_valid_conv_id(fork_conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+    ended = _btw_force_end(fork_conv_id)
+    return jsonify({"ended": ended, "fork_conv_id": fork_conv_id}), 200
+
+
 @app.route("/api/agents")
 def get_agents():
     """Proxy to routing handler to get available agents."""
