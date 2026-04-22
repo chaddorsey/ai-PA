@@ -659,6 +659,11 @@ services:
       - ~/.ssh/id_ed25519:/root/.ssh/id_ed25519:ro  # SSH key for laptop access via Tailscale
       - ~/.ssh/known_hosts_laptop:/root/.ssh/known_hosts:ro  # Laptop host key
       - ./scripts:/app/tools/scripts:ro  # Shared scripts (update-gws.sh, etc.)
+      # Patched SSRF guard — upstream 0.16.7 rejects any MCP server URL that
+      # resolves to a non-global IP, which breaks host.docker.internal. The
+      # patched file adds a LETTA_MCP_ALLOWED_HOSTS env-var allowlist.
+      # Revisit on every Letta upgrade (see letta/patches/url_validation.py).
+      - ./letta/patches/url_validation.py:/app/letta/helpers/url_validation.py:ro
     networks: [pa-internal]
     environment:
       PYTHONPATH: "/app/tools/letta"
@@ -701,6 +706,10 @@ services:
       # gws CLI credentials file path (Google Workspace CLI)
       GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
       OMNIFOCUS_BRIDGE_URL: "http://host.docker.internal:8889"
+      # Allowlist for the patched SSRF guard (letta/patches/url_validation.py).
+      # Any MCP server URL whose hostname is in this list skips the
+      # resolves-to-non-public-IP check. Keep narrowly scoped.
+      LETTA_MCP_ALLOWED_HOSTS: "host.docker.internal"
       # Redis for Letta background streaming (required by Letta Code CLI)
       LETTA_REDIS_HOST: "redis"
       LETTA_REDIS_PORT: "6379"
