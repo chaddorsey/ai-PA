@@ -769,6 +769,8 @@ services:
       OPENAI_KEY_MEDIA_SLEEPTIME: ${OPENAI_KEY_MEDIA_SLEEPTIME}
       OPENAI_KEY_OLD_AGENTS: ${OPENAI_KEY_OLD_AGENTS}
       OPENAI_KEY_FALLBACK: ${OPENAI_KEY_FALLBACK}
+      # Fireworks AI (open-weights models routed via fireworks_ai/ prefix in config.yaml)
+      FIREWORKS_AI_API_KEY: ${FIREWORKS_AI_API_KEY}
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     healthcheck:
       # The litellm image doesn't ship curl — use python3 (which IS installed)

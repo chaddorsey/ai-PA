@@ -170,6 +170,58 @@ model_list:
       model: "openai/gpt-4.1"
       api_key: "os.environ/OPENAI_KEY_OLD_AGENTS"
 
+  # =========================================================================
+  # FIREWORKS AI (open-weights models, routed via LiteLLM for per-alias
+  # cost tracking). Enabled when FIREWORKS_AI_API_KEY is set in .env.
+  # Full path format: fireworks_ai/accounts/fireworks/models/<name>
+  # Verified against the account's serverless catalog on 2026-04-22.
+  # =========================================================================
+
+  # --- DeepSeek V3.2 (latest, reasoning-capable) ---
+  - model_name: "deepseek-v3p2"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/deepseek-v3p2"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  - model_name: "deepseek-v3p1"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/deepseek-v3p1"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  # --- Kimi K2.6 (Moonshot; latest, not in /v1/models listing but live) ---
+  - model_name: "kimi-k2p6"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/kimi-k2p6"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  - model_name: "kimi-k2p5"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/kimi-k2p5"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  # --- GLM-5 / GLM-5.1 (Zhipu; leads SWE-bench Pro, strong agentic coding) ---
+  - model_name: "glm-5"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/glm-5"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  - model_name: "glm-5p1"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/glm-5p1"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  # --- MiniMax M2.7 (strong reasoning, long context) ---
+  - model_name: "minimax-m2p7"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/minimax-m2p7"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  # --- OpenAI open-weight GPT-OSS 120B ---
+  - model_name: "gpt-oss-120b"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/gpt-oss-120b"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
 litellm_settings:
   drop_params: true
   request_timeout: 120
