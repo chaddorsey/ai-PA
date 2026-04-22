@@ -1,5 +1,36 @@
 // Gmail Drafts & Follow-Ups Sidebar — view, edit, send, schedule, and discard
 
+// Auto-inject CSRF on same-origin state-changing /api calls. drafts.js
+// was written before ingress_guard landed and has 14 mutating fetches
+// that would each need a header update; this wrapper fixes them all at
+// once. Idempotent — skips if an X-CSRF-Token header is already set.
+(function installCsrfFetchShim() {
+  if (window.__paCsrfFetchShimInstalled) return;
+  window.__paCsrfFetchShimInstalled = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async function patchedFetch(input, init) {
+    init = init || {};
+    const method = (init.method || 'GET').toUpperCase();
+    const mutating = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+    if (!mutating) return originalFetch(input, init);
+
+    // Only touch same-origin /api/ URLs. Leave everything else alone.
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    const sameOrigin = url.startsWith('/') || url.startsWith(window.location.origin);
+    if (!sameOrigin || !url.includes('/api/')) return originalFetch(input, init);
+
+    const headers = new Headers(init.headers || {});
+    if (!headers.has('X-CSRF-Token')) {
+      const m = document.cookie.match(/(?:^|; )pa_csrf_cookie=([^;]*)/);
+      const token = m ? decodeURIComponent(m[1]) : (window.__paCsrfToken || '');
+      if (token) headers.set('X-CSRF-Token', token);
+    }
+    init.headers = headers;
+    if (init.credentials === undefined) init.credentials = 'same-origin';
+    return originalFetch(input, init);
+  };
+})();
+
 class DraftsSidebar {
   constructor(taskSidebar) {
     this.taskSidebar = taskSidebar;
