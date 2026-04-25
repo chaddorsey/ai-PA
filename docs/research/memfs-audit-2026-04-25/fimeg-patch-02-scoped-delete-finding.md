@@ -92,7 +92,12 @@ We're running this as a fourth patch layered on top of Fimeg's 1-3 (in `letta-me
 
 Verification:
 - Smoke test (`letta memory status` against unrelated agent) still passes
-- Empirical multi-agent verification pending (planned during scratch-agent first-port)
+- **Empirical multi-agent verification: PASS (2026-04-25).** Direct call to
+  `_delete_block_from_postgres(scratch_agent_id, 'important_people')` on a
+  block attached to scratch + companion. Result: scratch detached, companion
+  retained the attachment, block remained in DB. Log line confirmed:
+  "Detached agent ... block retained for other agents". Counterfactual under
+  Fimeg patch 02 alone: block hard-deleted, companion's attachment wiped.
 
 ## Recommended actions
 
