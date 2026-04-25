@@ -1,0 +1,70 @@
+--- a/letta/services/block_manager_git.py
++++ b/letta/services/block_manager_git.py
+@@ -155,9 +155,27 @@
+         label: str,
+         actor: PydanticUser,
+     ) -> None:
+-        """Delete a block from PostgreSQL cache."""
++        """Detach a block from this agent and hard-delete the block only if no
++        other agents reference it.
++
++        Stock Fimeg patch 02 deletes the BlocksAgents rows for *all* agents
++        attached to the block and then hard-deletes the block itself, which
++        propagates the orphan-cleanup globally and destroys data shared
++        across the ecosystem. In multi-agent setups (most production self-
++        hosted installs), shared blocks like ``important_people``,
++        ``extracted_tasks``, and queue blocks have many readers; the global
++        delete makes memfs migration unsafe for any agent that touches a
++        shared block.
++
++        Scoped behavior:
++          1. Remove the (agent_id, block_id) row from BlocksAgents only --
++             other agents keep their attachments intact.
++          2. Check whether any BlocksAgents row still references the block.
++          3. If none remain, the block is now globally orphaned -- safe to
++             hard-delete. Otherwise leave it in place.
++        """
+         async with db_registry.async_session() as session:
+-            from sqlalchemy import delete, select
++            from sqlalchemy import delete, func, select
+ 
+             from letta.orm.blocks_agents import BlocksAgents
+ 
+@@ -174,11 +192,33 @@
+             block = result.scalar_one_or_none()
+ 
+             if block:
+-                # Delete from blocks_agents
+-                await session.execute(delete(BlocksAgents).where(BlocksAgents.block_id == block.id))
+-                # Delete the block
+-                await block.hard_delete_async(db_session=session, actor=actor)
++                # Detach this agent only. Other agents keep their attachments.
++                await session.execute(
++                    delete(BlocksAgents).where(
++                        BlocksAgents.agent_id == agent_id,
++                        BlocksAgents.block_id == block.id,
++                    )
++                )
++                await session.flush()
+ 
++                # If no other agents reference the block, hard-delete it.
++                remaining = await session.execute(
++                    select(func.count())
++                    .select_from(BlocksAgents)
++                    .where(BlocksAgents.block_id == block.id)
++                )
++                if remaining.scalar() == 0:
++                    await block.hard_delete_async(db_session=session, actor=actor)
++                    logger.info(
++                        f"Hard-deleted orphan block '{label}' (block_id={block.id}); "
++                        f"no remaining agent attachments"
++                    )
++                else:
++                    logger.info(
++                        f"Detached agent {agent_id} from block '{label}' "
++                        f"(block_id={block.id}); block retained for other agents"
++                    )
++
+     # =========================================================================
+     # Override BlockManager methods to add git integration
+     # =========================================================================

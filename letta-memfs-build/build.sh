@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."  # run from repo root regardless of cwd
 REPO_ROOT="$(pwd)"
 
-TAG="letta-local:0.16.7-memfs-v1"
+TAG="letta-local:0.16.7-memfs-v2"
 NOCACHE=""
 for arg in "$@"; do
   case "$arg" in
@@ -38,6 +38,7 @@ docker run --rm "$TAG" sh -c "
   grep -q 'sync-from-git' /app/letta/server/rest_api/routers/v1/agents.py && echo '  patch 01 (sync_endpoint) present' || { echo 'MISSING patch 01' >&2; exit 1; };
   grep -q '_delete_block_from_postgres' /app/letta/services/block_manager_git.py && echo '  patch 02 (delete_propagation) present' || { echo 'MISSING patch 02' >&2; exit 1; };
   grep -q 'LETTA_MEMFS_BLOCK_PATH_PREFIXES' /app/letta/services/memory_repo/path_mapping.py && echo '  patch 03 (system_only_blocks) present' || { echo 'MISSING patch 03' >&2; exit 1; };
+  grep -q 'block retained for other agents' /app/letta/services/block_manager_git.py && echo '  patch 04 (scoped_delete_propagation) present' || { echo 'MISSING patch 04' >&2; exit 1; };
 "
 
 echo ""

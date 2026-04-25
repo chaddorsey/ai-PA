@@ -25,9 +25,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Pull patches from the named build context "root" (passed via --build-context root=..)
+# 01-03: vendored from Fimeg upstream
+# 04+: local refinements layered on top (must apply AFTER the upstream patches
+#      they refine; numeric prefix dictates apply order)
 COPY --from=root letta-memfs-patches/upstream-fimeg/server_memory_sync_endpoint.patch /tmp/patches/01-sync-endpoint.patch
 COPY --from=root letta-memfs-patches/upstream-fimeg/server_sync_delete_propagation.patch /tmp/patches/02-delete-propagation.patch
 COPY --from=root letta-memfs-patches/upstream-fimeg/server_system_only_blocks.patch /tmp/patches/03-system-only-blocks.patch
+COPY --from=root letta-memfs-patches/local/server_scoped_delete_propagation.patch /tmp/patches/04-scoped-delete-propagation.patch
 
 # Pre-flight: dry-run all patches before any real apply, so failures surface
 # before we modify the image.
