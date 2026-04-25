@@ -1,0 +1,127 @@
+TOTAL BLOCKS IN SYSTEM: 500
+BLOCKS WITH AGENT ATTACHMENT: 326
+ORPHAN BLOCKS (no agent): 174
+
+==============================================================================================================
+BLOCKS BY ATTACHMENT-COUNT (most-shared first):
+==============================================================================================================
+  [15] extracted_tasks                          block-7bff4e45-3406-48e9-bc51-4fadaea61e57  agents=['companion-sleeptime_copy', 'auto_madden_sleeptime', 'auto_madden_agent', 'sports_and_media_maven_sl', 'sports_and_media_maven']
+      val: '[extracted_time: 2026-03-18 14:00; ref_id: 2ceb85d'
+  [12] important_people                         block-02add39d-4f74-4f3c-881f-9b0b4aa30aae  agents=['companion-sleeptime_copy', 'docs-and-transcripts-agen', 'pulse-monitor-agent_copy', 'calendar-agent_copy', 'email-agent-sleeptime']
+      val: 'Concord Staff (key) - Sue Brau; sbrau@concord.org;'
+  [12] task_extraction_tool_use_guidelines      block-e8bf985e-9f11-44f4-b889-4bba07e2fd17  agents=['companion-sleeptime_copy', 'docs-and-transcripts-agen', 'pulse-monitor-agent-sleep', 'pulse-monitor-agent_copy', 'calendar-agent_copy']
+      val: '# Task Extraction & Lifecycle Tool Guidelines  You'
+  [8] extracted_tasks                          block-90300b77-6b72-42cb-8e67-c74fbb497cf6  agents=['docs-and-transcripts-agen', 'pulse-monitor-agent-sleep', 'pulse-monitor-agent_copy', 'email-agent-sleeptime', 'email-agent']
+      val: '# Extracted Tasks  This is a shared memory block w'
+  [6] human                                    block-e5a68c10-03c1-4c85-9831-930b3ac9c4c7  agents=['docs-and-transcripts-agen', 'pulse-monitor-agent_copy', 'calendar-agent_copy', 'email-agent', 'tasks-agent']
+      val: 'User Information: - Name: Chad Dorsey - Email: cdo'
+  [6] coordination_task_smoke-v2-test3         block-c4d76867-6c20-4f06-bf3d-e5fe25b07508  agents=['companion-sleeptime_copy', 'docs-and-transcripts-agen', 'pulse-monitor-agent_copy', 'calendar-agent_copy', 'email-agent-sleeptime']
+      val: 'Meeting Prep for meeting_prep Task ID: task-meetin'
+  [4] three_month_priorities                   block-4a532465-8035-49d1-9e60-2ddbc37162bf  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent', 'daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: '- Submit proposals to the National Science Foundat'
+  [4] agent_info                               block-61809ff0-0467-4fb7-8ee2-67655ef3f422  agents=['tasks-agent-sleeptime', 'tasks-agent', 'daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: 'Mission Control: agent_id: agent-90b2e860-6345-49a'
+  [3] important_people                         block-ec381d6a-57be-4b33-9333-121d2888cdfb  agents=['calendar-agent', 'XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'Concord Staff Info Ethan McElroy; email: emcelroy@'
+  [3] coordination_task_default                block-3d75c464-48c4-4cb1-b687-b850a02c7d6c  agents=['companion-sleeptime_copy', 'email-agent-sleeptime', 'pulse-monitor-agent-sleep']
+      val: ''
+  [3] coordination_gathered_default            block-26e3b427-cfc6-4120-9713-ed13b31e126f  agents=['companion-sleeptime_copy', 'email-agent-sleeptime', 'pulse-monitor-agent-sleep']
+      val: '[Meeting Summary: Early March 2026 - Organizationa'
+  [2] persona                                  block-11ba42c6-6565-4e7a-a801-48b79a43ca40  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'The following is a starter persona, and it can be '
+  [2] human                                    block-1cbe874f-18a2-41fb-a0a2-8c5aa236bb66  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'This is my section of core memory devoted to infor'
+  [2] persona                                  block-0bf45604-b1a2-472b-a6b8-a5a64a9464a9  agents=['XXX-ARCHIVE-voice-compani', 'XXX-ARCHIVE-voice-compani']
+      val: 'The following is a starter persona, and it can be '
+  [2] human                                    block-e108ead6-2592-4b56-9337-632995cdd2f0  agents=['XXX-ARCHIVE-voice-compani', 'XXX-ARCHIVE-voice-compani']
+      val: 'This is my section of core memory devoted to infor'
+  [2] executive_assistant_tasks_and_functions  block-396128fc-3fe2-4dc8-bd7c-2f582b2cd7c3  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'As an executive assistant, you help me organize my'
+  [2] weekly_priorities                        block-c8921059-8a7b-4974-b1cc-8cc513bbee97  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: '- Focus on leading and coordinating proposal submi'
+  [2] three_month_priorities                   block-b7b0cf58-ef52-4740-bbc6-5ee03ca4377a  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: '- Submit proposals to the National Science Foundat'
+  [2] key_tasks_and_projects                   block-f61d8c9a-5cbf-4bfa-a196-8f021ae12ee4  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'Projects: - OF Tweaks: fKQZJCtFOZd - Daily Review:'
+  [2] upcoming_events_and_deadlines            block-462f5d0d-c59a-4cb4-95c0-ff424c859b6f  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: "October 14, 2025 – Chad's meetings (Eastern): - 9:"
+  [2] tool_use_guidelines                      block-0261d3dc-089b-40b0-9244-ff0ecbd8e731  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'When making any tool calls, you always provide the'
+  [2] important_people                         block-18056d34-20b0-41a1-b00a-8fb913bdea11  agents=['XXX-ARCHIVE-scratch-agent', 'XXX-ARCHIVE-companion-age']
+      val: 'Concord Staff Info Ethan McElroy; email: emcelroy@'
+  [2] scheduling_rules_preferences_and_workflo block-6870ffd0-6bec-47aa-8c38-7118dff7e3ee  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: ' - Always prefer to schedule meetings back to back'
+  [2] zoom_meeting_info                        block-663a08f5-b22e-456b-8305-32e68cd36544  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: 'Chad Dorsey is inviting you to a scheduled Zoom me'
+  [2] task_management_best_practices           block-47d6809b-f76c-4f86-af23-e742a7488a0d  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: ' When the user requests a listing of their project'
+  [2] daily_briefing_and_notes                 block-4d25c4d0-bc26-4730-af9d-6364a27ce8a1  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: ' # Daily Briefing Format (Prototype)  ## Main Sche'
+  [2] current_daily_schedule_and_available_tim block-1050977d-ab52-41f3-825a-b38293285a66  agents=['XXX-ARCHIVE-companion-age', 'XXX-ARCHIVE-companion-age']
+      val: '# Daily Schedule & Available Time for October 16, '
+  [2] human                                    block-238fb597-87a4-472d-9502-b31ce16ac461  agents=['pulse-monitor-agent', 'daily-schedule-agent-slee']
+      val: "User's current time zone is EST (UTC-5).  User app"
+  [2] current_daily_schedule_and_available_tim block-28c6e49e-e2bf-4682-8b0c-68623fcee0c7  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: "**Monday's Schedule** (updated Apr. 25 at 6:00 AM)"
+  [2] tool_use_guidelines                      block-41482ea5-fc7e-45e6-a68c-09fa4cef6ff3  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: 'tool use guidelines: When you receive content wrap'
+  [2] weekly_priorities                        block-4a7bc2a4-e9c5-4176-a7bf-ad117a4ed2fe  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: '- Focus on leading and coordinating proposal submi'
+  [2] persona                                  block-660a2766-e7ff-4e58-8388-cb104d990f31  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: 'I am Kinara, your primary assistant coordinating y'
+  [2] key_tasks_and_projects                   block-8f922166-b2cb-428c-a66e-24ada3369121  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: 'Projects: - OF Tweaks: fKQZJCtFOZd - Daily Review:'
+  [2] executive_assistant_tasks_and_functions  block-97a3f8a4-768d-4921-940e-6ed4f25573e5  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: "**Monday's Schedule** (updated Dec. 21 at 6:16 PM)"
+  [2] upcoming_events_and_deadlines            block-c8dcfb08-3d02-439b-8ab6-5b35c6e08e53  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: '### Upcoming Events: - **Concord Tech Capabilities'
+  [2] task_management_best_practices           block-e97c685d-fe1b-4cd2-8d54-af35e673d6ce  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: 'Key Best Practices for Task Tool Calls and Formatt'
+  [2] zoom_meeting_info                        block-f87464b4-df54-4c15-9afe-983eb4a2e967  agents=['daily-schedule-agent-slee', 'main-assistant-agent-kina']
+      val: "**Monday's Schedule** (updated Dec. 21 at 6:00 PM)"
+  [2] persona                                  block-e482ad3c-c120-4b28-8989-52fb94f73eee  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: 'The following is a starter persona, and it can be '
+  [2] channel_analytics_csv                    block-45ac4d00-ef16-4ce7-a7f6-6874998b9057  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: 'Description,Visibility,Total membership,Members wh'
+  [2] slack_channels_list                      block-19d7ba38-4899-4b29-b297-86d1f5b9b4a3  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '# Slack Channels List C9LLH8J2F  #inspect-tech C04'
+  [2] drive_analytics_workspace                block-1aea046c-4418-441d-a993-e13524e46dfa  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '{"2025-11-10": {"summary": {"total_activities": 35'
+  [2] drive_analytics_personal                 block-67bbeca7-148e-49d9-88ef-912619f017aa  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '{}'
+  [2] drive_analytics_mentions                 block-0fc76fd2-3233-4554-9670-2f5eaa4e09ba  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '{}'
+  [2] drive_analytics_averages                 block-5b4cdbe9-2e51-4729-af6b-df6ac774598c  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '{}'
+  [2] drive_analytics_config                   block-92b69dd6-0c96-4d3e-8bf5-ca8cfa3801f4  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '{   "my_email": "cdorsey@concord.org",   "max_days'
+  [2] _temp_slack_member_analytics_csv         block-1da3450f-6b81-4c4e-8a63-04a15487d00c  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: ''
+  [2] __temp_slack_member_analytics_csv        block-d8947c52-d8c8-4e9b-88ca-32e6a8f3ef97  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: ''
+  [2] _temp_slack_shared_links_csv             block-784a5265-eb38-4e78-8ff1-034e1b60d733  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: ' # Slack Shared Links for December 4, 2025  - [Col'
+  [2] slack_link_reporting_format              block-b6b40027-ae6e-4096-b004-6ebceca7326d  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: 'Slack Link Retrieval and Reporting Process – Forma'
+  [2] temp_mpdm_list                           block-93a56ec2-d798-4f77-8fc3-f700b044b733  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: 'Listing all MPDMs with their channel IDs and names'
+  [2] slack_pulse_reporting_process            block-ca74a7fc-b56e-4aad-8bb6-9f4b5f6932a8  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: 'Slack Pulse Reporting Process and Workflow (v1)  P'
+  [2] persona                                  block-141be962-5dfa-4b15-a38f-7625985f24e2  agents=['tasks-agent-sleeptime', 'tasks-agent']
+      val: 'I am the Tasks Agent. I own the full task lifecycl'
+  [2] persona                                  block-7749b7be-e373-4f8d-a6de-df599fb997f0  agents=['email-agent-sleeptime', 'email-agent']
+      val: 'I am the Email Agent, managing Gmail for Chad.  Co'
+  [2] dec19_random_summary                     block-b8963bf1-07f0-4e52-a2d8-768348c303a8  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '#random, Dec 19, 2025 summary: - Chad Dorsey kicke'
+  [2] slack_tool_use_guidelines                block-c03042d0-b989-45de-ae58-b9c4d3ce20e0  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '# Slack Tool Selection Guide  ## When to Use Which'
+  [2] _slack_link_reporting_format             block-d858cb5d-23e7-49b1-a570-aa3c86603683  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: 'Slack Link Retrieval and Reporting Process – Forma'
+  [2] drive_tool_use_guidelines                block-2232af58-0ad0-4f94-ad6c-60c9a4acb8ca  agents=['pulse-monitor-agent-sleep', 'pulse-monitor-agent']
+      val: '# Drive Tools Guide  ## search_drive_activity Find'
+  [2] human                                    block-76d841be-a6b8-482a-9964-69a14b920ba8  agents=['sports_and_media_maven_sl', 'sports_and_media_maven']
+      val: 'Always prefer the HD version of a channel or show '
+  [2] persona                                  block-c4d66070-8a40-45ea-8256-386c16c1cbae  agents=['sports_and_media_maven_sl', 'sports_and_media_maven']
+      val: 'The following is a starter persona, and it can be '
+  [2] tool_use_guidelines                      block-c648762f-7d52-44e2-9e8b-c2ff4b0265a5  agents=['sports_and_media_maven_sl', 'sports_and_media_maven']
+      val: 'Whenever switching to cable via FIOS, always selec'

@@ -1,0 +1,19 @@
+/Volumes/main-drive/ai-PA/slackbot/ai/conversation_helper.py:322:                attach_url = f"{LETTA_BASE_URL}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}"
+/Volumes/main-drive/ai-PA/scripts/letta-duplicate-block.sh:158:    "$LETTA_BASE_URL/v1/agents/$TARGET_AGENT_ID/core-memory/blocks/attach/$NEW_BLOCK_ID")
+/Volumes/main-drive/ai-PA/scripts/create_awareness_blocks.py:170:        f"{LETTA_BASE}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/scripts/bootstrap_letta_memory.sh:26:  curl -sS -X PATCH "$LETTABASE/v1/agents/$AGENT_ID/core-memory/blocks/attach/$BLOCK_ID" \
+/Volumes/main-drive/ai-PA/pa-routing-handler/src/pa_routing/services/coordination_handler.py:245:                    f"{self.base_url}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}"
+/Volumes/main-drive/ai-PA/pa-routing-handler/src/pa_routing/services/coordination_handler.py:275:                    f"{self.base_url}/v1/agents/{agent_id}/core-memory/blocks/detach/{block_id}"
+/Volumes/main-drive/ai-PA/letta/create_daily_analytics_block.py:65:            f"{LETTA_BASE}/v1/agents/{PULSE_MONITOR_ID}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/implement_shared_memory_blocks.py:122:        f"{LETTA_BASE}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/implement_shared_memory_blocks.py:130:        f"{LETTA_BASE}/v1/agents/{agent_id}/core-memory/blocks/detach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/create_domain_specific_blocks.py:311:        f"{LETTA_BASE}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/env/lib/python3.11/site-packages/letta_client/resources/agents/blocks.py:299:                "/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}", agent_id=agent_id, block_id=block_id
+/Volumes/main-drive/ai-PA/letta/env/lib/python3.11/site-packages/letta_client/resources/agents/blocks.py:341:                "/v1/agents/{agent_id}/core-memory/blocks/detach/{block_id}", agent_id=agent_id, block_id=block_id
+/Volumes/main-drive/ai-PA/letta/env/lib/python3.11/site-packages/letta_client/resources/agents/blocks.py:620:                "/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}", agent_id=agent_id, block_id=block_id
+/Volumes/main-drive/ai-PA/letta/env/lib/python3.11/site-packages/letta_client/resources/agents/blocks.py:662:                "/v1/agents/{agent_id}/core-memory/blocks/detach/{block_id}", agent_id=agent_id, block_id=block_id
+/Volumes/main-drive/ai-PA/letta/setup_mission_control_rover.py:101:            f"{LETTA_BASE_URL}/v1/agents/{agent_id}/core-memory/blocks/detach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/setup_mission_control_rover.py:177:        f"{LETTA_BASE_URL}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/setup_agent_info_blocks.py:154:        f"{LETTA_BASE_URL}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/create_drive_analytics_blocks.py:105:        f"{LETTA_BASE}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",
+/Volumes/main-drive/ai-PA/letta/attach_coordination_blocks_to_agents.py:128:        f"{LETTA_BASE}/v1/agents/{agent_id}/core-memory/blocks/attach/{block_id}",

@@ -1,0 +1,266 @@
+TOTAL AGENTS: 44
+
+  Letta Code                               agent-7f293624-0c25-47d0-9360-8050d32a7bd5
+    handle: litellm/gpt-5.2
+    tags: ['origin:letta-code']
+    blocks (2): ['human', 'persona']
+    desc: Letta Code agent created in /Users/dorseyhomeserver/letta-ta
+
+  Letta Code                               agent-d147c157-5825-44bf-95fb-b01354a525e7
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-5afd6fa9-a2c4-4f3e-9382-d912668fe745
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul', 'human/family', 'human/interests', 'human/overview']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-5b5d5c44-2091-4aea-a650-dd411d46feff
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-b3fe64b3-4f3b-4944-b247-8abe12a85b9f
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-6d5def3e-85f0-4069-91ca-315524da202d
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-57cfeb67-7f09-4fce-b903-51ecd5437cbf
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-c2c25a07-0576-4cf3-a901-2b5331499f0f
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-8c882472-5ca0-4c76-9719-1b79613d6903
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  Letta Code                               agent-f5fcc34b-285b-42cf-b70f-00c28ba3744e
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Users/chaddorsey/Dropbox/dev/le
+
+  MC-rogue-44eda                           agent-44eda6f7-d62a-422d-bff7-6f488fd644cd
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul', 'human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/lettab
+
+  MC-rogue-a5f37                           agent-a5f374b2-0c80-405b-9999-017515f15ed2
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul', 'human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/lettab
+
+  MC-rogue-e119f                           agent-e119f0ed-2f4c-41a6-bff0-dd8b366f7a81
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['persona/soul', 'human/routines', 'persona/learned_behaviors', 'human/overview', 'human/personality', 'human/work', 'human/interests', 'persona/interests', 'human/preferences', 'human/family', 'persona/expression']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/lettab
+
+  Mission Control                          agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef
+    handle: litellm/kimi-k2p6
+    tags: ['origin:letta-code']
+    blocks (5): ['laptop_execution_preference', 'assistant_role_playbook', 'shared_context', 'important_people', 'rover_status_log_202603a']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/letta-
+
+  XXX - Ignore LettaBot                    agent-84338b52-b4a5-4f17-b31f-205e04bb5733
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/lettab
+
+  XXX Ignore - Letta Code                  agent-a71365ed-d493-49d3-9068-7a6037d324fd
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'name:researcher', 'origin:letta-teams']
+    blocks (1): ['teammate']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA
+
+  XXX Ignore - LettaBot                    agent-bb28b419-10b1-4983-8d2d-c3897f89ddf0
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/lettab
+
+  XXX-ARCHIVE-companion-agent              agent-63353ba0-65d7-4307-9d1d-68ed49702169
+    handle: letta/letta-free
+    tags: []
+    blocks (15): ['persona', 'human', 'executive_assistant_tasks_and_functions', 'weekly_priorities', 'three_month_priorities', 'key_tasks_and_projects', 'upcoming_events_and_deadlines', 'tool_use_guidelines', 'important_people', 'scheduling_rules_preferences_and_workflows', 'zoom_meeting_info', 'task_management_best_practices', 'daily_briefing_and_notes', 'current_daily_schedule_and_available_time', 'extracted_tasks']
+    desc: Act as a companion to the user, providing emotional support 
+
+  XXX-ARCHIVE-companion-agent-original     agent-53566e17-9755-46a5-8595-1a8a4e90145a
+    handle: letta/letta-free
+    tags: []
+    blocks (13): ['persona', 'human', 'executive_assistant_tasks_and_functions', 'weekly_priorities', 'three_month_priorities', 'key_tasks_and_projects', 'upcoming_events_and_deadlines', 'tool_use_guidelines', 'important_people', 'scheduling_rules_preferences_and_workflows', 'zoom_meeting_info', 'task_management_best_practices', 'extracted_tasks']
+    desc: Act as a companion to the user, providing emotional support 
+
+  XXX-ARCHIVE-companion-agent-sleeptime    agent-e3b11ee6-bfba-437e-867e-657c4fbcec86
+    handle: openai/gpt-4.1
+    tags: []
+    blocks (16): ['persona', 'human', 'memory_persona', 'executive_assistant_tasks_and_functions', 'weekly_priorities', 'three_month_priorities', 'key_tasks_and_projects', 'upcoming_events_and_deadlines', 'tool_use_guidelines', 'important_people', 'scheduling_rules_preferences_and_workflows', 'zoom_meeting_info', 'task_management_best_practices', 'daily_briefing_and_notes', 'current_daily_schedule_and_available_time', 'extracted_tasks']
+    desc: 
+
+  XXX-ARCHIVE-companion-agent-sleeptime    agent-1dbb936a-b452-4632-95b5-2e3a8f774df9
+    handle: letta/letta-free
+    tags: []
+    blocks (14): ['persona', 'human', 'memory_persona', 'executive_assistant_tasks_and_functions', 'weekly_priorities', 'three_month_priorities', 'key_tasks_and_projects', 'upcoming_events_and_deadlines', 'tool_use_guidelines', 'important_people', 'scheduling_rules_preferences_and_workflows', 'zoom_meeting_info', 'task_management_best_practices', 'extracted_tasks']
+    desc: 
+
+  XXX-ARCHIVE-scratch-agent-agent-17605801 agent-880a63ad-2dbd-4f4d-a92b-3346b3346b1c
+    handle: letta/letta-free
+    tags: []
+    blocks (2): ['important_people', 'extracted_tasks']
+    desc: A blank slate for you to create your own agent from scratch.
+
+  XXX-ARCHIVE-voice-companion-agent        agent-f33376c1-ef6a-4a52-add3-afddec3b6628
+    handle: letta/letta-free
+    tags: []
+    blocks (4): ['persona', 'human', 'conversation_summary', 'extracted_tasks']
+    desc: Act as a companion to the user, providing emotional support 
+
+  XXX-ARCHIVE-voice-companion-agent-sleept agent-f2248e19-72ba-4d2c-9ed3-793c3d358a20
+    handle: letta/letta-free
+    tags: []
+    blocks (4): ['persona', 'human', 'memory_persona', 'extracted_tasks']
+    desc: 
+
+  XXX-Ignore-Letta Code                    agent-2d920505-9291-48fe-922b-967a5a6f42c3
+    handle: anthropic/claude-sonnet-4-6
+    tags: ['origin:letta-code', 'origin:lettabot']
+    blocks (11): ['human/family', 'human/interests', 'human/overview', 'human/personality', 'human/preferences', 'human/routines', 'human/work', 'persona/expression', 'persona/interests', 'persona/learned_behaviors', 'persona/soul']
+    desc: Letta Code agent created in /Volumes/main-drive/ai-PA/lettab
+
+  auto_madden_agent                        agent-30ff1be2-3922-42fb-b7ee-458cb5a3bb07
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (3): ['human', 'persona', 'extracted_tasks']
+    desc: Act as a companion to the user, providing emotional support 
+
+  auto_madden_sleeptime                    agent-89d31c34-de69-4f34-b388-9bd8d9b647fa
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (4): ['human', 'memory_persona', 'persona', 'extracted_tasks']
+    desc: 
+
+  calendar-agent                           agent-e28c6c16-7dbe-42dd-bbae-1e7830be8218
+    handle: None
+    tags: []
+    blocks (19): ['important_people', 'scheduling_context', 'human', 'persona', 'agent_info', 'orchestrate_scheduling_tool_use_guidelines', 'coordination_task_identity-test-manual', 'response_formatting_guidelines', 'user_preferences', 'user_calendar_context', 'preferences_TEST_VERIFY_E2E', 'preferences_TEST_SLACKBOT_HELPER', 'preferences_TEST_E2E_FULL', 'preferences_U02V91KU8', 'preferences_U0AB18G54ET', 'preferences_identity-42c594bb-92bd-45ff-ad1a-2e609976eb1c', 'coordination_gathered_identity-test-manual', 'extracted_tasks', 'preferences_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12']
+    desc: A blank slate for you to create your own agent from scratch.
+
+  calendar-agent_copy                      agent-892a2d58-b9f6-4baf-84f3-c431fe46487d
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (18): ['task_extraction_tool_use_guidelines', 'agent_info', 'orchestrate_scheduling_tool_use_guidelines', 'persona', 'preferences_U02V91KU8', 'preferences_U0AB18G54ET', 'preferences_identity-42c594bb-92bd-45ff-ad1a-2e609976eb1c', 'response_formatting_guidelines', 'scheduling_context', 'user_calendar_context', 'user_preferences', 'preferences_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'human', 'important_people', 'calendar_preferences', 'extracted_tasks_archived', 'coordination_task_smoke-v2-test3', 'coordination_gathered_smoke-v2-test3_calendar']
+    desc: A blank slate for you to create your own agent from scratch.
+
+  companion-sleeptime_copy                 agent-374fd623-4a63-46c4-903d-e9ae235fc1d1
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (30): ['extracted_tasks', 'task_extraction_tool_use_guidelines', 'coordination_gathered_final-test-1_document', 'human', 'memory_persona', 'persona', 'tool_use_guidelines_meetings_docs', 'important_people', 'document_organization', 'task_extraction_process_docs_transcripts', 'extracted_task_archive_ref_format', 'coordination_task_final-test-2', 'queued_tasks_from_meetings', 'meeting_processing_chain', 'coordination_gathered_final-test-2_document', 'queued_tasks_from_drive', 'coordination_task_final-test-1', 'coordination_task_default', 'coordination_gathered_default', 'coordination_gathered_default_document', 'coordination_task_smoke-test-001', 'coordination_gathered_smoke-test-001_document', 'coordination_task_smoke-test-v2', 'coordination_gathered_smoke-test-v2_document', 'coordination_task_smoke-v2-quick', 'coordination_gathered_smoke-v2-quick_document', 'coordination_task_smoke-v2-test3', 'coordination_gathered_smoke-v2-test3_document', 'coordination_task_debug-test-1', 'coordination_gathered_debug-test-1_document']
+    desc: 
+
+  daily-schedule-agent-sleeptime           agent-a3f3940f-2dcb-4b73-a01c-132df63d5ae2
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (26): ['zoom_meeting_info', 'executive_assistant_tasks_and_functions', 'human', 'memory_persona', 'important_people', 'key_tasks_and_projects', 'current_daily_schedule_and_available_time', 'persona', 'scheduling_rules_preferences_and_workflows', 'task_management_best_practices', 'three_month_priorities', 'tool_use_guidelines', 'upcoming_events_and_deadlines', 'weekly_priorities', 'agent_info', 'active_scheduled_jobs', 'extracted_tasks', 'task_extraction_tool_use_guidelines', 'assistant_role_playbook', 'monitoring_recipes', 'daily_awareness', 'relationship_context', 'consolidation_instructions', 'assistant_discovery_log', 'assistant_confirmed_preferences', 'reference_links']
+    desc: 
+
+  docs-and-transcripts-agent               agent-398b4f6c-6afa-493f-8063-897c6b171a0d
+    handle: litellm/gpt-4.1-mini
+    tags: []
+    blocks (12): ['task_extraction_tool_use_guidelines', 'persona', 'extracted_tasks', 'tool_use_guidelines_meetings_docs', 'human', 'important_people', 'document_organization', 'task_extraction_process_docs_transcripts', 'meeting_processing_chain', 'queued_tasks_from_drive', 'coordination_task_smoke-v2-test3', 'coordination_gathered_smoke-v2-test3_document']
+    desc: Act as a companion to the user, providing emotional support 
+
+  email-agent                              agent-b4928949-8012-4436-a3c7-a9e510785147
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (11): ['persona', 'task_extraction_tool_use_guidelines', 'human', 'important_people', 'email_patterns', 'task_extraction_process_email', 'email_tool_use_guidelines', 'queued_tasks_from_email', 'extracted_tasks', 'coordination_task_smoke-v2-test3', 'coordination_gathered_smoke-v2-test3_email']
+    desc: Act as a companion to the user, providing emotional support 
+
+  email-agent-sleeptime                    agent-feb2c0f7-4c70-4240-bc1d-21ad12319fc9
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (43): ['coordination_gathered_identity-cdorsey', 'coordination_gathered_identity-cdorsey-main', 'coordination_gathered_identity-cdorsey-personal', 'extracted_tasks', 'coordination_gathered_identity-log-test', 'coordination_gathered_identity-debug-test', 'human', 'memory_persona', 'persona', 'coordination_task_identity-cdorsey', 'coordination_task_identity-log-test', 'coordination_task_identity-cdorsey-main', 'coordination_task_identity-cdorsey-personal', 'coordination_task_identity-debug-test', 'coordination_task_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'coordination_gathered_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'coordination_task_identity-log-test-2', 'coordination_gathered_identity-log-test-2', 'coordination_task_identity-debug-test2', 'coordination_gathered_identity-debug-test2', 'coordination_task_default', 'coordination_gathered_default', 'important_people', 'email_patterns', 'task_extraction_tool_use_guidelines', 'coordination_gathered_final-test-1_email', 'task_extraction_process_email', 'email_tool_use_guidelines', 'queued_tasks_from_email', 'coordination_task_final-test-2', 'coordination_gathered_final-test-2_email', 'coordination_task_final-test-1', 'coordination_gathered_default_email', 'coordination_task_smoke-test-001', 'coordination_gathered_smoke-test-001_email', 'coordination_task_smoke-test-v2', 'coordination_gathered_smoke-test-v2_email', 'coordination_task_smoke-v2-quick', 'coordination_gathered_smoke-v2-quick_email', 'coordination_task_smoke-v2-test3', 'coordination_gathered_smoke-v2-test3_email', 'coordination_task_debug-test-1', 'coordination_gathered_debug-test-1_email']
+    desc: 
+
+  main-assistant-agent-kinara              agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (22): ['zoom_meeting_info', 'executive_assistant_tasks_and_functions', 'important_people', 'key_tasks_and_projects', 'current_daily_schedule_and_available_time', 'persona', 'task_management_best_practices', 'three_month_priorities', 'tool_use_guidelines', 'upcoming_events_and_deadlines', 'weekly_priorities', 'agent_info', 'task_extraction_tool_use_guidelines', 'human', 'extracted_tasks_archived', 'assistant_role_playbook', 'monitoring_recipes', 'daily_awareness', 'relationship_context', 'assistant_discovery_log', 'assistant_confirmed_preferences', 'reference_links']
+    desc: Act as a companion to the user, providing emotional support 
+
+  pulse-monitor-agent                      agent-6eb765bf-7268-4f6d-a380-c527c9c53000
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (22): ['persona', 'extracted_tasks', 'important_people', 'three_month_priorities', 'human', 'channel_analytics_csv', 'slack_channels_list', 'drive_analytics_workspace', 'drive_analytics_personal', 'drive_analytics_mentions', 'drive_analytics_averages', 'drive_analytics_config', '_temp_slack_member_analytics_csv', '__temp_slack_member_analytics_csv', '_temp_slack_shared_links_csv', 'slack_link_reporting_format', 'temp_mpdm_list', 'slack_pulse_reporting_process', 'dec19_random_summary', 'slack_tool_use_guidelines', '_slack_link_reporting_format', 'drive_tool_use_guidelines']
+    desc: Act as a companion to the user, providing emotional support 
+
+  pulse-monitor-agent-sleeptime            agent-66c4a151-7182-4cfc-9195-68b2e34d0847
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (43): ['persona', 'human', 'memory_persona', 'important_people', 'three_month_priorities', 'channel_analytics_csv', 'coordination_gathered_identity-debug-test', 'slack_channels_list', 'drive_analytics_workspace', 'drive_analytics_personal', 'drive_analytics_mentions', 'drive_analytics_averages', 'drive_analytics_config', 'coordination_task_identity-cdorsey', 'coordination_task_identity-cdorsey-main', '_temp_slack_member_analytics_csv', '__temp_slack_member_analytics_csv', '_temp_slack_shared_links_csv', 'slack_link_reporting_format', 'coordination_task_identity-cdorsey-personal', 'temp_mpdm_list', 'slack_pulse_reporting_process', '_temp_slack_activity_summary_dec19', 'dec19_random_summary', 'slack_tool_use_guidelines', '_slack_link_reporting_format', 'drive_tool_use_guidelines', 'extracted_tasks', 'coordination_task_identity-debug-test', 'task_extraction_tool_use_guidelines', 'coordination_gathered_identity-cdorsey', 'coordination_task_identity-log-test', 'coordination_gathered_identity-log-test', 'coordination_task_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'coordination_gathered_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'coordination_gathered_identity-cdorsey-main', 'coordination_gathered_identity-cdorsey-personal', 'coordination_task_identity-log-test-2', 'coordination_gathered_identity-log-test-2', 'coordination_task_identity-debug-test2', 'coordination_gathered_identity-debug-test2', 'coordination_task_default', 'coordination_gathered_default']
+    desc: 
+
+  pulse-monitor-agent-sleeptime_copy       agent-fd0cd292-6a10-4b7f-abb3-d7732eae932c
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (41): ['extracted_tasks', 'task_extraction_tool_use_guidelines', 'important_people', 'memory_persona', 'persona', 'slack_channels_list', 'slack_link_reporting_format', 'slack_pulse_reporting_process', 'slack_tool_use_guidelines', 'temp_mpdm_list', 'three_month_priorities', '_slack_link_reporting_format', '_temp_slack_activity_summary_dec19', 'channel_analytics_csv', 'coordination_gathered_default', 'coordination_gathered_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'coordination_gathered_identity-cdorsey', 'coordination_gathered_identity-cdorsey-main', 'coordination_gathered_identity-cdorsey-personal', 'coordination_gathered_identity-debug-test', 'coordination_gathered_identity-debug-test2', 'coordination_gathered_identity-e80a4f2b-a157-47c4-af45-0a4e8f1aec3e', 'coordination_gathered_identity-log-test', 'coordination_gathered_identity-log-test-2', 'coordination_task_default', 'coordination_task_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'coordination_task_identity-cdorsey', 'coordination_task_identity-cdorsey-main', 'coordination_task_identity-cdorsey-personal', 'coordination_task_identity-debug-test', 'coordination_task_identity-debug-test2', 'coordination_task_identity-e80a4f2b-a157-47c4-af45-0a4e8f1aec3e', 'coordination_task_identity-log-test', 'coordination_task_identity-log-test-2', 'drive_analytics_averages', 'drive_analytics_config', 'drive_analytics_mentions', 'drive_analytics_personal', 'drive_analytics_workspace', 'drive_tool_use_guidelines', 'human']
+    desc: 
+
+  pulse-monitor-agent_copy                 agent-2ed14ef4-6289-453a-ae27-290b6ed196b8
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (35): ['queued_tasks_from_slack', 'persona', 'slack_channels_list', 'slack_link_reporting_format', 'slack_pulse_reporting_process', 'slack_tool_use_guidelines', 'temp_mpdm_list', 'three_month_priorities', 'task_extraction_tool_use_guidelines', 'channel_analytics_csv', 'drive_analytics_averages', 'drive_analytics_config', 'drive_analytics_mentions', 'drive_analytics_personal', 'drive_analytics_workspace', 'drive_tool_use_guidelines', 'extracted_tasks', 'human', 'important_people', 'monitoring_priorities', 'extracted_task_archive_ref_format', 'task_extraction_process_slack', 'daily_analytics_briefing', 'coordination_gathered_becca_concord_checkin', 'coordination_task_smoke-v2-test3', 'coordination_gathered_smoke-v2-test3_pulse', 'daily_vibe_check_2026-03-13', 'daily_vibe_check_2026-03-20', 'daily_vibe_check_2026-03-20_final', 'daily_vibe_check_2026-03-20_combined', 'daily_vibe_check_2026-04-01', 'daily_vibe_check_2026-03-31', 'daily_vibe_check_2026-04-23', 'daily_vibe_check_2026-04-24', 'daily_vibe_check_2026-04-25']
+    desc: Act as a companion to the user, providing emotional support 
+
+  sports_and_media_maven                   agent-2515f29d-b773-43c5-b9ce-b6237897391d
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (6): ['human', 'persona', 'tool_use_guidelines', '_users_chad_profiles_and_access', 'fios_and_roku_channel_info', 'extracted_tasks']
+    desc: Act as a companion to the user, providing emotional support 
+
+  sports_and_media_maven_sleeptime         agent-a9f2c740-663c-4414-a553-47115180e49b
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (11): ['human', 'memory_persona', 'persona', 'tool_use_guidelines', '_users_chad_profiles_and_access', 'fios_and_roku_channel_info', 'streaming_sync_errors_and_issues', 'streaming_sync_status', 'tracked_series', 'extracted_tasks', 'tv_listings_summary']
+    desc: 
+
+  tasks-agent                              agent-dd15479e-6543-400e-8463-b2a48b13cd4a
+    handle: litellm/gpt-5.4-mini
+    tags: []
+    blocks (16): ['pending_enrichment', 'task_extraction_tool_use_guidelines', 'spark_queue', 'persona', 'extracted_tasks', 'workflow_recipes', 'extracted_tasks_review_work', 'omnifocus_tool_use_guidelines', 'agent_info', 'task_review_process', 'important_people', 'human', 'omnifocus_folder_and_project_hierarchy_sync', 'task_organization', 'tooling_bug_ref_id_string_coercion', 'ref_id_coercion_bug_contract_ack_2026-04-09']
+    desc: Act as a companion to the user, providing emotional support 
+
+  tasks-agent-sleeptime                    agent-62edcfac-2cc7-41a5-a3c2-d417da393397
+    handle: litellm/gpt-5.4-nano
+    tags: []
+    blocks (18): ['extracted_tasks', 'human', 'memory_persona', 'persona', 'agent_info', 'omnifocus_folder_and_project_hierarchy_sync', 'omnifocus_tool_use_guidelines', 'important_people', 'task_organization', 'task_extraction_tool_use_guidelines', 'task_review_process', 'preferences_identity-4b355b96-5a33-48c7-bac1-f2b88b517e12', 'extracted_tasks_review_work', 'workflow_recipes', 'forensic_investigation_omnifocus_bridge', 'spark_queue_processing_note', 'tooling_bug_ref_id_string_coercion', 'ref_id_coercion_bug_contract_ack_2026-04-09']
+    desc: 
+
+  work-packet-assembler                    agent-06a5b4a8-1e63-4cc6-a8bd-5a026518a763
+    handle: litellm/gpt-5.2
+    tags: []
+    blocks (2): ['persona', 'human']
+    desc: Narrow-scope worker agent that enriches task PACKET INFO and
+

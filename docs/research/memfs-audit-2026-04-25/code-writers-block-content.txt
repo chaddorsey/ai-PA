@@ -1,0 +1,1 @@
+/Volumes/main-drive/ai-PA/scripts/bootstrap_letta_memory.sh:26:  curl -sS -X PATCH "$LETTABASE/v1/agents/$AGENT_ID/core-memory/blocks/attach/$BLOCK_ID" \
