@@ -344,25 +344,24 @@ This is a band-aid, not a fix. Use only if blocked.
 2. Patched binary + `LETTA_MEMFS_GIT_URL` set but agent has no tag → clones from the server proxy as usual (patch is additive, per patches/README)
 3. Patched binary + agent has tag → clones from Gitea URL (Phase 4 validates)
 
-### Phase 3 — Block duplication helper
+### Phase 3 — Block duplication helper (COMPLETED 2026-04-25)
 
-- [ ] **3.1 Create `scripts/letta-duplicate-block.sh`**
-  - Input: `SOURCE_BLOCK_ID`, `TARGET_AGENT_ID`, optional `NEW_LABEL` (defaults to source label)
-  - Action: `GET /v1/blocks/$SOURCE_BLOCK_ID` → `POST /v1/blocks/` with same value and label → `PATCH /v1/agents/$TARGET_AGENT_ID/core-memory/blocks/attach/$NEW_BLOCK_ID`
-  - Idempotent: if the target agent already has a block with the same label, skip with a warning
-  - Output: prints the new block ID
+- [x] **3.1 `scripts/letta-duplicate-block.sh`** (2026-04-25)
+  - Inputs: `SOURCE_BLOCK_ID`, optional `TARGET_AGENT_ID`, optional `--label NEW_LABEL`
+  - Action: GET source block → POST new block (copy value/label/description/limit) → PATCH agent attach (if target given)
+  - Refuses the six Class-B shared queue blocks (R20) with explicit error message + exit 2
+  - Idempotent: if target agent already has a block with the new label, returns existing block_id and skips creation
+  - Stdout: just the new block_id (so callers can capture); diagnostics go to stderr
 
-- [ ] **3.2 Test the helper against throwaway blocks**
-  - Create a throwaway block, duplicate it to a throwaway agent, verify the duplicate is a distinct block (different ID), same content
-  - Edit the duplicate and verify the source is untouched
-  - Verification: `curl /v1/blocks/$SOURCE` and `/v1/blocks/$NEW` show different IDs, same content after creation, divergent after edit
-
-**Test file**: `tests/integration/test_letta_duplicate_block.sh`
-
-**Test scenarios**:
-1. Duplicate a single block — verify new block, attach to target
-2. Duplicate when target already has same-label block — verify skip with warning
-3. Duplicate a block with non-ASCII content — verify encoding survives
+- [x] **3.2 Test scenarios all pass** (2026-04-25)
+  - Test file: `tests/integration/test_letta_duplicate_block.sh`
+  - Scenarios validated:
+    1. Duplicate without target — produces unattached block, distinct ID, content preserved
+    2. Duplicate to target agent — block created and attached
+    3. Idempotence — re-run with same target+label returns existing id (no duplicate)
+    4. Edit isolation — modifying dup doesn't touch source
+    5. Refusal — Class-B forbidden block (extracted_tasks `block-90300b77-...`) exits 2 cleanly
+  - Self-cleanup via trap: removes any test-created blocks/agents on exit
 
 ### Phase 4 — Staged canaries (C1–C5)
 
