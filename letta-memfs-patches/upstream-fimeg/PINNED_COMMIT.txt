@@ -1,0 +1,2 @@
+1156a55fa81bc71891a1f1ccac7351d98c713a47
+Vendored from https://github.com/Fimeg/letta-external-memfs at commit 1156a55fa81bc71891a1f1ccac7351d98c713a47 on 2026-04-25

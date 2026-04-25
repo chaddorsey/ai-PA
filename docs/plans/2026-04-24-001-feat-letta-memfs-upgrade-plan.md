@@ -55,6 +55,14 @@ The old image (`letta:pg-0.16.7`) and the Homebrew-installed `letta` binary rema
 
 ## Implementation Units
 
+### Codebase audits (2026-04-25, pre-Phase-1)
+
+- [x] **Audit: `--link` references** — none found in production code. Letta-code 0.19.x removed `--link`; we never used it. Confirmed via grep across all `.py/.ts/.js/.sh/.yaml/.md` (excluding node_modules, .worktrees, vendored patches, research docs).
+- [x] **Audit: `subagent_type=explore` references** — none in production code. The 5 hits are all in `docs/research/` documenting the upstream bug. Letta-code 0.24.0+ removed `explore` from BUILTIN_SOURCES (and we observed it broken in 0.23.8 too); we never used it.
+- [x] **Audit: any other deprecated subagent_types** — none. Our codebase makes zero direct `Task(subagent_type=...)` calls (Task is in disallowedTools).
+
+Result: clean audit. Forward-compatibility risk on the letta-code-version axis is minimal. Re-run before each letta-code minor bump.
+
 ### Phase -1 — Reconcile Task tool disablement (REVISED 2026-04-25)
 
 **Why this is Phase -1**: Every consolidation pattern in the sibling brainstorm depends on `Task(...)` invocations working. Task is currently in our `--disallowedTools`.
@@ -251,17 +259,30 @@ This is a band-aid, not a fix. Use only if blocked.
 
 ### Phase 1 — Patched Letta server image
 
-- [ ] **1.1 Vendor the patches locally**
-  - Create: `letta-memfs-patches/` directory at repo root containing a git submodule or direct-checkout of `github.com/Fimeg/letta-external-memfs` at a pinned commit
-  - Pin: record the commit SHA in `letta-memfs-patches/PINNED_COMMIT.txt` so rebuilds are reproducible
-  - Rationale: avoid depending on upstream main moving under us
+- [x] **1.1 Vendor the Fimeg patches at pinned commit** (2026-04-25)
+  - Vendored at `letta-memfs-patches/upstream-fimeg/` (4 patch files + README + CHANGELOG)
+  - Pinned to `Fimeg/letta-external-memfs@1156a55fa81bc71891a1f1ccac7351d98c713a47` (2026-04-24, "feat: add delete-propagation and system-only patches, fix bare-repo sync path")
+  - Patch headers verified well-formed; files touched:
+    - `memoryGit.ts.patch` → `src/agent/memoryGit.ts` (letta-code client patch)
+    - `server_memory_sync_endpoint.patch` → `letta/server/rest_api/routers/v1/agents.py` (REQUIRED — adds POST /v1/agents/{id}/memory/sync-from-git)
+    - `server_sync_delete_propagation.patch` → `letta/services/block_manager_git.py` (HARDENING — addresses Fimeg/Vee finding F3 "additive-only sync")
+    - `server_system_only_blocks.patch` → `letta/services/memory_repo/path_mapping.py` (HARDENING — addresses Fimeg/Vee finding F4 "all .md become blocks", gated by LETTA_MEMFS_BLOCK_PATH_PREFIXES env)
+  - Pin info at `letta-memfs-patches/upstream-fimeg/PINNED_COMMIT.txt`
 
-- [ ] **1.2 Create forked Letta source build directory**
-  - Create: `letta-memfs-build/` directory with a `Dockerfile` that (a) clones `letta-ai/letta` at 0.16.7, (b) applies all three server patches from `letta-memfs-patches/patches/`, (c) builds the server image
-  - Base: `FROM letta/letta:pg-0.16.7` if we can overlay, else build from source — verify which is feasible
-  - Dockerfile pattern: COPY patches → `RUN cd /app && patch -p1 < ...` → entrypoint unchanged
+- [ ] **1.2 Create patched Letta server image**
+  - Create: `letta-memfs-build/Dockerfile` that overlays on stock `letta/letta:0.16.7`
+  - Apply ALL THREE server patches (not just the required one):
+    - `server_memory_sync_endpoint.patch` (required — F3 prerequisite)
+    - `server_sync_delete_propagation.patch` (HARDENING — F3 fix)
+    - `server_system_only_blocks.patch` (HARDENING — F4 fix)
+  - Dockerfile pattern: `FROM letta/letta:0.16.7` → `COPY ../letta-memfs-patches/upstream-fimeg/server_*.patch /tmp/patches/` → `RUN cd /app && patch -p1 < /tmp/patches/X.patch && ...` → entrypoint unchanged
+  - Pre-flight verify-patches.sh that runs `patch --dry-run` before real apply (fails fast if anchors changed)
   - Output tag: `letta-local:0.16.7-memfs-v1`
-  - Verification: `docker build -t letta-local:0.16.7-memfs-v1 letta-memfs-build/ && docker run --rm letta-local:0.16.7-memfs-v1 python -c "import letta; print(letta.__version__)"`
+  - Verification: `docker build` succeeds; `docker run --rm letta-local:0.16.7-memfs-v1 python -c "import letta; print(letta.__version__)"` returns 0.16.7
+  - Acceptance criteria explicitly per Fimeg/Vee findings:
+    - F3 fix in place (delete propagation works — verified in Phase 4 canary test)
+    - F4 fix in place (path filter respected when `LETTA_MEMFS_BLOCK_PATH_PREFIXES=system/` set)
+    - Postgres schema unchanged (patches don't touch schema — verify via pg_dump diff)
 
 - [ ] **1.3 Wire the patched image into docker-compose.yml behind a flag**
   - Modify: `docker-compose.yml` — change `letta.image` from hardcoded `letta/letta:pg-0.16.7` to `${LETTA_IMAGE:-letta/letta:pg-0.16.7}`. Default stays on unpatched for safety.
