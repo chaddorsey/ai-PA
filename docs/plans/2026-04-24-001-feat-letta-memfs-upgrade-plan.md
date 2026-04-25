@@ -89,14 +89,19 @@ The chain of misattribution:
   - Applied via `letta-memfs-patches/patches/apply_letta_code_self_hosted_handle_fix.py` (idempotent Python script, atomic write, byte-exact match-and-replace)
   - All five outstanding questions resolved (see resolved-questions section in patch artifact)
 
-- [x] **C1.2 Project-local letta-code installed and patched** (2026-04-25)
-  - `npm install @letta-ai/letta-code@0.24.2` into `~/code/letta-code-memfs/`
-  - Backup `letta.js.original` retained alongside patched `letta.js`
+- [x] **C1.2 Project-local letta-code installed and patched, restructured into repo** (2026-04-25)
+  - Initial install: `npm install @letta-ai/letta-code@0.24.2` into `~/code/letta-code-memfs/`
+  - **Step 1 restructure (2026-04-25 evening)**: moved to `/Volumes/main-drive/ai-PA/letta-code-patched/` so the artifact lives under repo + backup umbrella alongside the patch script
+  - Build flow: `letta-code-patched/build.sh` runs `npm install` + applies `letta-memfs-patches/patches/apply_letta_code_self_hosted_handle_fix.py` idempotently
+  - `package.json` pins `@letta-ai/letta-code@0.24.2`
+  - `.gitignore` excludes `node_modules/` (artifact reproducible from build.sh, not committed)
+  - Backup `letta.js.original` retained alongside patched `letta.js` for rollback
   - Patch applied: 2 createAgentRequestBase blocks replaced, 8 `[PATCH-3205]` markers in file
-  - Binary verified: `node --check` passes, `--version` returns `0.24.2 (Letta Code)`, `--help` works
+  - Binary verified: `node --check` passes, `--version` returns `0.24.2 (Letta Code)`, end-to-end Task call against a `litellm/X`-handle pilot succeeds (`STEP1-VERIFY` file written by subagent)
 
 - [x] **C1.3 Wrapper script for LETTA_CODE_BIN** (2026-04-25)
   - At `letta-memfs-patches/letta-patched-wrapper.sh`
+  - Resolves repo root via `BASH_SOURCE` so it works regardless of where the repo lives
   - Subagent spawns inherit via the existing `LETTA_CODE_BIN` env-var mechanism (already built into letta-code via `resolveLettaInvocation` + `ensureLettaShimDir`)
   - Set `LETTA_CODE_BIN=<wrapper-path>` and parent + all subagent descendants use the patched copy
 

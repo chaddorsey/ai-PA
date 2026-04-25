@@ -1,0 +1,12 @@
+# node_modules holds the npm-installed letta-code that gets patched in place.
+# Reproducible via build.sh — install, then apply patch.
+node_modules/
+package-lock.json
+
+# Original backup written by npm install (pre-patch state); useful for rollback
+# during dev but not worth committing.
+node_modules/@letta-ai/letta-code/letta.js.original
+
+# Local IDE/OS noise
+.DS_Store
+.vscode/

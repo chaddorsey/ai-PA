@@ -15,7 +15,7 @@ sql-stopgap: ../scripts/letta-handle-stopgap/
 
 ## VALIDATED 2026-04-25 — Path C works end-to-end
 
-Patch built and applied to project-local letta-code at `~/code/letta-code-memfs/node_modules/@letta-ai/letta-code/letta.js`. Both `createAgent` sites carry the patch (8 `[PATCH-3205]` marker comments verified). Binary parses, runs, reports `0.24.2 (Letta Code)`.
+Patch built and applied to project-local letta-code at `/Volumes/main-drive/ai-PA/letta-code-patched/node_modules/@letta-ai/letta-code/letta.js` (restructured from initial `~/code/letta-code-memfs/` location into the repo on 2026-04-25 evening, see `letta-code-patched/README.md` and `letta-code-patched/build.sh`). Both `createAgent` sites carry the patch (8 `[PATCH-3205]` marker comments verified). Binary parses, runs, reports `0.24.2 (Letta Code)`.
 
 End-to-end Task validation against a fresh pilot agent with `llm_config.handle = "litellm/gpt-4.1-mini"` (matches our production agent shape):
 
