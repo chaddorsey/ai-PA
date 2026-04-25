@@ -480,7 +480,7 @@ This is a band-aid, not a fix. Use only if blocked.
 
 **This is a discrete required artifact, not just process discipline.** Before any production agent is migrated, we produce and review a written impact analysis for that specific agent. No production agent is touched until its analysis is signed off.
 
-- [ ] **4.37 Create the impact analysis template** at `docs/templates/memfs-migration-impact-analysis.md`. Template includes the following required sections:
+- [x] **4.37 Impact analysis template created** at `docs/templates/memfs-migration-impact-analysis.md` (2026-04-25). Template includes the following required sections:
   - **Agent identity**: ID, name, model, current tag set, current tool list (verbatim from `/v1/agents/{id}`)
   - **Current memory inventory**: every block currently attached (ID, label, last-modified, size, value-summary), distinguishing per-agent blocks from shared blocks
   - **Current writers**: enumerate every external service or human-driven path that writes to this agent's memory or messages — gmail-watch, slackbot, scheduling-orchestrator, pa-routing-handler, pa-web-ui sidebar, direct API, etc. For each: write frequency, write target (which block / message), write semantics (append / replace / structured)
