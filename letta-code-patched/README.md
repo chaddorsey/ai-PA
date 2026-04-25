@@ -1,8 +1,10 @@
 # letta-code-patched
 
-Pinned and patched copy of `@letta-ai/letta-code` for self-hosted Letta deployments where the `provider_models` registry doesn't include the parent agent's handle (which causes `POST /v1/agents/` to fail with `HandleNotFoundError` during subagent spawn).
+Pinned and patched copy of `@letta-ai/letta-code` for self-hosted Letta. Applies two independent patches to the bundled `letta.js`:
 
-The patch (`Path C` from the diagnostic chain) makes letta-code send `llm_config: <object>` instead of `model: <handle-string>` when creating subagent agents, bypassing server-side handle resolution per `server.py:540` guard. Source: `../letta-memfs-patches/patches/letta_code_self_hosted_handle_fix.md`.
+1. **Path C handle-fix (`PATCH-3205`)** — fixes `POST /v1/agents/` failing with `HandleNotFoundError` during subagent spawn when the `provider_models` registry doesn't contain the parent agent's handle. Makes letta-code send `llm_config: <object>` instead of `model: <handle-string>` when creating subagents, bypassing server-side handle resolution per `server.py:540` guard. Source: `../letta-memfs-patches/patches/letta_code_self_hosted_handle_fix.md`.
+
+2. **memfs-external-git (`PATCH-MEMFS-GIT`)** — translates `Fimeg/letta-external-memfs/patches/memoryGit.ts.patch` to the bundle. Makes letta-code's memfs git operations route to `LETTA_MEMFS_GIT_URL` (e.g. our self-hosted Gitea) instead of the Letta server's `/v1/git/` proxy. Three changes: env-var-aware `getGitRemoteUrl`, skip-credential-helper-when-external, and a remote-origin-update path that handles non-`/v1/git/` URLs. Source: `../letta-memfs-patches/patches/apply_letta_code_memfs_external_git.py`.
 
 ## Why this lives in the repo
 
@@ -24,9 +26,12 @@ Idempotent. Safe to re-run after:
 
 The script:
 1. Runs `npm install` (uses pinned `@letta-ai/letta-code@0.24.2`)
-2. Backs up `letta.js` → `letta.js.original`
-3. Applies `letta-memfs-patches/patches/apply_letta_code_self_hosted_handle_fix.py`
-4. Verifies the result has ≥6 `[PATCH-3205]` markers and `--version` returns cleanly
+2. Backs up `letta.js` → `letta.js.original` (only on first run, only if pristine)
+3. Applies `letta-memfs-patches/patches/apply_letta_code_self_hosted_handle_fix.py` (Path C, `PATCH-3205`)
+4. Applies `letta-memfs-patches/patches/apply_letta_code_memfs_external_git.py` (memfs-external-git, `PATCH-MEMFS-GIT`)
+5. Verifies ≥6 `[PATCH-3205]` markers, ≥3 `[PATCH-MEMFS-GIT]` markers, parses cleanly, `--version` returns 0.24.2
+
+Patches 3 and 4 are independent and additive. Both can apply alone or together. Both are idempotent at the apply.py level (detect existing markers, skip).
 
 Output: `node_modules/@letta-ai/letta-code/letta.js` (patched, gitignored).
 

@@ -312,12 +312,15 @@ This is a band-aid, not a fix. Use only if blocked.
 
 ### Phase 2 — Patched letta-code client
 
-- [ ] **2.1 Clone letta-code into a project-local directory**
-  - Location: `~/code/letta-code-memfs/` (outside this repo — it's a separate project)
-  - Pin: letta-code 0.23.8 (matching what's currently installed)
-  - Apply: `patch -p1 < /Volumes/main-drive/ai-PA/letta-memfs-patches/patches/memoryGit.ts.patch`
-  - Build: `bun install && bun run build`
-  - Output: `~/code/letta-code-memfs/dist/` with a runnable CLI entry
+- [x] **2.1 Patched letta-code with both patches** (2026-04-25)
+  - Location: `/Volumes/main-drive/ai-PA/letta-code-patched/` (in repo, gitignored node_modules)
+  - Pin: letta-code 0.24.2 via npm
+  - Both patches applied via `build.sh`:
+    - `apply_letta_code_self_hosted_handle_fix.py` (Path C / `PATCH-3205`) — 8 markers
+    - `apply_letta_code_memfs_external_git.py` (memfs-git / `PATCH-MEMFS-GIT`) — 3 markers
+  - Both apply scripts idempotent (detect markers, skip if already applied)
+  - Pristine `letta.js.original` retained for rollback
+  - End-to-end build verified: `npm install` + both patches + parse check + version check
 
 - [ ] **2.2 Add a thin wrapper script so pa-web-ui / LettaBot can choose the binary**
   - Create: `scripts/letta-code-wrapper.sh` in *this* repo — resolves to `$LETTA_CODE_BIN` if set, else falls back to `/opt/homebrew/bin/letta`
