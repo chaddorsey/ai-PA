@@ -1404,8 +1404,11 @@ services:
 
   pa-web-ui:
     build:
-      context: ./pa-web-ui
-      dockerfile: Dockerfile
+      # Build context bumped to repo root so Dockerfile can COPY the
+      # Path C patch script from letta-memfs-patches/. See pa-web-ui/Dockerfile
+      # and docs/plans/2026-04-25-step-3a-proposal-letta-code-patched-cutover.md.
+      context: .
+      dockerfile: pa-web-ui/Dockerfile
     container_name: pa-web-ui
     restart: unless-stopped
     networks: [pa-internal]
@@ -1421,6 +1424,12 @@ services:
     environment:
       - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
       - LETTA_BASE_URL=http://letta:8283
+      # Path C patched letta-code lives at /usr/local/bin/letta in the image
+      # (patched in pa-web-ui/Dockerfile). Setting LETTA_CODE_BIN here makes
+      # letta-code's subagent shim mechanism propagate the patched binary to
+      # spawned subagents — currently a no-op since Task is in --disallowedTools,
+      # but prepares for Step 3b when Task gets re-enabled.
+      - LETTA_CODE_BIN=/usr/local/bin/letta
       - PORT=5200
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
       - GWS_BRIDGE_URL=http://gws-bridge:8098

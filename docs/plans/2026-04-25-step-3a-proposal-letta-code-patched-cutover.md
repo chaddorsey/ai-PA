@@ -1,9 +1,37 @@
 ---
 date: 2026-04-25
-status: proposal — awaiting user review before any production touching
+status: EXECUTED for pa-web-ui (2026-04-25 evening); LettaBot deferred (retirement path)
 parent-plan: ./2026-04-24-001-feat-letta-memfs-upgrade-plan.md
 phase: -1, sub-step C1.6 (Step 3a only — binary swap with Task still disallowed)
 ---
+
+## Execution log (2026-04-25)
+
+### pa-web-ui — DONE
+
+- Decisions confirmed by user: V1 (keep 0.23.8 pin), B1.1 (build context bump), L2 (in-place apply for LettaBot), pa-web-ui first, ~24h soak with light testing.
+- pa-web-ui Dockerfile updated to apply Path C patch at image build time.
+- docker-compose.yml: bumped pa-web-ui's build context to repo root; added `LETTA_CODE_BIN=/usr/local/bin/letta` env.
+- apply.py fixed to preserve file mode (was clobbering the executable bit, blocking the in-image symlink invocation).
+- Built + cut over: `docker compose build pa-web-ui && docker compose up -d pa-web-ui`. Healthy in <30s.
+- In-container verification: `letta --version` = `0.23.8`, `grep -c PATCH-3205` = `8`, `LETTA_CODE_BIN` = `/usr/local/bin/letta`.
+- Smoke check: `/health` returns 200, no errors in 10-min log window.
+
+### LettaBot — DEFERRED (retirement path)
+
+- LettaBot transitively pins letta-code 0.18.2 via `@letta-ai/letta-code-sdk@0.1.11`. Path C patch's `OLD_BLOCK` (calibrated against 0.23.8/0.24.2) doesn't match.
+- 0.18.2's `createAgentRequestBase` is simpler (no `compaction_settings`); a 0.18-specific patch variant was drafted then **discarded** because LettaBot is on the retirement path: it stays for Telegram only until pa-web-ui's migration completes and Letta Code Channels become available on self-hosted (per memory: "LettaBot stays for Telegram, its HTTP API can eventually retire once pa-web-ui is migrated").
+- LettaBot continues to run on its 0.18.2 letta-code with `Task` and `TodoWrite` still in `--disallowedTools`. No production changes to LettaBot.
+- LettaBot's letta.js verified untouched (mtime preserved at original Mar 13 install date, no patch markers, no backup files left over).
+
+### What's live
+
+- pa-web-ui: patched letta-code, Task still disallowed, soak in progress
+- LettaBot: stock 0.18.2 letta-code, Task still disallowed, behavior unchanged
+- Letta server, Gitea (not yet stood up), all agents: unchanged
+
+---
+
 
 # Step 3a Proposal — Patched letta-code Production Binary Swap
 

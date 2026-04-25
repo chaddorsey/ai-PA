@@ -27,6 +27,19 @@ ARG LETTA_CODE_VERSION=0.23.8
 RUN npm install -g "@letta-ai/letta-code@${LETTA_CODE_VERSION}" \
     && npm cache clean --force
 
+# Apply the Path C self-hosted handle-fix patch to the installed letta-code.
+# This makes subagent agent-creation send `llm_config: <object>` instead of
+# `model: <handle-string>`, bypassing the server-side handle resolution that
+# fails on self-hosted Letta when the parent's handle isn't in provider_models.
+# Idempotent + version-tolerant (works on 0.23.8 and 0.24.2). Safe to keep
+# applied across LETTA_CODE_VERSION bumps as long as the createAgentRequestBase
+# byte-block matches; if a future bump changes the block, update apply.py.
+# See: docs/research/2026-04-24-letta-issue-3205-final-diagnosis.md
+COPY letta-memfs-patches/patches/apply_letta_code_self_hosted_handle_fix.py /tmp/apply-3205.py
+RUN python3 /tmp/apply-3205.py /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
+    && grep -c PATCH-3205 /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
+    && rm /tmp/apply-3205.py
+
 
 # ---------- Stage 2: Python app image ----------
 FROM python:3.11-slim
@@ -61,11 +74,13 @@ RUN ln -sf ../lib/node_modules/@letta-ai/letta-code/letta.js /usr/local/bin/lett
     && letta --version
 
 # Python dependencies.
-COPY requirements.txt .
+# NOTE: build context is now repo root (set in docker-compose.yml), so
+# pa-web-ui sources are under pa-web-ui/.
+COPY pa-web-ui/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code.
-COPY . .
+COPY pa-web-ui/. .
 
 # Expose port.
 EXPOSE 5200

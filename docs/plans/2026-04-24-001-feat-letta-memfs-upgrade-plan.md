@@ -189,11 +189,28 @@ This is a band-aid, not a fix. Use only if blocked.
 
 #### Common to all paths
 
-- [ ] **-1.X Re-enable Task in production clients (only after Path R or B succeeds)**
-  - Adjust `lettabot/lettabot.yaml` to remove `Task` from `disallowedTools`
-  - Adjust pa-web-ui's letta-code subprocess invocation flags
-  - Verify pa-web-ui chat behavior is unchanged
+- [x] **C1.6 Step 3a — pa-web-ui binary swap (2026-04-25)**
+  - pa-web-ui rebuilt with Path C patch baked into image at build time
+  - Build context bumped to repo root so Dockerfile can COPY the patch script
+  - apply.py fixed to preserve executable mode on patched letta.js
+  - Container healthy, in-image verification passes, no error noise in logs
+  - Task still in `--disallowedTools`; patch is gated dead code in this state
+  - Soak window in progress
+  - Detailed execution log: `docs/plans/2026-04-25-step-3a-proposal-letta-code-patched-cutover.md`
+
+- [ ] **C1.6 Step 3a — LettaBot binary swap — DEFERRED (retirement path)**
+  - LettaBot transitively pins letta-code 0.18.2 via `@letta-ai/letta-code-sdk@0.1.11`
+  - 0.18.2 `createAgentRequestBase` shape differs from 0.23.8/0.24.2 (no `compaction_settings`)
+  - 0.18-variant patch drafted then discarded — LettaBot is on the retirement path (stays for Telegram only until self-hosted Letta Code Channels become available)
+  - LettaBot stays as-is with Task in `disallowedTools`. No production changes.
+
+- [ ] **C1.6 Step 3b — Re-enable Task in production (only after Step 3a soak is clean + canary work is sufficiently advanced)**
+  - Adjust pa-web-ui's letta-code subprocess invocation flags to remove `Task` from `--disallowedTools`
+  - Optionally also remove `EnterPlanMode` (validated working in C1.5)
+  - Keep `TodoWrite` blocked unless explicitly re-enabled (separate decision; C1.5 confirmed it works on the patched binary)
+  - Verify pa-web-ui chat behavior with Task is sane
   - Watch for any new failure patterns over 24h before declaring stable
+  - LettaBot Task is intentionally NOT re-enabled (deprecation path)
 
 **Gate**: Phases 0–3 may run in parallel with Phase -1. Phase 4 (canaries) cannot start C2 until either Path R or Path B succeeds, OR until we explicitly choose Path A and re-scope. Phase 6+ (universal migration via consolidators) is **hard-gated on Task working**, which is hard-gated on Path R or Path B.
 

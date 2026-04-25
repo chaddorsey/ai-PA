@@ -134,10 +134,15 @@ def main(path=None):
 
     new_content = content.replace(OLD_BLOCK, NEW_BLOCK)
 
+    # Capture original mode so the patched file remains executable
+    # (letta.js is invoked as a shebang script via /usr/local/bin/letta).
+    original_mode = os.stat(path).st_mode
+
     # Write atomically
     tmp_path = path + ".patch3205.tmp"
     with open(tmp_path, "w") as f:
         f.write(new_content)
+    os.chmod(tmp_path, original_mode)
     os.replace(tmp_path, path)
 
     n_markers = new_content.count("[PATCH-3205]")
