@@ -1609,6 +1609,44 @@ services:
       retries: 3
       start_period: 15s
 
+  # ---------------------------------------------------------------------------
+  # Gitea — self-hosted git host for letta-external-memfs (Phase 0).
+  # Provides per-agent memory repos that letta-code clones via LETTA_MEMFS_GIT_URL.
+  # See docs/plans/2026-04-24-001-feat-letta-memfs-upgrade-plan.md Phase 0.
+  # ---------------------------------------------------------------------------
+  gitea:
+    image: gitea/gitea:1.26.1
+    container_name: gitea
+    restart: unless-stopped
+    networks: [pa-internal]
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__server__DOMAIN: gitea
+      GITEA__server__ROOT_URL: http://gitea:3000/
+      GITEA__server__SSH_DOMAIN: gitea
+      # Disable SSH listener — letta-code uses HTTPS-style tokens
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__service__REQUIRE_SIGNIN_VIEW: "false"
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__log__MODE: console
+      GITEA__log__LEVEL: Info
+    ports:
+      # Expose only on loopback so the host can reach :3030 for admin/dev,
+      # but agents inside docker hit gitea:3000 over the internal network.
+      - "127.0.0.1:3030:3000"
+    volumes:
+      - gitea-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 
 volumes:
   supabase_db:
@@ -1632,6 +1670,7 @@ volumes:
   watch-history-credentials:
   entity-backfill-data:
   task-completion-data:
+  gitea-data:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring

@@ -782,6 +782,27 @@ main() {
             docker-compose exec -T n8n n8n export:workflow --backup --output=/tmp/n8n_backup.json 2>/dev/null || true
             docker cp "$(docker-compose ps -q n8n)":/tmp/n8n_backup.json "$BACKUP_PATH/configs/n8n_workflows.json" 2>/dev/null || true
         fi
+
+        # Backup Gitea via gitea dump (application-aware, SQLite-consistent).
+        # The gitea-data volume is also captured in volume backup as belt-and-suspenders;
+        # the dump is the authoritative restore artifact for repos + db + config.
+        if is_service_running "gitea"; then
+            log "Creating Gitea application dump..."
+            mkdir -p "$BACKUP_PATH/gitea"
+            local dump_dir="/tmp/gitea-dump-$TIMESTAMP"
+            # gitea dump runs as 'git' user; produces a single timestamped zip
+            docker exec -u git gitea sh -c "mkdir -p $dump_dir && cd $dump_dir && gitea dump -c /data/gitea/conf/app.ini --type zip" >/dev/null 2>&1 || \
+                log_warning "Gitea dump failed; gitea-data volume tar from backup_all_volumes is the fallback restore source"
+            # Copy any produced dump out
+            docker exec gitea sh -c "ls $dump_dir/*.zip 2>/dev/null | head -1" 2>/dev/null | while read dump_path; do
+                if [[ -n "$dump_path" ]]; then
+                    docker cp "gitea:$dump_path" "$BACKUP_PATH/gitea/$(basename $dump_path)" 2>/dev/null && \
+                        log_success "Gitea dump saved: $BACKUP_PATH/gitea/$(basename $dump_path)"
+                fi
+            done
+            # Cleanup in-container dump dir
+            docker exec -u git gitea sh -c "rm -rf $dump_dir" 2>/dev/null || true
+        fi
     fi
     
     # Record Git state (for all backup types)

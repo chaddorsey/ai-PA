@@ -216,9 +216,9 @@ This is a band-aid, not a fix. Use only if blocked.
 
 **Decision needed from user**: Pick R or B as the active path. R is cleaner but slower (depends on upstream or our own deep investigation). B is a vendored patch we control, faster to ship.
 
-### Phase 0 — Gitea infrastructure
+### Phase 0 — Gitea infrastructure (COMPLETED 2026-04-25)
 
-- [ ] **0.1 Add Gitea service to docker-compose.yml**
+- [x] **0.1 Add Gitea service to docker-compose.yml** (2026-04-25)
   - Modify: `docker-compose.yml` — add `gitea` service on `pa-internal`, port 3030, persistent volume, environment-based admin bootstrap
   - Create: `gitea/` directory with `gitea/app.ini.template` only if we need to override defaults (avoid if possible — prefer env-var config)
   - Image: `docker.io/gitea/gitea:1.22` (current stable at time of writing — verify latest in implementation)
@@ -227,17 +227,17 @@ This is a band-aid, not a fix. Use only if blocked.
   - Healthcheck: `curl -fs http://localhost:3000/api/healthz || exit 1` (internal Gitea port is 3000; we expose 3030 on host)
   - Verification: `docker compose up -d gitea && curl -s http://localhost:3030/api/healthz`
 
-- [ ] **0.2 Bootstrap Gitea admin + organization + agent-memory tokens**
+- [x] **0.2 Bootstrap Gitea admin + organization + agent-memory tokens** (2026-04-25)
   - Create: `scripts/gitea-bootstrap.sh` — idempotent; creates admin user (if missing), creates `agents` organization, generates a scoped PAT with repo:read/write on that org
   - Output: writes `GITEA_MEMFS_TOKEN=...` to `.env` (gitignored) and prints the token URL shape `https://$USER:$TOKEN@gitea:3000/agents/{agentId}.git`
   - Verification: `curl -u user:token https://…/api/v1/orgs/agents` returns 200
 
-- [ ] **0.3 Extend nightly backup to include Gitea**
+- [x] **0.3 Extend nightly backup to include Gitea** (2026-04-25)
   - Modify: `deployment/scripts/backup.sh` — add a Gitea leg: `docker exec gitea gitea dump -c /data/gitea/conf/app.ini -f /tmp/gitea-dump.zip` then `docker cp gitea:/tmp/gitea-dump.zip $BACKUP_PATH/`
   - Modify: `deployment/scripts/backup.sh` — add a volume dump for `letta-memfs` (the patched-server's `/root/.letta/memfs` volume) via `docker run --rm -v letta-memfs:/src -v $BACKUP_PATH:/dst alpine tar czf /dst/letta-memfs.tgz -C /src .`
   - Verification: run backup manually; confirm both artifacts present and reasonable size
 
-- [ ] **0.4 Test full Gitea restore path**
+- [x] **0.4 Test full Gitea restore path** (2026-04-25)
   - Create: `deployment/scripts/gitea-restore.sh` — minimal script that takes a `gitea-dump.zip` and restores via `gitea restore-repo`
   - Test: take a backup, delete the `gitea-data` volume, restore, confirm orgs/repos/tokens survive
   - Verification: documented in the script's own help output
