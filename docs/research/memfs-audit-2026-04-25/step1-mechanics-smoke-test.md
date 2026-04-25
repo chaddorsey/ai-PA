@@ -1,18 +1,28 @@
 ---
 date: 2026-04-25
 target: XXX-ARCHIVE-scratch-agent (agent-880a63ad-2dbd-4f4d-a92b-3346b3346b1c)
-status: PASS
+status: SUBSTRATE PASS — content-flow validation deferred to step 2/3 TUI rehearsals
 parent: docs/plans/2026-04-24-001-feat-letta-memfs-upgrade-plan.md
 ---
 
-# Step 1 — memfs mechanics smoke test on scratch-agent
+# Step 1 — memfs substrate mechanics smoke test on scratch-agent
 
 ## Result
 
-**PASS.** Memfs enablement on a self-hosted patched server is functional.
-The user-facing letta-code CLI paths have known limitations against
-self-hosted (documented below); the REST orchestration is what production
-migrations will use.
+**Substrate-level PASS.** The server-side memfs primitives (tag set,
+auto-init of bare repo, sync-from-git, patch 04 scoped delete) all work
+against the self-hosted patched server. **Content flow was NOT validated**
+because scratch had zero attached blocks at the time of memfs enable —
+the test exercised an empty-state operation, not the block-to-file
+translation that real migrations require.
+
+**Migration-flow validation moves to step 2/3 TUI rehearsals.** The
+canonical block-to-file translation lives inside letta-code's TUI
+`/memfs enable` slash command; reimplementing it in REST orchestration
+isn't justified for a candidate set of ~4 agents.
+
+Scratch was reverted to neutral state (tag dropped, bare repo removed)
+post-test.
 
 ## What was tested
 
