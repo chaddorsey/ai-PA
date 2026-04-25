@@ -668,6 +668,11 @@ services:
       # patched file adds a LETTA_MCP_ALLOWED_HOSTS env-var allowlist.
       # Revisit on every Letta upgrade (see letta/patches/url_validation.py).
       - ./letta/patches/url_validation.py:/app/letta/helpers/url_validation.py:ro
+      # External-memfs persistent storage (Phase 1 patched server). Bare
+      # repos at /root/.letta/memfs/repository/{org_id}/{agent_id}/repo.git
+      # MUST survive container recreation, otherwise sync-from-git silently
+      # loses agent memory state on every letta restart.
+      - letta-memfs:/root/.letta/memfs
     networks: [pa-internal]
     environment:
       PYTHONPATH: "/app/tools/letta"
@@ -714,6 +719,14 @@ services:
       # Any MCP server URL whose hostname is in this list skips the
       # resolves-to-non-public-IP check. Keep narrowly scoped.
       LETTA_MCP_ALLOWED_HOSTS: "host.docker.internal"
+      # External-memfs (Phase 1 patched server). Active only when LETTA_IMAGE
+      # points at letta-local:0.16.7-memfs-v1. With stock image, these are
+      # ignored. See docs/plans/2026-04-24-001-feat-letta-memfs-upgrade-plan.md.
+      LETTA_MEMFS_SERVICE_URL: "${LETTA_MEMFS_SERVICE_URL:-local}"
+      # Restrict which .md paths in an agent's memfs become Postgres blocks.
+      # Default `system/` per Fimeg/Vee F4 finding; everything else stays as
+      # filesystem-only (visible in tree, content not pinned).
+      LETTA_MEMFS_BLOCK_PATH_PREFIXES: "${LETTA_MEMFS_BLOCK_PATH_PREFIXES:-system/}"
       # Redis for Letta background streaming (required by Letta Code CLI)
       LETTA_REDIS_HOST: "redis"
       LETTA_REDIS_PORT: "6379"
@@ -1675,6 +1688,7 @@ volumes:
   entity-backfill-data:
   task-completion-data:
   gitea-data:
+  letta-memfs:
 
 # --- Monitoring and Logging Configuration ---
 # All services use standardized logging and labeling for unified monitoring

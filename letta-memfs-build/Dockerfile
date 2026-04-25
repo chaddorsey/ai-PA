@@ -17,10 +17,12 @@
 
 FROM letta/letta:0.16.7
 
-# patch tool isn't always present in slim images; ensure it
-RUN if ! command -v patch >/dev/null 2>&1; then \
-        apt-get update && apt-get install -y --no-install-recommends patch && rm -rf /var/lib/apt/lists/*; \
-    fi
+# Install build/runtime tools required for memfs operations:
+# - patch: needed to apply the three server patches at build time
+# - git: needed at runtime by memfs_client_base.py (RuntimeError otherwise)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends patch git ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
 # Pull patches from the named build context "root" (passed via --build-context root=..)
 COPY --from=root letta-memfs-patches/upstream-fimeg/server_memory_sync_endpoint.patch /tmp/patches/01-sync-endpoint.patch
