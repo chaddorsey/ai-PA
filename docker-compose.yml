@@ -641,7 +641,11 @@ services:
   # Letta is an agent building framework with built-in memory/vectordb support.
   # https://docs.letta.com/quickstart/docker
   letta:
-    image: letta/letta:0.16.7
+    # Default to stock 0.16.7. Set LETTA_IMAGE=letta-local:0.16.7-memfs-v1 in .env
+    # to use the patched server image with the three external-memfs server patches
+    # applied (see letta-memfs-build/Dockerfile + docs/plans/2026-04-24-001).
+    # Rollback is one env-var edit + `docker compose up -d letta`.
+    image: ${LETTA_IMAGE:-letta/letta:0.16.7}
     entrypoint: ["/bin/bash", "/app/tools/letta/entrypoint-wrapper.sh"]
     command: ["--host", "0.0.0.0"]
     ports:

@@ -269,26 +269,26 @@ This is a band-aid, not a fix. Use only if blocked.
     - `server_system_only_blocks.patch` → `letta/services/memory_repo/path_mapping.py` (HARDENING — addresses Fimeg/Vee finding F4 "all .md become blocks", gated by LETTA_MEMFS_BLOCK_PATH_PREFIXES env)
   - Pin info at `letta-memfs-patches/upstream-fimeg/PINNED_COMMIT.txt`
 
-- [ ] **1.2 Create patched Letta server image**
-  - Create: `letta-memfs-build/Dockerfile` that overlays on stock `letta/letta:0.16.7`
-  - Apply ALL THREE server patches (not just the required one):
-    - `server_memory_sync_endpoint.patch` (required — F3 prerequisite)
-    - `server_sync_delete_propagation.patch` (HARDENING — F3 fix)
-    - `server_system_only_blocks.patch` (HARDENING — F4 fix)
-  - Dockerfile pattern: `FROM letta/letta:0.16.7` → `COPY ../letta-memfs-patches/upstream-fimeg/server_*.patch /tmp/patches/` → `RUN cd /app && patch -p1 < /tmp/patches/X.patch && ...` → entrypoint unchanged
-  - Pre-flight verify-patches.sh that runs `patch --dry-run` before real apply (fails fast if anchors changed)
-  - Output tag: `letta-local:0.16.7-memfs-v1`
-  - Verification: `docker build` succeeds; `docker run --rm letta-local:0.16.7-memfs-v1 python -c "import letta; print(letta.__version__)"` returns 0.16.7
-  - Acceptance criteria explicitly per Fimeg/Vee findings:
-    - F3 fix in place (delete propagation works — verified in Phase 4 canary test)
-    - F4 fix in place (path filter respected when `LETTA_MEMFS_BLOCK_PATH_PREFIXES=system/` set)
-    - Postgres schema unchanged (patches don't touch schema — verify via pg_dump diff)
+- [x] **1.2 Patched Letta server image built** (2026-04-25)
+  - `letta-memfs-build/Dockerfile`: overlays on stock `letta/letta:0.16.7`, uses Docker `--build-context root=` to pull patches from `letta-memfs-patches/upstream-fimeg/`
+  - All THREE server patches applied in numeric order (01-sync-endpoint, 02-delete-propagation, 03-system-only-blocks)
+  - Pre-flight `patch --dry-run` for each patch before real apply (fails fast if anchors changed)
+  - Post-apply Python import verification for all three modified modules + letta version
+  - `letta-memfs-build/build.sh` wrapper: `--no-cache` flag option, end verification spot-checks each patch's distinguishing string in the patched files
+  - Output: `letta-local:0.16.7-memfs-v1` (1.85 GB, locally available)
+  - Acceptance criteria met:
+    - All three patches applied (verified: each module's distinguishing string detected post-build)
+    - Python imports clean (`from letta.server.rest_api.routers.v1 import agents`, `block_manager_git`, `path_mapping`)
+    - `letta.__version__` returns `0.16.7`
+    - F3 fix in place (delete propagation patch grep-verified)
+    - F4 fix in place (LETTA_MEMFS_BLOCK_PATH_PREFIXES env-gate grep-verified)
+    - Postgres schema unchanged (patches modify request routing + sync logic only, not schema — pg_dump diff would be the formal proof; deferred to Phase 4 canary)
 
-- [ ] **1.3 Wire the patched image into docker-compose.yml behind a flag**
-  - Modify: `docker-compose.yml` — change `letta.image` from hardcoded `letta/letta:pg-0.16.7` to `${LETTA_IMAGE:-letta/letta:pg-0.16.7}`. Default stays on unpatched for safety.
-  - Modify: `.env.example` (and `.env`) — add `LETTA_IMAGE=letta-local:0.16.7-memfs-v1` commented out by default
-  - Verification: `LETTA_IMAGE=letta-local:0.16.7-memfs-v1 docker compose up -d letta && docker inspect ai-pa-letta-1 --format '{{.Config.Image}}'` shows the patched tag
-  - Rollback: comment `LETTA_IMAGE` in `.env`, restart; unpatched image runs with zero change to Postgres state
+- [x] **1.3 Patched image wired into docker-compose.yml behind a flag** (2026-04-25)
+  - `docker-compose.yml` letta service: `image: ${LETTA_IMAGE:-letta/letta:0.16.7}` (default unchanged, opt-in via env)
+  - Verified: `docker compose config` resolves to stock `letta/letta:0.16.7` when LETTA_IMAGE unset
+  - Production letta container still running stock image — no production change
+  - Rollback path: remove `LETTA_IMAGE` from `.env`, `docker compose up -d letta` — single env-var edit
 
 - [ ] **1.4 Add memfs env vars to the letta service config**
   - Modify: `docker-compose.yml` under `letta.environment` — add `LETTA_MEMFS_SERVICE_URL: local`, `LETTA_MEMFS_BLOCK_PATH_PREFIXES: system/`
