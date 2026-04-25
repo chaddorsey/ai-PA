@@ -367,8 +367,27 @@ This is a band-aid, not a fix. Use only if blocked.
 
 **Restructure rationale**: a single canary cannot validate the orthogonal dimensions that matter — infrastructure, Task tool behavior, REST-only agent migration, multi-channel agent migration, consolidator pattern. Conflating them means failures get mis-attributed and rollback is muddied. Each stage has its own canary, success criteria, and explicit teardown.
 
-#### C1 — Infrastructure canary (`memfs-canary-infra`)
+#### C1 — Infrastructure canary (`memfs-canary-infra`) — COMPLETED 2026-04-25
+
 **Validates**: Gitea up, three server patches apply correctly, sync endpoint works, six base validation tests pass, rollback works. **No agent behavior tested.**
+
+**All 8 tests passed**:
+- T1 smoke (`system/persona.md` → block created)
+- T2 round-trip (external edit → block updated to new content)
+- T3 external edit (covered by T2)
+- T4 delete propagation (`git rm` → block soft-deleted, patch 02)
+- T5 path filter (`system/notes` materialized, `reference/x` correctly excluded, patch 03)
+- T6 binary handling — HTTP 400 with clean error detail (better than upstream's 500); F5 mitigation present
+- T7 recall via Task — fork-based subagent ran end-to-end
+- T8 /doctor — 1232 events, 5 distinct tool types, 0 errors (hit 240s timeout before result event but no failures)
+
+**Pre-existing requirements surfaced + addressed during C1**:
+- Patched server image needs `git` CLI (added to Dockerfile)
+- `LETTA_MEMFS_SERVICE_URL=local` + `LETTA_MEMFS_BLOCK_PATH_PREFIXES=system/` env vars (added to docker-compose letta service)
+- `letta-memfs:/root/.letta/memfs` persistent volume (added to docker-compose)
+- Bare repo HEAD must be set to `refs/heads/main` after `git init --bare` (operationally — pre-create canary repo flow needs this step)
+
+**Canary still alive** at `agent-870cd995-48d4-406b-8708-89e4dc390d6a` with `git-memory-enabled` tag and 1 block (`system/notes`). Repo at `agents/agent-870cd995-...` in Gitea. Will be torn down before C2 starts.
 
 - [ ] **4.1 Create the `memfs-canary-infra` agent**
   - Create: `scripts/canary-manage.sh` — generic canary lifecycle script supporting `create <name>`, `tag <name> <tag>`, `attach-block <name> <block-id>`, `snapshot <name>`, `teardown <name>`. Used for all C1–C5.
