@@ -460,8 +460,22 @@ This is a band-aid, not a fix. Use only if blocked.
 - [ ] **4.15 Test 5: REST-initiated Task** — `POST /v1/agents/{id}/messages` with a message instructing the agent to call Task; verify the resulting Task call executes correctly. **This is the empirical answer to whether scheduler-service-driven consolidators will work.**
 - [ ] **4.16 C2 teardown** — same shape as 4.9. Gate to C3: all 5 tests passed.
 
-#### C3 — REST-only agent canary (`memfs-canary-rest`)
+#### C3 — REST-only agent canary (`memfs-canary-rest`) — COMPLETED 2026-04-25
+
 **Validates**: A purpose-built REST-only agent (no live letta-code session) can be migrated to memfs without breaking external writers; whether REST writes to its blocks drift from git after migration. **Answers sibling R18.**
+
+**FINDINGS — definitive R18 answer:**
+
+R18 outcome was **outcome C** (writes blocked entirely) plus a stronger constraint: **memfs-enabled agents are pure-memfs**. See `docs/research/2026-04-25-c3-canary-r18-findings.md` for the full writeup.
+
+Three concrete behaviors verified:
+1. Pre-existing attached blocks soft-deleted on first sync (delete propagation is unconditional)
+2. External `PATCH /v1/blocks/<id>` returns HTTP 500 (`git reset --hard` failure on bare repo)
+3. New blocks attached after memfs enable get wiped on next sync
+
+**Implication**: every agent we want to migrate must first have its external block writers either redirected (push to Gitea instead of PATCH) OR detached (move shared blocks to a shadow agent that stays on Postgres). Tasks agent in particular has 6 external writers and is currently memfs-incompatible in its present shape.
+
+The Phase 4.5 Migration Impact Analysis template's "Writer impact" section is now the single most important gate before any agent migration.
 
 - [ ] **4.17 Create C3 agent** — same baseline as C1; explicitly NOT connected via letta-code TUI
 - [ ] **4.18 Attach a duplicated awareness-style block** — simulates what a real REST-only agent (Email, Calendar) has
