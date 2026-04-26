@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# letta-patched — wrapper around the npm-installed `letta` CLI that:
+#   1. Self-heals our patches (Path C handle->llm_config + memfs-git URL
+#      substitution) if a letta-code update has wiped them.
+#   2. Sets DISABLE_AUTOUPDATER=1 in env so the wrapped CLI doesn't try to
+#      auto-update mid-invocation.
+#   3. Exec's the real letta binary with the user's args.
+#
+# Usage: invoke as `letta-patched ...args...`. Optionally alias `letta` to
+# this so existing muscle memory carries through:
+#
+#     alias letta='/Volumes/main-drive/ai-PA/bin/letta-patched'
+#
+# Or: prepend $REPO/bin to PATH so this wrapper takes precedence.
+#
+# When new letta-code releases break our patch anchors, this wrapper will
+# print a warning to stderr and run UNPATCHED — letting you notice the
+# breakage rather than silently shipping unpatched code. Re-pin to a
+# known-good version in that case (see DISABLE_AUTOUPDATER below).
+#
+# Side effects: writes to LETTA_JS path (idempotent — patch scripts no-op
+# if markers already present).
+
+set -euo pipefail
+
+REPO_ROOT="${REPO_ROOT:-/Volumes/main-drive/ai-PA}"
+PATCHES_DIR="$REPO_ROOT/letta-memfs-patches/patches"
+LETTA_BIN="${LETTA_BIN:-/opt/homebrew/bin/letta}"
+LETTA_JS="${LETTA_JS:-/opt/homebrew/lib/node_modules/@letta-ai/letta-code/letta.js}"
+PATH_C_SCRIPT="$PATCHES_DIR/apply_letta_code_self_hosted_handle_fix.py"
+MEMFS_GIT_SCRIPT="$PATCHES_DIR/apply_letta_code_memfs_external_git.py"
+
+# Required tags for our patched bundle
+PATCH_C_MARKER="PATCH-3205\|patch3205"
+MEMFS_GIT_MARKER="PATCH-MEMFS-GIT"
+
+needs_patch_c=0
+needs_memfs_git=0
+
+if [[ ! -f "$LETTA_JS" ]]; then
+    echo "letta-patched: WARN: $LETTA_JS not found — falling back to bare invocation" >&2
+    DISABLE_AUTOUPDATER=1 exec "$LETTA_BIN" "$@"
+fi
+
+# Idempotent presence checks
+grep -q "$PATCH_C_MARKER" "$LETTA_JS" 2>/dev/null || needs_patch_c=1
+grep -q "$MEMFS_GIT_MARKER" "$LETTA_JS" 2>/dev/null || needs_memfs_git=1
+
+if [[ $needs_patch_c -eq 1 ]] || [[ $needs_memfs_git -eq 1 ]]; then
+    echo "letta-patched: detected missing patch markers — re-applying" >&2
+
+    if [[ $needs_patch_c -eq 1 ]]; then
+        if ! python3 "$PATH_C_SCRIPT" "$LETTA_JS" >&2; then
+            echo "letta-patched: WARN: Path C patch failed to apply — proceeding without it" >&2
+        fi
+    fi
+
+    if [[ $needs_memfs_git -eq 1 ]]; then
+        if ! python3 "$MEMFS_GIT_SCRIPT" "$LETTA_JS" >&2; then
+            echo "letta-patched: WARN: memfs-git patch failed to apply — proceeding without it" >&2
+        fi
+    fi
+fi
+
+DISABLE_AUTOUPDATER=1 exec "$LETTA_BIN" "$@"
