@@ -32,20 +32,16 @@ COPY --from=root letta-memfs-patches/upstream-fimeg/server_memory_sync_endpoint.
 COPY --from=root letta-memfs-patches/upstream-fimeg/server_sync_delete_propagation.patch /tmp/patches/02-delete-propagation.patch
 COPY --from=root letta-memfs-patches/upstream-fimeg/server_system_only_blocks.patch /tmp/patches/03-system-only-blocks.patch
 COPY --from=root letta-memfs-patches/local/server_scoped_delete_propagation.patch /tmp/patches/04-scoped-delete-propagation.patch
+COPY --from=root letta-memfs-patches/local/server_fetch_before_sync.patch /tmp/patches/05-fetch-before-sync.patch
 
-# Pre-flight: dry-run all patches before any real apply, so failures surface
-# before we modify the image.
-RUN cd /app && \
-    for p in /tmp/patches/*.patch; do \
-        echo "[verify] $p" && \
-        patch -p1 --dry-run < "$p" >/dev/null && \
-        echo "[verify] OK $p"; \
-    done
-
-# Apply patches in numeric order
+# Apply patches in numeric order, verifying each against the cumulative
+# state. We can't dry-run all-then-apply-all because later patches may
+# modify code added by earlier ones (e.g. patch 05 extends sync-from-git
+# which is itself added by patch 01).
 RUN cd /app && \
     for p in /tmp/patches/*.patch; do \
         echo "[apply] $p" && \
+        patch -p1 --dry-run < "$p" >/dev/null && \
         patch -p1 < "$p" && \
         echo "[apply] OK $p"; \
     done

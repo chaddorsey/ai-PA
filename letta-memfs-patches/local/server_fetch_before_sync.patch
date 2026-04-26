@@ -1,0 +1,60 @@
+--- a/letta/server/rest_api/routers/v1/agents.py
++++ b/letta/server/rest_api/routers/v1/agents.py
+@@ -1357,6 +1357,57 @@
+             detail="Server is not configured with GitEnabledBlockManager; git-backed memory is unavailable.",
+         )
+ 
++    # [PATCH-05-FETCH-FIRST] If the bare repo has an `origin` remote, fetch
++    # before reading blocks so a Gitea-webhook-driven sync actually picks up
++    # the new commit. Without this, sync-from-git only refreshes Postgres
++    # cache from the bare repo's pre-existing HEAD.
++    import asyncio as _asyncio
++    import os
++    from letta.services.memory_repo.storage.local import LocalStorageBackend
++    backend = getattr(server.block_manager.memory_repo_manager, "storage", None)
++    if isinstance(backend, LocalStorageBackend):
++        # Note: _base_path and _prefix are conventionally-private but are the
++        # actual storage attributes on LocalStorageBackend in 0.16.7. May
++        # change in future versions; getattr with defaults provides a
++        # graceful fallback.
++        base_path = str(getattr(backend, "_base_path", "/root/.letta/memfs"))
++        prefix = getattr(backend, "_prefix", "repository")
++        bare_repo = os.path.join(
++            base_path, prefix, actor.organization_id, agent_id, "repo.git"
++        )
++        if os.path.isdir(bare_repo):
++            check_proc = await _asyncio.create_subprocess_exec(
++                "git", "--git-dir", bare_repo, "remote",
++                stdin=_asyncio.subprocess.DEVNULL,
++                stdout=_asyncio.subprocess.PIPE,
++                stderr=_asyncio.subprocess.PIPE,
++            )
++            check_out, _ = await check_proc.communicate()
++            remotes = (check_out or b"").decode("utf-8", errors="replace").split()
++            if "origin" in remotes:
++                fetch_proc = await _asyncio.create_subprocess_exec(
++                    "git", "--git-dir", bare_repo, "fetch", "origin",
++                    "main:main", "--force", "--update-head-ok",
++                    stdin=_asyncio.subprocess.DEVNULL,
++                    stdout=_asyncio.subprocess.PIPE,
++                    stderr=_asyncio.subprocess.PIPE,
++                )
++                try:
++                    _, fetch_err = await _asyncio.wait_for(
++                        fetch_proc.communicate(), timeout=15.0
++                    )
++                    if fetch_proc.returncode != 0:
++                        logger.warning(
++                            f"[PATCH-05-FETCH-FIRST] git fetch failed for "
++                            f"agent {agent_id}: "
++                            f"{(fetch_err or b'').decode('utf-8', errors='replace').strip()[:300]}"
++                        )
++                except _asyncio.TimeoutError:
++                    fetch_proc.kill()
++                    logger.warning(
++                        f"[PATCH-05-FETCH-FIRST] git fetch timed out for agent {agent_id}"
++                    )
++
+     blocks = await server.block_manager.sync_blocks_from_git(
+         agent_id=agent_id,
+         actor=actor,

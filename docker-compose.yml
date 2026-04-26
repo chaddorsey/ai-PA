@@ -1651,6 +1651,10 @@ services:
       GITEA__security__INSTALL_LOCK: "true"
       GITEA__log__MODE: console
       GITEA__log__LEVEL: Info
+      # Allow webhooks to internal docker network (memfs-sync-relay sits there).
+      # Default Gitea blocks private IPs as anti-SSRF; we override for the
+      # pa-internal subnet plus the named relay service.
+      GITEA__webhook__ALLOWED_HOST_LIST: "memfs-sync-relay,172.20.0.0/16,127.0.0.1"
     ports:
       # Expose only on loopback so the host can reach :3030 for admin/dev,
       # but agents inside docker hit gitea:3000 over the internal network.
@@ -1663,6 +1667,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  memfs-sync-relay:
+    build:
+      context: ./memfs-sync-relay
+    container_name: memfs-sync-relay
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      letta:
+        condition: service_started
+      gitea:
+        condition: service_healthy
+    environment:
+      RELAY_PORT: "8901"
+      LETTA_BASE_URL: "http://letta:8283"
+      GITEA_WEBHOOK_SECRET: "${GITEA_MEMFS_WEBHOOK_SECRET}"
+      ALLOWED_GITEA_ORG: "agents"
+      ALLOWED_BRANCHES: "main"
+    ports:
+      # Loopback only — Gitea reaches it via internal DNS at memfs-sync-relay:8901;
+      # 127.0.0.1:8901 is for host-side curl health checks and manual webhook tests.
+      - "127.0.0.1:8901:8901"
 
 
 volumes:

@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."  # run from repo root regardless of cwd
 REPO_ROOT="$(pwd)"
 
-TAG="letta-local:0.16.7-memfs-v2"
+TAG="letta-local:0.16.7-memfs-v3"
 NOCACHE=""
 for arg in "$@"; do
   case "$arg" in
