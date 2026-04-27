@@ -123,6 +123,11 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
         )
         if notes_match:
             private_notes = notes_match.group(1).strip()
+            # Granola exports escape markdown brackets as `\[c\]` / `\[;\]`.
+            # Normalize so the marker regex (which expects plain `[c]` /
+            # `[;]`) matches both forms. Affects only the pre-bracket and
+            # post-bracket backslash characters; doesn't touch other escapes.
+            private_notes = re.sub(r'\\([\[\]])', r'\1', private_notes)
 
         summary_match = re.search(
             r"### Summary\s*\n(.*?)(?=\n### |\Z)", full_text, re.DOTALL
@@ -418,9 +423,11 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                         seen_texts.add(normalized)
                         proposed_actions.append({"text": text, "source": "transcript"})
 
-        # ── Queue task candidates to durable memory block ──
-        QUEUE_BLOCK_ID = "block-809efd9b-e2ca-4d11-af89-9a1c7710716c"
-        QUEUE_BLOCK_LIMIT = 20000
+        # ── Queue task candidates to pa_web.task_queue (Cycle-1 Pattern 2) ──
+        # Cutover 2026-04-26: replaces block-PATCH on
+        # block-809efd9b-... with Postgres INSERT into pa_web.task_queue
+        # source='meeting'. Each candidate gets a unique source_ref so the
+        # UNIQUE (source, source_ref) constraint can dedup re-scans.
         # Deduplicate by task text (multi-chunk meetings can duplicate markers)
         seen_texts = set()
         queue_items = []
@@ -431,74 +438,67 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
         queued_count = 0
 
         if queue_items:
-            import uuid as _uuid
+            import os as _os
+            import hashlib as _hashlib
             from datetime import datetime as _dt
-
             try:
-                # GET current block value
-                block_url = f"{LETTA_BASE}/v1/blocks/{QUEUE_BLOCK_ID}"
-                block_req = urllib.request.Request(block_url, method="GET")
-                with urllib.request.urlopen(block_req, timeout=10) as block_resp:
-                    block_data = json.loads(block_resp.read().decode("utf-8"))
-                current_value = block_data.get("value", "")
+                import psycopg as _psycopg
+                from psycopg.types.json import Jsonb as _Jsonb
+            except Exception:
+                _psycopg = None
+                _Jsonb = None
 
-                # Strip "(empty)" placeholder if present
-                if "(empty)" in current_value:
-                    current_value = current_value.replace("(empty)", "").strip()
-                    if not current_value:
-                        current_value = "# Queued Tasks from Meetings"
-
-                now_str = _dt.now().strftime("%Y-%m-%d %H:%M")
-                participants_str = ", ".join(participants) if participants else "unknown"
-                urls_str = ", ".join(doc_urls) if doc_urls else ""
-
-                new_entries = []
-                for item in queue_items:
-                    scan_id = _uuid.uuid4().hex[:8]
-                    marker_type = (
-                        "my_tasks" if "c" in item["marker"].lower() else "their_tasks"
+            if _psycopg is not None:
+                try:
+                    pg_password = _os.environ.get("POSTGRES_PASSWORD", "")
+                    pg_url = _os.environ.get(
+                        "PA_WEB_POSTGRES_URL",
+                        f"postgresql://postgres:{pg_password}@supabase-db:5432/postgres",
                     )
-                    entry_lines = [
-                        f"[queued: {now_str}; scan_id: {scan_id}] meeting_id: {meeting_id}",
-                        f"title: {meeting_title}",
-                        f"date: {meeting_date}",
-                        f"participants: {participants_str}",
-                        f"granola_link: {granola_link}",
-                        f"marker_type: {marker_type}",
-                        f"task: {item['text']}",
-                    ]
-                    if item.get("deadline_hint"):
-                        entry_lines.append(f"deadline_hint: {item['deadline_hint']}")
-                        entry_lines.append(
-                            f"deadline_source: {item.get('deadline_source', 'unknown')}"
+                    participants_str = ", ".join(participants) if participants else "unknown"
+                    urls_list = list(doc_urls) if doc_urls else []
+                    now_iso = _dt.now().isoformat()
+
+                    rows_to_insert = []
+                    for item in queue_items:
+                        # Stable source_ref: meeting_id + sha8 of task text
+                        text_hash = _hashlib.sha256(item["text"].encode()).hexdigest()[:8]
+                        source_ref = f"meeting-{meeting_id}-{text_hash}"
+                        marker_type = (
+                            "my_tasks" if "c" in item["marker"].lower() else "their_tasks"
                         )
-                    if urls_str:
-                        entry_lines.append(f"urls: {urls_str}")
-                    new_entries.append("\n".join(entry_lines))
+                        payload = {
+                            "queued_at": now_iso,
+                            "meeting_id": meeting_id,
+                            "title": meeting_title,
+                            "date": meeting_date,
+                            "participants": participants,
+                            "granola_link": granola_link,
+                            "marker_type": marker_type,
+                            "task": item["text"],
+                            "related_urls": urls_list,
+                        }
+                        if item.get("deadline_hint"):
+                            payload["deadline_hint"] = item["deadline_hint"]
+                            payload["deadline_source"] = item.get("deadline_source", "unknown")
+                        rows_to_insert.append((source_ref, _Jsonb(payload)))
 
-                # Build new block value — append entries separated by ---
-                entries_text = "\n---\n".join(new_entries) + "\n---"
-                if current_value.rstrip().endswith("---"):
-                    new_value = current_value.rstrip() + "\n" + entries_text
-                else:
-                    new_value = current_value.rstrip() + "\n" + entries_text
-
-                # Overflow guard
-                if len(new_value) > QUEUE_BLOCK_LIMIT:
-                    pass  # Skip queue write, log in return value
-                else:
-                    patch_data = json.dumps({"value": new_value}).encode("utf-8")
-                    patch_req = urllib.request.Request(
-                        block_url,
-                        data=patch_data,
-                        headers={"Content-Type": "application/json"},
-                        method="PATCH",
-                    )
-                    urllib.request.urlopen(patch_req, timeout=10)
-                    queued_count = len(new_entries)
-
-            except Exception as qe:
-                pass  # Queue write failure is non-fatal; scan package still returns
+                    with _psycopg.connect(pg_url, autocommit=True, connect_timeout=10) as _conn:
+                        with _conn.cursor() as _cur:
+                            for sref, payload in rows_to_insert:
+                                _cur.execute(
+                                    """
+                                    INSERT INTO pa_web.task_queue (source, source_ref, payload)
+                                    VALUES ('meeting', %s, %s)
+                                    ON CONFLICT (source, source_ref) DO NOTHING
+                                    RETURNING id
+                                    """,
+                                    (sref, payload),
+                                )
+                                if _cur.fetchone():
+                                    queued_count += 1
+                except Exception as qe:
+                    pass  # Queue write failure is non-fatal; scan package still returns
 
         # ── Extract [c] tasks via spark queue ──
         # Write sparks for each [c] marker task. process_spark_queue handles
@@ -512,7 +512,23 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
             urls_str = ", ".join(doc_urls) if doc_urls else ""
             source_ts = meeting_date if "T" in str(meeting_date) else f"{meeting_date}T00:00:00Z"
 
-            SPARK_BLOCK_ID = "block-534bb56d-f7f1-4ea4-b2d9-20dc75eca03a"
+            # Cycle-1 Pattern 2 cutover (2026-04-26): write to
+            # pa_web.task_queue with source='meeting_marker' instead of
+            # PATCHing block-534bb56d-... The unique source_ref is the
+            # spark_id, which is generated per-marker.
+            import os as _os_sp
+            try:
+                import psycopg as _psycopg_sp
+                from psycopg.types.json import Jsonb as _Jsonb_sp
+            except Exception:
+                _psycopg_sp = None
+                _Jsonb_sp = None
+
+            pg_password_sp = _os_sp.environ.get("POSTGRES_PASSWORD", "")
+            pg_url_sp = _os_sp.environ.get(
+                "PA_WEB_POSTGRES_URL",
+                f"postgresql://postgres:{pg_password_sp}@supabase-db:5432/postgres",
+            )
 
             for item in my_tasks:
                 task_text = item["text"]
@@ -521,13 +537,14 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 if _stripped:
                     task_text = _stripped[0].upper() + _stripped[1:]
 
+                spark_id = _uuid2.uuid4().hex[:8]
                 # Build spark record
                 spark = {
-                    "spark_id": _uuid2.uuid4().hex[:8],
+                    "spark_id": spark_id,
                     "captured_at": source_ts,
                     "source_type": "meeting",
                     "origin": "user-indicated",
-                    "reference_id": f"meeting-{meeting_id}",
+                    "reference_id": f"meeting-{meeting_id}-{spark_id}",
                     "source_text": item["text"],
                     "from_person": "Chad Dorsey (note creator)",
                     "location": meeting_title,
@@ -543,37 +560,33 @@ def scan_meeting_notes(meeting_id: str) -> Dict[str, Any]:
                 if item.get("deadline_hint"):
                     spark["deadline_hint"] = item["deadline_hint"]
 
-                # Write spark to queue
-                try:
-                    spark_json = json.dumps(spark)
-                    block_url = f"{LETTA_BASE}/v1/blocks/{SPARK_BLOCK_ID}"
-                    # Read current
-                    breq = urllib.request.Request(block_url, method="GET")
-                    with urllib.request.urlopen(breq, timeout=10) as bresp:
-                        bdata = json.loads(bresp.read().decode("utf-8"))
-                    current = bdata.get("value", "").rstrip()
-                    if "(empty)" in current:
-                        current = current.replace("(empty)", "").strip()
-                        if not current:
-                            current = "# Spark Queue"
-                    updated = f"{current}\n{spark_json}\n"
-
-                    bpatch = json.dumps({"value": updated}).encode("utf-8")
-                    bpreq = urllib.request.Request(
-                        block_url, data=bpatch,
-                        headers={"Content-Type": "application/json"},
-                        method="PATCH",
-                    )
-                    urllib.request.urlopen(bpreq, timeout=10)
-
+                if _psycopg_sp is None:
                     extraction_results.append({
                         "task": task_text,
-                        "ref_id": spark["spark_id"],
-                        "status": "spark_queued",
+                        "ref_id": "",
+                        "status": "spark_failed: psycopg unavailable",
                     })
+                    continue
 
+                try:
+                    with _psycopg_sp.connect(pg_url_sp, autocommit=True, connect_timeout=10) as _conn_sp:
+                        with _conn_sp.cursor() as _cur_sp:
+                            _cur_sp.execute(
+                                """
+                                INSERT INTO pa_web.task_queue (source, source_ref, payload)
+                                VALUES ('meeting_marker', %s, %s)
+                                ON CONFLICT (source, source_ref) DO NOTHING
+                                RETURNING id
+                                """,
+                                (spark["reference_id"], _Jsonb_sp(spark)),
+                            )
+                            row_sp = _cur_sp.fetchone()
+                    extraction_results.append({
+                        "task": task_text,
+                        "ref_id": spark_id,
+                        "status": "spark_queued" if row_sp else "spark_dedup",
+                    })
                 except Exception as spark_err:
-                    # Fallback: inline extraction (old path)
                     extraction_results.append({
                         "task": task_text,
                         "ref_id": "",
