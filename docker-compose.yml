@@ -678,6 +678,15 @@ services:
       PYTHONPATH: "/app/tools/letta"
       LETTA_DEBUG: "${LETTA_DEBUG:-false}"
       LETTA_PG_URI: "postgresql://letta:letta_dev_password@supabase-db:5432/letta"
+      # Cycle-1 Postgres-writer custom tools (consume_queue, add_extracted_tasks_postgres,
+      # refresh_plate) connect to supabase-db's `postgres` database for the pa_web schema.
+      # The container's own POSTGRES_PASSWORD is `letta` (for letta's metadata DB) — wrong
+      # for pa_web. Override with explicit URL.
+      PA_WEB_POSTGRES_URL: "postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres"
+      # Gitea access for tools that write to agents-canonical.git
+      # (cycle-1 Layer-5 signals: e.g., compose_daily_briefing).
+      GITEA_MEMFS_TOKEN: "${GITEA_MEMFS_TOKEN:-}"
+      GITEA_BASE_URL: "http://gitea:3000"
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
       TOOL_EXEC_DIR: "/app/tools/letta"  # Directory where tools are executed
       TOOL_EXEC_VENV_NAME: "env"  # Virtual environment name (Letta will create it and install requirements.txt)
@@ -987,6 +996,38 @@ services:
       - "service=cloudflare-tunnel"
       - "component=external-access"
       - "network=pa-internal"
+
+  # --- Cycle-1 Pattern 5 mirror writer ---
+  # Polls pa_web.tasks every 30s and regenerates the legacy
+  # extracted_tasks block (block-90300b77) so not-yet-migrated agents
+  # see fresh content during the read-shadow window. See mirror-writer/README.md.
+  mirror-writer:
+    build:
+      context: ./mirror-writer
+      dockerfile: Dockerfile
+    container_name: mirror-writer
+    restart: unless-stopped
+    networks:
+      - pa-internal
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    environment:
+      - LETTA_BASE_URL=http://letta:8283
+      - PA_WEB_POSTGRES_URL=postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
+      - MIRROR_TARGET_BLOCK_ID=block-90300b77-6b72-42cb-8e67-c74fbb497cf6
+      - MIRROR_POLL_INTERVAL_SEC=30
+      - MIRROR_LAG_ALERT_SEC=300
+      - MIRROR_HALT_FAIL_WINDOW_SEC=600
+      - MIRROR_HALT_FAIL_THRESHOLD=5
+      - MIRROR_HEALTH_PORT=8090
+    ports:
+      - "8090:8090"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   gmail-watch-service:
     build:

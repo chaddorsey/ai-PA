@@ -673,6 +673,104 @@ def generate_daily_briefing(
         # Wrap in VERBATIM tags so the agent passes it through unchanged
         verbatim_briefing = f"[VERBATIM_USER_OUTPUT]\n{briefing}\n[/VERBATIM_USER_OUTPUT]"
         
+        # ========== LAYER-5: WRITE TO CANONICAL SIGNALS ==========
+        # Cycle-1 substrate: agents-canonical.git/signals/YYYY-MM-DD/schedule.md.
+        # The 15-min refresh cadence makes this a freshness loop on a single
+        # daily file (overwritten on each tick), which means ~40 commits/day
+        # weekdays — git handles that volume fine and the commit history is
+        # a useful audit trail of how the day's schedule evolved.
+        signal_written = False
+        signal_html_url = ""
+        target_date_str = target_dt.strftime("%Y-%m-%d")
+        signal_path = f"signals/{target_date_str}/schedule.md"
+        try:
+            import base64 as _b64
+            import urllib.request as _ureq
+            import urllib.error as _uerr
+            gitea_token = os.environ.get("GITEA_MEMFS_TOKEN", "")
+            gitea_base = os.environ.get(
+                "GITEA_BASE_URL", "http://gitea:3000"
+            ).rstrip("/")
+            if gitea_token:
+                fm_lines = [
+                    "---",
+                    f"description: Daily schedule + available time for {target_date_str}",
+                    "source: daily-schedule-agent",
+                    "attention_level: routine",
+                    "mentioned_entities: []",
+                    f"date: {target_date_str}",
+                    f"last_refreshed_at: {now.isoformat()}",
+                    "---",
+                    "",
+                ]
+                full_signal_content = "\n".join(fm_lines) + briefing + "\n"
+
+                contents_url = (
+                    f"{gitea_base}/api/v1/repos/agents/agents-canonical"
+                    f"/contents/{signal_path}"
+                )
+                auth_h = {
+                    "Authorization": f"token {gitea_token}",
+                    "Content-Type": "application/json",
+                }
+
+                # Idempotent upsert: PUT if file exists, POST otherwise.
+                existing_sha = None
+                try:
+                    check_req = _ureq.Request(
+                        contents_url + "?ref=main", headers=auth_h
+                    )
+                    with _ureq.urlopen(check_req, timeout=10) as r:
+                        existing = json_lib.loads(r.read().decode("utf-8"))
+                        existing_sha = existing.get("sha")
+                except _uerr.HTTPError as he:
+                    if he.code != 404:
+                        raise
+
+                method = "PUT" if existing_sha else "POST"
+                body = {
+                    "branch": "main",
+                    "content": _b64.b64encode(
+                        full_signal_content.encode("utf-8")
+                    ).decode("ascii"),
+                    "message": (
+                        f"signals: schedule refresh {target_date_str} "
+                        f"@ {now.strftime('%H:%M %Z')}"
+                    ),
+                }
+                if existing_sha:
+                    body["sha"] = existing_sha
+
+                attempts = [body]
+                if not existing_sha:
+                    body_no_branch = dict(body)
+                    body_no_branch.pop("branch", None)
+                    attempts.append(body_no_branch)
+
+                last_err = None
+                for attempt_body in attempts:
+                    try:
+                        write_req = _ureq.Request(
+                            contents_url,
+                            data=json_lib.dumps(attempt_body).encode(),
+                            headers=auth_h,
+                            method=method,
+                        )
+                        with _ureq.urlopen(write_req, timeout=20) as wr:
+                            res = json_lib.loads(wr.read().decode("utf-8"))
+                            content_obj = res.get("content") or {}
+                            signal_html_url = content_obj.get("html_url", "")
+                            signal_written = True
+                        break
+                    except Exception as we:
+                        last_err = we
+                        continue
+
+                if not signal_written and last_err is not None:
+                    signal_html_url = f"(write_failed: {str(last_err)[:140]})"
+        except Exception as sig_err:
+            signal_html_url = f"(setup_failed: {str(sig_err)[:140]})"
+
         # ========== DIRECTLY UPDATE MEMORY BLOCK ==========
         # Update the memory block programmatically instead of relying on the agent
         memory_block_id = "block-28c6e49e-e2bf-4682-8b0c-68623fcee0c7"
@@ -736,6 +834,9 @@ def generate_daily_briefing(
             "memory_updated": memory_updated,
             "memory_block_id": memory_block_id if memory_updated else None,
             "memory_error": memory_error,
+            "signal_written": signal_written,
+            "signal_path": signal_path,
+            "signal_html_url": signal_html_url,
             "timestamp": now.isoformat(),
             "target_date": target_dt.strftime("%Y-%m-%d"),
             "current_time_eastern": current_time_formatted,

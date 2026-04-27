@@ -427,7 +427,119 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             except Exception:
                 pass
 
-        # --- Write to memory block ---
+        # --- Layer-5: write to agents-canonical/signals/YYYY-MM-DD/analytics-morning.md ---
+        # The shared canonical repo (Gitea: agents/agents-canonical) is the
+        # cycle-1 substrate for agent-produced signals/digests. Convention:
+        # signals/YYYY-MM-DD/<source>-<slug>.md with YAML frontmatter.
+        # Block + local-md writes remain for back-compat until cycle-2 makes
+        # consumers ready; this is purely additive.
+        signal_written = False
+        signal_html_url = ""
+        signal_path = f"signals/{date_str}/analytics-morning.md"
+        try:
+            import base64 as _b64
+            gitea_token = os.environ.get("GITEA_MEMFS_TOKEN", "")
+            gitea_base = os.environ.get(
+                "GITEA_BASE_URL", "http://gitea:3000"
+            ).rstrip("/")
+            if gitea_token:
+                # Build YAML frontmatter per the cycle-1 plan signal contract.
+                # mentioned_entities: drawn from standout channel labels.
+                entities = [s.get("label", "") for s in standouts] if standouts else []
+                attention = "elevated" if standouts else "routine"
+                description = (
+                    f"Daily analytics briefing for {date_str} ({day_name}) — "
+                    f"composed by pulse-monitor"
+                )
+                fm_lines = [
+                    "---",
+                    f"description: {description}",
+                    "source: pulse-monitor-agent",
+                    f"attention_level: {attention}",
+                    "mentioned_entities: ["
+                    + ", ".join(json.dumps(e) for e in entities)
+                    + "]",
+                    f"composed_at: {datetime.utcnow().isoformat()}Z",
+                    f"date: {date_str}",
+                    "---",
+                    "",
+                ]
+                full_signal_content = "\n".join(fm_lines) + briefing_text + "\n"
+
+                contents_url = (
+                    f"{gitea_base}/api/v1/repos/agents/agents-canonical"
+                    f"/contents/{signal_path}"
+                )
+                auth_h = {
+                    "Authorization": f"token {gitea_token}",
+                    "Content-Type": "application/json",
+                }
+
+                # Check whether the file already exists (idempotency: if a
+                # cron retries the same day, we PUT-update; otherwise POST).
+                existing_sha = None
+                try:
+                    check_req = urllib.request.Request(
+                        contents_url + "?ref=main", headers=auth_h
+                    )
+                    with urllib.request.urlopen(check_req, timeout=10) as r:
+                        existing = json.loads(r.read().decode("utf-8"))
+                        existing_sha = existing.get("sha")
+                except urllib.error.HTTPError as he:
+                    if he.code != 404:
+                        raise
+
+                method = "PUT" if existing_sha else "POST"
+                body = {
+                    "branch": "main",
+                    "content": _b64.b64encode(
+                        full_signal_content.encode("utf-8")
+                    ).decode("ascii"),
+                    "message": (
+                        f"signals: daily analytics briefing for {date_str}"
+                    ),
+                }
+                if existing_sha:
+                    body["sha"] = existing_sha
+
+                # Bootstrap an empty repo on the first ever write: Gitea
+                # accepts POST /contents on an empty repo and auto-creates
+                # the default branch with the initial commit. If our POST
+                # fails because the default branch differs from "main",
+                # we fall back to dropping the branch param.
+                attempts = [body]
+                if not existing_sha:
+                    body_no_branch = dict(body)
+                    body_no_branch.pop("branch", None)
+                    attempts.append(body_no_branch)
+
+                last_err = None
+                for attempt_body in attempts:
+                    try:
+                        write_req = urllib.request.Request(
+                            contents_url,
+                            data=json.dumps(attempt_body).encode(),
+                            headers=auth_h,
+                            method=method,
+                        )
+                        with urllib.request.urlopen(write_req, timeout=20) as wr:
+                            result_data = json.loads(wr.read().decode("utf-8"))
+                            content_obj = result_data.get("content") or {}
+                            signal_html_url = content_obj.get("html_url", "")
+                            signal_written = True
+                        break
+                    except Exception as we:
+                        last_err = we
+                        continue
+
+                if not signal_written and last_err is not None:
+                    # Surfaced in the return dict for debugging; doesn't
+                    # fail the briefing overall.
+                    signal_html_url = f"(write_failed: {str(last_err)[:140]})"
+        except Exception as sig_err:
+            signal_html_url = f"(setup_failed: {str(sig_err)[:140]})"
+
+        # --- Write to v1 memory block (legacy; back-compat until cycle-2) ---
         block_written = False
         if agent_id:
             try:
@@ -466,6 +578,9 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             "markdown_written": md_written,
             "markdown_path": md_path,
             "block_written": block_written,
+            "signal_written": signal_written,
+            "signal_path": signal_path,
+            "signal_html_url": signal_html_url,
             "snapshots_compared": len(recent_28),
             "standouts": len(standouts),
         }
