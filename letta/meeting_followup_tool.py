@@ -168,62 +168,53 @@ def prepare_meeting_followup(
         if all_items:
             html_parts.append("<ul>" + "".join(all_items) + "</ul>")
 
-        # Dedup marker: embed meeting_id in a hidden HTML comment + a
-        # tiny visible footer line so we can find this draft later by
-        # querying Gmail with `Meeting-ID: <id>`.
-        html_parts.append(
-            f"<!-- Meeting-ID: {meeting_id} -->"
-            f"<p style=\"font-size:8pt;color:#999\">"
-            f"Meeting-ID: {meeting_id}</p>"
-        )
+        # NOTE (2026-04-27): dedup-via-body-marker disabled while we soak
+        # normal usage. The duplicate-drafts problem (7 drafts for one
+        # meeting) was largely a debug-session artifact (manual repeated
+        # invocations). Steady-state usage may only call this once per
+        # meeting (granola-ingest dispatches once per meeting after the
+        # summary is ready). If duplicates persist in normal soak, the
+        # right fix is the pa_web.external_artifact_refs substrate, not
+        # the body-footer kludge. Re-enable by uncommenting both this
+        # marker block and the existing-draft search/update path below.
+        #
+        # html_parts.append(
+        #     f"<!-- Meeting-ID: {meeting_id} -->"
+        #     f"<p style=\"font-size:8pt;color:#999\">"
+        #     f"Meeting-ID: {meeting_id}</p>"
+        # )
 
         body_html = "".join(html_parts)
 
-        # ── Idempotency: search for an existing draft for this meeting_id ──
-        # If found, UPDATE that draft instead of creating a new one. This
-        # makes regular meeting processing produce one draft per meeting,
-        # not one per scan-cycle (granola-ingest polls every 30 min and
-        # may re-dispatch the post-meeting flow multiple times as Granola
-        # finalizes the transcript).
-        existing_draft_id = ""
-        try:
-            _list_q = f"Meeting-ID: {meeting_id}"
-            _list_cmd = ["gws"] + "gmail users drafts list".split()
-            _list_cmd.extend(["--params", json.dumps({
-                "userId": "me", "q": _list_q, "maxResults": 5,
-            })])
-            _list_cmd.extend(["--format", "json"])
-            _lr = subprocess.run(_list_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
-            if _lr.returncode == 0:
-                _ldata = json.loads(_lr.stdout) if _lr.stdout.strip() else {}
-                _drafts = _ldata.get("drafts") or []
-                if _drafts:
-                    # Most recent first (Gmail returns by createdTime desc).
-                    existing_draft_id = _drafts[0].get("id", "")
-        except Exception:
-            pass  # Best-effort — if list fails, fall back to create-new.
+        # # ── Idempotency: search for existing draft for this meeting_id ──
+        # # (disabled — see NOTE above)
+        # existing_draft_id = ""
+        # try:
+        #     _list_q = f"Meeting-ID: {meeting_id}"
+        #     _list_cmd = ["gws"] + "gmail users drafts list".split()
+        #     _list_cmd.extend(["--params", json.dumps({
+        #         "userId": "me", "q": _list_q, "maxResults": 5,
+        #     })])
+        #     _list_cmd.extend(["--format", "json"])
+        #     _lr = subprocess.run(_list_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+        #     if _lr.returncode == 0:
+        #         _ldata = json.loads(_lr.stdout) if _lr.stdout.strip() else {}
+        #         _drafts = _ldata.get("drafts") or []
+        #         if _drafts:
+        #             existing_draft_id = _drafts[0].get("id", "")
+        # except Exception:
+        #     pass
 
-        # ── Create or update Gmail draft via gws ──
+        # ── Create Gmail draft via gws ──
         message = MIMEText(body_html, "html")
         message["To"] = ", ".join(emails_list)
         subject = f"{meeting_title} - meeting summary"
         message["Subject"] = subject
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-        if existing_draft_id:
-            # UPDATE the existing draft (idempotent re-dispatch)
-            _cmd = ["gws"] + "gmail users drafts update".split()
-            _cmd.extend(["--params", json.dumps({
-                "userId": "me", "id": existing_draft_id,
-            })])
-            _cmd.extend(["--json", json.dumps({
-                "id": existing_draft_id,
-                "message": {"raw": raw},
-            })])
-        else:
-            _cmd = ["gws"] + "gmail users drafts create".split()
-            _cmd.extend(["--params", json.dumps({"userId": "me"})])
-            _cmd.extend(["--json", json.dumps({"message": {"raw": raw}})])
+        _cmd = ["gws"] + "gmail users drafts create".split()
+        _cmd.extend(["--params", json.dumps({"userId": "me"})])
+        _cmd.extend(["--json", json.dumps({"message": {"raw": raw}})])
         _cmd.extend(["--format", "json"])
         _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
         if _r.returncode != 0:
