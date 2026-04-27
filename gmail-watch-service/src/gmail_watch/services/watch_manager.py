@@ -58,6 +58,14 @@ class WatchManager:
         self._drive_task_queue_writer: Optional[DriveTaskQueueWriter] = None
         self._drive_enricher: Optional[DriveEnricher] = None
 
+    # Class-level (process-wide) dedup of (doc_id, comment_id) pairs we've
+    # already evaluated. WatchManager is instantiated per-request, so an
+    # instance-level set wouldn't persist across cycles. This class-level
+    # set persists until container restart. Bounded to 5000 entries
+    # (FIFO drop) to cap memory.
+    _evaluated_comments: list[tuple[str, str]] = []
+    _evaluated_comments_set: set[tuple[str, str]] = set()
+
     @property
     def registry(self) -> ThreadRegistry:
         """Lazy-load thread registry."""
@@ -92,6 +100,16 @@ class WatchManager:
         if self._drive_enricher is None and settings.drive_token_path:
             self._drive_enricher = DriveEnricher(settings.drive_token_path)
         return self._drive_enricher
+
+    def _mark_comment_evaluated(self, key: tuple[str, str]) -> None:
+        """Record that we've evaluated (doc_id, comment_id). Bounded FIFO."""
+        if key in self._evaluated_comments_set:
+            return
+        self._evaluated_comments.append(key)
+        self._evaluated_comments_set.add(key)
+        if len(self._evaluated_comments) > 5000:
+            old = self._evaluated_comments.pop(0)
+            self._evaluated_comments_set.discard(old)
 
     async def _get_sync_state(self) -> Optional[SyncState]:
         """Get the current sync state from database.
@@ -934,62 +952,172 @@ class WatchManager:
                         "Re: Comment on ", ""
                     ).strip(' "')
 
-                    # Process each comment as a separate task
-                    # Only queue comments authored by the account owner.
-                    # Others get a warning reply.
-                    OWNER_EMAILS = {
-                        settings.gmail_address.lower(),
-                    }
+                    # Process each comment as a separate task.
+                    # GATE POLICY: only queue comments whose AUTHOR (per
+                    # Drive API, not the email-body parser) matches
+                    # settings.gmail_address. Comments from anyone else
+                    # are rejected with a public reply on the doc.
+                    SELF_EMAIL = settings.gmail_address.lower().strip()
 
                     msg_had_error = False
+                    # spark_ok is referenced after the loop. Initialize here
+                    # so it's always defined even when every comment in the
+                    # batch is rejected by the self-author gate (continue
+                    # paths bypass the inner spark_ok = False at line ~1174).
+                    spark_ok = False
                     for comment_entry in all_comments:
                         comment_id = comment_entry.get("comment_id")
                         doc_id = doc_id_fallback
 
+                        # ── Idempotency: skip already-evaluated comments ──
+                        # Without this the DTaskQueue label scan reruns
+                        # the gate every cycle, spamming rejection-reply
+                        # attempts and burning Drive API quota.
+                        eval_key = (doc_id or "", comment_id or "")
+                        if eval_key in self._evaluated_comments_set:
+                            continue
+
                         comment_content = DriveTaskQueueWriter.strip_trigger_address(
                             comment_entry.get("comment_text", "")
                         )
-                        triggered_by = comment_entry.get("author_email") or from_address
                         comment_author = comment_entry.get("author_name", "")
 
-                        # ── Owner gate: only queue self-authored comments ──
-                        author_email_lower = (
-                            comment_entry.get("author_email") or from_address
-                        ).lower().strip()
-                        if author_email_lower not in OWNER_EMAILS:
+                        # ── Author identity: Drive API `author.me` flag
+                        # primary, email-body parser fallback ──
+                        #
+                        # Google deprecated `author.emailAddress` for
+                        # comments (privacy hardening). The authoritative
+                        # signal is `author.me` — a boolean Google sets
+                        # based on the authenticated OAuth user. We MUST
+                        # pass `includeDeleted=True` because Drive 404s
+                        # comments.get for older/resolved entries without
+                        # it.
+                        #
+                        # Fallback path: when Drive API access fails for
+                        # any reason (token revoked, doc deleted, scope
+                        # change), parse the author from the notification
+                        # email body. Trusted only when From: is
+                        # comments-noreply@docs.google.com (Google's own
+                        # infrastructure) — guards against spoofing via
+                        # forwarded mail.
+                        is_self_author = False
+                        real_author_name = ""
+                        author_source = "unknown"
+                        if self.drive_enricher and comment_id and doc_id:
+                            try:
+                                self.drive_enricher._ensure_auth()
+                                cmt = self.drive_enricher._drive_service.comments().get(
+                                    fileId=doc_id, commentId=comment_id,
+                                    includeDeleted=True,
+                                    fields="author/me,author/displayName,id",
+                                ).execute()
+                                a = cmt.get("author") or {}
+                                if a.get("me") is True:
+                                    is_self_author = True
+                                    author_source = "drive-api-me-flag"
+                                else:
+                                    # Drive says NOT me — authoritative reject.
+                                    author_source = "drive-api-not-me"
+                                real_author_name = a.get("displayName") or ""
+                            except Exception as auth_err:
+                                log.info(
+                                    "drive_comment_drive_api_failed_falling_back",
+                                    doc_id=doc_id,
+                                    comment_id=comment_id,
+                                    error=str(auth_err)[:200],
+                                )
+                                # Fall through to email-body fallback.
+
+                        # Fallback: email-body parsed author email.
+                        # Only consulted when Drive API didn't give us a
+                        # definitive answer (i.e., author_source is still
+                        # "unknown" — meaning we couldn't reach Drive at
+                        # all). Drive's "not me" answer is final.
+                        if author_source == "unknown":
+                            from_lower = (from_address or "").lower()
+                            is_google_notification = (
+                                "comments-noreply@docs.google.com" in from_lower
+                            )
+                            if is_google_notification:
+                                body_author_email = (
+                                    comment_entry.get("author_email") or ""
+                                ).lower().strip()
+                                if body_author_email == SELF_EMAIL:
+                                    is_self_author = True
+                                    author_source = "email-body-parser-self"
+                                elif body_author_email:
+                                    is_self_author = False
+                                    author_source = "email-body-parser-other"
+                                    real_author_name = comment_entry.get("author_name", "") or ""
+
+                        if author_source == "unknown":
+                            log.warning(
+                                "drive_comment_author_unverifiable",
+                                doc_id=doc_id,
+                                comment_id=comment_id,
+                                from_address=(from_address or "")[:80],
+                            )
+                            self._mark_comment_evaluated(eval_key)
+                            continue
+
+                        # `triggered_by` is informational; use the best
+                        # name/email we have for downstream logging.
+                        triggered_by = (
+                            "me (cdorsey@concord.org)" if is_self_author
+                            else (comment_entry.get("author_email")
+                                  or real_author_name or "unknown")
+                        )
+
+                        if not is_self_author:
                             log.info(
-                                "drive_comment_skipped_not_owner",
-                                author=author_email_lower,
+                                "drive_comment_skipped_not_self",
+                                author_name=real_author_name,
                                 doc_title=doc_title,
                                 comment_id=comment_id,
+                                author_source=author_source,
                             )
-                            # Post a warning reply (best-effort)
+                            # Post a public rejection reply on the doc
+                            # (best-effort). The author of a non-self
+                            # comment sees: "This comment was not queued
+                            # as a task. Only cdorsey@concord.org can
+                            # queue tasks via the +dtasks address."
                             if self.drive_enricher and comment_id and doc_id:
                                 try:
-                                    self.drive_enricher._ensure_auth()
                                     self.drive_enricher._drive_service.replies().create(
                                         fileId=doc_id,
                                         commentId=comment_id,
                                         body={
                                             "content": (
-                                                "This comment was not queued as a task. "
-                                                "Only the document owner can queue tasks "
-                                                "via the +dtasks address."
+                                                "This comment was not queued as a "
+                                                f"task. Only {SELF_EMAIL} can queue "
+                                                "tasks via the +dtasks address."
                                             ),
                                         },
                                         fields="id",
                                     ).execute()
                                     log.info(
-                                        "drive_comment_warning_reply_posted",
+                                        "drive_comment_rejection_reply_posted",
                                         doc_id=doc_id,
                                         comment_id=comment_id,
+                                        rejected_author=real_author_email,
                                     )
                                 except Exception as reply_err:
+                                    # Most common: comment was deleted or
+                                    # is in a doc the bot can't write to.
+                                    # Log + move on; do NOT retry.
                                     log.warning(
-                                        "drive_comment_warning_reply_failed",
+                                        "drive_comment_rejection_reply_failed",
+                                        doc_id=doc_id,
+                                        comment_id=comment_id,
                                         error=str(reply_err)[:200],
                                     )
+                            self._mark_comment_evaluated(eval_key)
                             continue
+
+                        # Self-authored — proceed to queue. Mark as
+                        # evaluated so a re-scan of the same email after
+                        # task-queue insert doesn't re-trigger anything.
+                        self._mark_comment_evaluated(eval_key)
 
                         # Parse for task markers from comment text
                         marker_entries = TaskQueueWriter.parse_markers(comment_content)
@@ -1004,13 +1132,22 @@ class WatchManager:
                                 for me in marker_entries
                             ]
                         else:
-                            if not comment_content.strip():
-                                continue  # Skip empty/assigned-only comments
-                            # No marker — user indicated task via +dtasks but
-                            # didn't use [c] or > convention. Mark as "implicit".
+                            stripped = comment_content.strip()
+                            if not stripped:
+                                # Bare @-mention with no body (the user
+                                # tagged +dtasks but typed no other content)
+                                # — generate an implicit "review this
+                                # comment thread" task pointing at the doc.
+                                # Without this, the queue write is skipped
+                                # and the user-tagged comment never lands.
+                                stripped = (
+                                    f"Review/respond to comment in “{doc_title}”"
+                                    if doc_title else
+                                    "Review/respond to a Google Doc comment"
+                                )
                             entry_defs = [{
                                 "marker_type": "implicit",
-                                "task_hint": comment_content.strip(),
+                                "task_hint": stripped,
                                 "context": None,
                             }]
 

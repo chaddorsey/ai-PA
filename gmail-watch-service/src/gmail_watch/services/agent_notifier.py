@@ -213,17 +213,23 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
                 lines.append(f"- **{subject}** from {from_addr}{notes_tag}")
 
         lines.append(
-            "\nIMPORTANT: Do NOT call process_email_task_queue — the entries are "
-            "already queued in your queued_tasks_from_email memory block. "
-            "Read each entry from the block, then call trigger_task_extraction() "
-            "for each one with source_type='email' and the entry's message_id, "
-            "subject, and snippet. "
-            "Use origin='user-indicated' (these tasks were explicitly queued by the user "
-            "via forward-to-tasks or TaskQueue label). "
-            'For "explicit" marker entries, the task_hint IS the task description. '
-            'For "pointer" marker entries, read the full email and expand the hint '
-            "into a complete task. "
-            "Remove each entry from the block after successful extraction."
+            "\nCYCLE-1 INSTRUCTIONS: Entries are queued in pa_web.task_queue "
+            "(source='email'). Do NOT call process_email_task_queue or "
+            "trigger_task_extraction — those legacy paths are retired. "
+            "Instead:\n"
+            "  1. Call consume_queue(source='email', limit=20) to claim the "
+            "pending row(s).\n"
+            "  2. For each claimed row, call add_extracted_tasks_postgres(...) "
+            "to land it in pa_web.tasks. Use origin='user-indicated' for "
+            "forward-to-tasks/TaskQueue-label entries. For 'explicit' marker "
+            "entries the task_hint IS the task description (use it as "
+            "raw_description). For 'pointer' marker entries, read the full "
+            "email and expand the hint into a complete task description.\n"
+            "  3. The enrichment-scanner will pick up enrichment_state="
+            "'pending' rows on its 30s tick and run the 4-tool chain.\n"
+            "DUPLICATE-CHECK POLICY: rely on the DB's ON CONFLICT (ref_id) DO "
+            "NOTHING — if you suspect a duplicate, attempt the insert anyway "
+            "and trust the tool's status='exists' vs 'ok' return."
         )
 
         message = "\n".join(lines)
@@ -242,10 +248,14 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         if not entries:
             return {"status": "ok", "message": "no entries"}
 
+        # Cycle-1: sparks live in pa_web.task_queue (source varies by
+        # producer). process_spark_queue is retired.
         message = (
-            f"[Spark Queue] {len(entries)} new spark(s). "
-            "Call process_spark_queue(). Then: Phase A (refine + discover), "
-            "then Phase B (backtrace_task for user-indicated tasks only)."
+            f"[Task Queue] {len(entries)} new spark(s) in pa_web.task_queue. "
+            "Call consume_queue(source=<the relevant source>, limit=20) to "
+            "claim pending row(s), then add_extracted_tasks_postgres(...) for "
+            "each. Phase B (backtrace_task) for user-indicated tasks only. "
+            "Do NOT call process_spark_queue — that path was retired in cycle 1."
         )
 
         original_agent_id = self.agent_id
@@ -288,17 +298,25 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
                 lines.append(f"- Comment on **{doc_title}**: \"{comment_text}\"")
 
         lines.append(
-            "\nEntries are enriched with Drive API data (comment text, "
-            "quoted passage, surrounding context). Extract tasks from the "
-            "queued_tasks_from_drive block using add_extracted_tasks. "
-            "Use origin='user-indicated' (these tasks were explicitly marked by the user "
-            "in document comments). "
-            'For "explicit" marker entries, the task_hint IS the task description. '
-            'For "pointer" marker entries, use the comment and document context '
-            "to expand the hint into a complete task. "
-            "For entries without markers, compose a task from the comment text "
-            "and surrounding context. "
-            "Remove each entry from the block after extraction."
+            "\nCYCLE-1 INSTRUCTIONS: Entries are queued in pa_web.task_queue "
+            "(source='google-docs-comment'). The legacy "
+            "queued_tasks_from_drive block + add_extracted_tasks path is "
+            "retired. Instead:\n"
+            "  1. Call consume_queue(source='google-docs-comment', limit=20) "
+            "to claim pending row(s).\n"
+            "  2. For each claimed row, call add_extracted_tasks_postgres(...). "
+            "Use origin='user-indicated' for explicitly-marked comments. "
+            "For 'explicit' marker entries the task_hint IS the task "
+            "description. For 'pointer' marker entries, use the comment and "
+            "document context (the queue payload includes comment text, "
+            "quoted passage, and surrounding context) to expand the hint. "
+            "For entries without markers, compose a task from the comment "
+            "and surrounding context.\n"
+            "  3. The enrichment-scanner will pick up enrichment_state="
+            "'pending' rows on its 30s tick and run the 4-tool chain.\n"
+            "DUPLICATE-CHECK POLICY: rely on the DB's ON CONFLICT (ref_id) DO "
+            "NOTHING — if you suspect a duplicate, attempt the insert anyway "
+            "and trust the tool's status='exists' vs 'ok' return."
         )
 
         message = "\n".join(lines)

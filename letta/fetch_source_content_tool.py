@@ -29,7 +29,7 @@ def fetch_source_content(
        and fetch_hint automatically. Simpler for enrichment pipeline callers.
 
     Args:
-        source_type: One of "email", "meeting", "slack", "google-docs-comment". Optional if ref_id provided.
+        source_type: One of "email", "meeting", "meeting_marker", "slack", "google-docs-comment". Optional if ref_id provided.
         fetch_hint: Retrieval instruction from the spark record. Optional if ref_id provided.
             Format: "gmail:MESSAGE_ID" for email, "granola:MEETING_ID" for meetings.
             For slack/docs-comment, pass the reference_id instead.
@@ -98,10 +98,10 @@ def fetch_source_content(
                     if not source_type:
                         source_type = _src or "unknown"
                     # Source-specific fetch_hint derivation:
-                    #   slack:    fetch_hint = source_ref (slack-CXXX-ts)
-                    #   email:    fetch_hint = "gmail:<msgid>" (smeta or strip prefix)
-                    #   meeting:  fetch_hint = "granola:<meeting_id>" or pull from smeta
-                    #   drive*:   fetch_hint = source_ref
+                    #   slack:               fetch_hint = source_ref (slack-CXXX-ts)
+                    #   email:               fetch_hint = "gmail:<msgid>" (smeta or strip prefix)
+                    #   meeting:             fetch_hint = "granola:<meeting_id>" or pull from smeta
+                    #   google-docs-comment: fetch_hint = source_ref (gdocs-comment-<doc>-<cmt>)
                     if not fetch_hint:
                         smeta = _smeta or {}
                         if source_type == "email":
@@ -216,9 +216,30 @@ def fetch_source_content(
                         parts_to_check.extend(part.get("parts", []))
 
                     if body_data:
-                        content = base64.urlsafe_b64decode(body_data).decode("utf-8", "replace")
+                        body_text = base64.urlsafe_b64decode(body_data).decode("utf-8", "replace")
                     else:
-                        content = msg.get("snippet", "")
+                        body_text = msg.get("snippet", "")
+
+                    # Permalink (gmail web URL). Useful for resources field.
+                    permalink = f"https://mail.google.com/mail/u/0/#inbox/{message_id}"
+                    metadata["permalink"] = permalink
+
+                    # Wrap email body as the anchor — same framing as slack
+                    # so the agent treats it as the canonical task source.
+                    content = (
+                        "[*** ANCHOR — EMAIL BODY ***]\n"
+                        "This is the email the user/system flagged for task "
+                        "creation. The task statement (suggested_title, "
+                        "direct_action) MUST anchor on this content. "
+                        "Thread context below is for enrichment fields ONLY; "
+                        "do NOT use it to redefine the task.\n"
+                        f"From: {headers.get('From','')}\n"
+                        f"Subject: {headers.get('Subject','')}\n"
+                        f"Date: {headers.get('Date','')}\n"
+                        f"[Permalink: {permalink}]\n\n"
+                        f"{body_text}\n"
+                        "[*** END ANCHOR ***]"
+                    )
 
                     # Also fetch thread context if this is part of a thread
                     thread_id = msg.get("threadId", "")
@@ -249,7 +270,12 @@ def fetch_source_content(
                                             f"{tm.get('snippet','')[:150]}"
                                         )
                                     prefix = f"({len(thread_msgs)} messages in thread, showing last {len(recent_msgs)})\n" if len(thread_msgs) > 10 else ""
-                                    content += f"\n\n--- THREAD CONTEXT ---\n{prefix}" + "\n".join(thread_context)
+                                    content += (
+                                        "\n\n--- AMBIENT THREAD CONTEXT (low-weight; "
+                                        "consult only for enrichment, never to "
+                                        f"redefine the task) ---\n{prefix}"
+                                        + "\n".join(thread_context)
+                                    )
                                     metadata["thread_message_count"] = len(thread_msgs)
                         except Exception:
                             pass  # Thread fetch is best-effort
@@ -274,7 +300,25 @@ def fetch_source_content(
                     # Find the meeting passage (longest one with meeting content)
                     best = max(passages, key=lambda p: len(p.get("text", "")) if isinstance(p, dict) else 0)
                     if isinstance(best, dict):
-                        content = best.get("text", "")
+                        raw = best.get("text", "")
+                        # Wrap as anchor — same framing as slack/email/docs.
+                        # The meeting transcript IS the anchor; for marker-
+                        # tagged tasks, the marker line within the transcript
+                        # is the focal item, but the whole transcript provides
+                        # context. The agent should anchor on whatever line
+                        # produced the marker (raw_description tells it).
+                        content = (
+                            "[*** ANCHOR — MEETING TRANSCRIPT/NOTES ***]\n"
+                            "This is the meeting the system flagged for task "
+                            "creation (granola_id=" + meeting_id + "). The "
+                            "task statement (suggested_title, direct_action) "
+                            "MUST anchor on the marker line that produced "
+                            "this task (see raw_description). Surrounding "
+                            "transcript content is supporting context for "
+                            "enrichment fields ONLY.\n\n"
+                            + raw
+                            + "\n[*** END ANCHOR ***]"
+                        )
                         metadata = {"meeting_id": meeting_id}
             except Exception as e:
                 content = f"(archival search error: {str(e)[:200]})"
@@ -466,17 +510,287 @@ def fetch_source_content(
             metadata = metadata if content and not content.startswith("(") else {"hint": "Parse failed"}
 
         elif source_type == "google-docs-comment":
-            # Comment content was already enriched by DriveEnricher
-            # Discovery would scan comment replies — use run_gws
-            content = "(Docs comment replies require run_gws — call run_gws directly)"
-            metadata = {"hint": "Use run_gws to fetch comment reply chain for discovery"}
+            # Parse source_ref (gdocs-comment-<DOC_ID>-<COMMENT_ID>) to get
+            # doc + comment ids. fetch_hint is the same string in cycle-1.
+            ref = fetch_hint or source_ref or ""
+            doc_id = ""
+            comment_id = ""
+            if ref.startswith("gdocs-comment-"):
+                rest = ref[len("gdocs-comment-"):]
+                # COMMENT_ID begins after the LAST '-' that separates the
+                # 33-char-ish doc id from the comment id (Drive ids contain
+                # underscores, sometimes hyphens). Use the heuristic: split
+                # at the LAST hyphen if comment id is well-formed (starts
+                # with 'AAAB' or all caps + digits, or includes underscore).
+                # Simpler & robust: try right-most hyphen first.
+                if "-" in rest:
+                    doc_id, comment_id = rest.rsplit("-", 1)
+                else:
+                    doc_id = rest
+            try:
+                # ── Comment + replies ──
+                comment_text = ""
+                comment_author = ""
+                quoted_passage = ""
+                comment_date = ""
+                replies_lines = []
+                if doc_id and comment_id:
+                    cmd = ["gws", "drive", "comments", "get",
+                           "--params", json.dumps({
+                               "fileId": doc_id, "commentId": comment_id,
+                               "fields": "content,author,quotedFileContent,"
+                                         "createdTime,resolved,replies",
+                           }),
+                           "--format", "json"]
+                    cresult = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                    if cresult.returncode == 0:
+                        craw = "\n".join(l for l in cresult.stdout.split("\n")
+                                         if not l.startswith("Using keyring"))
+                        cdata = json.loads(craw) if craw.strip() else {}
+                        comment_text = cdata.get("content", "") or ""
+                        comment_author = (cdata.get("author") or {}).get("displayName", "")
+                        quoted_passage = (cdata.get("quotedFileContent") or {}).get("value", "")
+                        comment_date = cdata.get("createdTime", "")
+                        for rep in (cdata.get("replies") or []):
+                            ra = (rep.get("author") or {}).get("displayName", "")
+                            replies_lines.append(
+                                f"[reply] [{rep.get('createdTime','')}] "
+                                f"{ra}: {(rep.get('content') or '')[:300]}"
+                            )
+
+                # ── Parent doc title + mime + permalink ──
+                doc_title = ""
+                permalink = ""
+                mime_type = ""
+                if doc_id:
+                    cmd = ["gws", "drive", "files", "get",
+                           "--params", json.dumps({
+                               "fileId": doc_id,
+                               "fields": "id,name,mimeType,webViewLink",
+                           }),
+                           "--format", "json"]
+                    fresult = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                    if fresult.returncode == 0:
+                        fraw = "\n".join(l for l in fresult.stdout.split("\n")
+                                         if not l.startswith("Using keyring"))
+                        fdata = json.loads(fraw) if fraw.strip() else {}
+                        doc_title = fdata.get("name", "")
+                        mime_type = fdata.get("mimeType", "")
+                        permalink = (
+                            fdata.get("webViewLink", "")
+                            or f"https://docs.google.com/document/d/{doc_id}/edit?disco={comment_id}"
+                        )
+                        # Append the disco fragment so the link jumps to the
+                        # specific comment thread when opened.
+                        if "disco=" not in permalink and comment_id:
+                            sep = "&" if "?" in permalink else "?"
+                            permalink = f"{permalink}{sep}disco={comment_id}"
+
+                # ── Surrounding doc body around the highlighted passage ──
+                # quotedFileContent is often a short fragment ("this", "the
+                # team", "X"); the agent needs surrounding paragraph(s) to
+                # know what the comment actually concerns. Strategy by mime:
+                #   - Google Docs: fetch full body, locate quoted passage,
+                #     extract ±WINDOW chars around it.
+                #   - Google Sheets: fetch sheet metadata + the row containing
+                #     the comment-anchored cell (best-effort).
+                #   - Google Slides: fetch the slide containing the comment
+                #     (best-effort; slides API is structurally different).
+                #   - PDFs / images / others: no body extraction available;
+                #     rely on doc title + comment alone.
+                surrounding_context = ""
+                surrounding_kind = ""  # "before+after", "doc-opening", "sheet-row", "slide", or ""
+                WINDOW = 800  # chars on each side of the quoted passage
+                try:
+                    if mime_type == "application/vnd.google-apps.document" and doc_id:
+                        cmd = ["gws", "docs", "documents", "get",
+                               "--params", json.dumps({"documentId": doc_id}),
+                               "--format", "json"]
+                        dresult = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+                        if dresult.returncode == 0:
+                            draw = "\n".join(l for l in dresult.stdout.split("\n")
+                                             if not l.startswith("Using keyring"))
+                            ddata = json.loads(draw) if draw.strip() else {}
+                            paragraphs = []
+                            for el in (ddata.get("body") or {}).get("content", []):
+                                para = el.get("paragraph")
+                                if not para:
+                                    continue
+                                for elt in para.get("elements", []):
+                                    tr = elt.get("textRun") or {}
+                                    t = tr.get("content", "")
+                                    if t:
+                                        paragraphs.append(t)
+                            flat_body = "".join(paragraphs)
+                            if quoted_passage and flat_body:
+                                # Try exact match; fall back to whitespace-
+                                # normalized match (Drive sometimes adds
+                                # trailing spaces or differs in newlines).
+                                idx = flat_body.find(quoted_passage)
+                                if idx == -1:
+                                    norm_body = " ".join(flat_body.split())
+                                    norm_q = " ".join(quoted_passage.split())
+                                    nidx = norm_body.find(norm_q)
+                                    if nidx >= 0:
+                                        # Approximate idx in original body by
+                                        # mapping char-count proportionally —
+                                        # close enough for window extraction.
+                                        ratio = len(flat_body) / max(1, len(norm_body))
+                                        idx = int(nidx * ratio)
+                                if idx >= 0:
+                                    start = max(0, idx - WINDOW)
+                                    end = min(len(flat_body), idx + len(quoted_passage) + WINDOW)
+                                    pre = flat_body[start:idx].lstrip()
+                                    post = flat_body[idx + len(quoted_passage):end].rstrip()
+                                    surrounding_context = (
+                                        f"[…before…]\n{pre}\n"
+                                        f"[HIGHLIGHTED PASSAGE]\n{quoted_passage}\n"
+                                        f"[…after…]\n{post}"
+                                    )
+                                    surrounding_kind = "before+after"
+                                else:
+                                    # Quoted passage not locatable; fall back
+                                    # to doc opening for high-level context.
+                                    surrounding_context = flat_body[:1500]
+                                    surrounding_kind = "doc-opening"
+                            elif flat_body and not quoted_passage:
+                                # No quoted passage (rare for Docs); show
+                                # opening for orientation.
+                                surrounding_context = flat_body[:1500]
+                                surrounding_kind = "doc-opening"
+                    elif mime_type == "application/vnd.google-apps.spreadsheet":
+                        # Sheets: surfacing the anchored cell + neighbors
+                        # requires parsing the comment's anchor JSON, which
+                        # the Drive comments API does not return cleanly.
+                        # Best-effort: include sheet name + first ~30 rows
+                        # of first sheet as orientation.
+                        cmd = ["gws", "sheets", "spreadsheets", "get",
+                               "--params", json.dumps({
+                                   "spreadsheetId": doc_id,
+                                   "includeGridData": False,
+                               }),
+                               "--format", "json"]
+                        sresult = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                        if sresult.returncode == 0:
+                            sraw = "\n".join(l for l in sresult.stdout.split("\n")
+                                             if not l.startswith("Using keyring"))
+                            sdata = json.loads(sraw) if sraw.strip() else {}
+                            sheet_names = [s.get("properties", {}).get("title", "")
+                                           for s in (sdata.get("sheets") or [])]
+                            surrounding_context = (
+                                "Sheets in this spreadsheet: "
+                                + ", ".join(sheet_names)
+                            )
+                            surrounding_kind = "sheet-list"
+                    elif mime_type == "application/vnd.google-apps.presentation":
+                        # Slides: best-effort — list slide titles.
+                        cmd = ["gws", "slides", "presentations", "get",
+                               "--params", json.dumps({"presentationId": doc_id}),
+                               "--format", "json"]
+                        presult = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                        if presult.returncode == 0:
+                            praw = "\n".join(l for l in presult.stdout.split("\n")
+                                             if not l.startswith("Using keyring"))
+                            pdata = json.loads(praw) if praw.strip() else {}
+                            slide_count = len(pdata.get("slides") or [])
+                            title_block = (pdata.get("title") or "")
+                            surrounding_context = (
+                                f"Presentation '{title_block}' has {slide_count} slide(s)."
+                            )
+                            surrounding_kind = "slide-summary"
+                    # PDFs / images / other mimes: no fetch (handled by
+                    # falling through with empty surrounding_context).
+                except FileNotFoundError:
+                    pass  # gws unavailable; surrounding context simply omitted
+                except Exception:
+                    pass  # Best-effort; do not fail enrichment if body fetch errors
+
+                metadata = {
+                    "doc_id": doc_id,
+                    "comment_id": comment_id,
+                    "doc_title": doc_title,
+                    "doc_mime_type": mime_type,
+                    "comment_author": comment_author,
+                    "comment_date": comment_date,
+                    "permalink": permalink,
+                    "reply_count": len(replies_lines),
+                    "surrounding_context_kind": surrounding_kind,
+                }
+
+                parts = []
+                parts.append(
+                    "[*** ANCHOR — DOCS COMMENT ***]\n"
+                    "This is the Google Docs comment the system flagged for "
+                    "task creation. The task statement (suggested_title, "
+                    "direct_action) MUST anchor on this comment. Quoted "
+                    "passage and replies below are supporting context for "
+                    "enrichment fields ONLY; do NOT use them to redefine "
+                    "the task.\n"
+                    f"Doc: {doc_title}\n"
+                    f"Author: {comment_author}\n"
+                    f"Date: {comment_date}\n"
+                    f"[Permalink: {permalink}]\n\n"
+                    f"COMMENT: {comment_text}\n"
+                    "[*** END ANCHOR ***]"
+                )
+                if quoted_passage:
+                    parts.append(
+                        "--- QUOTED DOC PASSAGE (the text the comment is "
+                        "anchored to in the source document) ---\n"
+                        + quoted_passage[:1500]
+                    )
+                if surrounding_context:
+                    if surrounding_kind == "before+after":
+                        label = (
+                            "--- SURROUNDING DOC CONTEXT (~"
+                            f"{WINDOW} chars before + after the highlighted "
+                            "passage; supporting context for enrichment "
+                            "fields, NEVER for redefining the task) ---"
+                        )
+                    elif surrounding_kind == "doc-opening":
+                        label = (
+                            "--- DOC OPENING (highlighted passage could not "
+                            "be located in body; first 1500 chars shown for "
+                            "orientation; for enrichment only) ---"
+                        )
+                    elif surrounding_kind == "sheet-list":
+                        label = (
+                            "--- SPREADSHEET ORIENTATION (sheet names; the "
+                            "specific anchored cell is not retrievable from "
+                            "the comments API) ---"
+                        )
+                    elif surrounding_kind == "slide-summary":
+                        label = (
+                            "--- SLIDE DECK ORIENTATION (deck title + slide "
+                            "count; the specific anchored slide is not "
+                            "retrievable from the comments API) ---"
+                        )
+                    else:
+                        label = "--- SURROUNDING CONTEXT ---"
+                    parts.append(label + "\n" + surrounding_context)
+                if replies_lines:
+                    parts.append(
+                        "--- AMBIENT REPLY THREAD (low-weight; consult only "
+                        "for enrichment, never to redefine the task) ---\n"
+                        + "\n".join(replies_lines[:10])
+                    )
+                content = "\n\n".join(parts) if parts else "(no docs comment content)"
+            except FileNotFoundError:
+                content = "(gws CLI not available for docs-comment fetch)"
+                metadata = {"hint": "gws not present"}
+            except Exception as e:
+                content = f"(docs-comment fetch error: {str(e)[:200]})"
+                metadata = {"hint": "fetch failed"}
 
         else:
             return {"status": "error", "error_message": f"Unsupported source_type: {source_type}"}
 
-        # Truncate very long content
-        if len(content) > 5000:
-            content = content[:5000] + "\n\n(truncated at 5000 chars)"
+        # Truncate very long content. Bumped from 5000 → 8000 so docs-
+        # comment surrounding context (anchor + quoted + ±800 before/after
+        # + replies) fits without losing the most useful before/after
+        # passages. Slack/email/meeting bundles fit comfortably under this.
+        if len(content) > 8000:
+            content = content[:8000] + "\n\n(truncated at 8000 chars)"
 
         return {
             "status": "ok",

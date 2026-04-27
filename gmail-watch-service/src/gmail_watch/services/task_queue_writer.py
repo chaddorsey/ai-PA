@@ -223,67 +223,85 @@ class TaskQueueWriter:
         return json.dumps(record)
 
     async def write_to_spark_queue(self, spark_json: str) -> dict[str, Any]:
-        """Write a Spark Record to the spark_queue block.
+        """Write a Spark Record to pa_web.task_queue.
 
-        Uses the spark_queue_block_id from settings.
-        Deduplicates by reference_id — skips if the same reference already exists.
+        Cycle-1 Pattern 2 cutover (2026-04-26): replaces the legacy
+        block-PATCH path. Source is derived from spark_data['source_type']
+        ('email' or 'drive'). Dedup is enforced by the
+        UNIQUE (source, source_ref) constraint via ON CONFLICT DO NOTHING.
         """
         import json as _json
+        import os
 
-        spark_block_id = settings.spark_queue_block_id
-        if not spark_block_id:
-            return {"status": "error", "error": "No spark_queue_block_id configured"}
-        if not self.letta_base_url:
-            return {"status": "error", "error": "No letta_base_url configured"}
+        try:
+            import asyncpg
+        except Exception as e:
+            logger.error("task_queue_asyncpg_import_failed", error=str(e))
+            return {"status": "error", "error": f"asyncpg import failed: {e}"}
 
-        block_url = f"{self.letta_base_url}/v1/blocks/{spark_block_id}"
-
-        # Extract reference_id for dedup check
+        # Parse the spark record
         try:
             spark_data = _json.loads(spark_json)
-            ref_id = spark_data.get("reference_id", "")
-        except Exception:
-            ref_id = ""
+        except Exception as e:
+            return {"status": "error", "error": f"invalid spark_json: {e}"}
+
+        ref_id = spark_data.get("reference_id", "")
+        source_type = spark_data.get("source_type", "email")
+        # Map source_type → task_queue.source CHECK constraint values.
+        # Include 'google-docs-comment' for drive comment ingestion.
+        if source_type not in (
+            "email", "slack", "drive", "meeting",
+            "meeting_marker", "google-docs-comment",
+        ):
+            source_type = "email"  # safe default
+        if not ref_id:
+            return {"status": "error", "error": "spark missing reference_id"}
+
+        # Derive Postgres URL — gmail-watch's DATABASE_URL has the
+        # SQLAlchemy '+asyncpg' driver hint that asyncpg.connect rejects.
+        db_url = os.environ.get("PA_WEB_POSTGRES_URL")
+        if not db_url:
+            db_url = os.environ.get("DATABASE_URL", "")
+            db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        if not db_url:
+            password = os.environ.get("POSTGRES_PASSWORD", "")
+            db_url = f"postgresql://postgres:{password}@supabase-db:5432/postgres"
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get(block_url)
-                resp.raise_for_status()
-                block_data = resp.json()
-                current_value = block_data.get("value", "").rstrip()
-
-                # Deduplicate: skip if reference_id already in block
-                if ref_id and ref_id in current_value:
-                    logger.info(
-                        "spark_queue_dedup_skip",
-                        reference_id=ref_id,
-                        block_id=spark_block_id,
-                    )
-                    return {"status": "ok", "dedup": True}
-
-                # Strip "(empty)" placeholder
-                if "(empty)" in current_value:
-                    current_value = current_value.replace("(empty)", "").strip()
-                    if not current_value:
-                        current_value = "# Spark Queue"
-
-                updated = f"{current_value}\n{spark_json}\n---"
-
-                patch_resp = await client.patch(
-                    block_url,
-                    json={"value": updated},
+            conn = await asyncpg.connect(db_url, timeout=15.0)
+            try:
+                row_id = await conn.fetchval(
+                    """
+                    INSERT INTO pa_web.task_queue (source, source_ref, payload)
+                    VALUES ($1, $2, $3::jsonb)
+                    ON CONFLICT (source, source_ref) DO NOTHING
+                    RETURNING id
+                    """,
+                    source_type,
+                    ref_id,
+                    spark_json,
                 )
-                patch_resp.raise_for_status()
+            finally:
+                await conn.close()
 
-            logger.info("spark_queue_entry_written", block_id=spark_block_id)
-            return {"status": "ok"}
+            if row_id is None:
+                logger.info(
+                    "task_queue_dedup_skip",
+                    reference_id=ref_id,
+                    source=source_type,
+                )
+                return {"status": "ok", "dedup": True}
 
-        except httpx.HTTPStatusError as e:
-            error = f"HTTP {e.response.status_code}: {e.response.text}"
-            logger.error("spark_queue_write_failed", error=error)
-            return {"status": "error", "error": error}
+            logger.info(
+                "task_queue_entry_written",
+                reference_id=ref_id,
+                source=source_type,
+                row_id=row_id,
+            )
+            return {"status": "ok", "row_id": row_id}
+
         except Exception as e:
-            logger.error("spark_queue_write_failed", error=str(e))
+            logger.error("task_queue_write_failed", error=str(e), reference_id=ref_id)
             return {"status": "error", "error": str(e)}
 
     @staticmethod
