@@ -75,9 +75,67 @@ def fetch_source_content(
                     break
 
             if not task_passage:
-                return {"status": "error", "error_message": f"No archival passage found for ref_id {ref_id}"}
-
-            p_text = task_passage.get("text", "")
+                # Cycle-1 fallback: live-flow tasks live in pa_web.tasks,
+                # not archival. Look up the row and extract source_type +
+                # fetch_hint from source / source_metadata / source_ref.
+                try:
+                    import psycopg as _pg
+                    pg_url = os.environ.get("PA_WEB_POSTGRES_URL") or os.environ.get("POSTGRES_URL")
+                    if not pg_url:
+                        pw = os.environ.get("POSTGRES_PASSWORD", "")
+                        pg_url = f"postgresql://postgres:{pw}@supabase-db:5432/postgres"
+                    with _pg.connect(pg_url, autocommit=True, connect_timeout=10) as _conn:
+                        with _conn.cursor() as _cur:
+                            _cur.execute(
+                                """SELECT source, source_ref, source_metadata, task_body
+                                     FROM pa_web.tasks WHERE ref_id = %s""",
+                                (ref_id,),
+                            )
+                            _row = _cur.fetchone()
+                    if _row is None:
+                        return {"status": "error", "error_message": f"No row in pa_web.tasks (or archival) for ref_id {ref_id}"}
+                    _src, _sref, _smeta, _body = _row
+                    if not source_type:
+                        source_type = _src or "unknown"
+                    # Source-specific fetch_hint derivation:
+                    #   slack:    fetch_hint = source_ref (slack-CXXX-ts)
+                    #   email:    fetch_hint = "gmail:<msgid>" (smeta or strip prefix)
+                    #   meeting:  fetch_hint = "granola:<meeting_id>" or pull from smeta
+                    #   drive*:   fetch_hint = source_ref
+                    if not fetch_hint:
+                        smeta = _smeta or {}
+                        if source_type == "email":
+                            mid = smeta.get("message_id") or (smeta.get("location_id") if smeta.get("location_id") else None)
+                            if mid:
+                                fetch_hint = f"gmail:{mid}"
+                            elif _sref and _sref.startswith("email-"):
+                                fetch_hint = f"gmail:{_sref[6:]}"
+                        elif source_type in ("meeting", "meeting_marker"):
+                            mid = smeta.get("meeting_id") or smeta.get("location_id")
+                            if mid:
+                                fetch_hint = f"granola:{mid}"
+                        else:
+                            # slack, google-docs-comment, drive, generic
+                            fetch_hint = _sref
+                    if not source_ref:
+                        source_ref = _sref
+                    # If still no fetch_hint AND task_body contains the source text,
+                    # return that directly — same shortcut as the archival path.
+                    if not fetch_hint and not source_ref and _body:
+                        return {
+                            "status": "ok",
+                            "source_type": source_type,
+                            "content": _body,
+                            "metadata": {"source": "pa_web.tasks.task_body", "ref_id": ref_id},
+                            "content_length": len(_body),
+                        }
+                except Exception as _e:
+                    return {"status": "error", "error_message": f"pa_web.tasks fallback failed for {ref_id}: {_e}"}
+                # Skip the rest of the archival-passage extraction since
+                # we now have what we need (source_type + fetch_hint/source_ref)
+                p_text = ""
+            else:
+                p_text = task_passage.get("text", "")
 
             # Extract source_type from passage
             type_match = re.search(r"- Type: (.+)$", p_text, re.MULTILINE)
@@ -254,8 +312,32 @@ def fetch_source_content(
                     try:
                         auth_header = {"Authorization": f"Bearer {slack_token}"}
                         thread_lines = []
+                        anchor_text = ""
+                        anchor_user = ""
+
+                        # ── Anchor: explicitly fetch the user-clicked message ──
+                        # Use conversations.history with latest=ts inclusive=true
+                        # limit=1. Without this, the anchor's text was missing
+                        # from the bundle and the agent would synthesize task
+                        # statements from ambient thread/channel messages.
+                        try:
+                            anchor_url = (
+                                f"https://slack.com/api/conversations.history"
+                                f"?channel={channel_id}&latest={message_ts}"
+                                f"&limit=1&inclusive=true"
+                            )
+                            aareq = urllib.request.Request(anchor_url, headers=auth_header)
+                            with urllib.request.urlopen(aareq, timeout=10) as aaresp:
+                                aadata = json.loads(aaresp.read().decode("utf-8"))
+                            if aadata.get("ok") and aadata.get("messages"):
+                                am = aadata["messages"][0]
+                                anchor_text = am.get("text", "") or ""
+                                anchor_user = am.get("user", "") or ""
+                        except Exception:
+                            pass
 
                         # If message is in a thread, fetch thread replies
+                        # (supporting context — NOT to redefine the task).
                         if thread_ts != message_ts:
                             thread_url = (
                                 f"https://slack.com/api/conversations.replies"
@@ -266,13 +348,16 @@ def fetch_source_content(
                                 tdata = json.loads(tresp.read().decode("utf-8"))
                             if tdata.get("ok") and tdata.get("messages"):
                                 for tm in tdata["messages"][-15:]:
+                                    # Mark which thread reply IS the anchor
+                                    is_anchor = (tm.get("ts") == message_ts)
+                                    prefix = "[ANCHOR]" if is_anchor else "[reply]"
                                     thread_lines.append(
-                                        f"[{tm.get('ts','')}] <@{tm.get('user','')}>: "
+                                        f"{prefix} [{tm.get('ts','')}] <@{tm.get('user','')}>: "
                                         f"{tm.get('text','')[:200]}"
                                     )
 
-                        # Also fetch surrounding channel messages (3 before, 3 after)
-                        # Before
+                        # Surrounding channel messages: 3 before, 3 after.
+                        # AMBIENT context only — must not be used to redefine task.
                         before_url = (
                             f"https://slack.com/api/conversations.history"
                             f"?channel={channel_id}&latest={message_ts}"
@@ -283,7 +368,6 @@ def fetch_source_content(
                             bdata = json.loads(bresp.read().decode("utf-8"))
                         before_msgs = list(reversed(bdata.get("messages", [])[:3]))
 
-                        # After
                         after_url = (
                             f"https://slack.com/api/conversations.history"
                             f"?channel={channel_id}&oldest={message_ts}"
@@ -294,22 +378,68 @@ def fetch_source_content(
                             adata = json.loads(aresp.read().decode("utf-8"))
                         after_msgs = adata.get("messages", [])[:3]
 
-                        context_lines = []
+                        ambient_lines = []
                         for cm in before_msgs:
-                            context_lines.append(
+                            ambient_lines.append(
                                 f"[before] <@{cm.get('user','')}>: {cm.get('text','')[:200]}"
                             )
-                        context_lines.append(f"[THIS MESSAGE] ts={message_ts}")
                         for cm in after_msgs:
-                            context_lines.append(
+                            ambient_lines.append(
                                 f"[after] <@{cm.get('user','')}>: {cm.get('text','')[:200]}"
                             )
 
+                        # ── Compose content with explicit anchor framing ──
+                        # The agent MUST treat the ANCHOR block as the
+                        # canonical user-selected message; thread/ambient are
+                        # for enrichment only (resources, knowns, unknowns,
+                        # intent_genesis), NEVER to redefine the task.
+                        parts = []
+                        parts.append(
+                            "[*** ANCHOR — USER-SELECTED MESSAGE ***]\n"
+                            "This is the message the user explicitly tagged for "
+                            "task creation. The task statement (suggested_title, "
+                            "direct_action) MUST anchor on this content. "
+                            "Surrounding thread/ambient context below is ONLY "
+                            "for enrichment fields (resources, knowns, unknowns, "
+                            "intent_genesis) — do NOT use it to redefine the "
+                            "task or swap topic.\n"
+                            f"<@{anchor_user}> [{message_ts}]: {anchor_text}\n"
+                            "[*** END ANCHOR ***]"
+                        )
                         if thread_lines:
-                            content = "--- THREAD ---\n" + "\n".join(thread_lines)
-                            content += "\n\n--- CHANNEL CONTEXT ---\n" + "\n".join(context_lines)
-                        else:
-                            content = "--- CHANNEL CONTEXT ---\n" + "\n".join(context_lines)
+                            parts.append(
+                                "--- THREAD CONTEXT (supporting; the [ANCHOR] "
+                                "line marks the user-selected message; other "
+                                "[reply] lines are siblings — do NOT promote "
+                                "them over the anchor) ---\n"
+                                + "\n".join(thread_lines)
+                            )
+                        if ambient_lines:
+                            parts.append(
+                                "--- AMBIENT CHANNEL CONTEXT (low-weight; "
+                                "consult only for enrichment, never to "
+                                "redefine the task) ---\n"
+                                + "\n".join(ambient_lines)
+                            )
+                        content = "\n\n".join(parts)
+
+                        # Canonical permalink via chat.getPermalink. Works for
+                        # both channel messages and DMs; DMs return a workspace-
+                        # scoped URL that only resolves for the team. Agents
+                        # should render this as hyperlinked "Permalink".
+                        permalink = ""
+                        try:
+                            perm_url = (
+                                f"https://slack.com/api/chat.getPermalink"
+                                f"?channel={channel_id}&message_ts={message_ts}"
+                            )
+                            preq = urllib.request.Request(perm_url, headers=auth_header)
+                            with urllib.request.urlopen(preq, timeout=10) as presp:
+                                pdata = json.loads(presp.read().decode("utf-8"))
+                            if pdata.get("ok"):
+                                permalink = pdata.get("permalink", "")
+                        except Exception:
+                            pass
 
                         metadata = {
                             "channel_id": channel_id,
@@ -317,7 +447,16 @@ def fetch_source_content(
                             "thread_count": len(thread_lines),
                             "context_before": len(before_msgs),
                             "context_after": len(after_msgs),
+                            "permalink": permalink,
+                            "is_dm": channel_id.startswith("D"),
+                            "anchor_text": anchor_text,
+                            "anchor_user": anchor_user,
+                            "anchor_ts": message_ts,
                         }
+                        if permalink:
+                            content = (
+                                f"[Permalink: {permalink}]\n\n" + content
+                            )
                     except Exception as e:
                         content = f"(Slack fetch error: {str(e)[:200]})"
                 else:

@@ -259,26 +259,53 @@ def _trigger_extraction(entry: dict, logger: Logger,
         if files:
             spark["files"] = [{"name": f["name"], "type": f["type"]} for f in files]
 
-        spark_json = json.dumps(spark)
+        # Cycle-1 Pattern 2 cutover (2026-04-26): write to pa_web.task_queue
+        # instead of PATCHing the spark_queue Letta block. ref_id becomes
+        # source_ref (UNIQUE), spark dict becomes payload JSONB.
+        import psycopg
+        from psycopg.types.json import Jsonb
+        pg_password = os.getenv("POSTGRES_PASSWORD", "")
+        pg_url = os.getenv(
+            "PA_WEB_POSTGRES_URL",
+            f"postgresql://postgres:{pg_password}@supabase-db:5432/postgres",
+        )
+        try:
+            with psycopg.connect(pg_url, autocommit=True, connect_timeout=10) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO pa_web.task_queue (source, source_ref, payload)
+                        VALUES ('slack', %s, %s)
+                        ON CONFLICT (source, source_ref) DO NOTHING
+                        RETURNING id
+                        """,
+                        (ref_id, Jsonb(spark)),
+                    )
+                    row = cur.fetchone()
+            if row:
+                logger.info(f"Task queue row written for {ref_id} (id={row[0]})")
+            else:
+                logger.info(f"Task queue dedup skip for {ref_id}")
+        except Exception as e:
+            logger.error(f"Task queue write failed for {ref_id}: {e}", exc_info=True)
+            raise
 
-        # Write to spark_queue block
-        block_url = f"{LETTA_BASE_URL}/v1/blocks/{SPARK_QUEUE_BLOCK_ID}"
-        block_resp = requests.get(block_url, timeout=10)
-        block_resp.raise_for_status()
-        current_value = block_resp.json().get("value", "").rstrip()
-
-        if "(empty)" in current_value:
-            current_value = current_value.replace("(empty)", "").strip()
-            if not current_value:
-                current_value = "# Spark Queue"
-
-        updated = f"{current_value}\n{spark_json}\n---"
-        patch_resp = requests.patch(block_url, json={"value": updated}, timeout=10)
-        patch_resp.raise_for_status()
-        logger.info(f"Spark record written for {ref_id}")
-
-        # Notify tasks agent (lightweight — agent reads block for content)
-        notify_msg = "[Spark Queue] 1 new spark. Call process_spark_queue(). Then: Phase A (refine + discover), then Phase B (backtrace_task for user-indicated tasks only)."
+        # Notify tasks agent (post-cycle-1 cutover: agent reads pa_web.task_queue
+        # via consume_queue, NOT the legacy spark_queue block).
+        notify_msg = (
+            "[Task Queue] New slack spark. Call consume_queue(source='slack', limit=10) "
+            "to claim pending row(s) from pa_web.task_queue. For each row, refine/discover "
+            "context if needed, then call add_extracted_tasks_postgres(...) to land it in "
+            "pa_web.tasks. Phase B (backtrace_task) for user-indicated tasks only. "
+            "Do NOT call the legacy process_spark_queue — that path was retired in cycle 1.\n\n"
+            "DUPLICATE-CHECK POLICY: do NOT skip insertion based solely on conversation "
+            "memory of a prior identical source_ref. Tasks can be deleted out-of-band by "
+            "the user. Authoritative dedup is enforced by the database itself: "
+            "add_extracted_tasks_postgres uses ON CONFLICT (ref_id) DO NOTHING. If you "
+            "suspect a duplicate, attempt the insert anyway — the tool will return "
+            "status='exists' if the row already lives in pa_web.tasks, and status='ok' "
+            "(inserted=true) if it doesn't. Trust the tool's response, not your memory."
+        )
 
         resp = requests.post(
             f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",

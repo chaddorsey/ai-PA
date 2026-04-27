@@ -75,36 +75,90 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
                 task_text = p.get("text", "")
                 break
 
-        if not task_passage:
-            return {"status": "error", "error_message": f"No archival passage found for ref_id {ref_id}"}
+        # Defaults populated from archival passage OR pa_web.tasks fallback
+        task_desc = ""
+        source_type = ""
+        from_person = ""
+        location = ""
+        location_id = ""
+        reference_id = ""
+        source_text_field = ""
+        fetch_hint = ""
 
-        # Parse fields from passage
-        fields = {}
-        for pattern, key in [
-            (r"^TASK: (.+)$", "task_desc"),
-            (r"- Type: (.+)$", "source_type"),
-            (r"- From: (.+)$", "from_person"),
-            (r"- Location: (.+)$", "location"),
-            (r"- Location ID: (.+)$", "location_id"),
-            (r"- Reference ID: (.+)$", "reference_id"),
-        ]:
-            m = re.search(pattern, task_text, re.MULTILINE)
-            if m:
-                fields[key] = m.group(1).strip()
+        if task_passage:
+            fields = {}
+            for pattern, key in [
+                (r"^TASK: (.+)$", "task_desc"),
+                (r"- Type: (.+)$", "source_type"),
+                (r"- From: (.+)$", "from_person"),
+                (r"- Location: (.+)$", "location"),
+                (r"- Location ID: (.+)$", "location_id"),
+                (r"- Reference ID: (.+)$", "reference_id"),
+            ]:
+                m = re.search(pattern, task_text, re.MULTILINE)
+                if m:
+                    fields[key] = m.group(1).strip()
 
-        task_desc = fields.get("task_desc", "")
-        source_type = fields.get("source_type", "")
-        from_person = fields.get("from_person", "")
-        location = fields.get("location", "")
-        location_id = fields.get("location_id", "")
-        reference_id = fields.get("reference_id", "")
+            task_desc = fields.get("task_desc", "")
+            source_type = fields.get("source_type", "")
+            from_person = fields.get("from_person", "")
+            location = fields.get("location", "")
+            location_id = fields.get("location_id", "")
+            reference_id = fields.get("reference_id", "")
 
-        # Extract source text and fetch hint
-        st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\nFETCH HINT:|\nENRICH|\nPACKET INFO|\Z)", task_text, re.DOTALL)
-        source_text_field = st_match.group(1).strip() if st_match else ""
+            st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\nFETCH HINT:|\nENRICH|\nPACKET INFO|\Z)", task_text, re.DOTALL)
+            source_text_field = st_match.group(1).strip() if st_match else ""
 
-        fetch_hint_match = re.search(r"FETCH HINT: (.+)$", task_text, re.MULTILINE)
-        fetch_hint = fetch_hint_match.group(1).strip() if fetch_hint_match else ""
+            fetch_hint_match = re.search(r"FETCH HINT: (.+)$", task_text, re.MULTILINE)
+            fetch_hint = fetch_hint_match.group(1).strip() if fetch_hint_match else ""
+        else:
+            # Cycle-1 fallback: live-flow tasks live in pa_web.tasks, not archival.
+            try:
+                import psycopg as _pg
+                pg_url = os.environ.get("PA_WEB_POSTGRES_URL") or os.environ.get("POSTGRES_URL")
+                if not pg_url:
+                    pw = os.environ.get("POSTGRES_PASSWORD", "")
+                    pg_url = f"postgresql://postgres:{pw}@supabase-db:5432/postgres"
+                with _pg.connect(pg_url, autocommit=True, connect_timeout=10) as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            """SELECT raw_description, suggested_title, source, source_ref,
+                                      source_metadata, task_body, origin
+                                 FROM pa_web.tasks WHERE ref_id = %s""",
+                            (ref_id,),
+                        )
+                        _row = _cur.fetchone()
+                if _row is None:
+                    return {"status": "error", "error_message": f"No row in pa_web.tasks (or archival) for ref_id {ref_id}"}
+                _raw, _sug, _src, _sref, _smeta, _body, _origin = _row
+                task_desc = _sug or _raw or ""
+                source_type = _src or "unknown"
+                reference_id = _sref or ""
+                location_id = _sref or ""
+                source_text_field = _body or _raw or ""
+                smeta = _smeta or {}
+                if _origin:
+                    from_person = _origin
+                elif source_type == "email":
+                    from_person = smeta.get("from") or smeta.get("sender") or ""
+                elif source_type == "slack":
+                    from_person = smeta.get("user_name") or smeta.get("user") or ""
+                # Source-specific fetch_hint derivation (mirrors fetch_source_content)
+                if source_type == "email":
+                    mid = smeta.get("message_id") or smeta.get("location_id")
+                    if mid:
+                        fetch_hint = f"gmail:{mid}"
+                    elif _sref and _sref.startswith("email-"):
+                        fetch_hint = f"gmail:{_sref[6:]}"
+                elif source_type in ("meeting", "meeting_marker"):
+                    mid = smeta.get("meeting_id") or smeta.get("location_id")
+                    if mid:
+                        fetch_hint = f"granola:{mid}"
+                else:
+                    # slack, google-docs-comment, drive, generic
+                    fetch_hint = _sref or ""
+            except Exception as _e:
+                return {"status": "error", "error_message": f"pa_web.tasks fallback failed for {ref_id}: {_e}"}
 
         # Extract participants from passage
         participants = []
@@ -250,7 +304,7 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
 
         # ── Step 4: Archival search ──
         archival_hits = []
-        seen_ids = {task_passage.get("id", "")}
+        seen_ids = {task_passage.get("id", "")} if task_passage else set()
         searched_terms = set()
         new_anchors = []
 
@@ -415,7 +469,7 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
             "status": "ok",
             "ref_id": ref_id,
             "task": task_desc,
-            "passage_id": task_passage.get("id", ""),
+            "passage_id": task_passage.get("id", "") if task_passage else "",
 
             # Hard center — source material
             "source_content": full_content[:3000],

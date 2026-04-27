@@ -1,12 +1,32 @@
 """
-Write Packet Info Tool for Letta
+write_packet_info — cycle-1 Postgres-canonical version.
 
-Writes the PACKET INFO section to a task's archival passage after the agent
-has synthesized backtrace materials. Separates "search" (backtrace_task)
-from "write" (this tool).
+Writes the agent's synthesized PACKET INFO into pa_web.tasks.enrichment
+JSONB column. The pre-cycle-1 version wrote a PACKET INFO section to
+the archival passage text. Both stores remain readable, but this tool
+now writes ONLY to pa_web.tasks (cycle-1 canonical).
 
-Called by MC, tasks agent, or sleeptime after reviewing backtrace_task output
-and performing any additional hops / synthesis.
+The enrichment JSONB shape:
+    {
+      "packet_info": {
+        "direct_action": "...",
+        "artifact_provenance": "...",
+        "intent_genesis": "...",
+        "context_brief": ["...", "..."],          # list of bullets (lines)
+        "resources": ["[primary] ... — url ..."],  # list of resource lines
+        "related_tasks": ["...", "..."],           # list of ref_id + desc
+        "knowns": ["...", "..."],
+        "unknowns": ["...", "..."],
+        "mismatch_warnings": ["..."],              # list (rare)
+        "additional_notes": "..."                  # free-form
+      },
+      "enriched_at": "<iso>",
+      "enriched_by": "<agent-name-or-id>",
+      "phase": "phase-a-complete"  (or "phase-b-complete" with backtrace)
+    }
+
+Side effect: enrichment_state flips to 'done', closing the loop with
+the enrichment-scanner.
 
 Tool: write_packet_info
 """
@@ -28,259 +48,142 @@ def write_packet_info(
     additional_notes: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Write PACKET INFO to a task's archival passage after backtrace synthesis.
-
-    The agent calls this after reviewing backtrace_task output, performing
-    any additional hops, and synthesizing the results. This is the "write"
-    step — backtrace_task is the "search" step.
-
-    All string parameters accept free-form text. The agent composes the
-    content based on its synthesis of backtrace materials + its own memory.
+    Persist synthesized work-packet context to pa_web.tasks.enrichment.
 
     Args:
-        ref_id: The 8-char hex reference ID of the task.
-        direct_action: Direct-action node summary (who asked, where, what's done).
-        artifact_provenance: Primary artifact location and provenance chain. Null if not identified.
-        intent_genesis: Why/strategy/constraints — prior decisions, meetings, context. Null if not found.
-        context_brief: 3-5 bullet synthesis of what the agent knows about this task's context.
-        resources: Key resources for execution. One per line, format: "[priority] label — url_or_path (role)". Priority: primary, secondary, background. Role: read, reference, download, open. Example: "[primary] PhET Substack post — https://... (read)"
-        related_tasks: One per line. ref_ids and short descriptions of related tasks found.
-        knowns: What is established and verified. One per line.
-        unknowns: What is missing or unresolved. One per line.
-        mismatch_warnings: Any overlap/conflict warnings to flag prominently. Null if none.
-        additional_notes: Any other synthesis the agent wants to preserve.
+        ref_id: The 8-char hex reference ID of the task. REQUIRED.
+        direct_action: Direct-action node summary (who asked, where, what's done). REQUIRED.
+        artifact_provenance: Primary artifact location and provenance chain. Optional.
+        intent_genesis: Why/strategy/constraints — prior decisions, meetings, context. Optional.
+        context_brief: 3-5 bullet synthesis of context. One bullet per line. Optional.
+        resources: Key resources for execution. One per line: "[priority] label — url (role)". Optional.
+        related_tasks: One per line: ref_id + short description of related tasks. Optional.
+        knowns: What is established and verified. One per line. Optional.
+        unknowns: What is missing or unresolved. One per line. Optional.
+        mismatch_warnings: Overlap/conflict warnings to flag prominently. Optional.
+        additional_notes: Any other free-form synthesis. Optional.
 
     Returns:
-        Dictionary with status and the updated passage text.
+        Dictionary with:
+          - status: "ok" or "error"
+          - ref_id: the ref_id (echoed)
+          - enrichment: the resulting enrichment dict that was saved
+          - error_message: present only when status="error"
     """
-    import json
+    # ALL IMPORTS INSIDE FUNCTION - required for Letta tool extraction
     import os
-    import re
+    import json
     import traceback
-    import urllib.request
-    import urllib.error
+    from datetime import datetime, timezone
 
     try:
-        LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
-        AGENT_ID = os.environ.get("TASKS_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
-        ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
+        import psycopg
+        from psycopg.rows import dict_row
+        from psycopg.types.json import Jsonb
+    except Exception as e:
+        return {
+            "status": "error",
+            "ref_id": ref_id,
+            "error_message": f"psycopg import failed: {e}",
+        }
 
-        if not ref_id:
-            return {"status": "error", "error_message": "ref_id is required"}
+    try:
+        if not ref_id or not isinstance(ref_id, str):
+            return {"status": "error", "ref_id": ref_id,
+                    "error_message": "ref_id is required"}
+        if not direct_action or not isinstance(direct_action, str):
+            return {"status": "error", "ref_id": ref_id,
+                    "error_message": "direct_action is required"}
 
-        # ── Fetch the task's archival passage ──
-        search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={ref_id}&limit=3"
-        req = urllib.request.Request(search_url)
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                passages = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code in (301, 302, 307, 308):
-                req2 = urllib.request.Request(e.headers.get("Location", ""))
-                with urllib.request.urlopen(req2, timeout=15) as resp2:
-                    passages = json.loads(resp2.read().decode("utf-8"))
-            else:
-                raise
-        if not isinstance(passages, list):
-            passages = []
+        # Inline-parse multi-line free-form fields into list-of-strings.
+        # The agent passes each item on its own line; we strip empty
+        # lines and surrounding whitespace.
+        def _to_list(s):
+            if not s:
+                return []
+            return [ln.strip() for ln in s.split("\n") if ln.strip()]
 
-        task_passage = None
-        task_text = ""
-        for p in passages:
-            if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
-                task_passage = p
-                task_text = p.get("text", "")
-                break
-
-        if not task_passage:
-            return {"status": "error", "error_message": f"No archival passage found for ref_id {ref_id}"}
-
-        # ── Retrieve stored backtrace materials (from refine_task_description) ──
-        stored_materials = None
-        try:
-            mat_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search=backtrace-materials:{ref_id}&limit=3"
-            mat_req = urllib.request.Request(mat_url)
-            with urllib.request.urlopen(mat_req, timeout=10) as mat_resp:
-                mat_passages = json.loads(mat_resp.read().decode("utf-8"))
-            for mp in (mat_passages if isinstance(mat_passages, list) else []):
-                if isinstance(mp, dict) and f"BACKTRACE_MATERIALS ref_id:{ref_id}" in mp.get("text", ""):
-                    mat_text = mp.get("text", "")
-                    json_start = mat_text.find("\n")
-                    if json_start >= 0:
-                        stored_materials = json.loads(mat_text[json_start + 1:])
-                    # Clean up the transient passage
-                    mat_pid = mp.get("id", "")
-                    if mat_pid:
-                        try:
-                            urllib.request.urlopen(urllib.request.Request(
-                                f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{mat_pid}",
-                                method="DELETE",
-                            ), timeout=10)
-                        except Exception:
-                            pass
-                    break
-        except Exception:
-            pass  # Retrieval is best-effort
-
-        # Auto-populate fields from stored materials when agent didn't provide them
-        if stored_materials:
-            if not resources:
-                urls = stored_materials.get("anchors", {}).get("urls", [])
-                if urls:
-                    resource_lines = []
-                    for u in urls[:5]:
-                        resource_lines.append(f"[primary] {u}")
-                    resources = "\n".join(resource_lines)
-            if not related_tasks:
-                rt_list = stored_materials.get("related_tasks", [])
-                if rt_list:
-                    rt_lines = [f"[{rt['ref_id']}] {rt['task'][:60]}" for rt in rt_list[:5]]
-                    related_tasks = "\n".join(rt_lines)
-            if not mismatch_warnings:
-                mw_list = stored_materials.get("mismatch_warnings", [])
-                if mw_list:
-                    mismatch_warnings = "; ".join(w["message"] for w in mw_list)
-
-        # ── Build PACKET INFO section ──
-        lines = ["\nPACKET INFO"]
-
-        if mismatch_warnings:
-            lines.append("")
-            lines.append(f">>> ⚠ {mismatch_warnings} <<<")
-            lines.append("")
-
-        lines.append(f"- Direct-action: {direct_action}")
-        lines.append(f"- Artifact provenance: {artifact_provenance or '(not identified)'}")
-        lines.append(f"- Intent genesis: {intent_genesis or '(not identified)'}")
-
-        if context_brief:
-            lines.append("")
-            lines.append("Context brief:")
-            for item in context_brief.split("\n"):
-                item = item.strip().lstrip("- ")
-                if item:
-                    lines.append(f"  - {item}")
-
-        if resources:
-            lines.append("")
-            lines.append("Resources:")
-            for item in resources.split("\n"):
-                item = item.strip().lstrip("- ")
-                if item:
-                    lines.append(f"  - {item}")
-
-        if related_tasks:
-            lines.append("")
-            lines.append("Related tasks:")
-            for item in related_tasks.split("\n"):
-                item = item.strip().lstrip("- ")
-                if item:
-                    lines.append(f"  - {item}")
-
-        if knowns or unknowns:
-            lines.append("")
-            lines.append("Knowns / Unknowns:")
-            if knowns:
-                for k in knowns.split("\n"):
-                    k = k.strip().lstrip("- ")
-                    if k:
-                        lines.append(f"  Known: {k}")
-            if unknowns:
-                for u in unknowns.split("\n"):
-                    u = u.strip().lstrip("- ")
-                    if u:
-                        lines.append(f"  Unknown: {u}")
-
+        packet_info = {
+            "direct_action": direct_action.strip(),
+        }
+        if artifact_provenance:
+            packet_info["artifact_provenance"] = artifact_provenance.strip()
+        if intent_genesis:
+            packet_info["intent_genesis"] = intent_genesis.strip()
+        cb = _to_list(context_brief)
+        if cb:
+            packet_info["context_brief"] = cb
+        rs = _to_list(resources)
+        if rs:
+            packet_info["resources"] = rs
+        rt = _to_list(related_tasks)
+        if rt:
+            packet_info["related_tasks"] = rt
+        kn = _to_list(knowns)
+        if kn:
+            packet_info["knowns"] = kn
+        un = _to_list(unknowns)
+        if un:
+            packet_info["unknowns"] = un
+        mw = _to_list(mismatch_warnings)
+        if mw:
+            packet_info["mismatch_warnings"] = mw
         if additional_notes:
-            lines.append("")
-            lines.append("Agent notes:")
-            for n in additional_notes.split("\n"):
-                n = n.strip()
-                if n:
-                    lines.append(f"  {n}")
+            packet_info["additional_notes"] = additional_notes.strip()
 
-        packet_info_text = "\n".join(lines)
+        # Phase tag — useful for the enrichment-scanner timeout-recovery
+        # and for downstream consumers (pa-web-ui work packet renderer).
+        phase = "phase-b-complete" if (rs or rt or kn or un) else "phase-a-complete"
 
-        # ── Update archival passage ──
-        new_text = task_text
+        new_enrichment = {
+            "packet_info": packet_info,
+            "enriched_at": datetime.now(timezone.utc).isoformat(),
+            "enriched_by": os.environ.get("AGENT_NAME") or "tasks-agent",
+            "phase": phase,
+        }
 
-        # Remove existing PACKET INFO and stale sections
-        new_text = re.sub(
-            r"\n*Context brief:\n.*?(?=\nSOURCE TEXT\n|\nFETCH HINT:|\nPACKET INFO|\Z)",
-            "", new_text, flags=re.DOTALL,
-        )
-        new_text = re.sub(
-            r"\n*Knowns / (?:Assumptions / )?Unknowns:\n.*?(?=\nSOURCE TEXT\n|\nFETCH HINT:|\nPACKET INFO|\Z)",
-            "", new_text, flags=re.DOTALL,
-        )
-        new_text = re.sub(
-            r"\nPACKET INFO.*?(?=\nSOURCE TEXT\n|\nFETCH HINT:|\Z)",
-            "", new_text, flags=re.DOTALL,
-        )
+        pg_url = os.environ.get("PA_WEB_POSTGRES_URL") or os.environ.get("POSTGRES_URL")
+        if not pg_url:
+            password = os.environ.get("POSTGRES_PASSWORD", "")
+            pg_url = f"postgresql://postgres:{password}@supabase-db:5432/postgres"
 
-        # Update enrichment status
-        new_text = re.sub(
-            r"- Status: (?:none|phase-a-complete|phase0-complete|packet-info)",
-            "- Status: packet-info", new_text,
-        )
-
-        # Insert PACKET INFO before SOURCE TEXT
-        source_text_idx = new_text.find("\nSOURCE TEXT\n")
-        if source_text_idx > 0:
-            new_text = new_text[:source_text_idx] + "\n" + packet_info_text + new_text[source_text_idx:]
-        else:
-            new_text += "\n" + packet_info_text
-
-        # Update tags
-        tags = task_passage.get("tags", []) or []
-        tags = [t for t in tags if not t.startswith("enrichment:")]
-        tags.append("enrichment:packet-info")
-
-        # Delete old passage, insert new
-        passage_id = task_passage.get("id", "")
-        del_req = urllib.request.Request(
-            f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages/{passage_id}",
-            method="DELETE",
-        )
-        urllib.request.urlopen(del_req, timeout=10)
-
-        ins_data = json.dumps({"text": new_text, "tags": tags}).encode("utf-8")
-        ins_req = urllib.request.Request(
-            f"{LETTA_BASE}/v1/archives/{ARCHIVE_ID}/passages",
-            data=ins_data, headers={"Content-Type": "application/json"}, method="POST",
-        )
-        urllib.request.urlopen(ins_req, timeout=15)
-
-        # Trigger OmniFocus note re-assembly if task is confirmed.
-        # Baked in so worker agents don't need an HTTP tool.
-        reassemble_status = "skipped"
-        reassemble_detail = ""
-        if "- Status: confirmed" in new_text and "- Task ID:" in new_text:
-            pa_web_url = os.environ.get("PA_WEB_UI_URL", "http://pa-web-ui:5200")
-            reassemble_url = f"{pa_web_url}/api/tasks/{ref_id}/reassemble-work-packet"
-            try:
-                r_req = urllib.request.Request(reassemble_url, method="POST")
-                with urllib.request.urlopen(r_req, timeout=30) as r_resp:
-                    reassemble_status = "ok"
-                    reassemble_detail = f"HTTP {r_resp.status}"
-            except urllib.error.HTTPError as he:
-                reassemble_status = "failed"
-                reassemble_detail = f"HTTP {he.code}"
-            except Exception as re_err:
-                reassemble_status = "failed"
-                reassemble_detail = str(re_err)[:100]
+        # Merge: preserve any prior enrichment keys (e.g., merge_orphan_parent
+        # from archival lift, or stored backtrace materials from earlier
+        # phases) under top-level keys; replace packet_info / enriched_at /
+        # enriched_by / phase outright.
+        merge_sql = """
+            UPDATE pa_web.tasks
+               SET enrichment = COALESCE(enrichment, '{}'::jsonb) || %(new)s::jsonb,
+                   enrichment_state = 'done',
+                   updated_at = NOW(),
+                   migration_source = 'live'
+             WHERE ref_id = %(ref_id)s
+             RETURNING ref_id, enrichment, enrichment_state
+        """
+        with psycopg.connect(pg_url, autocommit=True, connect_timeout=10) as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(merge_sql, {
+                    "ref_id": ref_id,
+                    "new": json.dumps(new_enrichment),
+                })
+                row = cur.fetchone()
+        if row is None:
+            return {
+                "status": "error",
+                "ref_id": ref_id,
+                "error_message": f"No row in pa_web.tasks for ref_id {ref_id}",
+            }
 
         return {
             "status": "ok",
             "ref_id": ref_id,
-            "enrichment_status": "packet-info",
-            "packet_info_preview": packet_info_text[:500],
-            "reassemble": reassemble_status,
-            "reassemble_detail": reassemble_detail,
+            "enrichment": row.get("enrichment"),
+            "enrichment_state": row.get("enrichment_state"),
         }
 
     except Exception as e:
         return {
             "status": "error",
-            "error_message": f"{str(e)}\n{traceback.format_exc()}",
+            "ref_id": ref_id,
+            "error_message": f"{e}\n{traceback.format_exc()}",
         }

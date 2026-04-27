@@ -335,6 +335,92 @@ def ensure_pa_web_schema():
                       ON pa_web.thread_exchanges(conversation_id);
                 """)
 
+                # --- Cycle 1: organizational memory substrate ---
+                # Pattern 2: single task_queue replaces the per-source queue
+                # blocks. Pattern 5: pa_web.tasks absorbs both block-line and
+                # archival-passage layers; tasks_quarantine catches malformed
+                # passages during the archival lift (Unit 12).
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS pa_web.task_queue (
+                        id BIGSERIAL PRIMARY KEY,
+                        source TEXT NOT NULL CHECK (source IN
+                            ('email','slack','drive','meeting','meeting_marker')),
+                        source_ref TEXT NOT NULL,
+                        payload JSONB NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        claimed_at TIMESTAMPTZ NULL,
+                        processed_at TIMESTAMPTZ NULL,
+                        UNIQUE (source, source_ref)
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_task_queue_source_unclaimed
+                      ON pa_web.task_queue (source, created_at)
+                      WHERE claimed_at IS NULL;
+
+                    CREATE TABLE IF NOT EXISTS pa_web.tasks (
+                        ref_id TEXT PRIMARY KEY,
+                        extracted_at TIMESTAMPTZ,
+                        source TEXT,
+                        source_ref TEXT,
+                        origin TEXT,
+                        suggested_title TEXT NULL,
+                        confirmed_title TEXT NULL,
+                        original_est_minutes INTEGER,
+                        revised_est_minutes INTEGER NULL,
+                        actual_minutes INTEGER NULL,
+                        raw_description TEXT,
+                        extracted_by TEXT,
+                        status TEXT,
+                        merged_into TEXT NULL,
+                        omnifocus_id TEXT NULL,
+                        due_date DATE NULL,
+                        priority INTEGER NULL,
+                        owner TEXT NULL,
+                        task_body TEXT,
+                        source_metadata JSONB,
+                        related_urls TEXT[],
+                        omnifocus_pending_at TIMESTAMPTZ NULL,
+                        omnifocus_created_at TIMESTAMPTZ NULL,
+                        enrichment JSONB NULL,
+                        agent_notes TEXT NULL,
+                        merge_parent_id TEXT NULL,
+                        tags TEXT[] DEFAULT '{}',
+                        migration_source TEXT NOT NULL DEFAULT 'live'
+                            CHECK (migration_source IN ('archival_lift','live')),
+                        enrichment_state TEXT NULL
+                            CHECK (enrichment_state IS NULL OR enrichment_state IN
+                                   ('pending','in_progress','done','skipped','failed')),
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        started_at TIMESTAMPTZ NULL,
+                        closed_at TIMESTAMPTZ NULL
+                    );
+
+                    CREATE INDEX IF NOT EXISTS idx_tasks_status_updated
+                      ON pa_web.tasks (status, updated_at);
+                    CREATE INDEX IF NOT EXISTS idx_tasks_merged_into
+                      ON pa_web.tasks (merged_into) WHERE merged_into IS NOT NULL;
+                    CREATE INDEX IF NOT EXISTS idx_tasks_owner
+                      ON pa_web.tasks (owner) WHERE owner IS NOT NULL;
+                    CREATE INDEX IF NOT EXISTS idx_tasks_enrichment_state
+                      ON pa_web.tasks (enrichment_state)
+                      WHERE enrichment_state IN ('pending','in_progress','failed');
+
+                    CREATE TABLE IF NOT EXISTS pa_web.tasks_quarantine (
+                        passage_id TEXT PRIMARY KEY,
+                        raw_text TEXT NOT NULL,
+                        parse_error TEXT NOT NULL,
+                        quarantined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    );
+
+                    GRANT USAGE ON SCHEMA pa_web TO PUBLIC;
+                    GRANT SELECT, INSERT, UPDATE, DELETE
+                      ON pa_web.task_queue, pa_web.tasks, pa_web.tasks_quarantine
+                      TO PUBLIC;
+                    GRANT USAGE, SELECT ON SEQUENCE pa_web.task_queue_id_seq TO PUBLIC;
+                """)
+
             conn.commit()
             logger.info("pa_web_schema_ready")
         finally:
@@ -1782,6 +1868,11 @@ MC_MODEL_PRESETS = {
         "max_tokens": 16384,
         "_reasoning_options": [],
     },
+    # Kimi K2.x on Fireworks rejects any non-streamed request with
+    # max_tokens > 4096 ("Requests with max_tokens > 4096 must have
+    # stream=true"). Letta/LettaBot have at least one non-streamed
+    # path (result-summarizer / reasoning completion), so we pin
+    # max_tokens at 4096 here to avoid hard-400s on Telegram + mid-run.
     "kimi-k2.6 (fireworks)": {
         "model": "kimi-k2p6",
         "model_endpoint_type": "openai",
@@ -1789,7 +1880,7 @@ MC_MODEL_PRESETS = {
         "provider_name": "litellm",
         "handle": "litellm/kimi-k2p6",
         "context_window": 262144,
-        "max_tokens": 16384,
+        "max_tokens": 4096,
         "_reasoning_options": [],
     },
     "kimi-k2.5 (fireworks)": {
@@ -1799,7 +1890,7 @@ MC_MODEL_PRESETS = {
         "provider_name": "litellm",
         "handle": "litellm/kimi-k2p5",
         "context_window": 262144,
-        "max_tokens": 16384,
+        "max_tokens": 4096,
         "_reasoning_options": [],
     },
     "glm-5.1 (fireworks)": {
@@ -3536,16 +3627,44 @@ def _find_archival_passage(client, ref_id):
     return None, (jsonify({"error": f"No passage found for {ref_id}"}), 404)
 
 
-def _build_work_packet_segments(ref_id, passage_text):
+def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
     """Build rich-text segments for an OmniFocus work packet note.
 
     Shared by both first-pass assembly (in confirm handler) and
     re-assembly endpoint (for MC-enriched updates).
 
+    Cycle-1: when `enrichment` (the pa_web.tasks.enrichment JSONB) is
+    provided and contains packet_info, prefer it over the legacy
+    archival-passage-parsed shape. Falls back to parsed passage for
+    back-compat with rows whose enrichment was never run.
+
     Returns a list of segment dicts/strings for the setRichText bridge call.
     """
     parsed = parse_archival_passage(passage_text)
-    pi = parsed.get("packet_info", {})
+    pi = parsed.get("packet_info", {}) or {}
+
+    # Cycle-1 canonical: enrichment.packet_info from write_packet_info_tool.
+    # Shape: direct_action, artifact_provenance, intent_genesis,
+    # context_brief[], resources[], related_tasks[], knowns[], unknowns[],
+    # mismatch_warnings[] (plural — list), additional_notes.
+    if enrichment and isinstance(enrichment, dict):
+        cycle1_pi = enrichment.get("packet_info") or {}
+        if cycle1_pi:
+            # Normalize plural→singular for renderer keys, prefer cycle-1 values.
+            mw_list = cycle1_pi.get("mismatch_warnings") or []
+            pi = {
+                "context_brief": cycle1_pi.get("context_brief") or pi.get("context_brief") or [],
+                "resources": cycle1_pi.get("resources") or pi.get("resources") or [],
+                "related_tasks": cycle1_pi.get("related_tasks") or pi.get("related_tasks") or [],
+                "knowns": cycle1_pi.get("knowns") or pi.get("knowns") or [],
+                "unknowns": cycle1_pi.get("unknowns") or pi.get("unknowns") or [],
+                "mismatch_warning": (mw_list[0] if mw_list else pi.get("mismatch_warning")),
+                "agent_notes": cycle1_pi.get("additional_notes") or pi.get("agent_notes"),
+                # Pass through cycle-1-only fields for downstream rendering
+                "direct_action": cycle1_pi.get("direct_action"),
+                "artifact_provenance": cycle1_pi.get("artifact_provenance"),
+                "intent_genesis": cycle1_pi.get("intent_genesis"),
+            }
 
     segments = []
 
@@ -3582,8 +3701,13 @@ def _build_work_packet_segments(ref_id, passage_text):
                 role_match = re.search(r"\((\w+)\)\s*$", item)
                 role = f" ({role_match.group(1)})" if role_match else ""
                 segments.append({"text": f"  {label}{role}: ", "size": 11})
-                display_url = url[:60] + ("..." if len(url) > 60 else "")
-                segments.append({"text": f"{display_url}\n", "url": url, "underline": True, "size": 11})
+                # For slack permalinks (workspace-scoped, ugly), use the
+                # word "Permalink" as the visible hyperlink text.
+                if "slack.com/archives/" in url:
+                    display_text = "Permalink"
+                else:
+                    display_text = url[:60] + ("..." if len(url) > 60 else "")
+                segments.append({"text": f"{display_text}\n", "url": url, "underline": True, "size": 11})
             else:
                 segments.append(f"  • {item}\n")
 
@@ -3642,12 +3766,12 @@ def _get_work_packet_lock(ref_id):
         return _work_packet_locks[ref_id]
 
 
-def _write_work_packet_note(ref_id, omnifocus_task_id, passage_text):
+def _write_work_packet_note(ref_id, omnifocus_task_id, passage_text, enrichment=None):
     """Write the work packet note to OmniFocus via setRichText (atomic replace).
 
     Uses per-ref_id lock to prevent races between first-pass and re-assembly.
     """
-    segments = _build_work_packet_segments(ref_id, passage_text)
+    segments = _build_work_packet_segments(ref_id, passage_text, enrichment=enrichment)
     if not segments:
         return False
 
@@ -3705,18 +3829,78 @@ def _remove_ref_from_block(client, ref_id):
         pass
 
 
+# --- Cycle-1 Pattern 5 cutover (2026-04-26) ---
+# Task routes below read/write pa_web.tasks directly instead of the legacy
+# extracted_tasks block + tasks-agent archival. Mirror writer regenerates
+# the legacy block on a 30s tick for not-yet-migrated agent readers.
+# Every UPDATE sets migration_source='live' so Unit 12's archival re-run
+# predicate skips these rows.
+
+_TASK_TERMINAL_STATUSES = {"done", "completed", "rejected", "merged", "archived"}
+_TASK_TRIAGE_STATUSES = ("extracted", "active")
+
+
+def _set_live_marker(updates: dict) -> dict:
+    """Ensure every CRUD UPDATE flips migration_source to 'live'."""
+    updates = dict(updates)
+    updates.setdefault("migration_source", "live")
+    return updates
+
+
 @app.route('/api/tasks', methods=['GET'])
 def api_get_tasks():
-    """Get all pending extracted tasks from block."""
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.get(
-                f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
-            )
-            resp.raise_for_status()
-            block = resp.json()
+    """Triage queue: tasks awaiting confirm or reject.
 
-        tasks = parse_task_block(block.get('value', ''))
+    Per the cycle-1 sidebar contract: only 'extracted' or 'active' rows
+    that haven't been closed (rejected/completed/merged). Confirmed
+    tasks drop out (they've moved into the work pipeline via
+    OmniFocus / MC).
+    """
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT ref_id, extracted_at, origin,
+                           original_est_minutes, revised_est_minutes,
+                           raw_description, suggested_title, confirmed_title,
+                           status, source, source_ref
+                      FROM pa_web.tasks
+                     WHERE closed_at IS NULL
+                       AND status IN %s
+                       AND raw_description IS NOT NULL
+                       AND length(trim(raw_description)) > 0
+                     ORDER BY extracted_at DESC NULLS LAST, ref_id
+                    """,
+                    (_TASK_TRIAGE_STATUSES,),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        tasks = []
+        for r in rows:
+            ts = r["extracted_at"].isoformat() if r["extracted_at"] else ""
+            tasks.append({
+                "ref_id": r["ref_id"],
+                "extracted_time": ts,
+                "origin": r["origin"],
+                # estimate_minutes preserves the legacy key the sidebar reads;
+                # prefer the revised value when set, else original.
+                "estimate_minutes": r["revised_est_minutes"]
+                                    if r["revised_est_minutes"] is not None
+                                    else r["original_est_minutes"],
+                "description": r["confirmed_title"]
+                               or r["suggested_title"]
+                               or r["raw_description"],
+                # New cycle-1 fields the sidebar may opt into:
+                "status": r["status"],
+                "suggested_title": r["suggested_title"],
+                "confirmed_title": r["confirmed_title"],
+                "source": r["source"],
+                "source_ref": r["source_ref"],
+            })
         return jsonify({"tasks": tasks})
     except Exception as e:
         logger.error("api_get_tasks_error", error=str(e))
@@ -3725,13 +3909,101 @@ def api_get_tasks():
 
 @app.route('/api/tasks/<ref_id>', methods=['GET'])
 def api_get_task_detail(ref_id):
-    """Get archival passage details for a task."""
+    """Get full task detail.
+
+    Returns the same shape parse_archival_passage produced — sidebar.js
+    consumes keys: task, ref_id, source_reference, source_metadata,
+    related_urls, timestamps, omnifocus, packet_info, raw_text. We
+    rebuild that shape from pa_web.tasks columns + (when present)
+    re-parse the stored task_body for backward-compat sections.
+    """
     try:
-        with httpx.Client(timeout=15.0) as client:
-            passage, err = _find_archival_passage(client, ref_id)
-            if err:
-                return err
-            return jsonify(parse_archival_passage(passage['text']))
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM pa_web.tasks WHERE ref_id = %s", (ref_id,))
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return jsonify({"error": f"Task {ref_id} not found"}), 404
+
+        # If we have the original archival passage text, parse_archival_passage
+        # gives us all the canonical sections. Otherwise build minimal shape.
+        body = row.get("task_body") or ""
+        if body:
+            detail = parse_archival_passage(body)
+        else:
+            detail = {"raw_text": "", "task": row.get("raw_description") or ""}
+
+        # Cycle-1: overlay enrichment.packet_info (canonical) onto detail.packet_info.
+        # Sidebar consumes detail.packet_info as the rendered section.
+        enrichment = row.get("enrichment") or {}
+        cy1_pi = (enrichment.get("packet_info") or {}) if isinstance(enrichment, dict) else {}
+        if cy1_pi:
+            mw_list = cy1_pi.get("mismatch_warnings") or []
+            existing_pi = detail.get("packet_info") or {}
+            detail["packet_info"] = {
+                **existing_pi,
+                "context_brief": cy1_pi.get("context_brief") or existing_pi.get("context_brief") or [],
+                "resources": cy1_pi.get("resources") or existing_pi.get("resources") or [],
+                "related_tasks": cy1_pi.get("related_tasks") or existing_pi.get("related_tasks") or [],
+                "knowns": cy1_pi.get("knowns") or existing_pi.get("knowns") or [],
+                "unknowns": cy1_pi.get("unknowns") or existing_pi.get("unknowns") or [],
+                "mismatch_warning": (mw_list[0] if mw_list else existing_pi.get("mismatch_warning")),
+                "agent_notes": cy1_pi.get("additional_notes") or existing_pi.get("agent_notes"),
+                "direct_action": cy1_pi.get("direct_action"),
+                "artifact_provenance": cy1_pi.get("artifact_provenance"),
+                "intent_genesis": cy1_pi.get("intent_genesis"),
+            }
+            detail["enrichment_state"] = row.get("enrichment_state")
+            detail["enrichment_phase"] = enrichment.get("phase")
+            detail["enriched_at"] = enrichment.get("enriched_at")
+
+        # Overlay PG-canonical fields (PG is source of truth post-cutover).
+        detail["ref_id"] = row["ref_id"]
+        detail["task"] = (row.get("confirmed_title")
+                          or row.get("suggested_title")
+                          or row.get("raw_description") or "")
+        detail.setdefault("origin", row.get("origin"))
+        if row.get("source_metadata"):
+            detail["source_metadata"] = {
+                **(detail.get("source_metadata") or {}),
+                **row["source_metadata"],
+            }
+        if row.get("related_urls"):
+            detail["related_urls"] = list(row["related_urls"])
+        # Estimate fields (cycle-1 schema additions)
+        if row.get("original_est_minutes") is not None:
+            detail["agent_estimate_minutes"] = row["original_est_minutes"]
+        if row.get("revised_est_minutes") is not None:
+            detail["estimate_minutes"] = row["revised_est_minutes"]
+        elif row.get("original_est_minutes") is not None:
+            detail["estimate_minutes"] = row["original_est_minutes"]
+        if row.get("actual_minutes") is not None:
+            detail["actual_minutes"] = row["actual_minutes"]
+        # OmniFocus state
+        of = dict(detail.get("omnifocus") or {})
+        if row.get("omnifocus_id"):
+            of["task_id"] = row["omnifocus_id"]
+        of.setdefault("status", row.get("status") or "")
+        if of:
+            detail["omnifocus"] = of
+        # Lifecycle timestamps
+        for label, val in (
+            ("Extracted", row.get("extracted_at")),
+            ("Started", row.get("started_at")),
+            ("Closed", row.get("closed_at")),
+            ("OmniFocus pending", row.get("omnifocus_pending_at")),
+            ("OmniFocus created", row.get("omnifocus_created_at")),
+        ):
+            if val:
+                detail.setdefault("timestamps", []).append(
+                    {"label": label, "value": val.isoformat()
+                                                if hasattr(val, "isoformat") else str(val)}
+                )
+        detail["status"] = row.get("status")
+        return jsonify(detail)
     except Exception as e:
         logger.error("api_get_task_detail_error", ref_id=ref_id, error=str(e))
         return jsonify({"error": str(e)}), 500
@@ -3739,77 +4011,49 @@ def api_get_task_detail(ref_id):
 
 @app.route('/api/tasks/<ref_id>', methods=['PATCH'])
 def api_update_task(ref_id):
-    """Update task description and/or estimate (inline edit)."""
+    """Inline edit of task title and/or estimate.
+
+    Cycle-1 update semantics:
+      - task_description → confirmed_title (the user-finalized title).
+        If never set, suggested_title remains the agent's original.
+      - estimate_minutes → revised_est_minutes (original_est_minutes is
+        immutable agent-set value).
+      - migration_source flips to 'live'.
+      - closed_at NEVER changes here — only status transitions close.
+    """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         task_description = data.get('task_description')
         estimate_minutes = data.get('estimate_minutes')
 
         if not task_description and estimate_minutes is None:
             return jsonify({"error": "task_description or estimate_minutes required"}), 400
 
-        from datetime import timezone
-        now = datetime.now(timezone.utc).astimezone()
-        iso_timestamp = now.isoformat()
+        sets = ["updated_at = NOW()", "migration_source = 'live'"]
+        params = []
+        if task_description:
+            sets.append("confirmed_title = %s")
+            params.append(task_description)
+        if estimate_minutes is not None:
+            sets.append("revised_est_minutes = %s")
+            params.append(int(estimate_minutes))
+        params.append(ref_id)
 
-        with httpx.Client(timeout=15.0) as client:
-            passage, err = _find_archival_passage(client, ref_id)
-            if err:
-                return err
-
-            old_text = passage['text']
-            old_tags = passage.get('tags', [])
-            passage_id = passage['id']
-            new_text = old_text
-
-            # Update TASK line
-            if task_description:
-                new_text = re.sub(
-                    r'^TASK: .*$', f'TASK: {task_description}',
-                    new_text, count=1, flags=re.MULTILINE,
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE pa_web.tasks SET {', '.join(sets)} "
+                    f"WHERE ref_id = %s RETURNING ref_id",
+                    params,
                 )
+                row = cur.fetchone()
+            conn.commit()
+        finally:
+            conn.close()
 
-            # Note: passage "- Estimate:" preserves the agent's ORIGINAL estimate
-            # (used for Agent Estimate line in OmniFocus note). User edits only
-            # update the block line's est: field, not the passage.
-
-            # Add Updated timestamp
-            new_text = re.sub(
-                r'(TIMESTAMPS\n(?:- .+\n)*)',
-                lambda m: m.group(0) + f'- Updated: {iso_timestamp}\n',
-                new_text, count=1,
-            )
-
-            _replace_passage(client, passage_id, new_text, old_tags)
-
-            # Update block line
-            block_resp = client.get(
-                f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
-            )
-            block_resp.raise_for_status()
-            block_val = block_resp.json().get('value', '')
-            new_val = block_val
-
-            if task_description:
-                new_val = re.sub(
-                    rf'(\[extracted_time: [^;]+; ref_id: {re.escape(ref_id)}[^\]]*\]) .+',
-                    f'\\1 {task_description}',
-                    new_val,
-                )
-
-            if estimate_minutes is not None:
-                est_re = rf'(\[extracted_time: [^;]+; ref_id: {re.escape(ref_id)}(?:; origin: [^\];]*)?)(; est: \d+)?(\])'
-                new_val = re.sub(
-                    est_re,
-                    rf'\g<1>; est: {estimate_minutes}\3',
-                    new_val,
-                )
-
-            if new_val != block_val:
-                client.patch(
-                    f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
-                    json={"value": new_val},
-                )
+        if not row:
+            return jsonify({"error": f"Task {ref_id} not found"}), 404
 
         return jsonify({"status": "ok", "ref_id": ref_id})
     except Exception as e:
@@ -3819,9 +4063,17 @@ def api_update_task(ref_id):
 
 @app.route('/api/tasks/<ref_id>/transition', methods=['POST'])
 def api_transition_task(ref_id):
-    """Transition task: confirm, reject, or complete."""
+    """Transition task: confirm, reject, or complete.
+
+    Cycle-1 lifecycle rules (per user spec 2026-04-26):
+      - reject → status='rejected', closed_at=NOW() (terminal)
+      - complete → status='completed', closed_at=NOW() (terminal,
+        typically driven by OmniFocus completion)
+      - confirm → status='confirmed', closed_at stays NULL
+        (task moves into work pipeline, not closed)
+    """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         action = data.get('action')
         omnifocus_task_id = data.get('omnifocus_task_id')
         rush = bool(data.get('rush', False))
@@ -3835,90 +4087,52 @@ def api_transition_task(ref_id):
         if action == "confirm" and not omnifocus_task_id:
             return jsonify({"error": "omnifocus_task_id required for confirm"}), 400
 
-        from datetime import timezone
-        now = datetime.now(timezone.utc).astimezone()
-        iso_timestamp = now.isoformat()
+        # Read old row first (for work-packet downstream + logging)
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM pa_web.tasks WHERE ref_id = %s", (ref_id,))
+                old_row = cur.fetchone()
+            if not old_row:
+                return jsonify({"error": f"Task {ref_id} not found"}), 404
 
-        with httpx.Client(timeout=15.0) as client:
-            passage, err = _find_archival_passage(client, ref_id)
-            if err:
-                return err
-
-            old_text = passage['text']
-            old_tags = list(passage.get('tags', []))
-            passage_id = passage['id']
-            new_text = old_text
-
+            # Build status transition
             if action == "confirm":
-                new_text = re.sub(
-                    r'(- OmniFocus: )pending',
-                    f'- OmniFocus created: {iso_timestamp}',
-                    new_text,
-                )
-                new_text = re.sub(
-                    r'- Task ID: pending',
-                    f'- Task ID: {omnifocus_task_id}',
-                    new_text,
-                )
-                new_text = re.sub(
-                    r'- Status: extracted', '- Status: confirmed', new_text
-                )
-                old_tags = [t for t in old_tags if not t.startswith('status:')]
-                old_tags.append('status:confirmed')
-
+                new_status = "confirmed"
+                close_clause = ""  # closed_at stays NULL per user spec
             elif action == "reject":
-                task_match = re.search(r'^TASK: (.+)$', new_text, re.MULTILINE)
-                if task_match:
-                    desc = task_match.group(1)
-                    if not desc.startswith('[REJECTED]'):
-                        new_text = re.sub(
-                            r'^TASK: .+$',
-                            f'TASK: [REJECTED] {desc}',
-                            new_text, count=1, flags=re.MULTILINE,
-                        )
-                new_text = re.sub(r'- OmniFocus: pending\n', '', new_text)
-                new_text = re.sub(
-                    r'(TIMESTAMPS\n(?:- .+\n)*)',
-                    lambda m: m.group(0) + f'- Rejected: {iso_timestamp}\n',
-                    new_text, count=1,
-                )
-                new_text = re.sub(
-                    r'\nOMNIFOCUS\n- Task ID: .+\n- Status: .+\n?', '', new_text
-                )
-                old_tags = [t for t in old_tags if not t.startswith('status:')]
-                old_tags.append('status:rejected')
-
+                new_status = "rejected"
+                close_clause = ", closed_at = NOW()"
             elif action == "complete":
-                task_match = re.search(r'^TASK: (.+)$', new_text, re.MULTILINE)
-                if task_match:
-                    desc = task_match.group(1)
-                    if not desc.startswith('[COMPLETED]'):
-                        new_text = re.sub(
-                            r'^TASK: .+$',
-                            f'TASK: [COMPLETED] {desc}',
-                            new_text, count=1, flags=re.MULTILINE,
-                        )
-                new_text = re.sub(
-                    r'(TIMESTAMPS\n(?:- .+\n)*)',
-                    lambda m: m.group(0) + f'- Completed: {iso_timestamp}\n',
-                    new_text, count=1,
-                )
-                new_text = re.sub(
-                    r'- Status: (extracted|confirmed)',
-                    '- Status: completed',
-                    new_text,
-                )
-                old_tags = [t for t in old_tags if not t.startswith('status:')]
-                old_tags.append('status:completed')
+                new_status = "completed"
+                close_clause = ", closed_at = NOW()"
 
-            _replace_passage(client, passage_id, new_text, old_tags)
-            _remove_ref_from_block(client, ref_id)
+            params: list = [new_status]
+            of_set = ""
+            if action == "confirm" and omnifocus_task_id:
+                of_set = ", omnifocus_id = %s, omnifocus_created_at = NOW()"
+                params.append(omnifocus_task_id)
+            params.append(ref_id)
 
-        # Extract task description for logging
-        task_match = re.search(r'^TASK: (?:\[(?:REJECTED|COMPLETED)\] )?(.+)$', old_text, re.MULTILINE)
-        task_desc = task_match.group(1) if task_match else None
-        source_match = re.search(r'^- Type: (.+)$', old_text, re.MULTILINE)
-        source_type = source_match.group(1).strip() if source_match else None
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""UPDATE pa_web.tasks
+                           SET status = %s{of_set}{close_clause},
+                               updated_at = NOW(),
+                               migration_source = 'live'
+                         WHERE ref_id = %s""",
+                    params,
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # task_body still holds the original archival passage; reuse for logging
+        old_text = old_row.get("task_body") or ""
+        task_desc = (old_row.get("confirmed_title")
+                     or old_row.get("suggested_title")
+                     or old_row.get("raw_description"))
+        source_type = old_row.get("source")
 
         log_lifecycle(
             action,
@@ -3937,37 +4151,40 @@ def api_transition_task(ref_id):
 
                 Uses setRichText (atomic clear+replace) via the shared helper,
                 so re-invocations are idempotent and won't duplicate content.
+                Cycle-1 source-of-truth: pa_web.tasks.task_body holds the
+                original archival passage text.
                 """
                 try:
-                    # Re-read the passage (it was just updated with confirmation)
-                    with httpx.Client(timeout=15.0, follow_redirects=True) as c:
-                        p_resp = c.get(
-                            f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}"
-                            f"/archival-memory/?search={ref_id}&limit=1",
+                    passage_text = old_row.get("task_body") or ""
+                    enrichment = old_row.get("enrichment") or None
+                    if passage_text or enrichment:
+                        _write_work_packet_note(
+                            ref_id, omnifocus_task_id, passage_text,
+                            enrichment=enrichment,
                         )
-                        passages = p_resp.json()
-
-                    passage_text = ""
-                    for p in (passages if isinstance(passages, list) else []):
-                        if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
-                            passage_text = p["text"]
-                            break
-
-                    if passage_text:
-                        _write_work_packet_note(ref_id, omnifocus_task_id, passage_text)
                 except Exception:
                     pass  # Work packet assembly is best-effort
 
             # Fire work packet assembly in background (first-pass, uses current PACKET INFO)
             threading.Thread(target=_assemble_work_packet, daemon=True).start()
 
-            # Deterministic gate: only dispatch MC if PACKET INFO is missing/incomplete
-            # OR if Rush was clicked. This keeps MC invocations targeted.
-            has_packet_info = "PACKET INFO" in old_text
+            # Deterministic gate: only dispatch MC if enrichment is missing/incomplete
+            # OR if Rush was clicked. Cycle-1 enrichment lives in
+            # pa_web.tasks.enrichment.packet_info; back-compat with legacy
+            # archival-passage PACKET INFO sections.
+            cy1_pi = ((old_row.get("enrichment") or {}).get("packet_info") or {})
+            has_cycle1_enrichment = bool(
+                cy1_pi.get("direct_action")
+                and (cy1_pi.get("context_brief") or cy1_pi.get("resources"))
+            )
+            has_packet_info = "PACKET INFO" in old_text or has_cycle1_enrichment
             has_complete_enrichment = (
-                has_packet_info
-                and "Context brief:" in old_text
-                and "Resources:" in old_text
+                has_cycle1_enrichment
+                or (
+                    "PACKET INFO" in old_text
+                    and "Context brief:" in old_text
+                    and "Resources:" in old_text
+                )
             )
             should_dispatch_mc = rush or not has_complete_enrichment
 
@@ -4089,39 +4306,43 @@ def api_reassemble_work_packet(ref_id):
     Per-ref_id lock prevents races with the first-pass assembly thread.
     """
     try:
-        with httpx.Client(timeout=15.0) as client:
-            passage, err = _find_archival_passage(client, ref_id)
-            if err:
-                return err
+        # Cycle-1: read row from pa_web.tasks; task_body holds the archival
+        # passage text that _write_work_packet_note expects.
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT * FROM pa_web.tasks WHERE ref_id = %s", (ref_id,))
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return jsonify({"error": f"Task {ref_id} not found"}), 404
 
-            passage_text = passage.get("text", "")
-
-        # Extract OmniFocus task ID from passage
-        of_match = re.search(r"- Task ID: (\S+)", passage_text)
-        if not of_match:
+        omnifocus_task_id = row.get("omnifocus_id")
+        if not omnifocus_task_id:
             return jsonify({
                 "status": "error",
                 "error": f"Task {ref_id} has no OmniFocus ID (not confirmed?)",
             }), 400
 
-        omnifocus_task_id = of_match.group(1).strip()
-        if omnifocus_task_id in ("pending", ""):
+        if (row.get("status") or "") != "confirmed":
             return jsonify({
                 "status": "error",
-                "error": f"Task {ref_id} has not been confirmed yet",
+                "error": f"Task {ref_id} is not in confirmed state",
             }), 400
 
-        # Check task is actually confirmed (not rejected/completed)
-        if "status:confirmed" not in (passage.get("tags") or []):
-            # Still allow if the passage text shows confirmed status
-            if "- Status: confirmed" not in passage_text:
-                return jsonify({
-                    "status": "error",
-                    "error": f"Task {ref_id} is not in confirmed state",
-                }), 400
+        passage_text = row.get("task_body") or ""
+        enrichment = row.get("enrichment") or None
+        if not passage_text and not enrichment:
+            return jsonify({
+                "status": "error",
+                "error": f"Task {ref_id} has no stored body or enrichment to reassemble from",
+            }), 400
 
         # Re-assemble using shared helper (uses setRichText atomically)
-        success = _write_work_packet_note(ref_id, omnifocus_task_id, passage_text)
+        success = _write_work_packet_note(
+            ref_id, omnifocus_task_id, passage_text, enrichment=enrichment,
+        )
 
         if not success:
             return jsonify({
@@ -4148,9 +4369,17 @@ def api_reassemble_work_packet(ref_id):
 
 @app.route('/api/tasks/merge', methods=['POST'])
 def api_merge_tasks():
-    """Merge multiple tasks into one."""
+    """Merge multiple tasks into one parent.
+
+    Cycle-1 lifecycle:
+      - Each child gets status='merged' and merged_into=<parent_ref_id>.
+        closed_at stays NULL (merge is NOT terminal per user spec; the
+        parent carries the lifecycle from here).
+      - A new parent row is INSERTed with status='extracted' so it
+        appears in the triage queue for the user to confirm/reject.
+    """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         ref_ids = data.get('ref_ids', [])
         merged_description = data.get('merged_task_description', '')
 
@@ -4160,103 +4389,63 @@ def api_merge_tasks():
             return jsonify({"error": "merged_task_description required"}), 400
 
         import uuid
-        from datetime import timezone
-        now = datetime.now(timezone.utc).astimezone()
-        iso_timestamp = now.isoformat()
-        year_month = now.strftime("%Y-%m")
         new_ref_id = uuid.uuid4().hex[:8]
 
-        with httpx.Client(timeout=15.0) as client:
-            # Find all passages
-            found = {}
-            for rid in ref_ids:
-                passage, _ = _find_archival_passage(client, rid)
-                if passage:
-                    found[rid] = passage
-
-            missing = [rid for rid in ref_ids if rid not in found]
-            if missing:
-                return jsonify({
-                    "error": f"Passages not found: {', '.join(missing)}"
-                }), 404
-
-            # Mark originals as merged
-            for rid, passage in found.items():
-                old_text = passage['text']
-                old_tags = list(passage.get('tags', []))
-                pid = passage['id']
-                new_text = old_text
-
-                task_match = re.search(r'^TASK: (.+)$', new_text, re.MULTILINE)
-                if task_match:
-                    desc = task_match.group(1)
-                    if not desc.startswith('[MERGED]'):
-                        new_text = re.sub(
-                            r'^TASK: .+$',
-                            f'TASK: [MERGED] {desc}',
-                            new_text, count=1, flags=re.MULTILINE,
-                        )
-
-                new_text = re.sub(
-                    rf'(REF_ID: {re.escape(rid)})',
-                    f'\\1\nMERGE_PARENT_ID: {new_ref_id}',
-                    new_text, count=1,
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor() as cur:
+                # Verify all children exist
+                cur.execute(
+                    "SELECT ref_id FROM pa_web.tasks WHERE ref_id = ANY(%s)",
+                    (ref_ids,),
                 )
-                new_text = re.sub(
-                    r'(TIMESTAMPS\n(?:- .+\n)*)',
-                    lambda m: m.group(0) + f'- Merged: {iso_timestamp}\n',
-                    new_text, count=1,
-                )
-                new_tags = [t for t in old_tags if not t.startswith('status:')]
-                new_tags.append('status:merged')
+                found = {r[0] for r in cur.fetchall()}
+                missing = [r for r in ref_ids if r not in found]
+                if missing:
+                    return jsonify({
+                        "error": f"Tasks not found: {', '.join(missing)}"
+                    }), 404
 
-                _replace_passage(client, pid, new_text, new_tags)
+                # Mark each child as merged into the new parent.
+                # closed_at stays NULL (merge not terminal per user spec).
+                cur.execute(
+                    """UPDATE pa_web.tasks
+                          SET status = 'merged',
+                              merged_into = %s,
+                              updated_at = NOW(),
+                              migration_source = 'live'
+                        WHERE ref_id = ANY(%s)""",
+                    (new_ref_id, ref_ids),
+                )
 
-            # Create merged passage
-            merged_text = (
-                f"TASK: {merged_description}\n"
-                f"REF_ID: {new_ref_id}\n"
-                f"MERGED_IDS: {', '.join(ref_ids)}\n\n"
-                f"TIMESTAMPS\n"
-                f"- Merged: {iso_timestamp}\n"
-                f"- OmniFocus: pending\n\n"
-                f"OMNIFOCUS\n"
-                f"- Task ID: pending\n"
-                f"- Status: extracted\n"
-            )
-            client.post(
-                f"{LETTA_BASE_URL}/v1/archives/{TASKS_ARCHIVE_ID}/passages",
-                json={
-                    "text": merged_text,
-                    "tags": [year_month, "status:extracted"],
-                },
-            )
+                # Create the new parent in extracted state so the user
+                # can triage it from the sidebar.
+                cur.execute(
+                    """INSERT INTO pa_web.tasks (
+                           ref_id, raw_description, suggested_title,
+                           status, extracted_at, migration_source,
+                           created_at, updated_at,
+                           enrichment
+                       ) VALUES (
+                           %s, %s, %s, 'extracted', NOW(), 'live',
+                           NOW(), NOW(),
+                           %s::jsonb
+                       )""",
+                    (
+                        new_ref_id, merged_description, merged_description,
+                        json.dumps({"merged_from": ref_ids}),
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
-            # Update block: remove merged entries, add new one
-            try:
-                block_resp = client.get(
-                    f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
-                )
-                block_resp.raise_for_status()
-                block_val = block_resp.json().get('value', '')
-                for rid in ref_ids:
-                    block_val = re.sub(
-                        rf'[^\n]*ref_id: {re.escape(rid)}[^\n]*\n*',
-                        '', block_val,
-                    )
-                while '\n\n\n' in block_val:
-                    block_val = block_val.replace('\n\n\n', '\n\n')
-                new_line = (
-                    f"[extracted_time: {iso_timestamp}; ref_id: {new_ref_id}]"
-                    f" {merged_description}"
-                )
-                block_val = block_val.rstrip() + '\n' + new_line + '\n'
-                client.patch(
-                    f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
-                    json={"value": block_val},
-                )
-            except Exception:
-                pass
+        log_lifecycle(
+            "merge",
+            ref_id=new_ref_id,
+            task=merged_description,
+            merged_ids=ref_ids,
+        )
 
         return jsonify({
             "status": "ok",

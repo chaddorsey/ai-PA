@@ -1168,7 +1168,11 @@ class TaskSidebar {
     const escaped = this.escapeHtml(str);
     return escaped.replace(
       /https?:\/\/[^\s<)]+/g,
-      url => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+      url => {
+        // Slack permalinks (channel + DM) are long/ugly; render as "Permalink".
+        const display = /slack\.com\/archives\//.test(url) ? 'Permalink' : url;
+        return `<a href="${url}" target="_blank" rel="noopener">${display}</a>`;
+      }
     );
   }
 }

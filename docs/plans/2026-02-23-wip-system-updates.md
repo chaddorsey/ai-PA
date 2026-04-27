@@ -692,3 +692,20 @@ Related: [CLI Recipe Suggestions](2026-03-08-cli-recipe-suggestions.md) — prop
 ---
 
 **Completed:** Items 1-7, 12, 15, 18, 24, 27, 28 — archive embedding migration, completion feedback loop, meeting follow-up pipeline (verified + proposed items), OmniFocus sync, Slack pipeline, agent outbound notifications, cross-agent awareness Phase 1 + identity mapping, ExFAT → APFS migration, direct Calendar API for scheduling, Add & Go sidebar queue integration, enrichment pipeline orchestration, work packet assembly.
+
+---
+
+## 31. Task Pipeline Improvements (OPEN — soak observations)
+
+**Status:** Open follow-ups surfaced during cycle-1 enrichment pipeline restoration soak (2026-04-27).
+**Doc:** [docs/followups/task-pipeline-improvements.md](../followups/task-pipeline-improvements.md)
+**Risk:** Low (refinements; pipeline already functional end-to-end)
+
+**Tracked items (see linked doc for full detail):**
+1. ~~Weight user-clicked Slack message highest in enrichment~~ — **SHIPPED 2026-04-27** (anchor message now explicitly fetched + wrapped; dispatch + tool guard).
+2. Don't overwrite user-supplied `suggested_title` — **PARTIALLY SHIPPED 2026-04-27** (drift guard in `refine_task_description`); origin-aware gating + re-enrichment idempotency open.
+3. Slackbot dedup UX — announce existing ref_id on `ON CONFLICT` instead of silent drop.
+4. Investigate task-statement formation drift (user-supplied vs agent-paraphrased) — partially mitigated by #1+#2 fixes; full audit still open.
+5. Multi-source verification for email / meeting / drive / google-docs-comment enrichment paths.
+6. Re-enrichment replay safety (augment-only mode that skips `refine_task_description`).
+7. Permalink polish — shipped 2026-04-27; DM-permalink browser-resolve behavior open for monitoring.
