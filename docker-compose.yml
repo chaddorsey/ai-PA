@@ -1579,6 +1579,10 @@ services:
       # Bind into the container at the letta-code resolver's $HOME-relative
       # path so memfs hydrates from existing memory on first spawn.
       - ${HOME}/.letta/agents:/root/.letta/agents:rw
+      # Global Letta Code skills — host ~/.letta/skills/<name>/SKILL.md
+      # is the canonical location per Ezra. Mounted read-only so the
+      # subprocess can load skills but can't accidentally write them.
+      - ${HOME}/.letta/skills:/root/.letta/skills:ro
     ports:
       - "5200:5200"
     healthcheck:
