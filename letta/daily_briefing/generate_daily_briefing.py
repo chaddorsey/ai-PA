@@ -800,10 +800,34 @@ def generate_daily_briefing(
                 "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef",
             )
             if gitea_token_m:
+                # ── current-ET-date guard ──
+                # Only write to schedule/today.md when target_date matches
+                # the current Eastern-time date. Otherwise write to a
+                # dated file (schedule/<date>.md) and leave today.md
+                # untouched. This prevents debug/test runs against past
+                # or future dates from clobbering the live "today" file
+                # that the daily-schedule skill depends on.
+                # today.md is the live file the daily-schedule skill reads.
+                # Cron runs at 06:00 ET (today's schedule) and 18:00 ET
+                # (tomorrow's schedule, pre-staged for the next morning).
+                # So today.md may legitimately hold today OR tomorrow.
+                # Debug runs against past/distant-future dates write to
+                # a dated file instead.
+                try:
+                    from zoneinfo import ZoneInfo as _ZI
+                    _et_now = datetime.now(tz=_ZI("America/New_York"))
+                except Exception:
+                    _et_now = datetime.now()
+                _et_today_str = _et_now.strftime("%Y-%m-%d")
+                _et_tomorrow_str = (_et_now + timedelta(days=1)).strftime("%Y-%m-%d")
+                _is_live = target_date_str in (_et_today_str, _et_tomorrow_str)
+                if _is_live:
+                    mc_memfs_path = "schedule/today.md"
+                else:
+                    mc_memfs_path = f"schedule/{target_date_str}.md"
                 # The schedule file content is the briefing body itself —
                 # no YAML frontmatter (memfs files don't need it; the
                 # pointer in system/ tells the agent to Read this file).
-                mc_memfs_path = "schedule/today.md"
                 mc_memfs_url = (
                     f"{gitea_base_m}/api/v1/repos/agents/{mc_agent_id}"
                     f"/contents/{mc_memfs_path}"
@@ -870,10 +894,14 @@ def generate_daily_briefing(
                         f"(write_failed: {str(last_err_m)[:140]})"
                     )
 
-                # ── ALSO write the JSON metadata to schedule/today.json
-                #     so time_remaining_now can recompute against current time
-                #     without parsing the markdown. Same idempotent upsert.
-                json_path = "schedule/today.json"
+                # ── ALSO write the JSON metadata so time-remaining.py can
+                #     recompute against current time without parsing the
+                #     markdown. Same current-ET-date guard as today.md:
+                #     only clobber today.json when target_date is today.
+                if _is_live:
+                    json_path = "schedule/today.json"
+                else:
+                    json_path = f"schedule/{target_date_str}.json"
                 json_url = (
                     f"{gitea_base_m}/api/v1/repos/agents/{mc_agent_id}"
                     f"/contents/{json_path}"
@@ -997,7 +1025,7 @@ def generate_daily_briefing(
             "signal_path": signal_path,
             "signal_html_url": signal_html_url,
             "mc_memfs_written": mc_memfs_written,
-            "mc_memfs_path": "schedule/today.md",
+            "mc_memfs_path": locals().get("mc_memfs_path", "schedule/today.md"),
             "mc_memfs_html_url": mc_memfs_html_url,
             "timestamp": now.isoformat(),
             "target_date": target_dt.strftime("%Y-%m-%d"),
