@@ -7,6 +7,7 @@ from listeners.actions.modal_actions import register_modal_actions
 from listeners.commands.ask_bolty_debug import register as reg_cmd
 from listeners.commands.schedule_command import register as reg_schedule_cmd
 from listeners.events.app_mentioned import register as reg_mention
+from listeners.events.chad_mention_signal import register as reg_chad_mention_signal
 from listeners.events.assistant_thread_started import register as reg_assistant_started
 from listeners.events.assistant_thread_context_changed import register as reg_assistant_context
 # from listeners.events.message_reaction import register as reg_reaction
@@ -25,6 +26,7 @@ def register_listeners(app: App):
     reg_cmd(app)
     reg_schedule_cmd(app)
     reg_mention(app)
+    reg_chad_mention_signal(app)  # push handler: emits Layer-5 signal on direct mentions of Chad
     reg_assistant_started(app)
     reg_assistant_context(app)
     # reg_reaction(app)

@@ -690,6 +690,10 @@ services:
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
       TOOL_EXEC_DIR: "/app/tools/letta"  # Directory where tools are executed
       TOOL_EXEC_VENV_NAME: "env"  # Virtual environment name (Letta will create it and install requirements.txt)
+      # Bumped from default 180s 2026-04-28 to allow analytics-snapshot backfill
+      # (Drive Activity API queries for old dates can take 3-5 min; default
+      # 180s causes consistent timeouts on historical-data backfill paths).
+      TOOL_SANDBOX_TIMEOUT: "${TOOL_SANDBOX_TIMEOUT:-600}"
       # Letta API configuration (for agent-to-agent communication)
       LETTA_API_KEY: "${LETTA_API_KEY:-}"  # Optional: API key for authenticated requests
       LETTA_BASE_URL: "http://localhost:8283"  # Base URL for Letta API (used by tools)
@@ -954,6 +958,10 @@ services:
       HEALTH_CHECK_PORT: "8081"
       # Spark queue for task extraction pipeline
       SPARK_QUEUE_BLOCK_ID: "block-534bb56d-f7f1-4ea4-b2d9-20dc75eca03a"
+      # Layer-5 signal emission for direct @-mentions of Chad (push path)
+      GITEA_MEMFS_TOKEN: ${GITEA_MEMFS_TOKEN}
+      GITEA_BASE_URL_HOST: "http://gitea:3000"
+      CHAD_USER_ID: "U02V91KU8"
     ports:
       - "8083:8081"  # Health check port - external 8083, internal 8081
     healthcheck:

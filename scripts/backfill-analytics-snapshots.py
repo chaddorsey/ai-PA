@@ -56,7 +56,7 @@ def run_snapshot(tool, target_date):
     req = urllib.request.Request(f"{LETTA_URL}/v1/tools/run", data=body, method="POST",
                                  headers={"Content-Type": "application/json"})
     try:
-        r = urllib.request.urlopen(req, timeout=300)
+        r = urllib.request.urlopen(req, timeout=700)
         return json.loads(r.read())
     except urllib.error.HTTPError as e:
         return {"status": "http_error", "error": f"{e.code}: {e.read().decode()[:300]}"}
