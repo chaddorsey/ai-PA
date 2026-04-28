@@ -13,6 +13,31 @@ mounted as the agent's file-backed memory) and what does NOT, so that:
 3. Cross-agent consumption flows through Layer-5 canonical signals,
    not through reading another agent's memfs.
 
+## Cache-discipline rule (READ THIS FIRST)
+
+Anything under `system/` is **recursively pinned** into the model's
+prompt prefix. Pinning is what makes the file always-available without
+a tool call — but rewriting a pinned file **invalidates the prefix
+cache** for every subsequent turn. Letta's prompt cache TTL is 5 min;
+busting it costs latency + tokens + money on every turn that follows.
+
+Rule: **`system/` is for files that do not get rewritten in normal
+operation.** Rolling projections, digests, and any file rewritten on
+a schedule MUST live OUTSIDE `system/` so they're lazy-loaded via
+`Read` / `read_memory_file` and don't sit in the prefix.
+
+Concrete pattern in MC's memfs:
+
+| File | Path | Pinned? | Rewritten? |
+|---|---|---|---|
+| Persona, playbook, protocols | `system/*.md` | yes | no — stable instructions |
+| Today's schedule (5×/day) | `schedule/today.md` | no | yes — cron-driven |
+| Today's signal digest (3×/day) | `digest/recent_signals.md` | no | yes — protocol-driven |
+| Dated archives | `schedule/2026-04-26.md` etc. | no | append-only, never overwritten |
+
+If you find yourself wanting to write to a `system/` file more than
+once after creation, that's a signal it belongs elsewhere.
+
 ## What memfs IS for
 
 memfs is **per-agent identity, behavior, and projections**:
@@ -34,9 +59,12 @@ memfs is **per-agent identity, behavior, and projections**:
 
 - **Layer 3 — Per-agent projections** of canonical state, kept up to date
   by the agent itself:
-  - Rolling latest-only files: `system/daily_analytics_briefing.md`,
-    `schedule/today.md`, `system/current_plate.md`. These get
-    overwritten each refresh — the agent uses them as its working view.
+  - Rolling latest-only files (lazy-loaded — NOT under `system/`):
+    `schedule/today.md`, `digest/recent_signals.md`,
+    `plate/current.md`. These get overwritten each refresh — the agent
+    Reads them as a working view but they don't sit in the prefix cache.
+    `system/daily_analytics_briefing.md` is a legacy exception (rewritten
+    daily but currently pinned); migrate to `briefing/daily.md` next pass.
   - Reference snapshots derived from canonical: `slack_channels_list.md`,
     `drive_analytics_averages.md`, etc. Refreshed periodically.
 
@@ -98,12 +126,10 @@ Plus role-specific Layer-3/4 files. See per-agent sections below.
 - `system/persona.md`
 - `system/required_tools.md`
 - `system/known_external_breakages.md`
-- `system/current_plate.md` (rolling, refreshed by `refresh_plate`)
-- `schedule/today.md`, `schedule/today.json` (rolling, written by
-  `generate_daily_briefing`)
-- `system/recent_signals_digest.md` (rolling, refreshed when MC reads
-  layer-5 signals — gives MC's working view of what worker agents
-  have surfaced lately)
+- `system/signals_protocol.md` (pinned, stable — instructions for digest refresh)
+- `plate/current.md` (rolling — NOT under `system/` — refreshed by `refresh_plate`)
+- `schedule/today.md`, `schedule/today.json` (rolling — NOT under `system/` — written by `generate_daily_briefing`)
+- `digest/recent_signals.md` (rolling — NOT under `system/` — refreshed by the signals protocol; gives MC's working view of what worker agents have surfaced lately)
 
 ### pulse-monitor
 
@@ -116,9 +142,11 @@ Plus role-specific Layer-3/4 files. See per-agent sections below.
 - `system/drive_analytics_averages.md`, `_config.md`, `_personal.md`,
   `_workspace.md`, `_mentions.md`
 - `system/drive_tool_use_guidelines.md`
-- `system/daily_analytics_briefing.md` (rolling latest)
-- `system/daily_vibe_check_<DATE>.md` (1-2 most recent only;
-  steward prunes older to keep memfs lean)
+- `briefing/daily_analytics.md` (rolling latest — NOT under `system/`)
+  *(legacy: currently lives at `system/daily_analytics_briefing.md`; migrate next pass)*
+- `vibe/daily_<DATE>.md` (1-2 most recent only — NOT under `system/`;
+  steward prunes older)
+  *(legacy: currently `system/daily_vibe_check_<DATE>.md`; migrate next pass)*
 
 ### calendar-agent_copy
 

@@ -16,7 +16,7 @@ near-term, in priority order.
 - `emit_canonical_signal` Letta primitive — write API for any agent.
 - `read_recent_signals` Letta primitive — read API (attached to MC).
 - MC `system/signals_protocol.md` — when to refresh, what to project, how to act.
-- MC `system/recent_signals_digest.md` — Layer-3 working digest stub.
+- MC `digest/recent_signals.md` — Layer-3 working digest stub. **Lives outside `system/`** so rewriting it does NOT bust the prompt prefix cache. (Initially placed under `system/` by mistake; corrected.)
 - MC `system/assistant_role_playbook.md` — pointer to the protocol.
 - Cron prompts updated for Slack Vibe Check, Quant Snapshot, T+2 Recollect, CSV Export, Compose Briefing — all five now emit `pulse-monitor-pipeline-health.md` plus their primary signals.
 
@@ -125,6 +125,28 @@ Two existing signals predate the `<source>-<slug>.md` convention:
 | `signals/<date>/analytics-morning.md` | `signals/<date>/pulse-monitor-analytics-morning.md` |
 
 Implementation: edit `generate_daily_briefing.py` and `compose_daily_briefing.py` to use the conventional path; leave the old files in place (or rename in a one-shot script). `read_recent_signals` is naming-agnostic, so this is purely consistency work — not blocking anything.
+
+## Cache-discipline cleanup (one-shot pass, near-term)
+
+Pinning anything under `system/` is recursive — and rewriting a pinned
+file invalidates the prompt prefix cache. Several existing files are
+in `system/` despite being rewritten regularly. Migrate each to a
+top-level non-pinned dir:
+
+| Current path (pinned, cache-busting) | Target path (lazy-loaded, cache-safe) | Producer |
+|---|---|---|
+| `system/daily_analytics_briefing.md` (pulse-monitor) | `briefing/daily_analytics.md` | `compose_daily_briefing` |
+| `system/daily_vibe_check_<DATE>.md` (pulse-monitor) | `vibe/daily_<DATE>.md` | vibe-check cron prompt → memfs write |
+| `system/temp_mpdm_list.md` (pulse-monitor) | `tmp/mpdm_list.md` (or delete if obsolete) | unknown |
+| Any future "current plate" / "current digest" file | `plate/current.md`, `digest/<thing>.md`, etc. | refresh_plate, others |
+
+Per-agent steps when migrating each:
+1. Update the producing tool / cron prompt to write to the new path.
+2. Migrate the existing file (one-time copy + delete).
+3. Update agent persona / playbook references.
+4. Verify cache TTL behavior in pa-web logs is healthier post-migration.
+
+**Test**: a Letta `letta-code` session with cache instrumentation should show prefix-cache hits steady across multiple turns, even when the agent is updating its rolling projection files.
 
 ## Constraints from Ezra's reflection-subagent note
 
