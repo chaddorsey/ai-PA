@@ -53,9 +53,25 @@ INTERACTIVE_APPROVAL_TOOLS: Set[str] = {
 }
 
 # Tools disallowed at the CLI level (R4 / R4b in the plan).
+#
+# Originally disallowed: Task, TodoWrite, EnterPlanMode, AskUserQuestion.
+# Status as of 2026-04-27:
+#
+# - Task: was disallowed pending upstream issue #3205 (subagent handle
+#   resolution in self-hosted Letta). Fixed in our image via the
+#   PATCH-3205 patch applied at Dockerfile build time
+#   (letta-memfs-patches/patches/apply_letta_code_self_hosted_handle_fix.py).
+#   R4 gate satisfied → unblocked.
+# - TodoWrite: original block rationale was specific to LettaBot's
+#   headless environment (interactive-approval hang). pa-web has a real
+#   control protocol implementation (`_handle_control_request`) that
+#   auto-allows non-INTERACTIVE_APPROVAL_TOOLS under --yolo, so the
+#   LettaBot-stuck-session pattern doesn't apply here. Unblocked 2026-04-27.
+# - EnterPlanMode / AskUserQuestion: stay blocked. These are
+#   INTERACTIVE_APPROVAL_TOOLS that the control handler explicitly
+#   denies (line ~1492). Unblocking would require new UI plumbing
+#   (modal/prompt rendering + response endpoint).
 DEFAULT_DISALLOWED_TOOLS: Tuple[str, ...] = (
-    "Task",
-    "TodoWrite",
     "EnterPlanMode",
     "AskUserQuestion",
 )
@@ -67,6 +83,8 @@ DEFAULT_ALLOWED_TOOLS: Tuple[str, ...] = (
     "Write",
     "Glob",
     "Grep",
+    "Task",
+    "TodoWrite",
     "web_search",
     "conversation_search",
     "manage_todo",
