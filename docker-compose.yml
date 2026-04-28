@@ -694,6 +694,12 @@ services:
       # (Drive Activity API queries for old dates can take 3-5 min; default
       # 180s causes consistent timeouts on historical-data backfill paths).
       TOOL_SANDBOX_TIMEOUT: "${TOOL_SANDBOX_TIMEOUT:-600}"
+      # orchestrate_scheduling tool runs in this sandbox; route via gws CLI
+      # (direct Google Calendar API) instead of the n8n MCP path because n8n
+      # isn't currently up. gws CLI uses the credentials mounted at
+      # /root/.gws/credentials.json. Same env var the scheduling-orchestrator-api
+      # service uses; setting here makes the in-sandbox path consistent.
+      USE_DIRECT_CALENDAR: "true"
       # Letta API configuration (for agent-to-agent communication)
       LETTA_API_KEY: "${LETTA_API_KEY:-}"  # Optional: API key for authenticated requests
       LETTA_BASE_URL: "http://localhost:8283"  # Base URL for Letta API (used by tools)
