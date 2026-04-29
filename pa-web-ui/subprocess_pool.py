@@ -1158,6 +1158,16 @@ class SubprocessRegistry:
             "HOME": "/root",
             "TERM": "dumb",
         }
+        # Canonical-store access (Layer-1 reference + Layer-5 signals via
+        # Gitea HTTP). MC reads/writes `agents-canonical/*` via Bash + curl
+        # in its tool calls; without these, the subprocess sees empty
+        # GITEA_MEMFS_TOKEN and falls into a credential-hunt spiral.
+        # Per R30: still no broad container env inheritance — these are
+        # explicit allowlist additions, not a wildcard pass-through.
+        for k in ("GITEA_MEMFS_TOKEN", "GITEA_BASE_URL"):
+            v = os.environ.get(k)
+            if v:
+                env[k] = v
 
         return subprocess.Popen(
             args,
