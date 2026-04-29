@@ -1162,6 +1162,12 @@ def is_noise_email(email: str) -> bool:
         return True
     if email == "cdorsey@concord.org":
         return True
+    # Sync/forwarding aliases of Chad's identity (OmniFocus, Evernote, etc.)
+    if re.match(r"^chaddorsey[\.\-_]?[a-z0-9]+@(sync\.omnigroup\.com|m\.evernote\.com)$", email, re.IGNORECASE):
+        return True
+    # chad@concord.org is a Chad alt — also self
+    if email == "chad@concord.org":
+        return True
     # Generic catch-all: a long alphanumeric local part is usually a forwarding hash
     local = email.split("@")[0]
     if len(local) >= 30 and re.match(r"^[a-f0-9]+$", local):
