@@ -1544,6 +1544,11 @@ services:
       - ./omnifocus-timer/logs:/data/timer-logs
       # --- Crash-log path for the subprocess pool (Unit 1.6) ---
       - ~/Library/Logs/pa-web-ui:/app/logs
+      # Shared cross-tool file exchange (same path as letta service uses).
+      # Lets MC read/write `/data/shared/` via Bash (the canonical path
+      # for tool-exchange transients per the laptop_execution_preference
+      # rule). Avoids round-tripping through execute_on_laptop SSH.
+      - /Users/dorseyhomeserver/Dropbox/letta-shared-files:/data/shared
       # --- Curated workspace for the letta-code subprocess (Unit 1.1) ---
       # Source-of-truth carve-out: docs/security/pa-web-ui-threat-model.md
       # Approach: mount the repo root at /workspace-safe, then mask every
