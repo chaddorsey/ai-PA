@@ -19,10 +19,14 @@ RUN apt-get update \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Pin the letta-code version that Phase 1 targets. Bumping this requires
-# re-running Unit 1.1's smoke tests (test_subprocess_env.py) and the
-# compatibility pass described in the migration plan.
-ARG LETTA_CODE_VERSION=0.23.8
+# Pinned letta-code version. Bumped 2026-04-29 from 0.23.8 → 0.24.10 to
+# align with the host's letta-code-patched and to enable memfs-via-Gitea
+# (the memfs-external-git patch was developed against 0.24.x). All three
+# bundle patches (#3205, memfs-external-git, empty-approvals) were
+# verified to apply against 0.24.10's bundle anchors before this bump.
+# Bumping again requires re-verifying anchors AND re-running pa-web-ui
+# Phase 1 smoke tests (tests/test_subprocess_pool.py + live smoke).
+ARG LETTA_CODE_VERSION=0.24.10
 
 RUN npm install -g "@letta-ai/letta-code@${LETTA_CODE_VERSION}" \
     && npm cache clean --force
@@ -50,6 +54,20 @@ COPY letta-memfs-patches/patches/apply_letta_code_empty_approvals_fix.py /tmp/ap
 RUN python3 /tmp/apply-empty-approvals.py /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
     && [ "$(grep -c '\[PATCH-EMPTY-APPROVALS\]' /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js)" -ge 2 ] \
     && rm /tmp/apply-empty-approvals.py
+
+# Apply the memfs-external-git patch so letta-code can run with --memfs
+# pointed at our self-hosted Gitea (instead of the cloud-only memfs server).
+# Three string-replacement edits in the bundle:
+#   1. getGitRemoteUrl → respect LETTA_MEMFS_GIT_URL env var (with {agentId})
+#   2. configureLocalCredentialHelper → skip when LETTA_MEMFS_GIT_URL is set
+#   3. maybeUpdateMemoryRemoteOrigin → bypass MemfsRemoteUrlForAgent guard
+# Without this, --memfs against self-hosted Letta exits returncode=1 with
+# "memfs is only available on Letta Cloud (api.letta.com)".
+# Patch was developed against 0.24.2; verified to apply on 0.24.10 anchors.
+COPY letta-memfs-patches/patches/apply_letta_code_memfs_external_git.py /tmp/apply-memfs-git.py
+RUN python3 /tmp/apply-memfs-git.py /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
+    && [ "$(grep -c 'PATCH-MEMFS-GIT' /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js)" -ge 3 ] \
+    && rm /tmp/apply-memfs-git.py
 
 
 # ---------- Stage 2: Python app image ----------

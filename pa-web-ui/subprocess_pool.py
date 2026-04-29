@@ -1139,12 +1139,14 @@ class SubprocessRegistry:
             "--output-format", "stream-json",
             "--input-format", "stream-json",
         ]
-        # NOTE: --memfs is NOT passed. R5 in the plan assumed memfs was
-        # universally available, but letta-code 0.23.8 gates it on Letta
-        # Cloud (`--memfs is only available on Letta Cloud (api.letta.com)`).
-        # On self-hosted Letta 0.16.7 the flag causes immediate subprocess
-        # exit with returncode=1. Accept memfs_enabled=false and revisit
-        # when self-hosted gains the capability.
+        # --memfs: enabled 2026-04-29 with letta-code 0.24.10 + the
+        # memfs-external-git patch (applied at Dockerfile build time, see
+        # letta-memfs-patches/patches/apply_letta_code_memfs_external_git.py).
+        # The patch makes letta-code accept LETTA_MEMFS_GIT_URL with
+        # {agentId} substitution, pointing at our self-hosted Gitea.
+        # Result: MC's letta-code subprocess can Read/Edit memfs files
+        # (system/*, signals/*, digest/*) directly instead of via Bash+curl.
+        args.append("--memfs")
         if yolo:
             args.append("--yolo")
         if allowed_tools:
@@ -1172,7 +1174,14 @@ class SubprocessRegistry:
         # env. Scheduling orchestration (multi-participant slot finding)
         # still goes through calendar-agent via Task; THIS is for direct
         # mutations on Chad's primary calendar after a slot is confirmed.
-        for k in ("GITEA_MEMFS_TOKEN", "GITEA_BASE_URL", "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"):
+        for k in (
+            "GITEA_MEMFS_TOKEN",
+            "GITEA_BASE_URL",
+            "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+            # Memfs-via-Gitea (see --memfs flag in args above).
+            "LETTA_MEMFS_LOCAL",
+            "LETTA_MEMFS_GIT_URL",
+        ):
             v = os.environ.get(k)
             if v:
                 env[k] = v
