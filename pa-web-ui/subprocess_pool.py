@@ -1164,7 +1164,15 @@ class SubprocessRegistry:
         # GITEA_MEMFS_TOKEN and falls into a credential-hunt spiral.
         # Per R30: still no broad container env inheritance — these are
         # explicit allowlist additions, not a wildcard pass-through.
-        for k in ("GITEA_MEMFS_TOKEN", "GITEA_BASE_URL"):
+        #
+        # GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: lets the gws CLI pick up
+        # the credentials mounted at /root/.gws/credentials.json so MC can
+        # issue direct Calendar/Gmail/Drive operations via Bash (e.g.,
+        # `gws calendar events update ...`). Mirrors the letta container's
+        # env. Scheduling orchestration (multi-participant slot finding)
+        # still goes through calendar-agent via Task; THIS is for direct
+        # mutations on Chad's primary calendar after a slot is confirmed.
+        for k in ("GITEA_MEMFS_TOKEN", "GITEA_BASE_URL", "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"):
             v = os.environ.get(k)
             if v:
                 env[k] = v
@@ -1466,10 +1474,15 @@ def _emit(
     # ApprovalCreate to Letta in a background thread.
     try:
         from approval_responder import maybe_handle_approval_request
+        # Match _handle_control_request's policy: under --yolo, allow ALL
+        # non-interactive tools (not just DEFAULT_ALLOWED_TOOLS — that list
+        # gates the --allowedTools CLI flag, which is a different surface).
+        # Passing allowed_tools=None puts the responder into yolo allow-all
+        # mode; INTERACTIVE_APPROVAL_TOOLS is still denied.
         maybe_handle_approval_request(
             handle,
             stamped,
-            allowed_tools=set(DEFAULT_ALLOWED_TOOLS),
+            allowed_tools=None,
             interactive_tools=INTERACTIVE_APPROVAL_TOOLS,
             emit_callback=lambda h, ev: _emit(h, ev, is_turn_boundary=False),
         )
