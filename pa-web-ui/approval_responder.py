@@ -99,6 +99,50 @@ def _extract_pending_calls(event: Dict[str, Any]) -> List[Dict[str, str]]:
     return calls
 
 
+def _get_run_state(run_id: str, timeout: float = 10.0) -> Optional[Dict[str, Any]]:
+    """Fetch a run's state. Used to disambiguate race-loss from crash-cleanup."""
+    if not run_id:
+        return None
+    req = urllib.request.Request(
+        f"{LETTA_BASE_URL}/v1/runs/{run_id}",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except Exception:
+        return None
+
+
+def classify_race_loss(run_state: Optional[Dict[str, Any]]) -> str:
+    """Distinguish race-loss outcomes after Letta returns 'no tool call awaiting approval'.
+
+    Returns:
+      'letta_code_won': run is healthy/active/completed normally — original
+                        path handled the approval. Responder is dormant.
+      'subprocess_crashed': run is failed with no clean stop_reason — the
+                            letta-code subprocess died (empty-approvals bug),
+                            Letta cleaned up the dangling approval, but the
+                            actual tool/dispatch never completed. User is
+                            in a dead-air state.
+      'unknown': run state couldn't be fetched OR shape doesn't match either
+                 pattern. Caller should default to alarm-but-don't-retry.
+    """
+    if not run_state:
+        return "unknown"
+    status = run_state.get("status")
+    stop_reason = run_state.get("stop_reason")
+    # Healthy outcomes: active, completed cleanly
+    if status in ("created", "running", "pending", "in_progress"):
+        return "letta_code_won"
+    if status == "completed" and stop_reason in ("end_turn", "max_steps", None):
+        return "letta_code_won"
+    # Crash signature: failed run, often with stop_reason=None or "error"
+    if status == "failed":
+        return "subprocess_crashed"
+    return "unknown"
+
+
 def _post_approval(
     agent_id: str,
     decisions: List[Dict[str, Any]],
@@ -201,6 +245,11 @@ def maybe_handle_approval_request(
     if not decisions:
         return False  # already handled (race with another thread)
 
+    # Capture run_id from the event for crash-detection on race-loss.
+    # ApprovalRequestMessage schema includes optional run_id; if absent the
+    # diagnosis falls back to "unknown".
+    run_id = event.get("run_id") or ""
+
     # Fire the POST in a daemon thread; do NOT block the stream emit path.
     def _run() -> None:
         result = _post_approval(handle.agent_id, decisions)
@@ -213,13 +262,51 @@ def maybe_handle_approval_request(
             return
         if "_error" in result:
             err = result["_error"]
-            # Race-loss case: letta-code's own approval path won. Letta returns
-            # 400 "No tool call is currently awaiting approval" because the
-            # approval was already cleared by the time our POST landed. This
-            # is the EXPECTED happy-case outcome (means the original flow
-            # worked). Log at info, not error.
+            # Race-loss case: Letta returns 400 "No tool call is currently
+            # awaiting approval". This means EITHER:
+            #   - letta-code's own approval path completed it (happy case), OR
+            #   - subprocess crashed from the empty-approvals bug, Letta
+            #     cleaned up the dangling approval, but the original tool
+            #     dispatch never completed (silent dead-air).
+            # Disambiguate by inspecting the run state.
             if "No tool call is currently awaiting approval" in err:
-                log.info("approval_responder_race_loss agent=%s conv=%s decisions=%s (letta-code won — original path worked)", handle.agent_id, handle.conv_id, classified)
+                run_state = _get_run_state(run_id) if run_id else None
+                outcome = classify_race_loss(run_state)
+                if outcome == "subprocess_crashed":
+                    log.error(
+                        "approval_responder_subprocess_crashed agent=%s conv=%s run=%s decisions=%s "
+                        "(crash-cleanup; tool dispatch did NOT complete; user is in dead-air)",
+                        handle.agent_id, handle.conv_id, run_id, classified,
+                    )
+                    # Synthesize a visible error event so chat.js can surface it
+                    # to the user instead of leaving them staring at silence.
+                    if emit_callback is not None:
+                        try:
+                            synthetic = {
+                                "type": "error",
+                                "message": (
+                                    "The agent's tool dispatch stranded due to a "
+                                    "letta-code subprocess crash. The original action did "
+                                    "NOT execute. Please retry your last request."
+                                ),
+                                "_synthesized_by": "approval_responder",
+                                "_run_id": run_id,
+                                "_decisions": classified,
+                            }
+                            emit_callback(handle, synthetic)
+                        except Exception as e:
+                            log.error("approval_responder_emit_crash_event_failed agent=%s err=%s", handle.agent_id, e)
+                elif outcome == "letta_code_won":
+                    log.info(
+                        "approval_responder_race_loss agent=%s conv=%s decisions=%s (letta-code won — original path worked)",
+                        handle.agent_id, handle.conv_id, classified,
+                    )
+                else:
+                    log.warning(
+                        "approval_responder_race_loss_unknown agent=%s conv=%s run=%s decisions=%s "
+                        "(could not disambiguate race-loss outcome — run_state=%s)",
+                        handle.agent_id, handle.conv_id, run_id, classified, run_state,
+                    )
             else:
                 log.error("approval_responder_post_error agent=%s conv=%s err=%s decisions=%s", handle.agent_id, handle.conv_id, err, classified)
             return
