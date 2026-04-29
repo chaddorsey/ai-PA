@@ -1515,6 +1515,11 @@ services:
       - FOLLOWUP_QUEUE=/data/timer-logs/pending-followups.jsonl
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
       - SLACK_USER_TOKEN=${SLACK_MCP_XOXP_TOKEN}
+      # MC reads/writes canonical (agents-canonical Gitea repo) via Bash + curl
+      # using this token. Same as letta service. Required for `reference/`,
+      # `signals/`, and any other canonical I/O from MC's subprocess.
+      - GITEA_MEMFS_TOKEN=${GITEA_MEMFS_TOKEN}
+      - GITEA_BASE_URL=http://gitea:3000
       # --- Ingress guard (Unit 1.0 / R29) ---
       # Browsers must present one of these Origins on POST/PATCH/DELETE.
       - PA_WEB_UI_ALLOWED_ORIGINS=${PA_WEB_UI_ALLOWED_ORIGINS:-http://localhost:5200,http://pa-web-ui.local:5200}
