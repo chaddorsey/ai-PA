@@ -892,26 +892,66 @@ class SubprocessRegistry:
         control_request. Does NOT affect the turn lock — control messages
         are out-of-band from user turns.
         """
-        self._write_json(handle, {
-            "type": "control_response",
-            "response": {
-                "subtype": "success",
-                "request_id": request_id,
-                "response": response,
-            },
-        })
+        try:
+            self._write_json(handle, {
+                "type": "control_response",
+                "response": {
+                    "subtype": "success",
+                    "request_id": request_id,
+                    "response": response,
+                },
+            })
+            logger.info(
+                "control_response_sent",
+                conv_id=handle.conv_id,
+                request_id=request_id,
+                subtype="success",
+                response_summary=(
+                    "allow" if response.get("behavior") == "allow"
+                    else ("deny" if response.get("behavior") == "deny"
+                          else "ack")
+                ),
+            )
+        except Exception as exc:
+            logger.error(
+                "control_response_send_failed",
+                conv_id=handle.conv_id,
+                request_id=request_id,
+                subtype="success",
+                error=type(exc).__name__,
+                detail=str(exc)[:300],
+            )
+            raise
 
     def send_control_response_error(
         self, handle: SubprocessHandle, request_id: str, error: str
     ) -> None:
-        self._write_json(handle, {
-            "type": "control_response",
-            "response": {
-                "subtype": "error",
-                "request_id": request_id,
-                "error": error,
-            },
-        })
+        try:
+            self._write_json(handle, {
+                "type": "control_response",
+                "response": {
+                    "subtype": "error",
+                    "request_id": request_id,
+                    "error": error,
+                },
+            })
+            logger.info(
+                "control_response_sent",
+                conv_id=handle.conv_id,
+                request_id=request_id,
+                subtype="error",
+                error=error[:200],
+            )
+        except Exception as exc:
+            logger.error(
+                "control_response_send_failed",
+                conv_id=handle.conv_id,
+                request_id=request_id,
+                subtype="error",
+                error=type(exc).__name__,
+                detail=str(exc)[:300],
+            )
+            raise
 
     # ------------------------------------------------------------ invalidate
 
@@ -1263,7 +1303,17 @@ def _dispatch_event(
 
     # --- control plane: never forwarded to subscribers ---
     if event_type == "control_request":
-        _handle_control_request(handle, registry, event)
+        try:
+            _handle_control_request(handle, registry, event)
+        except Exception as exc:
+            logger.error(
+                "control_request_dispatch_crash",
+                conv_id=handle.conv_id,
+                request_id=event.get("request_id", ""),
+                error=type(exc).__name__,
+                detail=str(exc)[:300],
+            )
+            raise
         return
 
     if event_type == "control_response":
@@ -1483,10 +1533,24 @@ def _handle_control_request(
       (unlikely as inbound); handle defensively.
     - interrupt: graceful abort request; acknowledge.
     - unknown: log warning, deny generically.
+
+    Each request_id flows through three log lines:
+      control_request_received → control_request_classified → control_response_sent
+    A break in that chain (any of the three missing) is the diagnostic
+    signal that the approval flow stranded the run.
     """
     request_id = event.get("request_id", "")
     request = event.get("request") or {}
     subtype = request.get("subtype")
+    tool_name = request.get("tool_name", "") if subtype == "can_use_tool" else ""
+
+    logger.info(
+        "control_request_received",
+        conv_id=handle.conv_id,
+        request_id=request_id,
+        subtype=subtype,
+        tool_name=tool_name,
+    )
 
     if not request_id:
         logger.warning(
@@ -1497,24 +1561,40 @@ def _handle_control_request(
         return
 
     if subtype == "can_use_tool":
-        tool_name = request.get("tool_name", "")
         if tool_name in INTERACTIVE_APPROVAL_TOOLS:
+            classification = "deny_interactive"
+            logger.info(
+                "control_request_classified",
+                conv_id=handle.conv_id,
+                request_id=request_id,
+                classification=classification,
+                tool_name=tool_name,
+            )
             registry.send_control_response(
                 handle, request_id, {"behavior": "deny", "message": "tool disallowed"}
             )
-            logger.info(
-                "control_denied_interactive_tool",
-                conv_id=handle.conv_id,
-                tool_name=tool_name,
-            )
             return
         # Under --yolo, allow all other tool use.
+        classification = "allow"
+        logger.info(
+            "control_request_classified",
+            conv_id=handle.conv_id,
+            request_id=request_id,
+            classification=classification,
+            tool_name=tool_name,
+        )
         registry.send_control_response(
             handle, request_id, {"behavior": "allow"}
         )
         return
 
     if subtype == "execute_external_tool":
+        logger.info(
+            "control_request_classified",
+            conv_id=handle.conv_id,
+            request_id=request_id,
+            classification="error_no_external_tools",
+        )
         # We don't register external tools in Phase 1.
         registry.send_control_response_error(
             handle,
@@ -1524,13 +1604,21 @@ def _handle_control_request(
         return
 
     if subtype == "interrupt":
+        logger.info(
+            "control_request_classified",
+            conv_id=handle.conv_id,
+            request_id=request_id,
+            classification="interrupt_ack",
+        )
         registry.send_control_response(handle, request_id, {})
         return
 
     # Unknown subtype — deny generically.
     logger.warning(
-        "control_request_unknown_subtype",
+        "control_request_classified",
         conv_id=handle.conv_id,
+        request_id=request_id,
+        classification="error_unknown_subtype",
         subtype=subtype,
     )
     registry.send_control_response_error(
