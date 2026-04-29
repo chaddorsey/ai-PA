@@ -212,7 +212,16 @@ def maybe_handle_approval_request(
             log.error("approval_responder_post_failed agent=%s conv=%s decisions=%s", handle.agent_id, handle.conv_id, classified)
             return
         if "_error" in result:
-            log.error("approval_responder_post_error agent=%s conv=%s err=%s decisions=%s", handle.agent_id, handle.conv_id, result["_error"], classified)
+            err = result["_error"]
+            # Race-loss case: letta-code's own approval path won. Letta returns
+            # 400 "No tool call is currently awaiting approval" because the
+            # approval was already cleared by the time our POST landed. This
+            # is the EXPECTED happy-case outcome (means the original flow
+            # worked). Log at info, not error.
+            if "No tool call is currently awaiting approval" in err:
+                log.info("approval_responder_race_loss agent=%s conv=%s decisions=%s (letta-code won — original path worked)", handle.agent_id, handle.conv_id, classified)
+            else:
+                log.error("approval_responder_post_error agent=%s conv=%s err=%s decisions=%s", handle.agent_id, handle.conv_id, err, classified)
             return
         log.info("approval_responder_post_ok agent=%s conv=%s decisions=%s response_messages=%d", handle.agent_id, handle.conv_id, classified, len(result.get("messages") or []))
 
