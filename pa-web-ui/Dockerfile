@@ -40,6 +40,17 @@ RUN python3 /tmp/apply-3205.py /usr/local/lib/node_modules/@letta-ai/letta-code/
     && grep -c PATCH-3205 /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
     && rm /tmp/apply-3205.py
 
+# Apply the empty-approvals subprocess-survival patch. letta-code 0.23.x
+# and 0.24.x panic-exit (returncode=1) when the server emits
+# stop_reason=requires_approval with approvals=[]. This patch replaces
+# the fatal exit with a wait+continue so an external resolver
+# (pa-web-ui/approval_responder.py) has time to POST an ApprovalCreate
+# and unblock the run. Full diagnosis: docs/diagnoses/letta-code-empty-approvals.md
+COPY letta-memfs-patches/patches/apply_letta_code_empty_approvals_fix.py /tmp/apply-empty-approvals.py
+RUN python3 /tmp/apply-empty-approvals.py /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
+    && [ "$(grep -c '\[PATCH-EMPTY-APPROVALS\]' /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js)" -ge 2 ] \
+    && rm /tmp/apply-empty-approvals.py
+
 
 # ---------- Stage 2: Python app image ----------
 FROM python:3.11-slim
