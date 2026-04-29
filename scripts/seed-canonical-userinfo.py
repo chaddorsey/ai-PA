@@ -880,14 +880,401 @@ def phase_core(args) -> int:
 # ---------- Phase B: candidates (stub for now — real run is heavier) ----------
 
 
+def gws_run(*args_list, timeout=300) -> Dict[str, Any]:
+    """Run gws CLI inside the letta container, return parsed JSON.
+
+    The letta container has gws auth configured. We exec from host.
+    """
+    import subprocess
+    cmd = ["docker", "exec", "ai-pa-letta-1", "/usr/local/bin/gws"] + list(args_list)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired:
+        return {"_error": f"timeout after {timeout}s"}
+    if r.returncode != 0:
+        # gws prints "Using keyring backend: keyring" to stderr on every run
+        err = r.stderr.replace("Using keyring backend: keyring\n", "").strip()
+        return {"_error": f"rc={r.returncode}: {err[:300]}", "_stdout": r.stdout[:300]}
+    try:
+        return json.loads(r.stdout)
+    except json.JSONDecodeError:
+        return {"_error": "non-JSON output", "_stdout": r.stdout[:300]}
+
+
+def harvest_email_threads(months: int) -> Dict[str, int]:
+    """Aggregate distinct threads where Chad replied, by other-participant email.
+
+    Excludes spam, trash, promotions, social, updates per user spec.
+    Returns dict: {email_lowercase: thread_count}
+    """
+    from collections import Counter
+    from datetime import date, timedelta
+
+    cutoff = (date.today() - timedelta(days=months * 30)).isoformat().replace("-", "/")
+    print(f"  email cutoff: {cutoff} (after:)", flush=True)
+
+    # Step 1: list distinct thread IDs Chad has sent in
+    # Strategy: paginate `from:me after:cutoff -in:spam -in:trash` and collect threadIds.
+    counts: Counter = Counter()
+    seen_threads = set()
+    page_token = None
+    page_no = 0
+    while True:
+        page_no += 1
+        params = {
+            "userId": "me",
+            "q": (f"from:me after:{cutoff} -in:spam -in:trash "
+                  "-category:promotions -category:social -category:updates"),
+            "maxResults": 100,
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        r = gws_run("gmail", "users", "messages", "list", "--params", json.dumps(params),
+                    timeout=120)
+        if "_error" in r:
+            print(f"  ! gmail list page {page_no} error: {r['_error']}", flush=True)
+            break
+        result = r.get("result") or r
+        for m in result.get("messages", []) or []:
+            tid = m.get("threadId")
+            if tid:
+                seen_threads.add(tid)
+        page_token = result.get("nextPageToken")
+        if not page_token:
+            break
+        if page_no % 5 == 0:
+            print(f"    list page {page_no} threads={len(seen_threads)}", flush=True)
+    print(f"  distinct sent threads: {len(seen_threads)}", flush=True)
+
+    # Step 2: for each thread, fetch metadata; extract non-Chad From addresses
+    fetched = 0
+    for tid in seen_threads:
+        params = {
+            "userId": "me",
+            "id": tid,
+            "format": "metadata",
+            "metadataHeaders": ["From", "To", "Cc"],
+        }
+        r = gws_run("gmail", "users", "threads", "get", "--params", json.dumps(params),
+                    timeout=30)
+        if "_error" in r:
+            continue
+        thread = r.get("result") or r
+        emails_in_thread = set()
+        for msg in thread.get("messages", []) or []:
+            for h in msg.get("payload", {}).get("headers", []) or []:
+                if h.get("name") in ("From", "To", "Cc"):
+                    val = h.get("value", "")
+                    for e in re.findall(r"<([^>]+@[^>]+)>|\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b", val):
+                        em = (e[0] or e[1]).lower().strip()
+                        if em and "cdorsey@concord.org" not in em:
+                            emails_in_thread.add(em)
+        for em in emails_in_thread:
+            counts[em] += 1
+        fetched += 1
+        if fetched % 100 == 0:
+            print(f"    fetched {fetched}/{len(seen_threads)} threads", flush=True)
+    print(f"  email aggregation done: {len(counts)} distinct counterparts", flush=True)
+    return dict(counts)
+
+
+def harvest_calendar_attendees(months: int) -> Dict[str, Dict[str, int]]:
+    """Aggregate calendar events; weight 2 if Chad organized, 1 if attendee.
+    Returns {email: {"organized_with": int, "invited_to": int, "score": int}}
+    """
+    from collections import defaultdict
+    from datetime import datetime, timedelta, timezone as tz_
+
+    time_min = (datetime.now(tz=tz_.utc) - timedelta(days=months * 30)).isoformat()
+    time_max = datetime.now(tz=tz_.utc).isoformat()
+    print(f"  calendar window: {time_min[:10]} → {time_max[:10]}", flush=True)
+
+    counts: Dict[str, Dict[str, int]] = defaultdict(lambda: {"organized_with": 0, "invited_to": 0, "score": 0})
+    seen_recurring = set()
+    page_token = None
+    page_no = 0
+    total_events = 0
+    while True:
+        page_no += 1
+        params = {
+            "calendarId": "primary",
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "maxResults": 250,
+            "singleEvents": True,
+            "orderBy": "startTime",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        r = gws_run("calendar", "events", "list", "--params", json.dumps(params),
+                    timeout=120)
+        if "_error" in r:
+            print(f"  ! calendar page {page_no} error: {r['_error']}", flush=True)
+            break
+        result = r.get("result") or r
+        for ev in result.get("items", []) or []:
+            if ev.get("status") == "cancelled":
+                continue
+            # Dedup recurring: count once per recurring series (use first instance)
+            rec_id = ev.get("recurringEventId")
+            if rec_id:
+                if rec_id in seen_recurring:
+                    continue
+                seen_recurring.add(rec_id)
+            total_events += 1
+            org_email = (ev.get("organizer") or {}).get("email", "").lower()
+            chad_organized = org_email == "cdorsey@concord.org"
+            attendees = ev.get("attendees") or []
+            for a in attendees:
+                em = (a.get("email") or "").lower()
+                if not em or em == "cdorsey@concord.org" or a.get("resource"):
+                    continue
+                # Skip declined attendees
+                if a.get("responseStatus") == "declined":
+                    continue
+                if chad_organized:
+                    counts[em]["organized_with"] += 1
+                    counts[em]["score"] += 2
+                else:
+                    counts[em]["invited_to"] += 1
+                    counts[em]["score"] += 1
+        page_token = result.get("nextPageToken")
+        if not page_token:
+            break
+        if page_no % 5 == 0:
+            print(f"    page {page_no} events={total_events} counterparts={len(counts)}", flush=True)
+    print(f"  calendar aggregation: {total_events} distinct events, {len(counts)} counterparts", flush=True)
+    return dict(counts)
+
+
+def harvest_drive_collaborators(months: int, max_files: int = 5000) -> Dict[str, int]:
+    """Drive doc collaborators (modified by Chad in last N months).
+    Capped at max_files to bound runtime — Chad's Drive is large.
+    Returns {email: doc_count}.
+    """
+    from collections import Counter
+    from datetime import datetime, timedelta, timezone as tz_
+
+    cutoff = (datetime.now(tz=tz_.utc) - timedelta(days=months * 30)).isoformat()
+    print(f"  drive cutoff: {cutoff[:10]} (modifiedTime >)  cap={max_files}", flush=True)
+
+    counts: Counter = Counter()
+    page_token = None
+    page_no = 0
+    total = 0
+    while total < max_files:
+        page_no += 1
+        params = {
+            "q": f"modifiedTime > '{cutoff}' and trashed = false",
+            "fields": "nextPageToken, files(id, owners, lastModifyingUser, sharingUser)",
+            "pageSize": 100,
+            "orderBy": "modifiedTime desc",
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        r = gws_run("drive", "files", "list", "--params", json.dumps(params),
+                    timeout=120)
+        if "_error" in r:
+            print(f"  ! drive page {page_no} error: {r['_error']}", flush=True)
+            break
+        result = r.get("result") or r
+        files = result.get("files", []) or []
+        for f in files:
+            total += 1
+            seen_in_doc = set()
+            for src in (f.get("owners") or []) + [f.get("lastModifyingUser"), f.get("sharingUser")]:
+                if not src:
+                    continue
+                em = (src.get("emailAddress") or "").lower()
+                if em and em != "cdorsey@concord.org":
+                    seen_in_doc.add(em)
+            for em in seen_in_doc:
+                counts[em] += 1
+        page_token = result.get("nextPageToken")
+        if not page_token:
+            break
+        if page_no % 5 == 0:
+            print(f"    drive page {page_no} files={total} counterparts={len(counts)}", flush=True)
+    print(f"  drive aggregation: {total} files, {len(counts)} counterparts", flush=True)
+    return dict(counts)
+
+
+def existing_canonical_emails() -> set:
+    """Read all reference/people/*/<slug>.md files; collect known emails."""
+    out = set()
+    for domain in ("work", "board", "family", "personal", "external"):
+        url = f"{GITEA_HOST}/api/v1/repos/{CANONICAL_REPO}/contents/reference/people/{domain}"
+        req = urllib.request.Request(url, headers={"Authorization": f"token {GITEA_TOKEN}"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                listing = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue
+            raise
+        for entry in listing:
+            if entry.get("type") != "file":
+                continue
+            file_url = (
+                f"{GITEA_HOST}/api/v1/repos/{CANONICAL_REPO}/contents/{entry['path']}?ref=main"
+            )
+            try:
+                with urllib.request.urlopen(
+                    urllib.request.Request(
+                        file_url, headers={"Authorization": f"token {GITEA_TOKEN}"}
+                    ),
+                    timeout=10,
+                ) as fr:
+                    fdata = json.loads(fr.read())
+                content = base64.b64decode(fdata["content"]).decode()
+                for em in re.findall(r"\bprimary:\s*(\S+@\S+)\b", content):
+                    out.add(em.lower())
+                for em in re.findall(
+                    r"^\s*[a-z_]+:\s*(\S+@\S+)\s*$", content, re.MULTILINE
+                ):
+                    out.add(em.lower())
+            except Exception:
+                continue
+    return out
+
+
+# Common automation/no-reply patterns to filter
+NOISE_EMAIL_PATTERNS = [
+    r"^no[\.\-_]?reply@",
+    r"^notifications?@",
+    r"^automated?@",
+    r"^donotreply@",
+    r"^do[-\.]not[-\.]reply@",
+    r"^bounce[s]?@",
+    r"^postmaster@",
+    r"^mailer[-\.]daemon@",
+    r"^calendar[\.\-_]?(notification|update)?s?@",
+    r"^reply[+\.][a-z0-9]{4,}@",  # gmail forwarding addresses
+]
+NOISE_RE = re.compile("|".join(NOISE_EMAIL_PATTERNS), re.IGNORECASE)
+
+
+def is_noise_email(email: str) -> bool:
+    if NOISE_RE.search(email):
+        return True
+    # Self-aliases: cdorsey@concord.org and any +-tag variants
+    if email.startswith("cdorsey+") and email.endswith("@concord.org"):
+        return True
+    if email == "cdorsey@concord.org":
+        return True
+    # Generic catch-all: a long alphanumeric local part is usually a forwarding hash
+    local = email.split("@")[0]
+    if len(local) >= 30 and re.match(r"^[a-f0-9]+$", local):
+        return True
+    return False
+
+
 def phase_candidates(args) -> int:
-    print("=== Phase B — candidate aggregation (24mo) ===\n")
-    print("This phase aggregates ranked candidates from:")
-    print("  - Gmail: distinct threads where Chad replied (excludes promotions/social/updates/spam/trash)")
-    print("  - Calendar: distinct events; weight 2 for Chad-organized, 1 for attendee")
-    print("  - Drive: distinct docs with Chad as collaborator/owner")
+    print(f"=== Phase B — candidate aggregation ({args.months}mo) ===\n")
+
+    months = args.months
+
+    print("Step 1: harvest Gmail replied threads ...")
+    email_counts = harvest_email_threads(months)
     print()
-    print("NOT YET IMPLEMENTED — needs gws CLI integration. Phase A first.")
+
+    print("Step 2: harvest Calendar attendees ...")
+    cal_counts = harvest_calendar_attendees(months)
+    print()
+
+    print("Step 3: harvest Drive collaborators ...")
+    drive_counts = harvest_drive_collaborators(months, max_files=args.drive_cap)
+    print()
+
+    # Step 4: existing canonical emails — exclude these (already seeded)
+    print("Step 4: load already-seeded canonical emails ...")
+    seeded = existing_canonical_emails()
+    print(f"  already seeded: {len(seeded)} emails\n")
+
+    # Step 5: aggregate
+    print("Step 5: aggregate + rank ...")
+    all_emails = set(email_counts) | set(cal_counts) | set(drive_counts)
+    rows = []
+    for em in all_emails:
+        if em in seeded or is_noise_email(em):
+            continue
+        e_count = email_counts.get(em, 0)
+        c = cal_counts.get(em, {"organized_with": 0, "invited_to": 0, "score": 0})
+        c_score = c["score"]
+        d_count = drive_counts.get(em, 0)
+        # Composite: email replies × 1.0 + calendar score × 1.0 + drive × 0.5
+        composite = e_count + c_score + 0.5 * d_count
+        rows.append({
+            "email": em,
+            "email_threads": e_count,
+            "cal_organized_with": c["organized_with"],
+            "cal_invited_to": c["invited_to"],
+            "drive_docs": d_count,
+            "composite": composite,
+        })
+
+    rows.sort(key=lambda r: -r["composite"])
+
+    # Step 5b: split into external vs concord-internal alt-email candidates
+    external_rows = [r for r in rows if not r["email"].endswith("@concord.org")]
+    internal_alts = [r for r in rows if r["email"].endswith("@concord.org")]
+
+    # Step 6: render report
+    out_path = "/tmp/seed-candidates-report.md"
+    lines = [
+        f"# Phase B candidate report ({months}mo window)",
+        "",
+        f"Generated: {datetime.now(tz=timezone.utc).isoformat()}",
+        f"External candidates (after de-dup + noise filter): **{len(external_rows)}**",
+        f"Concord-internal alt-emails not matched to a seeded primary: **{len(internal_alts)}**",
+        "",
+        "Columns: `composite` = email_threads + (2×organized_with + 1×invited_to) + 0.5×drive_docs",
+        "Rank top-down; cut at the threshold where signal becomes noise.",
+        "",
+        "## Concord-internal alt-emails",
+        "",
+        "These are @concord.org addresses that don't match a seeded person's "
+        "primary email. Each likely needs to be merged as `emails.alt: ...` into "
+        "an existing `reference/people/work/<slug>.md`, OR represents an ex-staff "
+        "member or shared mailbox.",
+        "",
+        "| Rank | Email | Threads | Cal-org | Cal-inv | Drive | Composite |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for i, r in enumerate(internal_alts[:50], 1):
+        lines.append(
+            f"| {i} | `{r['email']}` | {r['email_threads']} | "
+            f"{r['cal_organized_with']} | {r['cal_invited_to']} | "
+            f"{r['drive_docs']} | {r['composite']:.1f} |"
+        )
+    lines.append("")
+    lines.append("## External candidates (potential `reference/people/external/` seeds)")
+    lines.append("")
+    lines.append("These are non-Concord emails Chad has interacted with via Gmail/Calendar/Drive. "
+                 "Mark candidates for promotion to seeded with their target domain (external | personal | services).")
+    lines.append("")
+    lines.append("| Rank | Email | Threads | Cal-org | Cal-inv | Drive | Composite |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for i, r in enumerate(external_rows[:200], 1):
+        lines.append(
+            f"| {i} | `{r['email']}` | {r['email_threads']} | "
+            f"{r['cal_organized_with']} | {r['cal_invited_to']} | "
+            f"{r['drive_docs']} | {r['composite']:.1f} |"
+        )
+    if len(external_rows) > 200:
+        lines.append("")
+        lines.append(f"*(showing top 200 of {len(external_rows)} external candidates)*")
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines))
+    print(f"\nReport written: {out_path}")
+    print(f"  internal alts (top 5):")
+    for r in internal_alts[:5]:
+        print(f"    {r['email']:50s}  composite={r['composite']:.1f}  "
+              f"e={r['email_threads']} c={r['cal_organized_with']}/{r['cal_invited_to']} d={r['drive_docs']}")
+    print(f"  external (top 10):")
+    for r in external_rows[:10]:
+        print(f"    {r['email']:50s}  composite={r['composite']:.1f}  "
+              f"e={r['email_threads']} c={r['cal_organized_with']}/{r['cal_invited_to']} d={r['drive_docs']}")
     return 0
 
 
@@ -913,6 +1300,10 @@ def main():
     p.add_argument("--dry-run", action="store_true", default=True)
     p.add_argument("--commit", action="store_true",
                    help="Actually write to canonical (overrides --dry-run)")
+    p.add_argument("--months", type=int, default=24,
+                   help="Phase B time window (months back from today). Default 24.")
+    p.add_argument("--drive-cap", type=int, default=5000,
+                   help="Phase B max Drive files to scan. Default 5000.")
     args = p.parse_args()
     if args.commit:
         args.dry_run = False
