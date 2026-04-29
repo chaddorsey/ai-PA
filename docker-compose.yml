@@ -1529,6 +1529,13 @@ services:
       # `signals/`, and any other canonical I/O from MC's subprocess.
       - GITEA_MEMFS_TOKEN=${GITEA_MEMFS_TOKEN}
       - GITEA_BASE_URL=http://gitea:3000
+      # Memfs-via-Gitea (requires apply_letta_code_memfs_external_git.py
+      # patch in pa-web-ui/Dockerfile). Patched letta-code substitutes
+      # {agentId} per spawn. With these set + the patch applied, the
+      # subprocess runs with --memfs and reads/writes the agent's memfs
+      # files (system/*, signals/*, digest/*) directly via Read/Edit.
+      - LETTA_MEMFS_LOCAL=1
+      - LETTA_MEMFS_GIT_URL=http://pa-admin:${GITEA_MEMFS_TOKEN}@gitea:3000/agents/{agentId}.git
       # gws CLI credentials (Calendar/Gmail/Drive). Mounted by the
       # `./gws-bridge/credentials.json:/root/.gws/credentials.json:ro` volume
       # below — same host file letta + scheduling-orchestrator-api use.
