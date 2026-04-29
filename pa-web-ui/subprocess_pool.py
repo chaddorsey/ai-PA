@@ -1459,6 +1459,27 @@ def _emit(
         stamped.setdefault("_request_id", request_id)
     handle.ring_buffer.append(seq, stamped, is_turn_boundary=is_turn_boundary)
     _publish_to_subscribers(handle, stamped)
+    # Auto-approval responder (workaround for letta-code 0.23.8 bug #90).
+    # Fires asynchronously; never blocks the emit path. Returns True if it
+    # handled the event — we still forward to subscribers so chat.js sees
+    # the approval_request_message; the responder POSTs the
+    # ApprovalCreate to Letta in a background thread.
+    try:
+        from approval_responder import maybe_handle_approval_request
+        maybe_handle_approval_request(
+            handle,
+            stamped,
+            allowed_tools=set(DEFAULT_ALLOWED_TOOLS),
+            interactive_tools=INTERACTIVE_APPROVAL_TOOLS,
+            emit_callback=lambda h, ev: _emit(h, ev, is_turn_boundary=False),
+        )
+    except Exception as e:
+        # Never let the responder break the main emit path.
+        logger.warning(
+            "approval_responder_dispatch_failed",
+            conv_id=handle.conv_id,
+            err=str(e),
+        )
 
 
 def _publish_to_subscribers(
