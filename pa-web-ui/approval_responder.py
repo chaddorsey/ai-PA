@@ -120,25 +120,33 @@ def classify_race_loss(run_state: Optional[Dict[str, Any]]) -> str:
     Returns:
       'letta_code_won': run is healthy/active/completed normally — original
                         path handled the approval. Responder is dormant.
-      'subprocess_crashed': run is failed with no clean stop_reason — the
-                            letta-code subprocess died (empty-approvals bug),
-                            Letta cleaned up the dangling approval, but the
-                            actual tool/dispatch never completed. User is
-                            in a dead-air state.
-      'unknown': run state couldn't be fetched OR shape doesn't match either
-                 pattern. Caller should default to alarm-but-don't-retry.
+      'subprocess_crashed': run is failed OR completed-with-requires_approval.
+                            In both cases the tool/dispatch never completed:
+                            either the subprocess died (empty-approvals bug),
+                            or the streaming connection closed mid-approval
+                            and the server marked the run completed while
+                            stop_reason still carries the unresolved state.
+                            User is in a dead-air state.
+      'unknown': run state couldn't be fetched OR shape doesn't match any
+                 pattern. Caller should warn-but-don't-retry.
     """
     if not run_state:
         return "unknown"
     status = run_state.get("status")
     stop_reason = run_state.get("stop_reason")
-    # Healthy outcomes: active, completed cleanly
+    # Healthy outcomes: active, or completed with a clean terminal reason
     if status in ("created", "running", "pending", "in_progress"):
         return "letta_code_won"
     if status == "completed" and stop_reason in ("end_turn", "max_steps", None):
         return "letta_code_won"
-    # Crash signature: failed run, often with stop_reason=None or "error"
+    # Crash signature: failed run (typically stop_reason=None or "error")
     if status == "failed":
+        return "subprocess_crashed"
+    # Stranded signature: run is "completed" but stop_reason is still
+    # 'requires_approval' — the streaming consumer ended its turn while
+    # the agent was logically waiting for approval. Same dead-air symptom
+    # as a real crash from the user's perspective.
+    if status == "completed" and stop_reason == "requires_approval":
         return "subprocess_crashed"
     return "unknown"
 

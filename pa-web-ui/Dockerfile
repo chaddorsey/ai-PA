@@ -46,10 +46,20 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install curl (for healthchecks) + the Node runtime required by letta-code.
+# Install curl (for healthchecks + gws install) + the Node runtime required
+# by letta-code.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install gws CLI (Google Workspace) so MC + letta-code subagents can issue
+# direct Calendar/Gmail/Drive operations via Bash. Mirrors the letta
+# container's pattern (see letta/entrypoint-wrapper.sh + scripts/update-gws.sh).
+# Credentials are mounted at /root/.gws/credentials.json by docker-compose.
+COPY scripts/update-gws.sh /tmp/update-gws.sh
+RUN GWS_INSTALL_DIR=/usr/local/bin bash /tmp/update-gws.sh \
+    && rm /tmp/update-gws.sh \
+    && gws --version
 
 # Copy the Node runtime + global letta-code install from the build stage.
 # /usr/local/lib/node_modules holds the globally-installed letta-code

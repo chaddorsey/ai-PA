@@ -418,6 +418,10 @@ services:
       ALLOWLIST_SCRIPT_DIR: /app/scripts
       LETTA_BASE_URL: http://letta:8283
       SCHEDULER_TIMEZONE: America/New_York
+      # Slack user token for analytics CSV polling (sees USLACKBOT DMs)
+      SLACK_MCP_XOXP_TOKEN: ${SLACK_MCP_XOXP_TOKEN}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      RAW_ARCHIVE_DIR: /data/raw-archive
     volumes:
       - ./scheduler-service/scripts:/app/scripts:ro
       - ./deployment/scripts:/workspace/deployment/scripts:ro
@@ -427,6 +431,7 @@ services:
       - ./docker-compose.yml:/workspace/docker-compose.yml:ro
       - ./docs:/workspace/docs:ro
       - ./.git:/workspace/.git:ro
+      - ./data/raw-archive:/data/raw-archive
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [pa-internal]
     ports:
@@ -945,6 +950,7 @@ services:
     volumes:
       - slackbot_state:/app/state_store
       - slackbot_logs:/app/logs
+      - ./data/raw-archive:/data/raw-archive
     env_file:
       - .env
     environment:
@@ -952,6 +958,9 @@ services:
       SLACK_APP_TOKEN: ${SLACK_APP_TOKEN}
       LETTA_BASE_URL: "http://letta:8283"
       LETTA_AGENT_ID: ${LETTA_AGENT_ID}
+      # Postgres connection for analytics_raw inserts (raw-artifact catalog)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      RAW_ARCHIVE_DIR: "/data/raw-archive"
       # Scheduler agent for multi-user conversations (configurable)
       LETTA_SCHEDULER_AGENT_ID: ${LETTA_SCHEDULER_AGENT_ID:-agent-892a2d58-b9f6-4baf-84f3-c431fe46487d}
       # Supabase for conversation tracking
@@ -1520,6 +1529,10 @@ services:
       # `signals/`, and any other canonical I/O from MC's subprocess.
       - GITEA_MEMFS_TOKEN=${GITEA_MEMFS_TOKEN}
       - GITEA_BASE_URL=http://gitea:3000
+      # gws CLI credentials (Calendar/Gmail/Drive). Mounted by the
+      # `./gws-bridge/credentials.json:/root/.gws/credentials.json:ro` volume
+      # below — same host file letta + scheduling-orchestrator-api use.
+      - GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE=/root/.gws/credentials.json
       # --- Ingress guard (Unit 1.0 / R29) ---
       # Browsers must present one of these Origins on POST/PATCH/DELETE.
       - PA_WEB_UI_ALLOWED_ORIGINS=${PA_WEB_UI_ALLOWED_ORIGINS:-http://localhost:5200,http://pa-web-ui.local:5200}
@@ -1544,6 +1557,10 @@ services:
       - ./omnifocus-timer/logs:/data/timer-logs
       # --- Crash-log path for the subprocess pool (Unit 1.6) ---
       - ~/Library/Logs/pa-web-ui:/app/logs
+      # gws CLI credentials — same host file letta + scheduling-orchestrator-api use.
+      # Read-only; lets MC + letta-code subagents issue direct Calendar/Gmail/Drive
+      # operations via Bash (gws CLI installed in the image).
+      - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro
       # Shared cross-tool file exchange (same path as letta service uses).
       # Lets MC read/write `/data/shared/` via Bash (the canonical path
       # for tool-exchange transients per the laptop_execution_preference

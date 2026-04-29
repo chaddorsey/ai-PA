@@ -211,6 +211,12 @@ def test_classify_race_loss_failed_is_subprocess_crashed():
     assert classify_race_loss({"status": "failed", "stop_reason": "error"}) == "subprocess_crashed"
 
 
+def test_classify_race_loss_completed_requires_approval_is_subprocess_crashed():
+    # Stranded signature: streaming closed mid-approval; server says completed
+    # but stop_reason still reflects the unresolved approval state.
+    assert classify_race_loss({"status": "completed", "stop_reason": "requires_approval"}) == "subprocess_crashed"
+
+
 def test_classify_race_loss_unrecognized_status_is_unknown():
     assert classify_race_loss({"status": "weird-state"}) == "unknown"
 
