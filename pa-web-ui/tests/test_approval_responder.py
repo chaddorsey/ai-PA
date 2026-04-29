@@ -8,6 +8,7 @@ from unittest.mock import patch, MagicMock
 from approval_responder import (
     _classify,
     _extract_pending_calls,
+    classify_race_loss,
     maybe_handle_approval_request,
 )
 
@@ -182,6 +183,114 @@ def test_dedup_skips_already_responded_tool_call_id(monkeypatch):
     assert h1 is True
     assert h2 is False
     assert len(posted) == 1
+
+
+# -------------------- classify_race_loss --------------------
+
+def test_classify_race_loss_no_state_is_unknown():
+    assert classify_race_loss(None) == "unknown"
+    assert classify_race_loss({}) == "unknown"
+
+
+def test_classify_race_loss_active_run_is_letta_code_won():
+    assert classify_race_loss({"status": "running"}) == "letta_code_won"
+    assert classify_race_loss({"status": "in_progress"}) == "letta_code_won"
+    assert classify_race_loss({"status": "created"}) == "letta_code_won"
+
+
+def test_classify_race_loss_completed_clean_is_letta_code_won():
+    assert classify_race_loss({"status": "completed", "stop_reason": "end_turn"}) == "letta_code_won"
+    assert classify_race_loss({"status": "completed", "stop_reason": None}) == "letta_code_won"
+    assert classify_race_loss({"status": "completed", "stop_reason": "max_steps"}) == "letta_code_won"
+
+
+def test_classify_race_loss_failed_is_subprocess_crashed():
+    # The empty-approvals bug fingerprint: failed run with stop_reason=None
+    assert classify_race_loss({"status": "failed", "stop_reason": None}) == "subprocess_crashed"
+    # Also failed with stop_reason=error
+    assert classify_race_loss({"status": "failed", "stop_reason": "error"}) == "subprocess_crashed"
+
+
+def test_classify_race_loss_unrecognized_status_is_unknown():
+    assert classify_race_loss({"status": "weird-state"}) == "unknown"
+
+
+# -------------------- crash-detection path --------------------
+
+def test_race_loss_crash_emits_synthetic_error(monkeypatch):
+    handle = FakeHandle(agent_id="agent-crash", conv_id="conv-crash")
+    forwarded = []
+
+    def fake_post(agent_id, decisions, timeout=30):
+        return {"_error": "HTTP 400: No tool call is currently awaiting approval"}
+
+    def fake_get_run(run_id, timeout=10.0):
+        return {"status": "failed", "stop_reason": None}
+
+    def emit_cb(h, ev):
+        forwarded.append(ev)
+
+    monkeypatch.setattr("approval_responder._post_approval", fake_post)
+    monkeypatch.setattr("approval_responder._get_run_state", fake_get_run)
+
+    handled = maybe_handle_approval_request(
+        handle,
+        {
+            "message_type": "approval_request_message",
+            "tool_calls": [{"id": "tc_dead", "name": "Task"}],
+            "run_id": "run-died",
+        },
+        allowed_tools={"Task"},
+        interactive_tools=set(),
+        emit_callback=emit_cb,
+    )
+    assert handled is True
+
+    deadline = time.time() + 2.0
+    while not forwarded and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert len(forwarded) == 1
+    err = forwarded[0]
+    assert err["type"] == "error"
+    assert err["_synthesized_by"] == "approval_responder"
+    assert err["_run_id"] == "run-died"
+    assert "stranded" in err["message"].lower() or "subprocess crash" in err["message"].lower()
+
+
+def test_race_loss_letta_code_won_does_not_emit(monkeypatch):
+    handle = FakeHandle(agent_id="agent-clean", conv_id="conv-clean")
+    forwarded = []
+
+    def fake_post(agent_id, decisions, timeout=30):
+        return {"_error": "HTTP 400: No tool call is currently awaiting approval"}
+
+    def fake_get_run(run_id, timeout=10.0):
+        return {"status": "completed", "stop_reason": "end_turn"}
+
+    def emit_cb(h, ev):
+        forwarded.append(ev)
+
+    monkeypatch.setattr("approval_responder._post_approval", fake_post)
+    monkeypatch.setattr("approval_responder._get_run_state", fake_get_run)
+
+    maybe_handle_approval_request(
+        handle,
+        {
+            "message_type": "approval_request_message",
+            "tool_calls": [{"id": "tc_clean", "name": "Bash"}],
+            "run_id": "run-clean",
+        },
+        allowed_tools={"Bash"},
+        interactive_tools=set(),
+        emit_callback=emit_cb,
+    )
+
+    # Wait briefly to give the daemon thread a chance
+    time.sleep(0.3)
+
+    # Letta-code won the race — no synthetic error emitted
+    assert len(forwarded) == 0
 
 
 def test_emit_callback_forwards_resumed_messages(monkeypatch):
