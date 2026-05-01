@@ -27,6 +27,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN pip install --upgrade pip && pip install poetry
 
+# Install gws CLI (Google Workspace) so cron-driven scripts can issue
+# direct Calendar/Gmail/Drive/Admin Reports API calls via Bash. Mirrors
+# the letta and pa-web-ui patterns. Credentials are mounted at
+# /root/.gws/credentials.json by docker-compose.
+COPY scripts/update-gws.sh /tmp/update-gws.sh
+RUN bash /tmp/update-gws.sh \
+    && rm /tmp/update-gws.sh \
+    && gws --version
+
 COPY pyproject.toml poetry.lock README.md ./
 COPY src ./src
 COPY migrations ./migrations

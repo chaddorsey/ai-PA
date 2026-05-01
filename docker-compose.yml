@@ -422,6 +422,8 @@ services:
       SLACK_MCP_XOXP_TOKEN: ${SLACK_MCP_XOXP_TOKEN}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       RAW_ARCHIVE_DIR: /data/raw-archive
+      # gws CLI credentials path (Drive/Gmail/Admin Reports)
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: /root/.gws/credentials.json
     volumes:
       - ./scheduler-service/scripts:/app/scripts:ro
       - ./deployment/scripts:/workspace/deployment/scripts:ro
@@ -432,6 +434,10 @@ services:
       - ./docs:/workspace/docs:ro
       - ./.git:/workspace/.git:ro
       - ./data/raw-archive:/data/raw-archive
+      # gws CLI credentials (Drive/Gmail/Admin Reports) — same host file
+      # letta + pa-web-ui use. Lets backfill scripts query Google Admin
+      # Reports directly without going through Letta agents.
+      - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [pa-internal]
     ports:

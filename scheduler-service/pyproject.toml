@@ -13,6 +13,7 @@ uvicorn = { extras = ["standard"], version = "^0.30.5" }
 sqlalchemy = "^2.0.34"
 sqlalchemy-utils = "^0.41.2"
 asyncpg = "^0.29.0"
+psycopg = {extras=["binary"], version="^3.1"}
 alembic = "^1.13.2"
 apscheduler = "^3.10.4"
 structlog = "^24.1.0"
