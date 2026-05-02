@@ -32,25 +32,19 @@ detectors:
     endpoint: tcp://host.docker.internal:5555
 
 model:
-  # MegaDetector v5a (Microsoft AI for Earth, agentmorris/megadetector).
-  # YOLOv5x architecture trained on millions of camera-trap images —
-  # specialized for outdoor wildlife, low light, and varying distances
-  # which COCO-80 models handle poorly at our use case. Output is just
-  # 3 classes: animal / person / vehicle. The "fox vs neighbor's dog"
-  # discrimination then happens in the curator's heuristic + zones.
-  #
-  # Larger model than YOLO11-S (~140M params, 534MB ONNX), inference
-  # ~80-150ms on M4/ANE — still real-time for 3 cameras at 5fps.
-  #
-  # Exported via torch.hub yolov5 + torch.onnx.export (legacy tracer).
-  # Falls back to yolo-generic processing — Frigate parses YOLOv5
-  # output format the same way as YOLOv8/v9/v11.
+  # MegaDetector v5a, with output graph patched from YOLOv5 layout
+  # ([batch, anchors, 4+1+C]) to YOLOv8 layout ([batch, 4+C, anchors]).
+  # The patcher inserts Split → Mul (objectness × class_probs) →
+  # Concat → Transpose at the model output, producing what Frigate's
+  # yolo-generic post-processor expects. See:
+  #   frigate/build/patch_megadetector_to_yolov8.py
+  # Output classes (0-indexed): animal, person, vehicle.
   model_type: yolo-generic
   width: 640
   height: 640
   input_tensor: nchw
   input_dtype: float
-  path: /config/model_cache/megadetector.onnx
+  path: /config/model_cache/megadetector_yolov8.onnx
   labelmap_path: /config/megadetector_labels.txt
 
 # ----------------------------------------------------------------------
