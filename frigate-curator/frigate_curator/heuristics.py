@@ -21,17 +21,24 @@ import datetime as _dt
 
 
 # Score by hour-of-day. Indexed 0–23 (local time).
+# Foxes ARE more nocturnal/crepuscular but they also den under porches and
+# come out during the day, especially with kits in spring/summer. The
+# previous heavily-daytime-penalized curve was hiding too many real fox
+# events. Tuned now to favor night/twilight without zeroing out daytime.
 _HOURLY_SCORE = {
-    # 21:00–05:00 — peak fox activity, almost certainly a fox
+    # 21:00–05:00 — peak fox activity
     21: 1.00, 22: 1.00, 23: 1.00,
     0: 1.00, 1: 1.00, 2: 1.00, 3: 1.00, 4: 1.00,
     # 05:00–08:00 — dawn, foxes returning to den
-    5: 0.85, 6: 0.80, 7: 0.70,
-    # 08:00–17:00 — daytime, much more likely a pet
-    8: 0.30, 9: 0.25, 10: 0.20, 11: 0.20,
-    12: 0.20, 13: 0.20, 14: 0.20, 15: 0.20, 16: 0.25, 17: 0.30,
+    5: 0.90, 6: 0.85, 7: 0.75,
+    # 08:00–17:00 — daytime: less common but absolutely possible.
+    # Score floor of 0.5 — daytime fox events still surface in the UI's
+    # default "All" view; users can filter by time-of-day if they only
+    # want the high-confidence-nocturnal set.
+    8: 0.55, 9: 0.50, 10: 0.50, 11: 0.50,
+    12: 0.50, 13: 0.50, 14: 0.50, 15: 0.50, 16: 0.55, 17: 0.65,
     # 18:00–21:00 — dusk, foxes emerging
-    18: 0.55, 19: 0.75, 20: 0.90,
+    18: 0.80, 19: 0.90, 20: 0.95,
 }
 
 

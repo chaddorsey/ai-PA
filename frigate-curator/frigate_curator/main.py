@@ -19,6 +19,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from . import curator, db
 from .frigate_client import FrigateClient
@@ -108,12 +109,24 @@ def list_highlights(
     since: float | None = Query(default=None, description="unix epoch seconds"),
     until: float | None = Query(default=None, description="unix epoch seconds"),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted)$"),
+    time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
+    # Day = 6am–6pm local; Night = 6pm–6am local (wraps midnight)
+    hour_from = hour_to = None
+    if time_of_day == "day":
+        hour_from, hour_to = 6, 18
+    elif time_of_day == "night":
+        hour_from, hour_to = 18, 6
+
     rows = db.list_highlights(
-        DB_PATH, camera=camera, since=since, until=until,
-        min_score=min_score, limit=limit, offset=offset,
+        DB_PATH,
+        camera=camera, since=since, until=until,
+        min_score=min_score, bucket=bucket,
+        hour_from=hour_from, hour_to=hour_to,
+        limit=limit, offset=offset,
     )
     return {"items": rows, "count": len(rows)}
 
@@ -160,3 +173,37 @@ def get_stats() -> dict[str, Any]:
 @app.post("/promote/{event_id}")
 def promote_event(event_id: str) -> dict[str, Any]:
     return curator.promote(_client, HIGHLIGHTS_ROOT, DB_PATH, event_id)
+
+
+# ---------------------------------------------------------------------------
+# Family-vote actions. Each action is attributed to whoever's logged in via
+# Cloudflare Access (their email is forwarded by fox-cam-public from the
+# cf-access-authenticated-user-email header).
+# ---------------------------------------------------------------------------
+
+class ActionBody(BaseModel):
+    by: str | None = None  # email; optional for now (will always be set in production)
+
+
+@app.post("/highlights/{event_id}/favorite")
+def favorite_event(event_id: str, body: ActionBody) -> dict[str, Any]:
+    row = db.set_action(DB_PATH, event_id, "favorite", body.by)
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "favorited", "highlight": row}
+
+
+@app.post("/highlights/{event_id}/demote")
+def demote_event(event_id: str, body: ActionBody) -> dict[str, Any]:
+    row = db.set_action(DB_PATH, event_id, "demote", body.by)
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "demoted", "highlight": row}
+
+
+@app.post("/highlights/{event_id}/clear")
+def clear_event(event_id: str, body: ActionBody) -> dict[str, Any]:
+    row = db.set_action(DB_PATH, event_id, "clear", body.by)
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "cleared", "highlight": row}

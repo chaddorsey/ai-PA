@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fox Cam — Clip</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ v }}">
+</head>
+<body>
+  <header>
+    <h1>🦊 Fox Cam</h1>
+    <nav>
+      <a href="/">Live</a>
+      <a href="/highlights">Highlights</a>
+    </nav>
+  </header>
+  <main class="clip-page">
+    <div id="clip-card" class="highlight clip-permalink" data-event-id="{{ event_id }}">
+      <div class="meta loading">loading…</div>
+    </div>
+    <p class="meta-note"><a href="/highlights">← back to all highlights</a></p>
+  </main>
+  <script src="/static/clip.js?v={{ v }}"></script>
+</body>
+</html>

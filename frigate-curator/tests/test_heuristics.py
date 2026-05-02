@@ -21,14 +21,21 @@ def test_night_dog_is_high_likelihood():
     assert score >= 0.8, f"got {score}"
 
 
-def test_midday_cat_is_low_likelihood():
-    score = fox_likelihood(_at(13), "cat", 0.7)
-    assert score < 0.4, f"got {score}"
+def test_midday_animal_is_moderate_likelihood():
+    # Foxes do come out during the day; we don't want to bury daytime
+    # events. Score should be neither very high nor very low.
+    score = fox_likelihood(_at(13), "animal", 0.7)
+    assert 0.3 < score < 0.7, f"got {score}"
 
 
 def test_dusk_tracks_correctly():
     # 19:00 should be substantially higher than 13:00
-    assert fox_likelihood(_at(19), "dog", 0.7) > fox_likelihood(_at(13), "dog", 0.7)
+    assert fox_likelihood(_at(19), "animal", 0.7) > fox_likelihood(_at(13), "animal", 0.7)
+
+
+def test_animal_label_supported():
+    # MegaDetector emits 'animal' label; must be treated like dog/cat.
+    assert fox_likelihood(_at(2), "animal", 0.7) > 0.0
 
 
 def test_low_confidence_downweights():

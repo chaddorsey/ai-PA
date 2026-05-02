@@ -15,20 +15,34 @@
     </nav>
   </header>
   <main>
+    <div class="tabs">
+      <button class="tab active" data-bucket="pending">All</button>
+      <button class="tab" data-bucket="favorites">⭐ Favorites</button>
+      <button class="tab" data-bucket="demoted">🚫 No Foxes</button>
+    </div>
     <div class="filters">
+      <label>Time:
+        <select id="filter-time">
+          <option value="any" selected>Any</option>
+          <option value="day">Day (6am–6pm)</option>
+          <option value="night">Night (6pm–6am)</option>
+        </select>
+      </label>
+      <label>Date:
+        <select id="filter-date">
+          <option value="">All dates</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="7d" selected>Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+        </select>
+      </label>
       <label>Camera:
         <select id="filter-camera">
           <option value="">All</option>
           {% for s in streams %}
           <option value="{{ s }}">{{ s }}</option>
           {% endfor %}
-        </select>
-      </label>
-      <label>Min fox-likelihood:
-        <select id="filter-score">
-          <option value="0">All</option>
-          <option value="0.5">≥ 0.5 (likely)</option>
-          <option value="0.8" selected>≥ 0.8 (very likely)</option>
         </select>
       </label>
     </div>

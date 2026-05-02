@@ -92,11 +92,11 @@ class FrigateClient:
 
     def _download(self, path: str, dest: Path) -> bool:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with self._request("GET", path) as r:
-            if r.status_code == 404:
-                return False
-            r.raise_for_status()
-            tmp = dest.with_suffix(dest.suffix + ".tmp")
-            tmp.write_bytes(r.content)
-            tmp.rename(dest)
+        r = self._request("GET", path)
+        if r.status_code == 404:
+            return False
+        r.raise_for_status()
+        tmp = dest.with_suffix(dest.suffix + ".tmp")
+        tmp.write_bytes(r.content)
+        tmp.rename(dest)
         return True

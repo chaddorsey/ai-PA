@@ -135,6 +135,32 @@ def highlights_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/clip/{event_id}", response_class=HTMLResponse)
+async def clip_permalink(event_id: str, request: Request) -> HTMLResponse:
+    """Permalink page for a single highlight — easily shareable URL.
+
+    The fetch happens client-side after the page loads, so the page
+    template itself is small + cacheable. The clip metadata (and
+    favorite/demote state) comes from /api/highlights/<id>.
+    """
+    return templates.TemplateResponse(
+        "clip.html",
+        {"request": request, "event_id": event_id, "v": ASSET_VERSION},
+    )
+
+
+@app.get("/api/highlights/{event_id}")
+async def get_highlight(event_id: str) -> Any:
+    """Single highlight metadata — proxies curator's GET /highlights/<id>."""
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/highlights/{event_id}", timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {"status": "ok"}
@@ -268,6 +294,8 @@ async def list_highlights(
     since: float | None = Query(default=None),
     until: float | None = Query(default=None),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted)$"),
+    time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> Any:
@@ -275,6 +303,8 @@ async def list_highlights(
         raise HTTPException(status_code=400, detail="unknown camera")
     params: dict[str, Any] = {
         "min_score": min_score,
+        "bucket": bucket,
+        "time_of_day": time_of_day,
         "limit": limit,
         "offset": offset,
     }
@@ -286,6 +316,45 @@ async def list_highlights(
         params["until"] = until
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/highlights", params=params, timeout=10.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+# ---------------------------------------------------------------------------
+# Family-vote actions. The user's email comes from Cloudflare Access via
+# the cf-access-authenticated-user-email header (CF sets it on every
+# authenticated request). We forward it to the curator as the `by` field.
+# ---------------------------------------------------------------------------
+
+def _actor_email(request: Request) -> str | None:
+    return request.headers.get("cf-access-authenticated-user-email")
+
+
+@app.post("/api/highlights/{event_id}/favorite")
+async def favorite(event_id: str, request: Request) -> Any:
+    return await _post_action(event_id, "favorite", _actor_email(request))
+
+
+@app.post("/api/highlights/{event_id}/demote")
+async def demote(event_id: str, request: Request) -> Any:
+    return await _post_action(event_id, "demote", _actor_email(request))
+
+
+@app.post("/api/highlights/{event_id}/clear")
+async def clear(event_id: str, request: Request) -> Any:
+    return await _post_action(event_id, "clear", _actor_email(request))
+
+
+async def _post_action(event_id: str, action: str, by: str | None) -> Any:
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{CURATOR_API}/highlights/{event_id}/{action}",
+            json={"by": by},
+            timeout=10.0,
+        )
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
