@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Labels we care about. COCO-80 has no "fox", so we copy dog/cat events
 # at all hours and tag with fox_likelihood. The viewer can filter.
-INTERESTING_LABELS = {"dog", "cat"}
+INTERESTING_LABELS = {"animal", "dog", "cat"}  # animal = MegaDetector, dog/cat = COCO fallback
 
 # Always-copy threshold. Even daytime "probably a pet" events still get
 # saved because the user can re-classify (or we'll add a person-with-dog

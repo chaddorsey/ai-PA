@@ -1,9 +1,16 @@
 """Fox-likelihood scoring.
 
 Foxes are crepuscular — most active at dawn and dusk, also through the
-night. Daytime dog/cat detections are more likely to be a neighbor's pet
-or a stray cat. We don't auto-discard anything; we just tag with a
-likelihood score so the viewer + assistant can filter.
+night. The detector's "animal" label (MegaDetector) covers any animal
+including the neighbor's pet, raccoons, deer, etc. We don't auto-
+discard anything; we just tag with a likelihood score so the viewer +
+assistant can filter.
+
+This version supports both:
+  - MegaDetector labels (animal/person/vehicle) — primary path, after
+    the v5a swap. "animal" gets the full time-weighting curve.
+  - Legacy COCO labels (dog/cat) — fallback if model is reverted to
+    the YOLO11-S COCO-80 setup. dog/cat both proxy "animal".
 
 Once we add zones (e.g. mark the actual den area), we'll layer in a
 zone-overlap factor here. For now, time-of-day only.
@@ -28,19 +35,24 @@ _HOURLY_SCORE = {
 }
 
 
+# Labels that could plausibly be a fox under the active model.
+_ANIMAL_LABELS = {"animal", "dog", "cat"}
+
+
 def fox_likelihood(start_time: float, label: str, score: float) -> float:
     """Return 0.0–1.0 likelihood that this Frigate event is a fox.
 
     Args:
         start_time: unix epoch seconds (event start in Frigate)
-        label: Frigate-detected label ("dog", "cat", "person", ...)
+        label: Frigate-detected label
+            ("animal" with MegaDetector; "dog"/"cat" with COCO models)
         score: Frigate's own detection confidence (0–1)
 
     Returns:
         Combined score. Higher = more likely fox.
     """
-    if label not in {"dog", "cat"}:
-        return 0.0  # person etc. — never a fox
+    if label not in _ANIMAL_LABELS:
+        return 0.0  # person/vehicle/etc. — never a fox
 
     hour = _dt.datetime.fromtimestamp(start_time).hour
     time_factor = _HOURLY_SCORE.get(hour, 0.5)

@@ -4,6 +4,26 @@
 mqtt:
   enabled: false  # Wire up later when highlight-curator is added (Phase 9)
 
+# Frigate's internal go2rtc — needed for the UI's live preview (WebRTC
+# + MSE). Without streams here, the UI shows "No frames have been
+# received" because there's nothing for jsmpeg/WebRTC to subscribe to.
+# Each entry is a passthrough from the host go2rtc relay where the
+# actual camera RTSP termination happens.
+go2rtc:
+  streams:
+    fox_den_1:
+      - rtsp://host.docker.internal:8555/fox_den_1
+    fox_den_1_sub:
+      - rtsp://host.docker.internal:8555/fox_den_1_sub
+    fox_den_2:
+      - rtsp://host.docker.internal:8555/fox_den_2
+    fox_den_2_sub:
+      - rtsp://host.docker.internal:8555/fox_den_2_sub
+    fox_den_3:
+      - rtsp://host.docker.internal:8555/fox_den_3
+    fox_den_3_sub:
+      - rtsp://host.docker.internal:8555/fox_den_3_sub
+
 detectors:
   # Apple Silicon detector running on the macOS host (FrigateDetector.app).
   # Started by launchd: com.ai-pa.frigate-detector
@@ -12,22 +32,26 @@ detectors:
     endpoint: tcp://host.docker.internal:5555
 
 model:
-  # YOLO11-S exported via ultralytics at 640x640. Bigger input means
-  # the model sees ~4x more pixels than the previous 320x320, which
-  # is the single biggest accuracy lever for small/distant objects
-  # like a fox at the den. Inference cost is ~3-5x but still <50ms
-  # on M4/ANE so easily real-time for 3 cameras at 5fps.
+  # MegaDetector v5a (Microsoft AI for Earth, agentmorris/megadetector).
+  # YOLOv5x architecture trained on millions of camera-trap images —
+  # specialized for outdoor wildlife, low light, and varying distances
+  # which COCO-80 models handle poorly at our use case. Output is just
+  # 3 classes: animal / person / vehicle. The "fox vs neighbor's dog"
+  # discrimination then happens in the curator's heuristic + zones.
   #
-  # input_dtype: float makes Frigate cast its uint8 frames to float
-  # before sending — required for ultralytics-exported ONNX, which
-  # expects normalized float input.
+  # Larger model than YOLO11-S (~140M params, 534MB ONNX), inference
+  # ~80-150ms on M4/ANE — still real-time for 3 cameras at 5fps.
+  #
+  # Exported via torch.hub yolov5 + torch.onnx.export (legacy tracer).
+  # Falls back to yolo-generic processing — Frigate parses YOLOv5
+  # output format the same way as YOLOv8/v9/v11.
   model_type: yolo-generic
   width: 640
   height: 640
   input_tensor: nchw
   input_dtype: float
-  path: /config/model_cache/yolo.onnx
-  labelmap_path: /labelmap/coco-80.txt
+  path: /config/model_cache/megadetector.onnx
+  labelmap_path: /config/megadetector_labels.txt
 
 # ----------------------------------------------------------------------
 # Role split:
@@ -59,17 +83,14 @@ cameras:
       fps: 5
     objects:
       track:
-        # COCO-80 has no 'fox' label — closest reliable matches are
-        # 'dog' and 'cat'. The highlight curator (Phase 9) will tag
-        # fox vs neighbor's pet using zones + size heuristics.
-        - dog
-        - cat
+        # MegaDetector outputs only animal/person/vehicle. The fox-vs-
+        # neighbor's-pet discrimination happens in the curator
+        # (heuristics.py time-of-day weighting + zones once added).
+        - animal
         - person
+        - vehicle
       filters:
-        dog:
-          min_score: 0.5
-          threshold: 0.6
-        cat:
+        animal:
           min_score: 0.5
           threshold: 0.6
 
@@ -93,14 +114,11 @@ cameras:
       fps: 5
     objects:
       track:
-        - dog
-        - cat
+        - animal
         - person
+        - vehicle
       filters:
-        dog:
-          min_score: 0.5
-          threshold: 0.6
-        cat:
+        animal:
           min_score: 0.5
           threshold: 0.6
 
@@ -120,14 +138,11 @@ cameras:
       fps: 5
     objects:
       track:
-        - dog
-        - cat
+        - animal
         - person
+        - vehicle
       filters:
-        dog:
-          min_score: 0.5
-          threshold: 0.6
-        cat:
+        animal:
           min_score: 0.5
           threshold: 0.6
 

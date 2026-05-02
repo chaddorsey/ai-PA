@@ -279,3 +279,4 @@ frigate/*.pt
 # Frigate runtime state — only the explicit config file is tracked
 frigate/config/*
 !frigate/config/config.yml
+!frigate/config/megadetector_labels.txt
