@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import db
+from . import db, notify
 from .frigate_client import FrigateClient
 from .heuristics import fox_likelihood
 
@@ -118,6 +118,14 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
         "Saved %s [%s] camera=%s label=%s likelihood=%.2f duration=%.1fs",
         event_id, _fmt(start_time), camera, label, likelihood, end_time - start_time,
     )
+
+    # Push notification (no-op if NTFY_TOPIC unset or below threshold).
+    # Idempotent: only marks notified if send succeeded, but the upsert
+    # path above already short-circuits re-processing of known events,
+    # so we won't double-notify.
+    fresh = db.get_highlight(db_path, event_id)
+    if fresh and notify.maybe_notify(fresh):
+        db.mark_notified(db_path, event_id, time.time())
 
 
 def promote(client: FrigateClient, highlights_root: Path, db_path: Path, event_id: str) -> dict:

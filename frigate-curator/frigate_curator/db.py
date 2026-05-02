@@ -46,9 +46,18 @@ _MIGRATIONS = [
     "ALTER TABLE highlights ADD COLUMN demoted INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE highlights ADD COLUMN last_action_by TEXT",
     "ALTER TABLE highlights ADD COLUMN last_action_at REAL",
+    "ALTER TABLE highlights ADD COLUMN notified_at REAL",
     "CREATE INDEX IF NOT EXISTS highlights_favorited ON highlights (favorited, start_time DESC)",
     "CREATE INDEX IF NOT EXISTS highlights_demoted   ON highlights (demoted, start_time DESC)",
 ]
+
+
+def mark_notified(db_path: Path, event_id: str, ts: float) -> None:
+    with connect(db_path) as conn:
+        conn.execute(
+            "UPDATE highlights SET notified_at = ? WHERE event_id = ?",
+            [ts, event_id],
+        )
 
 
 def init(db_path: Path) -> None:

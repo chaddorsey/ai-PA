@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import curator, db
+from . import curator, db, notify
 from .frigate_client import FrigateClient
 
 
@@ -35,7 +35,10 @@ def _load_dotenv(path: Path = Path("/Volumes/main-drive/ai-PA/.env")) -> None:
     """
     if not path.is_file():
         return
-    allow = {"FRIGATE_PASS", "FRIGATE_USER", "FRIGATE_BASE_URL"}
+    allow = {
+        "FRIGATE_PASS", "FRIGATE_USER", "FRIGATE_BASE_URL",
+        "NTFY_TOPIC", "NTFY_BASE_URL", "FOX_PUBLIC_BASE_URL", "NOTIFY_THRESHOLD",
+    }
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -59,6 +62,15 @@ HIGHLIGHTS_ROOT = Path(os.environ.get("HIGHLIGHTS_ROOT", "/Volumes/main-filestor
 DB_PATH = Path(os.environ.get("CURATOR_DB", str(HIGHLIGHTS_ROOT / "index.db")))
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "5"))
 
+# Notification config. NTFY_TOPIC empty disables all push (default).
+# Set in .env to a long unguessable string; share with family in the
+# ntfy iOS/Android app. Threshold is fox_likelihood; 0.55 ≈ "above
+# baseline noise" given heuristics' time/confidence weighting.
+NTFY_BASE_URL = os.environ.get("NTFY_BASE_URL", "https://ntfy.sh")
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "").strip()
+FOX_PUBLIC_BASE_URL = os.environ.get("FOX_PUBLIC_BASE_URL", "https://foxes.cd-ai-pa.work")
+NOTIFY_THRESHOLD = float(os.environ.get("NOTIFY_THRESHOLD", "0.55"))
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("frigate_curator")
@@ -76,6 +88,11 @@ _client = FrigateClient(FRIGATE_BASE_URL, FRIGATE_USER, FRIGATE_PASS)
 def _startup() -> None:
     HIGHLIGHTS_ROOT.mkdir(parents=True, exist_ok=True)
     db.init(DB_PATH)
+    notify.configure(NTFY_BASE_URL, NTFY_TOPIC or None, FOX_PUBLIC_BASE_URL, NOTIFY_THRESHOLD)
+    if NTFY_TOPIC:
+        logger.info("ntfy push enabled: %s/%s threshold=%.2f", NTFY_BASE_URL, NTFY_TOPIC, NOTIFY_THRESHOLD)
+    else:
+        logger.info("ntfy push disabled (NTFY_TOPIC not set)")
     if not FRIGATE_PASS:
         logger.error("FRIGATE_PASS not set; curator will fail to authenticate. Set it in .env.")
         return
@@ -173,6 +190,22 @@ def get_stats() -> dict[str, Any]:
 @app.post("/promote/{event_id}")
 def promote_event(event_id: str) -> dict[str, Any]:
     return curator.promote(_client, HIGHLIGHTS_ROOT, DB_PATH, event_id)
+
+
+@app.post("/notify/test")
+def notify_test() -> dict[str, Any]:
+    """Send a synthetic ntfy push to confirm config + family subscriptions."""
+    if not NTFY_TOPIC:
+        raise HTTPException(status_code=400, detail="NTFY_TOPIC not configured")
+    fake = {
+        "event_id": "test-" + str(int(__import__("time").time())),
+        "camera": "test",
+        "label": "test",
+        "duration_s": 1.0,
+        "fox_likelihood": 0.99,
+    }
+    sent = notify.maybe_notify(fake)
+    return {"sent": sent, "topic": NTFY_TOPIC, "threshold": NOTIFY_THRESHOLD}
 
 
 # ---------------------------------------------------------------------------
