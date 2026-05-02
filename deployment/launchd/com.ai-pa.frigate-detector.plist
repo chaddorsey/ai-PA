@@ -60,5 +60,30 @@
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
+
+    <!--
+        Resource ceilings — keep WindowServer alive under load.
+        2026-05-02: kernel panic in AppleAVD with compressor segments
+        at 99% (memory pressure starved the display server's watchdog).
+        - Nice=5 lowers scheduling priority so WindowServer wins.
+        - ProcessType=Adaptive marks this as best-effort (lower jetsam
+          priority on memory pressure).
+        - Data limit caps heap; ANE inference itself runs in firmware
+          and doesn't count against this.
+    -->
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>ProcessType</key>
+    <string>Adaptive</string>
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>Data</key>
+        <integer>8589934592</integer>
+    </dict>
+    <key>HardResourceLimits</key>
+    <dict>
+        <key>Data</key>
+        <integer>8589934592</integer>
+    </dict>
 </dict>
 </plist>

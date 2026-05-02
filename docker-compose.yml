@@ -1855,6 +1855,14 @@ services:
     restart: unless-stopped
     privileged: false
     shm_size: "256mb"  # Bump if adding more cameras (rule of thumb: 64MB per camera)
+    # Resource ceilings — prevent ffmpeg decode loops from squeezing
+    # WindowServer and triggering an AppleAVD watchdog panic (seen
+    # 2026-05-02: kernel panic with compressor segments at 99%).
+    # 3 cameras × 704×480 @ 5fps software-decoded is well under 2GB
+    # in steady state; 4G leaves headroom for spikes.
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 4
     networks: [pa-internal]
     extra_hosts:
       # Lets the container reach the FrigateDetector app on the macOS host.

@@ -48,5 +48,12 @@
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
+
+    <!-- Lower scheduling priority + adaptive jetsam class — keep the
+         RTSP relay from competing with WindowServer under load. -->
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>ProcessType</key>
+    <string>Adaptive</string>
 </dict>
 </plist>

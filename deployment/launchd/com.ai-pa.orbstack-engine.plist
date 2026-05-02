@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.orbstack-engine</string>
+
+    <!--
+        Belt-and-suspenders Docker-engine startup.
+
+        OrbStack already has app.start_at_login=true, but after a kernel
+        panic (2026-05-02 AppleAVD watchdog) the engine came back stopped
+        even though the GUI relaunched. This LaunchAgent calls
+        `orbctl start` at login, which is idempotent (no-op if already
+        running) and guarantees the Docker socket is available so all
+        compose services come back up.
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/dorseyhomeserver/.orbstack/bin/orbctl</string>
+        <string>start</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- One-shot: don't restart, idempotent at boot only. -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/orbstack-engine-launch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/orbstack-engine-launch.log</string>
+</dict>
+</plist>
