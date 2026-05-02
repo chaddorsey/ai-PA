@@ -1789,6 +1789,111 @@ services:
       # 127.0.0.1:8901 is for host-side curl health checks and manual webhook tests.
       - "127.0.0.1:8901:8901"
 
+  # ----------------------------------------------------------------------
+  # Frigate — NVR + object detection for the front-yard fox den.
+  #
+  # Detection runs on the Apple Neural Engine via the FrigateDetector
+  # macOS app (launchd: com.ai-pa.frigate-detector), which exposes a
+  # ZMQ endpoint on host port 5555. The container connects to it via
+  # host.docker.internal:5555 — no GPU/Coral needed.
+  #
+  # Recordings + clips live on the Synology DS220j mounted at
+  # /Volumes/fox-cam (launchd: com.ai-pa.mount-fox-cam). The host bind
+  # mount means a NAS reboot will surface as I/O errors in the container,
+  # not a vanished volume — Frigate handles this gracefully.
+  #
+  # See deployment/synology/ for the mount infra and frigate/README.md
+  # for camera/model setup.
+  # ----------------------------------------------------------------------
+
+  # ----------------------------------------------------------------------
+  # fox-cam-public — read-only viewer service for external family/friends.
+  #
+  # Serves WebRTC live (proxied to host go2rtc) + curated highlights
+  # (proxied to host frigate-curator). Auth is enforced by Cloudflare
+  # Access in front of cloudflare-tunnel; this service additionally
+  # requires a Cf-Access-Jwt-Assertion header as defense in depth.
+  #
+  # Deliberately minimal egress: outbound HTTP only goes to
+  # host.docker.internal:1985 (go2rtc) and :5141 (curator). It cannot
+  # see Letta, Supabase, or any other pa-internal service even though
+  # it shares the network — there are no inbound paths from this
+  # service to those, only the cloudflare-tunnel ingress on 8080.
+  # ----------------------------------------------------------------------
+  fox-cam-public:
+    build:
+      context: ./fox-cam-public
+    container_name: fox-cam-public
+    restart: unless-stopped
+    networks: [pa-internal]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    expose:
+      - "8080"
+    # Host port only published when FOX_CAM_LOCAL_PORT is set. Use this
+    # for local browser testing (`FOX_CAM_LOCAL_PORT=8090 docker-compose
+    # up -d fox-cam-public` → http://127.0.0.1:8090). Leave unset in
+    # production so the only entry path is the cloudflare-tunnel.
+    ports:
+      - "127.0.0.1:${FOX_CAM_LOCAL_PORT:-0}:8080"
+    environment:
+      GO2RTC_API: "http://host.docker.internal:1985"
+      CURATOR_API: "http://host.docker.internal:5141"
+      # Set to "false" temporarily to allow direct localhost testing
+      # before wiring up Cloudflare Access. Default is "true".
+      REQUIRE_CF_ACCESS: "${FOX_CAM_REQUIRE_CF_ACCESS:-true}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:0.17.1-standard-arm64
+    container_name: frigate
+    restart: unless-stopped
+    privileged: false
+    shm_size: "256mb"  # Bump if adding more cameras (rule of thumb: 64MB per camera)
+    networks: [pa-internal]
+    extra_hosts:
+      # Lets the container reach the FrigateDetector app on the macOS host.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5000:5000"   # Web UI (unauth, LAN-only)
+      - "8971:8971"   # Auth web UI
+      - "8554:8554"   # RTSP restream (for downstream consumers)
+      - "1984:1984"   # go2rtc API
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./frigate/config:/config
+      - ./frigate/model_cache:/config/model_cache
+      # Frigate writes only short event/alert clips + snapshots + its
+      # internal SQLite DB. Synology Surveillance Station handles bulk
+      # 24/7 recording separately (different RTSP client, its own storage).
+      # Local disk avoids NFS-via-Docker headaches and gives Frigate
+      # fast I/O for its SQLite database.
+      - ./frigate/media:/media/frigate
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000  # 1GB
+    environment:
+      FRIGATE_RTSP_PASSWORD: "${FRIGATE_RTSP_PASSWORD:-changeme}"
+      # Camera credentials referenced as ${FRIGATE_FOX_CAM_USER} /
+      # ${FRIGATE_FOX_CAM_PASS} in frigate/config/config.yml. Frigate's
+      # config-env interpolation only picks up vars matching the FRIGATE_*
+      # allowlist, hence the FRIGATE_ prefix. Values come from
+      # /Volumes/main-drive/ai-PA/.env via docker-compose substitution.
+      FRIGATE_FOX_CAM_USER: "${FOX_CAM_USER}"
+      FRIGATE_FOX_CAM_PASS: "${FOX_CAM_PASS}"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5000/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 
 volumes:
   supabase_db:

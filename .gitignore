@@ -264,3 +264,18 @@ smaug/
 smaug-data/
 cli-proxy-api/auths/
 cli-proxy-api/logs/
+
+# Fox-cam (Frigate + curator + viewer) generated artifacts
+frigate/build/
+frigate/model_cache/
+frigate/media/
+frigate-curator/venv/
+frigate-curator/*.egg-info/
+frigate-curator/**/__pycache__/
+fox-cam-public/**/__pycache__/
+deployment/go2rtc/go2rtc
+deployment/go2rtc/go2rtc.zip
+frigate/*.pt
+# Frigate runtime state — only the explicit config file is tracked
+frigate/config/*
+!frigate/config/config.yml

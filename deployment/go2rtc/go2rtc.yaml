@@ -1,0 +1,54 @@
+# go2rtc — host-side RTSP relay for the fox-cam Dahuas.
+#
+# Why this exists: Frigate runs in Orbstack Docker, which routes only
+# via the Mac's Internet Sharing bridge (.139.x → en0 → .1.x). The
+# cameras live on .7.x (behind the eero), so the Docker VM cannot
+# reach them directly. go2rtc runs natively on the Mac, talks to the
+# cameras via en1 (.7.x), and re-publishes the streams over RTSP/WebRTC
+# on a host port that the Docker VM CAN reach via host.docker.internal.
+#
+# Camera credentials are read from environment variables sourced from
+# /Volumes/main-drive/ai-PA/.env by the launchd plist before exec:
+#   FOX_CAM_USER, FOX_CAM_PASS
+
+api:
+  # Bind on all interfaces so the fox-cam-public Docker container can
+  # reach this via host.docker.internal:1985. macOS firewall + the fact
+  # that we don't NAT this port to the public internet keeps it private.
+  # If you want it strictly local, add a pf rule blocking inbound 1985
+  # on en0/en1 and leave only the docker bridge interface allowed.
+  listen: ":1985"
+
+rtsp:
+  listen: ":8555"            # RTSP server (re-publish endpoint)
+                              # Frigate connects via host.docker.internal:8555
+  default_query: "video&audio"
+
+webrtc:
+  listen: ":8556"            # optional, for browser-based viewing
+
+log:
+  level: info
+  format: text
+
+streams:
+  fox_den_1:
+    - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.50:554/cam/realmonitor?channel=1&subtype=0
+    - "ffmpeg:fox_den_1#video=copy#audio=copy"
+
+  fox_den_1_sub:
+    - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.50:554/cam/realmonitor?channel=1&subtype=1
+
+  fox_den_2:
+    - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.51:554/cam/realmonitor?channel=1&subtype=0
+    - "ffmpeg:fox_den_2#video=copy#audio=copy"
+
+  fox_den_2_sub:
+    - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.51:554/cam/realmonitor?channel=1&subtype=1
+
+  fox_den_3:
+    - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.52:554/cam/realmonitor?channel=1&subtype=0
+    - "ffmpeg:fox_den_3#video=copy#audio=copy"
+
+  fox_den_3_sub:
+    - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.52:554/cam/realmonitor?channel=1&subtype=1

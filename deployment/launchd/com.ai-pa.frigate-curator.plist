@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.frigate-curator</string>
+
+    <!--
+        Polls Frigate's events API and copies fox-candidate clips into
+        /Volumes/main-filestore/frigate-highlights/. Runs natively on
+        the macOS host because Docker-on-Mac NFS / cross-mount issues
+        forced us to put both Frigate's clips and the highlights store
+        on host paths the daemon-VM can't see cleanly. Native Python
+        avoids that whole class of problem.
+
+        See frigate-curator/README and frigate-curator/frigate_curator/
+        for the implementation.
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Volumes/main-drive/ai-PA/frigate-curator/venv/bin/python</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>frigate_curator.main:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>5141</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Volumes/main-drive/ai-PA/frigate-curator</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/frigate-curator/curator.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/frigate-curator/curator.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>FRIGATE_BASE_URL</key>
+        <string>https://localhost:8971</string>
+        <key>FRIGATE_USER</key>
+        <string>admin</string>
+        <key>HIGHLIGHTS_ROOT</key>
+        <string>/Volumes/main-filestore/frigate-highlights</string>
+        <key>POLL_INTERVAL_S</key>
+        <string>5</string>
+    </dict>
+</dict>
+</plist>

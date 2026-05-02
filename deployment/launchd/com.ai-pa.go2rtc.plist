@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.go2rtc</string>
+
+    <!--
+        Host-side go2rtc relay for the fox-cam Dahuas. Frigate runs in
+        Docker (Orbstack) which can't reach the .7.x camera subnet
+        directly; go2rtc runs natively, talks to cameras via en1, and
+        re-publishes RTSP on localhost:8555. Frigate then connects via
+        host.docker.internal:8555/<stream_name>.
+
+        See deployment/go2rtc/go2rtc.yaml for the camera→stream map.
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Volumes/main-drive/ai-PA/deployment/go2rtc/run-go2rtc.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Volumes/main-drive/ai-PA/deployment/go2rtc</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/go2rtc/go2rtc.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/go2rtc/go2rtc.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

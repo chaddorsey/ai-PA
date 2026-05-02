@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.frigate-detector</string>
+
+    <!--
+        Runs the Frigate Apple Silicon Detector (ZMQ ONNX server) on the
+        macOS host. Frigate (in Docker) connects to it via
+        host.docker.internal:5555.
+
+        Why a LaunchAgent (user-session) and not a LaunchDaemon:
+        CoreML / Apple Neural Engine access requires the launch context
+        to be inside a logged-in user session. The Mac mini is set up
+        for auto-login as `dorseyhomeserver`, so this fires at boot.
+
+        Model is "AUTO" - Frigate sends the model to the detector at
+        runtime via ZMQ, so no manual ONNX build is needed.
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/FrigateDetector.app/Contents/Resources/app/venv/bin/python</string>
+        <string>/Applications/FrigateDetector.app/Contents/Resources/app/detector/zmq_onnx_client.py</string>
+        <string>--model</string>
+        <string>AUTO</string>
+        <string>--endpoint</string>
+        <string>tcp://0.0.0.0:5555</string>
+        <string>--providers</string>
+        <string>CoreMLExecutionProvider</string>
+        <string>CPUExecutionProvider</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Applications/FrigateDetector.app/Contents/Resources/app</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/FrigateDetector/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/FrigateDetector/launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

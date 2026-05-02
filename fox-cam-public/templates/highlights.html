@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fox Cam — Highlights</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ v }}">
+</head>
+<body>
+  <header>
+    <h1>🦊 Fox Cam</h1>
+    <nav>
+      <a href="/">Live</a>
+      <a href="/highlights" class="active">Highlights</a>
+    </nav>
+  </header>
+  <main>
+    <div class="filters">
+      <label>Camera:
+        <select id="filter-camera">
+          <option value="">All</option>
+          {% for s in streams %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Min fox-likelihood:
+        <select id="filter-score">
+          <option value="0">All</option>
+          <option value="0.5">≥ 0.5 (likely)</option>
+          <option value="0.8" selected>≥ 0.8 (very likely)</option>
+        </select>
+      </label>
+    </div>
+    <div id="highlights" class="grid"></div>
+    <button id="load-more">Load more</button>
+  </main>
+  <script src="/static/highlights.js?v={{ v }}"></script>
+</body>
+</html>
