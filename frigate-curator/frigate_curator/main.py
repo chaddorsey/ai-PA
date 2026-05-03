@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import curator, db, notify
+from . import classifier, curator, db, notify
 from .frigate_client import FrigateClient
 
 
@@ -38,6 +38,8 @@ def _load_dotenv(path: Path = Path("/Volumes/main-drive/ai-PA/.env")) -> None:
     allow = {
         "FRIGATE_PASS", "FRIGATE_USER", "FRIGATE_BASE_URL",
         "NTFY_TOPIC", "NTFY_BASE_URL", "FOX_PUBLIC_BASE_URL", "NOTIFY_THRESHOLD",
+        "LITELLM_BASE_URL", "LITELLM_MASTER_KEY",
+        "CLASSIFIER_ENABLED", "CLASSIFIER_MODEL", "CLASSIFIER_FRAMES",
     }
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -71,6 +73,16 @@ NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "").strip()
 FOX_PUBLIC_BASE_URL = os.environ.get("FOX_PUBLIC_BASE_URL", "https://foxes.cd-ai-pa.work")
 NOTIFY_THRESHOLD = float(os.environ.get("NOTIFY_THRESHOLD", "0.55"))
 
+# Classifier (Track 1) — vision-model species ID via litellm. Calibrated
+# on a 22-clip spike (2026-05-03): gpt-4o-mini at 91% accuracy with
+# 100% wildlife recall and 100% empty-frame specificity. Gemini 2.0
+# Flash is 86%/100%/78% — cheaper but more false-positive-prone.
+LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_API_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
+CLASSIFIER_ENABLED = os.environ.get("CLASSIFIER_ENABLED", "false").lower() == "true"
+CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "gpt-4o-mini/fox-cam")
+CLASSIFIER_FRAMES = int(os.environ.get("CLASSIFIER_FRAMES", "5"))
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("frigate_curator")
@@ -93,6 +105,16 @@ def _startup() -> None:
         logger.info("ntfy push enabled: %s/%s threshold=%.2f", NTFY_BASE_URL, NTFY_TOPIC, NOTIFY_THRESHOLD)
     else:
         logger.info("ntfy push disabled (NTFY_TOPIC not set)")
+
+    classifier.configure(
+        LITELLM_BASE_URL, LITELLM_API_KEY, CLASSIFIER_MODEL,
+        CLASSIFIER_FRAMES, CLASSIFIER_ENABLED,
+    )
+    if CLASSIFIER_ENABLED:
+        logger.info("Classifier enabled: model=%s frames=%d via %s",
+                    CLASSIFIER_MODEL, CLASSIFIER_FRAMES, LITELLM_BASE_URL)
+    else:
+        logger.info("Classifier disabled (set CLASSIFIER_ENABLED=true to turn on)")
     if not FRIGATE_PASS:
         logger.error("FRIGATE_PASS not set; curator will fail to authenticate. Set it in .env.")
         return
@@ -190,6 +212,45 @@ def get_stats() -> dict[str, Any]:
 @app.post("/promote/{event_id}")
 def promote_event(event_id: str) -> dict[str, Any]:
     return curator.promote(_client, HIGHLIGHTS_ROOT, DB_PATH, event_id)
+
+
+@app.post("/classify/{event_id}")
+def classify_event(event_id: str) -> dict[str, Any]:
+    """Run the classifier on an existing highlight (manual trigger).
+
+    Useful for back-filling clips saved before the classifier existed,
+    or re-classifying after a prompt/model change.
+    """
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="not found")
+    path = HIGHLIGHTS_ROOT / h["clip_path"]
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="clip file missing")
+    # Force-enable for manual call even if env says disabled.
+    was_enabled = classifier._ENABLED
+    classifier._ENABLED = True
+    try:
+        verdict = classifier.classify_clip(path)
+    finally:
+        classifier._ENABLED = was_enabled
+    if verdict is None:
+        raise HTTPException(status_code=503, detail="classifier not configured")
+    raw = "; ".join(f"{f.species}/{f.confidence}: {f.description}"
+                    for f in verdict.frames)
+    import time as _time
+    db.update_classification(
+        DB_PATH, event_id, verdict.species, verdict.confidence,
+        classifier._MODEL, _time.time(), raw,
+    )
+    return {
+        "event_id": event_id,
+        "species": verdict.species,
+        "confidence": verdict.confidence,
+        "is_wildlife": verdict.is_wildlife,
+        "frames": [{"species": f.species, "confidence": f.confidence,
+                    "description": f.description} for f in verdict.frames],
+    }
 
 
 @app.post("/notify/test")

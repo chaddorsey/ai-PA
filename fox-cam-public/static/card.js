@@ -29,9 +29,22 @@
     div.className = "meta";
     const t = new Date(h.start_time * 1000).toLocaleString();
     const fox = (h.fox_likelihood * 100).toFixed(0);
+    // Species badge — only render if classifier ran. Different colors
+    // for fox vs other wildlife vs none/person/vehicle so family can
+    // scan the gallery and ignore the not-fox cards quickly.
+    let speciesHTML = "";
+    if (h.species) {
+      const cls = "species-" + (
+        h.species === "fox" ? "fox" :
+        ["none","person","vehicle","error"].includes(h.species) ? "muted" :
+        "other"
+      );
+      const conf = h.species_confidence || "";
+      speciesHTML = `<span class="species ${cls}" title="${conf} confidence">${h.species}</span> · `;
+    }
     div.innerHTML = `
       <a class="time" href="/clip/${h.event_id}">${t}</a>
-      <div>${h.camera} · ${h.label} · ${h.duration_s.toFixed(1)}s
+      <div>${speciesHTML}${h.camera} · ${h.label} · ${h.duration_s.toFixed(1)}s
         · <span class="score">fox ${fox}%</span></div>`;
     return div;
   }

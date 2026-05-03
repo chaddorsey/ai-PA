@@ -47,9 +47,29 @@ _MIGRATIONS = [
     "ALTER TABLE highlights ADD COLUMN last_action_by TEXT",
     "ALTER TABLE highlights ADD COLUMN last_action_at REAL",
     "ALTER TABLE highlights ADD COLUMN notified_at REAL",
+    "ALTER TABLE highlights ADD COLUMN species TEXT",
+    "ALTER TABLE highlights ADD COLUMN species_confidence TEXT",
+    "ALTER TABLE highlights ADD COLUMN classifier_model TEXT",
+    "ALTER TABLE highlights ADD COLUMN classifier_at REAL",
+    "ALTER TABLE highlights ADD COLUMN classifier_raw TEXT",
     "CREATE INDEX IF NOT EXISTS highlights_favorited ON highlights (favorited, start_time DESC)",
     "CREATE INDEX IF NOT EXISTS highlights_demoted   ON highlights (demoted, start_time DESC)",
+    "CREATE INDEX IF NOT EXISTS highlights_species   ON highlights (species, start_time DESC)",
 ]
+
+
+def update_classification(
+    db_path: Path, event_id: str,
+    species: str, confidence: str,
+    model: str, at: float, raw: str,
+) -> None:
+    with connect(db_path) as conn:
+        conn.execute(
+            "UPDATE highlights SET species = ?, species_confidence = ?, "
+            "classifier_model = ?, classifier_at = ?, classifier_raw = ? "
+            "WHERE event_id = ?",
+            [species, confidence, model, at, raw, event_id],
+        )
 
 
 def mark_notified(db_path: Path, event_id: str, ts: float) -> None:

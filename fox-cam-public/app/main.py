@@ -296,6 +296,7 @@ async def list_highlights(
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
     bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
+    species_filter: str = Query(default="", regex="^(|wildlife|fox|unclassified)$"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> Any:
@@ -318,7 +319,24 @@ async def list_highlights(
         r = await client.get(f"{CURATOR_API}/highlights", params=params, timeout=10.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
-    return r.json()
+    body = r.json()
+    # Apply species filter client-side (curator doesn't know the
+    # 'wildlife' bucket — that's a viewer-level concept derived from
+    # species). Cheap; result sets are bounded.
+    if species_filter:
+        items = body.get("items", [])
+        if species_filter == "wildlife":
+            kept = [h for h in items if h.get("species") not in
+                    (None, "", "none", "person", "vehicle", "error")]
+        elif species_filter == "fox":
+            kept = [h for h in items if h.get("species") == "fox"]
+        elif species_filter == "unclassified":
+            kept = [h for h in items if not h.get("species")]
+        else:
+            kept = items
+        body["items"] = kept
+        body["count"] = len(kept)
+    return body
 
 
 # ---------------------------------------------------------------------------

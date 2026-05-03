@@ -7,6 +7,7 @@
   const filterCamera = document.getElementById("filter-camera");
   const filterTime = document.getElementById("filter-time");
   const filterDate = document.getElementById("filter-date");
+  const filterSpecies = document.getElementById("filter-species");
   const tabs = document.querySelectorAll(".tab");
 
   // Defensive — if any required element is missing, this isn't the
@@ -48,6 +49,7 @@
       offset,
     });
     if (filterCamera.value) params.append("camera", filterCamera.value);
+    if (filterSpecies.value) params.append("species_filter", filterSpecies.value);
     const range = dateRange();
     if (range.since !== undefined) params.append("since", range.since);
     if (range.until !== undefined) params.append("until", range.until);
@@ -86,6 +88,7 @@
   filterCamera.addEventListener("change", reset);
   filterTime.addEventListener("change", reset);
   filterDate.addEventListener("change", reset);
+  filterSpecies.addEventListener("change", reset);
   loadMore.addEventListener("click", load);
   load();
 })();

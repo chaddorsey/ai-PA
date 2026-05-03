@@ -230,6 +230,19 @@ button:hover { background: #1d4fd1; }
 }
 .highlight .meta a.time:hover { border-bottom-color: #fa9f3b; }
 
+/* Species badge from VLM classifier (Track 1). */
+.species {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.species-fox    { background: #3a2a18; color: #fa9f3b; border: 1px solid #c47e2a; }
+.species-other  { background: #1a2a18; color: #88c47e; border: 1px solid #3e8c5e; }
+.species-muted  { background: #1a1d24; color: #888;    border: 1px solid #2a2f37; }
+
 .info-card .meta { color: #888; font-style: italic; }
 
 .toast {

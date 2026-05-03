@@ -222,6 +222,41 @@ model_list:
       model: "fireworks_ai/accounts/fireworks/models/gpt-oss-120b"
       api_key: "os.environ/FIREWORKS_AI_API_KEY"
 
+  # --- DeepSeek V4 Pro (latest reasoning model on Fireworks) ---
+  - model_name: "deepseek-v4-pro"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/deepseek-v4-pro"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  # =========================================================================
+  # GOOGLE (Gemini) — vision-capable, used by fox-cam classifier (Track 1)
+  # =========================================================================
+
+  - model_name: "gemini-2.0-flash"
+    litellm_params:
+      model: "gemini/gemini-2.0-flash"
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: "gemini-2.5-flash"
+    litellm_params:
+      model: "gemini/gemini-2.5-flash"
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # =========================================================================
+  # FOX-CAM CLASSIFIER aliases (Track 1) — same models, scoped name for
+  # cost attribution.
+  # =========================================================================
+
+  - model_name: "gpt-4o-mini/fox-cam"
+    litellm_params:
+      model: "openai/gpt-4o-mini"
+      api_key: "os.environ/OPENAI_KEY_FALLBACK"
+
+  - model_name: "gemini-2.0-flash/fox-cam"
+    litellm_params:
+      model: "gemini/gemini-2.0-flash"
+      api_key: "os.environ/GEMINI_API_KEY"
+
 litellm_settings:
   drop_params: true
   request_timeout: 120
