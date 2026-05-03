@@ -67,12 +67,42 @@
   const main = document.getElementById("live-main");
   const cams = document.querySelectorAll(".cam[data-stream]");
 
+  // Track the active panzoom instance so we can tear it down on mode
+  // change. Only one camera is spotlighted at a time, so one instance.
+  let activeZoom = null;
+
   function setMode(mode, spotlight) {
     main.dataset.mode = mode;
+    // Tear down any prior panzoom whenever the mode changes — different
+    // spotlight = different video element = need a fresh instance.
+    if (activeZoom) {
+      try { activeZoom.dispose(); } catch (_) {}
+      activeZoom = null;
+    }
+    cams.forEach((c) => c.classList.remove("is-zoomed"));
+
     if (spotlight) {
       main.dataset.spotlight = spotlight;
       cams.forEach((c) => {
         c.classList.toggle("is-spotlight", c.dataset.stream === spotlight);
+      });
+      // Attach panzoom to the new spotlight video. Defer one frame so
+      // CSS-driven resize completes before panzoom measures bounds.
+      requestAnimationFrame(() => {
+        const cam = document.querySelector(`.cam[data-stream="${spotlight}"]`);
+        if (!cam) return;
+        const video = cam.querySelector("video");
+        if (!video || typeof window.panzoom !== "function") return;
+        activeZoom = window.panzoom(video, {
+          maxZoom: 8,
+          minZoom: 1,
+          bounds: true,
+          boundsPadding: 0.95,
+          smoothScroll: false,
+          // Disable panzoom's own double-click handling — we have our own.
+          zoomDoubleClickSpeed: 1,
+        });
+        wireZoomControls(cam, activeZoom, video);
       });
     } else {
       delete main.dataset.spotlight;
@@ -80,11 +110,75 @@
     }
   }
 
+  // Hook up the corner +/-/⛶ buttons + double-click + keyboard reset.
+  function wireZoomControls(cam, pz, video) {
+    const btnIn  = cam.querySelector(".zoom-in");
+    const btnOut = cam.querySelector(".zoom-out");
+    const btnFit = cam.querySelector(".zoom-fit");
+
+    const zoomAt = (factor, x, y) => {
+      const r = video.getBoundingClientRect();
+      pz.smoothZoom(x ?? (r.left + r.width / 2),
+                    y ?? (r.top + r.height / 2), factor);
+    };
+
+    btnIn  && btnIn.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1.5); });
+    btnOut && btnOut.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1 / 1.5); });
+    btnFit && btnFit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      pz.moveTo(0, 0);
+      pz.zoomAbs(0, 0, 1);
+    });
+
+    // Double-click anywhere on the video = zoom 2× at cursor.
+    const onDbl = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      zoomAt(2, ev.clientX, ev.clientY);
+    };
+    video.addEventListener("dblclick", onDbl);
+
+    // Track zoom state so cursor reflects pan-vs-zoom-in.
+    pz.on("zoom", () => {
+      const t = pz.getTransform();
+      cam.classList.toggle("is-zoomed", t.scale > 1.01);
+    });
+
+    // Esc / 0 key resets while spotlight is active.
+    const onKey = (ev) => {
+      if (!cam.classList.contains("is-spotlight")) return;
+      if (ev.key === "Escape" || ev.key === "0") {
+        pz.moveTo(0, 0);
+        pz.zoomAbs(0, 0, 1);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+
+    // Stash cleanup for dispose() so we don't leak listeners.
+    const origDispose = pz.dispose.bind(pz);
+    pz.dispose = () => {
+      try {
+        video.removeEventListener("dblclick", onDbl);
+        document.removeEventListener("keydown", onKey);
+      } catch (_) {}
+      origDispose();
+    };
+  }
+
   cams.forEach((cam) => {
     cam.addEventListener("click", (e) => {
-      // Ignore clicks on the native video controls / status area.
+      // Ignore the native video controls, zoom buttons, or any
+      // interaction inside the video while in spotlight (so panning
+      // doesn't bubble up and exit spotlight).
       if (e.target.tagName === "VIDEO" && e.target.controls) return;
+      if (e.target.closest(".zoom-controls")) return;
       const stream = cam.dataset.stream;
+      const inSpotlight = cam.classList.contains("is-spotlight");
+      // Inside the spotlighted video, suppress click-to-collapse so
+      // pan/zoom interactions don't accidentally go back to grid.
+      // Header (h2) and status row outside the video still collapse.
+      if (inSpotlight && e.target.closest(".video-wrap")) return;
+
       if (main.dataset.mode === "grid") {
         setMode("spotlight", stream);
       } else if (main.dataset.spotlight === stream) {

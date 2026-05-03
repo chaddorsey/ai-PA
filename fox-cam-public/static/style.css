@@ -116,6 +116,77 @@ main { padding: 1rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto; }
   background: #000;
   aspect-ratio: 16 / 9;
 }
+
+/* Wrapper that holds the live <video> + zoom controls overlay. The
+   wrapper clips so panzoom's transform stays inside the tile. */
+.cam .video-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  overflow: hidden;
+  /* pinch-zoom (not none) so OS pinch still works in browser-tab mode;
+     panzoom intercepts gestures on the video element itself. */
+  touch-action: pinch-zoom;
+}
+.cam .video-wrap video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* panzoom transforms this; transform-origin must be top-left */
+  transform-origin: 0 0;
+}
+
+/* Zoom controls — only shown in spotlight mode. Conventional bottom-right
+   stack like Google Maps / image viewers. Faded by default so they don't
+   distract; lifted to readable on hover. */
+.zoom-controls {
+  position: absolute;
+  bottom: 8px; right: 8px;
+  display: none;            /* hidden in grid; shown in spotlight via rule below */
+  flex-direction: column;
+  gap: 2px;
+  z-index: 5;
+}
+.live-layout[data-mode="spotlight"] .cam.is-spotlight .zoom-controls {
+  display: flex;
+}
+.zoom-btn {
+  width: 32px; height: 32px;
+  margin: 0; padding: 0;
+  background: rgba(15, 17, 22, 0.55);
+  color: #f0f0f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms, background 120ms;
+}
+.zoom-btn:hover { opacity: 1; background: rgba(15, 17, 22, 0.9); }
+.zoom-controls:hover .zoom-btn { opacity: 0.85; }
+
+/* Cursor affordances on the spotlight video — magnifier when not
+   zoomed, grab/grabbing when zoomed and pannable. */
+.live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap {
+  cursor: zoom-in;
+}
+.live-layout[data-mode="spotlight"] .cam.is-spotlight.is-zoomed .video-wrap {
+  cursor: grab;
+}
+.live-layout[data-mode="spotlight"] .cam.is-spotlight.is-zoomed .video-wrap:active {
+  cursor: grabbing;
+}
+
+/* Status row in spotlight gets a small zoom-hint inline; only when in
+   spotlight mode and not yet zoomed (so we stop nagging once they're
+   already using it). */
+.live-layout[data-mode="spotlight"] .cam.is-spotlight:not(.is-zoomed) .status::after {
+  content: "  ·  scroll · drag · pinch · double-click";
+  color: #555;
+  font-size: 0.78rem;
+}
 .cam .status {
   padding: 0.4rem 0.9rem;
   font-size: 0.8rem;
