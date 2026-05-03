@@ -115,19 +115,29 @@
     const btnIn  = cam.querySelector(".zoom-in");
     const btnOut = cam.querySelector(".zoom-out");
     const btnFit = cam.querySelector(".zoom-fit");
+    // Anchor zoom to the WRAPPER's visible center, not the video's
+    // bounding box. The video element moves under pan; the wrapper
+    // doesn't. Using the wrapper guarantees button-zoom always pivots
+    // around the pixel currently at the center of the visible tile.
+    const wrap = cam.querySelector(".video-wrap");
 
     const zoomAt = (factor, x, y) => {
-      const r = video.getBoundingClientRect();
-      pz.smoothZoom(x ?? (r.left + r.width / 2),
-                    y ?? (r.top + r.height / 2), factor);
+      if (x === undefined || y === undefined) {
+        const r = wrap.getBoundingClientRect();
+        x = r.left + r.width / 2;
+        y = r.top + r.height / 2;
+      }
+      pz.smoothZoom(x, y, factor);
     };
 
     btnIn  && btnIn.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1.5); });
     btnOut && btnOut.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1 / 1.5); });
     btnFit && btnFit.addEventListener("click", (e) => {
       e.stopPropagation();
-      pz.moveTo(0, 0);
+      // Reset transform: scale 1, translate 0,0. video element's
+      // transform-origin is 0,0 so this re-aligns it to the wrap.
       pz.zoomAbs(0, 0, 1);
+      pz.moveTo(0, 0);
     });
 
     // Double-click anywhere on the video = zoom 2× at cursor.
