@@ -51,7 +51,7 @@ Multiple events from one fox visit show as N separate cards. Group by camera + t
 On `/clip/<id>`, add ← / → buttons that walk through the highlights list at the same bucket+filter. Currently family members have to bounce back to /highlights, find their place, and click another.
 
 **F10 — PWA install for fox-cam-public.**
-`manifest.json` + service worker + apple-touch-icon so family can "Add to Home Screen" and get a chromeless app. Also unlocks iOS web push later if we ever want to phase out ntfy.
+`manifest.json` + service worker + apple-touch-icon so family can "Add to Home Screen" and get a chromeless app. Also unlocks iOS web push later if we ever want to phase out ntfy. Full plan: `docs/plans/2026-05-03-fox-cam-pwa-plan.md`. **Bigger than initial sketch** (4–6 hours): CF Access auth interacts with SW caching, live streaming must pass through untouched, iOS has standalone-mode quirks. Deferred until panzoom + main-stream spotlight ship; planning doc captures considerations to keep current work PWA-aware.
 
 ## Low priority — hygiene / infra
 
