@@ -73,6 +73,9 @@ Currently using a subdomain of the PA work domain. Long-term: dedicated public d
 **F16 — Curator: distinguish "still in progress" from stale events.**
 `_tick` skips events with `end_time is None` ("still in progress; we'll see it again next tick when ended"). For very-long-running events (hours-long person on porch), this can hold up the bootstrap window. Add a max-age cutoff (e.g., events with `start_time < now - 1h` and still no end_time get force-finalized at start_time + max_duration). Edge case but real.
 
+**F17 — SSS deep-dive integration (planned, deferred soak).**
+Pull arbitrary-window MP4 from Synology Surveillance Station on demand, cached + idempotent. Family-facing "+30s after this clip" button. Full plan written: `docs/plans/2026-05-03-fox-cam-sss-deep-dive-plan.md`. Levels A (sync pull-then-serve), A.1 (pre-warm on save), B (stream-while-fetching, deferred), C (live RTSP, parked). Pick up after pre/post + threshold soak shows where deep-dive demand actually lives.
+
 ## Architectural / deferred
 
 **FA — Fox-vs-cat-vs-dog-vs-deer multi-class auto-tagging.**

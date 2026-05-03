@@ -32,20 +32,24 @@ detectors:
     endpoint: tcp://host.docker.internal:5555
 
 model:
-  # MegaDetector v5a, with output graph patched from YOLOv5 layout
-  # ([batch, anchors, 4+1+C]) to YOLOv8 layout ([batch, 4+C, anchors]).
-  # The patcher inserts Split → Mul (objectness × class_probs) →
-  # Concat → Transpose at the model output, producing what Frigate's
-  # yolo-generic post-processor expects. See:
-  #   frigate/build/patch_megadetector_to_yolov8.py
-  # Output classes (0-indexed): animal, person, vehicle.
+  # YOLO11-S exported via ultralytics @ 640x640.
+  #
+  # MegaDetector v5a was attempted (see frigate/tools/patch_megadetector_to_yolov8.py)
+  # but the YOLOv5→YOLOv8 output graph patch caused CoreML to hang on
+  # inference (model loaded but inference_speed = 1.4e11ms, every frame
+  # skipped). The patched Split/Mul/Concat/Transpose at the output
+  # apparently breaks CoreML's graph optimization in a way that makes
+  # ANE inference effectively infinite. Revisit with a different patch
+  # approach (e.g., bake the YOLOv5→v8 conversion into a separate
+  # post-processing ONNX, or write a custom Frigate detector plugin
+  # that handles YOLOv5 output natively).
   model_type: yolo-generic
   width: 640
   height: 640
   input_tensor: nchw
   input_dtype: float
-  path: /config/model_cache/megadetector_yolov8.onnx
-  labelmap_path: /config/megadetector_labels.txt
+  path: /config/model_cache/yolo.onnx
+  labelmap_path: /labelmap/coco-80.txt
 
 # ----------------------------------------------------------------------
 # Role split:
@@ -77,21 +81,47 @@ cameras:
       fps: 5
     objects:
       track:
-        # MegaDetector outputs only animal/person/vehicle. The fox-vs-
-        # neighbor's-pet discrimination happens in the curator
-        # (heuristics.py time-of-day weighting + zones once added).
-        - animal
+        # COCO-80 has no 'fox' label — closest reliable proxies are
+        # 'dog' and 'cat'. The curator's fox_likelihood heuristic
+        # tags fox vs neighbor's pet using time-of-day weighting.
+        - dog
+        - cat
         - person
-        - vehicle
       filters:
-        animal:
-          min_score: 0.5
-          threshold: 0.6
+        dog:
+          min_score: 0.35
+          threshold: 0.5
+        cat:
+          min_score: 0.35
+          threshold: 0.5
 
     motion:
       threshold: 17
       contour_area: 8
       improve_contrast: true
+      mask:
+        - 0.853,0.078,0.972,0.078,0.969,0.036,0.857,0.042
+        - 0.004,0.212,0.154,0.156,0.154,0,0,0.003
+        - 0.416,0.106,0.99,0.039,0.994,0.003,0.407,0.003
+    zones:
+      den_exit_2:
+        coordinates: 0.996,0.089,0.418,0.123,0.5,0.989,0.992,0.983
+        loitering_time: 0
+        objects:
+          - cat
+          - dog
+        friendly_name: Den Exit 2
+        inertia: 3
+      den_exit_2_-_side:
+        coordinates: 0.152,0.173,0.007,0.229,0.009,0.994,0.171,0.989
+        loitering_time: 0
+        objects:
+          - cat
+          - dog
+        friendly_name: Den Exit 2 - Side
+    review:
+      alerts:
+        required_zones: den_exit_2
   fox_den_2:
     enabled: true
     ffmpeg:
@@ -108,14 +138,30 @@ cameras:
       fps: 5
     objects:
       track:
-        - animal
+        - dog
+        - cat
         - person
-        - vehicle
       filters:
-        animal:
-          min_score: 0.5
-          threshold: 0.6
+        dog:
+          min_score: 0.35
+          threshold: 0.5
+        cat:
+          min_score: 0.35
+          threshold: 0.5
 
+    motion:
+      mask:
+        - 0.068,0.196,0.867,0.017,0.85,0,0.004,0.008,0.004,0.207
+        - 0.851,0.075,0.964,0.081,0.969,0.036,0.848,0.034
+    zones:
+      exits_in_rocks:
+        coordinates: 
+          0.281,0.559,0.477,0.628,0.631,0.804,0.715,0.682,0.715,0.349,0.707,0.204,0.528,0.159,0.445,0.229
+        loitering_time: 0
+        objects:
+          - cat
+          - dog
+        friendly_name: Exits in Rocks
   fox_den_3:
     enabled: true
     ffmpeg:
@@ -132,27 +178,49 @@ cameras:
       fps: 5
     objects:
       track:
-        - animal
+        - dog
+        - cat
         - person
-        - vehicle
       filters:
-        animal:
-          min_score: 0.5
-          threshold: 0.6
+        dog:
+          min_score: 0.35
+          threshold: 0.5
+        cat:
+          min_score: 0.35
+          threshold: 0.5
 
 # ----------------------------------------------------------------------
 # Recording policy: SHORT alert clips only (SS handles bulk recording).
 # ----------------------------------------------------------------------
+    motion:
+      mask:
+        - 0.787,0.095,0.943,0.106,0.947,0.031,0.783,0.028
+        - 0.772,0.341,0.798,0.196,0.764,0.179,0.734,0.263,0.677,0.268,0.587,0.229,0.523,0.196,0.488,0.207,0.597,0.277,0.686,0.318
+        - 0.004,0.229,0.154,0.087,0.112,0.003,0.004,0.006
+    zones:
+      exit_1_and_yard:
+        coordinates: 
+          0.004,0.263,0.177,0.081,0.736,0.344,0.998,0.542,0.994,0.983,0.009,0.992
+        loitering_time: 0
+        objects:
+          - cat
+          - dog
+        friendly_name: Exit 1 and Yard
 record:
   enabled: true
   alerts:
-    pre_capture: 5
-    post_capture: 5
+    # Generous pre/post — clips draw from the rolling record buffer so
+    # this costs disk only, not CPU. Estimated ceiling at ~30 events/day
+    # across 3 cams × ~30MB/clip × 30d ≈ 30GB. Well within budget and
+    # gives family enough lead-in/lead-out that most "what just happened
+    # before that" questions don't require an SSS deep-dive.
+    pre_capture: 20
+    post_capture: 15
     retain:
       days: 30
   detections:
-    pre_capture: 5
-    post_capture: 5
+    pre_capture: 15
+    post_capture: 10
     retain:
       days: 14
 
@@ -169,3 +237,14 @@ snapshots:
 # 704×480 substreams at 5fps (trivial CPU load).
 
 version: 0.17-0
+semantic_search:
+  enabled: false
+  model_size: small
+face_recognition:
+  enabled: false
+  model_size: small
+lpr:
+  enabled: false
+classification:
+  bird:
+    enabled: true

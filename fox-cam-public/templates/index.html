@@ -14,9 +14,9 @@
       <a href="/highlights">Highlights</a>
     </nav>
   </header>
-  <main class="grid">
+  <main id="live-main" class="live-layout" data-mode="grid">
     {% for stream in streams %}
-    <section class="cam">
+    <section class="cam" data-stream="{{ stream }}">
       <h2>{{ stream }}</h2>
       <video id="v-{{ stream }}" data-stream="{{ stream }}" autoplay muted playsinline></video>
       <div class="status" id="s-{{ stream }}">connecting…</div>

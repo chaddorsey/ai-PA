@@ -57,6 +57,44 @@
     });
   }
 
+  // ---------- Spotlight (click-to-zoom) ----------
+  // Click any tile to make it the spotlight; the others shrink into a
+  // thumbnail rail. Click the spotlight to return to the grid. Streams
+  // stay live across mode switches — moving a video element between
+  // containers via the DOM doesn't tear down WebRTC/MSE connections,
+  // because the underlying MediaSource / MediaStream is bound to the
+  // element, not its position in the tree.
+  const main = document.getElementById("live-main");
+  const cams = document.querySelectorAll(".cam[data-stream]");
+
+  function setMode(mode, spotlight) {
+    main.dataset.mode = mode;
+    if (spotlight) {
+      main.dataset.spotlight = spotlight;
+      cams.forEach((c) => {
+        c.classList.toggle("is-spotlight", c.dataset.stream === spotlight);
+      });
+    } else {
+      delete main.dataset.spotlight;
+      cams.forEach((c) => c.classList.remove("is-spotlight"));
+    }
+  }
+
+  cams.forEach((cam) => {
+    cam.addEventListener("click", (e) => {
+      // Ignore clicks on the native video controls / status area.
+      if (e.target.tagName === "VIDEO" && e.target.controls) return;
+      const stream = cam.dataset.stream;
+      if (main.dataset.mode === "grid") {
+        setMode("spotlight", stream);
+      } else if (main.dataset.spotlight === stream) {
+        setMode("grid");
+      } else {
+        setMode("spotlight", stream);
+      }
+    });
+  });
+
   async function start(video, stream, status) {
     console.log(`[${stream}] start()`);
     const cached = getCachedWebRTCResult();
