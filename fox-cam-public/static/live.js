@@ -78,10 +78,18 @@
     document.body.classList.toggle("spotlight-mode", mode === "spotlight");
     // Tear down any prior panzoom whenever the mode changes — different
     // spotlight = different video element = need a fresh instance.
+    // panzoom.dispose() removes listeners but leaves the transform on
+    // the element, so we explicitly clear it. Otherwise a zoomed video
+    // returns to grid mode with the transform baked in (visible as
+    // "lands offset in the upper-right of the grid tile").
     if (activeZoom) {
       try { activeZoom.dispose(); } catch (_) {}
       activeZoom = null;
     }
+    document.querySelectorAll(".cam video").forEach((v) => {
+      v.style.transform = "";
+      v.style.transformOrigin = "";
+    });
     cams.forEach((c) => c.classList.remove("is-zoomed"));
 
     if (spotlight) {
@@ -225,18 +233,43 @@
     };
   }
 
+  // Track pointer-down position per cam so we can distinguish a real
+  // click from the tail of a drag. A drag that ends outside the
+  // .video-wrap (e.g., past the bottom edge while panning a zoomed
+  // view) would otherwise fire a click on the .cam element and
+  // collapse spotlight — surprising and we leak the zoom transform
+  // back into the grid view.
+  const DRAG_THRESHOLD_PX = 6;
+  const downPos = new WeakMap();
+
   cams.forEach((cam) => {
+    cam.addEventListener("pointerdown", (e) => {
+      downPos.set(cam, { x: e.clientX, y: e.clientY });
+    });
+
     cam.addEventListener("click", (e) => {
-      // Ignore the native video controls, zoom buttons, or any
-      // interaction inside the video while in spotlight (so panning
-      // doesn't bubble up and exit spotlight).
+      // Ignore native video controls, zoom buttons.
       if (e.target.tagName === "VIDEO" && e.target.controls) return;
       if (e.target.closest(".zoom-controls")) return;
+
+      // Was this a click, or the release of a drag? If pointer moved
+      // more than threshold between down and up, treat as drag.
+      const start = downPos.get(cam);
+      if (start) {
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+          downPos.delete(cam);
+          return;
+        }
+      }
+      downPos.delete(cam);
+
       const stream = cam.dataset.stream;
       const inSpotlight = cam.classList.contains("is-spotlight");
-      // Inside the spotlighted video, suppress click-to-collapse so
-      // pan/zoom interactions don't accidentally go back to grid.
-      // Header (h2) and status row outside the video still collapse.
+      // Inside the spotlighted video, only the explicit ⛶ button or
+      // the surrounding header/status row should collapse. Clicks
+      // inside the .video-wrap are reserved for zoom/pan interactions.
       if (inSpotlight && e.target.closest(".video-wrap")) return;
 
       if (main.dataset.mode === "grid") {
