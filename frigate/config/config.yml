@@ -23,6 +23,10 @@ go2rtc:
       - rtsp://host.docker.internal:8555/fox_den_3
     fox_den_3_sub:
       - rtsp://host.docker.internal:8555/fox_den_3_sub
+    fox_den_4:
+      - rtsp://host.docker.internal:8555/fox_den_4
+    fox_den_4_sub:
+      - rtsp://host.docker.internal:8555/fox_den_4_sub
 
 detectors:
   # Apple Silicon detector running on the macOS host (FrigateDetector.app).
@@ -199,13 +203,43 @@ cameras:
         - 0.004,0.229,0.154,0.087,0.112,0.003,0.004,0.006
     zones:
       exit_1_and_yard:
-        coordinates: 
+        coordinates:
           0.004,0.263,0.177,0.081,0.736,0.344,0.998,0.542,0.994,0.983,0.009,0.992
         loitering_time: 0
         objects:
           - cat
           - dog
         friendly_name: Exit 1 and Yard
+
+  # Amcrest 4K at 192.168.7.21 — added 2026-05-03. Zones/masks left
+  # unset; draw them in the Frigate UI once the camera is positioned.
+  fox_den_4:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://host.docker.internal:8555/fox_den_4_sub
+          roles:
+            - detect
+        - path: rtsp://host.docker.internal:8555/fox_den_4
+          roles:
+            - record
+    detect:
+      width: 704
+      height: 480
+      fps: 5
+    objects:
+      track:
+        - dog
+        - cat
+        - person
+      filters:
+        dog:
+          min_score: 0.35
+          threshold: 0.5
+        cat:
+          min_score: 0.35
+          threshold: 0.5
+
 record:
   enabled: true
   alerts:

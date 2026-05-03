@@ -90,5 +90,17 @@
   filterDate.addEventListener("change", reset);
   filterSpecies.addEventListener("change", reset);
   loadMore.addEventListener("click", load);
-  load();
+
+  // Capture last-seen-at BEFORE marking as seen, so cards rendered on
+  // this visit get the NEW badge. After load, post /api/viewer/seen so
+  // the next visit's count starts fresh.
+  fetch("/api/viewer/state")
+    .then((r) => r.ok ? r.json() : null)
+    .then((s) => {
+      window.LAST_SEEN_AT_PAGELOAD = (s && s.last_seen_at) || 0;
+      load();
+      // Mark seen now (background; don't block render).
+      fetch("/api/viewer/seen", { method: "POST" }).catch(() => {});
+    })
+    .catch(() => load());
 })();

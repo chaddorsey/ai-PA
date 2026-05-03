@@ -243,6 +243,96 @@ button:hover { background: #1d4fd1; }
 .species-other  { background: #1a2a18; color: #88c47e; border: 1px solid #3e8c5e; }
 .species-muted  { background: #1a1d24; color: #888;    border: 1px solid #2a2f37; }
 
+/* "?" tooltip trigger next to species badge. Tiny, unobtrusive. */
+.species-why {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px;
+  margin-left: 0.35rem; margin-top: 0;
+  padding: 0;
+  font-size: 0.65rem; font-weight: 700;
+  background: transparent; color: #888;
+  border: 1px solid #444; border-radius: 999px;
+  cursor: help;
+  vertical-align: middle;
+}
+.species-why:hover { color: #f5f5f5; border-color: #888; background: #1a1d24; }
+
+/* Popover with classifier reasoning. */
+.explain-popover {
+  position: absolute;
+  max-width: 340px;
+  z-index: 100;
+  background: #15171c;
+  border: 1px solid #2a2f37;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.82rem;
+  color: #d8d8d8;
+}
+.explain-popover .explain-header {
+  display: flex; gap: 0.5rem; align-items: baseline;
+  margin-bottom: 0.4rem; padding-bottom: 0.4rem;
+  border-bottom: 1px solid #232830;
+}
+.explain-popover .explain-header strong { color: #f5f5f5; text-transform: capitalize; }
+.explain-popover .muted { color: #888; font-size: 0.78rem; }
+.explain-popover ul { margin: 0; padding-left: 1.1rem; }
+.explain-popover li { margin: 0.2rem 0; line-height: 1.35; }
+
+/* "NEW" badge on cards from after the user's last visit. */
+.new-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  margin-right: 0.25rem;
+  border-radius: 999px;
+  background: #c43e3e;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.highlight.is-new { box-shadow: 0 0 0 1px #c43e3e inset; }
+.highlight.is-new.is-favorited { box-shadow: 0 0 0 1px #c47e2a inset, 0 0 0 2px #c43e3e inset; }
+
+/* Nav-link unread count badge ("Highlights · 5"). */
+.nav-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  background: #c43e3e;
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+/* Thumb wrapper supports hover-preview overlay. The <img> sits inside;
+   on hover, JS appends a <video class="preview"> that covers it. */
+.thumb-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  cursor: pointer;
+  overflow: hidden;
+}
+.thumb-wrap img,
+.thumb-wrap video,
+.thumb-wrap .preview {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.thumb-wrap .preview {
+  /* Subtle fade-in so it doesn't pop */
+  opacity: 0;
+  animation: preview-fade-in 120ms ease-in forwards;
+}
+@keyframes preview-fade-in { to { opacity: 1; } }
+
 .info-card .meta { color: #888; font-style: italic; }
 
 .toast {

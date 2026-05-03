@@ -55,7 +55,47 @@ _MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS highlights_favorited ON highlights (favorited, start_time DESC)",
     "CREATE INDEX IF NOT EXISTS highlights_demoted   ON highlights (demoted, start_time DESC)",
     "CREATE INDEX IF NOT EXISTS highlights_species   ON highlights (species, start_time DESC)",
+    """CREATE TABLE IF NOT EXISTS viewer_state (
+        email          TEXT PRIMARY KEY,
+        last_seen_at   REAL NOT NULL,
+        updated_at     REAL NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
 ]
+
+
+def get_viewer_state(db_path: Path, email: str) -> dict[str, Any] | None:
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT email, last_seen_at, updated_at FROM viewer_state WHERE email = ?",
+            [email],
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def update_viewer_state(db_path: Path, email: str, last_seen_at: float) -> None:
+    with connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO viewer_state (email, last_seen_at, updated_at) "
+            "VALUES (?, ?, strftime('%s','now')) "
+            "ON CONFLICT(email) DO UPDATE SET "
+            "  last_seen_at = excluded.last_seen_at, "
+            "  updated_at = strftime('%s','now')",
+            [email, last_seen_at],
+        )
+
+
+def count_new_since(db_path: Path, since: float, *,
+                    only_wildlife: bool = True) -> int:
+    """How many highlights have arrived since the given timestamp.
+
+    Defaults to wildlife-only (excludes person/vehicle/none) since those
+    are the events that should produce a "new highlights" badge."""
+    sql = "SELECT COUNT(*) AS n FROM highlights WHERE start_time > ? AND demoted = 0"
+    args: list[Any] = [since]
+    if only_wildlife:
+        sql += " AND (species IS NULL OR species NOT IN ('none','person','vehicle','error'))"
+    with connect(db_path) as conn:
+        return conn.execute(sql, args).fetchone()["n"]
 
 
 def update_classification(

@@ -11,7 +11,7 @@
     <h1>🦊 Fox Cam</h1>
     <nav>
       <a href="/" class="active">Live</a>
-      <a href="/highlights">Highlights</a>
+      <a href="/highlights" id="nav-highlights">Highlights<span id="new-count" class="nav-badge" hidden>0</span></a>
     </nav>
   </header>
   <main id="live-main" class="live-layout" data-mode="grid">
@@ -24,5 +24,19 @@
     {% endfor %}
   </main>
   <script src="/static/live.js?v={{ v }}"></script>
+  <script>
+    // Decorate /highlights nav with an unread count if there are new wildlife
+    // events since the user's last visit. Badge clears on next /highlights load.
+    fetch("/api/viewer/state")
+      .then((r) => r.ok ? r.json() : null)
+      .then((s) => {
+        if (s && s.new_count > 0) {
+          const b = document.getElementById("new-count");
+          b.textContent = s.new_count;
+          b.hidden = false;
+        }
+      })
+      .catch(() => {});
+  </script>
 </body>
 </html>

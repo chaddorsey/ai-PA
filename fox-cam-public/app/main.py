@@ -38,7 +38,7 @@ REQUIRE_CF_ACCESS = os.environ.get("REQUIRE_CF_ACCESS", "true").lower() == "true
 
 # Whitelist of stream names go2rtc serves to the public. Hardcoded so a
 # bug in go2rtc config can't suddenly expose new streams via this service.
-PUBLIC_STREAMS = {"fox_den_1", "fox_den_2", "fox_den_3"}
+PUBLIC_STREAMS = {"fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4"}
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -347,6 +347,34 @@ async def list_highlights(
 
 def _actor_email(request: Request) -> str | None:
     return request.headers.get("cf-access-authenticated-user-email")
+
+
+# ---------------------------------------------------------------------------
+# Per-user viewer state — "new since last visit" badging.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/viewer/state")
+async def get_viewer_state(request: Request) -> Any:
+    email = _actor_email(request)
+    async with httpx.AsyncClient() as client:
+        params = {"email": email} if email else {}
+        r = await client.get(f"{CURATOR_API}/viewer/state", params=params, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/viewer/seen")
+async def mark_viewer_seen(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        return {"status": "ignored", "reason": "anonymous"}
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/viewer/seen",
+                              json={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
 
 
 @app.post("/api/highlights/{event_id}/favorite")

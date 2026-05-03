@@ -206,6 +206,38 @@ def get_stats() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Per-user viewer state — "new highlights since you last visited" badging.
+# Identity is the user's email, set by fox-cam-public from CF Access.
+# ---------------------------------------------------------------------------
+
+@app.get("/viewer/state")
+def get_viewer_state(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        # Anonymous viewer — return current count from epoch 0 = all unseen.
+        new_count = db.count_new_since(DB_PATH, 0.0)
+        return {"email": None, "last_seen_at": None, "new_count": new_count}
+    state = db.get_viewer_state(DB_PATH, email)
+    last_seen = state["last_seen_at"] if state else 0.0
+    new_count = db.count_new_since(DB_PATH, last_seen)
+    return {"email": email, "last_seen_at": last_seen, "new_count": new_count}
+
+
+class SeenBody(BaseModel):
+    email: str | None = None
+    last_seen_at: float | None = None  # default = now
+
+
+@app.post("/viewer/seen")
+def mark_viewer_seen(body: SeenBody) -> dict[str, Any]:
+    if not body.email:
+        return {"status": "ignored", "reason": "anonymous"}
+    import time as _time
+    ts = body.last_seen_at if body.last_seen_at is not None else _time.time()
+    db.update_viewer_state(DB_PATH, body.email, ts)
+    return {"status": "ok", "email": body.email, "last_seen_at": ts}
+
+
+# ---------------------------------------------------------------------------
 # Write endpoint — only one. Manual promotion of a Frigate event.
 # ---------------------------------------------------------------------------
 

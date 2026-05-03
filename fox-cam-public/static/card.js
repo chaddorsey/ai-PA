@@ -3,25 +3,70 @@
 // plus helpers; everything else is page-local.
 
 (function () {
+  // Captured at gallery page load so navigating around doesn't reset the
+  // "NEW" badges underneath the cursor. Set by highlights.js after it
+  // fetches /api/viewer/state. 0 = mark nothing as new.
+  window.LAST_SEEN_AT_PAGELOAD = 0;
+
   window.makeCard = function makeCard(h) {
     const el = document.createElement("div");
     el.className = "highlight";
     el.dataset.eventId = h.event_id;
     if (h.favorited) el.classList.add("is-favorited");
     if (h.demoted) el.classList.add("is-demoted");
+    if (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD) {
+      el.classList.add("is-new");
+    }
     el.appendChild(cardThumb(h));
     el.appendChild(cardMeta(h));
     el.appendChild(cardActions(h));
     return el;
   };
 
+  // Frigate-style preview: thumbnail by default, swap to a muted looping
+  // <video> on hover (desktop). Click still triggers full inline play
+  // with controls. On mobile (no hover), behavior is unchanged — tap
+  // = full play.
   function cardThumb(h) {
+    const wrap = document.createElement("div");
+    wrap.className = "thumb-wrap";
+
     const img = document.createElement("img");
     img.src = `/api/highlights/${h.event_id}/thumbnail`;
     img.loading = "lazy";
     img.alt = "";
-    img.addEventListener("click", () => playInline(img.parentElement, h));
-    return img;
+    wrap.appendChild(img);
+
+    let preview = null;
+    let pendingHide = null;
+
+    function showPreview() {
+      clearTimeout(pendingHide);
+      if (preview) { preview.play().catch(() => {}); return; }
+      preview = document.createElement("video");
+      preview.src = `/api/highlights/${h.event_id}/clip`;
+      preview.muted = true;
+      preview.loop = true;
+      preview.playsInline = true;
+      preview.preload = "metadata";
+      preview.className = "preview";
+      wrap.appendChild(preview);
+      preview.play().catch(() => {});
+    }
+
+    function hidePreview() {
+      pendingHide = setTimeout(() => {
+        if (!preview) return;
+        preview.pause();
+        preview.remove();
+        preview = null;
+      }, 80);
+    }
+
+    wrap.addEventListener("mouseenter", showPreview);
+    wrap.addEventListener("mouseleave", hidePreview);
+    wrap.addEventListener("click", () => playInline(wrap, h));
+    return wrap;
   }
 
   function cardMeta(h) {
@@ -40,13 +85,62 @@
         "other"
       );
       const conf = h.species_confidence || "";
-      speciesHTML = `<span class="species ${cls}" title="${conf} confidence">${h.species}</span> · `;
+      const explainBtn = h.classifier_raw
+        ? `<button class="species-why" data-event-id="${h.event_id}" title="Why this classification?" aria-label="Why this classification?">?</button>`
+        : "";
+      speciesHTML = `<span class="species ${cls}" title="${conf} confidence">${h.species}</span>${explainBtn} · `;
     }
+    const newBadge = (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD)
+      ? `<span class="new-badge">NEW</span> ` : "";
     div.innerHTML = `
       <a class="time" href="/clip/${h.event_id}">${t}</a>
-      <div>${speciesHTML}${h.camera} · ${h.label} · ${h.duration_s.toFixed(1)}s
+      <div>${newBadge}${speciesHTML}${h.camera} · ${h.label} · ${h.duration_s.toFixed(1)}s
         · <span class="score">fox ${fox}%</span></div>`;
+    // Wire the "?" button to the popover. Done after innerHTML so the
+    // node exists.
+    const why = div.querySelector(".species-why");
+    if (why) {
+      why.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showExplain(why, h);
+      });
+    }
     return div;
+  }
+
+  // Lightweight popover. Click ? on mobile or hover on desktop to see
+  // the classifier's per-frame reasoning. Click anywhere else to dismiss.
+  function showExplain(anchor, h) {
+    document.querySelectorAll(".explain-popover").forEach((p) => p.remove());
+    const pop = document.createElement("div");
+    pop.className = "explain-popover";
+    const lines = (h.classifier_raw || "").split(";").map(s => s.trim()).filter(Boolean);
+    pop.innerHTML = `
+      <div class="explain-header">
+        <strong>${h.species}</strong>
+        <span class="muted">${h.species_confidence || ""} confidence · ${h.classifier_model || ""}</span>
+      </div>
+      <ul>${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>
+    `;
+    document.body.appendChild(pop);
+    const rect = anchor.getBoundingClientRect();
+    pop.style.top = `${window.scrollY + rect.bottom + 6}px`;
+    pop.style.left = `${Math.min(window.innerWidth - 340, rect.left)}px`;
+    setTimeout(() => {
+      const onDocClick = (ev) => {
+        if (!pop.contains(ev.target) && ev.target !== anchor) {
+          pop.remove();
+          document.removeEventListener("click", onDocClick);
+        }
+      };
+      document.addEventListener("click", onDocClick);
+    }, 0);
+  }
+
+  function escapeHtml(s) {
+    return s
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   function cardActions(h) {
@@ -130,15 +224,16 @@
     }, 2200);
   }
 
-  function playInline(card, h) {
-    const img = card.querySelector("img");
-    if (!img) return;
+  function playInline(wrap, h) {
+    // wrap is the .thumb-wrap div now. Replace its contents with a
+    // <video controls> for full inline playback.
+    wrap.innerHTML = "";
     const v = document.createElement("video");
     v.src = `/api/highlights/${h.event_id}/clip`;
     v.controls = true;
     v.autoplay = true;
     v.playsInline = true;
-    img.replaceWith(v);
+    wrap.appendChild(v);
   }
 
   // Also expose infoCard for empty-state messages on the gallery page.
