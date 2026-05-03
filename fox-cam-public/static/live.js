@@ -71,8 +71,11 @@
   // change. Only one camera is spotlighted at a time, so one instance.
   let activeZoom = null;
 
+  const thumbRail = document.getElementById("thumb-rail");
+
   function setMode(mode, spotlight) {
     main.dataset.mode = mode;
+    document.body.classList.toggle("spotlight-mode", mode === "spotlight");
     // Tear down any prior panzoom whenever the mode changes — different
     // spotlight = different video element = need a fresh instance.
     if (activeZoom) {
@@ -83,8 +86,20 @@
 
     if (spotlight) {
       main.dataset.spotlight = spotlight;
+      // Re-parent non-spotlight cams into the thumb-rail so the rail
+      // can scroll independently. Moving a .cam element via
+      // appendChild() preserves its inner <video>'s MediaStream/MSE
+      // binding — streams stay live across the move.
+      thumbRail.hidden = false;
+      thumbRail.innerHTML = "";
       cams.forEach((c) => {
-        c.classList.toggle("is-spotlight", c.dataset.stream === spotlight);
+        const isSpot = c.dataset.stream === spotlight;
+        c.classList.toggle("is-spotlight", isSpot);
+        if (isSpot) {
+          if (c.parentElement !== main) main.appendChild(c);
+        } else {
+          if (c.parentElement !== thumbRail) thumbRail.appendChild(c);
+        }
       });
       // Attach panzoom to the new spotlight video. Defer one frame so
       // CSS-driven resize completes before panzoom measures bounds.
@@ -93,20 +108,44 @@
         if (!cam) return;
         const video = cam.querySelector("video");
         if (!video || typeof window.panzoom !== "function") return;
+        // maxZoom = pixel-1:1. videoWidth is the source pixel count;
+        // clientWidth is the rendered width. Their ratio is the zoom
+        // level at which one source pixel = one display pixel; zooming
+        // beyond that just enlarges already-stretched pixels (visible
+        // mush, no actual detail gain).
+        // videoWidth may be 0 until metadata loads; fall back to a
+        // sensible cap and update on loadedmetadata.
+        const computeMax = () => {
+          const w = video.videoWidth || 0;
+          const dw = video.clientWidth || 1;
+          return w > 0 ? Math.max(1.5, w / dw) : 4;
+        };
         activeZoom = window.panzoom(video, {
-          maxZoom: 8,
+          maxZoom: computeMax(),
           minZoom: 1,
           bounds: true,
           boundsPadding: 0.95,
           smoothScroll: false,
-          // Disable panzoom's own double-click handling — we have our own.
           zoomDoubleClickSpeed: 1,
         });
+        // Patch maxZoom in once the video reports its real resolution.
+        const onMeta = () => {
+          if (activeZoom) activeZoom.setMaxZoom(computeMax());
+        };
+        if (video.videoWidth > 0) onMeta();
+        else video.addEventListener("loadedmetadata", onMeta, { once: true });
         wireZoomControls(cam, activeZoom, video);
       });
     } else {
       delete main.dataset.spotlight;
-      cams.forEach((c) => c.classList.remove("is-spotlight"));
+      // Move any cams that ended up in the thumb-rail back to the main
+      // grid container, in their original order.
+      cams.forEach((c) => {
+        c.classList.remove("is-spotlight");
+        if (c.parentElement !== main) main.insertBefore(c, thumbRail);
+      });
+      thumbRail.innerHTML = "";
+      thumbRail.hidden = true;
     }
   }
 
@@ -130,15 +169,26 @@
       pz.smoothZoom(x, y, factor);
     };
 
-    btnIn  && btnIn.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1.5); });
-    btnOut && btnOut.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1 / 1.5); });
-    btnFit && btnFit.addEventListener("click", (e) => {
-      e.stopPropagation();
+    const reset = () => {
       // Reset transform: scale 1, translate 0,0. video element's
       // transform-origin is 0,0 so this re-aligns it to the wrap.
       pz.zoomAbs(0, 0, 1);
       pz.moveTo(0, 0);
+    };
+
+    btnIn  && btnIn.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1.5); });
+    btnOut && btnOut.addEventListener("click", (e) => {
+      e.stopPropagation();
+      // If zooming out would put us at or below 1×, snap to identity
+      // transform rather than animate to a partial state. The bounds
+      // constraint at minZoom=1 otherwise leaves the video pinned to
+      // an edge when the prior pan offset can't shrink with scale —
+      // hence the "Cam 4 zoom-out lands left of center" weirdness.
+      const cur = pz.getTransform().scale;
+      if (cur / 1.5 <= 1.05) reset();
+      else zoomAt(1 / 1.5);
     });
+    btnFit && btnFit.addEventListener("click", (e) => { e.stopPropagation(); reset(); });
 
     // Double-click anywhere on the video = zoom 2× at cursor.
     const onDbl = (ev) => {

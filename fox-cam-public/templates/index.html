@@ -29,6 +29,11 @@
       <div class="status" id="s-{{ stream }}">connecting…</div>
     </section>
     {% endfor %}
+    <!-- The thumb-rail is empty in markup but becomes a flex column
+         containing the non-spotlight cams in spotlight mode (via JS
+         that re-parents them on mode change). Its existence in the
+         DOM here keeps the grid layout stable and CSS targets clean. -->
+    <div class="thumb-rail" id="thumb-rail" hidden></div>
   </main>
   <script src="/static/panzoom.min.js?v={{ v }}"></script>
   <script src="/static/live.js?v={{ v }}"></script>
