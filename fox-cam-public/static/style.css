@@ -756,3 +756,67 @@ button:hover { background: #1d4fd1; }
 }
 .remix-editor-row button.primary:hover { background: #a06520; }
 .remix-editor-row button:disabled { opacity: 0.5; cursor: default; }
+
+/* ============================================================ */
+/* Delivered badges + admin Promote UI                          */
+/* ============================================================ */
+
+/* Badge dropped onto a card by a deliverer animal. Pops on top-right. */
+.delivered-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: "Fredoka", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.95);
+  color: #2a1810;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  pointer-events: none;
+  transform-origin: center;
+}
+.delivered-badge.badge-featured { background: #f05a28; color: white; }
+.delivered-badge.badge-shared   { background: #ffb347; color: #2a1810; }
+.delivered-badge.badge-mine     { background: #f05a28; color: white; }
+.delivered-badge.badge-remix    { background: #6b4a3a; color: white; }
+.delivered-badge.badge-new      { background: #ffe27a; color: #2a1810; }
+
+/* Highlights cards that are featured on the public landing get a tiny
+   pin icon — visible to any authed viewer so they know which clips
+   guests see. */
+.highlight.is-featured::before {
+  content: "★";
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 4;
+  background: #f05a28;
+  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  box-shadow: 0 2px 6px rgba(240,90,40,0.4);
+}
+
+/* Feature toggle button (admin only). Distinct from heart/demote
+   visually — orange when off, dark-orange when actively featured. */
+.action-btn.action-feature {
+  background: #fff4e6;
+  color: #f05a28;
+  border-color: #f05a28;
+}
+.action-btn.action-feature.active {
+  background: #f05a28;
+  color: white;
+}
+.action-btn.action-feature:hover { background: #ffe7c9; }
+.action-btn.action-feature.active:hover { background: #ff7044; }

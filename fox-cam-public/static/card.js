@@ -41,6 +41,7 @@
     if (h.my_favorited) el.classList.add("is-favorited");
     if (h.my_demoted) el.classList.add("is-demoted");
     if ((h.favorite_count || 0) >= 2) el.classList.add("is-shared");
+    if (h.featured) el.classList.add("is-featured");
     if (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD) {
       el.classList.add("is-new");
     }
@@ -199,7 +200,65 @@
         location.href = `/clip/${h.event_id}?remix=1`;
       }));
     }
+    // Promote-to-landing button: admins only. Already-featured clips
+    // get an unpromote toggle. The label reads as a celebratory verb
+    // ("Feature") when off, "Featured ★" when on.
+    if (window.IS_ADMIN) {
+      const featured = !!h.featured;
+      const label = featured ? "★ Featured" : "Feature";
+      bar.appendChild(actionBtn(label, "feature", featured, () =>
+        toggleFeature(h)
+      ));
+    }
     return bar;
+  }
+
+  // Promote/unpromote with optional admin caption. On promote, prompt
+  // for an optional one-line caption (max 140 chars). On unpromote,
+  // confirm before clearing. Posts to /api/admin/* — server re-checks
+  // ADMIN_EMAILS, so the client-side IS_ADMIN flag is purely cosmetic.
+  async function toggleFeature(h) {
+    const featured = !!h.featured;
+    let url, body;
+    if (featured) {
+      if (!confirm("Remove this clip from the public landing page?")) return;
+      url = `/api/admin/highlights/${encodeURIComponent(h.event_id)}/unfeature`;
+      body = "{}";
+    } else {
+      const caption = (prompt("Optional caption (≤140 chars):", h.featured_caption || "") || "").trim();
+      if (caption.length > 140) {
+        alert("Caption must be 140 characters or fewer.");
+        return;
+      }
+      url = `/api/admin/highlights/${encodeURIComponent(h.event_id)}/feature`;
+      body = JSON.stringify({ caption: caption || null });
+    }
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        credentials: "same-origin",
+      });
+      if (r.status === 403) { alert("Admin only."); return; }
+      if (!r.ok) { alert("Couldn't update featured status."); return; }
+      const data = await r.json();
+      // Update the in-memory highlight + re-render the card so the
+      // toggle flips and (if newly promoted) we can fly the Deer in
+      // with the badge.
+      const el = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+      Object.assign(h, data.highlight || {});
+      if (el && el.parentNode) {
+        const rebuilt = window.makeCard(h);
+        el.parentNode.replaceChild(rebuilt, el);
+        if (!featured && window.deliverBadge) {
+          window.deliverBadge(rebuilt, "deer", "★ Featured");
+        }
+      }
+    } catch (err) {
+      console.error("[card] toggleFeature failed", err);
+      alert("Network error updating featured status.");
+    }
   }
 
   function actionBtn(label, kind, active, onClick) {
