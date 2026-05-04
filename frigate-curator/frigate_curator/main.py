@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import classifier, curator, db, notify
+from . import classifier, curator, db, deep_dive, notify, sss_client
 from .frigate_client import FrigateClient
 
 
@@ -40,6 +40,10 @@ def _load_dotenv(path: Path = Path("/Volumes/main-drive/ai-PA/.env")) -> None:
         "NTFY_TOPIC", "NTFY_BASE_URL", "FOX_PUBLIC_BASE_URL", "NOTIFY_THRESHOLD",
         "LITELLM_BASE_URL", "LITELLM_MASTER_KEY",
         "CLASSIFIER_ENABLED", "CLASSIFIER_MODEL", "CLASSIFIER_FRAMES",
+        "SSS_BASE_URL", "SSS_USER", "SSS_PASS",
+        "SSS_CAM_ID_FOX_DEN_1", "SSS_CAM_ID_FOX_DEN_2",
+        "SSS_CAM_ID_FOX_DEN_3", "SSS_CAM_ID_FOX_DEN_4",
+        "DEEP_DIVE_CACHE_ROOT",
     }
     for line in path.read_text().splitlines():
         line = line.strip()
@@ -82,6 +86,13 @@ LITELLM_API_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 CLASSIFIER_ENABLED = os.environ.get("CLASSIFIER_ENABLED", "false").lower() == "true"
 CLASSIFIER_MODEL = os.environ.get("CLASSIFIER_MODEL", "gpt-4o-mini/fox-cam")
 CLASSIFIER_FRAMES = int(os.environ.get("CLASSIFIER_FRAMES", "5"))
+
+# Deep-dive cache root — where we save SSS-sourced clip windows.
+# Defaults under HIGHLIGHTS_ROOT so backups capture both highlights and
+# deep-dive cache in one filesystem snapshot.
+DEEP_DIVE_CACHE_ROOT = Path(os.environ.get(
+    "DEEP_DIVE_CACHE_ROOT", str(HIGHLIGHTS_ROOT / "deep-dive-cache")
+))
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -244,6 +255,69 @@ def mark_viewer_seen(body: SeenBody) -> dict[str, Any]:
 @app.post("/promote/{event_id}")
 def promote_event(event_id: str) -> dict[str, Any]:
     return curator.promote(_client, HIGHLIGHTS_ROOT, DB_PATH, event_id)
+
+
+# ---------------------------------------------------------------------------
+# Deep-dive — fetch a window from SSS for a given highlight.
+#
+# Usage: family clicks "+30s" / "+1m" on a highlight card. Viewer POSTs
+# /highlights/<event_id>/deep-dive with desired window. We cache the
+# result keyed by (event_id, before, after) so repeat requests are
+# instant.
+# ---------------------------------------------------------------------------
+
+class DeepDiveBody(BaseModel):
+    before_s: float = 15.0
+    after_s: float = 30.0
+
+
+@app.post("/highlights/{event_id}/deep-dive")
+def deep_dive_event(event_id: str, body: DeepDiveBody) -> dict[str, Any]:
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        result = deep_dive.fetch_window(
+            DEEP_DIVE_CACHE_ROOT,
+            camera=h["camera"],
+            target_ts=h["start_time"],
+            before_s=body.before_s,
+            after_s=body.after_s,
+        )
+    except deep_dive.DeepDiveError as e:
+        msg = str(e)
+        if "past retention" in msg:
+            raise HTTPException(status_code=410, detail=msg)
+        if "not configured" in msg:
+            raise HTTPException(status_code=503, detail=msg)
+        raise HTTPException(status_code=502, detail=msg)
+    return {
+        "event_id": event_id,
+        "url": f"/deep-dive/{event_id}/{int(body.before_s)}_{int(body.after_s)}.mp4",
+        "duration_s": result.duration_s,
+        "cache_hit": result.cache_hit,
+        "chunk_id": result.chunk_id,
+    }
+
+
+@app.get("/deep-dive/{event_id}/{spec}.mp4")
+def serve_deep_dive_clip(event_id: str, spec: str) -> FileResponse:
+    """Serve a previously-fetched deep-dive clip. spec format is
+    '<before>_<after>' matching the fetch_window cache key."""
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        before_s, after_s = spec.split("_")
+        before_s, after_s = float(before_s), float(after_s)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="bad spec")
+    camera = h["camera"]
+    key = f"{camera}_{int(h['start_time'])}_{int(before_s)}_{int(after_s)}"
+    cache_path = DEEP_DIVE_CACHE_ROOT / camera / f"{key}.mp4"
+    if not cache_path.exists():
+        raise HTTPException(status_code=404, detail="window not yet fetched")
+    return FileResponse(cache_path, media_type="video/mp4")
 
 
 @app.post("/classify/{event_id}")
