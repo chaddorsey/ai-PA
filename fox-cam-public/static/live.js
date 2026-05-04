@@ -96,8 +96,7 @@
   // substream variants.
   function switchStream(video, newStream) {
     if (video.dataset.stream === newStream) return;  // no-op
-    try { if (video._ws) video._ws.close(); } catch (_) {}
-    try { video.pause(); video.srcObject = null; video.removeAttribute("src"); video.load(); } catch (_) {}
+    teardownVideo(video);
     video.dataset.stream = newStream;
     const cam = video.closest(".cam");
     const status = cam ? cam.querySelector(".status") : null;
@@ -106,6 +105,26 @@
       console.error(`[${newStream}] switchStream error:`, err);
       if (status) status.textContent = `error: ${err.message}`;
     });
+  }
+
+  // Fully tear down the previous MSE pipeline on a video. Removes the
+  // error listener, cancels any pending auto-retry, closes the WS, and
+  // detaches the source. Called by switchStream and at the start of
+  // runMSE so successive runs on the same video don't accumulate
+  // listeners or compete with each other.
+  function teardownVideo(video) {
+    try { if (video._retryTimer) clearTimeout(video._retryTimer); } catch (_) {}
+    video._retryTimer = null;
+    try { if (video._onVideoError) video.removeEventListener("error", video._onVideoError); } catch (_) {}
+    video._onVideoError = null;
+    try { if (video._ws) video._ws.close(); } catch (_) {}
+    video._ws = null;
+    try {
+      video.pause();
+      video.srcObject = null;
+      video.removeAttribute("src");
+      video.load();
+    } catch (_) {}
   }
 
   function setMode(mode, spotlight) {
@@ -433,6 +452,11 @@
 
   async function runMSE(video, stream, status) {
     console.log(`[${stream}] runMSE() start`);
+    // Always start clean — successive runs on the same element (auto-
+    // retry, switchStream) must not accumulate WS connections or
+    // error listeners.
+    teardownVideo(video);
+    video.dataset.stream = stream;  // ensure correct after teardown
 
     // Probe codecs the browser can decode. Order matters — we want
     // higher-level options listed FIRST so go2rtc picks them when the
@@ -561,21 +585,27 @@
       console.log(`[${stream}] video loadedmetadata, readyState=${video.readyState}`)
     );
 
-    // One-shot auto-recovery: if the video pipeline errors (cold-start
-    // producer, decoder allocation glitch, etc.), tear down and try
-    // again once. The retry attempts a fresh MediaSource + WebSocket
-    // 1.5s later. If the second attempt also errors, give up.
+    // One-shot auto-recovery scoped to THIS runMSE call. The handler
+    // checks that video.dataset.stream still matches the stream we
+    // were started for — if a switchStream() has fired in the meantime
+    // (entering/leaving spotlight), this stale handler should no-op
+    // rather than retry the old stream on top of the new pipeline.
     let retried = false;
     const onVideoError = (e) => {
       console.error(`[${stream}] video error:`, e, video.error);
+      if (video.dataset.stream !== stream) return;  // stale; we've moved on
       if (retried) return;
       retried = true;
       try { ws.close(); } catch (_) {}
       try { video.src = ""; video.load(); } catch (_) {}
       console.log(`[${stream}] auto-retry in 1.5s…`);
       if (status) status.textContent = "retrying…";
-      setTimeout(() => { runMSE(video, stream, status).catch(() => {}); }, 1500);
+      video._retryTimer = setTimeout(() => {
+        if (video.dataset.stream !== stream) return;
+        runMSE(video, stream, status).catch(() => {});
+      }, 1500);
     };
+    video._onVideoError = onVideoError;
     video.addEventListener("error", onVideoError);
 
     video._ws = ws;
