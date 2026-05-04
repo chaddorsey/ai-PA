@@ -151,12 +151,13 @@ body.landing a:hover { color: var(--color-ink); }
 .hero-layer.layer-fore .rocks     { right: 6%; bottom: 1%; height: 15%; }
 .hero-layer.layer-fore .acorn     { left: 72%; bottom: 4%; height: 3%; }
 
-/* Hero text — fixed (no parallax), centered, glowy */
+/* Hero text — fixed (no parallax), pulled up into the open cream space
+   above the trees so it doesn't crowd the foreground decor. */
 .hero-text {
   position: absolute;
-  top: 50%;
+  top: 32%;
   left: 50%;
-  transform: translate(-50%, -56%);
+  transform: translate(-50%, -50%);
   z-index: 10;
   text-align: center;
   width: min(820px, 90vw);
@@ -170,8 +171,8 @@ body.landing a:hover { color: var(--color-ink); }
 }
 
 .hero-dotcom {
-  width: 30%;
-  margin: -25% auto 0;
+  width: 24%;
+  margin: -8% auto 0;
   display: block;
   filter: drop-shadow(0 4px 8px rgba(240, 90, 40, 0.25));
 }
@@ -180,11 +181,11 @@ body.landing a:hover { color: var(--color-ink); }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: -28px;
+  margin-top: 24px;
   padding: 16px 36px;
   border-radius: var(--radius-pill);
-  background: var(--color-glow);
-  color: #1a0d05;
+  background: var(--color-glow) !important;
+  color: #000000 !important;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 19px;
@@ -193,12 +194,25 @@ body.landing a:hover { color: var(--color-ink); }
   box-shadow: var(--shadow-cta);
   cursor: pointer;
   text-decoration: none;
+  position: relative;
+  z-index: 5;          /* paint above any sibling SVGs that might overlap */
 }
 
-/* No hover change by design — the button stays exactly the same on
-   hover/focus so the page feels confidently still rather than reactive.
-   Only the focus outline is preserved for keyboard accessibility. */
-.hero-cta:focus-visible { outline: 2px solid #1a0d05; outline-offset: 3px; }
+/* Hover/focus deliberately have NO visual change — the button is meant
+   to feel like a confident static element. Only :focus-visible gets a
+   subtle keyboard outline. !important on color/background neutralizes
+   any stale cached overrides users might be carrying in their service
+   worker from earlier iterations. */
+.hero-cta:hover,
+.hero-cta:focus,
+.hero-cta:active,
+.hero-cta:visited {
+  background: var(--color-glow) !important;
+  color: #000000 !important;
+  transform: none !important;
+  box-shadow: var(--shadow-cta) !important;
+}
+.hero-cta:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
 
 .hero-cta::after { content: " →"; }
 
@@ -251,12 +265,9 @@ body.landing.ready .hero-logotext { opacity: 1; transform: scale(1); }
 body.landing .hero-dotcom { opacity: 0; transform: translateY(12px); transition: transform 0.4s ease, opacity 0.4s ease; transition-delay: 1.15s; }
 body.landing.ready .hero-dotcom { opacity: 1; transform: translateY(0); }
 
-/* CTA enters with a short slide+fade, but never starts fully invisible —
-   if the entrance JS or stylesheet failed to load (PWA cache miss /
-   font failure / etc.) the button must still be readable. So baseline
-   opacity is 0.85, and the entrance just lifts it to 1 + slides in. */
-body.landing .hero-cta { opacity: 0.85; transform: translateY(8px); transition: transform 0.4s ease, opacity 0.4s ease, box-shadow 0.18s ease, background 0.18s ease; transition-delay: 0.95s; }
-body.landing.ready .hero-cta { opacity: 1; transform: translateY(0); }
+/* CTA: never starts invisible. Plain visible from page load so a
+   slow font / SW miss / etc. can't render the button text invisible. */
+body.landing .hero-cta { opacity: 1; transition: opacity 0.3s ease; transition-delay: 0.95s; }
 
 /* --------------------------------------------------------------------------
    FOREST BAND — soft transition between hero and featured grid
