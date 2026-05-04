@@ -50,10 +50,15 @@
   const videos = document.querySelectorAll("video[data-stream]");
   for (const video of videos) {
     const stream = video.dataset.stream;
-    const status = document.getElementById(`s-${stream}`);
+    // Status element lives in the same .cam ancestor as the video.
+    // Don't look it up by id — the video's data-stream may differ
+    // from the cam's stream name (e.g. video pulls _sub variant for
+    // grid view, status id is keyed off the base name).
+    const cam = video.closest(".cam");
+    const status = cam ? cam.querySelector(".status") : null;
     start(video, stream, status).catch((err) => {
       console.error(`[${stream}] start error:`, err);
-      status.textContent = `error: ${err.message}`;
+      if (status) status.textContent = `error: ${err.message}`;
     });
   }
 
