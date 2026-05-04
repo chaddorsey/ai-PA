@@ -2,13 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Fox Cam</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Our Foxes — Live</title>
+  <!-- PWA: web manifest + iOS-specific meta + theme color. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/favicon.png" type="image/png" sizes="32x32">
+  <meta name="theme-color" content="#f05a28">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Our Foxes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="/static/style.css?v={{ v }}">
 </head>
 <body>
   <header>
-    <h1>🦊 Fox Cam</h1>
+    <h1>🦊 Our Foxes</h1>
     <nav>
       <a href="/" class="active">Live</a>
       <a href="/highlights" id="nav-highlights">Highlights<span id="new-count" class="nav-badge" hidden>0</span></a>
@@ -56,6 +65,14 @@
         }
       })
       .catch(() => {});
+    // Service worker registration. Best-effort; failures (older browser,
+    // private mode) silently degrade to a normal web page.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js")
+          .catch((err) => console.error("[sw] register failed", err));
+      });
+    }
   </script>
 </body>
 </html>

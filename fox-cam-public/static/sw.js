@@ -1,0 +1,112 @@
+// Service worker for Our Foxes PWA.
+//
+// Strategy:
+//   - Static assets (CSS / JS / icons / SVG): cache-first. Cached on
+//     install; refreshed when not in cache. Versioned via CACHE name —
+//     bumping the suffix on a release drops the old cache.
+//   - HTML pages (/, /highlights, /clip/*, /remix/*): network-first
+//     with cache fallback. Browsers always get the freshest HTML when
+//     online; offline opens load the last successful page.
+//   - Everything else (API, WebSocket, WebRTC signaling, live MSE): pass
+//     through completely. The SW must NOT intercept auth-gated /api/* —
+//     a cached 401 response would persist and break the page.
+//
+// Cloudflare Access compatibility: every request still goes to the
+// network when fresh, so CF cookies are honored. Cached HTML continues
+// to work offline; on 401 from any /api fetch the page reloads to
+// re-trigger the CF Access challenge.
+
+const CACHE = "our-foxes-v1";
+
+const STATIC_ASSETS = [
+  "/static/style.css",
+  "/static/card.js",
+  "/static/live.js",
+  "/static/highlights.js",
+  "/static/clip.js",
+  "/static/panzoom.min.js",
+  "/static/manifest.webmanifest",
+  "/static/icons/icon-192.png",
+  "/static/icons/icon-512.png",
+  "/static/icons/icon-maskable-512.png",
+  "/static/icons/apple-touch-icon.png",
+  "/static/icons/favicon.png",
+  "/static/icons/favicon.svg",
+];
+
+self.addEventListener("install", (event) => {
+  // Pre-cache static assets so the first PWA launch has them ready,
+  // including offline-first cold opens.
+  event.waitUntil(
+    caches.open(CACHE).then((cache) =>
+      // Use individual put() calls so a single 401/redirect doesn't
+      // abort the whole install. addAll() is all-or-nothing.
+      Promise.all(STATIC_ASSETS.map((url) =>
+        fetch(url, { credentials: "same-origin" })
+          .then((r) => {
+            if (r.ok) return cache.put(url, r);
+          })
+          .catch(() => {})
+      ))
+    )
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  // Drop old caches on version bump (CACHE constant changes).
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+
+  // Only handle same-origin requests. Pass through everything else.
+  if (url.origin !== self.location.origin) return;
+
+  // NEVER intercept auth-gated, real-time, or live-streaming paths.
+  // A cached 401 here would brick the page across the whole family.
+  if (url.pathname.startsWith("/api/")) return;
+  if (event.request.headers.get("upgrade") === "websocket") return;
+  if (event.request.method !== "GET") return;
+
+  // Static assets: cache-first.
+  if (url.pathname.startsWith("/static/")) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // HTML pages: network-first with cache fallback.
+  if (url.pathname === "/" ||
+      url.pathname === "/highlights" ||
+      url.pathname.startsWith("/clip/") ||
+      url.pathname.startsWith("/remix/")) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        if (response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Default: don't intercept.
+});

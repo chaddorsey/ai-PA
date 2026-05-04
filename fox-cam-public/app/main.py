@@ -188,6 +188,50 @@ def healthz() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# PWA: service worker + manifest at root scope.
+#
+# A service worker can only control paths within its registration scope,
+# which defaults to its own location. To control the whole site we serve
+# sw.js at /sw.js (not /static/sw.js). The actual file still lives in
+# /app/static so we can hot-edit without restarting; this route just
+# proxies that with the right MIME + Service-Worker-Allowed header.
+# ---------------------------------------------------------------------------
+
+@app.get("/sw.js")
+def service_worker() -> Any:
+    from fastapi.responses import Response
+    import pathlib
+    body = pathlib.Path("/app/static/sw.js").read_bytes()
+    return Response(
+        content=body,
+        media_type="application/javascript",
+        headers={
+            # Belt-and-suspenders: declare scope explicitly even though
+            # /sw.js naturally controls /. Some browsers warn without it.
+            "Service-Worker-Allowed": "/",
+            # SW files should not be cached by the browser — the browser
+            # has its own update flow. Cache-Control: no-cache is the
+            # convention for SW updates.
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@app.get("/manifest.webmanifest")
+def manifest_root() -> Any:
+    """Mirror of /static/manifest.webmanifest for any browser/tool that
+    expects the manifest at the URL root. Served with the official
+    application/manifest+json content type."""
+    from fastapi.responses import Response
+    import pathlib
+    body = pathlib.Path("/app/static/manifest.webmanifest").read_bytes()
+    return Response(
+        content=body,
+        media_type="application/manifest+json",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Live (proxied to go2rtc)
 # ---------------------------------------------------------------------------
 

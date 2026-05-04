@@ -2,13 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Fox Cam — Highlights</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Our Foxes — Highlights</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/favicon.png" type="image/png" sizes="32x32">
+  <meta name="theme-color" content="#f05a28">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Our Foxes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="/static/style.css?v={{ v }}">
 </head>
 <body>
   <header>
-    <h1>🦊 Fox Cam</h1>
+    <h1>🦊 Our Foxes</h1>
     <nav>
       <a href="/">Live</a>
       <a href="/highlights" class="active">Highlights<span id="new-count" class="nav-badge" hidden>0</span></a>
@@ -60,5 +68,13 @@
   </main>
   <script src="/static/card.js?v={{ v }}"></script>
   <script src="/static/highlights.js?v={{ v }}"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js")
+          .catch((err) => console.error("[sw] register failed", err));
+      });
+    }
+  </script>
 </body>
 </html>
