@@ -125,9 +125,11 @@ async def require_cf_access(request: Request, call_next):
     path = request.url.path
     if path in ("/healthz", "/robots.txt", "/sw.js", "/manifest.webmanifest"):
         return await call_next(request)
-    # PWA icons need to be reachable without auth so the manifest can
-    # render the install prompt + apple-touch-icon on a fresh device.
-    if path.startswith("/static/icons/"):
+    # All /static/ assets are public — they're cosmetic (CSS, JS, SVGs,
+    # icons, the logo PNG). Nothing sensitive lives in /static. Required
+    # for the public landing page to render and for the PWA install
+    # prompt to fetch its icons on a fresh device.
+    if path.startswith("/static/"):
         return await call_next(request)
     # Public landing surface — anonymous viewers see a curated set of
     # featured highlights at /. The matching API endpoints + clip
