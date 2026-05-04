@@ -8,6 +8,30 @@
   // fetches /api/viewer/state. 0 = mark nothing as new.
   window.LAST_SEEN_AT_PAGELOAD = 0;
 
+  // How far into the clip default playback should start. Frigate's
+  // current pre_capture is 30s for alerts; we want ~5s of context
+  // lead-in before the detection moment, so skip 25s. Pre-roll
+  // remains in the clip for scrubbing back ("re-examining"); the
+  // family just doesn't have to wait through it on first play.
+  // If the clip is shorter than this offset (older clips, or
+  // detection events with short pre), we clamp to a small fraction
+  // of the duration as a fallback.
+  const SKIP_PREROLL_S = 25;
+  function applyPrerollSkip(video) {
+    const seek = () => {
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) return;
+      // Don't skip past 80% of the clip (avoid landing inside the
+      // post-roll on very short clips from older Frigate configs).
+      const target = Math.min(SKIP_PREROLL_S, dur * 0.8);
+      if (target > 0.5) video.currentTime = target;
+    };
+    if (video.readyState >= 1 /* HAVE_METADATA */) seek();
+    else video.addEventListener("loadedmetadata", seek, { once: true });
+  }
+  // Expose so clip.js can use the same logic on the permalink page.
+  window.applyPrerollSkip = applyPrerollSkip;
+
   window.makeCard = function makeCard(h) {
     const el = document.createElement("div");
     el.className = "highlight";
@@ -51,6 +75,7 @@
       preview.preload = "metadata";
       preview.className = "preview";
       wrap.appendChild(preview);
+      applyPrerollSkip(preview);
       preview.play().catch(() => {});
     }
 
@@ -234,6 +259,7 @@
     v.autoplay = true;
     v.playsInline = true;
     wrap.appendChild(v);
+    applyPrerollSkip(v);
   }
 
   // Also expose infoCard for empty-state messages on the gallery page.

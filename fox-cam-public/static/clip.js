@@ -31,6 +31,9 @@
       v.muted = true;
       v.playsInline = true;
       img.replaceWith(v);
+      // Skip the pre-roll on first play; family can scrub back if
+      // they want to re-examine the lead-in.
+      if (window.applyPrerollSkip) window.applyPrerollSkip(v);
     }
   } catch (e) {
     console.error(e);
