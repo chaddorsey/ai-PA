@@ -83,6 +83,31 @@
   // change. Only one camera is spotlighted at a time, so one instance.
   let activeZoom = null;
 
+  // Compute the right stream variant for a cam based on whether it's
+  // the active spotlight. Grid + thumbnails use *_sub (704x480) for
+  // bandwidth; spotlight uses the main stream for native-resolution
+  // zoom now that all 4 cameras advertise honest H.264 levels.
+  function streamFor(camStreamName, isSpotlight) {
+    return isSpotlight ? camStreamName : `${camStreamName}_sub`;
+  }
+
+  // Tear down + restart MSE for a video element on a new stream name.
+  // Called when entering/leaving spotlight to swap between main and
+  // substream variants.
+  function switchStream(video, newStream) {
+    if (video.dataset.stream === newStream) return;  // no-op
+    try { if (video._ws) video._ws.close(); } catch (_) {}
+    try { video.pause(); video.srcObject = null; video.removeAttribute("src"); video.load(); } catch (_) {}
+    video.dataset.stream = newStream;
+    const cam = video.closest(".cam");
+    const status = cam ? cam.querySelector(".status") : null;
+    if (status) status.textContent = "switching stream…";
+    runMSE(video, newStream, status).catch((err) => {
+      console.error(`[${newStream}] switchStream error:`, err);
+      if (status) status.textContent = `error: ${err.message}`;
+    });
+  }
+
   function setMode(mode, spotlight) {
     main.dataset.mode = mode;
     document.body.classList.toggle("spotlight-mode", mode === "spotlight");
@@ -110,7 +135,13 @@
       // blob URL on Chromium, which would tear down every stream on
       // every spotlight switch.
       cams.forEach((c) => {
-        c.classList.toggle("is-spotlight", c.dataset.stream === spotlight);
+        const isSpot = c.dataset.stream === spotlight;
+        c.classList.toggle("is-spotlight", isSpot);
+        // Swap the cam's video to the right stream variant. The new
+        // spotlight gets the main stream; the rest stay on / move
+        // back to the substream.
+        const v = c.querySelector("video");
+        if (v) switchStream(v, streamFor(c.dataset.stream, isSpot));
       });
       // Attach panzoom to the new spotlight video. Defer one frame so
       // CSS-driven resize completes before panzoom measures bounds.
@@ -149,7 +180,12 @@
       });
     } else {
       delete main.dataset.spotlight;
-      cams.forEach((c) => c.classList.remove("is-spotlight"));
+      // Move every cam back to its substream variant for grid view.
+      cams.forEach((c) => {
+        c.classList.remove("is-spotlight");
+        const v = c.querySelector("video");
+        if (v) switchStream(v, streamFor(c.dataset.stream, false));
+      });
     }
   }
 
