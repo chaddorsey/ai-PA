@@ -21,34 +21,54 @@
       <div class="meta loading">loading…</div>
     </div>
 
-    <!-- Remixes panel: lists existing remixes for the highlight, plus
-         a "Make remix" button that captures the current playback +
-         pinch-zoom state into a saved sub-clip. -->
+    <!-- Remix-mode editor: hidden by default. Activated when the
+         viewer arrives with ?remix=1 (link from a favorited card) or
+         clicks the "Remix this clip" button on a favorited highlight.
+         The clip card above is replaced by a focused player with a
+         custom trim timeline below; zoom controls overlay the video. -->
+    <section id="remix-mode" class="remix-mode" hidden>
+      <div class="remix-stage">
+        <div class="remix-video-wrap">
+          <video id="remix-video" muted playsinline></video>
+          <div class="zoom-controls" aria-hidden="true">
+            <button class="zoom-btn zoom-in"  title="Zoom in"  aria-label="Zoom in">+</button>
+            <button class="zoom-btn zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+            <button class="zoom-btn zoom-fit" title="Fit"      aria-label="Fit">⛶</button>
+          </div>
+        </div>
+        <div class="remix-controls">
+          <button id="remix-playpause" type="button" class="remix-pp">▶</button>
+          <span id="remix-time" class="remix-time muted">0:00 / 0:00</span>
+          <span class="remix-spacer"></span>
+          <span id="remix-zoom-display" class="muted small">zoom: 1.0×</span>
+        </div>
+        <div class="trim-track" id="trim-track">
+          <div class="trim-region"></div>
+          <div class="trim-handle trim-start" data-handle="start" tabindex="0"
+                role="slider" aria-label="Trim start"></div>
+          <div class="trim-handle trim-end" data-handle="end" tabindex="0"
+                role="slider" aria-label="Trim end"></div>
+          <div class="trim-playhead"></div>
+        </div>
+        <div class="remix-meta-row">
+          <input id="remix-title" type="text" placeholder="Title (optional)" maxlength="80">
+          <span id="remix-trim-display" class="muted small"></span>
+        </div>
+        <div class="remix-actions-row">
+          <button id="remix-save" type="button" class="primary" disabled>Save Remix</button>
+          <button id="remix-cancel" type="button">Cancel</button>
+          <span id="remix-hint" class="muted small">
+            Drag the orange handles to trim. Pinch / scroll to zoom. The save button enables once you've made a change.
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Existing remixes for this clip — shown below the player when
+         not in remix mode. Hidden during remix-mode editing. -->
     <section id="remix-panel" class="remix-panel" hidden>
       <h3>Remixes <span class="muted" id="remix-count"></span></h3>
       <div id="remix-list"></div>
-      <div id="remix-editor" hidden>
-        <div class="remix-editor-row">
-          <label>Title <input id="remix-title" type="text" placeholder="What's happening here?"></label>
-        </div>
-        <div class="remix-editor-row">
-          <label>Start <input id="remix-start" type="number" step="0.1" min="0" value="0"> s</label>
-          <label>End   <input id="remix-end"   type="number" step="0.1" min="0" value="0"> s</label>
-          <button id="remix-mark-start" type="button" title="Use current playhead as start">⇤ now</button>
-          <button id="remix-mark-end"   type="button" title="Use current playhead as end">now ⇥</button>
-        </div>
-        <div class="remix-editor-row">
-          <span id="remix-zoom-label" class="muted">Zoom: fit</span>
-          <button id="remix-capture-zoom" type="button" title="Capture current pinch-zoom region">📷 capture zoom</button>
-        </div>
-        <div class="remix-editor-row">
-          <button id="remix-save" type="button" class="primary">Save remix</button>
-          <button id="remix-cancel" type="button">Cancel</button>
-        </div>
-      </div>
-      <div id="remix-actions" class="remix-actions">
-        <button id="remix-new" type="button">+ New remix</button>
-      </div>
     </section>
 
     <p class="meta-note"><a href="/highlights">← back to all highlights</a></p>

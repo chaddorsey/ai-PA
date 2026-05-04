@@ -1,24 +1,36 @@
-// Single-clip permalink page. Loads the highlight metadata via the
-// API and reuses window.makeCard for consistency with the gallery —
-// but auto-plays the video instead of showing the thumbnail. Now also
-// hosts the remix create/list UI: each highlight can have any number
-// of family-saved sub-clips with optional zoom regions.
+// Single-clip permalink page. Two modes share this template:
 //
-// If the URL is /remix/<id>, this page enters "remix playback" mode:
-// fetches the remix, finds its parent highlight, and plays the trimmed
-// + zoomed view automatically.
+//   /clip/<event_id>          - default view; existing remixes listed
+//                                below. Favorited cards add a "Remix"
+//                                link that re-routes here with ?remix=1
+//                                to enter remix mode.
+//
+//   /clip/<event_id>?remix=1  - remix-mode editor: focused player with
+//                                a custom trim timeline + drag handles,
+//                                pinch/scroll zoom (panzoom), title input,
+//                                Save Remix button (enabled only once the
+//                                user has actually edited something).
+//
+//   /remix/<remix_id>         - read-only playback of a saved remix:
+//                                jumps to start_offset, stops at end_offset,
+//                                applies the saved zoom region.
+//
+// The editor never tries to remix a non-favorited clip via UI; the
+// Remix link in card.js only renders when h.my_favorited is true.
+// Direct ?remix=1 URLs work regardless (CF Access already gates the page).
 
 (async function () {
   const main = document.querySelector("main.clip-page");
   const eventId = main.dataset.eventId;
   const remixId = main.dataset.remixId;
   const card = document.getElementById("clip-card");
+  const params = new URLSearchParams(location.search);
+  const wantRemixMode = params.get("remix") === "1";
 
   let highlight = null;
-  let remix = null;          // present when on /remix/<id>
-  let videoEl = null;
-  let pzInstance = null;     // panzoom on the video for capture
-  let capturedZoom = null;   // {x, y, scale} captured for save
+  let remix = null;            // present on /remix/<id>
+  let videoEl = null;          // active <video> on the page
+  let pzInstance = null;       // panzoom instance bound to the active video
 
   try {
     if (remixId) {
@@ -29,10 +41,7 @@
       highlight = body.highlight;
     } else if (eventId) {
       const r = await fetch(`/api/highlights/${encodeURIComponent(eventId)}`);
-      if (r.status === 404) {
-        card.querySelector(".meta").textContent = "Clip not found.";
-        return;
-      }
+      if (r.status === 404) { card.querySelector(".meta").textContent = "Clip not found."; return; }
       if (!r.ok) throw new Error(`highlight ${r.status}`);
       highlight = await r.json();
     } else {
@@ -40,13 +49,15 @@
       return;
     }
 
-    // Render the existing card (using highlight metadata) so the user
-    // gets the species badge, action buttons, etc. Then swap thumbnail
-    // for an autoplaying video element.
+    if (wantRemixMode && highlight) {
+      enterRemixMode(highlight);
+      return;
+    }
+
+    // Default render: card with autoplaying video, list of remixes below.
     const fresh = window.makeCard(highlight);
     fresh.classList.add("clip-permalink-card");
     card.replaceWith(fresh);
-
     const wrap = fresh.querySelector(".thumb-wrap") || fresh.querySelector("img")?.parentElement;
     const img = fresh.querySelector("img");
     if (img) {
@@ -58,69 +69,39 @@
       videoEl.playsInline = true;
       img.replaceWith(videoEl);
 
-      if (remix) {
-        // Remix playback: jump to start, stop at end, apply zoom.
-        applyRemixPlayback(videoEl, wrap, remix);
-      } else if (window.applyPrerollSkip) {
-        window.applyPrerollSkip(videoEl);
-      }
-
-      // Wire up panzoom on the video itself so the user can pinch /
-      // scroll in. We keep the instance for capture-zoom in the editor.
-      if (typeof window.panzoom === "function" && wrap) {
-        try {
-          videoEl.style.transformOrigin = "0 0";
-          pzInstance = window.panzoom(videoEl, {
-            maxZoom: 6, minZoom: 1, bounds: true,
-            boundsPadding: 0.95,
-            zoomDoubleClickSpeed: 1,
-          });
-        } catch (e) { console.warn("panzoom init:", e); }
-      }
+      if (remix) applyRemixPlayback(videoEl, wrap, remix);
+      else if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
     }
 
-    // Show the remix panel + populate its list with existing remixes
-    // (from the highlight payload) when on a clip permalink — not
-    // when viewing a remix permalink (which is read-only).
+    // Show existing remixes below the clip (read-only view).
     if (!remix) {
       const panel = document.getElementById("remix-panel");
-      if (panel) {
-        panel.hidden = false;
-        renderRemixList(highlight.remixes || []);
-        wireRemixEditor();
-      }
+      panel.hidden = false;
+      renderRemixList(highlight.remixes || []);
     }
   } catch (e) {
     console.error(e);
     if (card) card.querySelector(".meta").textContent = `Error: ${e.message}`;
   }
 
+  // ---------------------------------------------------------------
+  // Remix playback (read-only) — used on /remix/<id>
+  // ---------------------------------------------------------------
   function applyRemixPlayback(video, wrap, remix) {
     const start = remix.start_offset_s || 0;
     const end = remix.end_offset_s;
-    const seek = () => {
-      try { video.currentTime = start; } catch (_) {}
-    };
+    const seek = () => { try { video.currentTime = start; } catch (_) {} };
     if (video.readyState >= 1) seek();
     else video.addEventListener("loadedmetadata", seek, { once: true });
-    // Stop at end-offset by clamping in timeupdate handler.
     video.addEventListener("timeupdate", () => {
-      if (typeof end === "number" && video.currentTime >= end) {
-        video.pause();
-      }
+      if (typeof end === "number" && video.currentTime >= end) video.pause();
     });
-    // Apply saved zoom region: panzoom's transform model uses scale +
-    // translate; we have center-of-view (zoom_x, zoom_y) + scale. We
-    // wait for the video to know its rendered dimensions so the
-    // wrap-to-video transform can be calibrated.
     if (remix.zoom_scale && remix.zoom_scale > 1.01 && wrap) {
       const applyZoom = () => {
         const r = wrap.getBoundingClientRect();
         const cx = remix.zoom_x ?? 0.5;
         const cy = remix.zoom_y ?? 0.5;
         const s = remix.zoom_scale;
-        // Translate so that the wrap-relative point (cx*W, cy*H) ends
-        // up at the wrap center after scaling.
         const tx = (r.width / 2) - (cx * r.width * s);
         const ty = (r.height / 2) - (cy * r.height * s);
         video.style.transformOrigin = "0 0";
@@ -131,13 +112,16 @@
     }
   }
 
+  // ---------------------------------------------------------------
+  // Render existing remix list below the clip
+  // ---------------------------------------------------------------
   function renderRemixList(remixes) {
     const list = document.getElementById("remix-list");
     const count = document.getElementById("remix-count");
     list.innerHTML = "";
     count.textContent = remixes.length ? `(${remixes.length})` : "";
     if (!remixes.length) {
-      list.innerHTML = '<p class="muted">No remixes yet — click "+ New remix" to capture one.</p>';
+      list.innerHTML = '<p class="muted">No remixes yet — favorite this clip and click ✂️ Remix to capture one.</p>';
       return;
     }
     for (const r of remixes) {
@@ -154,108 +138,253 @@
     }
   }
 
-  function wireRemixEditor() {
-    const editor = document.getElementById("remix-editor");
-    const newBtn = document.getElementById("remix-new");
-    const cancelBtn = document.getElementById("remix-cancel");
-    const saveBtn = document.getElementById("remix-save");
-    const startInput = document.getElementById("remix-start");
-    const endInput = document.getElementById("remix-end");
-    const titleInput = document.getElementById("remix-title");
-    const markStartBtn = document.getElementById("remix-mark-start");
-    const markEndBtn = document.getElementById("remix-mark-end");
-    const captureZoomBtn = document.getElementById("remix-capture-zoom");
-    const zoomLabel = document.getElementById("remix-zoom-label");
+  // ---------------------------------------------------------------
+  // Remix mode (the editor)
+  // ---------------------------------------------------------------
+  function enterRemixMode(h) {
+    // Hide the original card + remixes panel; show the editor stage.
+    card.hidden = true;
+    document.getElementById("remix-panel").hidden = true;
+    const stage = document.getElementById("remix-mode");
+    stage.hidden = false;
 
-    newBtn?.addEventListener("click", () => {
-      editor.hidden = false;
-      newBtn.parentElement.hidden = true;
-      if (videoEl && isFinite(videoEl.duration)) {
-        startInput.value = "0";
-        endInput.value = videoEl.duration.toFixed(1);
+    const video = document.getElementById("remix-video");
+    video.src = `/api/highlights/${h.event_id}/clip`;
+    video.muted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+    videoEl = video;
+
+    const titleInput = document.getElementById("remix-title");
+    const saveBtn = document.getElementById("remix-save");
+    const cancelBtn = document.getElementById("remix-cancel");
+    const ppBtn = document.getElementById("remix-playpause");
+    const timeLbl = document.getElementById("remix-time");
+    const trimDisplay = document.getElementById("remix-trim-display");
+    const zoomDisplay = document.getElementById("remix-zoom-display");
+
+    // Editor state — comparing against these on every input event
+    // determines whether the Save button enables.
+    const initialState = { start: 0, end: 0, zoom: 1, title: "" };
+    const state = { start: 0, end: 0, zoom: 1, title: "" };
+
+    const recomputeDirty = () => {
+      const dirty =
+        Math.abs(state.start - initialState.start) > 0.05 ||
+        Math.abs(state.end - initialState.end) > 0.05 ||
+        Math.abs(state.zoom - initialState.zoom) > 0.05 ||
+        state.title.trim() !== initialState.title.trim();
+      saveBtn.disabled = !dirty;
+    };
+
+    // Skip the pre-roll on initial play, like normal viewing.
+    video.addEventListener("loadedmetadata", () => {
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) return;
+      // Pre-roll skip: jump 25s in if the clip is long enough; family
+      // can drag the start handle back if they want pre-roll context.
+      const target = Math.min(25, dur * 0.4);
+      try { video.currentTime = target; } catch (_) {}
+      // Initialize trim window to FULL clip — initialState matches.
+      initialState.start = 0; initialState.end = dur;
+      state.start = 0; state.end = dur;
+      updateTimeline();
+      updateTimeLabels();
+      // Try to play; mobile may require interaction.
+      video.play().catch(() => {});
+    }, { once: true });
+
+    video.addEventListener("timeupdate", () => {
+      updatePlayhead();
+      updateTimeLabels();
+      // Pause at end-of-trim during preview playback.
+      if (video.currentTime >= state.end - 0.05) {
+        video.pause();
       }
     });
-    cancelBtn?.addEventListener("click", () => {
-      editor.hidden = true;
-      newBtn.parentElement.hidden = false;
-      capturedZoom = null;
-      zoomLabel.textContent = "Zoom: fit";
+
+    // Play/pause toggle.
+    ppBtn.addEventListener("click", () => {
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
     });
-    markStartBtn?.addEventListener("click", () => {
-      if (videoEl) startInput.value = videoEl.currentTime.toFixed(1);
-    });
-    markEndBtn?.addEventListener("click", () => {
-      if (videoEl) endInput.value = videoEl.currentTime.toFixed(1);
-    });
-    captureZoomBtn?.addEventListener("click", () => {
-      if (!pzInstance || !videoEl) return;
-      const t = pzInstance.getTransform();
-      if (t.scale <= 1.01) {
-        capturedZoom = null;
-        zoomLabel.textContent = "Zoom: fit (no zoom captured)";
-        return;
-      }
-      const wrap = videoEl.parentElement;
+    video.addEventListener("play", () => { ppBtn.textContent = "⏸"; });
+    video.addEventListener("pause", () => { ppBtn.textContent = "▶"; });
+
+    // Panzoom on the video so user can pinch/scroll/drag.
+    if (typeof window.panzoom === "function") {
+      video.style.transformOrigin = "0 0";
+      pzInstance = window.panzoom(video, {
+        maxZoom: 6, minZoom: 1, bounds: true,
+        boundsPadding: 0.95, zoomDoubleClickSpeed: 1,
+      });
+      pzInstance.on("zoom", () => {
+        const t = pzInstance.getTransform();
+        state.zoom = t.scale;
+        zoomDisplay.textContent = `zoom: ${t.scale.toFixed(2)}×`;
+        recomputeDirty();
+      });
+    }
+
+    // Wire the corner zoom buttons to panzoom.
+    const wrap = video.parentElement;
+    wrap.querySelector(".zoom-in")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!pzInstance) return;
       const r = wrap.getBoundingClientRect();
-      // panzoom scale + translate → derive normalized center
-      // The visible center in WRAP coords corresponds to the point in
-      // VIDEO coords: (-tx + r.w/2) / scale, normalized by r.w.
-      const cx = (-t.x + r.width / 2) / (t.scale * r.width);
-      const cy = (-t.y + r.height / 2) / (t.scale * r.height);
-      capturedZoom = {
-        x: Math.max(0, Math.min(1, cx)),
-        y: Math.max(0, Math.min(1, cy)),
-        scale: t.scale,
-      };
-      zoomLabel.textContent =
-        `Zoom: ${t.scale.toFixed(1)}× at (${(capturedZoom.x*100).toFixed(0)}%, ${(capturedZoom.y*100).toFixed(0)}%)`;
+      pzInstance.smoothZoom(r.left + r.width / 2, r.top + r.height / 2, 1.5);
     });
-    saveBtn?.addEventListener("click", async () => {
-      const start = parseFloat(startInput.value);
-      const end = parseFloat(endInput.value);
-      if (!isFinite(start) || !isFinite(end) || end <= start) {
-        alert("End must be after start.");
-        return;
+    wrap.querySelector(".zoom-out")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!pzInstance) return;
+      const cur = pzInstance.getTransform().scale;
+      if (cur / 1.5 <= 1.05) {
+        pzInstance.zoomAbs(0, 0, 1);
+        pzInstance.moveTo(0, 0);
+      } else {
+        const r = wrap.getBoundingClientRect();
+        pzInstance.smoothZoom(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.5);
       }
+    });
+    wrap.querySelector(".zoom-fit")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!pzInstance) return;
+      pzInstance.zoomAbs(0, 0, 1);
+      pzInstance.moveTo(0, 0);
+    });
+
+    // Trim timeline handles + click-to-seek.
+    const track = document.getElementById("trim-track");
+    const region = track.querySelector(".trim-region");
+    const startH = track.querySelector(".trim-start");
+    const endH = track.querySelector(".trim-end");
+    const playH = track.querySelector(".trim-playhead");
+
+    function trackPctFromX(clientX) {
+      const r = track.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    }
+    function updateTimeline() {
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) return;
+      const sp = state.start / dur, ep = state.end / dur;
+      region.style.left = `${sp * 100}%`;
+      region.style.width = `${(ep - sp) * 100}%`;
+      startH.style.left = `${sp * 100}%`;
+      endH.style.left = `${ep * 100}%`;
+      const trimSecs = state.end - state.start;
+      trimDisplay.textContent =
+        `Trim: ${state.start.toFixed(1)}s → ${state.end.toFixed(1)}s (${trimSecs.toFixed(1)}s)`;
+    }
+    function updatePlayhead() {
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) return;
+      playH.style.left = `${(video.currentTime / dur) * 100}%`;
+    }
+    function updateTimeLabels() {
+      const dur = isFinite(video.duration) ? video.duration : 0;
+      timeLbl.textContent = `${fmtTime(video.currentTime)} / ${fmtTime(dur)}`;
+    }
+
+    // Drag handlers for handles. PointerEvent works for mouse + touch.
+    let dragging = null;  // 'start' | 'end' | null
+    function onHandleDown(ev) {
+      const which = ev.currentTarget.dataset.handle;
+      dragging = which;
+      ev.currentTarget.setPointerCapture?.(ev.pointerId);
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    function onPointerMove(ev) {
+      if (!dragging) return;
+      const dur = video.duration;
+      if (!isFinite(dur) || dur <= 0) return;
+      const t = trackPctFromX(ev.clientX) * dur;
+      if (dragging === "start") {
+        state.start = Math.max(0, Math.min(t, state.end - 0.5));
+        try { video.currentTime = state.start; } catch (_) {}
+      } else {
+        state.end = Math.min(dur, Math.max(t, state.start + 0.5));
+      }
+      updateTimeline();
+      recomputeDirty();
+    }
+    function onPointerUp(ev) {
+      dragging = null;
+    }
+    startH.addEventListener("pointerdown", onHandleDown);
+    endH.addEventListener("pointerdown", onHandleDown);
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    // Click on the track (away from handles) seeks the playhead.
+    track.addEventListener("click", (ev) => {
+      if (ev.target === startH || ev.target === endH) return;
+      const dur = video.duration;
+      if (!isFinite(dur)) return;
+      try { video.currentTime = trackPctFromX(ev.clientX) * dur; } catch (_) {}
+    });
+
+    titleInput.addEventListener("input", () => {
+      state.title = titleInput.value;
+      recomputeDirty();
+    });
+
+    // Save: capture current panzoom transform → normalized zoom_xy.
+    saveBtn.addEventListener("click", async () => {
       saveBtn.disabled = true;
       try {
+        let zoomCenter = null;
+        if (pzInstance && state.zoom > 1.05) {
+          const t = pzInstance.getTransform();
+          const r = wrap.getBoundingClientRect();
+          const cx = (-t.x + r.width / 2) / (t.scale * r.width);
+          const cy = (-t.y + r.height / 2) / (t.scale * r.height);
+          zoomCenter = {
+            x: Math.max(0, Math.min(1, cx)),
+            y: Math.max(0, Math.min(1, cy)),
+          };
+        }
         const body = {
-          title: titleInput.value.trim() || null,
-          start_offset_s: start,
-          end_offset_s: end,
-          zoom_x: capturedZoom?.x,
-          zoom_y: capturedZoom?.y,
-          zoom_scale: capturedZoom?.scale ?? 1.0,
+          title: state.title.trim() || null,
+          start_offset_s: state.start,
+          end_offset_s: state.end,
+          zoom_x: zoomCenter?.x,
+          zoom_y: zoomCenter?.y,
+          zoom_scale: state.zoom,
         };
-        const r = await fetch(`/api/highlights/${highlight.event_id}/remix`, {
+        const r = await fetch(`/api/highlights/${h.event_id}/remix`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
         if (!r.ok) throw new Error(`save ${r.status}`);
         const out = await r.json();
-        // Refresh list, hide editor, copy permalink.
-        const listResp = await fetch(`/api/remixes?event_id=${highlight.event_id}`);
-        const listBody = await listResp.json();
-        renderRemixList(listBody.items || []);
-        editor.hidden = true;
-        newBtn.parentElement.hidden = false;
-        // Reset
-        titleInput.value = "";
-        capturedZoom = null;
-        zoomLabel.textContent = "Zoom: fit";
         const url = `${location.origin}/remix/${out.remix_id}`;
         try { await navigator.clipboard.writeText(url); } catch {}
-        alert(`Remix saved.\nPermalink copied:\n${url}`);
+        alert(`Remix saved.\nPermalink copied to clipboard:\n${url}`);
+        // Navigate back to the clip page (without ?remix=1) so they
+        // see the new remix in the list.
+        location.href = `/clip/${h.event_id}`;
       } catch (e) {
         console.error(e);
         alert(`Save failed: ${e.message}`);
-      } finally {
         saveBtn.disabled = false;
       }
     });
+
+    cancelBtn.addEventListener("click", () => {
+      // Just go back to the regular clip view (drops query param).
+      location.href = `/clip/${h.event_id}`;
+    });
   }
 
+  // Helpers
+  function fmtTime(s) {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  }
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")

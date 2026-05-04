@@ -184,6 +184,14 @@
       setAction(h.event_id, h.my_demoted ? "clear" : "demote")
     ));
     bar.appendChild(actionBtn("🔗", "share", false, () => copyShareLink(h.event_id)));
+    // Remix link only once you've favorited the clip — encourages the
+    // "love this moment, want to capture a piece of it" workflow.
+    // Routes to /clip/<id>?remix=1 which enters remix mode directly.
+    if (h.my_favorited) {
+      bar.appendChild(actionBtn("✂️ Remix", "remix", false, () => {
+        location.href = `/clip/${h.event_id}?remix=1`;
+      }));
+    }
     return bar;
   }
 
