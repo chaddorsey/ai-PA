@@ -109,7 +109,11 @@ async def require_cf_access(request: Request, call_next):
         return await call_next(request)
     # /healthz is allowed unauthenticated for the host's health-monitor
     # service; loopback only via docker network.
-    if request.url.path == "/healthz":
+    # /robots.txt is allowed so crawlers can read the disallow rule
+    # before being challenged at CF Access. (CF will likely block
+    # anonymous traffic anyway, but this keeps the polite signal
+    # working in any future config.)
+    if request.url.path in ("/healthz", "/robots.txt"):
         return await call_next(request)
     # Static assets: served behind the same auth gate (no CDN bypass)
     jwt = request.headers.get("cf-access-jwt-assertion")
@@ -185,6 +189,25 @@ async def get_highlight(event_id: str, request: Request) -> Any:
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# robots.txt — disallow everything. The site is family-private behind
+# Cloudflare Access; no benefit to indexing, real downside if a search
+# engine crawls anything that ever leaks past Access.
+# ---------------------------------------------------------------------------
+_ROBOTS_TXT = (
+    "# Our Foxes is a private family site behind Cloudflare Access.\n"
+    "# Please don't index any of it.\n"
+    "User-agent: *\n"
+    "Disallow: /\n"
+)
+
+
+@app.get("/robots.txt")
+def robots_txt() -> Any:
+    from fastapi.responses import Response
+    return Response(content=_ROBOTS_TXT, media_type="text/plain")
 
 
 # ---------------------------------------------------------------------------
