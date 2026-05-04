@@ -388,10 +388,19 @@
   async function runMSE(video, stream, status) {
     console.log(`[${stream}] runMSE() start`);
 
-    // Probe codecs the browser can decode.
+    // Probe codecs the browser can decode. Order matters — we want
+    // higher-level options listed FIRST so go2rtc picks them when the
+    // stream actually contains 4K/4MP frames. Without these, go2rtc
+    // may default to Main@4.1 (avc1.4D0029) which legally tops out at
+    // 1920x1080 — frames at 4K cause the decoder to throw MediaError
+    // on every fragment after init. Cams now: 4MP / 4MP / 6MP / 4K.
     const candidates = [
-      "avc1.640029",  // H.264 High@4.1
-      "avc1.4D001F",  // H.264 Main@3.1 (Dahuas — confirmed via go2rtc probe)
+      "avc1.640033",  // H.264 High@5.1   (≤4K)
+      "avc1.4D0033",  // H.264 Main@5.1   (≤4K)
+      "avc1.640032",  // H.264 High@5.0   (≤4K30)
+      "avc1.4D0032",  // H.264 Main@5.0
+      "avc1.640029",  // H.264 High@4.1   (≤1080p)
+      "avc1.4D001F",  // H.264 Main@3.1
       "avc1.4D401F",
       "avc1.42E01E",
       "hvc1.1.6.L93.B0",
