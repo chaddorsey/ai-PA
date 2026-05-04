@@ -48,19 +48,26 @@
   }
 
   const videos = document.querySelectorAll("video[data-stream]");
-  for (const video of videos) {
-    const stream = video.dataset.stream;
-    // Status element lives in the same .cam ancestor as the video.
-    // Don't look it up by id — the video's data-stream may differ
-    // from the cam's stream name (e.g. video pulls _sub variant for
-    // grid view, status id is keyed off the base name).
-    const cam = video.closest(".cam");
-    const status = cam ? cam.querySelector(".status") : null;
-    start(video, stream, status).catch((err) => {
-      console.error(`[${stream}] start error:`, err);
-      if (status) status.textContent = `error: ${err.message}`;
-    });
-  }
+  // Stagger stream startup. Spinning up 4 MediaSource pipelines
+  // simultaneously with the same H.264 codec on macOS Chromium causes
+  // VideoToolbox decoder allocation contention — typically 1–2 of the
+  // 4 streams fail with PIPELINE_ERROR_DECODE on the first frame
+  // (which streams fail varies between reloads — classic race).
+  // 600ms between starts gives each MediaSource time to finish its
+  // codec init before the next one contends. ~2.4s total cold-load
+  // for 4 cams — barely noticeable, eliminates the contention.
+  (async () => {
+    for (const video of videos) {
+      const stream = video.dataset.stream;
+      const cam = video.closest(".cam");
+      const status = cam ? cam.querySelector(".status") : null;
+      start(video, stream, status).catch((err) => {
+        console.error(`[${stream}] start error:`, err);
+        if (status) status.textContent = `error: ${err.message}`;
+      });
+      await new Promise((r) => setTimeout(r, 600));
+    }
+  })();
 
   // ---------- Spotlight (click-to-zoom) ----------
   // Click any tile to make it the spotlight; the others shrink into a
