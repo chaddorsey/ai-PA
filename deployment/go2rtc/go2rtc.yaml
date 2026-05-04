@@ -61,3 +61,11 @@ streams:
 
   fox_den_4_sub:
     - rtsp://${FOX_CAM_USER}:${FOX_CAM_PASS}@192.168.7.53:554/cam/realmonitor?channel=1&subtype=1
+
+  # SPS-rewrite for native-resolution spotlight zoom is parked.
+  # Attempted with the h264_metadata=level=52 bitstream filter via both
+  # ffmpeg:source#extra=... (URL encoding mangled the space in '-bsf:v
+  # <name>') and exec:ffmpeg -i rtsp://localhost:8555/source (chained-
+  # source resolution timed out on 3/4 cameras). Cam 1 worked; the
+  # rest didn't reliably establish.
+  # See docs/followups/2026-05-02-fox-cam-improvements.md F21.

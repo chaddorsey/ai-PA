@@ -76,6 +76,18 @@ Currently using a subdomain of the PA work domain. Long-term: dedicated public d
 **F17 — SSS deep-dive integration (planned, deferred soak).**
 Pull arbitrary-window MP4 from Synology Surveillance Station on demand, cached + idempotent. Family-facing "+30s after this clip" button. Full plan written: `docs/plans/2026-05-03-fox-cam-sss-deep-dive-plan.md`. Levels A (sync pull-then-serve), A.1 (pre-warm on save), B (stream-while-fetching, deferred), C (live RTSP, parked). Pick up after pre/post + threshold soak shows where deep-dive demand actually lives.
 
+**F21 — Native-resolution spotlight zoom (SPS rewrite or re-encode).**
+Live grid + spotlight currently consume the 704×480 substream because the cameras' main streams advertise H.264 Main@Level 4.1 in their SPS but actually emit 4MP/6MP/4K frames. Browsers refuse with PIPELINE_ERROR_DECODE. Two attempted fixes failed:
+1. `ffmpeg:source#extra=-bsf:v h264_metadata=level=52` — go2rtc URL-encodes the args, turning the space into `+` which ffmpeg parses as garbage.
+2. `exec:ffmpeg -i rtsp://127.0.0.1:8555/source -c copy -bsf:v h264_metadata=level=52 -f rtsp {output}` — Cam 1 worked but cams 2/3/4 timed out establishing the chained source connection through go2rtc's loopback.
+
+Three viable next paths (in order of preference):
+- **Camera-side level config via Dahua ConfigTool.** One-time setup; flip the H.264 level from 4.1 to 5.1 or 5.2 in each camera. No CPU cost on Mac mini. Requires user action with Dahua's tool against the proprietary 37777 protocol since cams have HTTP disabled.
+- **exec:ffmpeg directly off camera RTSP** with credentials (bypass go2rtc loopback; uses an extra camera RTSP slot per cam — Dahuas allow ~4, currently using 2-3 each). Test if Cam 4's slot is the limiter.
+- **Re-encode in go2rtc** via `#video=h264#hardware`. Uses VideoToolbox HW encoder; ~1 core per stream × 4 streams = manageable on M-series. Highest reliability but real CPU cost.
+
+Highlights gallery is unaffected (Frigate writes from main directly inside its container, so clips are full resolution; classifier and gallery already see them). Only the live spotlight is constrained.
+
 ## Architectural / deferred
 
 **FA — Fox-vs-cat-vs-dog-vs-deer multi-class auto-tagging.**
