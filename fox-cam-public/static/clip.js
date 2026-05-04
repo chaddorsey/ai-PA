@@ -32,6 +32,27 @@
   let videoEl = null;          // active <video> on the page
   let pzInstance = null;       // panzoom instance bound to the active video
 
+  // Probe identity so anonymous viewers (those who reached this page
+  // via a shared featured-clip link) get a clean read-only view: no
+  // favorite/demote/remix actions, no "Remixes" panel below.
+  let whoami = { authed: false, admin: false };
+  try {
+    const wr = await fetch("/api/whoami", { credentials: "same-origin" });
+    if (wr.ok) whoami = await wr.json();
+  } catch { /* default to anonymous */ }
+  window.IS_ADMIN = !!whoami.admin;
+  if (!whoami.authed) {
+    document.body.classList.add("is-anonymous");
+    // Inject an explicit back-to-landing link for anonymous viewers,
+    // since the default .meta-note (which links to /highlights) is
+    // hidden by CSS for them.
+    const back = document.createElement("a");
+    back.className = "anon-back-link";
+    back.href = "/";
+    back.textContent = "← Back to Our Foxes";
+    main.appendChild(back);
+  }
+
   try {
     if (remixId) {
       const rr = await fetch(`/api/remixes/${encodeURIComponent(remixId)}`);

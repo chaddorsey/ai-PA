@@ -72,7 +72,7 @@
     }
     const data = await r.json();
     if (data.items.length === 0 && offset === 0) {
-      grid.appendChild(window.infoCard(emptyMessage(bucket)));
+      grid.appendChild(buildEmptyState(bucket));
       loadMore.style.display = "none";
       return;
     }
@@ -81,10 +81,21 @@
     loadMore.style.display = data.items.length === limit ? "" : "none";
   }
 
-  function emptyMessage(b) {
-    if (b === "favorites") return "No favorites yet — click ⭐ on a clip to feature it here.";
-    if (b === "demoted") return "Nothing here yet — clips marked “Not a fox” show up in this section.";
-    return "No highlights yet for these filters.";
+  function buildEmptyState(b) {
+    const empties = {
+      pending: { svg: "/static/animals/Stump.svg",   text: "Quiet woods today. Check back tonight." },
+      mine:    { svg: "/static/animals/Bear.svg",     text: "Star a clip to save it here." },
+      shared:  { svg: "/static/animals/Tree-Trio.svg", text: "Once two of you star the same clip, it shows up here." },
+      demoted: { svg: "/static/animals/Frog.svg",     text: "Nothing here yet — clips marked “Not a fox” live here." },
+    };
+    const cfg = empties[b] || empties.pending;
+    const wrap = document.createElement("div");
+    wrap.className = "empty-state";
+    wrap.innerHTML = `
+      <img src="${cfg.svg}" alt="" aria-hidden="true">
+      <p>${cfg.text}</p>
+    `;
+    return wrap;
   }
 
   tabs.forEach((t) => {

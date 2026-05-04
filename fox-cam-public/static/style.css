@@ -820,3 +820,49 @@ button:hover { background: #1d4fd1; }
 }
 .action-btn.action-feature:hover { background: #ffe7c9; }
 .action-btn.action-feature.active:hover { background: #ff7044; }
+
+/* Anonymous viewers reaching a featured-clip permalink get a clean
+   read-only view — no actions, no remix panel, no "back to highlights"
+   (since they have no /highlights access). */
+body.is-anonymous .actions,
+body.is-anonymous .remix-panel,
+body.is-anonymous .remix-mode,
+body.is-anonymous .meta-note { display: none !important; }
+
+body.is-anonymous main.clip-page {
+  max-width: 760px;
+  margin: 24px auto 64px;
+  padding: 0 16px;
+}
+.anon-back-link {
+  display: block;
+  text-align: center;
+  margin: 28px auto 0;
+  color: #f05a28;
+  font-family: "Fredoka", system-ui, sans-serif;
+  font-weight: 500;
+  text-decoration: none;
+  font-size: 16px;
+}
+.anon-back-link:hover { color: #2a1810; }
+
+/* Illustrated empty states for the highlights gallery */
+.empty-state {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 56px 16px 32px;
+  color: #6b4a3a;
+}
+.empty-state img {
+  height: 140px;
+  width: auto;
+  opacity: 0.85;
+  margin: 0 auto 16px;
+  display: block;
+}
+.empty-state p {
+  font-family: "Fredoka", system-ui, sans-serif;
+  font-size: 17px;
+  margin: 0;
+  line-height: 1.4;
+}
