@@ -526,9 +526,23 @@
     video.addEventListener("loadedmetadata", () =>
       console.log(`[${stream}] video loadedmetadata, readyState=${video.readyState}`)
     );
-    video.addEventListener("error", (e) =>
-      console.error(`[${stream}] video error:`, e, video.error)
-    );
+
+    // One-shot auto-recovery: if the video pipeline errors (cold-start
+    // producer, decoder allocation glitch, etc.), tear down and try
+    // again once. The retry attempts a fresh MediaSource + WebSocket
+    // 1.5s later. If the second attempt also errors, give up.
+    let retried = false;
+    const onVideoError = (e) => {
+      console.error(`[${stream}] video error:`, e, video.error);
+      if (retried) return;
+      retried = true;
+      try { ws.close(); } catch (_) {}
+      try { video.src = ""; video.load(); } catch (_) {}
+      console.log(`[${stream}] auto-retry in 1.5s…`);
+      if (status) status.textContent = "retrying…";
+      setTimeout(() => { runMSE(video, stream, status).catch(() => {}); }, 1500);
+    };
+    video.addEventListener("error", onVideoError);
 
     video._ws = ws;
   }
