@@ -143,11 +143,14 @@ main { padding: 1rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto; }
   width: 100%;
   display: block;
   background: #000;
-  aspect-ratio: 16 / 9;
 }
 
 /* Wrapper that holds the live <video> + zoom controls overlay. The
-   wrapper clips so panzoom's transform stays inside the tile. */
+   wrapper clips so panzoom's transform stays inside the tile. In grid
+   and thumb-rail modes, the wrapper takes a fixed 16:9 box; the video
+   inside uses object-fit:contain so its native aspect ratio (typically
+   3:2 for 704x480 substreams) is preserved with letterbox bars rather
+   than being stretched horizontally. */
 .cam .video-wrap {
   position: relative;
   width: 100%;
@@ -162,8 +165,26 @@ main { padding: 1rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto; }
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
   /* panzoom transforms this; transform-origin must be top-left */
   transform-origin: 0 0;
+}
+
+/* Spotlight: the .cam fills the available column height (set by the
+   grid container at calc(100vh - 80px)). The video-wrap drops its
+   aspect-ratio constraint and instead grows to fill the leftover
+   height after the h2 + status rows. The video stays object-fit:contain
+   so its native ratio is preserved without distortion or cropping. */
+@media (min-width: 721px) {
+  .live-layout[data-mode="spotlight"] .cam.is-spotlight {
+    display: flex;
+    flex-direction: column;
+  }
+  .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap {
+    flex: 1 1 auto;
+    aspect-ratio: auto;          /* ignore the 16:9 default */
+    min-height: 0;
+  }
 }
 
 /* Zoom controls — only shown in spotlight mode. Conventional bottom-right
