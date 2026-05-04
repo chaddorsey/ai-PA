@@ -83,8 +83,6 @@
   // change. Only one camera is spotlighted at a time, so one instance.
   let activeZoom = null;
 
-  const thumbRail = document.getElementById("thumb-rail");
-
   function setMode(mode, spotlight) {
     main.dataset.mode = mode;
     document.body.classList.toggle("spotlight-mode", mode === "spotlight");
@@ -106,20 +104,13 @@
 
     if (spotlight) {
       main.dataset.spotlight = spotlight;
-      // Re-parent non-spotlight cams into the thumb-rail so the rail
-      // can scroll independently. Moving a .cam element via
-      // appendChild() preserves its inner <video>'s MediaStream/MSE
-      // binding — streams stay live across the move.
-      thumbRail.hidden = false;
-      thumbRail.innerHTML = "";
+      // Layout is purely CSS-driven via grid-area + .is-spotlight.
+      // Cams stay as direct children of #live-main always — moving a
+      // <video> element via DOM mutation invalidates its MediaSource
+      // blob URL on Chromium, which would tear down every stream on
+      // every spotlight switch.
       cams.forEach((c) => {
-        const isSpot = c.dataset.stream === spotlight;
-        c.classList.toggle("is-spotlight", isSpot);
-        if (isSpot) {
-          if (c.parentElement !== main) main.appendChild(c);
-        } else {
-          if (c.parentElement !== thumbRail) thumbRail.appendChild(c);
-        }
+        c.classList.toggle("is-spotlight", c.dataset.stream === spotlight);
       });
       // Attach panzoom to the new spotlight video. Defer one frame so
       // CSS-driven resize completes before panzoom measures bounds.
@@ -158,14 +149,7 @@
       });
     } else {
       delete main.dataset.spotlight;
-      // Move any cams that ended up in the thumb-rail back to the main
-      // grid container, in their original order.
-      cams.forEach((c) => {
-        c.classList.remove("is-spotlight");
-        if (c.parentElement !== main) main.insertBefore(c, thumbRail);
-      });
-      thumbRail.innerHTML = "";
-      thumbRail.hidden = true;
+      cams.forEach((c) => c.classList.remove("is-spotlight"));
     }
   }
 
