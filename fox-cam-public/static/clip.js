@@ -76,8 +76,16 @@
     // Show existing remixes below the clip (read-only view).
     if (!remix) {
       const panel = document.getElementById("remix-panel");
+      panel.id = "remixes";       // anchor target for #remixes deep-link
       panel.hidden = false;
       renderRemixList(highlight.remixes || []);
+      // If we landed with #remixes in the URL (from card link), scroll
+      // to the panel after render so the user lands on the list.
+      if (location.hash === "#remixes") {
+        requestAnimationFrame(() => {
+          panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
     }
   } catch (e) {
     console.error(e);
@@ -129,11 +137,16 @@
       const a = document.createElement("a");
       a.href = `/remix/${r.remix_id}`;
       a.className = "remix-item";
-      const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? `· zoom ${r.zoom_scale.toFixed(1)}×` : "";
+      const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
+      const username = r.created_by ? r.created_by.split('@')[0] : "anonymous";
+      const title = r.title ? escapeHtml(r.title) : '<em class="muted">(untitled)</em>';
       a.innerHTML = `
-        <div class="remix-title">${escapeHtml(r.title || "(untitled)")}</div>
-        <div class="remix-meta">${dur}s ${zoom}
-          ${r.created_by ? "· by " + escapeHtml(r.created_by.split('@')[0]) : ""}</div>`;
+        <div class="remix-title">
+          <span class="remix-author">@${escapeHtml(username)}</span>
+          <span class="remix-sep">·</span>
+          ${title}
+        </div>
+        <div class="remix-meta">${dur}s${zoom}</div>`;
       list.appendChild(a);
     }
   }

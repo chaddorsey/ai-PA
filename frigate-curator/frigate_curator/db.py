@@ -282,6 +282,24 @@ def remix_list_for_user(db_path: Path, email: str, *, limit: int = 100,
     return [dict(r) for r in rows]
 
 
+def remix_counts_bulk(db_path: Path, event_ids: list[str]) -> dict[str, int]:
+    """Return {event_id: remix_count} for the given highlights. Used by
+    the list endpoint to attach a 'N remixes' marker per card."""
+    if not event_ids:
+        return {}
+    placeholders = ",".join("?" for _ in event_ids)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT event_id, COUNT(*) AS n FROM remixes "
+            f"WHERE event_id IN ({placeholders}) GROUP BY event_id",
+            event_ids,
+        ).fetchall()
+    out = {eid: 0 for eid in event_ids}
+    for r in rows:
+        out[r["event_id"]] = r["n"]
+    return out
+
+
 def remix_list_recent(db_path: Path, *, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     with connect(db_path) as conn:
         rows = conn.execute(

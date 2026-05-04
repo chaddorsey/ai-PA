@@ -197,10 +197,11 @@ def list_highlights(
             limit=limit, offset=offset,
         )
 
-    # Attach per-user vote data to every card so frontend can show
-    # heart state (this user) + count badge (family total).
+    # Attach per-user vote data + remix counts to every card.
     if rows:
-        votes = db.list_user_actions_bulk(DB_PATH, [r["event_id"] for r in rows])
+        ids = [r["event_id"] for r in rows]
+        votes = db.list_user_actions_bulk(DB_PATH, ids)
+        remix_counts = db.remix_counts_bulk(DB_PATH, ids)
         for r in rows:
             v = votes.get(r["event_id"], {})
             favorites = v.get("favorites", [])
@@ -208,6 +209,7 @@ def list_highlights(
             r["favorite_count"] = len(favorites)
             r["my_favorited"] = bool(email and email in favorites)
             r["my_demoted"] = bool(email and email in v.get("demotes", []))
+            r["remix_count"] = remix_counts.get(r["event_id"], 0)
 
     return {"items": rows, "count": len(rows)}
 
@@ -224,8 +226,10 @@ def get_highlight(event_id: str, email: str | None = None) -> dict[str, Any]:
         "favorite_voters": state["voters"],
         "favorite_count": state["favorite_count"],
     })
-    # Attach remixes so the clip page can list them.
+    # Attach remixes so the clip page can list them; also include the
+    # count as a top-level field for parity with /highlights list rows.
     h["remixes"] = db.remix_list_for_event(DB_PATH, event_id)
+    h["remix_count"] = len(h["remixes"])
     return h
 
 

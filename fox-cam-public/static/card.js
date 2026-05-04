@@ -120,10 +120,17 @@
     }
     const newBadge = (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD)
       ? `<span class="new-badge">NEW</span> ` : "";
+    // Remix count: shown only when there's at least one remix for this
+    // highlight. Click links to the clip page's #remixes section so
+    // family can see who's made which sub-clips.
+    const remixCount = h.remix_count || 0;
+    const remixHTML = remixCount > 0
+      ? ` · <a class="remix-count-link" href="/clip/${h.event_id}#remixes" title="View remixes">🎬 ${remixCount} remix${remixCount === 1 ? "" : "es"}</a>`
+      : "";
     div.innerHTML = `
       <a class="time" href="/clip/${h.event_id}">${t}</a>
       <div>${newBadge}${speciesHTML}${h.camera} · ${h.label} · ${h.duration_s.toFixed(1)}s
-        · <span class="score">fox ${fox}%</span></div>`;
+        · <span class="score">fox ${fox}%</span>${remixHTML}</div>`;
     // Wire the "?" button to the popover. Done after innerHTML so the
     // node exists.
     const why = div.querySelector(".species-why");
