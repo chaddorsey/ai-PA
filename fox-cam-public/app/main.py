@@ -192,7 +192,24 @@ def home(request: Request) -> HTMLResponse:
 
 
 @app.get("/highlights", response_class=HTMLResponse)
-def highlights_page(request: Request) -> HTMLResponse:
+def highlights_page(request: Request, next: str | None = None) -> Any:
+    """The highlights gallery page.
+
+    Special case: when called with ?next=<path>, redirect there
+    instead of rendering. This is how the public landing page's
+    "Friends and family login" button gets the visitor home to the
+    live cams: it links to /highlights?next=/. Anonymous visitors
+    get the Cloudflare Access OTP challenge first (since /highlights
+    is gated by the authed Access app), and after authenticating
+    Cloudflare returns them here. The redirect then sends them to
+    the live grid at /.
+
+    Only relative paths starting with a single slash are honored —
+    no open redirect to off-host targets.
+    """
+    if next and next.startswith("/") and not next.startswith("//"):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=next, status_code=302)
     return templates.TemplateResponse(
         "highlights.html",
         {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
