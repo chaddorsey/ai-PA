@@ -244,17 +244,17 @@ record:
   enabled: true
   alerts:
     # Generous pre/post — clips draw from the rolling record buffer so
-    # this costs disk only, not CPU. Estimated ceiling at ~30 events/day
-    # across 3 cams × ~30MB/clip × 30d ≈ 30GB. Well within budget and
-    # gives family enough lead-in/lead-out that most "what just happened
-    # before that" questions don't require an SSS deep-dive.
-    pre_capture: 20
-    post_capture: 15
+    # this costs disk only, not CPU. 30+20 ensures we usually capture
+    # the subject *entering* the frame (Frigate's object detector
+    # takes ~5-10s to lock onto a moving subject; 30s pre gives a
+    # comfortable margin even when the fox arrived slowly).
+    pre_capture: 30
+    post_capture: 20
     retain:
       days: 30
   detections:
-    pre_capture: 15
-    post_capture: 10
+    pre_capture: 20
+    post_capture: 15
     retain:
       days: 14
 
