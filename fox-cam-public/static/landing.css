@@ -134,18 +134,18 @@ body.landing a:hover { color: var(--color-ink); }
 .hero-layer.layer-mid .tree-trio  { left:  2%; bottom: 14%; height: 60%; }
 .hero-layer.layer-mid .tree-pair  { right: 4%; bottom: 16%; height: 50%; }
 .hero-layer.layer-mid .stump      { left: 40%; bottom: 4%;  height: 11%; }
-.hero-layer.layer-mid .ferns-l    { left: 10%; bottom: 2%;  height: 8%; }
-.hero-layer.layer-mid .ferns-r    { right:22%; bottom: 4%;  height: 7%; }
+.hero-layer.layer-mid .ferns-l    { left: 10%; bottom: 2%;  height: 24%; }
+.hero-layer.layer-mid .ferns-r    { right:22%; bottom: 4%;  height: 21%; }
 .hero-layer.layer-mid .rabbit     { right:36%; bottom: 6%;  height: 6%; }
 
-/* Foreground layer: small grass tufts + tiny ground accents along the
-   bottom edge. Treat them as decorative dabs, not scenery. */
-.hero-layer.layer-fore .grass-1   { left:  4%; bottom: 0; width: 11%; }
-.hero-layer.layer-fore .grass-2   { left: 24%; bottom: 0; width: 9%;  }
-.hero-layer.layer-fore .grass-3   { right:14%; bottom: 0; width: 11%; }
-.hero-layer.layer-fore .grass-4   { right:34%; bottom: 0; width: 8%;  }
-.hero-layer.layer-fore .grass-5   { left: 56%; bottom: 0; width: 9%;  }
-.hero-layer.layer-fore .mushrooms { left: 16%; bottom: 1%; height: 5%; }
+/* Foreground layer: tiny grass tufts (decorative dabs) + ground
+   accents along the bottom edge. */
+.hero-layer.layer-fore .grass-1   { left:  4%; bottom: 0; width: 2.2%; }
+.hero-layer.layer-fore .grass-2   { left: 24%; bottom: 0; width: 1.8%; }
+.hero-layer.layer-fore .grass-3   { right:14%; bottom: 0; width: 2.2%; }
+.hero-layer.layer-fore .grass-4   { right:34%; bottom: 0; width: 1.6%; }
+.hero-layer.layer-fore .grass-5   { left: 56%; bottom: 0; width: 1.8%; }
+.hero-layer.layer-fore .mushrooms { left: 16%; bottom: 1%; height: 15%; }
 .hero-layer.layer-fore .rocks     { right: 6%; bottom: 1%; height: 5%; }
 .hero-layer.layer-fore .acorn     { left: 72%; bottom: 4%; height: 3%; }
 
@@ -233,12 +233,21 @@ body.landing a:hover { color: var(--color-ink); }
 /* --------------------------------------------------------------------------
    PAGE-LOAD ENTRANCE — staggered slide-up, then the logo bounce
    Driven by adding .ready to <body> after first paint via landing.js.
-   -------------------------------------------------------------------------- */
+   --------------------------------------------------------------------------
+   IMPORTANT: the transition is removed from .hero-layer once the
+   entrance is complete (see landing.js .parallax-active class) so that
+   scroll-driven transforms respond instantly without smoothing through
+   a 600ms curve. */
 
 body.landing .hero-layer { transform: translateY(40px); opacity: 0; transition: transform 0.6s cubic-bezier(.2,.7,.3,1.05), opacity 0.6s ease; }
 body.landing.ready .hero-layer.layer-sky  { transform: translateY(0); opacity: 1; transition-delay: 0.10s; }
 body.landing.ready .hero-layer.layer-mid  { transform: translateY(0); opacity: 1; transition-delay: 0.30s; }
 body.landing.ready .hero-layer.layer-fore { transform: translateY(0); opacity: 1; transition-delay: 0.50s; }
+
+/* Once the entrance finishes, kill the smoothing on layer transforms.
+   Otherwise every scroll tick has to chase a 600ms easing curve and
+   parallax feels late + sluggish. */
+body.landing.parallax-active .hero-layer { transition: none !important; }
 
 body.landing .hero-logotext { opacity: 0; transform: scale(0.6); transition: transform 0.55s cubic-bezier(.34,1.56,.64,1), opacity 0.4s ease; transition-delay: 0.85s; }
 body.landing.ready .hero-logotext { opacity: 1; transform: scale(1); }
@@ -246,7 +255,11 @@ body.landing.ready .hero-logotext { opacity: 1; transform: scale(1); }
 body.landing .hero-dotcom { opacity: 0; transform: translateY(12px); transition: transform 0.4s ease, opacity 0.4s ease; transition-delay: 1.15s; }
 body.landing.ready .hero-dotcom { opacity: 1; transform: translateY(0); }
 
-body.landing .hero-cta { opacity: 0; transform: translateY(8px); transition: transform 0.4s ease, opacity 0.4s ease, box-shadow 0.18s ease, background 0.18s ease; transition-delay: 1.35s; }
+/* CTA enters with a short slide+fade, but never starts fully invisible —
+   if the entrance JS or stylesheet failed to load (PWA cache miss /
+   font failure / etc.) the button must still be readable. So baseline
+   opacity is 0.85, and the entrance just lifts it to 1 + slides in. */
+body.landing .hero-cta { opacity: 0.85; transform: translateY(8px); transition: transform 0.4s ease, opacity 0.4s ease, box-shadow 0.18s ease, background 0.18s ease; transition-delay: 0.95s; }
 body.landing.ready .hero-cta { opacity: 1; transform: translateY(0); }
 
 /* --------------------------------------------------------------------------

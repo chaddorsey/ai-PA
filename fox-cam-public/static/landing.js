@@ -28,6 +28,10 @@
         document.body.classList.add("ready");
       });
     });
+    // After the entrance transitions complete (~1.5s for the last layer),
+    // strip transition smoothing from hero-layer so scroll-driven
+    // parallax responds without the 600ms easing tail.
+    setTimeout(() => document.body.classList.add("parallax-active"), 1600);
   }
 
   // ---------------------------------------------------------------------------
