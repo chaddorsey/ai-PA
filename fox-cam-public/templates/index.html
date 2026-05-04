@@ -19,7 +19,14 @@
     <section class="cam" data-stream="{{ stream }}">
       <h2>{{ stream }}</h2>
       <div class="video-wrap">
-        <video id="v-{{ stream }}" data-stream="{{ stream }}" autoplay muted playsinline></video>
+        <!-- Live grid uses the camera substream (704x480) for two
+             reasons: (1) Dahua/Amcrest main-stream SPS reports level
+             4.1 but actually pushes 4K/4MP frames, which browsers
+             refuse to decode (level mismatch). (2) 4 simultaneous
+             4K streams is unnecessary bandwidth for a glanceable
+             dashboard. Spotlight will switch to main on demand once
+             the SPS-rewrite is in place. -->
+        <video id="v-{{ stream }}" data-stream="{{ stream }}_sub" autoplay muted playsinline></video>
         <div class="zoom-controls" aria-hidden="true">
           <button class="zoom-btn zoom-in"  title="Zoom in"  aria-label="Zoom in">+</button>
           <button class="zoom-btn zoom-out" title="Zoom out" aria-label="Zoom out">−</button>

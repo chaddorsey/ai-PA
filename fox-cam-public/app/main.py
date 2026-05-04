@@ -38,7 +38,15 @@ REQUIRE_CF_ACCESS = os.environ.get("REQUIRE_CF_ACCESS", "true").lower() == "true
 
 # Whitelist of stream names go2rtc serves to the public. Hardcoded so a
 # bug in go2rtc config can't suddenly expose new streams via this service.
-PUBLIC_STREAMS = {"fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4"}
+PUBLIC_STREAMS = {
+    "fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4",
+    # Substream variants — used by the live grid view because main
+    # streams' SPS reports level 4.1 but actually emits 4K/4MP frames,
+    # which browsers refuse to decode. Substreams are 704x480/Main@3.1
+    # and decode cleanly. Spotlight will eventually switch to main
+    # once we rewrite the SPS via go2rtc bitstream filter.
+    "fox_den_1_sub", "fox_den_2_sub", "fox_den_3_sub", "fox_den_4_sub",
+}
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
