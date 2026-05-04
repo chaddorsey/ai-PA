@@ -171,45 +171,40 @@ async def require_cf_access(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
-    """Auth-aware root.
+    """Public landing page.
 
-    - Anonymous viewers see the public landing page (curated highlights).
-    - Authenticated viewers see the live multi-camera grid.
-    A visitor who's already authenticated but lands on / via a "log out and
-    come back" flow can pass ?login=1 to be sent to the login challenge
-    explicitly (no-op when CF Access already authed them).
+    Always renders the landing page. The live multi-camera grid lives
+    at /live (a gated Access path) — authed visitors are sent there by
+    the landing's login buttons.
+
+    We can't render the live grid here based on the email header,
+    because / is in a Cloudflare Access Bypass app: CF strips the
+    cf-access-authenticated-user-email header on bypassed paths even
+    for authed visitors. So / always looks anonymous to the origin —
+    making it strictly a public surface, with /live as the dedicated
+    authed home.
     """
-    email = _actor_email(request)
-    if email:
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
-        )
     return templates.TemplateResponse(
         "landing.html",
         {"request": request, "v": ASSET_VERSION},
     )
 
 
-@app.get("/highlights", response_class=HTMLResponse)
-def highlights_page(request: Request, next: str | None = None) -> Any:
-    """The highlights gallery page.
+@app.get("/live", response_class=HTMLResponse)
+def live_page(request: Request) -> HTMLResponse:
+    """Live multi-camera grid (gated by Cloudflare Access).
 
-    Special case: when called with ?next=<path>, redirect there
-    instead of rendering. This is how the public landing page's
-    "Friends and family login" button gets the visitor home to the
-    live cams: it links to /highlights?next=/. Anonymous visitors
-    get the Cloudflare Access OTP challenge first (since /highlights
-    is gated by the authed Access app), and after authenticating
-    Cloudflare returns them here. The redirect then sends them to
-    the live grid at /.
-
-    Only relative paths starting with a single slash are honored —
-    no open redirect to off-host targets.
+    All four camera tiles + go2rtc MSE WebSocket links + spotlight
+    interactions. Identical to the previous / for authed users.
     """
-    if next and next.startswith("/") and not next.startswith("//"):
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=next, status_code=302)
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
+    )
+
+
+@app.get("/highlights", response_class=HTMLResponse)
+def highlights_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "highlights.html",
         {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
