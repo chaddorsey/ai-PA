@@ -474,6 +474,52 @@ def _highlight_with_state(event_id: str, email: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Featured — admin-curated highlights shown on the public landing page.
+#
+# Authorization is the caller's responsibility (fox-cam-public checks
+# ADMIN_EMAILS before forwarding). The curator just records what was
+# requested and trusts the upstream proxy.
+# ---------------------------------------------------------------------------
+
+class FeaturedBody(BaseModel):
+    by: str | None = None      # admin email
+    caption: str | None = None  # optional short blurb (≤140 chars)
+
+
+@app.get("/featured")
+def list_featured_endpoint(limit: int = Query(default=6, ge=1, le=24)) -> dict[str, Any]:
+    """Public list of featured highlights for the landing page.
+
+    Returns the same row shape as /highlights so card.js can render
+    them without a parallel code path.
+    """
+    return {"highlights": db.list_featured(DB_PATH, limit=limit)}
+
+
+@app.post("/highlights/{event_id}/feature")
+def feature_event(event_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="feature requires a 'by' email")
+    caption = (body.caption or "").strip() or None
+    if caption and len(caption) > 140:
+        raise HTTPException(status_code=400, detail="caption max 140 chars")
+    h = db.set_featured(DB_PATH, event_id, featured=True, by=body.by, caption=caption)
+    if h is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "featured", "highlight": h}
+
+
+@app.post("/highlights/{event_id}/unfeature")
+def unfeature_event(event_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="unfeature requires a 'by' email")
+    h = db.set_featured(DB_PATH, event_id, featured=False)
+    if h is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "unfeatured", "highlight": h}
+
+
+# ---------------------------------------------------------------------------
 # Remixes — user-defined sub-clips with optional zoom region.
 # ---------------------------------------------------------------------------
 

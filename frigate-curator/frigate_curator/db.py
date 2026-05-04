@@ -101,6 +101,15 @@ _MIGRATIONS = [
     )""",
     "CREATE INDEX IF NOT EXISTS remixes_event ON remixes (event_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS remixes_creator ON remixes (created_by, created_at DESC)",
+    # Landing-page featured highlights — admin-curated subset of clips
+    # shown to anonymous visitors at /. featured=1 means "show on
+    # landing"; featured_caption is an optional short admin-written
+    # blurb shown under the card.
+    "ALTER TABLE highlights ADD COLUMN featured INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE highlights ADD COLUMN featured_at REAL",
+    "ALTER TABLE highlights ADD COLUMN featured_by TEXT",
+    "ALTER TABLE highlights ADD COLUMN featured_caption TEXT",
+    "CREATE INDEX IF NOT EXISTS highlights_featured ON highlights (featured, featured_at DESC)",
 ]
 
 
@@ -493,6 +502,53 @@ def list_highlights(
     args.extend([limit, offset])
     with connect(db_path) as conn:
         rows = conn.execute(sql, args).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_featured(
+    db_path: Path,
+    event_id: str,
+    *,
+    featured: bool,
+    by: str | None = None,
+    caption: str | None = None,
+) -> dict[str, Any] | None:
+    """Promote (featured=True) or unpromote (featured=False) a highlight
+    for the public landing page. When unpromoting, clears featured_at /
+    featured_by / featured_caption.
+    """
+    now = time.time()
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT 1 FROM highlights WHERE event_id = ?", [event_id]).fetchone()
+        if not row:
+            return None
+        if featured:
+            conn.execute(
+                "UPDATE highlights SET featured = 1, featured_at = ?, featured_by = ?, "
+                "featured_caption = ? WHERE event_id = ?",
+                [now, by, caption, event_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE highlights SET featured = 0, featured_at = NULL, featured_by = NULL, "
+                "featured_caption = NULL WHERE event_id = ?",
+                [event_id],
+            )
+        out = conn.execute("SELECT * FROM highlights WHERE event_id = ?", [event_id]).fetchone()
+    return dict(out) if out else None
+
+
+def list_featured(db_path: Path, *, limit: int = 6) -> list[dict[str, Any]]:
+    """Featured highlights for the public landing page, newest first.
+
+    Default cap of 6 matches the landing-page design (3×2 grid).
+    """
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM highlights WHERE featured = 1 "
+            "ORDER BY featured_at DESC LIMIT ?",
+            [limit],
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

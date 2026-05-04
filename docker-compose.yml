@@ -1842,6 +1842,9 @@ services:
       # Set to "false" temporarily to allow direct localhost testing
       # before wiring up Cloudflare Access. Default is "true".
       REQUIRE_CF_ACCESS: "${FOX_CAM_REQUIRE_CF_ACCESS:-true}"
+      # Comma-separated emails allowed to promote highlights to the
+      # public landing page. Comparison is case-insensitive.
+      ADMIN_EMAILS: "${FOX_CAM_ADMIN_EMAILS:-}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
       interval: 30s

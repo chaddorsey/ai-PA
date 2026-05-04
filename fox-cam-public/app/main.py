@@ -42,6 +42,15 @@ REQUIRE_CF_ACCESS = os.environ.get("REQUIRE_CF_ACCESS", "true").lower() == "true
 # per camera; other UI keys off these names too (data-stream, id, etc.).
 PUBLIC_STREAMS = {"fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4"}
 
+# Comma-separated allowlist of admin emails. Admins can promote/unpromote
+# highlights to the public landing page. Comparison is case-insensitive
+# and trims whitespace.
+ADMIN_EMAILS = {
+    e.strip().lower()
+    for e in os.environ.get("ADMIN_EMAILS", "").split(",")
+    if e.strip()
+}
+
 # Streams the WebRTC/MSE proxy will pass through. Includes the _sub
 # variants because the live grid currently asks for them (main-stream
 # SPS-level mismatch causes browser decode errors).
@@ -113,7 +122,35 @@ async def require_cf_access(request: Request, call_next):
     # before being challenged at CF Access. (CF will likely block
     # anonymous traffic anyway, but this keeps the polite signal
     # working in any future config.)
-    if request.url.path in ("/healthz", "/robots.txt"):
+    path = request.url.path
+    if path in ("/healthz", "/robots.txt", "/sw.js", "/manifest.webmanifest"):
+        return await call_next(request)
+    # PWA icons need to be reachable without auth so the manifest can
+    # render the install prompt + apple-touch-icon on a fresh device.
+    if path.startswith("/static/icons/"):
+        return await call_next(request)
+    # Public landing surface — anonymous viewers see a curated set of
+    # featured highlights at /. The matching API endpoints + clip
+    # permalink + clip stream/thumbnail are also unauthenticated so
+    # those cards can render and play. Cloudflare Access has matching
+    # bypass rules at the edge for these paths.
+    if path == "/" or path == "/clip" or path.startswith("/clip/"):
+        return await call_next(request)
+    if path in ("/api/featured", "/api/whoami"):
+        return await call_next(request)
+    if path.startswith("/api/featured/"):
+        return await call_next(request)
+    # Per-clip media that the public landing + permalink need: the
+    # thumbnail and clip files for any *featured* highlight. These
+    # endpoints check featured-ness before serving (see below).
+    if path.startswith("/api/highlights/") and (
+        path.endswith("/thumbnail") or path.endswith("/clip")
+        or path.endswith(".mp4")
+    ):
+        return await call_next(request)
+    # Single-highlight metadata for the permalink page (anonymous can
+    # view only featured ones; the route handler enforces).
+    if path.startswith("/api/highlights/") and path.count("/") == 3:
         return await call_next(request)
     # Static assets: served behind the same auth gate (no CDN bypass)
     jwt = request.headers.get("cf-access-jwt-assertion")
@@ -173,7 +210,12 @@ async def remix_permalink(remix_id: str, request: Request) -> HTMLResponse:
 
 @app.get("/api/highlights/{event_id}")
 async def get_highlight(event_id: str, request: Request) -> Any:
-    """Single highlight metadata — proxies curator's GET /highlights/<id>."""
+    """Single highlight metadata — proxies curator's GET /highlights/<id>.
+
+    Anonymous viewers may only fetch *featured* highlights (so a leaked
+    URL of a non-promoted clip won't reveal it). Authenticated viewers
+    see anything.
+    """
     email = _actor_email(request)
     params = {"email": email} if email else {}
     async with httpx.AsyncClient() as client:
@@ -183,6 +225,74 @@ async def get_highlight(event_id: str, request: Request) -> Any:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
+    payload = r.json()
+    if not email and not payload.get("featured"):
+        # Don't leak existence to anonymous viewers.
+        raise HTTPException(status_code=404, detail="not found")
+    return payload
+
+
+@app.get("/api/whoami")
+def whoami(request: Request) -> dict[str, Any]:
+    """Identity hint for the client.
+
+    Anonymous → {"authed": false, "admin": false}.
+    Authenticated non-admin → {"authed": true, "admin": false, "email": "..."}.
+    Admin → {"authed": true, "admin": true, "email": "..."}.
+
+    Used by templates to decide which controls to render (e.g., the
+    Promote button on highlight cards). NEVER trust the client's
+    interpretation of this — every admin action is re-checked against
+    ADMIN_EMAILS server-side.
+    """
+    email = _actor_email(request)
+    return {
+        "authed": bool(email),
+        "admin": bool(email and email.lower() in ADMIN_EMAILS),
+        "email": email,
+    }
+
+
+@app.get("/api/featured")
+async def get_featured(limit: int = 6) -> Any:
+    """Public list of featured highlights for the landing page."""
+    if limit < 1 or limit > 24:
+        raise HTTPException(status_code=400, detail="limit out of range")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/featured",
+                              params={"limit": limit}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/admin/highlights/{event_id}/feature")
+async def admin_feature(event_id: str, request: Request) -> Any:
+    """Promote a highlight to the public landing page (admin-only)."""
+    admin_email = _require_admin(request)
+    body = await request.json() if request.headers.get("content-length") else {}
+    payload = {"by": admin_email, "caption": body.get("caption")}
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/highlights/{event_id}/feature",
+                              json=payload, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.post("/api/admin/highlights/{event_id}/unfeature")
+async def admin_unfeature(event_id: str, request: Request) -> Any:
+    """Remove a highlight from the public landing page (admin-only)."""
+    admin_email = _require_admin(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/highlights/{event_id}/unfeature",
+                              json={"by": admin_email}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
     return r.json()
 
 
@@ -443,6 +553,22 @@ def _actor_email(request: Request) -> str | None:
     return request.headers.get("cf-access-authenticated-user-email")
 
 
+def _is_admin(request: Request) -> bool:
+    email = _actor_email(request)
+    return bool(email and email.lower() in ADMIN_EMAILS)
+
+
+def _require_admin(request: Request) -> str:
+    """Raise 403 unless the request comes from an ADMIN_EMAILS user.
+
+    Returns the admin's email so callers can attribute the action.
+    """
+    email = _actor_email(request)
+    if not email or email.lower() not in ADMIN_EMAILS:
+        raise HTTPException(status_code=403, detail="admin only")
+    return email
+
+
 # ---------------------------------------------------------------------------
 # Per-user viewer state — "new since last visit" badging.
 # ---------------------------------------------------------------------------
@@ -580,13 +706,32 @@ async def _post_action(event_id: str, action: str, by: str | None) -> Any:
 
 
 @app.get("/api/highlights/{event_id}/clip")
-async def highlight_clip(event_id: str) -> StreamingResponse:
+async def highlight_clip(event_id: str, request: Request) -> StreamingResponse:
+    await _ensure_visible(event_id, request)
     return await _proxy_curator(f"/highlights/{event_id}/clip", "video/mp4")
 
 
 @app.get("/api/highlights/{event_id}/thumbnail")
-async def highlight_thumb(event_id: str) -> StreamingResponse:
+async def highlight_thumb(event_id: str, request: Request) -> StreamingResponse:
+    await _ensure_visible(event_id, request)
     return await _proxy_curator(f"/highlights/{event_id}/thumbnail", "image/jpeg")
+
+
+async def _ensure_visible(event_id: str, request: Request) -> None:
+    """Anonymous viewers may only fetch media for *featured* highlights.
+
+    Authenticated viewers see anything. We do this in fox-cam-public
+    rather than the curator because admin-vs-anonymous policy lives
+    here; the curator is intentionally policy-free.
+    """
+    if _actor_email(request):
+        return
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/highlights/{event_id}", timeout=4.0)
+    if r.status_code == 404 or (r.status_code == 200 and not r.json().get("featured")):
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
 
 
 async def _proxy_curator(path: str, media_type: str) -> StreamingResponse:
