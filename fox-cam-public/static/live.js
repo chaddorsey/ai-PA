@@ -47,17 +47,12 @@
     } catch {}
   }
 
-  const videos = document.querySelectorAll("video[data-stream]");
-  // Stagger stream startup. Spinning up 4 MediaSource pipelines
-  // simultaneously with the same H.264 codec on macOS Chromium causes
-  // VideoToolbox decoder allocation contention — typically 1–2 of the
-  // 4 streams fail with PIPELINE_ERROR_DECODE on the first frame
-  // (which streams fail varies between reloads — classic race).
-  // 600ms between starts gives each MediaSource time to finish its
-  // codec init before the next one contends. ~2.4s total cold-load
-  // for 4 cams — barely noticeable, eliminates the contention.
+  // Start grid streams (substreams), staggered to avoid VideoToolbox
+  // decoder contention on macOS Chromium when 4 MediaSources spin up
+  // at once.
+  const gridVideos = document.querySelectorAll("video.grid-stream[data-stream]");
   (async () => {
-    for (const video of videos) {
+    for (const video of gridVideos) {
       const stream = video.dataset.stream;
       const cam = video.closest(".cam");
       const status = cam ? cam.querySelector(".status") : null;
@@ -83,28 +78,44 @@
   // change. Only one camera is spotlighted at a time, so one instance.
   let activeZoom = null;
 
-  // Compute the right stream variant for a cam based on whether it's
-  // the active spotlight. Grid + thumbnails use *_sub (704x480) for
-  // bandwidth; spotlight uses the main stream for native-resolution
-  // zoom now that all 4 cameras advertise honest H.264 levels.
-  function streamFor(camStreamName, isSpotlight) {
-    return isSpotlight ? camStreamName : `${camStreamName}_sub`;
+  // Bring the spotlight (high-res) pipeline online for a given cam.
+  // Uses the cam's .spotlight-stream <video> element which is dormant
+  // until needed. The .grid-stream substream stays playing the whole
+  // time; CSS hides it once .spotlight-ready flips on.
+  function attachSpotlightStream(cam) {
+    const sv = cam.querySelector("video.spotlight-stream");
+    if (!sv) return;
+    const baseName = sv.dataset.base;
+    sv.dataset.stream = baseName;          // main stream
+    const status = cam.querySelector(".status");
+    if (status) status.textContent = "loading hi-res…";
+    runMSE(sv, baseName, status).catch((err) => {
+      console.error(`[${baseName}] spotlight start error:`, err);
+      if (status) status.textContent = `hi-res error: ${err.message}`;
+    });
+    // When the main stream actually starts playing (frames decoded),
+    // flip .spotlight-ready so CSS hides the substream and shows main.
+    const onPlaying = () => {
+      cam.classList.add("spotlight-ready");
+      sv.removeEventListener("playing", onPlaying);
+      sv.removeEventListener("loadeddata", onPlaying);
+    };
+    sv.addEventListener("playing", onPlaying);
+    sv.addEventListener("loadeddata", onPlaying);
   }
 
-  // Tear down + restart MSE for a video element on a new stream name.
-  // Called when entering/leaving spotlight to swap between main and
-  // substream variants.
-  function switchStream(video, newStream) {
-    if (video.dataset.stream === newStream) return;  // no-op
-    teardownVideo(video);
-    video.dataset.stream = newStream;
-    const cam = video.closest(".cam");
-    const status = cam ? cam.querySelector(".status") : null;
-    if (status) status.textContent = "switching stream…";
-    runMSE(video, newStream, status).catch((err) => {
-      console.error(`[${newStream}] switchStream error:`, err);
-      if (status) status.textContent = `error: ${err.message}`;
-    });
+  // Tear down the spotlight (high-res) pipeline for a cam. Removes
+  // .spotlight-ready so CSS reveals the substream again, then cleans
+  // up the spotlight-stream's WS / MSE state. The grid-stream is
+  // never touched.
+  function detachSpotlightStream(cam) {
+    cam.classList.remove("spotlight-ready");
+    const sv = cam.querySelector("video.spotlight-stream");
+    if (sv) {
+      teardownVideo(sv);
+      sv.style.transform = "";
+      sv.style.transformOrigin = "";
+    }
   }
 
   // Fully tear down the previous MSE pipeline on a video. Removes the
@@ -148,26 +159,28 @@
 
     if (spotlight) {
       main.dataset.spotlight = spotlight;
-      // Layout is purely CSS-driven via grid-area + .is-spotlight.
-      // Cams stay as direct children of #live-main always — moving a
-      // <video> element via DOM mutation invalidates its MediaSource
-      // blob URL on Chromium, which would tear down every stream on
-      // every spotlight switch.
+      // Cams always stay direct children of #live-main and the
+      // grid-stream substream keeps playing on each. For the new
+      // spotlight cam, fire up the parallel main-stream pipeline on
+      // its .spotlight-stream video element. Any prior spotlight
+      // (when swapping cams) gets its main pipeline torn down.
       cams.forEach((c) => {
         const isSpot = c.dataset.stream === spotlight;
+        const wasSpot = c.classList.contains("is-spotlight");
         c.classList.toggle("is-spotlight", isSpot);
-        // Swap the cam's video to the right stream variant. The new
-        // spotlight gets the main stream; the rest stay on / move
-        // back to the substream.
-        const v = c.querySelector("video");
-        if (v) switchStream(v, streamFor(c.dataset.stream, isSpot));
+        if (isSpot && !wasSpot) attachSpotlightStream(c);
+        if (!isSpot && wasSpot) detachSpotlightStream(c);
       });
       // Attach panzoom to the new spotlight video. Defer one frame so
       // CSS-driven resize completes before panzoom measures bounds.
       requestAnimationFrame(() => {
         const cam = document.querySelector(`.cam[data-stream="${spotlight}"]`);
         if (!cam) return;
-        const video = cam.querySelector("video");
+        // Attach panzoom to the high-res spotlight-stream so zoom
+        // works on real pixels. Falls back to grid-stream if the
+        // spotlight pipeline isn't up yet (rare race).
+        const video = cam.querySelector("video.spotlight-stream") ||
+                      cam.querySelector("video.grid-stream");
         if (!video || typeof window.panzoom !== "function") return;
         // maxZoom = pixel-1:1. videoWidth is the source pixel count;
         // clientWidth is the rendered width. Their ratio is the zoom
@@ -199,11 +212,9 @@
       });
     } else {
       delete main.dataset.spotlight;
-      // Move every cam back to its substream variant for grid view.
       cams.forEach((c) => {
+        if (c.classList.contains("is-spotlight")) detachSpotlightStream(c);
         c.classList.remove("is-spotlight");
-        const v = c.querySelector("video");
-        if (v) switchStream(v, streamFor(c.dataset.stream, false));
       });
     }
   }
