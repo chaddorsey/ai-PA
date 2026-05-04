@@ -169,9 +169,23 @@ async def require_cf_access(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
+    """Auth-aware root.
+
+    - Anonymous viewers see the public landing page (curated highlights).
+    - Authenticated viewers see the live multi-camera grid.
+    A visitor who's already authenticated but lands on / via a "log out and
+    come back" flow can pass ?login=1 to be sent to the login challenge
+    explicitly (no-op when CF Access already authed them).
+    """
+    email = _actor_email(request)
+    if email:
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
+        )
     return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
+        "landing.html",
+        {"request": request, "v": ASSET_VERSION},
     )
 
 

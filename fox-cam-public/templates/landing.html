@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Our Foxes</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/favicon.png" type="image/png" sizes="32x32">
+  <meta name="theme-color" content="#f05a28">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Our Foxes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/landing.css?v={{ v }}">
+</head>
+<body class="landing">
+
+  <header class="landing-header">
+    <span class="brand-mark">🦊</span>
+    <a href="#login" class="login">Family login →</a>
+  </header>
+
+  <!-- ========================================================================
+       HERO — three parallax layers + fixed centered logotext
+       ======================================================================== -->
+  <section class="hero" id="hero">
+
+    <div class="hero-layer layer-sky" data-speed="0.15">
+      <img class="town" src="/static/animals/Curvy-houses-town.svg" alt="" aria-hidden="true">
+    </div>
+
+    <div class="hero-layer layer-mid" data-speed="0.45">
+      <img class="tree-trio" src="/static/animals/Tree-Trio.svg" alt="" aria-hidden="true">
+      <img class="tree-pair" src="/static/animals/Tree-pair.svg" alt="" aria-hidden="true">
+      <img class="stump"     src="/static/animals/Stump.svg"     alt="" aria-hidden="true">
+      <img class="ferns-l"   src="/static/animals/Ferns.svg"     alt="" aria-hidden="true">
+      <img class="ferns-r"   src="/static/animals/Ferns.svg"     alt="" aria-hidden="true">
+      <img class="rabbit"    src="/static/animals/Rabbit.svg"    alt="" aria-hidden="true">
+    </div>
+
+    <div class="hero-layer layer-fore" data-speed="0.85">
+      <img class="grass-1"   src="/static/animals/Grass-1.svg"   alt="" aria-hidden="true">
+      <img class="grass-2"   src="/static/animals/Grass-2.svg"   alt="" aria-hidden="true">
+      <img class="grass-3"   src="/static/animals/Grass-3.svg"   alt="" aria-hidden="true">
+      <img class="mushrooms" src="/static/animals/Mushrooms.svg" alt="" aria-hidden="true">
+      <img class="rocks"     src="/static/animals/Rocks.svg"     alt="" aria-hidden="true">
+      <img class="acorn"     src="/static/animals/Acorn.svg"     alt="" aria-hidden="true">
+    </div>
+
+    <div class="hero-text">
+      <img class="hero-logotext" src="/static/our-foxes-logo.png" alt="Our Foxes">
+      <img class="hero-dotcom"   src="/static/animals/dot-com-text.svg" alt=".com">
+      <a class="hero-cta" href="#login">Family login</a>
+    </div>
+
+    <div class="scroll-cue" aria-hidden="true">
+      <img class="acorn-cue" src="/static/animals/Acorn.svg" alt="">
+      <span>scroll for today's foxes</span>
+    </div>
+
+  </section>
+
+  <div class="forest-band" aria-hidden="true"></div>
+
+  <!-- ========================================================================
+       FEATURED — admin-curated highlights (anonymous-readable)
+       ======================================================================== -->
+  <section class="featured-section">
+    <div class="featured-grid" id="featured-grid">
+      <!-- cards injected by landing.js -->
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       ABOUT STRIP — three short value props w/ animal icons
+       ======================================================================== -->
+  <section class="about-strip">
+    <div class="about-grid">
+      <div class="about-col">
+        <img src="/static/animals/Fox-1.svg" alt="">
+        <h3 style="font-family: var(--font-display); margin: 0 0 6px;">Real foxes</h3>
+        <p style="margin: 0; color: var(--color-ink-soft);">Wildlife-camera footage from a den in our backyard.</p>
+      </div>
+      <div class="about-col">
+        <img src="/static/animals/Squirrel.svg" alt="">
+        <h3 style="font-family: var(--font-display); margin: 0 0 6px;">Daily visitors</h3>
+        <p style="margin: 0; color: var(--color-ink-soft);">Foxes, raccoons, deer, and the occasional very confident squirrel.</p>
+      </div>
+      <div class="about-col">
+        <img src="/static/animals/Bear.svg" alt="">
+        <h3 style="font-family: var(--font-display); margin: 0 0 6px;">Family-curated</h3>
+        <p style="margin: 0; color: var(--color-ink-soft);">Hand-picked highlights — only the best moments make it here.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================================
+       FOOTER
+       ======================================================================== -->
+  <footer class="landing-footer" id="login">
+    <img class="tree-mark" src="/static/animals/Tree-solitary.svg" alt="" aria-hidden="true">
+    <p style="margin: 0 0 8px;">Made with care from a backyard in the suburbs.</p>
+    <p style="margin: 0;"><a href="/?login=1">Family login →</a></p>
+  </footer>
+
+  <script src="/static/landing.js?v={{ v }}"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js")
+          .catch((err) => console.error("[sw] register failed", err));
+      });
+    }
+  </script>
+</body>
+</html>
