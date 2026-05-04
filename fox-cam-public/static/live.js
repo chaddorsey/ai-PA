@@ -95,13 +95,54 @@
     });
     // When the main stream actually starts playing (frames decoded),
     // flip .spotlight-ready so CSS hides the substream and shows main.
+    // Then re-attach panzoom to the now-visible spotlight-stream so
+    // zoom acts on real pixels.
     const onPlaying = () => {
       cam.classList.add("spotlight-ready");
       sv.removeEventListener("playing", onPlaying);
       sv.removeEventListener("loadeddata", onPlaying);
+      attachPanzoom(cam, sv);
     };
     sv.addEventListener("playing", onPlaying);
     sv.addEventListener("loadeddata", onPlaying);
+  }
+
+  // (Re)initialize panzoom on a specific video element. Called twice
+  // per spotlight enter: once on the grid-stream (immediate, so zoom
+  // works on the visible substream while main is still loading) and
+  // once on the spotlight-stream when it's ready (real high-res zoom).
+  function attachPanzoom(cam, video) {
+    if (typeof window.panzoom !== "function") return;
+    if (activeZoom) {
+      try { activeZoom.dispose(); } catch (_) {}
+      activeZoom = null;
+    }
+    // Clear residual transform on the previous video so it returns
+    // to identity if we ever swap back to it.
+    cam.querySelectorAll("video").forEach((v) => {
+      if (v !== video) {
+        v.style.transform = "";
+        v.style.transformOrigin = "";
+      }
+    });
+    cam.classList.remove("is-zoomed");
+    const computeMax = () => {
+      const w = video.videoWidth || 0;
+      const dw = video.clientWidth || 1;
+      return w > 0 ? Math.max(1.5, w / dw) : 4;
+    };
+    activeZoom = window.panzoom(video, {
+      maxZoom: computeMax(),
+      minZoom: 1,
+      bounds: true,
+      boundsPadding: 0.95,
+      smoothScroll: false,
+      zoomDoubleClickSpeed: 1,
+    });
+    const onMeta = () => { if (activeZoom) activeZoom.setMaxZoom(computeMax()); };
+    if (video.videoWidth > 0) onMeta();
+    else video.addEventListener("loadedmetadata", onMeta, { once: true });
+    wireZoomControls(cam, activeZoom, video);
   }
 
   // Tear down the spotlight (high-res) pipeline for a cam. Removes
