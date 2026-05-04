@@ -172,7 +172,10 @@ body.landing a:hover { color: var(--color-ink); }
 
 .hero-dotcom {
   width: 24%;
-  margin: -8% auto 0;
+  /* Tucked up into the concave arch underneath "Our Foxes". The
+     bubble logotext arcs up at the edges; the negative space
+     directly under "ur Fox" is where the .com sits naturally. */
+  margin: -22% auto 0;
   display: block;
   filter: drop-shadow(0 4px 8px rgba(240, 90, 40, 0.25));
 }
