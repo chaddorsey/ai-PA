@@ -62,10 +62,15 @@ main { padding: 1rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto; }
 }
 
 .thumb-rail {
-  display: flex;
   flex-direction: column;
   gap: 1rem;
   grid-column: 2;
+}
+/* Honor the HTML `hidden` attribute — overrides anything below. */
+.thumb-rail[hidden] { display: none !important; }
+/* Only show as a flex column when actually populated (in spotlight mode). */
+.live-layout[data-mode="spotlight"] .thumb-rail {
+  display: flex;
 }
 
 .live-layout[data-mode="spotlight"] .thumb-rail .cam h2 {
