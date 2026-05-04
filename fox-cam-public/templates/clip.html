@@ -14,12 +14,46 @@
       <a href="/highlights">Highlights</a>
     </nav>
   </header>
-  <main class="clip-page">
+  <main class="clip-page"
+        data-event-id="{{ event_id or '' }}"
+        data-remix-id="{{ remix_id or '' }}">
     <div id="clip-card" class="highlight clip-permalink" data-event-id="{{ event_id }}">
       <div class="meta loading">loading…</div>
     </div>
+
+    <!-- Remixes panel: lists existing remixes for the highlight, plus
+         a "Make remix" button that captures the current playback +
+         pinch-zoom state into a saved sub-clip. -->
+    <section id="remix-panel" class="remix-panel" hidden>
+      <h3>Remixes <span class="muted" id="remix-count"></span></h3>
+      <div id="remix-list"></div>
+      <div id="remix-editor" hidden>
+        <div class="remix-editor-row">
+          <label>Title <input id="remix-title" type="text" placeholder="What's happening here?"></label>
+        </div>
+        <div class="remix-editor-row">
+          <label>Start <input id="remix-start" type="number" step="0.1" min="0" value="0"> s</label>
+          <label>End   <input id="remix-end"   type="number" step="0.1" min="0" value="0"> s</label>
+          <button id="remix-mark-start" type="button" title="Use current playhead as start">⇤ now</button>
+          <button id="remix-mark-end"   type="button" title="Use current playhead as end">now ⇥</button>
+        </div>
+        <div class="remix-editor-row">
+          <span id="remix-zoom-label" class="muted">Zoom: fit</span>
+          <button id="remix-capture-zoom" type="button" title="Capture current pinch-zoom region">📷 capture zoom</button>
+        </div>
+        <div class="remix-editor-row">
+          <button id="remix-save" type="button" class="primary">Save remix</button>
+          <button id="remix-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <div id="remix-actions" class="remix-actions">
+        <button id="remix-new" type="button">+ New remix</button>
+      </div>
+    </section>
+
     <p class="meta-note"><a href="/highlights">← back to all highlights</a></p>
   </main>
+  <script src="/static/panzoom.min.js?v={{ v }}"></script>
   <script src="/static/card.js?v={{ v }}"></script>
   <script src="/static/clip.js?v={{ v }}"></script>
 </body>

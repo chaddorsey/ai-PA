@@ -367,6 +367,10 @@ button:hover { background: #1d4fd1; }
 
 .highlight.is-favorited { box-shadow: 0 0 0 1px #c47e2a inset; }
 .highlight.is-demoted   { opacity: 0.65; }
+/* Shared family-favorite ring — golden glow distinct from solo favorite. */
+.highlight.is-shared {
+  box-shadow: 0 0 0 2px #fa9f3b inset, 0 0 18px -4px rgba(250,159,59,0.3);
+}
 
 .highlight .meta a.time {
   color: #f5f5f5;
@@ -517,3 +521,66 @@ button:hover { background: #1d4fd1; }
   color: #888;
 }
 .meta-note a { color: #aaa; }
+
+/* Remix panel: lives below the highlight on /clip/<id>. Lists existing
+   remixes + hosts the create editor. */
+.remix-panel {
+  margin-top: 1.5rem;
+  padding: 1rem 1.2rem;
+  border: 1px solid #1f2228;
+  border-radius: 12px;
+  background: #15171c;
+}
+.remix-panel h3 { margin: 0 0 0.7rem; font-size: 1rem; font-weight: 500; }
+.remix-panel .muted { color: #888; font-size: 0.85rem; margin-left: 0.4rem; }
+.remix-item {
+  display: block;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.4rem;
+  border: 1px solid #2a2f37;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #d8d8d8;
+  background: #1a1d24;
+  transition: border-color 120ms;
+}
+.remix-item:hover { border-color: #c47e2a; }
+.remix-title { font-weight: 500; color: #f5f5f5; }
+.remix-meta { font-size: 0.8rem; color: #888; margin-top: 0.15rem; }
+.remix-actions { margin-top: 0.7rem; }
+.remix-actions button {
+  background: #1a1d24; color: #c0c0c0;
+  border: 1px solid #2a2f37; border-radius: 6px;
+  padding: 0.4rem 0.9rem; font-size: 0.9rem; cursor: pointer;
+  margin: 0;
+}
+.remix-actions button:hover { background: #232830; color: #fff; }
+#remix-editor { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid #232830; }
+.remix-editor-row {
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.remix-editor-row label { font-size: 0.85rem; color: #b0b0b0; }
+.remix-editor-row input[type="text"] {
+  flex: 1; min-width: 200px;
+  background: #0e1014; color: #e6e6e6;
+  border: 1px solid #2a2f37; border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+}
+.remix-editor-row input[type="number"] {
+  width: 6rem;
+  background: #0e1014; color: #e6e6e6;
+  border: 1px solid #2a2f37; border-radius: 6px;
+  padding: 0.35rem 0.5rem; margin-left: 0.3rem;
+}
+.remix-editor-row button {
+  background: #1a1d24; color: #c0c0c0;
+  border: 1px solid #2a2f37; border-radius: 6px;
+  padding: 0.35rem 0.7rem; font-size: 0.85rem; cursor: pointer;
+  margin: 0;
+}
+.remix-editor-row button.primary {
+  background: #c47e2a; color: white; border-color: #c47e2a;
+}
+.remix-editor-row button.primary:hover { background: #a06520; }
+.remix-editor-row button:disabled { opacity: 0.5; cursor: default; }

@@ -159,8 +159,9 @@ def list_highlights(
     since: float | None = Query(default=None, description="unix epoch seconds"),
     until: float | None = Query(default=None, description="unix epoch seconds"),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
-    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted)$"),
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
+    email: str | None = Query(default=None, description="viewer email for 'mine' bucket"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -171,21 +172,60 @@ def list_highlights(
     elif time_of_day == "night":
         hour_from, hour_to = 18, 6
 
-    rows = db.list_highlights(
-        DB_PATH,
-        camera=camera, since=since, until=until,
-        min_score=min_score, bucket=bucket,
-        hour_from=hour_from, hour_to=hour_to,
-        limit=limit, offset=offset,
-    )
+    # Special buckets that come from the per-user actions table:
+    #  - 'mine'   : highlights this user has favorited (newest first)
+    #  - 'shared' : highlights favorited by 2+ family members
+    rows: list[dict[str, Any]]
+    if bucket == "mine":
+        if not email:
+            raise HTTPException(status_code=400, detail="bucket=mine requires email")
+        ids = db.list_my_favorites(DB_PATH, email, limit=limit, offset=offset)
+        rows = [r for r in (db.get_highlight(DB_PATH, eid) for eid in ids) if r]
+    elif bucket == "shared":
+        pairs = db.list_shared_favorites(DB_PATH, limit=limit, offset=offset)
+        rows = []
+        for eid, _n in pairs:
+            r = db.get_highlight(DB_PATH, eid)
+            if r:
+                rows.append(r)
+    else:
+        rows = db.list_highlights(
+            DB_PATH,
+            camera=camera, since=since, until=until,
+            min_score=min_score, bucket=bucket,
+            hour_from=hour_from, hour_to=hour_to,
+            limit=limit, offset=offset,
+        )
+
+    # Attach per-user vote data to every card so frontend can show
+    # heart state (this user) + count badge (family total).
+    if rows:
+        votes = db.list_user_actions_bulk(DB_PATH, [r["event_id"] for r in rows])
+        for r in rows:
+            v = votes.get(r["event_id"], {})
+            favorites = v.get("favorites", [])
+            r["favorite_voters"] = favorites
+            r["favorite_count"] = len(favorites)
+            r["my_favorited"] = bool(email and email in favorites)
+            r["my_demoted"] = bool(email and email in v.get("demotes", []))
+
     return {"items": rows, "count": len(rows)}
 
 
 @app.get("/highlights/{event_id}")
-def get_highlight(event_id: str) -> dict[str, Any]:
+def get_highlight(event_id: str, email: str | None = None) -> dict[str, Any]:
     h = db.get_highlight(DB_PATH, event_id)
     if not h:
         raise HTTPException(status_code=404, detail="not found")
+    state = db.get_user_state(DB_PATH, event_id, email or "")
+    h.update({
+        "my_favorited": state["my_favorited"] if email else False,
+        "my_demoted": state["my_demoted"] if email else False,
+        "favorite_voters": state["voters"],
+        "favorite_count": state["favorite_count"],
+    })
+    # Attach remixes so the clip page can list them.
+    h["remixes"] = db.remix_list_for_event(DB_PATH, event_id)
     return h
 
 
@@ -387,23 +427,135 @@ class ActionBody(BaseModel):
 
 @app.post("/highlights/{event_id}/favorite")
 def favorite_event(event_id: str, body: ActionBody) -> dict[str, Any]:
-    row = db.set_action(DB_PATH, event_id, "favorite", body.by)
-    if row is None:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="favorites require a 'by' email")
+    if not db.get_highlight(DB_PATH, event_id):
         raise HTTPException(status_code=404, detail="not found")
-    return {"status": "favorited", "highlight": row}
+    db.user_action_set(DB_PATH, event_id, body.by, "favorite")
+    return {"status": "favorited", "highlight": _highlight_with_state(event_id, body.by)}
 
 
 @app.post("/highlights/{event_id}/demote")
 def demote_event(event_id: str, body: ActionBody) -> dict[str, Any]:
-    row = db.set_action(DB_PATH, event_id, "demote", body.by)
-    if row is None:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="demotes require a 'by' email")
+    if not db.get_highlight(DB_PATH, event_id):
         raise HTTPException(status_code=404, detail="not found")
-    return {"status": "demoted", "highlight": row}
+    db.user_action_set(DB_PATH, event_id, body.by, "demote")
+    return {"status": "demoted", "highlight": _highlight_with_state(event_id, body.by)}
 
 
 @app.post("/highlights/{event_id}/clear")
 def clear_event(event_id: str, body: ActionBody) -> dict[str, Any]:
-    row = db.set_action(DB_PATH, event_id, "clear", body.by)
-    if row is None:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="clear requires a 'by' email")
+    if not db.get_highlight(DB_PATH, event_id):
         raise HTTPException(status_code=404, detail="not found")
-    return {"status": "cleared", "highlight": row}
+    db.user_action_clear(DB_PATH, event_id, body.by)
+    return {"status": "cleared", "highlight": _highlight_with_state(event_id, body.by)}
+
+
+def _highlight_with_state(event_id: str, email: str) -> dict[str, Any]:
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        return {}
+    state = db.get_user_state(DB_PATH, event_id, email)
+    h.update({
+        "my_favorited": state["my_favorited"],
+        "my_demoted": state["my_demoted"],
+        "favorite_voters": state["voters"],
+        "favorite_count": state["favorite_count"],
+    })
+    return h
+
+
+# ---------------------------------------------------------------------------
+# Remixes — user-defined sub-clips with optional zoom region.
+# ---------------------------------------------------------------------------
+
+class RemixCreateBody(BaseModel):
+    by: str | None = None
+    title: str | None = None
+    start_offset_s: float
+    end_offset_s: float
+    zoom_x: float | None = None
+    zoom_y: float | None = None
+    zoom_scale: float = 1.0
+    notes: str | None = None
+
+
+class RemixUpdateBody(BaseModel):
+    title: str | None = None
+    start_offset_s: float | None = None
+    end_offset_s: float | None = None
+    zoom_x: float | None = None
+    zoom_y: float | None = None
+    zoom_scale: float | None = None
+    notes: str | None = None
+
+
+@app.post("/highlights/{event_id}/remix")
+def create_remix(event_id: str, body: RemixCreateBody) -> dict[str, Any]:
+    if not db.get_highlight(DB_PATH, event_id):
+        raise HTTPException(status_code=404, detail="highlight not found")
+    if body.end_offset_s <= body.start_offset_s:
+        raise HTTPException(status_code=400, detail="end_offset_s must exceed start_offset_s")
+    remix_id = db.remix_create(
+        DB_PATH,
+        event_id=event_id, created_by=body.by, title=body.title,
+        start_offset_s=body.start_offset_s, end_offset_s=body.end_offset_s,
+        zoom_x=body.zoom_x, zoom_y=body.zoom_y, zoom_scale=body.zoom_scale,
+        notes=body.notes,
+    )
+    return {"remix_id": remix_id, "remix": db.remix_get(DB_PATH, remix_id)}
+
+
+@app.get("/remixes/{remix_id}")
+def get_remix(remix_id: str) -> dict[str, Any]:
+    r = db.remix_get(DB_PATH, remix_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="remix not found")
+    h = db.get_highlight(DB_PATH, r["event_id"])
+    return {"remix": r, "highlight": h}
+
+
+@app.get("/remixes")
+def list_remixes(email: str | None = None,
+                  event_id: str | None = None,
+                  limit: int = Query(default=100, ge=1, le=1000),
+                  offset: int = Query(default=0, ge=0)) -> dict[str, Any]:
+    if event_id:
+        items = db.remix_list_for_event(DB_PATH, event_id)
+    elif email:
+        items = db.remix_list_for_user(DB_PATH, email, limit=limit, offset=offset)
+    else:
+        items = db.remix_list_recent(DB_PATH, limit=limit, offset=offset)
+    return {"items": items, "count": len(items)}
+
+
+@app.patch("/remixes/{remix_id}")
+def update_remix(remix_id: str, body: RemixUpdateBody) -> dict[str, Any]:
+    if not db.remix_get(DB_PATH, remix_id):
+        raise HTTPException(status_code=404, detail="remix not found")
+    db.remix_update(
+        DB_PATH, remix_id,
+        title=body.title, start_offset_s=body.start_offset_s,
+        end_offset_s=body.end_offset_s,
+        zoom_x=body.zoom_x, zoom_y=body.zoom_y,
+        zoom_scale=body.zoom_scale, notes=body.notes,
+    )
+    return {"remix": db.remix_get(DB_PATH, remix_id)}
+
+
+@app.delete("/remixes/{remix_id}")
+def delete_remix(remix_id: str, by: str | None = None) -> dict[str, Any]:
+    r = db.remix_get(DB_PATH, remix_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="remix not found")
+    # Creator-only delete (any logged-in family member can delete their
+    # own remixes; not a moderator path yet).
+    only_creator = r.get("created_by") if by else None
+    if r.get("created_by") and by != r["created_by"]:
+        raise HTTPException(status_code=403, detail="only creator may delete")
+    db.remix_delete(DB_PATH, remix_id, only_creator=only_creator)
+    return {"status": "deleted", "remix_id": remix_id}

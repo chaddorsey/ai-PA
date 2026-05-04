@@ -36,8 +36,11 @@
     const el = document.createElement("div");
     el.className = "highlight";
     el.dataset.eventId = h.event_id;
-    if (h.favorited) el.classList.add("is-favorited");
-    if (h.demoted) el.classList.add("is-demoted");
+    // Heart state shows the CURRENT viewer's vote, not the aggregate.
+    // Aggregate count appears as a small badge next to it.
+    if (h.my_favorited) el.classList.add("is-favorited");
+    if (h.my_demoted) el.classList.add("is-demoted");
+    if ((h.favorite_count || 0) >= 2) el.classList.add("is-shared");
     if (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD) {
       el.classList.add("is-new");
     }
@@ -171,11 +174,14 @@
   function cardActions(h) {
     const bar = document.createElement("div");
     bar.className = "actions";
-    bar.appendChild(actionBtn("⭐", "favorite", h.favorited, () =>
-      setAction(h.event_id, h.favorited ? "clear" : "favorite")
+    // Heart shows YOUR state; small "★ N" suffix when family has favorited too.
+    const favCount = h.favorite_count || 0;
+    const favLabel = favCount > 1 ? `⭐ ${favCount}` : "⭐";
+    bar.appendChild(actionBtn(favLabel, "favorite", h.my_favorited, () =>
+      setAction(h.event_id, h.my_favorited ? "clear" : "favorite")
     ));
-    bar.appendChild(actionBtn("🚫", "demote", h.demoted, () =>
-      setAction(h.event_id, h.demoted ? "clear" : "demote")
+    bar.appendChild(actionBtn("🚫", "demote", h.my_demoted, () =>
+      setAction(h.event_id, h.my_demoted ? "clear" : "demote")
     ));
     bar.appendChild(actionBtn("🔗", "share", false, () => copyShareLink(h.event_id)));
     return bar;
@@ -215,7 +221,9 @@
     let shouldHide = false;
     if (currentBucket === "pending" && h.demoted) shouldHide = true;
     if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
-    if (currentBucket === "demoted" && !h.demoted) shouldHide = true;
+    if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
+    if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;
+    if (currentBucket === "demoted" && !h.my_demoted) shouldHide = true;
 
     if (shouldHide) {
       card.style.transition = "opacity 0.3s";

@@ -62,7 +62,274 @@ _MIGRATIONS = [
     )""",
     "ALTER TABLE highlights ADD COLUMN source TEXT NOT NULL DEFAULT 'frigate'",
     "CREATE INDEX IF NOT EXISTS highlights_source ON highlights (source, start_time DESC)",
+    # Per-user favorites/demotes — replaces the single-bucket model.
+    # The legacy highlights.favorited / .demoted columns stay as
+    # *aggregate* state ("anyone favorited this") so existing UI
+    # rendering doesn't break; per-user state lives here.
+    """CREATE TABLE IF NOT EXISTS highlight_user_actions (
+        highlight_id   TEXT NOT NULL,
+        email          TEXT NOT NULL,
+        action         TEXT NOT NULL,
+        set_at         REAL NOT NULL,
+        PRIMARY KEY (highlight_id, email, action)
+    )""",
+    "CREATE INDEX IF NOT EXISTS hua_email ON highlight_user_actions (email, action, set_at DESC)",
+    "CREATE INDEX IF NOT EXISTS hua_highlight ON highlight_user_actions (highlight_id, action)",
+    # Backfill existing favorited rows into the new per-user table,
+    # keyed on last_action_by. Idempotent via INSERT OR IGNORE on PK.
+    """INSERT OR IGNORE INTO highlight_user_actions (highlight_id, email, action, set_at)
+       SELECT event_id, last_action_by, 'favorite', COALESCE(last_action_at, created_at)
+       FROM highlights
+       WHERE favorited = 1 AND last_action_by IS NOT NULL""",
+    """INSERT OR IGNORE INTO highlight_user_actions (highlight_id, email, action, set_at)
+       SELECT event_id, last_action_by, 'demote', COALESCE(last_action_at, created_at)
+       FROM highlights
+       WHERE demoted = 1 AND last_action_by IS NOT NULL""",
+    # Remixes — user-defined sub-clips with optional zoom region.
+    """CREATE TABLE IF NOT EXISTS remixes (
+        remix_id        TEXT PRIMARY KEY,
+        event_id        TEXT NOT NULL,
+        created_by      TEXT,
+        created_at      REAL NOT NULL DEFAULT (strftime('%s','now')),
+        title           TEXT,
+        start_offset_s  REAL NOT NULL,
+        end_offset_s    REAL NOT NULL,
+        zoom_x          REAL,
+        zoom_y          REAL,
+        zoom_scale      REAL NOT NULL DEFAULT 1.0,
+        notes           TEXT
+    )""",
+    "CREATE INDEX IF NOT EXISTS remixes_event ON remixes (event_id, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS remixes_creator ON remixes (created_by, created_at DESC)",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Per-user favorite/demote helpers
+# ---------------------------------------------------------------------------
+
+def user_action_set(db_path: Path, event_id: str, email: str, action: str) -> None:
+    """Record that `email` performed `action` on `event_id`.
+    action ∈ {'favorite', 'demote'}. Inserts into the per-user table
+    (idempotent via PK), then recomputes aggregate columns on highlights.
+    Setting 'favorite' clears any prior 'demote' from the same user, and
+    vice versa."""
+    import time as _time
+    if action not in ("favorite", "demote"):
+        raise ValueError(f"unknown action: {action!r}")
+    other = "demote" if action == "favorite" else "favorite"
+    now = _time.time()
+    with connect(db_path) as conn:
+        # Toggle: clear opposing action by this user
+        conn.execute(
+            "DELETE FROM highlight_user_actions WHERE highlight_id = ? AND email = ? AND action = ?",
+            [event_id, email, other],
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO highlight_user_actions (highlight_id, email, action, set_at) "
+            "VALUES (?, ?, ?, ?)",
+            [event_id, email, action, now],
+        )
+        _refresh_aggregate(conn, event_id, email, now)
+
+
+def user_action_clear(db_path: Path, event_id: str, email: str) -> None:
+    """Remove any favorite/demote actions for this user on this highlight."""
+    import time as _time
+    now = _time.time()
+    with connect(db_path) as conn:
+        conn.execute(
+            "DELETE FROM highlight_user_actions WHERE highlight_id = ? AND email = ?",
+            [event_id, email],
+        )
+        _refresh_aggregate(conn, event_id, email, now)
+
+
+def _refresh_aggregate(conn: sqlite3.Connection, event_id: str,
+                        email: str | None, ts: float) -> None:
+    """Recompute legacy favorited/demoted columns from per-user table."""
+    fav = conn.execute(
+        "SELECT COUNT(*) AS n FROM highlight_user_actions WHERE highlight_id = ? AND action = 'favorite'",
+        [event_id],
+    ).fetchone()["n"]
+    dem = conn.execute(
+        "SELECT COUNT(*) AS n FROM highlight_user_actions WHERE highlight_id = ? AND action = 'demote'",
+        [event_id],
+    ).fetchone()["n"]
+    conn.execute(
+        "UPDATE highlights SET favorited = ?, demoted = ?, "
+        "last_action_by = ?, last_action_at = ? WHERE event_id = ?",
+        [1 if fav > 0 else 0, 1 if dem > 0 else 0, email, ts, event_id],
+    )
+
+
+def get_user_state(db_path: Path, event_id: str, email: str) -> dict[str, Any]:
+    """Return {my_favorited, my_demoted, voters: [...]} for one highlight."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT email, action FROM highlight_user_actions WHERE highlight_id = ?",
+            [event_id],
+        ).fetchall()
+    voters = [r["email"] for r in rows if r["action"] == "favorite"]
+    demoters = [r["email"] for r in rows if r["action"] == "demote"]
+    return {
+        "my_favorited": email in voters,
+        "my_demoted": email in demoters,
+        "voters": voters,
+        "demoters": demoters,
+        "favorite_count": len(voters),
+        "demote_count": len(demoters),
+    }
+
+
+def list_user_actions_bulk(db_path: Path, event_ids: list[str]) -> dict[str, dict]:
+    """For a list of event_ids, return {event_id: {favorites: [emails],
+    demotes: [emails]}}. Used by list endpoint to attach per-card vote data."""
+    if not event_ids:
+        return {}
+    placeholders = ",".join("?" for _ in event_ids)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT highlight_id, email, action FROM highlight_user_actions "
+            f"WHERE highlight_id IN ({placeholders})",
+            event_ids,
+        ).fetchall()
+    out: dict[str, dict] = {eid: {"favorites": [], "demotes": []} for eid in event_ids}
+    for r in rows:
+        bucket = "favorites" if r["action"] == "favorite" else "demotes"
+        out[r["highlight_id"]][bucket].append(r["email"])
+    return out
+
+
+def list_my_favorites(db_path: Path, email: str, *, limit: int = 100,
+                      offset: int = 0) -> list[str]:
+    """event_ids the user has favorited, newest favoriting first."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT highlight_id FROM highlight_user_actions "
+            "WHERE email = ? AND action = 'favorite' "
+            "ORDER BY set_at DESC LIMIT ? OFFSET ?",
+            [email, limit, offset],
+        ).fetchall()
+    return [r["highlight_id"] for r in rows]
+
+
+def list_shared_favorites(db_path: Path, *, min_voters: int = 2,
+                           limit: int = 100, offset: int = 0) -> list[tuple[str, int]]:
+    """Highlights favorited by at least min_voters distinct emails.
+    Returns [(event_id, count), ...] sorted by count desc, then start_time desc."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT hua.highlight_id, COUNT(DISTINCT hua.email) AS n "
+            "FROM highlight_user_actions hua "
+            "JOIN highlights h ON h.event_id = hua.highlight_id "
+            "WHERE hua.action = 'favorite' "
+            "GROUP BY hua.highlight_id "
+            "HAVING n >= ? "
+            "ORDER BY n DESC, h.start_time DESC "
+            "LIMIT ? OFFSET ?",
+            [min_voters, limit, offset],
+        ).fetchall()
+    return [(r["highlight_id"], r["n"]) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Remix helpers
+# ---------------------------------------------------------------------------
+
+def remix_create(db_path: Path, *, event_id: str, created_by: str | None,
+                 title: str | None, start_offset_s: float, end_offset_s: float,
+                 zoom_x: float | None, zoom_y: float | None,
+                 zoom_scale: float, notes: str | None) -> str:
+    import secrets
+    remix_id = secrets.token_urlsafe(8)
+    with connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO remixes (remix_id, event_id, created_by, title, "
+            "start_offset_s, end_offset_s, zoom_x, zoom_y, zoom_scale, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [remix_id, event_id, created_by, title, start_offset_s, end_offset_s,
+             zoom_x, zoom_y, zoom_scale, notes],
+        )
+    return remix_id
+
+
+def remix_get(db_path: Path, remix_id: str) -> dict[str, Any] | None:
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT * FROM remixes WHERE remix_id = ?", [remix_id]
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def remix_list_for_event(db_path: Path, event_id: str) -> list[dict[str, Any]]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM remixes WHERE event_id = ? ORDER BY created_at DESC",
+            [event_id],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remix_list_for_user(db_path: Path, email: str, *, limit: int = 100,
+                        offset: int = 0) -> list[dict[str, Any]]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM remixes WHERE created_by = ? "
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [email, limit, offset],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remix_list_recent(db_path: Path, *, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM remixes ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            [limit, offset],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def remix_update(db_path: Path, remix_id: str, *,
+                  title: str | None = None,
+                  start_offset_s: float | None = None,
+                  end_offset_s: float | None = None,
+                  zoom_x: float | None = None,
+                  zoom_y: float | None = None,
+                  zoom_scale: float | None = None,
+                  notes: str | None = None) -> bool:
+    fields, args = [], []
+    for k, v in [("title", title), ("start_offset_s", start_offset_s),
+                  ("end_offset_s", end_offset_s), ("zoom_x", zoom_x),
+                  ("zoom_y", zoom_y), ("zoom_scale", zoom_scale),
+                  ("notes", notes)]:
+        if v is not None:
+            fields.append(f"{k} = ?"); args.append(v)
+    if not fields:
+        return False
+    args.append(remix_id)
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            f"UPDATE remixes SET {', '.join(fields)} WHERE remix_id = ?", args
+        )
+        return cur.rowcount > 0
+
+
+def remix_delete(db_path: Path, remix_id: str, *, only_creator: str | None = None) -> bool:
+    """Delete a remix. If only_creator is provided, only delete if
+    created_by matches (otherwise no-op, returns False)."""
+    with connect(db_path) as conn:
+        if only_creator:
+            cur = conn.execute(
+                "DELETE FROM remixes WHERE remix_id = ? AND created_by = ?",
+                [remix_id, only_creator],
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM remixes WHERE remix_id = ?", [remix_id]
+            )
+        return cur.rowcount > 0
 
 
 def get_viewer_state(db_path: Path, email: str) -> dict[str, Any] | None:

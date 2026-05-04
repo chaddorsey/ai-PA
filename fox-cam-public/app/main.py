@@ -156,11 +156,25 @@ async def clip_permalink(event_id: str, request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/remix/{remix_id}", response_class=HTMLResponse)
+async def remix_permalink(remix_id: str, request: Request) -> HTMLResponse:
+    """Permalink for a saved remix (sub-clip + zoom region).
+    Shares the clip.html template; client JS detects the route and
+    fetches /api/remixes/<id> instead of /api/highlights/<id>."""
+    return templates.TemplateResponse(
+        "clip.html",
+        {"request": request, "event_id": "", "remix_id": remix_id, "v": ASSET_VERSION},
+    )
+
+
 @app.get("/api/highlights/{event_id}")
-async def get_highlight(event_id: str) -> Any:
+async def get_highlight(event_id: str, request: Request) -> Any:
     """Single highlight metadata — proxies curator's GET /highlights/<id>."""
+    email = _actor_email(request)
+    params = {"email": email} if email else {}
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/highlights/{event_id}", timeout=8.0)
+        r = await client.get(f"{CURATOR_API}/highlights/{event_id}",
+                              params=params, timeout=8.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -297,11 +311,12 @@ async def snapshot(stream: str) -> StreamingResponse:
 
 @app.get("/api/highlights")
 async def list_highlights(
+    request: Request,
     camera: str | None = None,
     since: float | None = Query(default=None),
     until: float | None = Query(default=None),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
-    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted)$"),
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
     species_filter: str = Query(default="", regex="^(|wildlife|fox|unclassified)$"),
     limit: int = Query(default=50, ge=1, le=500),
@@ -322,6 +337,11 @@ async def list_highlights(
         params["since"] = since
     if until is not None:
         params["until"] = until
+    # Forward viewer email so curator can attach my_favorited / my_demoted
+    # state per card and resolve bucket=mine.
+    email = _actor_email(request)
+    if email:
+        params["email"] = email
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/highlights", params=params, timeout=10.0)
     if r.status_code != 200:
@@ -397,6 +417,85 @@ async def demote(event_id: str, request: Request) -> Any:
 @app.post("/api/highlights/{event_id}/clear")
 async def clear(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "clear", _actor_email(request))
+
+
+# ---------------------------------------------------------------------------
+# Remixes — user-defined sub-clip trims with optional zoom region.
+# Proxies through to curator with viewer email forwarded as `by`.
+# ---------------------------------------------------------------------------
+
+@app.post("/api/highlights/{event_id}/remix")
+async def create_remix(event_id: str, request: Request) -> Any:
+    body = await request.json()
+    body["by"] = _actor_email(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{CURATOR_API}/highlights/{event_id}/remix",
+            json=body, timeout=10.0,
+        )
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code == 400:
+        raise HTTPException(status_code=400, detail=(r.json() or {}).get("detail", "bad request"))
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/remixes/{remix_id}")
+async def get_remix(remix_id: str) -> Any:
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/remixes/{remix_id}", timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/remixes")
+async def list_remixes(request: Request,
+                        event_id: str | None = None,
+                        scope: str = Query(default="", regex="^(|mine|all)$"),
+                        limit: int = Query(default=50, ge=1, le=500),
+                        offset: int = Query(default=0, ge=0)) -> Any:
+    email = _actor_email(request)
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if event_id: params["event_id"] = event_id
+    elif scope == "mine" and email: params["email"] = email
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/remixes", params=params, timeout=10.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.patch("/api/remixes/{remix_id}")
+async def update_remix(remix_id: str, request: Request) -> Any:
+    body = await request.json()
+    async with httpx.AsyncClient() as client:
+        r = await client.patch(f"{CURATOR_API}/remixes/{remix_id}",
+                                json=body, timeout=10.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.delete("/api/remixes/{remix_id}")
+async def delete_remix(remix_id: str, request: Request) -> Any:
+    by = _actor_email(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.delete(f"{CURATOR_API}/remixes/{remix_id}",
+                                 params={"by": by} if by else {}, timeout=10.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code == 403:
+        raise HTTPException(status_code=403, detail="only creator may delete")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
 
 
 async def _post_action(event_id: str, action: str, by: str | None) -> Any:
