@@ -38,15 +38,14 @@ REQUIRE_CF_ACCESS = os.environ.get("REQUIRE_CF_ACCESS", "true").lower() == "true
 
 # Whitelist of stream names go2rtc serves to the public. Hardcoded so a
 # bug in go2rtc config can't suddenly expose new streams via this service.
-PUBLIC_STREAMS = {
-    "fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4",
-    # Substream variants — used by the live grid view because main
-    # streams' SPS reports level 4.1 but actually emits 4K/4MP frames,
-    # which browsers refuse to decode. Substreams are 704x480/Main@3.1
-    # and decode cleanly. Spotlight will eventually switch to main
-    # once we rewrite the SPS via go2rtc bitstream filter.
-    "fox_den_1_sub", "fox_den_2_sub", "fox_den_3_sub", "fox_den_4_sub",
-}
+# Base camera names — what the live grid renders as tiles. One section
+# per camera; other UI keys off these names too (data-stream, id, etc.).
+PUBLIC_STREAMS = {"fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4"}
+
+# Streams the WebRTC/MSE proxy will pass through. Includes the _sub
+# variants because the live grid currently asks for them (main-stream
+# SPS-level mismatch causes browser decode errors).
+ALLOWED_PROXY_STREAMS = PUBLIC_STREAMS | {f"{s}_sub" for s in PUBLIC_STREAMS}
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -192,7 +191,7 @@ async def webrtc_offer(stream: str, request: Request) -> StreamingResponse:
     pass the body through. Path is whitelisted to PUBLIC_STREAMS so an
     attacker cannot supply a stream name we didn't intend to expose.
     """
-    if stream not in PUBLIC_STREAMS:
+    if stream not in ALLOWED_PROXY_STREAMS:
         raise HTTPException(status_code=404, detail="unknown stream")
     body = await request.body()
     headers = {"Content-Type": request.headers.get("content-type", "application/sdp")}
@@ -224,7 +223,7 @@ async def mse_websocket(ws: WebSocket, stream: str) -> None:
     Cloudflare Access auth is checked at WebSocket accept time via the
     cf-access-jwt-assertion header forwarded with the upgrade request.
     """
-    if stream not in PUBLIC_STREAMS:
+    if stream not in ALLOWED_PROXY_STREAMS:
         await ws.close(code=4404, reason="unknown stream")
         return
     if REQUIRE_CF_ACCESS and not ws.headers.get("cf-access-jwt-assertion"):
@@ -275,7 +274,7 @@ async def mse_websocket(ws: WebSocket, stream: str) -> None:
 @app.get("/api/snapshot/{stream}")
 async def snapshot(stream: str) -> StreamingResponse:
     """Serve a single JPEG snapshot from go2rtc (fallback for non-WebRTC clients)."""
-    if stream not in PUBLIC_STREAMS:
+    if stream not in ALLOWED_PROXY_STREAMS:
         raise HTTPException(status_code=404, detail="unknown stream")
     async with httpx.AsyncClient() as client:
         r = await client.get(
