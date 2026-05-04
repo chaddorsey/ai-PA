@@ -50,19 +50,22 @@ main { padding: 1rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto; }
    Mobile (≤720px): single column; spotlight on top, others below in
    normal page-scroll flow. */
 
+/* Desktop spotlight: spotlight cam is position:absolute filling column-1
+   area; non-spotlight cams flow naturally in grid column 2 (each in
+   its own auto row, stacked). This avoids two grid-row pitfalls:
+   - All cams in grid-column:2 sharing row 1 stack on top of each other.
+   - grid-row: 1 / span 99 stretches auto-rows the spotlight track
+     spans, which other items don't honor.
+*/
+
 .live-layout[data-mode="spotlight"] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
   gap: 1rem;
   align-items: start;
+  align-content: start;
 }
 
-.live-layout[data-mode="spotlight"] .cam.is-spotlight {
-  grid-column: 1;
-  /* Span enough rows that the spotlight is always taller than the
-     stack of thumbnails next to it. */
-  grid-row: 1 / span 99;
-}
 .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) {
   grid-column: 2;
 }
@@ -74,31 +77,43 @@ main { padding: 1rem 1.5rem 4rem; max-width: 1400px; margin: 0 auto; }
   display: none;
 }
 
-/* Desktop: pin the layout to viewport so page scroll doesn't move
-   the spotlight. The thumbnail stack in column 2 will overflow if
-   there are enough cams; we get scroll naturally on the grid container
-   via overflow-y on the column. */
+/* Desktop: pin the layout to viewport so page scroll doesn't move the
+   spotlight. The spotlight cam is absolutely positioned to occupy
+   column 1's full height; the grid only really uses column 2. */
 @media (min-width: 721px) {
   body.spotlight-mode { overflow: hidden; }
   .live-layout[data-mode="spotlight"] {
+    position: relative;
     height: calc(100vh - 80px);
-    overflow: hidden;
   }
   .live-layout[data-mode="spotlight"] .cam.is-spotlight {
+    position: absolute;
+    left: 0;
+    top: 0;
+    /* Width = container width minus rail (260px) and gap (1rem). */
+    width: calc(100% - 260px - 1rem);
     height: 100%;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Right column (non-spotlight cams) gets independent overflow. */
+  .live-layout[data-mode="spotlight"] {
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 }
 
-/* Mobile: single column, page scrolls. */
+/* Mobile: single column, position relative, page scrolls naturally. */
 @media (max-width: 720px) {
   .live-layout[data-mode="spotlight"] {
     grid-template-columns: 1fr;
   }
-  .live-layout[data-mode="spotlight"] .cam.is-spotlight,
+  .live-layout[data-mode="spotlight"] .cam.is-spotlight {
+    grid-column: 1;
+    position: static;
+  }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) {
     grid-column: 1;
-    grid-row: auto;
   }
 }
 

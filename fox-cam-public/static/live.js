@@ -238,6 +238,20 @@
   const DRAG_THRESHOLD_PX = 6;
   const downPos = new WeakMap();
 
+  // The "Live" nav link points to "/" — clicking it while already on
+  // "/" would trigger a full page reload, tearing down all 4 streams
+  // and forcing the 5-10s cold-start dance again. Intercept that click
+  // and just collapse to grid mode in-place if we're already on /.
+  const liveLink = document.querySelector('nav a[href="/"]');
+  if (liveLink) {
+    liveLink.addEventListener("click", (e) => {
+      if (location.pathname === "/" || location.pathname === "") {
+        e.preventDefault();
+        if (main.dataset.mode !== "grid") setMode("grid");
+      }
+    });
+  }
+
   cams.forEach((cam) => {
     cam.addEventListener("pointerdown", (e) => {
       downPos.set(cam, { x: e.clientX, y: e.clientY });
