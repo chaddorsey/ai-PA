@@ -129,21 +129,25 @@ body.landing a:hover { color: var(--color-ink); }
   opacity: 0.65;
 }
 
-/* Mid layer: scattered trees + a stump */
-.hero-layer.layer-mid .tree-trio  { left:  2%; bottom: 18%; height: 75%; }
-.hero-layer.layer-mid .tree-pair  { right: 4%; bottom: 22%; height: 65%; }
-.hero-layer.layer-mid .stump      { left: 38%; bottom: 8%;  height: 22%; }
-.hero-layer.layer-mid .ferns-l    { left:  6%; bottom: 4%;  height: 18%; }
-.hero-layer.layer-mid .ferns-r    { right:18%; bottom: 6%;  height: 16%; }
-.hero-layer.layer-mid .rabbit     { right:32%; bottom: 12%; height: 11%; }
+/* Mid layer: scattered trees + a stump. Trees stay tall (they're trees!),
+   but ferns and the stump are scaled down to feel like ground details. */
+.hero-layer.layer-mid .tree-trio  { left:  2%; bottom: 14%; height: 60%; }
+.hero-layer.layer-mid .tree-pair  { right: 4%; bottom: 16%; height: 50%; }
+.hero-layer.layer-mid .stump      { left: 40%; bottom: 4%;  height: 11%; }
+.hero-layer.layer-mid .ferns-l    { left: 10%; bottom: 2%;  height: 8%; }
+.hero-layer.layer-mid .ferns-r    { right:22%; bottom: 4%;  height: 7%; }
+.hero-layer.layer-mid .rabbit     { right:36%; bottom: 6%;  height: 6%; }
 
-/* Foreground layer: grasses, mushrooms, rocks at the bottom edge */
-.hero-layer.layer-fore .grass-1   { left:  0;   bottom:0;   width: 38%; }
-.hero-layer.layer-fore .grass-2   { left: 32%;  bottom:0;   width: 38%; }
-.hero-layer.layer-fore .grass-3   { right: 0;   bottom:0;   width: 36%; }
-.hero-layer.layer-fore .mushrooms { left: 12%;  bottom: 5%; height: 14%; }
-.hero-layer.layer-fore .rocks     { right: 9%;  bottom: 3%; height: 16%; }
-.hero-layer.layer-fore .acorn     { left: 70%;  bottom:11%; height: 6%; }
+/* Foreground layer: small grass tufts + tiny ground accents along the
+   bottom edge. Treat them as decorative dabs, not scenery. */
+.hero-layer.layer-fore .grass-1   { left:  4%; bottom: 0; width: 11%; }
+.hero-layer.layer-fore .grass-2   { left: 24%; bottom: 0; width: 9%;  }
+.hero-layer.layer-fore .grass-3   { right:14%; bottom: 0; width: 11%; }
+.hero-layer.layer-fore .grass-4   { right:34%; bottom: 0; width: 8%;  }
+.hero-layer.layer-fore .grass-5   { left: 56%; bottom: 0; width: 9%;  }
+.hero-layer.layer-fore .mushrooms { left: 16%; bottom: 1%; height: 5%; }
+.hero-layer.layer-fore .rocks     { right: 6%; bottom: 1%; height: 5%; }
+.hero-layer.layer-fore .acorn     { left: 72%; bottom: 4%; height: 3%; }
 
 /* Hero text — fixed (no parallax), centered, glowy */
 .hero-text {
@@ -175,19 +179,20 @@ body.landing a:hover { color: var(--color-ink); }
   align-items: center;
   gap: 8px;
   margin-top: 28px;
-  padding: 14px 32px;
+  padding: 16px 36px;
   border-radius: var(--radius-pill);
   background: var(--color-glow);
-  color: white;
+  color: #ffffff;
   font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  font-size: 19px;
+  letter-spacing: 0.01em;
   border: none;
   box-shadow: var(--shadow-cta);
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
   text-decoration: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
 }
 
 .hero-cta:hover,
@@ -378,7 +383,15 @@ body.landing.ready .hero-cta { opacity: 1; transform: translateY(0); }
 @media (max-width: 720px) { .about-grid { grid-template-columns: 1fr; gap: 36px; } }
 
 .about-col img,
-.about-col svg { height: 88px; width: auto; margin: 0 auto 16px; display: block; }
+.about-col svg { height: 92px; width: auto; margin: 0 auto 14px; display: block; }
+.about-col h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 17px;
+  margin: 0;
+  color: var(--color-ink-soft);
+  letter-spacing: 0.02em;
+}
 
 /* --------------------------------------------------------------------------
    FOOTER
