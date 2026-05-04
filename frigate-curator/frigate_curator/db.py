@@ -60,6 +60,8 @@ _MIGRATIONS = [
         last_seen_at   REAL NOT NULL,
         updated_at     REAL NOT NULL DEFAULT (strftime('%s','now'))
     )""",
+    "ALTER TABLE highlights ADD COLUMN source TEXT NOT NULL DEFAULT 'frigate'",
+    "CREATE INDEX IF NOT EXISTS highlights_source ON highlights (source, start_time DESC)",
 ]
 
 
