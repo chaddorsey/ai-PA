@@ -1285,7 +1285,10 @@ body.filters-hidden .filters { display: none !important; }
   flex-shrink: 0;
 }
 
-/* Remix list/grid toggle — icon-only square pills */
+/* Remix list/grid toggle — icon-only square pills.
+   Material Icons font has a built-in line-height that's NOT 1;
+   without explicit line-height the glyph sits visually high in the
+   button. Lock it down here. */
 .view-toggle {
   display: inline-flex;
   background: var(--color-cream-deep);
@@ -1293,6 +1296,7 @@ body.filters-hidden .filters { display: none !important; }
   border-radius: 999px;
   gap: 2px;
   margin: 0;
+  align-items: center;
 }
 .view-toggle button {
   background: transparent;
@@ -1300,15 +1304,21 @@ body.filters-hidden .filters { display: none !important; }
   color: var(--color-ink-soft);
   width: 36px;
   height: 36px;
+  padding: 0;
   border-radius: 999px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 1;
   transition: background 0.15s ease, color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.view-toggle button .material-icons { font-size: 20px; }
+.view-toggle button .material-icons {
+  font-size: 20px;
+  line-height: 1;
+  display: block;
+}
 .view-toggle button:hover { color: var(--color-ink); }
 .view-toggle button.active {
   background: var(--color-glow);

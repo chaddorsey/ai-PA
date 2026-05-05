@@ -904,18 +904,35 @@
     }
 
     videoEl = body.querySelector(".modal-video");
-    videoEl.controls = true;            // belt-and-suspenders: ensure
-    videoEl.setAttribute("controls", ""); // native scrubber renders
+    videoEl.controls = true;
+    videoEl.setAttribute("controls", "");
     videoEl.src = `/api/highlights/${encodeURIComponent(parentH.event_id)}/clip`;
     const wrap = body.querySelector(".modal-video-wrap");
 
-    // Seek to start_offset, stop at end_offset.
-    videoEl.addEventListener("loadedmetadata", () => {
-      videoEl.currentTime = remix.start_offset_s || 0;
-    }, { once: true });
+    // Seek to start_offset, stop at end_offset. Defensive: if
+    // metadata is already loaded by the time we attach the listener
+    // (cached video, instant seek), apply the seek immediately;
+    // otherwise wait for the loadedmetadata event.
+    const seekToStart = () => {
+      const startS = Number(remix.start_offset_s) || 0;
+      try { videoEl.currentTime = startS; } catch {}
+    };
+    if (videoEl.readyState >= 1 /* HAVE_METADATA */) {
+      seekToStart();
+    } else {
+      videoEl.addEventListener("loadedmetadata", seekToStart, { once: true });
+      // Also seek once the browser has buffered enough to start playing —
+      // ensures the user actually sees the trim window even if metadata
+      // load + autoplay raced.
+      videoEl.addEventListener("loadeddata", seekToStart, { once: true });
+    }
     videoEl.addEventListener("timeupdate", () => {
-      if (remix.end_offset_s && videoEl.currentTime >= remix.end_offset_s - 0.05) {
+      const endS = Number(remix.end_offset_s) || 0;
+      if (endS && videoEl.currentTime >= endS - 0.05) {
         videoEl.pause();
+        // Snap back to start so the next play resumes the trim window
+        // rather than continuing into the post-roll of the parent clip.
+        videoEl.currentTime = Number(remix.start_offset_s) || 0;
       }
     });
 
