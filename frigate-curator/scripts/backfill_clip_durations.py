@@ -58,12 +58,14 @@ def main() -> int:
             n_fail += 1
             continue
         old = r["duration_s"] or 0
-        if abs(d - old) > 0.5:
+        # Always force-write the ffprobe value so the field never drifts
+        # from the on-disk file, even when within tenths of a second.
+        if abs(d - old) > 0.01:
             conn.execute(
                 "UPDATE highlights SET duration_s = ? WHERE event_id = ?",
                 [d, eid],
             )
-            print(f"[ok]   {eid}: {old:.1f}s → {d:.1f}s")
+            print(f"[ok]   {eid}: {old:.2f}s → {d:.2f}s")
         n_ok += 1
     conn.commit()
     conn.close()
