@@ -82,6 +82,8 @@ cameras:
         - path: rtsp://host.docker.internal:8555/fox_den_1_sub
           roles:
             - detect
+        - path: rtsp://host.docker.internal:8555/fox_den_1
+          roles:
             - record
     detect:
       enabled: true
@@ -132,6 +134,8 @@ cameras:
         - path: rtsp://host.docker.internal:8555/fox_den_2_sub
           roles:
             - detect
+        - path: rtsp://host.docker.internal:8555/fox_den_2
+          roles:
             - record
     detect:
       enabled: true
@@ -162,6 +166,8 @@ cameras:
         - path: rtsp://host.docker.internal:8555/fox_den_3_sub
           roles:
             - detect
+        - path: rtsp://host.docker.internal:8555/fox_den_3
+          roles:
             - record
     detect:
       enabled: true
@@ -209,6 +215,8 @@ cameras:
         - path: rtsp://host.docker.internal:8555/fox_den_4_sub
           roles:
             - detect
+        - path: rtsp://host.docker.internal:8555/fox_den_4
+          roles:
             - record
     detect:
       enabled: true

@@ -901,20 +901,14 @@ body.filters-hidden .filters { display: none !important; }
   transition: transform 0.32s cubic-bezier(.4,0,.2,1), opacity 0.25s ease;
   will-change: transform;
 }
-.modal-stage.sliding-out-left  { transform: translateX(-100%); opacity: 0; }
-.modal-stage.sliding-out-right { transform: translateX( 100%); opacity: 0; }
-.modal-stage.sliding-in-from-right {
-  position: absolute; inset: 0;
-  transform: translateX(100%);
-}
-.modal-stage.sliding-in-from-left {
-  position: absolute; inset: 0;
-  transform: translateX(-100%);
-}
-.modal-stage.sliding-in-active {
-  transform: translateX(0);
-  opacity: 1;
-}
+/* No position changes during slide — transform-only so removing the
+   classes at the end of animation doesn't snap layout. The body's
+   overflow: hidden keeps off-screen content clipped. */
+.modal-stage.sliding-out-left      { transform: translateX(-100%); opacity: 0; }
+.modal-stage.sliding-out-right     { transform: translateX( 100%); opacity: 0; }
+.modal-stage.sliding-in-from-right { transform: translateX( 100%); opacity: 0; }
+.modal-stage.sliding-in-from-left  { transform: translateX(-100%); opacity: 0; }
+.modal-stage.sliding-in-active     { transform: translateX(0);     opacity: 1; }
 
 /* Section divider used inside the gallery (e.g. "Archived" section
    below active My Faves / Group Faves / Remixes items) */
@@ -943,4 +937,55 @@ body.filters-hidden .filters { display: none !important; }
 .action-btn,
 .archive-toggle {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* === Card + modal video: 16:9 cards, fill with cover ====================
+   Recording role now consumes the main stream (1920x1080 16:9) per
+   frigate/config/config.yml — saved clips are HD, not the substream's
+   704x480. Cards stay 16:9; videos use object-fit: cover so they fill
+   completely with no letterbox bars. (Older 4:3 clips will be side-
+   cropped slightly until they age out — acceptable since new MD-detected
+   visits arrive at 1080p.) */
+.highlight .thumb-wrap,
+.modal-video-wrap,
+.modal-stage-remix .modal-video-wrap {
+  aspect-ratio: 16 / 9 !important;
+}
+.highlight .thumb-wrap > img,
+.highlight .thumb-wrap > video,
+.modal-video {
+  object-fit: cover !important;
+}
+
+/* === Modal close × — remove rectangle, just the glyph upper-right ======== */
+.card-modal-close {
+  top: 4px !important;
+  right: 8px !important;
+  width: 32px !important;
+  height: 32px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: white !important;
+  font-size: 30px !important;
+  font-weight: 400 !important;
+  line-height: 1 !important;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+}
+.card-modal-close:hover {
+  background: transparent !important;
+  transform: scale(1.15) !important;
+  color: white !important;
+}
+
+/* === Modal nav: hard-disable focus outlines on the prev button =========== */
+.modal-nav,
+.modal-nav:focus,
+.modal-nav:focus-visible,
+.modal-nav:active {
+  outline: none !important;
+  box-shadow: none !important;
 }
