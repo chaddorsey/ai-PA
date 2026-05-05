@@ -1453,3 +1453,14 @@ body.filters-hidden .filters { display: none !important; }
     flex-shrink: 0;
   }
 }
+
+/* P1.4 — On iOS, hide modal prev/next buttons; horizontal swipe takes
+   their place. Desktop + Android touch keep the always-visible arrows
+   (Android touch via the (hover: none) opacity rule above). */
+body.ios .modal-nav { display: none !important; }
+
+/* P1.8 — Gesture coexistence. The dialog body allows vertical scroll +
+   horizontal swipe; the video wrap delegates everything to panzoom (so
+   pinch / two-finger pan work without browser interception). */
+.card-modal-body { touch-action: pan-y; }
+.modal-video-wrap > video { touch-action: none; }

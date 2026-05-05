@@ -261,18 +261,64 @@
     if (!dialog.open) return;
     if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-      const siblings = findSiblingIds();
-      if (!current) return;
-      const i = siblings.indexOf(current.event_id);
-      if (i < 0) return;
       const direction = e.key === "ArrowLeft" ? "prev" : "next";
-      const target = direction === "prev" ? siblings[i - 1] : siblings[i + 1];
-      if (target) {
-        e.preventDefault();
-        slideToCard(target, direction);
-      }
+      navigateModal(direction, e);
     }
   });
+
+  // Unified navigation entry point — used by both keyboard and touch
+  // swipe. Handles both highlight-card mode (slideToCard over
+  // findSiblingIds()) and remix-playback mode (slideToRemix over
+  // window.REMIX_NAV_LIST). Returns true if a slide fired so the
+  // caller can suppress default browser behavior.
+  function navigateModal(direction, ev) {
+    if (currentRemix) {
+      const list = window.REMIX_NAV_LIST || [];
+      const i = list.indexOf(currentRemix.remix_id);
+      if (i < 0) return false;
+      const target = direction === "prev" ? list[i - 1] : list[i + 1];
+      if (!target) return false;
+      if (ev && ev.preventDefault) ev.preventDefault();
+      slideToRemix(target, direction);
+      return true;
+    }
+    if (!current) return false;
+    const siblings = findSiblingIds();
+    const i = siblings.indexOf(current.event_id);
+    if (i < 0) return false;
+    const target = direction === "prev" ? siblings[i - 1] : siblings[i + 1];
+    if (!target) return false;
+    if (ev && ev.preventDefault) ev.preventDefault();
+    slideToCard(target, direction);
+    return true;
+  }
+
+  // Touch swipe handler — bound on the dialog (not the video wrap, so
+  // pinch on the video stays with panzoom). A horizontal swipe of >60px
+  // and at least 1.5× more horizontal than vertical fires navigateModal.
+  // Vertical scroll inside the body (touch-action: pan-y) is preserved.
+  let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+  dialog.addEventListener("touchstart", (e) => {
+    // Only single-finger swipes navigate; multi-touch is panzoom.
+    if (e.touches.length !== 1) { touchStartT = 0; return; }
+    const t = e.touches[0];
+    touchStartX = t.clientX;
+    touchStartY = t.clientY;
+    touchStartT = Date.now();
+  }, { passive: true });
+  dialog.addEventListener("touchend", (e) => {
+    if (!touchStartT) return;
+    const dt = Date.now() - touchStartT;
+    touchStartT = 0;
+    if (dt > 600) return;             // too slow → user was holding, not swiping
+    if (e.changedTouches.length !== 1) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    if (Math.abs(dx) < 60) return;
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    navigateModal(dx > 0 ? "prev" : "next", null);
+  }, { passive: true });
 
   closeBtn.addEventListener("click", () => window.closeCardModal());
   // Replay button — restart the current modal video from frame 0.
