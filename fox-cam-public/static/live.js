@@ -150,9 +150,14 @@
         console.error(`[${stream}] start error:`, err);
         if (status) status.textContent = `error: ${err.message}`;
       });
-      video.addEventListener("loadedmetadata", () => {
-        bindGridPanzoom(cam, video);
-      }, { once: true });
+      // Bind panzoom as soon as the video has dimensions. If
+      // loadedmetadata already fired before this listener attaches
+      // (fast WebRTC cam beating our event registration), bind
+      // synchronously instead — otherwise the cam ends up with no
+      // panzoom and pinch silently fails.
+      const bindWhenReady = () => bindGridPanzoom(cam, video);
+      if (video.readyState >= 1) bindWhenReady();
+      else video.addEventListener("loadedmetadata", bindWhenReady, { once: true });
       if (STAGGER_MS) await new Promise((r) => setTimeout(r, STAGGER_MS));
     }
   })();
@@ -602,11 +607,18 @@
       const dx = t.clientX - start.x;
       const dy = t.clientY - start.y;
       if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
-      // We dispatched a real tap. Don't double-fire if the synthesized
-      // click also makes it through — set a marker on the cam to
-      // suppress the click handler for this gesture.
+      // CRITICAL: only set recentTap (which suppresses click bubbling
+      // via the capture-phase filter below) when this tap is actually
+      // for spotlight toggling. A tap on a zoom button reaches here
+      // too — without this guard, recentTap fires and the capture
+      // filter kills the synthesized button click.
+      const target = e.target;
+      if (target.closest(".zoom-controls")) return;
+      if (target.tagName === "VIDEO" && target.controls) return;
+      const inSpotlight = cam.classList.contains("is-spotlight");
+      if (inSpotlight && target.closest(".video-wrap")) return;
       cam.dataset.recentTap = String(Date.now());
-      spotlightToggle(e.target);
+      spotlightToggle(target);
     }, { passive: true });
     // Click suppression for touch-derived spotlight toggles.
     const origClickFilter = cam._origClickFilter;
