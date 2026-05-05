@@ -366,3 +366,182 @@ nav a.active { background: var(--color-glow); color: white !important; }
 .featured-card video {
   object-fit: contain !important;
 }
+
+/* ===== Card-detail modal ================================================= */
+
+.card-modal {
+  width: min(960px, 92vw);
+  max-height: 92vh;
+  border: none;
+  border-radius: 20px;
+  padding: 0;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  box-shadow: 0 24px 80px rgba(42, 24, 16, 0.55);
+  overflow: hidden;
+  font-family: var(--font-body);
+}
+.card-modal::backdrop {
+  background: rgba(42, 24, 16, 0.7);
+  backdrop-filter: blur(4px);
+}
+body.modal-open { overflow: hidden; }
+
+.card-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--color-ink);
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.card-modal-close:hover {
+  background: white;
+  transform: scale(1.05);
+}
+
+.card-modal-body { padding: 0; }
+
+.modal-stage {
+  display: flex;
+  flex-direction: column;
+}
+.modal-video-wrap {
+  position: relative;
+  width: 100%;
+  background: #1a1110;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  touch-action: pinch-zoom;
+}
+.modal-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  transform-origin: 0 0;
+}
+
+.modal-meta {
+  padding: 18px 22px 6px;
+}
+.modal-title {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--color-ink);
+}
+.modal-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+.modal-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: rgba(240, 90, 40, 0.12);
+  color: var(--color-glow);
+}
+.modal-badge.fox       { background: var(--color-glow); color: white; }
+.modal-badge.wildlife  { background: var(--color-forest); color: white; }
+.modal-badge.muted     { background: rgba(0,0,0,0.06); color: var(--color-ink-soft); }
+.modal-badge.shared    { background: var(--color-warm); color: var(--color-ink); }
+.modal-badge.featured  { background: var(--color-glow); color: white; }
+.modal-meta-extra {
+  margin-left: auto;
+  color: var(--color-ink-soft);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 22px 22px;
+  border-top: 1px solid rgba(240, 90, 40, 0.08);
+  margin-top: 14px;
+}
+
+/* Remix-mode body — denser, dark video stage with the trim editor below. */
+.modal-stage-remix .modal-video-wrap { aspect-ratio: 16 / 9; cursor: zoom-in; }
+.modal-stage-remix .remix-controls,
+.modal-stage-remix .remix-meta-row,
+.modal-stage-remix .remix-actions-row { padding: 0 22px; }
+.modal-stage-remix .remix-controls { padding-top: 12px; }
+.modal-stage-remix .trim-track { margin-left: 22px; margin-right: 22px; }
+.modal-stage-remix .remix-meta-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 10px;
+}
+.modal-stage-remix .remix-meta-row input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid rgba(240, 90, 40, 0.25);
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-ink);
+  background: white;
+}
+.modal-stage-remix .remix-meta-row input:focus {
+  outline: 2px solid var(--color-glow);
+  outline-offset: 1px;
+}
+.modal-stage-remix .remix-actions-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 14px;
+  padding-bottom: 22px;
+}
+.modal-stage-remix .remix-actions-row .primary {
+  background: var(--color-glow);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 22px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.modal-stage-remix .remix-actions-row .primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.modal-stage-remix .remix-actions-row button:not(.primary) {
+  background: white;
+  color: var(--color-ink-soft);
+  border: 1.5px solid rgba(240, 90, 40, 0.25);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+}
+.modal-stage-remix .zoom-controls {
+  display: flex;
+  bottom: 12px;
+  right: 12px;
+}

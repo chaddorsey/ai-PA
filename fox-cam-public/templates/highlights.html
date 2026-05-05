@@ -75,8 +75,20 @@
     <div id="highlights" class="grid"></div>
     <button id="load-more">Load more</button>
   </main>
+
+  <!-- Card-detail modal. Opened by clicking a card; closed via the X
+       button, clicking the backdrop, or ESC. The body is rebuilt by
+       modal.js on every open and switches between two layouts:
+         (1) viewer  — large player + meta + actions (default)
+         (2) remix   — focused player + trim timeline + zoom controls -->
+  <dialog id="card-modal" class="card-modal" aria-labelledby="card-modal-title">
+    <button class="card-modal-close" type="button" aria-label="Close">×</button>
+    <div class="card-modal-body" id="card-modal-body"></div>
+  </dialog>
+  <script src="/static/panzoom.min.js?v={{ v }}"></script>
   <script src="/static/deliverers.js?v={{ v }}"></script>
   <script src="/static/card.js?v={{ v }}"></script>
+  <script src="/static/modal.js?v={{ v }}"></script>
   <script src="/static/highlights.js?v={{ v }}"></script>
   <script src="/static/easter-eggs.js?v={{ v }}"></script>
   <script>
