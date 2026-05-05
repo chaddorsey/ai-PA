@@ -22,11 +22,11 @@ into the task descriptions.
 | Periodic Background Sync warm-up? | **Cut.** | Not implemented on iOS Safari. |
 | HLS pipeline? | **Cut.** | Over-engineering for 5 family viewers on home Wi-Fi. |
 | Web Push? | **Cut.** | ntfy.sh already covers this with a real iOS app. |
-| Splash screens? | **Cut.** | Polish for a brief white flash; not worth per-device PNG generation. |
+| Splash screens? | **Keep — Phase 2.** Mock with one or two iPhone resolutions; refine after first-pass review. | User-flagged as delight. |
 | Pull-to-refresh? | **Cut.** | Browser reload + tab tap already does it. |
-| Long-press menu? | **Cut.** | L effort, four actions already reachable by tap. |
-| Double-tap favorite? | **Cut.** | Conflicts with browser double-tap-zoom. |
-| Filter row → sheet button? | **Defer.** | Wraps to 3 rows but still functional. Revisit if anyone complains. |
+| Long-press menu? | **Keep — Phase 2.** Custom popover (touchstart + 500ms timer); iOS Safari `contextmenu` event is inconsistent on non-link/image. Pop a 4-action menu (⭐ / 🚫 / 🔗 / 🗃). Disable native iOS callout on the card via `-webkit-touch-callout: none` so we don't double-show menus. | User wants it; complements double-tap-favorite (slow full menu vs. fast common action). |
+| Double-tap favorite? | **Keep — Phase 2.** Single `dblclick` listener on card thumb, with `touch-action: manipulation` on the card to suppress the browser's 300ms double-tap-zoom delay. Heart pulses on top via existing `deliverBadge`. | User wants it. Conflicts with double-tap-zoom only if `touch-action: manipulation` isn't set; with it, browser disables double-tap-zoom on that element and we own the gesture. |
+| Filter row → sheet button? | **Defer — Phase 2.** | iOS-style "Filters" button at top; tap opens a bottom sheet containing the 6 dropdowns. Currently they wrap to 3 rows on phone; functional but cramped. Lift if Phase 1 settles and we still see complaints. |
 | Swipe-down to close modal? | **Defer.** | Backdrop tap + X work fine. Revisit with bottom-sheet modal. |
 | Tabs scroll breakpoint precision | `max-width: 480px`, `scroll-snap-type: x mandatory`, active tab snapped to start. | Most predictable iOS scroll-snap behavior. |
 | `touch-action` on `.modal-video-wrap` (pinch vs swipe collision) | `touch-action: pan-y` so vertical pinch + horizontal swipe coexist. Scope swipe handler to dialog body, not the video wrap. | Avoids swallowing pinch. |
@@ -156,10 +156,35 @@ Per audit §2 sketch. Pure CSS for the layout + slide-up animation. Pair with th
 - Audit claim: SW network-first caches HTML on first successful fetch. Verified by reading sw.js — but the **first cold-load offline** fails because there's nothing in cache yet.
 - Fix: in `install` handler, precache `/highlights` (will fetch authed; CF Access cookie present at install time). If precache 401s (token expired), don't fail install — let runtime cache it instead.
 
-### P2.3 Add iOS-specific manifest tweaks (drop ones that don't work)
+### P2.3 iOS-specific manifest tweaks
 - `apple-mobile-web-app-status-bar-style: black-translucent` in landing template only (so hero gradient runs under status bar). Other authed pages stay `default`.
 - Skip `display_override` (iOS ignores).
 - Skip `orientation: portrait-primary` for now — iPad use case wants free orientation.
+
+### P2.4 Splash screens (mock first-pass)
+- Generate apple-touch-startup-image PNGs for at minimum 2 sizes:
+  - iPhone 13/14/15 standard (1170×2532, @3x)
+  - iPad Pro 11" (1668×2388, @2x)
+- Background: warm cream (`#fdf6e3` from theme) with the 🦊 mark centered, scaled to ~30% of width.
+- Use a Python script with Pillow to generate from a single SVG source so we can re-render at any resolution later.
+- Add `<link rel="apple-touch-startup-image" media="..." href="...">` per resolution to all 4 templates.
+- Defer per-orientation variants and the long tail of older iPhone sizes — those produce a stretched mark, not a broken launch.
+
+### P2.5 Double-tap to favorite
+- In `card.js`, on the card's `.thumb-wrap`, add `touch-action: manipulation` (suppresses the 300ms delay browser uses to detect double-tap-zoom on that element).
+- Bind `dblclick` listener (covers iOS Safari) → if not already favorited, fire the favorite POST and run the existing `window.deliverBadge(card, "fox-3", "⭐ Mine", { badgeClass: "badge-mine" })` so the heart pulses with the existing animation.
+- If already favorited, the double-tap is a no-op (don't unfavorite — Instagram pattern is one-way; users can unfavorite via the visible button).
+- Gate behind `body.ios` to keep desktop double-click semantics untouched.
+
+### P2.6 Long-press context menu
+- New small file `fox-cam-public/static/long-press-menu.js` (~80 lines).
+- Bind on `.highlight` card (and inside the modal on `.modal-stage`):
+  - `touchstart` → start 500ms timer; cancel on `touchmove` > 8px or `touchend` < 500ms; cancel on scroll.
+  - On fire: small haptic feedback via `navigator.vibrate(10)` (no-op on iOS but harmless).
+  - Render a custom popover anchored at touch coordinates with: ⭐ Favorite / 🚫 Not a fox / 🔗 Share / 🗃 Archive.
+  - Tap outside to dismiss; tap an action to fire it via the existing `setAction()` / share / archive paths.
+- Suppress native iOS callout: `.highlight { -webkit-touch-callout: none; -webkit-user-select: none }` (gated `body.ios` so desktop selection stays normal).
+- Gate the JS itself behind `body.ios` (don't load on desktop).
 
 ---
 
@@ -169,14 +194,10 @@ Per scope-guardian review:
 - HLS encoding pipeline.
 - Web Push.
 - Periodic Background Sync.
-- Splash screens (per-iPhone-resolution PNGs).
 - Per-iPhone-model animation throttling.
 - Pull-to-refresh JS.
-- Long-press context menu.
-- Double-tap favorite.
 - Scroll-into-view autoplay.
 - Cellular-aware preview gating (only matters once IO autoplay ships).
-- Filter row → sheet button.
 - Swipe-down to close modal (revisit with P2.1 bottom sheet).
 
 If any of these become user complaints in practice, lift back into a future phase.
@@ -219,5 +240,10 @@ Per Phase 2:
 - All Phase 1 files +
 - `fox-cam-public/static/sw.js` install-handler precache.
 - `fox-cam-public/templates/landing.html` status-bar-style.
+- `fox-cam-public/static/icons/splash-*.png` (new — generated).
+- `fox-cam-public/scripts/generate-splash.py` (new — Pillow-based generator).
+- `fox-cam-public/static/long-press-menu.js` (new).
+- `fox-cam-public/static/card.js` — double-tap-favorite handler.
+- `fox-cam-public/templates/highlights.html`, `clip.html`, `landing.html` — apple-touch-startup-image links + long-press script tag (gated).
 
 No new endpoints. No new dependencies.
