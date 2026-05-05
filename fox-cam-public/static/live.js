@@ -60,11 +60,14 @@
         console.error(`[${stream}] start error:`, err);
         if (status) status.textContent = `error: ${err.message}`;
       });
-      // Bind panzoom + zoom-control buttons to each grid-stream so
-      // pinch/scroll/drag works in grid view. Spotlight mode swaps
-      // the active video to .spotlight-stream and rebinds via
-      // attachPanzoom() in the spotlight enter handler.
-      bindGridPanzoom(cam, video);
+      // Defer panzoom binding until the video actually has dimensions
+      // (loadedmetadata fires after the MSE pipeline produces its first
+      // frame). Binding too early during stream init breaks rendering
+      // — anvaka/panzoom miscomputes bounds against a 0×0 element and
+      // can leave the video off-screen.
+      video.addEventListener("loadedmetadata", () => {
+        bindGridPanzoom(cam, video);
+      }, { once: true });
       await new Promise((r) => setTimeout(r, 600));
     }
   })();
