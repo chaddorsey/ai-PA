@@ -157,6 +157,18 @@
     };
     sv.addEventListener("playing", onPlaying);
     sv.addEventListener("loadeddata", onPlaying);
+
+    // Spotlight-stream errors (Cam 4's 4K main stream is the usual
+    // culprit — VideoToolbox throws on certain SPS configs) used to
+    // leave .spotlight-ready on while runMSE retried, hiding the
+    // grid-stream and collapsing the wrap to zero height. Drop the
+    // class on every error so the grid-stream substream is visible
+    // continuously while the high-res pipeline reconnects.
+    const onSpotlightError = () => {
+      cam.classList.remove("spotlight-ready");
+      if (status) status.textContent = "hi-res hiccup — using sub";
+    };
+    sv.addEventListener("error", onSpotlightError);
   }
 
   // (Re)initialize panzoom on a specific video element. Called twice

@@ -1291,6 +1291,7 @@ body.filters-hidden .filters { display: none !important; }
    Material Icons font has a built-in line-height that's NOT 1;
    without explicit line-height the glyph sits visually high in the
    button. Lock it down here. */
+.view-toggle[hidden] { display: none !important; }
 .view-toggle {
   display: inline-flex;
   background: var(--color-cream-deep);
