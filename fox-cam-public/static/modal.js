@@ -331,31 +331,36 @@
         async () => toggleFeature(h)
       ));
     }
-    // Delete (admin-only, irreversible)
+    // Delete (admin-only, irreversible) — rendered as a small red
+    // text link in the upper-right corner of the modal's text area
+    // (set up by CSS .modal-meta-delete). Out of the main action row
+    // because deleting is destructive and shouldn't be next to the
+    // hearts and shares.
     if (window.IS_ADMIN) {
-      actionsBar.appendChild(actionBtn(
-        "🗑 Delete", "delete", false,
-        async () => {
-          if (!confirm("Permanently delete this clip? Removes the video, thumbnail, all remixes, and all user actions. This cannot be undone.")) return;
-          const r = await fetch(
-            `/api/admin/highlights/${encodeURIComponent(h.event_id)}`,
-            { method: "DELETE", credentials: "same-origin" }
-          );
-          if (!r.ok) {
-            alert("Couldn't delete clip.");
-            return;
-          }
-          // Remove the card from the gallery if it's still there.
-          const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
-          if (card) {
-            card.style.transition = "opacity 0.3s, transform 0.3s";
-            card.style.opacity = "0";
-            card.style.transform = "scale(0.95)";
-            setTimeout(() => card.remove(), 300);
-          }
-          window.closeCardModal();
+      const deleteLink = document.createElement("a");
+      deleteLink.className = "modal-meta-delete";
+      deleteLink.href = "javascript:void(0)";
+      deleteLink.textContent = "Delete";
+      deleteLink.title = "Permanently delete this clip (admin)";
+      deleteLink.addEventListener("click", async (e) => {
+        e.preventDefault();
+        if (!confirm("Permanently delete this clip? Removes the video, thumbnail, all remixes, and all user actions. This cannot be undone.")) return;
+        const r = await fetch(
+          `/api/admin/highlights/${encodeURIComponent(h.event_id)}`,
+          { method: "DELETE", credentials: "same-origin" }
+        );
+        if (!r.ok) { alert("Couldn't delete clip."); return; }
+        const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+        if (card) {
+          card.style.transition = "opacity 0.3s, transform 0.3s";
+          card.style.opacity = "0";
+          card.style.transform = "scale(0.95)";
+          setTimeout(() => card.remove(), 300);
         }
-      ));
+        window.closeCardModal();
+      });
+      const metaArea = body.querySelector(".modal-meta");
+      if (metaArea) metaArea.appendChild(deleteLink);
     }
     // Archive toggle (per-user)
     actionsBar.appendChild(actionBtn(
