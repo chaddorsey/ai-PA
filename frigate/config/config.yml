@@ -87,7 +87,7 @@ cameras:
       enabled: true
       width: 704   # Dahua substream default
       height: 480
-      fps: 5
+      fps: 3
     objects:
       track:
         - animal
@@ -129,15 +129,15 @@ cameras:
     enabled: true
     ffmpeg:
       inputs:
-        - path: rtsp://host.docker.internal:8555/fox_den_2
+        - path: rtsp://host.docker.internal:8555/fox_den_2_sub
           roles:
             - detect
             - record
     detect:
       enabled: true
-      width: 1920
-      height: 1080
-      fps: 5
+      width: 704
+      height: 480
+      fps: 3
     objects:
       track:
         - animal
@@ -167,7 +167,7 @@ cameras:
       enabled: true
       width: 704
       height: 480
-      fps: 5
+      fps: 3
     objects:
       track:
         - animal
@@ -214,7 +214,7 @@ cameras:
       enabled: true
       width: 704
       height: 480
-      fps: 5
+      fps: 3
     objects:
       track:
         - animal
