@@ -15,6 +15,10 @@
   <link rel="stylesheet" href="/static/style.css?v={{ v }}">
 </head>
 <body>
+  <script>
+    window.CURRENT_EMAIL = {{ (current_email or '')|tojson }};
+    window.IS_ADMIN = {{ (is_admin or false)|tojson }};
+  </script>
   <header>
     <h1>🦊 Our Foxes</h1>
     <nav>

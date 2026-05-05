@@ -18,16 +18,7 @@
   let offset = 0;
   const limit = 30;
 
-  // Probe admin status once at page load. Server is the source of truth
-  // (every admin endpoint re-checks ADMIN_EMAILS), so this flag is purely
-  // for showing the right buttons.
-  fetch("/api/whoami", { credentials: "same-origin" })
-    .then((r) => r.json())
-    .then((d) => {
-      window.IS_ADMIN = !!(d && d.admin);
-      if (window.IS_ADMIN) document.body.classList.add("is-admin");
-    })
-    .catch(() => { window.IS_ADMIN = false; });
+  // window.IS_ADMIN is injected by the server in highlights.html.
 
   function reset() {
     offset = 0;

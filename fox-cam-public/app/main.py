@@ -192,22 +192,44 @@ def home(request: Request) -> HTMLResponse:
 
 @app.get("/live", response_class=HTMLResponse)
 def live_page(request: Request) -> HTMLResponse:
-    """Live multi-camera grid (gated by Cloudflare Access).
-
-    All four camera tiles + go2rtc MSE WebSocket links + spotlight
-    interactions. Identical to the previous / for authed users.
-    """
+    """Live multi-camera grid (gated by Cloudflare Access)."""
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
+        {
+            "request": request,
+            "streams": sorted(PUBLIC_STREAMS),
+            "v": ASSET_VERSION,
+            **_identity_ctx(request),
+        },
     )
+
+
+def _identity_ctx(request: Request) -> dict[str, Any]:
+    """Identity for template injection on gated routes.
+
+    These routes are guaranteed to be authed (CF Access enforces the
+    cf-access-authenticated-user-email header), so we know who the
+    visitor is at template-render time. Avoids a round-trip via the
+    /api/whoami endpoint, which is unreliable when the client request
+    happens to land on a CF Access Bypass path (header gets stripped).
+    """
+    email = _actor_email(request)
+    return {
+        "current_email": email or "",
+        "is_admin": bool(email and email.lower() in ADMIN_EMAILS),
+    }
 
 
 @app.get("/highlights", response_class=HTMLResponse)
 def highlights_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "highlights.html",
-        {"request": request, "streams": sorted(PUBLIC_STREAMS), "v": ASSET_VERSION},
+        {
+            "request": request,
+            "streams": sorted(PUBLIC_STREAMS),
+            "v": ASSET_VERSION,
+            **_identity_ctx(request),
+        },
     )
 
 
@@ -221,7 +243,8 @@ async def clip_permalink(event_id: str, request: Request) -> HTMLResponse:
     """
     return templates.TemplateResponse(
         "clip.html",
-        {"request": request, "event_id": event_id, "v": ASSET_VERSION},
+        {"request": request, "event_id": event_id, "v": ASSET_VERSION,
+         **_identity_ctx(request)},
     )
 
 
@@ -232,7 +255,8 @@ async def remix_permalink(remix_id: str, request: Request) -> HTMLResponse:
     fetches /api/remixes/<id> instead of /api/highlights/<id>."""
     return templates.TemplateResponse(
         "clip.html",
-        {"request": request, "event_id": "", "remix_id": remix_id, "v": ASSET_VERSION},
+        {"request": request, "event_id": "", "remix_id": remix_id,
+         "v": ASSET_VERSION, **_identity_ctx(request)},
     )
 
 
