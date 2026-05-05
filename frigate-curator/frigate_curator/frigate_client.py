@@ -88,6 +88,15 @@ class FrigateClient:
         return self._download(f"/api/events/{event_id}/clip.mp4", dest)
 
     def download_thumbnail(self, event_id: str, dest: Path) -> bool:
+        # Use the full-frame snapshot (camera FOV at detection moment)
+        # rather than Frigate's bbox-cropped thumbnail. The bbox crop is
+        # typically square-ish and renders with letterbox bars when shown
+        # in our 16:9 card layout. Snapshot is the entire frame and
+        # composes naturally with the card.
+        if self._download(f"/api/events/{event_id}/snapshot.jpg", dest):
+            return True
+        # Fall back to thumbnail.jpg if the snapshot endpoint isn't
+        # available for older events.
         return self._download(f"/api/events/{event_id}/thumbnail.jpg", dest)
 
     def _download(self, path: str, dest: Path) -> bool:
