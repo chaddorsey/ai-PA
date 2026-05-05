@@ -33,12 +33,18 @@
     </nav>
   </header>
   <main>
-    <div class="tabs">
-      <button class="tab active" data-bucket="pending">All</button>
-      <button class="tab" data-bucket="mine">⭐ My Faves</button>
-      <button class="tab" data-bucket="shared"><span class="dual-star" aria-hidden="true"></span>Group Faves</button>
-      <button class="tab" data-bucket="remixes">🎬 Remixes</button>
-      <button class="tab" data-bucket="demoted">🚫 No Foxes</button>
+    <div class="tabs-row">
+      <div class="tabs">
+        <button class="tab active" data-bucket="pending">All</button>
+        <button class="tab" data-bucket="mine">⭐ My Faves</button>
+        <button class="tab" data-bucket="shared"><span class="dual-star" aria-hidden="true"></span>Group Faves</button>
+        <button class="tab" data-bucket="remixes">🎬 Remixes</button>
+        <button class="tab" data-bucket="demoted">🚫 No Foxes</button>
+      </div>
+      <div id="view-toggle" class="view-toggle" hidden>
+        <button data-view="list" class="active" type="button" title="List view" aria-label="List view"><span class="material-icons">view_list</span></button>
+        <button data-view="grid" type="button" title="Card view" aria-label="Card view"><span class="material-icons">grid_view</span></button>
+      </div>
     </div>
     <div class="filters">
       <span class="filters-label" id="filters-label">Filter</span>
@@ -81,13 +87,6 @@
           <option value="unclassified">Not yet classified</option>
         </select>
       </label>
-    </div>
-    <!-- View-mode toggle, currently only used by the Remixes tab to
-         switch between the grouped vertical list (default) and the
-         standard video-card grid. Hidden on every other bucket. -->
-    <div id="view-toggle" class="view-toggle" hidden>
-      <button data-view="list" class="active" type="button">List</button>
-      <button data-view="grid" type="button">Cards</button>
     </div>
     <div id="highlights" class="grid"></div>
     <button id="load-more">Load more</button>

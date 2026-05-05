@@ -808,25 +808,37 @@ body.modal-open { overflow: hidden; }
 }
 .highlight.is-archived:hover { opacity: 1; filter: none; }
 
-/* === Modal: remix-playback "back to original" row === */
-.modal-back-row {
-  padding: 12px 22px 0;
-}
+/* === Modal remix-playback: "back to original" floating icon button
+   in the top-left corner of the video, mirroring the close X on the
+   right. Was a chunky pill that crashed visually into the tabs row. */
 .modal-back {
-  background: transparent;
-  border: 1.5px solid rgba(240, 90, 40, 0.3);
-  color: var(--color-glow);
-  font-family: var(--font-display);
-  font-size: 13px;
-  padding: 6px 14px;
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border: none;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
+  color: white;
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+  transition: background 0.15s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
 }
 .modal-back:hover {
   background: var(--color-glow);
-  color: white;
+  transform: scale(1.06);
 }
+.modal-back:focus,
+.modal-back:focus-visible,
+.modal-back:active { outline: none; }
+.modal-back .material-icons { font-size: 20px; }
 
 /* Delete button — admin-only, distinguished by a red-ish hue */
 .action-btn.action-delete {
@@ -1222,29 +1234,41 @@ body.filters-hidden .filters { display: none !important; }
 .remix-child .rx-title { font-weight: 500; font-size: 14px; }
 .remix-child .rx-meta { font-size: 12px; }
 
-/* Remix list/grid toggle */
+/* Tabs row: tabs (left) + view-toggle (right) on a single line */
+.tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.tabs-row .tabs { margin-bottom: 0 !important; }
+
+/* Remix list/grid toggle — icon-only square pills */
 .view-toggle {
   display: inline-flex;
   background: var(--color-cream-deep);
-  padding: 4px;
+  padding: 3px;
   border-radius: 999px;
-  margin: 0 0 14px auto;
-  align-self: flex-end;
   gap: 2px;
+  margin: 0;
 }
 .view-toggle button {
   background: transparent;
   border: none;
-  font-family: var(--font-display);
-  font-weight: 500;
-  font-size: 13px;
   color: var(--color-ink-soft);
-  padding: 6px 16px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.15s ease, color 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
+.view-toggle button .material-icons { font-size: 20px; }
 .view-toggle button:hover { color: var(--color-ink); }
 .view-toggle button.active {
   background: var(--color-glow);

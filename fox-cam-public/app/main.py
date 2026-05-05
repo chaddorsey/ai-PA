@@ -825,7 +825,8 @@ async def _post_action(event_id: str, action: str, by: str | None) -> Any:
 
 
 @app.get("/api/highlights/{event_id}/clip")
-async def highlight_clip(event_id: str) -> StreamingResponse:
+async def highlight_clip(event_id: str, download: int = 0,
+                          filename: str | None = None) -> StreamingResponse:
     # Per-id media is reachable without auth because /api/highlights/*
     # is in a Cloudflare Access Bypass app (so anonymous viewers can
     # play featured permalinks). Event IDs are unguessable timestamp+
@@ -833,7 +834,12 @@ async def highlight_clip(event_id: str) -> StreamingResponse:
     # IDs are reachable to anonymous viewers via the public /api/featured
     # response — so a knowledge-of-the-id leak is bounded to clips an
     # admin already chose to share.
-    return await _proxy_curator(f"/highlights/{event_id}/clip", "video/mp4")
+    extra: dict[str, str] = {}
+    if download:
+        safe = (filename or f"{event_id}.mp4").replace('"', '').replace("\n", "").replace("\r", "")
+        extra["Content-Disposition"] = f'attachment; filename="{safe}"'
+    return await _proxy_curator(f"/highlights/{event_id}/clip", "video/mp4",
+                                 extra_headers=extra)
 
 
 @app.get("/api/highlights/{event_id}/thumbnail")
@@ -841,7 +847,8 @@ async def highlight_thumb(event_id: str) -> StreamingResponse:
     return await _proxy_curator(f"/highlights/{event_id}/thumbnail", "image/jpeg")
 
 
-async def _proxy_curator(path: str, media_type: str) -> StreamingResponse:
+async def _proxy_curator(path: str, media_type: str,
+                          extra_headers: dict[str, str] | None = None) -> StreamingResponse:
     async with httpx.AsyncClient() as client:
         async with client.stream("GET", f"{CURATOR_API}{path}", timeout=30.0) as r:
             if r.status_code == 404:
@@ -849,8 +856,11 @@ async def _proxy_curator(path: str, media_type: str) -> StreamingResponse:
             if r.status_code != 200:
                 raise HTTPException(status_code=502, detail="curator error")
             content = await r.aread()
+    headers = {"Cache-Control": "private, max-age=300"}
+    if extra_headers:
+        headers.update(extra_headers)
     return StreamingResponse(
         iter([content]),
         media_type=media_type,
-        headers={"Cache-Control": "private, max-age=300"},
+        headers=headers,
     )

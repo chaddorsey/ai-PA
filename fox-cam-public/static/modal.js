@@ -479,6 +479,22 @@
         () => prompt("Copy this URL:", url)
       );
     }));
+    // Download the .mp4 file. Anchor with download attr + filename
+    // derived from the start_time so the user lands a meaningful name.
+    actionsBar.appendChild(actionBtn("⬇ Download", "download", false, () => {
+      const stamp = h.start_time
+        ? new Date(h.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
+        : h.event_id;
+      const cam = (window.prettyCamera ? window.prettyCamera(h.camera) : (h.camera || "fox"))
+        .replace(/\s+/g, "-").toLowerCase();
+      const filename = `${cam}-${stamp}.mp4`;
+      const a = document.createElement("a");
+      a.href = `/api/highlights/${encodeURIComponent(h.event_id)}/clip?download=1&filename=${encodeURIComponent(filename)}`;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }));
     if (h.my_favorited) {
       actionsBar.appendChild(actionBtn("✂️ Remix", "remix", false,
         () => renderRemixEditor(h)));
@@ -851,19 +867,24 @@
     const dur = (remix.end_offset_s - remix.start_offset_s).toFixed(1);
     const title = remix.title || "(untitled)";
 
+    // Date+time of the parent highlight, shown in the remix meta line.
+    const parentDate = (parentH && parentH.start_time)
+      ? new Date(parentH.start_time * 1000).toLocaleString()
+      : "";
+
     body.innerHTML = `
       <div class="modal-stage modal-stage-remix-play">
-        <div class="modal-back-row">
-          <button class="modal-back" type="button" id="rp-back">← See original highlight</button>
-        </div>
         <div class="modal-video-wrap">
+          <button class="modal-back" type="button" id="rp-back" title="See original highlight" aria-label="See original highlight">
+            <span class="material-icons">arrow_back</span>
+          </button>
           <video class="modal-video" controls autoplay muted playsinline></video>
         </div>
         <div class="modal-meta">
           <h2 class="modal-title">🎬 ${escapeHtml(title)}</h2>
           <div class="modal-badges">
             <span class="modal-badge fox">@${escapeHtml(username)}</span>
-            <span class="modal-meta-extra">${dur}s</span>
+            ${parentDate ? `<span class="modal-meta-extra">${parentDate} · ${dur}s</span>` : `<span class="modal-meta-extra">${dur}s</span>`}
           </div>
         </div>
       </div>
