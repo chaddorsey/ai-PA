@@ -25,7 +25,7 @@
     offset = 0;
     grid.innerHTML = "";
     grid.classList.remove("remix-list-view");
-    if (bucket === "remixes") {
+    if (bucket === "remixes" && remixView === "list") {
       loadRemixesList();
     } else {
       load();
@@ -124,11 +124,19 @@
         const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
         const title = r.title || "(untitled)";
         const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
+        // Each child shows the parent highlight's full-frame thumbnail
+        // (remixes are sub-windows of that frame so it's the right
+        // visual identifier). Tree glyph stays for hierarchy clarity.
         li.innerHTML = `
           <span class="rx-tree" aria-hidden="true">└─</span>
-          <span class="rx-author">@${escapeHtml(username)}</span>
-          <span class="rx-title">${escapeHtml(title)}</span>
-          <span class="rx-meta muted">${dur}s${zoom}</span>`;
+          <img class="rx-thumb" src="/api/highlights/${encodeURIComponent(g.event_id)}/thumbnail" alt="" loading="lazy">
+          <div class="rx-text">
+            <div class="rx-line1"><span class="rx-title">${escapeHtml(title)}</span></div>
+            <div class="rx-line2">
+              <span class="rx-author">@${escapeHtml(username)}</span>
+              <span class="rx-meta muted">${dur}s${zoom}</span>
+            </div>
+          </div>`;
         li.addEventListener("click", (e) => {
           e.preventDefault();
           if (window.openRemixModal) window.openRemixModal(r.remix_id);
@@ -274,8 +282,27 @@
     document.body.classList.toggle("filters-hidden", bucket === "demoted");
     const lbl = document.getElementById("filters-label");
     if (lbl) lbl.textContent = "Filter " + (BUCKET_LABEL[bucket] || "");
+    // Show the list/cards toggle only on the Remixes tab.
+    const vt = document.getElementById("view-toggle");
+    if (vt) vt.hidden = bucket !== "remixes";
   }
   syncFiltersVisibility();
+
+  // Remixes tab view mode: "list" (vertical grouped list, default) or
+  // "grid" (standard highlight cards, one per parent clip — same as
+  // the old behavior).
+  let remixView = "list";
+  const viewToggle = document.getElementById("view-toggle");
+  if (viewToggle) {
+    viewToggle.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", () => {
+        remixView = b.dataset.view;
+        viewToggle.querySelectorAll("button").forEach((x) =>
+          x.classList.toggle("active", x === b));
+        if (bucket === "remixes") reset();
+      });
+    });
+  }
 
   tabs.forEach((t) => {
     t.addEventListener("click", () => {

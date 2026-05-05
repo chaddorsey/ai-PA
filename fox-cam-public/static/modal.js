@@ -818,10 +818,14 @@
           return;
         }
         const data = await r.json();
-        // Refresh highlight (remix_count + remixes list updated).
-        const refreshed = await fetch(`/api/highlights/${encodeURIComponent(h.event_id)}`,
-          { credentials: "same-origin" });
-        if (refreshed.ok) Object.assign(h, await refreshed.json());
+        // Surgical local merge — only the remix list + count change
+        // after a remix save. Avoiding a refetch keeps the user's
+        // in-modal state authoritative (saving a remix used to wipe
+        // an in-modal ⭐ Mine because the refresh fetch's view of
+        // my_favorited could lag the just-issued favorite POST).
+        h.remixes = Array.isArray(h.remixes) ? h.remixes.slice() : [];
+        if (data && data.remix) h.remixes.unshift(data.remix);
+        h.remix_count = (h.remix_count || 0) + 1;
         renderViewer(h);
         if (window.deliverBadge) {
           window.deliverBadge(body.querySelector(".modal-stage"),

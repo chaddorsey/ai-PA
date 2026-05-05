@@ -82,6 +82,13 @@
         </select>
       </label>
     </div>
+    <!-- View-mode toggle, currently only used by the Remixes tab to
+         switch between the grouped vertical list (default) and the
+         standard video-card grid. Hidden on every other bucket. -->
+    <div id="view-toggle" class="view-toggle" hidden>
+      <button data-view="list" class="active" type="button">List</button>
+      <button data-view="grid" type="button">Cards</button>
+    </div>
     <div id="highlights" class="grid"></div>
     <button id="load-more">Load more</button>
   </main>
