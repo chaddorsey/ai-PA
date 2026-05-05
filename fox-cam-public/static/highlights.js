@@ -56,12 +56,29 @@
     if (range.since !== undefined) params.append("since", range.since);
     if (range.until !== undefined) params.append("until", range.until);
 
-    const r = await fetch(`/api/highlights?${params}`);
-    if (!r.ok) {
-      grid.appendChild(window.infoCard(`server returned ${r.status}`));
+    let r;
+    try {
+      r = await fetch(`/api/highlights?${params}`, { credentials: "same-origin" });
+    } catch (err) {
+      console.error("[highlights] /api/highlights network error:", err);
+      grid.appendChild(window.infoCard(`Network error: ${err.message || err}`));
       return;
     }
-    const data = await r.json();
+    if (!r.ok) {
+      const ct = r.headers.get("content-type") || "";
+      let detail = `${r.status}`;
+      try { detail += " — " + (ct.includes("json") ? JSON.stringify(await r.json()) : (await r.text()).slice(0, 200)); } catch {}
+      console.error("[highlights] /api/highlights non-ok:", r.status, r.url);
+      grid.appendChild(window.infoCard(`Server returned ${detail}. (URL: ${r.url})`));
+      return;
+    }
+    let data;
+    try { data = await r.json(); }
+    catch (err) {
+      console.error("[highlights] /api/highlights parse error:", err);
+      grid.appendChild(window.infoCard(`Couldn't parse highlights response.`));
+      return;
+    }
     if (data.items.length === 0 && offset === 0) {
       grid.appendChild(buildEmptyState(bucket));
       loadMore.style.display = "none";
@@ -106,14 +123,19 @@
 
   // Capture last-seen-at BEFORE marking as seen, so cards rendered on
   // this visit get the NEW badge. After load, post /api/viewer/seen so
-  // the next visit's count starts fresh.
-  fetch("/api/viewer/state")
+  // the next visit's count starts fresh. ALL paths still call load(),
+  // even when /api/viewer/state errors — without that, a single 401 on
+  // viewer/state would leave the gallery empty forever.
+  fetch("/api/viewer/state", { credentials: "same-origin" })
     .then((r) => r.ok ? r.json() : null)
     .then((s) => {
       window.LAST_SEEN_AT_PAGELOAD = (s && s.last_seen_at) || 0;
-      load();
-      // Mark seen now (background; don't block render).
-      fetch("/api/viewer/seen", { method: "POST" }).catch(() => {});
     })
-    .catch(() => load());
+    .catch((err) => {
+      console.error("[highlights] /api/viewer/state failed:", err);
+    })
+    .finally(() => {
+      load();
+      fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" }).catch(() => {});
+    });
 })();
