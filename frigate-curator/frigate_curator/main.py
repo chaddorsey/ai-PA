@@ -161,6 +161,7 @@ def list_highlights(
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
     bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared|remixes)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
+    status: str = Query(default="active", regex="^(any|active|archived)$"),
     email: str | None = Query(default=None, description="viewer email for 'mine' bucket"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -206,7 +207,9 @@ def list_highlights(
             limit=limit, offset=offset,
         )
 
-    # Attach per-user vote data + remix counts to every card.
+    # Attach per-user vote data + remix counts to every card, then
+    # apply the per-user status filter (active = not archived by me;
+    # archived = archived by me; any = no filter).
     if rows:
         ids = [r["event_id"] for r in rows]
         votes = db.list_user_actions_bulk(DB_PATH, ids)
@@ -214,11 +217,19 @@ def list_highlights(
         for r in rows:
             v = votes.get(r["event_id"], {})
             favorites = v.get("favorites", [])
+            archives = v.get("archives", [])
             r["favorite_voters"] = favorites
             r["favorite_count"] = len(favorites)
             r["my_favorited"] = bool(email and email in favorites)
             r["my_demoted"] = bool(email and email in v.get("demotes", []))
+            r["my_archived"] = bool(email and email in archives)
+            r["archive_count"] = len(archives)
             r["remix_count"] = remix_counts.get(r["event_id"], 0)
+        if status == "active":
+            rows = [r for r in rows if not r.get("my_archived")]
+        elif status == "archived":
+            rows = [r for r in rows if r.get("my_archived")]
+        # status == "any" → keep everything
 
     return {"items": rows, "count": len(rows)}
 
@@ -458,6 +469,26 @@ def demote_event(event_id: str, body: ActionBody) -> dict[str, Any]:
     return {"status": "demoted", "highlight": _highlight_with_state(event_id, body.by)}
 
 
+@app.post("/highlights/{event_id}/archive")
+def archive_event(event_id: str, body: ActionBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="archive requires a 'by' email")
+    if not db.get_highlight(DB_PATH, event_id):
+        raise HTTPException(status_code=404, detail="not found")
+    db.user_action_set(DB_PATH, event_id, body.by, "archive")
+    return {"status": "archived", "highlight": _highlight_with_state(event_id, body.by)}
+
+
+@app.post("/highlights/{event_id}/unarchive")
+def unarchive_event(event_id: str, body: ActionBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="unarchive requires a 'by' email")
+    if not db.get_highlight(DB_PATH, event_id):
+        raise HTTPException(status_code=404, detail="not found")
+    db.user_action_clear_one(DB_PATH, event_id, body.by, "archive")
+    return {"status": "unarchived", "highlight": _highlight_with_state(event_id, body.by)}
+
+
 @app.post("/highlights/{event_id}/clear")
 def clear_event(event_id: str, body: ActionBody) -> dict[str, Any]:
     if not body.by:
@@ -476,6 +507,7 @@ def _highlight_with_state(event_id: str, email: str) -> dict[str, Any]:
     h.update({
         "my_favorited": state["my_favorited"],
         "my_demoted": state["my_demoted"],
+        "my_archived": state.get("my_archived", False),
         "favorite_voters": state["voters"],
         "favorite_count": state["favorite_count"],
     })

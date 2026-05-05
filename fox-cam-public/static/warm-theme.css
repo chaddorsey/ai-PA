@@ -646,3 +646,170 @@ body.modal-open { overflow: hidden; }
 }
 .modal-remix-item .rx-title { font-weight: 500; }
 .modal-remix-item .rx-meta { font-size: 12px; }
+
+/* === Live: enforce a 2x2 grid that fits the viewport ====================== */
+.live-layout[data-mode="grid"] {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  grid-template-rows: 1fr 1fr !important;
+  gap: 12px !important;
+  /* Fill the visible area: viewport height minus header + safe-area
+     bottom + minimal page padding. Header is ~70px in warm-theme. */
+  height: calc(100vh - 88px);
+  max-height: calc(100vh - 88px);
+}
+.live-layout[data-mode="grid"] .cam {
+  min-height: 0;             /* allow children to shrink to fit row */
+  display: flex;
+  flex-direction: column;
+}
+.live-layout[data-mode="grid"] .cam .video-wrap {
+  flex: 1 1 auto;
+  aspect-ratio: auto !important;   /* don't force 16:9, fill the cell */
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .live-layout[data-mode="grid"] {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: repeat(4, 1fr) !important;
+    height: auto;
+    max-height: none;
+  }
+}
+
+/* === Caption rebuild: two rows, left/right justified ===================== */
+.highlight .meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.highlight .meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.highlight .meta-row-top { justify-content: space-between; }
+.highlight .meta-row-bottom {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.highlight .meta-row .meta-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+.highlight .meta-row .meta-cam {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--color-ink-soft);
+  background: rgba(240, 90, 40, 0.10);
+  padding: 2px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.highlight .meta-row .meta-sep { color: var(--color-ink-soft); }
+.highlight .meta-row .meta-dur { color: var(--color-ink-soft); font-weight: 600; }
+.highlight .meta-row a.time {
+  border-bottom: 1px dashed rgba(240, 90, 40, 0.4);
+}
+.highlight .meta-row a.remix-count-link {
+  background: rgba(240, 90, 40, 0.10);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border-bottom: none !important;
+}
+
+/* Two-star overlap glyph (no SVG required) for the Group Faves tab */
+.dual-star {
+  display: inline-block;
+  position: relative;
+  width: 1.4em;
+  height: 1em;
+  margin-right: 4px;
+  vertical-align: -0.05em;
+}
+.dual-star::before,
+.dual-star::after {
+  content: "★";
+  position: absolute;
+  font-size: 1em;
+  line-height: 1;
+}
+.dual-star::before {
+  left: 0;
+  color: var(--color-warm);
+  filter: drop-shadow(0 0 1px rgba(0,0,0,0.4));
+}
+.dual-star::after {
+  left: 0.45em;
+  color: var(--color-glow);
+  filter: drop-shadow(0 0 1px rgba(0,0,0,0.4));
+}
+.tab.active .dual-star::before { color: #fff5dc; }
+.tab.active .dual-star::after  { color: #fff; }
+
+/* === Archive toggle — top-right of card + modal === */
+.archive-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 6;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--color-ink-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.highlight:hover .archive-toggle,
+.highlight .archive-toggle:focus-visible,
+.archive-toggle.is-archived {
+  opacity: 1;
+}
+.archive-toggle:hover {
+  background: white;
+  color: var(--color-glow);
+}
+.archive-toggle.is-archived {
+  background: var(--color-glow);
+  color: white;
+}
+.archive-toggle.is-archived:hover { background: #ff7044; }
+
+/* Archived cards — slight fade so they look distinct in 'All' status */
+.highlight.is-archived {
+  opacity: 0.72;
+  filter: grayscale(0.2);
+}
+.highlight.is-archived:hover { opacity: 1; filter: none; }
+
+/* === Modal: remix-playback "back to original" row === */
+.modal-back-row {
+  padding: 12px 22px 0;
+}
+.modal-back {
+  background: transparent;
+  border: 1.5px solid rgba(240, 90, 40, 0.3);
+  color: var(--color-glow);
+  font-family: var(--font-display);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.modal-back:hover {
+  background: var(--color-glow);
+  color: white;
+}

@@ -108,7 +108,7 @@
           <video class="modal-video" controls autoplay muted playsinline></video>
         </div>
         <div class="modal-meta">
-          <h2 class="modal-title" id="card-modal-title">${escapeHtml(h.camera)} · ${t}</h2>
+          <h2 class="modal-title" id="card-modal-title">${escapeHtml((window.prettyCamera||(s=>s))(h.camera))} · ${t}</h2>
           <div class="modal-badges">${speciesBadge}${sharedBadge}${featuredBadge}
             <span class="modal-meta-extra">${(h.duration_s || 0).toFixed(1)}s</span>
           </div>
@@ -170,6 +170,22 @@
         async () => toggleFeature(h)
       ));
     }
+    // Archive toggle (per-user)
+    actionsBar.appendChild(actionBtn(
+      h.my_archived ? "🗃 Unarchive" : "🗃 Archive",
+      "archive", !!h.my_archived,
+      async () => {
+        const wasArchived = !!h.my_archived;
+        const r = await fetch(
+          `/api/actions/${encodeURIComponent(h.event_id)}/${wasArchived ? "unarchive" : "archive"}`,
+          { method: "POST", credentials: "same-origin" }
+        );
+        if (!r.ok) return;
+        const data = await r.json();
+        Object.assign(h, data.highlight || {});
+        renderViewer(h);
+      }
+    ));
 
     // Existing remixes for this clip — list them below the actions
     // so the user can jump to a specific cut without leaving the
@@ -186,14 +202,18 @@
         const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
         const titleText = r.title || "(untitled)";
         const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
-        const a = document.createElement("a");
-        a.className = "modal-remix-item";
-        a.href = `/remix/${encodeURIComponent(r.remix_id)}`;
-        a.innerHTML = `
+        const item = document.createElement("a");
+        item.className = "modal-remix-item";
+        item.href = "javascript:void(0)";   // stay in modal
+        item.addEventListener("click", (e) => {
+          e.preventDefault();
+          renderRemixPlayback(h, r);
+        });
+        item.innerHTML = `
           <span class="rx-author">@${escapeHtml(username)}</span>
           <span class="rx-title">${escapeHtml(titleText)}</span>
           <span class="rx-meta muted">${dur}s${zoom}</span>`;
-        list.appendChild(a);
+        list.appendChild(item);
       }
       panel.appendChild(list);
       body.querySelector(".modal-stage").appendChild(panel);
@@ -460,6 +480,75 @@
         saveBtn.disabled = false;
         saveBtn.textContent = "Save Remix";
       }
+    });
+  }
+
+  // ===========================================================================
+  // Remix playback — read-only view of a saved remix inside the modal.
+  // Plays the parent clip seeking from start_offset to end_offset and
+  // applies the saved zoom region. Includes a "← See original highlight"
+  // link that swaps back to the regular viewer for the parent.
+  // ===========================================================================
+  function renderRemixPlayback(parentH, remix) {
+    teardownVideo();
+    const username = remix.created_by ? remix.created_by.split("@")[0] : "anonymous";
+    const dur = (remix.end_offset_s - remix.start_offset_s).toFixed(1);
+    const title = remix.title || "(untitled)";
+
+    body.innerHTML = `
+      <div class="modal-stage modal-stage-remix-play">
+        <div class="modal-back-row">
+          <button class="modal-back" type="button" id="rp-back">← See original highlight</button>
+        </div>
+        <div class="modal-video-wrap">
+          <video class="modal-video" controls autoplay muted playsinline></video>
+        </div>
+        <div class="modal-meta">
+          <h2 class="modal-title">🎬 ${escapeHtml(title)}</h2>
+          <div class="modal-badges">
+            <span class="modal-badge fox">@${escapeHtml(username)}</span>
+            <span class="modal-meta-extra">${dur}s</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    videoEl = body.querySelector(".modal-video");
+    videoEl.src = `/api/highlights/${encodeURIComponent(parentH.event_id)}/clip`;
+    const wrap = body.querySelector(".modal-video-wrap");
+
+    // Seek to start_offset, stop at end_offset.
+    videoEl.addEventListener("loadedmetadata", () => {
+      videoEl.currentTime = remix.start_offset_s || 0;
+    }, { once: true });
+    videoEl.addEventListener("timeupdate", () => {
+      if (remix.end_offset_s && videoEl.currentTime >= remix.end_offset_s - 0.05) {
+        videoEl.pause();
+      }
+    });
+
+    // Apply saved zoom region (if any) via panzoom — for read-only
+    // playback, we just zoom-and-pan in once on load, no interactive
+    // controls. Bind panzoom anyway so the viewer can pinch/scroll
+    // to adjust.
+    panzoomInstance = bindPanzoom(videoEl, wrap);
+    if (panzoomInstance && remix.zoom_scale && remix.zoom_scale > 1.01) {
+      videoEl.addEventListener("loadedmetadata", () => {
+        const r = wrap.getBoundingClientRect();
+        const cx = (remix.zoom_x || 0.5) * r.width;
+        const cy = (remix.zoom_y || 0.5) * r.height;
+        try {
+          panzoomInstance.zoomAbs(0, 0, remix.zoom_scale);
+          panzoomInstance.moveTo(
+            r.width / 2 - cx * remix.zoom_scale,
+            r.height / 2 - cy * remix.zoom_scale
+          );
+        } catch (err) { /* ignore */ }
+      }, { once: true });
+    }
+
+    body.querySelector("#rp-back").addEventListener("click", () => {
+      renderViewer(parentH);
     });
   }
 

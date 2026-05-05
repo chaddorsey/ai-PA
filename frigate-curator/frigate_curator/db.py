@@ -119,25 +119,36 @@ _MIGRATIONS = [
 
 def user_action_set(db_path: Path, event_id: str, email: str, action: str) -> None:
     """Record that `email` performed `action` on `event_id`.
-    action ∈ {'favorite', 'demote'}. Inserts into the per-user table
-    (idempotent via PK), then recomputes aggregate columns on highlights.
-    Setting 'favorite' clears any prior 'demote' from the same user, and
-    vice versa."""
+    action ∈ {'favorite', 'demote', 'archive'}. 'archive' is independent
+    of favorite/demote (a clip can be both archived AND favorited);
+    favorite + demote remain mutually exclusive per user."""
     import time as _time
-    if action not in ("favorite", "demote"):
+    if action not in ("favorite", "demote", "archive"):
         raise ValueError(f"unknown action: {action!r}")
-    other = "demote" if action == "favorite" else "favorite"
     now = _time.time()
     with connect(db_path) as conn:
-        # Toggle: clear opposing action by this user
-        conn.execute(
-            "DELETE FROM highlight_user_actions WHERE highlight_id = ? AND email = ? AND action = ?",
-            [event_id, email, other],
-        )
+        if action in ("favorite", "demote"):
+            other = "demote" if action == "favorite" else "favorite"
+            conn.execute(
+                "DELETE FROM highlight_user_actions WHERE highlight_id = ? AND email = ? AND action = ?",
+                [event_id, email, other],
+            )
         conn.execute(
             "INSERT OR REPLACE INTO highlight_user_actions (highlight_id, email, action, set_at) "
             "VALUES (?, ?, ?, ?)",
             [event_id, email, action, now],
+        )
+        _refresh_aggregate(conn, event_id, email, now)
+
+
+def user_action_clear_one(db_path: Path, event_id: str, email: str, action: str) -> None:
+    """Clear a SPECIFIC action (e.g. unarchive) without touching others."""
+    import time as _time
+    now = _time.time()
+    with connect(db_path) as conn:
+        conn.execute(
+            "DELETE FROM highlight_user_actions WHERE highlight_id = ? AND email = ? AND action = ?",
+            [event_id, email, action],
         )
         _refresh_aggregate(conn, event_id, email, now)
 
@@ -181,11 +192,14 @@ def get_user_state(db_path: Path, event_id: str, email: str) -> dict[str, Any]:
         ).fetchall()
     voters = [r["email"] for r in rows if r["action"] == "favorite"]
     demoters = [r["email"] for r in rows if r["action"] == "demote"]
+    archivers = [r["email"] for r in rows if r["action"] == "archive"]
     return {
         "my_favorited": email in voters,
         "my_demoted": email in demoters,
+        "my_archived": email in archivers,
         "voters": voters,
         "demoters": demoters,
+        "archivers": archivers,
         "favorite_count": len(voters),
         "demote_count": len(demoters),
     }
@@ -203,10 +217,11 @@ def list_user_actions_bulk(db_path: Path, event_ids: list[str]) -> dict[str, dic
             f"WHERE highlight_id IN ({placeholders})",
             event_ids,
         ).fetchall()
-    out: dict[str, dict] = {eid: {"favorites": [], "demotes": []} for eid in event_ids}
+    out: dict[str, dict] = {eid: {"favorites": [], "demotes": [], "archives": []} for eid in event_ids}
+    bucket_for = {"favorite": "favorites", "demote": "demotes", "archive": "archives"}
     for r in rows:
-        bucket = "favorites" if r["action"] == "favorite" else "demotes"
-        out[r["highlight_id"]][bucket].append(r["email"])
+        b = bucket_for.get(r["action"])
+        if b: out[r["highlight_id"]][b].append(r["email"])
     return out
 
 

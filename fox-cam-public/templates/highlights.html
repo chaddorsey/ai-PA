@@ -35,7 +35,7 @@
     <div class="tabs">
       <button class="tab active" data-bucket="pending">All</button>
       <button class="tab" data-bucket="mine">⭐ My Faves</button>
-      <button class="tab" data-bucket="shared">🌟 Top Faves</button>
+      <button class="tab" data-bucket="shared"><span class="dual-star" aria-hidden="true"></span>Group Faves</button>
       <button class="tab" data-bucket="remixes">🎬 Remixes</button>
       <button class="tab" data-bucket="demoted">🚫 No Foxes</button>
     </div>
@@ -62,6 +62,13 @@
           {% for s in streams %}
           <option value="{{ s }}">{{ s }}</option>
           {% endfor %}
+        </select>
+      </label>
+      <label>Status:
+        <select id="filter-status">
+          <option value="active" selected>Active</option>
+          <option value="any">All</option>
+          <option value="archived">Archived</option>
         </select>
       </label>
       <label>Species:

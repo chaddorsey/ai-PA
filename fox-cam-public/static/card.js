@@ -8,6 +8,16 @@
   // fetches /api/viewer/state. 0 = mark nothing as new.
   window.LAST_SEEN_AT_PAGELOAD = 0;
 
+  // Map internal stream names to family-friendly display names. Used
+  // everywhere a camera label is shown (card meta, modal title, live
+  // tile h2). Keep stream IDs as-is in URLs so /api/highlights etc.
+  // don't break.
+  window.prettyCamera = function prettyCamera(streamId) {
+    if (!streamId) return "";
+    const m = String(streamId).match(/fox_den_(\d+)/);
+    return m ? `Fox Cam ${m[1]}` : streamId;
+  };
+
   // Populate the "who am I" indicator in every page header. Identity
   // comes from window.CURRENT_EMAIL / window.IS_ADMIN injected by the
   // server when rendering an authed page (see _identity_ctx in
@@ -64,6 +74,8 @@
     if (h.my_demoted) el.classList.add("is-demoted");
     if ((h.favorite_count || 0) >= 2) el.classList.add("is-shared");
     if (h.featured) el.classList.add("is-featured");
+    if (h.my_archived) el.classList.add("is-archived");
+    el.appendChild(archiveToggle(h));
     const isNew = h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD;
     if (isNew) el.classList.add("is-new");
     el.appendChild(cardThumb(h));
@@ -131,7 +143,6 @@
     const div = document.createElement("div");
     div.className = "meta";
     const t = new Date(h.start_time * 1000).toLocaleString();
-    const fox = (h.fox_likelihood * 100).toFixed(0);
     // Species badge — only render if classifier ran. Different colors
     // for fox vs other wildlife vs none/person/vehicle so family can
     // scan the gallery and ignore the not-fox cards quickly.
@@ -146,21 +157,25 @@
       const explainBtn = h.classifier_raw
         ? `<button class="species-why" data-event-id="${h.event_id}" title="Why this classification?" aria-label="Why this classification?">?</button>`
         : "";
-      speciesHTML = `<span class="species ${cls}" title="${conf} confidence">${h.species}</span>${explainBtn} · `;
+      speciesHTML = `<span class="species ${cls}" title="${conf} confidence">${h.species}</span>${explainBtn}`;
     }
     const newBadge = (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD)
       ? `<span class="new-badge">NEW</span> ` : "";
-    // Remix count: shown only when there's at least one remix for this
-    // highlight. Click links to the clip page's #remixes section so
-    // family can see who's made which sub-clips.
     const remixCount = h.remix_count || 0;
     const remixHTML = remixCount > 0
-      ? ` · <a class="remix-count-link" href="/clip/${h.event_id}#remixes" title="View remixes">🎬 ${remixCount} remix${remixCount === 1 ? "" : "es"}</a>`
+      ? `<a class="remix-count-link" href="/clip/${h.event_id}#remixes" title="View remixes">🎬 ${remixCount}</a>`
       : "";
+    const cam = window.prettyCamera ? window.prettyCamera(h.camera) : h.camera;
     div.innerHTML = `
-      <a class="time" href="/clip/${h.event_id}">${t}</a>
-      <div>${newBadge}${speciesHTML}${h.camera} · ${h.label} · ${h.duration_s.toFixed(1)}s
-        · <span class="score">fox ${fox}%</span>${remixHTML}</div>`;
+      <div class="meta-row meta-row-top">
+        <span class="meta-left">${newBadge}${speciesHTML}${remixHTML ? " " + remixHTML : ""}</span>
+        <span class="meta-cam">${cam}</span>
+      </div>
+      <div class="meta-row meta-row-bottom">
+        <a class="time" href="/clip/${h.event_id}">${t}</a>
+        <span class="meta-sep"> – </span>
+        <span class="meta-dur">${h.duration_s.toFixed(1)}s</span>
+      </div>`;
     // Wire the "?" button to the popover. Done after innerHTML so the
     // node exists.
     const why = div.querySelector(".species-why");
@@ -397,6 +412,56 @@
     wrap.appendChild(v);
     applyPrerollSkip(v);
   }
+
+  // Archive toggle — top-right corner of every card. Inline SVG icon
+  // (Material Symbols-style: filled box with a horizontal lid). Click
+  // POSTs /api/actions/{id}/{archive|unarchive} and either fades the
+  // card out (if Active filter) or flips its visual state in place.
+  const ICON_ARCHIVE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <path fill="currentColor" d="M3 5h18v3H3zM4 9h16v11H4zm5 4v2h6v-2H9z"/></svg>`;
+  const ICON_UNARCHIVE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <path fill="currentColor" d="M3 5h18v3H3zM4 9h16v11H4zm6 5l2-2 2 2v3h-4z"/></svg>`;
+  function archiveToggle(h) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "archive-toggle" + (h.my_archived ? " is-archived" : "");
+    btn.title = h.my_archived ? "Unarchive (move back to Active)" : "Archive (hide from Active)";
+    btn.setAttribute("aria-label", btn.title);
+    btn.innerHTML = h.my_archived ? ICON_UNARCHIVE : ICON_ARCHIVE;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleArchive(h);
+    });
+    return btn;
+  }
+  async function toggleArchive(h) {
+    const wasArchived = !!h.my_archived;
+    const action = wasArchived ? "unarchive" : "archive";
+    const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/${action}`,
+      { method: "POST", credentials: "same-origin" });
+    if (!r.ok) { console.error("archive toggle failed", r.status); return; }
+    const data = await r.json();
+    Object.assign(h, data.highlight || {});
+    const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+    if (!card) return;
+    const status = document.getElementById("filter-status")?.value || "active";
+    // Hide if the new state moves the card out of the current Status
+    // filter (active → archived if archiving, archived → active if
+    // unarchiving). 'any' keeps everything visible.
+    const movedOut = (status === "active" && h.my_archived) ||
+                     (status === "archived" && !h.my_archived);
+    if (movedOut) {
+      card.style.transition = "opacity 0.3s, transform 0.3s";
+      card.style.opacity = "0";
+      card.style.transform = "scale(0.95)";
+      setTimeout(() => card.remove(), 300);
+    } else {
+      const fresh = window.makeCard(h);
+      card.replaceWith(fresh);
+    }
+  }
+  window.toggleArchive = toggleArchive;
 
   // Stagger NEW-badge deliveries so a freshly-loaded gallery doesn't
   // launch eight squirrels at once. Each card's animation is queued and

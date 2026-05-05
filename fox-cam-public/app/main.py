@@ -566,6 +566,7 @@ async def list_highlights(
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
     bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared|remixes)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
+    status: str = Query(default="active", regex="^(any|active|archived)$"),
     species_filter: str = Query(default="", regex="^(|wildlife|fox|unclassified)$"),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -576,6 +577,7 @@ async def list_highlights(
         "min_score": min_score,
         "bucket": bucket,
         "time_of_day": time_of_day,
+        "status": status,
         "limit": limit,
         "offset": offset,
     }
@@ -694,6 +696,16 @@ async def demote(event_id: str, request: Request) -> Any:
 @app.post("/api/highlights/{event_id}/clear")  # legacy alias
 async def clear(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "clear", _actor_email(request))
+
+
+@app.post("/api/actions/{event_id}/archive")
+async def archive(event_id: str, request: Request) -> Any:
+    return await _post_action(event_id, "archive", _actor_email(request))
+
+
+@app.post("/api/actions/{event_id}/unarchive")
+async def unarchive(event_id: str, request: Request) -> Any:
+    return await _post_action(event_id, "unarchive", _actor_email(request))
 
 
 # ---------------------------------------------------------------------------
