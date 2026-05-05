@@ -226,10 +226,10 @@
       <div class="modal-stage${slideClass}">
         <div class="modal-video-wrap">
           <video class="modal-video" controls autoplay muted playsinline></video>
-          <button class="modal-nav prev" type="button" aria-label="Previous clip" ${prevId ? "" : "disabled"}>
+          <button class="modal-nav prev" type="button" aria-label="Previous clip" tabindex="-1" ${prevId ? "" : "disabled"}>
             <span class="material-icons">chevron_left</span>
           </button>
-          <button class="modal-nav next" type="button" aria-label="Next clip" ${nextId ? "" : "disabled"}>
+          <button class="modal-nav next" type="button" aria-label="Next clip" tabindex="-1" ${nextId ? "" : "disabled"}>
             <span class="material-icons">chevron_right</span>
           </button>
           <div class="zoom-controls" aria-hidden="true">

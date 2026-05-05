@@ -60,9 +60,58 @@
         console.error(`[${stream}] start error:`, err);
         if (status) status.textContent = `error: ${err.message}`;
       });
+      // Bind panzoom + zoom-control buttons to each grid-stream so
+      // pinch/scroll/drag works in grid view. Spotlight mode swaps
+      // the active video to .spotlight-stream and rebinds via
+      // attachPanzoom() in the spotlight enter handler.
+      bindGridPanzoom(cam, video);
       await new Promise((r) => setTimeout(r, 600));
     }
   })();
+
+  // Persistent grid-mode panzoom instances keyed by cam element so
+  // we can dispose them cleanly on spotlight enter without leaving
+  // stray listeners on the grid-stream <video>.
+  const gridPanzooms = new Map();
+  function bindGridPanzoom(cam, video) {
+    if (!cam || !video || typeof window.panzoom !== "function") return;
+    if (gridPanzooms.has(cam)) return;
+    video.style.transformOrigin = "0 0";
+    let inst;
+    try {
+      inst = window.panzoom(video, {
+        maxZoom: 6, minZoom: 1, bounds: true,
+        boundsPadding: 0.95, zoomDoubleClickSpeed: 1,
+      });
+    } catch (e) { return; }
+    gridPanzooms.set(cam, inst);
+    const wrap = video.parentElement;   // .video-wrap
+    const zin  = wrap.querySelector(".zoom-controls .zoom-in");
+    const zout = wrap.querySelector(".zoom-controls .zoom-out");
+    const zfit = wrap.querySelector(".zoom-controls .zoom-fit");
+    if (zin) zin.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const r = wrap.getBoundingClientRect();
+      inst.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
+    });
+    if (zout) zout.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const cur = inst.getTransform().scale;
+      const next = cur / 1.5;
+      if (next <= 1.05) {
+        inst.zoomAbs(0, 0, 1);
+        inst.moveTo(0, 0);
+      } else {
+        const r = wrap.getBoundingClientRect();
+        inst.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
+      }
+    });
+    if (zfit) zfit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      inst.zoomAbs(0, 0, 1);
+      inst.moveTo(0, 0);
+    });
+  }
 
   // ---------- Spotlight (click-to-zoom) ----------
   // Click any tile to make it the spotlight; the others shrink into a

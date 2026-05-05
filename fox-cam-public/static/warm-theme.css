@@ -849,11 +849,10 @@ body.modal-open { overflow: hidden; }
 .modal-nav {
   position: absolute;
   top: 8%;
-  /* Stop above the native video controls bar (typically the bottom
-     ~46px of the video element). Without this the gradient overlay
-     covers the play / fullscreen / triple-dot menu and can't be
-     clicked. */
-  bottom: 56px;
+  /* Clear the zoom-controls (3-button stack at bottom:60px, ~34px
+     each → up to ~94px) AND the native HTML5 controls bar (~46px).
+     115px keeps the prev/next click target above both. */
+  bottom: 115px;
   width: 56px;
   display: flex;
   align-items: center;
@@ -1071,8 +1070,16 @@ body.filters-hidden .filters { display: none !important; }
   opacity: 0;
   transition: opacity 0.18s ease;
   pointer-events: none;
-  bottom: 12px;
+  /* Sit above the native video scrubber bar (~46px) so the controls
+     don't fight for clicks. 60px = scrubber + a bit of padding. */
+  bottom: 60px;
   right: 12px;
+}
+/* In spotlight mode, hide zoom controls on the thumb-rail tiles
+   (they're tiny enough that zoom would be useless and intercepts
+   click-to-spotlight). */
+.live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .zoom-controls {
+  display: none !important;
 }
 .modal-video-wrap:hover .zoom-controls,
 .modal-stage-remix .modal-video-wrap:hover .zoom-controls,
