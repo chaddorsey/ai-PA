@@ -1111,3 +1111,22 @@ body.filters-hidden .filters { display: none !important; }
   background: var(--color-glow) !important;
   border-color: var(--color-glow) !important;
 }
+
+/* Filter row contextual label — "Filter My Faves", "Filter Group
+   Faves", etc. Sits inline-flex at the start of the .filters bar. */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+.filters-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-glow);
+  background: rgba(240, 90, 40, 0.10);
+  padding: 4px 12px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}

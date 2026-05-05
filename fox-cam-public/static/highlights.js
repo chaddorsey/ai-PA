@@ -45,24 +45,27 @@
   }
 
   async function load() {
-    // Filters apply ONLY to the "All" tab. Every other bucket is
-    // itself a single-parameter curation (My Faves, Group Faves,
-    // Remixes, No Foxes) and applying camera/time/date/species/status
-    // on top would hide clips the viewer is asking to see. Within
-    // those buckets archived items render in a separate section at
-    // the bottom of the gallery instead.
-    const onAll = bucket === "pending";
+    // Filters apply within ANY filterable bucket — camera/time/date/
+    // species narrow the visible set without changing which bucket
+    // you're in. The Status pulldown is special: on the curated
+    // buckets we always pass status=any so the curator returns both
+    // active + archived; the frontend then splits them into an
+    // "Archived" section below the active items.
+    const filterable = bucket !== "demoted";
     const params = new URLSearchParams({
       bucket,
-      time_of_day: onAll ? filterTime.value : "any",
+      time_of_day: filterable ? filterTime.value : "any",
       limit,
       offset,
     });
-    if (onAll && filterCamera.value) params.append("camera", filterCamera.value);
-    if (onAll && filterSpecies.value) params.append("species_filter", filterSpecies.value);
-    if (onAll && filterStatus && filterStatus.value) params.append("status", filterStatus.value);
-    else if (!onAll) params.append("status", "any");   // include archives so we can split client-side
-    if (onAll) {
+    if (filterable && filterCamera.value) params.append("camera", filterCamera.value);
+    if (filterable && filterSpecies.value) params.append("species_filter", filterSpecies.value);
+    if (bucket === "pending" && filterStatus && filterStatus.value) {
+      params.append("status", filterStatus.value);
+    } else {
+      params.append("status", "any");
+    }
+    if (filterable) {
       const range = dateRange();
       if (range.since !== undefined) params.append("since", range.since);
       if (range.until !== undefined) params.append("until", range.until);
@@ -110,8 +113,10 @@
 
     // Curated buckets render archived items in a separate section so
     // a user can still see (and unarchive) clips they've put away
-    // without losing them from the bucket entirely.
-    const splitArchived = !onAll && offset === 0;
+    // without losing them from the bucket entirely. On the All tab,
+    // the Status pulldown (Active/All/Archived) drives this — no
+    // section split.
+    const splitArchived = bucket !== "pending" && bucket !== "demoted" && offset === 0;
     if (splitArchived) {
       const active = data.items.filter((h) => !h.my_archived);
       const archived = data.items.filter((h) => h.my_archived);
@@ -151,11 +156,21 @@
     return wrap;
   }
 
-  // The filter row (camera/time/date/status/species) is meaningful only
-  // on the "All" tab — every other tab is itself a curated subset.
-  // Toggle a body class so CSS hides the filters bar when not on All.
+  // Filter row visibility + contextual label. Hidden on No Foxes
+  // (everything there shares the same demoted state — filters add
+  // nothing). Shown elsewhere with a "Filter <bucket name>" label so
+  // the user knows the filters apply within the active bucket only.
+  const BUCKET_LABEL = {
+    pending: "All",
+    mine:    "My Faves",
+    shared:  "Group Faves",
+    remixes: "Remixes",
+    demoted: "No Foxes",
+  };
   function syncFiltersVisibility() {
-    document.body.classList.toggle("filters-hidden", bucket !== "pending");
+    document.body.classList.toggle("filters-hidden", bucket === "demoted");
+    const lbl = document.getElementById("filters-label");
+    if (lbl) lbl.textContent = "Filter " + (BUCKET_LABEL[bucket] || "");
   }
   syncFiltersVisibility();
 

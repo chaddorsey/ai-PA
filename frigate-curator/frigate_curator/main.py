@@ -173,31 +173,48 @@ def list_highlights(
     elif time_of_day == "night":
         hour_from, hour_to = 18, 6
 
-    # Special buckets that come from the per-user actions table:
-    #  - 'mine'   : highlights this user has favorited (newest first)
-    #  - 'shared' : highlights favorited by 2+ family members
+    # Special buckets that come from the per-user actions / remixes
+    # tables. We pull a generous over-fetch (limit*4, capped) before
+    # applying camera/since/until/hour filters in Python, then trim to
+    # `limit`. Cheap given typical fave-set sizes (≤100s of clips).
+    def _passes_filters(r: dict) -> bool:
+        if camera and r.get("camera") != camera: return False
+        if since is not None and (r.get("start_time") or 0) < since: return False
+        if until is not None and (r.get("start_time") or 0) > until: return False
+        if hour_from is not None and hour_to is not None:
+            import datetime
+            t = datetime.datetime.fromtimestamp(r.get("start_time") or 0)
+            h = t.hour
+            if hour_from <= hour_to:
+                if not (hour_from <= h < hour_to): return False
+            else:
+                if not (h >= hour_from or h < hour_to): return False
+        return True
+
     rows: list[dict[str, Any]]
     if bucket == "mine":
         if not email:
             raise HTTPException(status_code=400, detail="bucket=mine requires email")
-        ids = db.list_my_favorites(DB_PATH, email, limit=limit, offset=offset)
-        rows = [r for r in (db.get_highlight(DB_PATH, eid) for eid in ids) if r]
+        ids = db.list_my_favorites(DB_PATH, email, limit=max(limit*4, 200), offset=0)
+        rows = [r for r in (db.get_highlight(DB_PATH, eid) for eid in ids) if r and _passes_filters(r)]
+        rows = rows[offset:offset+limit]
     elif bucket == "shared":
-        pairs = db.list_shared_favorites(DB_PATH, limit=limit, offset=offset)
+        pairs = db.list_shared_favorites(DB_PATH, limit=max(limit*4, 200), offset=0)
         rows = []
         for eid, _n in pairs:
             r = db.get_highlight(DB_PATH, eid)
-            if r:
+            if r and _passes_filters(r):
                 rows.append(r)
+        rows = rows[offset:offset+limit]
     elif bucket == "remixes":
-        # Highlights that have at least one remix. Newest-clip-first.
         with db.connect(DB_PATH) as conn:
             ids = [r["event_id"] for r in conn.execute(
                 "SELECT DISTINCT event_id FROM remixes "
                 "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                [limit, offset],
+                [max(limit*4, 200), 0],
             ).fetchall()]
-        rows = [r for r in (db.get_highlight(DB_PATH, eid) for eid in ids) if r]
+        rows = [r for r in (db.get_highlight(DB_PATH, eid) for eid in ids) if r and _passes_filters(r)]
+        rows = rows[offset:offset+limit]
     else:
         rows = db.list_highlights(
             DB_PATH,
