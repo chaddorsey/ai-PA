@@ -216,6 +216,14 @@
     const baseName = sv.dataset.base;
     sv.dataset.stream = baseName;          // main stream
     const status = cam.querySelector(".status");
+    // No MSE on this browser (iOS Safari): the substream the cam is
+    // already playing via its grid-stream <video> has to be the
+    // spotlight view too. Skip the hi-res attach entirely so we don't
+    // crash on `new MediaSource()`.
+    if (!HAS_MSE) {
+      if (status) status.textContent = "live (sub)";
+      return;
+    }
     if (status) status.textContent = "loading hi-res…";
     runMSE(sv, baseName, status).catch((err) => {
       console.error(`[${baseName}] spotlight start error:`, err);
@@ -562,13 +570,24 @@
     });
   });
 
+  // iOS Safari (browser tab) doesn't expose MediaSource at all — only
+  // ManagedMediaSource on iOS 17.1+ behind a flag. WebRTC is the only
+  // viable live-streaming path on iOS. If WebRTC fails on iOS and we
+  // try to fall back to MSE, the runMSE function crashes immediately
+  // with "Can't find variable: MediaSource".
+  const HAS_MSE = typeof window.MediaSource !== "undefined" ||
+                  typeof window.ManagedMediaSource !== "undefined";
+  const IS_IOS_LIKE = document.documentElement.classList.contains("ios");
+
   async function start(video, stream, status) {
     console.log(`[${stream}] start()`);
     const cached = getCachedWebRTCResult();
-    // Skip WebRTC if either (a) we've cached a failure for this browser
-    // or (b) we're on Chromium and haven't proven WebRTC works here.
-    // Chromium's mDNS obfuscation means the attempt would just time out.
-    const skipWebRTC = cached === "fail" || (isChromium && cached !== "ok");
+    // On iOS, NEVER skip WebRTC based on a cached failure — MSE isn't
+    // available as a fallback, so a single bad WebRTC attempt would
+    // permanently lock the cam off. Always retry WebRTC.
+    const skipWebRTC = !IS_IOS_LIKE && (
+      cached === "fail" || (isChromium && cached !== "ok")
+    );
     if (skipWebRTC) {
       console.log(
         `[${stream}] skipping WebRTC (` +
@@ -577,6 +596,11 @@
             : "Chromium without proven WebRTC support") +
           ")"
       );
+      if (!HAS_MSE) {
+        status.textContent = "no compatible stream path";
+        console.error(`[${stream}] cached WebRTC fail + no MSE; can't play`);
+        return;
+      }
       status.textContent = "connecting (MSE)…";
       await runMSE(video, stream, status);
       return;
@@ -591,6 +615,13 @@
     } catch (err) {
       console.warn(`[${stream}] WebRTC failed:`, err.message);
       setCachedWebRTCResult("fail");
+    }
+    if (!HAS_MSE) {
+      // iOS path: WebRTC just failed and there's no MSE to fall back
+      // to. Surface a friendly message; user can retry by reloading.
+      status.textContent = "WebRTC unavailable — pull to refresh";
+      console.error(`[${stream}] WebRTC failed and MediaSource is not available`);
+      return;
     }
     status.textContent = "falling back to MSE…";
     await runMSE(video, stream, status);

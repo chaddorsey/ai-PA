@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v54-passive-autoplay-probe";
+const CACHE = "our-foxes-v55-ios-mse-guard";
 
 const STATIC_ASSETS = [
   "/static/style.css",
