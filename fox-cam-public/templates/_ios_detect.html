@@ -1,0 +1,25 @@
+{# Inline iOS detection. Inserted in <head> of every template so the
+   classes are present before stylesheet evaluation (avoids FOUC for
+   any body.ios-prefixed CSS rule). Sets:
+     - html.ios + body.ios on iPhone/iPad/iPod (incl. iPadOS 13+ "MacIntel" lie)
+     - html.ios-pwa + body.ios-pwa when also launched as a PWA from Home Screen #}
+<script>
+(function () {
+  var ua = navigator.userAgent;
+  // The second clause catches iPadOS 13+ which reports platform "MacIntel"
+  // and a Safari UA but is distinguishable by maxTouchPoints > 1.
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.platform) ||
+              (ua.indexOf("Mac") !== -1 && navigator.maxTouchPoints > 1);
+  if (!isIOS) return;
+  var isStandalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+                     navigator.standalone === true;
+  var classes = ["ios"];
+  if (isStandalone) classes.push("ios-pwa");
+  document.documentElement.classList.add.apply(document.documentElement.classList, classes);
+  var setBody = function () {
+    document.body.classList.add.apply(document.body.classList, classes);
+  };
+  if (document.body) setBody();
+  else document.addEventListener("DOMContentLoaded", setBody, { once: true });
+})();
+</script>
