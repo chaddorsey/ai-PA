@@ -97,6 +97,28 @@ nav a.active { background: var(--color-glow); color: white !important; }
   padding: 12px 14px !important;
 }
 .highlight .meta .muted { color: var(--color-ink-soft) !important; }
+/* Datetime link on each card — original style.css makes it #f5f5f5
+   (near-white) for the dark theme, which becomes invisible on the
+   warm-theme white card. Override to dark ink with an orange
+   underline accent. */
+.highlight .meta .time,
+.highlight .meta a.time {
+  color: var(--color-ink) !important;
+  font-weight: 600 !important;
+  border-bottom-color: rgba(240, 90, 40, 0.35) !important;
+}
+.highlight .meta a.time:hover {
+  color: var(--color-glow) !important;
+  border-bottom-color: var(--color-glow) !important;
+}
+.highlight .meta a.remix-count-link {
+  color: var(--color-glow) !important;
+  border-bottom-color: rgba(240, 90, 40, 0.35) !important;
+}
+.highlight .meta a.remix-count-link:hover {
+  color: var(--color-ink) !important;
+  border-bottom-color: var(--color-ink) !important;
+}
 
 /* --- Live cams --- */
 .cam {
