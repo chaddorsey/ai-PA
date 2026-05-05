@@ -25,6 +25,29 @@
     });
   }
 
+  // Passive probe: 1.5s after a stream is marked "live (...)", check
+  // whether the video is actually playing. If paused, the browser's
+  // autoplay was likely rejected — call play() once explicitly so the
+  // returned promise rejects with NotAllowedError and notePlayRejection
+  // surfaces the scrim. If the video is already playing, do nothing
+  // (avoids the race where an explicit play() interrupts an in-flight
+  // autoplay attempt).
+  function schedulePlayProbe(video) {
+    setTimeout(() => {
+      if (!video.paused || video.ended) return;
+      // readyState 0 = HAVE_NOTHING — still buffering; not autoplay
+      // rejection. Re-probe once shortly.
+      if (video.readyState < 1) {
+        setTimeout(() => {
+          if (!video.paused || video.ended) return;
+          notePlayRejection(video.play());
+        }, 1500);
+        return;
+      }
+      notePlayRejection(video.play());
+    }, 1500);
+  }
+
   // Scrim shown over the live grid when iOS refuses autoplay. One tap
   // anywhere on the scrim calls play() on every grid <video>. Once any
   // play() resolves the user-activation lock lifts globally; the scrim
@@ -603,10 +626,13 @@
       if (pc.connectionState === "connected") {
         clearTimeout(timer);
         status.textContent = "live (WebRTC)";
-        // Force play() so we can detect autoplay-rejection on iOS.
-        // Without this, ontrack sets srcObject but the video may sit
-        // paused silently (no error event) until a user gesture.
-        notePlayRejection(video.play());
+        // Passive autoplay-rejection probe: don't call play() here
+        // (it races with the browser's own autoplay attempt and can
+        // throw AbortError, breaking the pipeline). Wait, then check
+        // if the video is still paused — if so, autoplay was rejected
+        // and we explicitly try again so notePlayRejection can detect
+        // it and reveal the scrim.
+        schedulePlayProbe(video);
         resolveConn();
       } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
         clearTimeout(timer);
@@ -715,10 +741,8 @@
           console.error(`[${stream}] sourceBuffer error:`, e)
         );
         status.textContent = "live (MSE)";
-        // Force play() once the MSE pipeline is wired so we can detect
-        // autoplay rejection on iOS (autoplay attribute alone doesn't
-        // surface a rejection event).
-        notePlayRejection(video.play());
+        // Passive autoplay-rejection probe — see comment in tryWebRTC.
+        schedulePlayProbe(video);
         flush();
       } catch (e) {
         console.error(`[${stream}] addSourceBuffer failed:`, e);
