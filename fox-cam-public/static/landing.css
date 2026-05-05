@@ -164,7 +164,7 @@ body.landing a:hover { color: var(--color-ink); }
 }
 
 .hero-logotext {
-  width: clamp(420px, 48vw, 720px);
+  width: clamp(280px, 60vw, 720px);
   filter: drop-shadow(0 8px 18px rgba(240, 90, 40, 0.35));
   display: block;
   margin: 0 auto;
@@ -184,7 +184,10 @@ body.landing a:hover { color: var(--color-ink); }
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  /* Pad past the home-indicator on notched iPhones; resolves to 64px
+     on devices with no inset (env() = 0). */
   margin-top: 64px;
+  margin-bottom: max(0px, env(safe-area-inset-bottom));
   padding: 16px 36px;
   border-radius: var(--radius-pill);
   background: var(--color-glow) !important;
@@ -442,7 +445,13 @@ body.landing .hero-cta { opacity: 1; transition: opacity 0.3s ease; transition-d
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 28px;
+  /* Pad past notch/safe-area on iOS PWA so the brand mark and login
+     button don't sit under the status bar. env() = 0 in browser tab. */
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(28px, env(safe-area-inset-right))
+    16px
+    max(28px, env(safe-area-inset-left));
   font-family: var(--font-display);
   font-size: 15px;
   font-weight: 500;

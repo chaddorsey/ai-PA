@@ -397,6 +397,13 @@ nav a.active { background: var(--color-glow); color: white !important; }
   overflow: hidden;
   font-family: var(--font-body);
 }
+/* iOS PWA: when launched standalone, the home indicator sits at the
+   bottom of the viewport and the modal can extend under it. Add an
+   inner padding-bottom equal to the inset so action buttons stay
+   tappable. Browser-tab mode has env() = 0 so this is a no-op. */
+body.ios .card-modal-body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
 .card-modal::backdrop {
   background: rgba(42, 24, 16, 0.7);
   backdrop-filter: blur(4px);
@@ -670,9 +677,14 @@ body.modal-open { overflow: hidden; }
   grid-template-rows: 1fr 1fr !important;
   gap: 12px !important;
   /* Fill the visible area: viewport height minus header + safe-area
-     bottom + minimal page padding. Header is ~70px in warm-theme. */
+     bottom + minimal page padding. Header is ~70px in warm-theme.
+     dvh tracks the dynamic viewport (excludes iOS Safari URL bar);
+     env() subtracts notch + home-indicator on iPhone/iPad. The plain
+     vh line is a fallback for browsers without dvh. */
   height: calc(100vh - 88px);
   max-height: calc(100vh - 88px);
+  height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
 .live-layout[data-mode="grid"] .cam {
   min-height: 0;             /* allow children to shrink to fit row */

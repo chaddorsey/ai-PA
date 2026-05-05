@@ -98,7 +98,12 @@ main {
   body.spotlight-mode { overflow: hidden; }
   .live-layout[data-mode="spotlight"] {
     position: relative;
+    /* dvh tracks the dynamic viewport (excludes the iOS Safari URL
+       bar when scrolled); subtract safe-area insets so the spotlight
+       doesn't slip under notch / home indicator on iPad portrait or
+       landscape. Falls back to vh on browsers that don't grok dvh. */
     height: calc(100vh - 80px);
+    height: calc(100dvh - 80px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     /* Internal gutters: 1rem top/bottom, 1.5rem left/right so the
        spotlight + rail don't hit the browser edges. The grid items
        (rail cams) respect the padding directly; the absolute
