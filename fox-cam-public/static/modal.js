@@ -258,7 +258,7 @@
       trimDisp.textContent = `${fmt(state.start)} → ${fmt(state.end)} (${fmt(state.end - state.start)})`;
       const changed = Math.abs(state.start - initialState.start) > 0.05
         || Math.abs(state.end - initialState.end) > 0.05;
-      const zoomChanged = panzoomInstance && Math.abs((panzoomInstance.getScale?.() ?? 1) - 1) > 0.02;
+      const zoomChanged = panzoomInstance && Math.abs((panzoomInstance.getTransform?.()?.scale ?? 1) - 1) > 0.02;
       saveBtn.disabled = !(changed || zoomChanged || state.dirtyTitle);
     }
 
@@ -347,21 +347,40 @@
       updateTrimVisuals();
     });
 
-    // Pan/zoom on the video. bindPanzoom returns the instance so we
-    // can listen for zoom changes here.
+    // Pan/zoom on the video. anvaka/panzoom API is "on('zoom', cb)" +
+    // getTransform(), smoothZoom(cx, cy, factor), zoomAbs(x, y, scale).
     panzoomInstance = bindPanzoom(videoEl, wrap);
     if (panzoomInstance) {
-      videoEl.addEventListener("panzoomchange", () => {
-        const s = panzoomInstance.getScale?.() ?? 1;
-        zoomDisp.textContent = `zoom: ${s.toFixed(1)}×`;
+      panzoomInstance.on("zoom", () => {
+        const t = panzoomInstance.getTransform();
+        zoomDisp.textContent = `zoom: ${t.scale.toFixed(2)}×`;
         updateTrimVisuals();
       });
       const zin = body.querySelector(".zoom-in");
       const zout = body.querySelector(".zoom-out");
       const zfit = body.querySelector(".zoom-fit");
-      if (zin) zin.addEventListener("click", () => panzoomInstance.zoomIn());
-      if (zout) zout.addEventListener("click", () => panzoomInstance.zoomOut());
-      if (zfit) zfit.addEventListener("click", () => panzoomInstance.reset());
+      if (zin) zin.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const r = wrap.getBoundingClientRect();
+        panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
+      });
+      if (zout) zout.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const cur = panzoomInstance.getTransform().scale;
+        const next = cur / 1.5;
+        if (next <= 1.05) {
+          panzoomInstance.zoomAbs(0, 0, 1);
+          panzoomInstance.moveTo(0, 0);
+        } else {
+          const r = wrap.getBoundingClientRect();
+          panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
+        }
+      });
+      if (zfit) zfit.addEventListener("click", (e) => {
+        e.stopPropagation();
+        panzoomInstance.zoomAbs(0, 0, 1);
+        panzoomInstance.moveTo(0, 0);
+      });
     }
 
     cancelBtn.addEventListener("click", () => renderViewer(h));
@@ -369,21 +388,21 @@
     saveBtn.addEventListener("click", async () => {
       saveBtn.disabled = true;
       saveBtn.textContent = "Saving…";
+      const transform = panzoomInstance?.getTransform?.() ?? { scale: 1, x: 0, y: 0 };
       const payload = {
         title: titleInp.value.trim() || null,
         start_offset_s: state.start,
         end_offset_s:   state.end,
-        zoom_scale:     panzoomInstance?.getScale?.() ?? 1,
-        zoom_x: 0.5,  // simple model: capture current pan as center
+        zoom_scale:     transform.scale,
+        zoom_x: 0.5,
         zoom_y: 0.5,
       };
-      // Capture current pan as center if zoomed.
-      if (panzoomInstance && panzoomInstance.getScale?.() > 1.02) {
-        const p = panzoomInstance.getPan?.() ?? { x: 0, y: 0 };
+      // Capture current pan center if zoomed (anvaka/panzoom returns
+      // x/y as the translation in screen pixels of the [0,0] origin).
+      if (transform.scale > 1.02) {
         const r = wrap.getBoundingClientRect();
-        const s = panzoomInstance.getScale?.() ?? 1;
-        payload.zoom_x = ((r.width / 2 - p.x) / s) / r.width;
-        payload.zoom_y = ((r.height / 2 - p.y) / s) / r.height;
+        payload.zoom_x = (r.width / 2 - transform.x) / (r.width * transform.scale);
+        payload.zoom_y = (r.height / 2 - transform.y) / (r.height * transform.scale);
       }
       try {
         const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/remix`, {
@@ -417,26 +436,22 @@
   }
 
   // ===========================================================================
-  // Panzoom binding — used by both the viewer and the remix editor
+  // Panzoom binding — used by both the viewer and the remix editor.
+  // Uses the lowercase anvaka/panzoom library (window.panzoom) which is
+  // what clip.js / live.js already use. The capital-P @panzoom/panzoom
+  // library has a different API and isn't loaded.
   // ===========================================================================
   function bindPanzoom(videoTarget, wrapEl) {
-    if (!window.Panzoom || !videoTarget || !wrapEl) {
-      console.warn("[modal] panzoom missing", { hasLib: !!window.Panzoom });
+    if (typeof window.panzoom !== "function" || !videoTarget || !wrapEl) {
+      console.warn("[modal] panzoom missing", { hasLib: typeof window.panzoom });
       return null;
     }
     try {
-      const inst = window.Panzoom(videoTarget, {
-        maxScale: 6, minScale: 1, contain: "outside",
-        cursor: "zoom-in", animate: true, duration: 150,
-        // Don't intercept clicks on action-row buttons rendered
-        // outside the wrap.
-        excludeClass: "no-panzoom",
+      videoTarget.style.transformOrigin = "0 0";
+      const inst = window.panzoom(videoTarget, {
+        maxZoom: 6, minZoom: 1, bounds: true,
+        boundsPadding: 0.95, zoomDoubleClickSpeed: 1,
       });
-      // Wheel-to-zoom on the wrap.
-      wrapEl.addEventListener("wheel", (e) => {
-        e.preventDefault();
-        inst.zoomWithWheel(e);
-      }, { passive: false });
       return inst;
     } catch (err) {
       console.warn("[modal] panzoom init failed", err);
