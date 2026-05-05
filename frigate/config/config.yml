@@ -92,14 +92,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         cat:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         person:
-          min_score: 0.30
-          threshold: 0.45
+          min_score: 0.10
+          threshold: 0.20
 
     motion:
       threshold: 17
@@ -132,14 +132,14 @@ cameras:
     enabled: true
     ffmpeg:
       inputs:
-        - path: rtsp://host.docker.internal:8555/fox_den_2_sub
+        - path: rtsp://host.docker.internal:8555/fox_den_2
           roles:
             - detect
             - record
     detect:
       enabled: true
-      width: 704
-      height: 480
+      width: 1920
+      height: 1080
       fps: 5
     objects:
       track:
@@ -148,14 +148,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         cat:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         person:
-          min_score: 0.30
-          threshold: 0.45
+          min_score: 0.10
+          threshold: 0.20
 
     motion:
       threshold: 17
@@ -193,14 +193,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         cat:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         person:
-          min_score: 0.30
-          threshold: 0.45
+          min_score: 0.10
+          threshold: 0.20
 
 # ----------------------------------------------------------------------
 # Recording policy: SHORT alert clips only (SS handles bulk recording).
@@ -245,14 +245,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         cat:
-          min_score: 0.15
-          threshold: 0.25
+          min_score: 0.05
+          threshold: 0.15
         person:
-          min_score: 0.30
-          threshold: 0.45
+          min_score: 0.10
+          threshold: 0.20
     motion:
       threshold: 17
       contour_area: 8
