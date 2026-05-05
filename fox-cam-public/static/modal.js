@@ -170,6 +170,34 @@
         async () => toggleFeature(h)
       ));
     }
+
+    // Existing remixes for this clip — list them below the actions
+    // so the user can jump to a specific cut without leaving the
+    // modal. Each entry is a link to /remix/<remix_id> which is the
+    // standalone remix-playback page (already gated by Access).
+    if (Array.isArray(h.remixes) && h.remixes.length) {
+      const panel = document.createElement("div");
+      panel.className = "modal-remixes";
+      panel.innerHTML = `<h3 class="modal-remixes-h">🎬 Remixes <span class="muted">(${h.remixes.length})</span></h3>`;
+      const list = document.createElement("div");
+      list.className = "modal-remixes-list";
+      for (const r of h.remixes) {
+        const dur = (r.end_offset_s - r.start_offset_s).toFixed(1);
+        const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
+        const titleText = r.title || "(untitled)";
+        const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
+        const a = document.createElement("a");
+        a.className = "modal-remix-item";
+        a.href = `/remix/${encodeURIComponent(r.remix_id)}`;
+        a.innerHTML = `
+          <span class="rx-author">@${escapeHtml(username)}</span>
+          <span class="rx-title">${escapeHtml(titleText)}</span>
+          <span class="rx-meta muted">${dur}s${zoom}</span>`;
+        list.appendChild(a);
+      }
+      panel.appendChild(list);
+      body.querySelector(".modal-stage").appendChild(panel);
+    }
   }
 
   // ===========================================================================

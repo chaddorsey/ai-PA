@@ -602,3 +602,47 @@ body.modal-open { overflow: hidden; }
 /* Modal viewer: video gets cursor: zoom-in to advertise the panzoom
    feature. (Panzoom is bound on both modes by modal.js.) */
 .modal-video-wrap { cursor: zoom-in; }
+
+/* === Modal: existing remix list under the actions row === */
+.modal-remixes {
+  border-top: 1px solid rgba(240, 90, 40, 0.12);
+  padding: 14px 22px 22px;
+}
+.modal-remixes-h {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--color-ink);
+  margin: 0 0 10px;
+}
+.modal-remixes-h .muted { color: var(--color-ink-soft); font-weight: 500; }
+.modal-remixes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modal-remix-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(240, 90, 40, 0.04);
+  border: 1px solid rgba(240, 90, 40, 0.12);
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.modal-remix-item:hover {
+  background: rgba(240, 90, 40, 0.10);
+  border-color: rgba(240, 90, 40, 0.35);
+  color: var(--color-ink);
+}
+.modal-remix-item .rx-author {
+  color: var(--color-glow);
+  font-weight: 600;
+  font-size: 13px;
+}
+.modal-remix-item .rx-title { font-weight: 500; }
+.modal-remix-item .rx-meta { font-size: 12px; }

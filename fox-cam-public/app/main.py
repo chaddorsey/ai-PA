@@ -564,7 +564,7 @@ async def list_highlights(
     since: float | None = Query(default=None),
     until: float | None = Query(default=None),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
-    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared)$"),
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared|remixes)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
     species_filter: str = Query(default="", regex="^(|wildlife|fox|unclassified)$"),
     limit: int = Query(default=50, ge=1, le=500),

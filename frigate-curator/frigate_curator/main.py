@@ -159,7 +159,7 @@ def list_highlights(
     since: float | None = Query(default=None, description="unix epoch seconds"),
     until: float | None = Query(default=None, description="unix epoch seconds"),
     min_score: float = Query(default=0.0, ge=0.0, le=1.0),
-    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared)$"),
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared|remixes)$"),
     time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
     email: str | None = Query(default=None, description="viewer email for 'mine' bucket"),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -188,6 +188,15 @@ def list_highlights(
             r = db.get_highlight(DB_PATH, eid)
             if r:
                 rows.append(r)
+    elif bucket == "remixes":
+        # Highlights that have at least one remix. Newest-clip-first.
+        with db.connect(DB_PATH) as conn:
+            ids = [r["event_id"] for r in conn.execute(
+                "SELECT DISTINCT event_id FROM remixes "
+                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                [limit, offset],
+            ).fetchall()]
+        rows = [r for r in (db.get_highlight(DB_PATH, eid) for eid in ids) if r]
     else:
         rows = db.list_highlights(
             DB_PATH,

@@ -102,9 +102,10 @@
 
   function buildEmptyState(b) {
     const empties = {
-      pending: { svg: "/static/animals/Stump.svg",   text: "Quiet woods today. Check back tonight." },
-      mine:    { svg: "/static/animals/Bear.svg",     text: "Star a clip to save it here." },
+      pending: { svg: "/static/animals/Stump.svg",    text: "Quiet woods today. Check back tonight." },
+      mine:    { svg: "/static/animals/Bear.svg",     text: "Star a clip to save it as a favorite here." },
       shared:  { svg: "/static/animals/Tree-Trio.svg", text: "Once two of you star the same clip, it shows up here." },
+      remixes: { svg: "/static/animals/Raccoon-2.svg", text: "Open a favorited clip and ✂️ Remix to capture a moment." },
       demoted: { svg: "/static/animals/Frog.svg",     text: "Nothing here yet — clips marked “Not a fox” live here." },
     };
     const cfg = empties[b] || empties.pending;
