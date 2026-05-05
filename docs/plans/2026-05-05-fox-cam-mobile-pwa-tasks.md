@@ -24,7 +24,7 @@ into the task descriptions.
 | Web Push? | **Cut.** | ntfy.sh already covers this with a real iOS app. |
 | Splash screens? | **Keep — Phase 2.** Mock with one or two iPhone resolutions; refine after first-pass review. | User-flagged as delight. |
 | Pull-to-refresh? | **Cut.** | Browser reload + tab tap already does it. |
-| Long-press menu? | **Keep — Phase 2.** Custom popover (touchstart + 500ms timer); iOS Safari `contextmenu` event is inconsistent on non-link/image. Pop a 4-action menu (⭐ / 🚫 / 🔗 / 🗃). Disable native iOS callout on the card via `-webkit-touch-callout: none` so we don't double-show menus. | User wants it; complements double-tap-favorite (slow full menu vs. fast common action). |
+| Long-press menu? | **Cut.** | User concerned about interaction conflicts (scroll, native callouts, accidental fires during card hold-to-share). Tap-on-visible-buttons covers all 4 actions; double-tap-favorite covers the most common one. |
 | Double-tap favorite? | **Keep — Phase 2.** Single `dblclick` listener on card thumb, with `touch-action: manipulation` on the card to suppress the browser's 300ms double-tap-zoom delay. Heart pulses on top via existing `deliverBadge`. | User wants it. Conflicts with double-tap-zoom only if `touch-action: manipulation` isn't set; with it, browser disables double-tap-zoom on that element and we own the gesture. |
 | Filter row → sheet button? | **Defer — Phase 2.** | iOS-style "Filters" button at top; tap opens a bottom sheet containing the 6 dropdowns. Currently they wrap to 3 rows on phone; functional but cramped. Lift if Phase 1 settles and we still see complaints. |
 | Swipe-down to close modal? | **Defer.** | Backdrop tap + X work fine. Revisit with bottom-sheet modal. |
@@ -176,16 +176,6 @@ Per audit §2 sketch. Pure CSS for the layout + slide-up animation. Pair with th
 - If already favorited, the double-tap is a no-op (don't unfavorite — Instagram pattern is one-way; users can unfavorite via the visible button).
 - Gate behind `body.ios` to keep desktop double-click semantics untouched.
 
-### P2.6 Long-press context menu
-- New small file `fox-cam-public/static/long-press-menu.js` (~80 lines).
-- Bind on `.highlight` card (and inside the modal on `.modal-stage`):
-  - `touchstart` → start 500ms timer; cancel on `touchmove` > 8px or `touchend` < 500ms; cancel on scroll.
-  - On fire: small haptic feedback via `navigator.vibrate(10)` (no-op on iOS but harmless).
-  - Render a custom popover anchored at touch coordinates with: ⭐ Favorite / 🚫 Not a fox / 🔗 Share / 🗃 Archive.
-  - Tap outside to dismiss; tap an action to fire it via the existing `setAction()` / share / archive paths.
-- Suppress native iOS callout: `.highlight { -webkit-touch-callout: none; -webkit-user-select: none }` (gated `body.ios` so desktop selection stays normal).
-- Gate the JS itself behind `body.ios` (don't load on desktop).
-
 ---
 
 ## Phase 3 — Cut entirely
@@ -242,8 +232,7 @@ Per Phase 2:
 - `fox-cam-public/templates/landing.html` status-bar-style.
 - `fox-cam-public/static/icons/splash-*.png` (new — generated).
 - `fox-cam-public/scripts/generate-splash.py` (new — Pillow-based generator).
-- `fox-cam-public/static/long-press-menu.js` (new).
 - `fox-cam-public/static/card.js` — double-tap-favorite handler.
-- `fox-cam-public/templates/highlights.html`, `clip.html`, `landing.html` — apple-touch-startup-image links + long-press script tag (gated).
+- `fox-cam-public/templates/highlights.html`, `clip.html`, `landing.html` — apple-touch-startup-image links.
 
 No new endpoints. No new dependencies.
