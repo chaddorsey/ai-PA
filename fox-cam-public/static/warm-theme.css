@@ -808,37 +808,67 @@ body.modal-open { overflow: hidden; }
 }
 .highlight.is-archived:hover { opacity: 1; filter: none; }
 
-/* === Modal remix-playback: "back to original" floating icon button
-   in the top-left corner of the video, mirroring the close X on the
-   right. Was a chunky pill that crashed visually into the tabs row. */
-.modal-back {
-  position: absolute;
-  top: 4px;
-  left: 8px;
-  z-index: 10;
-  width: 36px;
-  height: 36px;
-  border: none;
-  padding: 0;
-  background: rgba(0, 0, 0, 0.45);
-  color: white;
+/* === Modal remix-playback: "← See original highlight" pill button
+   sits inside the modal-meta area on its own line so it doesn't
+   collide with anything. Centered, clear text, hover lifts. */
+.modal-back-pill {
+  display: inline-flex;
+  align-items: center;
+  margin: 14px auto 0;
+  background: white;
+  border: 1.5px solid rgba(240, 90, 40, 0.35);
+  color: var(--color-glow);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 18px;
   border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.modal-back-pill:hover {
+  background: var(--color-glow);
+  color: white;
+  transform: translateY(-1px);
+}
+.modal-back-pill:focus,
+.modal-back-pill:focus-visible,
+.modal-back-pill:active { outline: none; }
+.modal-stage-remix-play .modal-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.modal-stage-remix-play .modal-back-pill { align-self: center; }
+
+/* === Download icon next to date/duration slug ============================ */
+.meta-download {
+  background: transparent;
+  border: none;
+  color: var(--color-ink-soft);
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  margin-left: 6px;
+  vertical-align: middle;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.modal-back:hover {
-  background: var(--color-glow);
-  transform: scale(1.06);
+.meta-download .material-icons { font-size: 18px; }
+.meta-download:hover {
+  background: rgba(240, 90, 40, 0.10);
+  color: var(--color-glow);
+  transform: translateY(-1px);
 }
-.modal-back:focus,
-.modal-back:focus-visible,
-.modal-back:active { outline: none; }
-.modal-back .material-icons { font-size: 20px; }
+.meta-download:focus,
+.meta-download:focus-visible,
+.meta-download:active { outline: none; }
+.modal-meta-extra { display: inline-flex; align-items: center; gap: 4px; }
 
 /* Delete button — admin-only, distinguished by a red-ish hue */
 .action-btn.action-delete {

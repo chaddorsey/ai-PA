@@ -344,7 +344,12 @@
         <div class="modal-meta">
           <h2 class="modal-title" id="card-modal-title">${escapeHtml((window.prettyCamera||(s=>s))(h.camera))} · ${t}</h2>
           <div class="modal-badges">${speciesBadge}${sharedBadge}${featuredBadge}
-            <span class="modal-meta-extra">${(h.duration_s || 0).toFixed(1)}s</span>
+            <span class="modal-meta-extra">
+              ${(h.duration_s || 0).toFixed(1)}s
+              <button class="meta-download" type="button" title="Download clip" aria-label="Download clip">
+                <span class="material-icons">download</span>
+              </button>
+            </span>
           </div>
         </div>
         <div class="modal-actions" id="modal-actions"></div>
@@ -481,20 +486,15 @@
     }));
     // Download the .mp4 file. Anchor with download attr + filename
     // derived from the start_time so the user lands a meaningful name.
-    actionsBar.appendChild(actionBtn("⬇ Download", "download", false, () => {
-      const stamp = h.start_time
-        ? new Date(h.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
-        : h.event_id;
-      const cam = (window.prettyCamera ? window.prettyCamera(h.camera) : (h.camera || "fox"))
-        .replace(/\s+/g, "-").toLowerCase();
-      const filename = `${cam}-${stamp}.mp4`;
-      const a = document.createElement("a");
-      a.href = `/api/highlights/${encodeURIComponent(h.event_id)}/clip?download=1&filename=${encodeURIComponent(filename)}`;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }));
+    // Download icon next to the date/duration slug. Wired here so it
+    // closes over the current `h`.
+    const dlBtn = body.querySelector(".meta-download");
+    if (dlBtn) {
+      dlBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        triggerDownload(h);
+      });
+    }
     if (h.my_favorited) {
       actionsBar.appendChild(actionBtn("✂️ Remix", "remix", false,
         () => renderRemixEditor(h)));
@@ -875,20 +875,33 @@
     body.innerHTML = `
       <div class="modal-stage modal-stage-remix-play">
         <div class="modal-video-wrap">
-          <button class="modal-back" type="button" id="rp-back" title="See original highlight" aria-label="See original highlight">
-            <span class="material-icons">arrow_back</span>
-          </button>
           <video class="modal-video" controls autoplay muted playsinline></video>
         </div>
         <div class="modal-meta">
           <h2 class="modal-title">🎬 ${escapeHtml(title)}</h2>
           <div class="modal-badges">
             <span class="modal-badge fox">@${escapeHtml(username)}</span>
-            ${parentDate ? `<span class="modal-meta-extra">${parentDate} · ${dur}s</span>` : `<span class="modal-meta-extra">${dur}s</span>`}
+            <span class="modal-meta-extra">
+              ${parentDate ? `${parentDate} · ` : ""}${dur}s
+              <button class="meta-download" type="button" title="Download remix clip" aria-label="Download clip">
+                <span class="material-icons">download</span>
+              </button>
+            </span>
           </div>
+          <button class="modal-back-pill" type="button" id="rp-back">← See original highlight</button>
         </div>
       </div>
     `;
+    // Wire download icon (saves the parent .mp4 — remixes are
+    // sub-windows of the same source file). Filename includes the
+    // remix title so users can tell which one they downloaded.
+    const dlBtn = body.querySelector(".meta-download");
+    if (dlBtn) {
+      dlBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        triggerDownload(parentH || { event_id: remix.event_id, start_time: remix.start_offset_s, camera: parentH?.camera }, remix.title || "remix");
+      });
+    }
 
     videoEl = body.querySelector(".modal-video");
     videoEl.src = `/api/highlights/${encodeURIComponent(parentH.event_id)}/clip`;
@@ -1014,6 +1027,29 @@
     }
     const cls = h.species === "fox" ? "fox" : "wildlife";
     return `<span class="modal-badge ${cls}">${escapeHtml(h.species)}</span>`;
+  }
+
+  // Trigger a browser-side download of the parent clip's mp4. Used
+  // by the meta-download icon in both viewer and remix-playback modes.
+  // For remix mode, the source is still the parent clip (remixes are
+  // virtual sub-windows); the suffix encodes the remix title so
+  // multiple downloads off the same parent stay distinguishable.
+  function triggerDownload(h, suffix) {
+    if (!h || !h.event_id) return;
+    const stamp = h.start_time
+      ? new Date(h.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
+      : h.event_id;
+    const cam = (window.prettyCamera ? window.prettyCamera(h.camera) : (h.camera || "fox"))
+      .replace(/\s+/g, "-").toLowerCase();
+    let filename = `${cam}-${stamp}`;
+    if (suffix) filename += "-" + String(suffix).replace(/[^a-z0-9-]+/gi, "-").slice(0, 40);
+    filename += ".mp4";
+    const a = document.createElement("a");
+    a.href = `/api/highlights/${encodeURIComponent(h.event_id)}/clip?download=1&filename=${encodeURIComponent(filename)}`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   function escapeHtml(s) {
