@@ -74,6 +74,31 @@
     }
   }
 
+  // Walk the gallery in DOM order to find the list of currently-loaded
+  // event_ids so the prev/next arrows can navigate inside the active
+  // tab+filter without a refetch.
+  function findSiblingIds() {
+    return Array.from(document.querySelectorAll("#highlights .highlight[data-event-id]"))
+      .map((el) => el.dataset.eventId);
+  }
+
+  // Keyboard shortcuts: ←/→ navigate, ESC closes (handled by <dialog>).
+  document.addEventListener("keydown", (e) => {
+    if (!dialog.open) return;
+    if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const siblings = findSiblingIds();
+      if (!current) return;
+      const i = siblings.indexOf(current.event_id);
+      if (i < 0) return;
+      const target = e.key === "ArrowLeft" ? siblings[i - 1] : siblings[i + 1];
+      if (target) {
+        e.preventDefault();
+        window.openCardModal(target);
+      }
+    }
+  });
+
   closeBtn.addEventListener("click", () => window.closeCardModal());
   dialog.addEventListener("click", (e) => {
     // Click on the backdrop (the dialog itself) closes; clicks bubbling
@@ -102,10 +127,21 @@
 
     const t = new Date(h.start_time * 1000).toLocaleString();
 
+    const siblings = findSiblingIds();
+    const idx = siblings.indexOf(h.event_id);
+    const prevId = idx > 0 ? siblings[idx - 1] : null;
+    const nextId = (idx >= 0 && idx < siblings.length - 1) ? siblings[idx + 1] : null;
+
     body.innerHTML = `
       <div class="modal-stage">
         <div class="modal-video-wrap">
           <video class="modal-video" controls autoplay muted playsinline></video>
+          <button class="modal-nav prev" type="button" aria-label="Previous clip" ${prevId ? "" : "disabled"}>
+            <span class="material-icons">chevron_left</span>
+          </button>
+          <button class="modal-nav next" type="button" aria-label="Next clip" ${nextId ? "" : "disabled"}>
+            <span class="material-icons">chevron_right</span>
+          </button>
         </div>
         <div class="modal-meta">
           <h2 class="modal-title" id="card-modal-title">${escapeHtml((window.prettyCamera||(s=>s))(h.camera))} · ${t}</h2>
@@ -121,6 +157,18 @@
     videoEl = body.querySelector(".modal-video");
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
+
+    // Wire prev/next nav.
+    const prevBtn = body.querySelector(".modal-nav.prev");
+    const nextBtn = body.querySelector(".modal-nav.next");
+    if (prevBtn && prevId) prevBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.openCardModal(prevId);
+    });
+    if (nextBtn && nextId) nextBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      window.openCardModal(nextId);
+    });
 
     // Pinch / scroll / drag to zoom into the video. Bound after the
     // video element exists so panzoom can measure its size on first

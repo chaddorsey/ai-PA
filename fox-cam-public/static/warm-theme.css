@@ -826,3 +826,48 @@ body.modal-open { overflow: hidden; }
   border-color: #b41e1e !important;
   color: #8a1818 !important;
 }
+
+/* Material Icons inside the archive toggle render at 18px, currentColor */
+.archive-toggle .material-icons {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* === Modal: prev / next arrows on the video edges === */
+.modal-nav {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 7;
+  background: linear-gradient(90deg, rgba(0,0,0,0.45), transparent);
+  color: white;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease;
+  pointer-events: auto;
+}
+.modal-nav.prev { left: 0; }
+.modal-nav.next {
+  right: 0;
+  background: linear-gradient(270deg, rgba(0,0,0,0.45), transparent);
+}
+.modal-video-wrap:hover .modal-nav,
+.modal-nav:focus-visible {
+  opacity: 1;
+}
+.modal-nav:hover {
+  opacity: 1;
+}
+.modal-nav .material-icons {
+  font-size: 38px;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+.modal-nav:disabled {
+  opacity: 0;
+  pointer-events: none;
+}

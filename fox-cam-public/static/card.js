@@ -413,21 +413,17 @@
     applyPrerollSkip(v);
   }
 
-  // Archive toggle — top-right corner of every card. Inline SVG icon
-  // (Material Symbols-style: filled box with a horizontal lid). Click
-  // POSTs /api/actions/{id}/{archive|unarchive} and either fades the
-  // card out (if Active filter) or flips its visual state in place.
-  const ICON_ARCHIVE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-    <path fill="currentColor" d="M3 5h18v3H3zM4 9h16v11H4zm5 4v2h6v-2H9z"/></svg>`;
-  const ICON_UNARCHIVE = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-    <path fill="currentColor" d="M3 5h18v3H3zM4 9h16v11H4zm6 5l2-2 2 2v3h-4z"/></svg>`;
+  // Archive toggle — top-right corner of every card. Uses Material
+  // Icons font (loaded in the template) for a reliably-rendering glyph;
+  // the previous inline SVG was failing to render as a blank pill in
+  // some browser/font configurations.
   function archiveToggle(h) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "archive-toggle" + (h.my_archived ? " is-archived" : "");
     btn.title = h.my_archived ? "Unarchive (move back to Active)" : "Archive (hide from Active)";
     btn.setAttribute("aria-label", btn.title);
-    btn.innerHTML = h.my_archived ? ICON_UNARCHIVE : ICON_ARCHIVE;
+    btn.innerHTML = `<span class="material-icons">${h.my_archived ? "unarchive" : "archive"}</span>`;
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
