@@ -24,7 +24,12 @@
   function reset() {
     offset = 0;
     grid.innerHTML = "";
-    load();
+    grid.classList.remove("remix-list-view");
+    if (bucket === "remixes") {
+      loadRemixesList();
+    } else {
+      load();
+    }
   }
 
   function dateRange() {
@@ -42,6 +47,104 @@
     if (v === "7d") return { since: (now - 7 * day) / 1000 };
     if (v === "30d") return { since: (now - 30 * day) / 1000 };
     return {};
+  }
+
+  // Remixes tab uses a different rendering path — vertical list of
+  // remix cards grouped by parent highlight, rather than the standard
+  // .grid of highlight cards. Wire it before the regular load() so the
+  // tab-change handler can dispatch.
+  async function loadRemixesList() {
+    grid.innerHTML = "";
+    grid.classList.add("remix-list-view");
+    let data;
+    try {
+      const r = await fetch(`/api/remixes?limit=200`, { credentials: "same-origin" });
+      data = await r.json();
+    } catch (err) {
+      grid.appendChild(window.infoCard("Couldn't load remixes."));
+      return;
+    }
+    const items = (data && data.items) || [];
+    if (!items.length) {
+      grid.appendChild(buildEmptyState("remixes"));
+      loadMore.style.display = "none";
+      return;
+    }
+    // Group by parent event_id, preserving newest-first order from
+    // the API. The parent of each group is the highlight itself.
+    const groups = new Map();
+    for (const r of items) {
+      const eid = r.event_id;
+      if (!groups.has(eid)) groups.set(eid, { event_id: eid, parent: r, remixes: [] });
+      groups.get(eid).remixes.push(r);
+    }
+    // Cache the flat remix order so the modal can navigate prev/next
+    // through every remix across all groups.
+    window.REMIX_NAV_LIST = items.map((r) => r.remix_id);
+
+    for (const g of groups.values()) {
+      const block = document.createElement("div");
+      block.className = "remix-group";
+
+      const header = document.createElement("div");
+      header.className = "remix-group-header";
+      const cam = window.prettyCamera ? window.prettyCamera(g.parent.parent_camera) : (g.parent.parent_camera || "");
+      const t = g.parent.parent_start_time
+        ? new Date(g.parent.parent_start_time * 1000).toLocaleString()
+        : "";
+      const speciesPill = g.parent.parent_species
+        ? `<span class="remix-group-species">${escapeHtml(g.parent.parent_species)}</span>`
+        : "";
+      const countPill = g.remixes.length > 1
+        ? `<span class="remix-group-count">${g.remixes.length} remixes</span>` : "";
+      header.innerHTML = `
+        <a class="remix-group-link" href="/clip/${encodeURIComponent(g.event_id)}"
+           data-event-id="${encodeURIComponent(g.event_id)}"
+           title="View original highlight">
+          <span class="remix-group-title">${cam} <span class="muted">·</span> ${t}</span>
+          ${speciesPill}${countPill}
+        </a>`;
+      // Hijack click to open original-highlight modal in place.
+      header.querySelector("a").addEventListener("click", (e) => {
+        e.preventDefault();
+        if (window.openCardModal) window.openCardModal(g.event_id);
+      });
+      block.appendChild(header);
+
+      // Indented child list — visual hierarchy via .remix-children
+      // class. If only 1 remix, the indent + tree-glyph still apply
+      // for a consistent look.
+      const ul = document.createElement("ul");
+      ul.className = "remix-children";
+      for (const r of g.remixes) {
+        const li = document.createElement("li");
+        li.className = "remix-child";
+        li.dataset.remixId = r.remix_id;
+        const dur = (r.end_offset_s - r.start_offset_s).toFixed(1);
+        const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
+        const title = r.title || "(untitled)";
+        const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
+        li.innerHTML = `
+          <span class="rx-tree" aria-hidden="true">└─</span>
+          <span class="rx-author">@${escapeHtml(username)}</span>
+          <span class="rx-title">${escapeHtml(title)}</span>
+          <span class="rx-meta muted">${dur}s${zoom}</span>`;
+        li.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (window.openRemixModal) window.openRemixModal(r.remix_id);
+        });
+        ul.appendChild(li);
+      }
+      block.appendChild(ul);
+      grid.appendChild(block);
+    }
+    loadMore.style.display = "none";
+  }
+
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
   }
 
   async function load() {

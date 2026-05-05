@@ -57,6 +57,109 @@
     renderViewer(h);
   };
 
+  // Open a saved remix in the modal in playback mode. Used from the
+  // /highlights Remixes tab where each list item is a remix card.
+  window.openRemixModal = async function openRemixModal(remixId) {
+    if (!dialog.open) {
+      body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      document.body.classList.add("modal-open");
+    }
+    let remix;
+    try {
+      const r = await fetch(`/api/remixes/${encodeURIComponent(remixId)}`,
+        { credentials: "same-origin" });
+      const body_ = await r.json();
+      remix = body_.remix || body_;
+    } catch (err) {
+      body.innerHTML = `<p style="padding:32px;text-align:center;color:#6b4a3a;">
+        Couldn't load this remix. <a href="javascript:window.closeCardModal()">Close</a></p>`;
+      return;
+    }
+    let parentH;
+    try {
+      const pr = await fetch(`/api/highlights/${encodeURIComponent(remix.event_id)}`,
+        { credentials: "same-origin" });
+      parentH = await pr.json();
+    } catch (err) { /* no parent */ }
+    current = parentH;
+    currentRemix = remix;   // tracked separately so prev/next can navigate remixes
+    renderRemixPlaybackWithNav(parentH, remix);
+  };
+
+  let currentRemix = null;
+
+  // Wrapper around the existing remix-playback view that adds prev/next
+  // buttons that walk window.REMIX_NAV_LIST set by highlights.js.
+  function renderRemixPlaybackWithNav(parentH, remix) {
+    renderRemixPlayback(parentH, remix);
+    // Inject prev/next nav into the modal-video-wrap for remix mode
+    const wrap = body.querySelector(".modal-video-wrap");
+    const list = window.REMIX_NAV_LIST || [];
+    const idx = list.indexOf(remix.remix_id);
+    const prevId = idx > 0 ? list[idx - 1] : null;
+    const nextId = (idx >= 0 && idx < list.length - 1) ? list[idx + 1] : null;
+    if (wrap) {
+      const prev = document.createElement("button");
+      prev.className = "modal-nav prev";
+      prev.type = "button";
+      prev.tabIndex = -1;
+      prev.setAttribute("aria-label", "Previous remix");
+      prev.innerHTML = `<span class="material-icons">chevron_left</span>`;
+      if (!prevId) prev.disabled = true;
+      prev.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (prevId) slideToRemix(prevId, "prev");
+      });
+      const next = document.createElement("button");
+      next.className = "modal-nav next";
+      next.type = "button";
+      next.tabIndex = -1;
+      next.setAttribute("aria-label", "Next remix");
+      next.innerHTML = `<span class="material-icons">chevron_right</span>`;
+      if (!nextId) next.disabled = true;
+      next.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (nextId) slideToRemix(nextId, "next");
+      });
+      wrap.appendChild(prev);
+      wrap.appendChild(next);
+    }
+  }
+
+  async function slideToRemix(remixId, direction) {
+    if (sliding) return;
+    sliding = true;
+    const oldStage = body.querySelector(".modal-stage");
+    const outClass = direction === "next" ? "sliding-out-left" : "sliding-out-right";
+    const inClass  = direction === "next" ? "sliding-in-from-right" : "sliding-in-from-left";
+    if (oldStage) oldStage.classList.add(outClass);
+    let remix, parentH;
+    try {
+      const r = await fetch(`/api/remixes/${encodeURIComponent(remixId)}`,
+        { credentials: "same-origin" });
+      const j = await r.json();
+      remix = j.remix || j;
+      const pr = await fetch(`/api/highlights/${encodeURIComponent(remix.event_id)}`,
+        { credentials: "same-origin" });
+      parentH = await pr.json();
+    } catch (err) { sliding = false; return; }
+    await new Promise((res) => setTimeout(res, 280));
+    current = parentH;
+    currentRemix = remix;
+    renderRemixPlaybackWithNav(parentH, remix);
+    const newStage = body.querySelector(".modal-stage");
+    if (newStage) {
+      newStage.classList.add(inClass);
+      newStage.getBoundingClientRect();
+      requestAnimationFrame(() => newStage.classList.add("sliding-in-active"));
+      setTimeout(() => newStage.classList.remove(inClass, "sliding-in-active"), 380);
+    }
+    closeBtn.focus({ preventScroll: true });
+    sliding = false;
+  }
+
   window.closeCardModal = function closeCardModal() {
     teardownVideo();
     body.innerHTML = "";

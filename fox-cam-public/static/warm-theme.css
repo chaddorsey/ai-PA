@@ -1130,3 +1130,94 @@ body.filters-hidden .filters { display: none !important; }
   border-radius: 999px;
   letter-spacing: 0.02em;
 }
+
+/* === Remix list view (Remixes tab) =======================================
+   Vertical list of grouped remix cards. Each parent highlight gets a
+   header row; its remixes are indented children with a tree glyph for
+   visual hierarchy. Click the header → opens parent in modal; click a
+   child → opens the remix in playback modal. */
+.grid.remix-list-view {
+  display: flex !important;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.remix-group {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.10);
+  padding: 12px 18px 14px;
+}
+.remix-group-header { padding-bottom: 4px; }
+.remix-group-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  text-decoration: none;
+  color: var(--color-ink) !important;
+  border-bottom: none !important;
+}
+.remix-group-link:hover .remix-group-title { color: var(--color-glow); }
+.remix-group-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  transition: color 0.15s ease;
+}
+.remix-group-species {
+  background: var(--color-glow);
+  color: white;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+.remix-group-count {
+  background: var(--color-warm);
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  margin-left: auto;
+}
+.remix-children {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.remix-child {
+  display: grid;
+  grid-template-columns: 24px auto 1fr auto;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(240, 90, 40, 0.04);
+  border: 1px solid rgba(240, 90, 40, 0.10);
+  margin: 6px 0 0;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.remix-child:hover {
+  background: rgba(240, 90, 40, 0.10);
+  border-color: rgba(240, 90, 40, 0.40);
+  transform: translateX(2px);
+}
+.remix-child .rx-tree {
+  color: rgba(240, 90, 40, 0.45);
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-align: center;
+}
+.remix-child .rx-author {
+  color: var(--color-glow);
+  font-weight: 600;
+  font-size: 13px;
+}
+.remix-child .rx-title { font-weight: 500; font-size: 14px; }
+.remix-child .rx-meta { font-size: 12px; }

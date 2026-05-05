@@ -324,10 +324,25 @@ def remix_counts_bulk(db_path: Path, event_ids: list[str]) -> dict[str, int]:
     return out
 
 
-def remix_list_recent(db_path: Path, *, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+def remix_list_recent(db_path: Path, *, limit: int = 100, offset: int = 0,
+                       embed_parent: bool = True) -> list[dict[str, Any]]:
+    """All remixes newest-first, optionally enriched with parent
+    highlight metadata so list views can render rich cards without an
+    N+1 fetch (camera / start_time / thumb_path / species)."""
+    if not embed_parent:
+        with connect(db_path) as conn:
+            rows = conn.execute(
+                "SELECT * FROM remixes ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                [limit, offset],
+            ).fetchall()
+        return [dict(r) for r in rows]
     with connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT * FROM remixes ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "SELECT r.*, "
+            "h.camera AS parent_camera, h.start_time AS parent_start_time, "
+            "h.species AS parent_species, h.thumb_path AS parent_thumb_path "
+            "FROM remixes r LEFT JOIN highlights h ON h.event_id = r.event_id "
+            "ORDER BY r.created_at DESC LIMIT ? OFFSET ?",
             [limit, offset],
         ).fetchall()
     return [dict(r) for r in rows]

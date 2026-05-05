@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v31-filter-faves";
+const CACHE = "our-foxes-v32-remix-list";
 
 const STATIC_ASSETS = [
   "/static/style.css",
