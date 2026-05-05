@@ -21,9 +21,12 @@ from .heuristics import fox_likelihood
 logger = logging.getLogger(__name__)
 
 
-# Labels we care about. COCO-80 has no "fox", so we copy dog/cat events
-# at all hours and tag with fox_likelihood. The viewer can filter.
-INTERESTING_LABELS = {"animal", "dog", "cat"}  # animal = MegaDetector, dog/cat = COCO fallback
+# Labels we care about. COCO-80 has no "fox" so we copy dog/cat AND
+# person events — at our 704x480 substream resolution YOLO regularly
+# misclassifies crouched foxes (especially kits) as person. The
+# gpt-4o-mini classifier downstream sorts wildlife from real humans
+# (species='person' → curator filters auto-demote in default views).
+INTERESTING_LABELS = {"animal", "dog", "cat", "person"}
 
 # Always-copy threshold. Even daytime "probably a pet" events still get
 # saved because the user can re-classify (or we'll add a person-with-dog

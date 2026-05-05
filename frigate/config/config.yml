@@ -92,11 +92,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
         cat:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
+        person:
+          min_score: 0.30
+          threshold: 0.45
 
     motion:
       threshold: 17
@@ -145,11 +148,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
         cat:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
+        person:
+          min_score: 0.30
+          threshold: 0.45
 
     motion:
       mask:
@@ -184,11 +190,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
         cat:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
+        person:
+          min_score: 0.30
+          threshold: 0.45
 
 # ----------------------------------------------------------------------
 # Recording policy: SHORT alert clips only (SS handles bulk recording).
@@ -230,11 +239,14 @@ cameras:
         - person
       filters:
         dog:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
         cat:
-          min_score: 0.35
-          threshold: 0.5
+          min_score: 0.15
+          threshold: 0.25
+        person:
+          min_score: 0.30
+          threshold: 0.45
 
 record:
   enabled: true
