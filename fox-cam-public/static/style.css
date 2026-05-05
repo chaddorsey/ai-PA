@@ -866,3 +866,38 @@ body.is-anonymous main.clip-page {
   margin: 0;
   line-height: 1.4;
 }
+
+/* Who-am-I indicator in the header */
+.who-am-i {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: #888;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.who-am-i .email { color: #c0c0c0; }
+.who-am-i .admin-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f05a28;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.who-am-i .signout {
+  color: #888;
+  text-decoration: none;
+  border: 1px solid #333;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+.who-am-i .signout:hover {
+  color: #f5f5f5;
+  border-color: #c47e2a;
+}
+header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }

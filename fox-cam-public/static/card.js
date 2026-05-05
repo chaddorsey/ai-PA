@@ -8,6 +8,30 @@
   // fetches /api/viewer/state. 0 = mark nothing as new.
   window.LAST_SEEN_AT_PAGELOAD = 0;
 
+  // Populate the "who am I" indicator in every page header. Anyone
+  // logged in sees their email + a sign-out link; admin badge appears
+  // for ADMIN_EMAILS. Best-effort — failures are silent.
+  fetch("/api/whoami", { credentials: "same-origin" })
+    .then((r) => r.ok ? r.json() : null)
+    .then((d) => {
+      if (!d || !d.authed) return;
+      window.IS_ADMIN = !!d.admin;
+      if (d.admin) document.body.classList.add("is-admin");
+      const el = document.getElementById("who-am-i");
+      if (!el) return;
+      const adminBadge = d.admin ? '<span class="admin-badge">admin</span>' : "";
+      el.innerHTML = `${adminBadge}<span class="email">${escapeHtml(d.email)}</span>` +
+        ' <a href="/cdn-cgi/access/logout" class="signout" title="Sign out">sign out</a>';
+      el.hidden = false;
+    })
+    .catch(() => {});
+
+  function escapeHtml(s) {
+    return String(s || "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
   // How far into the clip default playback should start. Frigate's
   // current pre_capture is 30s for alerts; we want ~5s of context
   // lead-in before the detection moment, so skip 25s. Pre-roll
