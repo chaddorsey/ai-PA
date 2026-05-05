@@ -154,6 +154,8 @@ nav a.active { background: var(--color-glow); color: white !important; }
   border-radius: 999px;
   display: inline-flex;
   margin-bottom: 16px;
+  border-bottom: none !important;
+  padding-bottom: 8px !important;
 }
 .tab {
   background: transparent !important;
@@ -1292,7 +1294,7 @@ body.filters-hidden .filters { display: none !important; }
 .view-toggle {
   display: inline-flex;
   background: var(--color-cream-deep);
-  padding: 3px;
+  padding: 4px;
   border-radius: 999px;
   gap: 2px;
   margin: 0;
@@ -1302,8 +1304,8 @@ body.filters-hidden .filters { display: none !important; }
   background: transparent;
   border: none;
   color: var(--color-ink-soft);
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   margin: 0;
   border-radius: 999px;
@@ -1322,8 +1324,8 @@ body.filters-hidden .filters { display: none !important; }
 }
 .view-toggle button svg {
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
 }
 .view-toggle button:hover { color: var(--color-ink); }
 .view-toggle button.active {
