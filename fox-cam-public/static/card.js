@@ -133,8 +133,15 @@
       }, 80);
     }
 
-    wrap.addEventListener("mouseenter", showPreview);
-    wrap.addEventListener("mouseleave", hidePreview);
+    // Skip hover-preview on iOS — mouseenter fires unpredictably from
+    // taps and the autoplay download is wasted bandwidth on cellular.
+    // Tap on a card opens the modal (highlights.js) or plays inline
+    // (clip page) — both more useful than a hover preview that the
+    // user has to discover.
+    if (!document.documentElement.classList.contains("ios")) {
+      wrap.addEventListener("mouseenter", showPreview);
+      wrap.addEventListener("mouseleave", hidePreview);
+    }
     wrap.addEventListener("click", () => playInline(wrap, h));
     return wrap;
   }

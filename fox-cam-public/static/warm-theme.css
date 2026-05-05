@@ -1382,3 +1382,74 @@ body.filters-hidden .filters { display: none !important; }
 }
 .rx-line2 .rx-author { color: var(--color-glow); font-weight: 600; }
 .rx-line2 .rx-meta { color: var(--color-ink-soft); }
+
+/* ==========================================================================
+   Touch / iOS PWA — Phase 1 (P1.2 + P1.3 + P1.5)
+   --------------------------------------------------------------------------
+   `(hover: none)` catches any primary-touch device (iPhone, Android, etc.)
+   and is used for capability-driven rules (tap-target sizing, always-visible
+   affordances). Behavior that's specifically iOS-shaped is gated on
+   `body.ios` set by the inline detection script in <head>.
+   ========================================================================== */
+
+@media (hover: none) {
+  /* Tap targets ≥ 44pt per Apple HIG. Visual size held by padding so the
+     pill buttons don't suddenly look chunky — the hit area grows, the
+     glyph stays put. */
+  .action-btn {
+    min-height: 44px !important;
+    min-width: 44px !important;
+    padding: 10px 16px !important;
+  }
+  .zoom-btn {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .card-modal-close,
+  .card-modal-replay {
+    width: 44px !important;
+    height: 44px !important;
+  }
+  .archive-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Always-visible affordances. On hover-capable devices these stay
+     hover-revealed; on touch they fade in at low opacity so users see
+     them without an unprovoked first tap. */
+  .archive-toggle {
+    opacity: 0.7;
+  }
+  .modal-nav {
+    opacity: 0.55;
+    pointer-events: auto;
+  }
+  .modal-video-wrap .zoom-controls,
+  .modal-stage-remix .zoom-controls,
+  .cam .video-wrap .zoom-controls {
+    opacity: 0.7;
+    pointer-events: auto;
+  }
+}
+
+/* P1.5 — tabs row horizontal scroll on phones. <= 480px is the threshold
+   below which the 5 tabs definitely overflow. scroll-snap-type: x mandatory
+   keeps the active tab snapped to the start of the viewport so the user
+   never lands between tabs. */
+@media (max-width: 480px) {
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    /* hide scrollbar visually; horizontal scroll affordance comes from
+       the partial visibility of the next tab. */
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+}
