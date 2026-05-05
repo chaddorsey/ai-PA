@@ -95,6 +95,11 @@
          focusable-element behavior doesn't land on the prev nav arrow
          and render a browser focus ring there. -->
     <button class="card-modal-close" type="button" aria-label="Close" autofocus>×</button>
+    <!-- Replay current clip from frame 0. Spaced 1.5× the close-X
+         height beneath it. -->
+    <button class="card-modal-replay" type="button" aria-label="Replay from start" title="Replay from start">
+      <span class="material-icons">replay</span>
+    </button>
     <div class="card-modal-body" id="card-modal-body"></div>
   </dialog>
   <script src="/static/panzoom.min.js?v={{ v }}"></script>

@@ -172,6 +172,19 @@
   });
 
   closeBtn.addEventListener("click", () => window.closeCardModal());
+  // Replay button — restart the current modal video from frame 0.
+  const replayBtn = dialog.querySelector(".card-modal-replay");
+  if (replayBtn) {
+    replayBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!videoEl) return;
+      try {
+        videoEl.currentTime = 0;
+        const p = videoEl.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } catch {}
+    });
+  }
   dialog.addEventListener("click", (e) => {
     // Click on the backdrop (the dialog itself) closes; clicks bubbling
     // from inside the body don't.

@@ -981,6 +981,35 @@ body.filters-hidden .filters { display: none !important; }
   color: white !important;
 }
 
+/* Replay button — curved-arrow Material icon, sits below the × with
+   1.5× the X's height worth of gap between them.
+   X is 32px tall, top:4px → its bottom is at 36px. Gap of 1.5×32 = 48
+   pushes the replay's top to 36+48 = 84px. */
+.card-modal-replay {
+  position: absolute;
+  top: 84px;
+  right: 8px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.7));
+  transition: transform 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-modal-replay:hover { transform: scale(1.15); }
+.card-modal-replay:focus,
+.card-modal-replay:focus-visible,
+.card-modal-replay:active { outline: none; }
+.card-modal-replay .material-icons { font-size: 26px; }
+
 /* === Modal nav: hard-disable focus outlines on the prev button =========== */
 .modal-nav,
 .modal-nav:focus,
