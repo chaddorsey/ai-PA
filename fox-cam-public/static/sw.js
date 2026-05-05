@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v7-error-visibility";
+const CACHE = "our-foxes-v8-thumbnails";
 
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -92,19 +92,34 @@ self.addEventListener("fetch", (event) => {
   }
 
   // HTML pages: network-first with cache fallback.
+  // /live is intentionally excluded — it's an authed-only page and
+  // a stale cached copy could end up served to a freshly-deauthed
+  // visitor (or worse, a different visitor on a shared device).
   if (url.pathname === "/" ||
       url.pathname === "/highlights" ||
       url.pathname.startsWith("/clip/") ||
       url.pathname.startsWith("/remix/")) {
-    event.respondWith(
-      fetch(event.request).then((response) => {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(event.request);
         if (response.status === 200) {
           const copy = response.clone();
           caches.open(CACHE).then((cache) => cache.put(event.request, copy));
         }
         return response;
-      }).catch(() => caches.match(event.request))
-    );
+      } catch (err) {
+        // Network failed (offline). Try cache; if cache miss, surface
+        // a real Response so the browser doesn't reject the FetchEvent
+        // promise (which produces "Failed to convert value to
+        // 'Response'" errors in the console + a hung navigation).
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response("Offline — please reconnect.", {
+          status: 503,
+          headers: { "Content-Type": "text/plain" }
+        });
+      }
+    })());
     return;
   }
 

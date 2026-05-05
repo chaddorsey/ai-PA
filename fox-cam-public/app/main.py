@@ -264,9 +264,13 @@ async def remix_permalink(remix_id: str, request: Request) -> HTMLResponse:
 async def get_highlight(event_id: str, request: Request) -> Any:
     """Single highlight metadata — proxies curator's GET /highlights/<id>.
 
-    Anonymous viewers may only fetch *featured* highlights (so a leaked
-    URL of a non-promoted clip won't reveal it). Authenticated viewers
-    see anything.
+    Anyone with a valid event_id can read this. Cloudflare Access has
+    /api/highlights/* in a Bypass app so anonymous viewers can hit
+    featured permalinks; that bypass also strips the auth header for
+    authed users, so we can't distinguish them at this layer. The
+    LIST endpoint /api/highlights is gated, so anonymous can't
+    enumerate IDs — the only way an anonymous visitor learns an ID is
+    via the public /api/featured response.
     """
     email = _actor_email(request)
     params = {"email": email} if email else {}
@@ -277,11 +281,7 @@ async def get_highlight(event_id: str, request: Request) -> Any:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
-    payload = r.json()
-    if not email and not payload.get("featured"):
-        # Don't leak existence to anonymous viewers.
-        raise HTTPException(status_code=404, detail="not found")
-    return payload
+    return r.json()
 
 
 @app.get("/api/whoami")
@@ -758,32 +758,20 @@ async def _post_action(event_id: str, action: str, by: str | None) -> Any:
 
 
 @app.get("/api/highlights/{event_id}/clip")
-async def highlight_clip(event_id: str, request: Request) -> StreamingResponse:
-    await _ensure_visible(event_id, request)
+async def highlight_clip(event_id: str) -> StreamingResponse:
+    # Per-id media is reachable without auth because /api/highlights/*
+    # is in a Cloudflare Access Bypass app (so anonymous viewers can
+    # play featured permalinks). Event IDs are unguessable timestamp+
+    # random hashes, the LIST endpoint stays authed, and only featured
+    # IDs are reachable to anonymous viewers via the public /api/featured
+    # response — so a knowledge-of-the-id leak is bounded to clips an
+    # admin already chose to share.
     return await _proxy_curator(f"/highlights/{event_id}/clip", "video/mp4")
 
 
 @app.get("/api/highlights/{event_id}/thumbnail")
-async def highlight_thumb(event_id: str, request: Request) -> StreamingResponse:
-    await _ensure_visible(event_id, request)
+async def highlight_thumb(event_id: str) -> StreamingResponse:
     return await _proxy_curator(f"/highlights/{event_id}/thumbnail", "image/jpeg")
-
-
-async def _ensure_visible(event_id: str, request: Request) -> None:
-    """Anonymous viewers may only fetch media for *featured* highlights.
-
-    Authenticated viewers see anything. We do this in fox-cam-public
-    rather than the curator because admin-vs-anonymous policy lives
-    here; the curator is intentionally policy-free.
-    """
-    if _actor_email(request):
-        return
-    async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/highlights/{event_id}", timeout=4.0)
-    if r.status_code == 404 or (r.status_code == 200 and not r.json().get("featured")):
-        raise HTTPException(status_code=404, detail="not found")
-    if r.status_code != 200:
-        raise HTTPException(status_code=502, detail="curator error")
 
 
 async def _proxy_curator(path: str, media_type: str) -> StreamingResponse:
