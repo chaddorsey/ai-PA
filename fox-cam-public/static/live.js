@@ -6,6 +6,15 @@
 (function () {
   console.log("[live.js] loaded, version=7");
 
+  // iOS Safari (browser tab) doesn't expose MediaSource at all. iOS
+  // 17.1+ adds ManagedMediaSource, but its API + segment expectations
+  // differ enough that runMSE (which uses `new MediaSource()`) can't
+  // just swap the constructor. Only flag HAS_MSE when the legacy
+  // MediaSource is actually present — ManagedMediaSource counts as
+  // "no MSE for our pipeline".
+  const HAS_MSE = typeof window.MediaSource !== "undefined";
+  const IS_IOS_LIKE = document.documentElement.classList.contains("ios");
+
   // Autoplay rejection: iOS Safari often refuses to start a muted
   // video without a prior user gesture, even with autoplay+muted+
   // playsinline set. The browser doesn't fire any error in that case
@@ -123,10 +132,15 @@
     } catch {}
   }
 
-  // Start grid streams (substreams), staggered to avoid VideoToolbox
+  // Start grid streams. The 600ms stagger exists to avoid VideoToolbox
   // decoder contention on macOS Chromium when 4 MediaSources spin up
-  // at once.
+  // at once. On iOS there's no MSE — only WebRTC — and the stagger
+  // disadvantages the first cam, which has to negotiate ICE while the
+  // OS network stack is cold. Cam 1 then hits the ICE timeout (even
+  // at 6s) more often than cams 2–4 that benefit from a warmed-up
+  // stack. Race all four in parallel on iOS.
   const gridVideos = document.querySelectorAll("video.grid-stream[data-stream]");
+  const STAGGER_MS = IS_IOS_LIKE ? 0 : 600;
   (async () => {
     for (const video of gridVideos) {
       const stream = video.dataset.stream;
@@ -136,15 +150,10 @@
         console.error(`[${stream}] start error:`, err);
         if (status) status.textContent = `error: ${err.message}`;
       });
-      // Defer panzoom binding until the video actually has dimensions
-      // (loadedmetadata fires after the MSE pipeline produces its first
-      // frame). Binding too early during stream init breaks rendering
-      // — anvaka/panzoom miscomputes bounds against a 0×0 element and
-      // can leave the video off-screen.
       video.addEventListener("loadedmetadata", () => {
         bindGridPanzoom(cam, video);
       }, { once: true });
-      await new Promise((r) => setTimeout(r, 600));
+      if (STAGGER_MS) await new Promise((r) => setTimeout(r, STAGGER_MS));
     }
   })();
 
@@ -535,11 +544,25 @@
       downPos.set(cam, { x: e.clientX, y: e.clientY });
     });
 
-    cam.addEventListener("click", (e) => {
-      // Ignore native video controls, zoom buttons.
-      if (e.target.tagName === "VIDEO" && e.target.controls) return;
-      if (e.target.closest(".zoom-controls")) return;
+    // Spotlight toggle. Shared body so both click (desktop) and a
+    // touchend-derived tap (iOS — panzoom on the video swallows the
+    // synthesized click in some cases) hit the same logic.
+    const spotlightToggle = (target) => {
+      if (target.tagName === "VIDEO" && target.controls) return;
+      if (target.closest(".zoom-controls")) return;
+      const stream = cam.dataset.stream;
+      const inSpotlight = cam.classList.contains("is-spotlight");
+      if (inSpotlight && target.closest(".video-wrap")) return;
+      if (main.dataset.mode === "grid") {
+        setMode("spotlight", stream);
+      } else if (main.dataset.spotlight === stream) {
+        setMode("grid");
+      } else {
+        setMode("spotlight", stream);
+      }
+    };
 
+    cam.addEventListener("click", (e) => {
       // Was this a click, or the release of a drag? If pointer moved
       // more than threshold between down and up, treat as drag.
       const start = downPos.get(cam);
@@ -552,32 +575,52 @@
         }
       }
       downPos.delete(cam);
-
-      const stream = cam.dataset.stream;
-      const inSpotlight = cam.classList.contains("is-spotlight");
-      // Inside the spotlighted video, only the explicit ⛶ button or
-      // the surrounding header/status row should collapse. Clicks
-      // inside the .video-wrap are reserved for zoom/pan interactions.
-      if (inSpotlight && e.target.closest(".video-wrap")) return;
-
-      if (main.dataset.mode === "grid") {
-        setMode("spotlight", stream);
-      } else if (main.dataset.spotlight === stream) {
-        setMode("grid");
-      } else {
-        setMode("spotlight", stream);
-      }
+      spotlightToggle(e.target);
     });
-  });
 
-  // iOS Safari (browser tab) doesn't expose MediaSource at all. iOS
-  // 17.1+ adds ManagedMediaSource, but its API + segment expectations
-  // differ enough that runMSE (which uses `new MediaSource()`) can't
-  // just swap the constructor. Only flag HAS_MSE when the legacy
-  // MediaSource is actually present — ManagedMediaSource counts as
-  // "no MSE for our pipeline".
-  const HAS_MSE = typeof window.MediaSource !== "undefined";
-  const IS_IOS_LIKE = document.documentElement.classList.contains("ios");
+    // iOS tap fallback: panzoom on the <video> calls preventDefault on
+    // pointerup which can suppress the synthesized click. Use touchend
+    // as a parallel path — single-finger, short hold, no significant
+    // movement = a tap. Mirrors the drag-threshold guard so a pan-end
+    // doesn't toggle spotlight.
+    let touchStartXY = null;
+    let touchStartT = 0;
+    cam.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) { touchStartXY = null; return; }
+      const t = e.touches[0];
+      touchStartXY = { x: t.clientX, y: t.clientY };
+      touchStartT = Date.now();
+    }, { passive: true });
+    cam.addEventListener("touchend", (e) => {
+      if (!touchStartXY) return;
+      const start = touchStartXY;
+      touchStartXY = null;
+      if (e.touches.length !== 0) return;            // multi-touch end
+      if (Date.now() - touchStartT > 500) return;   // long-press → not a tap
+      if (e.changedTouches.length !== 1) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+      // We dispatched a real tap. Don't double-fire if the synthesized
+      // click also makes it through — set a marker on the cam to
+      // suppress the click handler for this gesture.
+      cam.dataset.recentTap = String(Date.now());
+      spotlightToggle(e.target);
+    }, { passive: true });
+    // Click suppression for touch-derived spotlight toggles.
+    const origClickFilter = cam._origClickFilter;
+    if (!origClickFilter) {
+      cam.addEventListener("click", (e) => {
+        const ts = parseInt(cam.dataset.recentTap || "0", 10);
+        if (ts && Date.now() - ts < 350) {
+          e.stopImmediatePropagation();
+          cam.dataset.recentTap = "";
+        }
+      }, true);  // capture phase, runs before the toggle handler
+      cam._origClickFilter = true;
+    }
+  });
 
   async function start(video, stream, status) {
     console.log(`[${stream}] start()`);

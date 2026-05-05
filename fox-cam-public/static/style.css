@@ -276,6 +276,12 @@ main {
   cursor: pointer;
   opacity: 0.55;
   transition: opacity 120ms, background 120ms;
+  /* The cam .video-wrap > video has touch-action: none so panzoom can
+     own pinch — but the zoom buttons sit on top of the video and need
+     their own touch-action so iOS routes a tap straight through to
+     click without spawning a 300ms double-tap-zoom check (which
+     suppresses the click on what should be a single-tap button). */
+  touch-action: manipulation;
 }
 .zoom-btn:hover { opacity: 1; background: rgba(15, 17, 22, 0.9); }
 .zoom-controls:hover .zoom-btn { opacity: 0.85; }
