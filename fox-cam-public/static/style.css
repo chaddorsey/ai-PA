@@ -99,11 +99,15 @@ main {
   .live-layout[data-mode="spotlight"] {
     position: relative;
     height: calc(100vh - 80px);
-    /* 1rem of internal padding gives breathing room between the
-       header above + main bottom and the cam tiles. The grid items
-       (rail cams) respect this; the absolute spotlight uses explicit
-       top/bottom/left to honor the same gutter. */
-    padding: 1rem 0;
+    /* Internal gutters: 1rem top/bottom, 1.5rem left/right so the
+       spotlight + rail don't hit the browser edges. The grid items
+       (rail cams) respect the padding directly; the absolute
+       spotlight uses explicit top/bottom/left to match. */
+    padding: 1rem 1.5rem;
+    /* Horizontal gutter between spotlight and rail = 1.5rem (this
+       gap value drives the grid layout's column spacing so col-1
+       width and the spotlight's calc'd width line up). */
+    gap: 1.5rem;
     /* Rail scrolls if it overflows; absolute spotlight stays put. */
     overflow-y: auto;
     overflow-x: hidden;
@@ -117,14 +121,13 @@ main {
        inline style wins over the class selector and the spotlight
        falls into normal flow (collapse). */
     position: absolute !important;
-    left: 0;
+    left: 1.5rem;
     top: 1rem;
     bottom: 1rem;
     height: auto;
-    /* Wider gutter (2rem) between spotlight's right edge and the
-       thumbnail rail so the boundary reads as separation, not
-       collision. */
-    width: calc(100% - 220px - 2rem);
+    /* Width = layout width − left padding (1.5rem) − right padding
+       (1.5rem) − rail (220px) − inter-column gap (1.5rem). */
+    width: calc(100% - 220px - 4.5rem);
     display: flex;
     flex-direction: column;
   }
