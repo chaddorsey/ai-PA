@@ -469,6 +469,30 @@ def demote_event(event_id: str, body: ActionBody) -> dict[str, Any]:
     return {"status": "demoted", "highlight": _highlight_with_state(event_id, body.by)}
 
 
+@app.delete("/highlights/{event_id}")
+def delete_highlight(event_id: str) -> dict[str, Any]:
+    """Hard-delete a highlight: DB row, per-user actions, remixes, and
+    the on-disk clip + thumbnail. Caller is responsible for auth (the
+    proxy enforces admin-only).
+    """
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="not found")
+    # Remove on-disk media first; even if it fails the DB cleanup
+    # below proceeds so a partial state doesn't strand an orphan row.
+    for sub in ("clip_path", "thumb_path"):
+        rel = h.get(sub)
+        if not rel: continue
+        try: (HIGHLIGHTS_ROOT / rel).unlink()
+        except FileNotFoundError: pass
+        except Exception as e: logger.warning("delete %s: %s", rel, e)
+    with db.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM remixes WHERE event_id = ?", [event_id])
+        conn.execute("DELETE FROM highlight_user_actions WHERE highlight_id = ?", [event_id])
+        conn.execute("DELETE FROM highlights WHERE event_id = ?", [event_id])
+    return {"status": "deleted", "event_id": event_id}
+
+
 @app.post("/highlights/{event_id}/archive")
 def archive_event(event_id: str, body: ActionBody) -> dict[str, Any]:
     if not body.by:

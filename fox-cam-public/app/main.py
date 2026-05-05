@@ -353,6 +353,20 @@ async def admin_feature(event_id: str, request: Request) -> Any:
     return r.json()
 
 
+@app.delete("/api/admin/highlights/{event_id}")
+async def admin_delete_highlight(event_id: str, request: Request) -> Any:
+    """Hard-delete a highlight (admin-only). Removes DB row, user-actions,
+    remixes, and the on-disk clip + thumbnail. Irreversible."""
+    _require_admin(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.delete(f"{CURATOR_API}/highlights/{event_id}", timeout=10.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
 @app.post("/api/admin/highlights/{event_id}/unfeature")
 async def admin_unfeature(event_id: str, request: Request) -> Any:
     """Remove a highlight from the public landing page (admin-only)."""

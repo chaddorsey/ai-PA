@@ -77,6 +77,8 @@ nav a.active { background: var(--color-glow); color: white !important; }
   box-shadow: 0 4px 14px rgba(240, 90, 40, 0.10);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   overflow: hidden;
+  position: relative;          /* anchor for absolutely-positioned
+                                  archive button + featured pin */
 }
 .highlight:hover {
   transform: translateY(-2px);
@@ -812,4 +814,15 @@ body.modal-open { overflow: hidden; }
 .modal-back:hover {
   background: var(--color-glow);
   color: white;
+}
+
+/* Delete button — admin-only, distinguished by a red-ish hue */
+.action-btn.action-delete {
+  border-color: rgba(180, 30, 30, 0.4) !important;
+  color: #b41e1e !important;
+}
+.action-btn.action-delete:hover {
+  background: rgba(180, 30, 30, 0.08) !important;
+  border-color: #b41e1e !important;
+  color: #8a1818 !important;
 }
