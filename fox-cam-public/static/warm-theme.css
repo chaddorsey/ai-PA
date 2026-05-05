@@ -290,13 +290,18 @@ nav a.active { background: var(--color-glow); color: white !important; }
 }
 .nav-badge {
   background: var(--color-glow);
-  color: white;
+  color: transparent;          /* hide any text content */
   border-radius: 999px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 11px;
-  padding: 1px 7px;
-  margin-left: 4px;
+  font-size: 0;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  margin-left: 6px;
+  display: inline-block;
+  vertical-align: 0.5em;
+  box-shadow: 0 0 0 2px var(--color-cream-deep), 0 1px 4px rgba(240,90,40,0.5);
+  /* Pulse subtly so the user notices new activity. */
+  animation: nav-badge-pulse 2.4s ease-in-out infinite;
 }
 
 /* --- Featured pin --- */
@@ -915,3 +920,7 @@ body.filters-hidden .filters { display: none !important; }
   margin: 0;
 }
 .grid .section-divider h3 .muted { color: var(--color-ink-soft); font-weight: 500; }
+@keyframes nav-badge-pulse {
+  0%, 100% { transform: scale(1);   box-shadow: 0 0 0 2px var(--color-cream-deep), 0 0 0 0 rgba(240,90,40,0.5); }
+  50%      { transform: scale(1.2); box-shadow: 0 0 0 2px var(--color-cream-deep), 0 0 0 5px rgba(240,90,40,0); }
+}

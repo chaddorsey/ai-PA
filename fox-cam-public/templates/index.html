@@ -70,10 +70,14 @@
     fetch("/api/viewer/state")
       .then((r) => r.ok ? r.json() : null)
       .then((s) => {
+        const b = document.getElementById("new-count");
+        if (!b) return;
         if (s && s.new_count > 0) {
-          const b = document.getElementById("new-count");
-          b.textContent = s.new_count;
+          b.textContent = "";   // dot only, no number
+          b.title = `${s.new_count} new highlight${s.new_count === 1 ? "" : "s"}`;
           b.hidden = false;
+        } else {
+          b.hidden = true;
         }
       })
       .catch(() => {});

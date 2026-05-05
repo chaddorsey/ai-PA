@@ -32,10 +32,15 @@
   // ===========================================================================
 
   window.openCardModal = async function openCardModal(eventId) {
-    body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
-    if (typeof dialog.showModal === "function") dialog.showModal();
-    else dialog.setAttribute("open", "");
-    document.body.classList.add("modal-open");
+    // showModal throws if the dialog is already open. Guard so callers
+    // that don't know whether the modal is currently displayed (e.g.
+    // direct card clicks while a modal is open) don't crash.
+    if (!dialog.open) {
+      body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      document.body.classList.add("modal-open");
+    }
 
     let h;
     try {
@@ -82,28 +87,52 @@
       .map((el) => el.dataset.eventId);
   }
 
-  // Slide-animated navigation between cards inside the modal. The
-  // existing stage slides out in the direction of motion; the new
-  // content slides in from the opposite side. No modal close/reopen
-  // flash. Sequential (out → in) keeps the implementation simple
-  // without needing to render two stages simultaneously.
+  // Slide-animated navigation between cards inside the modal.
+  //
+  // The whole point: the modal chrome stays in place. Only the
+  // .modal-stage swaps. We bypass openCardModal because it (a) calls
+  // dialog.showModal() again — which is a no-op or throws on an
+  // already-open dialog, but in some browsers visibly flashes — and
+  // (b) sets body.innerHTML to a "Loading…" placeholder while it
+  // fetches, which the user sees as a brief blank flash.
+  //
+  // Instead: fetch the next highlight in parallel with the slide-out
+  // animation, then render the new viewer directly into the body
+  // and slide it in. Old and new stages coexist briefly (old at
+  // -100%, new at +100% → 0) so there's no empty frame between.
   let sliding = false;
   async function slideToCard(eventId, direction) {
     if (sliding) return;
     sliding = true;
+
     const outClass = direction === "next" ? "sliding-out-left" : "sliding-out-right";
     const inClass  = direction === "next" ? "sliding-in-from-right" : "sliding-in-from-left";
+
+    // Kick off slide-out + fetch concurrently.
     const oldStage = body.querySelector(".modal-stage");
-    if (oldStage) {
-      oldStage.classList.add(outClass);
-      await new Promise((res) => setTimeout(res, 260));
+    if (oldStage) oldStage.classList.add(outClass);
+    let newH = null;
+    try {
+      const r = await fetch(`/api/highlights/${encodeURIComponent(eventId)}`,
+        { credentials: "same-origin" });
+      if (r.ok) newH = await r.json();
+    } catch (err) {
+      console.error("[modal] slide fetch failed", err);
     }
-    await window.openCardModal(eventId);
+    if (!newH) { sliding = false; return; }
+
+    // Wait for the slide-out to finish (~260ms) before swapping
+    // body content. We started the timer when the class was added,
+    // and the fetch usually finishes faster than that on local API.
+    await new Promise((res) => setTimeout(res, 280));
+
+    current = newH;
+    renderViewer(newH);   // replaces body.innerHTML with the new stage
+
     const newStage = body.querySelector(".modal-stage");
     if (newStage) {
       newStage.classList.add(inClass);
-      // Force a layout flush so the transition fires from off-screen.
-      newStage.getBoundingClientRect();
+      newStage.getBoundingClientRect();   // force reflow
       requestAnimationFrame(() => {
         newStage.classList.add("sliding-in-active");
       });
