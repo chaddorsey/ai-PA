@@ -122,6 +122,11 @@
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
 
+    // Pinch / scroll / drag to zoom into the video. Bound after the
+    // video element exists so panzoom can measure its size on first
+    // load.
+    bindPanzoom(videoEl, body.querySelector(".modal-video-wrap"));
+
     // Build action bar inline, mirroring card.js's row but routed back
     // through this modal so toggles update in place.
     const actionsBar = body.querySelector("#modal-actions");
@@ -293,6 +298,9 @@
       handle.addEventListener("pointerdown", (e) => {
         e.preventDefault();
         handle.setPointerCapture(e.pointerId);
+        const wasPlaying = !videoEl.paused;
+        videoEl.pause();
+        playPause.textContent = "▶";
         const move = (ev) => {
           const rect = track.getBoundingClientRect();
           let pct = (ev.clientX - rect.left) / rect.width;
@@ -301,11 +309,21 @@
           if (key === "start") state.start = Math.min(t, state.end - 0.2);
           else                state.end   = Math.max(t, state.start + 0.2);
           state.dirty = true;
+          // Seek the video to the dragged handle so the playhead
+          // tracks the trim edge in real time. Without this the
+          // scrubber stays stuck at its old position until the user
+          // releases and presses play.
+          videoEl.currentTime = (key === "start") ? state.start : state.end;
           updateTrimVisuals();
         };
         const up = () => {
           handle.removeEventListener("pointermove", move);
           handle.removeEventListener("pointerup", up);
+          if (wasPlaying) {
+            videoEl.currentTime = state.start;
+            videoEl.play();
+            playPause.textContent = "❚❚";
+          }
         };
         handle.addEventListener("pointermove", move);
         handle.addEventListener("pointerup", up);
@@ -314,26 +332,36 @@
     dragHandle(startH, "start");
     dragHandle(endH, "end");
 
+    // Click anywhere on the track (not on a handle) to seek.
+    track.addEventListener("click", (e) => {
+      if (e.target === startH || e.target === endH) return;
+      const rect = track.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      const t = pct * (videoEl.duration || 0);
+      videoEl.currentTime = Math.max(state.start, Math.min(state.end, t));
+      updatePlayhead();
+    });
+
     titleInp.addEventListener("input", () => {
       state.dirtyTitle = titleInp.value.trim().length > 0;
       updateTrimVisuals();
     });
 
-    // Pan/zoom on the video.
-    if (window.Panzoom) {
-      panzoomInstance = window.Panzoom(videoEl, {
-        maxScale: 6, minScale: 1, contain: "outside",
-        cursor: "zoom-in",
-      });
-      wrap.addEventListener("wheel", panzoomInstance.zoomWithWheel, { passive: false });
+    // Pan/zoom on the video. bindPanzoom returns the instance so we
+    // can listen for zoom changes here.
+    panzoomInstance = bindPanzoom(videoEl, wrap);
+    if (panzoomInstance) {
       videoEl.addEventListener("panzoomchange", () => {
         const s = panzoomInstance.getScale?.() ?? 1;
         zoomDisp.textContent = `zoom: ${s.toFixed(1)}×`;
         updateTrimVisuals();
       });
-      body.querySelector(".zoom-in").addEventListener("click", () => panzoomInstance.zoomIn());
-      body.querySelector(".zoom-out").addEventListener("click", () => panzoomInstance.zoomOut());
-      body.querySelector(".zoom-fit").addEventListener("click", () => panzoomInstance.reset());
+      const zin = body.querySelector(".zoom-in");
+      const zout = body.querySelector(".zoom-out");
+      const zfit = body.querySelector(".zoom-fit");
+      if (zin) zin.addEventListener("click", () => panzoomInstance.zoomIn());
+      if (zout) zout.addEventListener("click", () => panzoomInstance.zoomOut());
+      if (zfit) zfit.addEventListener("click", () => panzoomInstance.reset());
     }
 
     cancelBtn.addEventListener("click", () => renderViewer(h));
@@ -386,6 +414,34 @@
         saveBtn.textContent = "Save Remix";
       }
     });
+  }
+
+  // ===========================================================================
+  // Panzoom binding — used by both the viewer and the remix editor
+  // ===========================================================================
+  function bindPanzoom(videoTarget, wrapEl) {
+    if (!window.Panzoom || !videoTarget || !wrapEl) {
+      console.warn("[modal] panzoom missing", { hasLib: !!window.Panzoom });
+      return null;
+    }
+    try {
+      const inst = window.Panzoom(videoTarget, {
+        maxScale: 6, minScale: 1, contain: "outside",
+        cursor: "zoom-in", animate: true, duration: 150,
+        // Don't intercept clicks on action-row buttons rendered
+        // outside the wrap.
+        excludeClass: "no-panzoom",
+      });
+      // Wheel-to-zoom on the wrap.
+      wrapEl.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        inst.zoomWithWheel(e);
+      }, { passive: false });
+      return inst;
+    } catch (err) {
+      console.warn("[modal] panzoom init failed", err);
+      return null;
+    }
   }
 
   // ===========================================================================

@@ -545,3 +545,60 @@ body.modal-open { overflow: hidden; }
   bottom: 12px;
   right: 12px;
 }
+
+/* Make video/thumbnail clicks open the modal — without this the
+   <video> can absorb pointer events and the click never bubbles to
+   the .highlight container that the delegation listens on. */
+.highlight .thumb-wrap {
+  cursor: zoom-in;
+}
+.highlight .thumb-wrap > img,
+.highlight .thumb-wrap > video {
+  pointer-events: none;
+}
+
+/* === Modal trim editor: thicker, yellow scrubber === */
+.modal-stage-remix .trim-track {
+  height: 28px !important;
+  background: #fff4e6 !important;        /* warm cream */
+  border: 2px solid rgba(240, 90, 40, 0.2) !important;
+  border-radius: 14px !important;
+  margin: 18px 22px 8px !important;
+  cursor: pointer;
+}
+.modal-stage-remix .trim-region {
+  background: var(--color-warm) !important;
+  border-radius: 14px !important;
+  opacity: 0.7;
+}
+.modal-stage-remix .trim-handle {
+  width: 22px !important;
+  background: var(--color-warm) !important;
+  border: 2px solid #ffd17a !important;
+  border-radius: 8px !important;
+  top: -6px !important;
+  bottom: -6px !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.modal-stage-remix .trim-handle:hover,
+.modal-stage-remix .trim-handle:focus-visible {
+  background: #ffd17a !important;
+  outline: none;
+}
+.modal-stage-remix .trim-handle::before,
+.modal-stage-remix .trim-handle::after {
+  background: rgba(42, 24, 16, 0.55) !important;
+}
+.modal-stage-remix .trim-playhead {
+  width: 4px !important;
+  background: var(--color-glow) !important;
+  border-radius: 2px !important;
+  top: -4px !important;
+  bottom: -4px !important;
+  box-shadow: 0 0 8px rgba(240, 90, 40, 0.6);
+  pointer-events: none;
+}
+
+/* Modal viewer: video gets cursor: zoom-in to advertise the panzoom
+   feature. (Panzoom is bound on both modes by modal.js.) */
+.modal-video-wrap { cursor: zoom-in; }
