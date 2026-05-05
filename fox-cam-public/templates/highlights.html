@@ -91,7 +91,10 @@
          (1) viewer  — large player + meta + actions (default)
          (2) remix   — focused player + trim timeline + zoom controls -->
   <dialog id="card-modal" class="card-modal" aria-labelledby="card-modal-title">
-    <button class="card-modal-close" type="button" aria-label="Close">×</button>
+    <!-- Close button has autofocus so the dialog's default first-
+         focusable-element behavior doesn't land on the prev nav arrow
+         and render a browser focus ring there. -->
+    <button class="card-modal-close" type="button" aria-label="Close" autofocus>×</button>
     <div class="card-modal-body" id="card-modal-body"></div>
   </dialog>
   <script src="/static/panzoom.min.js?v={{ v }}"></script>

@@ -145,6 +145,10 @@
         newStage.classList.remove(inClass, "sliding-in-active");
       }, 380);
     }
+    // Steal focus from any prev/next button that briefly held it,
+    // so Chrome's :focus ring (sometimes rendered as box-shadow even
+    // after we set outline:none) doesn't linger on the prev arrow.
+    closeBtn.focus({ preventScroll: true });
     sliding = false;
   }
   window.slideToCard = slideToCard;
@@ -226,10 +230,13 @@
       </div>
     `;
 
-    // Attach the video stream + skip preroll.
+    // Attach the video stream. Always play from frame 0 in the modal —
+    // applyPrerollSkip() jumps ~25s in to skip Frigate's pre-event
+    // buffer, but for an opened/slid modal card the user expects to
+    // see the entire clip from the beginning.
     videoEl = body.querySelector(".modal-video");
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
-    if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
+    videoEl.currentTime = 0;
 
     // Wire prev/next nav with a slide animation between cards. The
     // viewer only swaps content (no full-modal teardown), so the

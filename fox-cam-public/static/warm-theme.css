@@ -985,7 +985,16 @@ body.filters-hidden .filters { display: none !important; }
 .modal-nav,
 .modal-nav:focus,
 .modal-nav:focus-visible,
-.modal-nav:active {
+.modal-nav:active,
+.modal-nav:focus-within {
   outline: none !important;
   box-shadow: none !important;
+  border: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  -webkit-tap-highlight-color: transparent !important;
 }
+/* Belt-and-suspenders: kill the inner focus ring some browsers add. */
+.modal-nav::-moz-focus-inner { border: 0 !important; padding: 0 !important; }
+/* Stop Chrome from rendering accent-color halos via :focus-visible */
+.modal-nav:focus-visible { outline-style: none !important; }
