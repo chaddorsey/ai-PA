@@ -317,3 +317,30 @@ nav a.active { background: var(--color-glow); color: white !important; }
     transition: none !important;
   }
 }
+
+/* --- Thumbnail framing -----------------------------------------------------
+   Override the default object-fit: cover that crops/zooms thumbnails to
+   fill the card. cover hides edges and exaggerates upscaling fuzz on
+   low-resolution Frigate stills. Using contain shows the full frame with
+   small bars on the sides; the bars sit on a soft backdrop that blends
+   with the warm theme. */
+.highlight .thumb-wrap {
+  background: #1a1110;     /* warm-dark, not pure black */
+}
+.highlight .thumb-wrap img,
+.highlight .thumb-wrap video,
+.highlight .thumb-wrap .preview,
+.highlight video,
+.highlight img.thumb {
+  object-fit: contain !important;
+  background: #1a1110;
+}
+
+/* Featured cards on the landing page: same fix */
+.featured-card {
+  background: #1a1110;     /* matches the contain bars */
+}
+.featured-card .thumb,
+.featured-card video {
+  object-fit: contain !important;
+}

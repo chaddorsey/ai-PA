@@ -33,7 +33,8 @@
   </header>
   <main class="clip-page"
         data-event-id="{{ event_id or '' }}"
-        data-remix-id="{{ remix_id or '' }}">
+        data-remix-id="{{ remix_id or '' }}"
+        data-force-remix="{{ '1' if force_remix_mode else '' }}">
     <div id="clip-card" class="highlight clip-permalink" data-event-id="{{ event_id }}">
       <div class="meta loading">loading…</div>
     </div>

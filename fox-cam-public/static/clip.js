@@ -25,7 +25,7 @@
   const remixId = main.dataset.remixId;
   const card = document.getElementById("clip-card");
   const params = new URLSearchParams(location.search);
-  const wantRemixMode = params.get("remix") === "1";
+  const wantRemixMode = params.get("remix") === "1" || main.dataset.forceRemix === "1";
 
   let highlight = null;
   let remix = null;            // present on /remix/<id>

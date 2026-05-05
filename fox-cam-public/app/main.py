@@ -233,6 +233,25 @@ def highlights_page(request: Request) -> HTMLResponse:
     )
 
 
+@app.get("/highlights/{event_id}/remix", response_class=HTMLResponse)
+async def remix_edit(event_id: str, request: Request) -> HTMLResponse:
+    """Authed remix-edit page for a highlight.
+
+    Sits under /highlights/* so it's covered by the authed Access app
+    and CF Access reliably injects the email header. The clip
+    permalink page at /clip/{id} is in the public Bypass app (so a
+    shared featured-clip URL works for anonymous viewers), but Bypass
+    strips the auth header — making the remix editor on /clip/* render
+    in anonymous mode for authed users. /highlights/{id}/remix is the
+    authed-only path that gives the editor a real session.
+    """
+    return templates.TemplateResponse(
+        "clip.html",
+        {"request": request, "event_id": event_id, "v": ASSET_VERSION,
+         "force_remix_mode": True, **_identity_ctx(request)},
+    )
+
+
 @app.get("/clip/{event_id}", response_class=HTMLResponse)
 async def clip_permalink(event_id: str, request: Request) -> HTMLResponse:
     """Permalink page for a single highlight — easily shareable URL.
