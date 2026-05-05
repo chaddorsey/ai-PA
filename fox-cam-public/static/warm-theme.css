@@ -1,0 +1,319 @@
+/* ==========================================================================
+   warm-theme.css — Cartoony skin layered over style.css for the authed
+   pages (/live, /highlights, /clip). Loaded AFTER style.css so it wins
+   on shared selectors. Carries the same palette, type, and geometry as
+   landing.css so the brand doesn't snap when a viewer crosses from the
+   public landing into the family-private interior.
+
+   Functional behavior (live grid layout, MSE video sizing, remix editor,
+   parallax interactions, etc.) lives in style.css and STAYS there. This
+   file only changes color, type, geometry, and motion.
+   ========================================================================== */
+
+:root {
+  --color-glow:        #f05a28;
+  --color-glow-soft:   #ff8a5c;
+  --color-warm:        #ffb347;
+  --color-cream:       #fef6ec;
+  --color-cream-deep:  #fce6c9;
+  --color-forest:      #3a7a4a;
+  --color-forest-soft: #6ba36f;
+  --color-ink:         #2a1810;
+  --color-ink-soft:    #6b4a3a;
+  --font-display: "Fredoka", "Quicksand", system-ui, sans-serif;
+  --font-body:    "Nunito", system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-cream) !important;
+  color: var(--color-ink) !important;
+  font-family: var(--font-body) !important;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.16  0 0 0 0 0.09  0 0 0 0 0.06  0 0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>") !important;
+  background-repeat: repeat !important;
+}
+
+/* --- Header --- */
+header {
+  background: var(--color-cream-deep);
+  border-bottom: 2px solid rgba(240, 90, 40, 0.15) !important;
+  box-shadow: 0 2px 12px rgba(240, 90, 40, 0.08);
+}
+header h1 {
+  font-family: var(--font-display) !important;
+  color: var(--color-glow) !important;
+  font-weight: 600 !important;
+}
+nav a {
+  color: var(--color-ink-soft) !important;
+  font-family: var(--font-display);
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 999px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+nav a.active, nav a:hover {
+  color: var(--color-ink) !important;
+  background: rgba(240, 90, 40, 0.12);
+}
+nav a.active { background: var(--color-glow); color: white !important; }
+
+.who-am-i .email { color: var(--color-ink-soft) !important; }
+.who-am-i .signout {
+  border-color: rgba(240, 90, 40, 0.4) !important;
+  color: var(--color-ink-soft) !important;
+}
+.who-am-i .signout:hover {
+  color: var(--color-ink) !important;
+  border-color: var(--color-glow) !important;
+  background: rgba(240, 90, 40, 0.08);
+}
+
+/* --- Cards / highlights grid --- */
+.highlight {
+  background: white !important;
+  border: none !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.10);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+}
+.highlight:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(240, 90, 40, 0.20);
+}
+.highlight.is-favorited {
+  outline: 3px solid var(--color-glow);
+  outline-offset: -3px;
+}
+.highlight.is-shared {
+  outline: 3px solid var(--color-warm);
+  outline-offset: -3px;
+}
+.highlight.is-demoted { opacity: 0.6; }
+.highlight .meta {
+  font-family: var(--font-body) !important;
+  color: var(--color-ink) !important;
+  padding: 12px 14px !important;
+}
+.highlight .meta .muted { color: var(--color-ink-soft) !important; }
+
+/* --- Live cams --- */
+.cam {
+  background: #1a1110 !important;       /* keep dark inside the video tile */
+  border: 2px solid rgba(240, 90, 40, 0.25) !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.10);
+  transition: border-color 0.18s ease, transform 0.2s ease;
+}
+.cam:hover {
+  border-color: var(--color-glow) !important;
+  transform: translateY(-1px);
+}
+.cam h2 {
+  background: var(--color-cream-deep) !important;
+  color: var(--color-ink) !important;
+  font-family: var(--font-display) !important;
+  font-weight: 500;
+  border-bottom: none !important;
+}
+.cam.is-spotlight {
+  border-color: var(--color-glow) !important;
+}
+
+/* --- Tabs + filters --- */
+.tabs {
+  background: var(--color-cream-deep);
+  padding: 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  margin-bottom: 16px;
+}
+.tab {
+  background: transparent !important;
+  color: var(--color-ink-soft) !important;
+  border: none !important;
+  padding: 8px 18px !important;
+  border-radius: 999px !important;
+  font-family: var(--font-display) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.tab:hover { color: var(--color-ink) !important; }
+.tab.active {
+  background: var(--color-glow) !important;
+  color: white !important;
+}
+
+.filters {
+  background: white;
+  padding: 14px 18px;
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.08);
+  margin-bottom: 18px;
+}
+.filters label {
+  font-family: var(--font-display);
+  color: var(--color-ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+.filters select {
+  background: var(--color-cream) !important;
+  border: 1px solid rgba(240, 90, 40, 0.25) !important;
+  border-radius: 999px !important;
+  color: var(--color-ink) !important;
+  font-family: var(--font-body) !important;
+  padding: 6px 12px !important;
+}
+.filters select:focus { outline: 2px solid var(--color-glow); outline-offset: 1px; }
+
+/* --- Action buttons (heart, demote, share, remix, feature) --- */
+.action-btn {
+  background: white !important;
+  color: var(--color-ink-soft) !important;
+  border: 1.5px solid rgba(240, 90, 40, 0.2) !important;
+  border-radius: 999px !important;
+  font-family: var(--font-display) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 5px 12px !important;
+  transition: background 0.18s ease, transform 0.1s ease, border-color 0.18s ease;
+}
+.action-btn:hover {
+  background: rgba(240, 90, 40, 0.08) !important;
+  border-color: var(--color-glow) !important;
+  color: var(--color-ink) !important;
+  transform: translateY(-1px);
+}
+.action-btn.active {
+  background: var(--color-glow) !important;
+  color: white !important;
+  border-color: var(--color-glow) !important;
+}
+.action-btn.action-favorite.active { background: var(--color-glow) !important; }
+.action-btn.action-demote.active   { background: #6b4a3a !important; }
+.action-btn.action-feature         { background: #fff4e6 !important; color: var(--color-glow) !important; border-color: var(--color-glow) !important; }
+.action-btn.action-feature.active  { background: var(--color-glow) !important; color: white !important; }
+
+/* Load more button */
+#load-more {
+  background: var(--color-glow) !important;
+  color: white !important;
+  font-family: var(--font-display) !important;
+  font-weight: 600 !important;
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 12px 28px !important;
+  font-size: 15px !important;
+  margin: 24px auto !important;
+  display: block !important;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.25);
+}
+#load-more:hover { background: #ff7044 !important; }
+
+/* Empty state already styled in style.css */
+
+/* --- Species badge --- */
+.species {
+  background: rgba(240, 90, 40, 0.12) !important;
+  color: var(--color-glow) !important;
+  font-family: var(--font-display) !important;
+  border-radius: 999px !important;
+  padding: 2px 10px !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+}
+.species.species-fox    { background: var(--color-glow) !important; color: white !important; }
+.species.species-muted  { background: rgba(0,0,0,0.06) !important; color: var(--color-ink-soft) !important; }
+
+/* --- Remix panel + remix mode --- */
+.remix-panel {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.08);
+  margin-top: 16px;
+}
+.remix-panel h3 {
+  font-family: var(--font-display) !important;
+  color: var(--color-ink) !important;
+}
+
+.remix-mode {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 4px 14px rgba(240, 90, 40, 0.08);
+}
+
+/* Trim handles + region in remix-mode */
+.trim-handle { background: var(--color-glow) !important; }
+.trim-region { background: rgba(240, 90, 40, 0.18) !important; }
+.trim-playhead { background: var(--color-ink) !important; }
+
+/* --- "NEW" badge --- */
+.new-badge {
+  background: var(--color-warm) !important;
+  color: var(--color-ink) !important;
+  font-family: var(--font-display) !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+}
+.nav-badge {
+  background: var(--color-glow);
+  color: white;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  padding: 1px 7px;
+  margin-left: 4px;
+}
+
+/* --- Featured pin --- */
+.highlight.is-featured::before {
+  background: var(--color-glow) !important;
+  box-shadow: 0 2px 6px rgba(240, 90, 40, 0.4) !important;
+}
+
+/* --- Delivered badges --- */
+.delivered-badge {
+  font-family: var(--font-display) !important;
+}
+.delivered-badge.badge-mine     { background: var(--color-glow) !important; color: white !important; }
+.delivered-badge.badge-shared   { background: var(--color-warm) !important; color: var(--color-ink) !important; }
+.delivered-badge.badge-featured { background: var(--color-glow) !important; color: white !important; }
+.delivered-badge.badge-new      { background: var(--color-warm) !important; color: var(--color-ink) !important; }
+.delivered-badge.badge-remix    { background: #6b4a3a !important; color: white !important; }
+
+/* --- Live cams: animal peek slot ------------------------------------------
+   Each .cam gets a peek-slot that sits OUTSIDE the video bounds (top-right
+   corner, slightly overlapping). Animals fly in via deliverers.js logic. */
+.cam .peek-slot {
+  position: absolute;
+  top: -22px;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  pointer-events: none;
+  z-index: 4;
+  display: none;
+}
+.cam .peek-slot.peek-active { display: block; }
+.cam .peek-slot img {
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+}
+
+/* --- Hovers + transitions: keep existing functional CSS but soften timing - */
+@media (prefers-reduced-motion: reduce) {
+  .highlight, .cam, .action-btn, #load-more {
+    transition: none !important;
+  }
+}

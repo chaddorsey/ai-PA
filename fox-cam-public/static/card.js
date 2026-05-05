@@ -64,12 +64,19 @@
     if (h.my_demoted) el.classList.add("is-demoted");
     if ((h.favorite_count || 0) >= 2) el.classList.add("is-shared");
     if (h.featured) el.classList.add("is-featured");
-    if (h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD) {
-      el.classList.add("is-new");
-    }
+    const isNew = h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD;
+    if (isNew) el.classList.add("is-new");
     el.appendChild(cardThumb(h));
     el.appendChild(cardMeta(h));
     el.appendChild(cardActions(h));
+
+    // Squirrel delivers the ✨ NEW badge on cards that arrived since
+    // the viewer's last seen. Fired once per card via IntersectionObserver
+    // so the squirrel only runs when the card actually enters the
+    // viewport, not for every card off-screen.
+    if (isNew && window.deliverBadge) {
+      _scheduleNewDelivery(el);
+    }
     return el;
   };
 
@@ -207,12 +214,24 @@
     // Heart shows YOUR state; small "★ N" suffix when family has favorited too.
     const favCount = h.favorite_count || 0;
     const favLabel = favCount > 1 ? `⭐ ${favCount}` : "⭐";
-    bar.appendChild(actionBtn(favLabel, "favorite", h.my_favorited, () =>
-      setAction(h.event_id, h.my_favorited ? "clear" : "favorite")
-    ));
-    bar.appendChild(actionBtn("🚫", "demote", h.my_demoted, () =>
-      setAction(h.event_id, h.my_demoted ? "clear" : "demote")
-    ));
+    bar.appendChild(actionBtn(favLabel, "favorite", h.my_favorited, () => {
+      const wasFav = h.my_favorited;
+      setAction(h.event_id, wasFav ? "clear" : "favorite");
+      // Newly favorited (toggling on): Fox-3 delivers the ⭐ Mine
+      // badge. Newly unfavorited: no animation (less is more).
+      if (!wasFav && window.deliverBadge) {
+        const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+        if (card) window.deliverBadge(card, "fox-3", "⭐ Mine", { badgeClass: "badge-mine" });
+      }
+    }));
+    bar.appendChild(actionBtn("🚫", "demote", h.my_demoted, () => {
+      const wasDemoted = h.my_demoted;
+      setAction(h.event_id, wasDemoted ? "clear" : "demote");
+      if (!wasDemoted && window.deliverBadge) {
+        const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+        if (card) window.deliverBadge(card, "frog", "🚫 Not a fox", { badgeClass: "badge-nofox" });
+      }
+    }));
     bar.appendChild(actionBtn("🔗", "share", false, () => copyShareLink(h.event_id)));
     // Remix link only once you've favorited the clip — encourages the
     // "love this moment, want to capture a piece of it" workflow.
@@ -273,8 +292,15 @@
       if (el && el.parentNode) {
         const rebuilt = window.makeCard(h);
         el.parentNode.replaceChild(rebuilt, el);
-        if (!featured && window.deliverBadge) {
-          window.deliverBadge(rebuilt, "deer", "★ Featured");
+        if (!featured) {
+          // Just-promoted: fire the parade across the top + the Deer
+          // delivers the badge onto the card. Two layered moments —
+          // small (per-card) + big (page-wide) — for a real "we made
+          // a public choice" feel.
+          if (window.fireParade) window.fireParade();
+          if (window.deliverBadge) {
+            setTimeout(() => window.deliverBadge(rebuilt, "deer", "★ Featured", { badgeClass: "badge-featured" }), 400);
+          }
         }
       }
     } catch (err) {
@@ -364,6 +390,26 @@
     v.playsInline = true;
     wrap.appendChild(v);
     applyPrerollSkip(v);
+  }
+
+  // Stagger NEW-badge deliveries so a freshly-loaded gallery doesn't
+  // launch eight squirrels at once. Each card's animation is queued and
+  // released ~600ms after the previous one. Only fires once per card.
+  let _newQueue = Promise.resolve();
+  function _scheduleNewDelivery(cardEl) {
+    if (cardEl.dataset.newDelivered) return;
+    cardEl.dataset.newDelivered = "1";
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        io.disconnect();
+        _newQueue = _newQueue.then(() => new Promise((resolve) => {
+          window.deliverBadge(cardEl, "squirrel", "✨ NEW", { badgeClass: "badge-new" });
+          setTimeout(resolve, 600);
+        }));
+      }
+    }, { threshold: 0.3 });
+    io.observe(cardEl);
   }
 
   // Also expose infoCard for empty-state messages on the gallery page.
