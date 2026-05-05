@@ -342,7 +342,31 @@
       actionsBar.appendChild(actionBtn("🚫", "demote", h.my_demoted, async () => {
         const wasDemoted = h.my_demoted;
         const updated = await postAction(h.event_id, wasDemoted ? "clear" : "demote");
-        if (updated) { Object.assign(h, updated); renderViewer(h); }
+        if (updated) {
+          Object.assign(h, updated);
+          renderViewer(h);
+          // Mirror card.js shouldHide logic: if the demote/clear flips
+          // the card OUT of the active tab's bucket, remove its
+          // gallery card so the All view doesn't keep showing the
+          // now-flagged clip until a refresh.
+          const tab = document.querySelector(".tab.active");
+          const currentBucket = tab ? tab.dataset.bucket : null;
+          let shouldHide = false;
+          if (currentBucket === "pending" && h.demoted) shouldHide = true;
+          if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
+          if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
+          if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;
+          if (currentBucket === "demoted" && !h.demoted) shouldHide = true;
+          if (shouldHide) {
+            const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+            if (card) {
+              card.style.transition = "opacity 0.3s, transform 0.3s";
+              card.style.opacity = "0";
+              card.style.transform = "scale(0.95)";
+              setTimeout(() => card.remove(), 300);
+            }
+          }
+        }
       }));
     }
     actionsBar.appendChild(actionBtn("🔗 Share", "share", false, () => {

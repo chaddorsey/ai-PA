@@ -24,6 +24,32 @@ logger = logging.getLogger(__name__)
 
 
 _FFPROBE = shutil.which("ffprobe")
+_FFMPEG = shutil.which("ffmpeg")
+
+
+def _faststart_remux(clip_path: Path) -> bool:
+    """Re-mux the MP4 with -movflags +faststart so the moov atom is at
+    the front of the file. Without this, browsers use a tiny initial
+    buffer for video.duration and the scrubber shows ~3s at first
+    until the trailing moov is fetched. -c copy means no transcode,
+    just container rewrite. Returns True on success.
+    """
+    if not _FFMPEG or not clip_path.exists():
+        return False
+    tmp = clip_path.with_suffix(".tmp.mp4")
+    try:
+        subprocess.run(
+            [_FFMPEG, "-y", "-loglevel", "error", "-i", str(clip_path),
+             "-c", "copy", "-movflags", "+faststart", str(tmp)],
+            check=True, timeout=30,
+        )
+        tmp.replace(clip_path)
+        return True
+    except Exception as e:
+        logger.debug("faststart remux failed on %s: %s", clip_path, e)
+        try: tmp.unlink()
+        except Exception: pass
+        return False
 
 
 def _probe_clip_duration(clip_path: Path) -> float | None:
@@ -130,6 +156,12 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
         return
     client.download_thumbnail(event_id, thumb_dest)
 
+    # Move the MP4's moov atom to the front so browsers know the
+    # total duration immediately on first load. Without this the
+    # scrubber initially shows ~3s and only catches up once the
+    # browser fetches the trailing moov.
+    _faststart_remux(clip_dest)
+
     # The on-disk clip's actual duration. Frigate records each event
     # with pre_capture + tracked_window + post_capture seconds of
     # video, so e.g. a 5s tracked object lands in a ~55s clip file.
@@ -214,6 +246,7 @@ def promote(client: FrigateClient, highlights_root: Path, db_path: Path, event_i
     if not client.download_clip(event_id, clip_dest):
         return {"status": "no_clip"}
     client.download_thumbnail(event_id, thumb_dest)
+    _faststart_remux(clip_dest)
 
     clip_duration = _probe_clip_duration(clip_dest) or (end_time - start_time)
     now = time.time()

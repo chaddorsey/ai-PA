@@ -849,10 +849,11 @@ body.modal-open { overflow: hidden; }
 .modal-nav {
   position: absolute;
   top: 8%;
-  /* Clear the zoom-controls (3-button stack at bottom:60px, ~34px
-     each → up to ~94px) AND the native HTML5 controls bar (~46px).
-     115px keeps the prev/next click target above both. */
-  bottom: 115px;
+  /* Clear the 3-button zoom stack at the right edge (bottom:60px,
+     ~34px each + 2px gaps = ~110px tall → top edge at bottom: 170px).
+     175px on the prev/next click area keeps the + zoom button
+     hittable instead of triggering a card switch when targeted. */
+  bottom: 175px;
   width: 56px;
   display: flex;
   align-items: center;
