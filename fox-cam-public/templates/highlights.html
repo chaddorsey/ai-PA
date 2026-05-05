@@ -77,7 +77,11 @@
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
+        // Force any registered SW to fetch the latest sw.js and
+        // skipWaiting+activate. Without this, a buggy older SW can
+        // keep intercepting /api/* requests and breaking the page.
         navigator.serviceWorker.register("/sw.js")
+          .then((reg) => reg.update())
           .catch((err) => console.error("[sw] register failed", err));
       });
     }
