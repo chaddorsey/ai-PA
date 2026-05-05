@@ -297,17 +297,38 @@
   // pinch on the video stays with panzoom). A horizontal swipe of >60px
   // and at least 1.5× more horizontal than vertical fires navigateModal.
   // Vertical scroll inside the body (touch-action: pan-y) is preserved.
+  //
+  // Guards (review-fix):
+  // - Reject when touch starts on an interactive control: a horizontal
+  //   drag that ends past 60px would otherwise fire BOTH the button's
+  //   click AND a navigation, executing the action against the wrong
+  //   clip after the slide.
+  // - Reset touchStartT whenever a second finger lands (pinch-zoom):
+  //   without this, lifting one of two pinch fingers fires touchend
+  //   with changedTouches.length===1, producing a phantom navigation.
+  const SWIPE_IGNORE_TARGETS =
+    "button, a, input, select, textarea, .action-btn, " +
+    ".card-modal-close, .card-modal-replay, .modal-nav, " +
+    ".zoom-btn, .zoom-controls, .meta-download";
   let touchStartX = 0, touchStartY = 0, touchStartT = 0;
   dialog.addEventListener("touchstart", (e) => {
-    // Only single-finger swipes navigate; multi-touch is panzoom.
+    // Multi-touch invalidates any prior single-finger anchor.
     if (e.touches.length !== 1) { touchStartT = 0; return; }
     const t = e.touches[0];
+    if (e.target && e.target.closest && e.target.closest(SWIPE_IGNORE_TARGETS)) {
+      touchStartT = 0;
+      return;
+    }
     touchStartX = t.clientX;
     touchStartY = t.clientY;
     touchStartT = Date.now();
   }, { passive: true });
   dialog.addEventListener("touchend", (e) => {
     if (!touchStartT) return;
+    // Only commit when the LAST finger lifted — this guards against
+    // mid-pinch single-finger lifts that we'd otherwise read as a
+    // swipe across the original anchor.
+    if (e.touches.length !== 0) { touchStartT = 0; return; }
     const dt = Date.now() - touchStartT;
     touchStartT = 0;
     if (dt > 600) return;             // too slow → user was holding, not swiping

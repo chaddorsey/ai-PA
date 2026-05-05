@@ -397,11 +397,11 @@ nav a.active { background: var(--color-glow); color: white !important; }
   overflow: hidden;
   font-family: var(--font-body);
 }
-/* iOS PWA: when launched standalone, the home indicator sits at the
-   bottom of the viewport and the modal can extend under it. Add an
-   inner padding-bottom equal to the inset so action buttons stay
-   tappable. Browser-tab mode has env() = 0 so this is a no-op. */
-body.ios .card-modal-body {
+/* PWA / notched-device safety: when launched standalone, the home
+   indicator sits at the bottom of the viewport and the modal can
+   extend under it. Capability-shaped (any device with insets), not
+   iOS-specific — env() = 0 elsewhere makes this a no-op there. */
+.card-modal-body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 .card-modal::backdrop {
@@ -1393,31 +1393,40 @@ body.filters-hidden .filters { display: none !important; }
    ========================================================================== */
 
 @media (hover: none) {
-  /* Tap targets ≥ 44pt per Apple HIG. Visual size held by padding so the
-     pill buttons don't suddenly look chunky — the hit area grows, the
-     glyph stays put. */
+  /* Tap targets ≥ 44pt per Apple HIG. .action-btn requires !important
+     because every existing .action-btn rule in this file uses it
+     (:hover, .active, .action-favorite.active, etc.). The other
+     buttons don't have competing !important on size, so plain rules
+     suffice. Visual size for .action-btn held by padding (10/16) so
+     the pill chip stays compact while the hit area grows. */
   .action-btn {
     min-height: 44px !important;
     min-width: 44px !important;
     padding: 10px 16px !important;
   }
   .zoom-btn {
-    width: 44px !important;
-    height: 44px !important;
+    width: 44px;
+    height: 44px;
   }
   .card-modal-close,
   .card-modal-replay {
-    width: 44px !important;
-    height: 44px !important;
-  }
-  .archive-toggle {
     width: 44px;
     height: 44px;
+  }
+  /* Archive toggle: stretch hit area via box-shadow-as-extender pattern
+     would be cleaner, but we keep visual ~30px and grow only padding
+     so the glyph centering doesn't drift. The visible chip stays at
+     30×30 via the existing rule; min-* lifts the hit area to 44pt. */
+  .archive-toggle {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* Always-visible affordances. On hover-capable devices these stay
      hover-revealed; on touch they fade in at low opacity so users see
-     them without an unprovoked first tap. */
+     them without an unprovoked first tap. NOTE: `.modal-nav` here is
+     for Android-touch only — iOS hides .modal-nav entirely (P1.4)
+     because horizontal swipe replaces the arrows. */
   .archive-toggle {
     opacity: 0.7;
   }
@@ -1456,7 +1465,11 @@ body.filters-hidden .filters { display: none !important; }
 
 /* P1.4 — On iOS, hide modal prev/next buttons; horizontal swipe takes
    their place. Desktop + Android touch keep the always-visible arrows
-   (Android touch via the (hover: none) opacity rule above). */
+   (Android touch via the (hover: none) opacity rule above).
+   Selecting via html.ios (set synchronously in <head>) instead of
+   body.ios avoids a brief flash before DOMContentLoaded sets the
+   body class. */
+html.ios .modal-nav,
 body.ios .modal-nav { display: none !important; }
 
 /* P1.8 — Gesture coexistence. The dialog body allows vertical scroll +

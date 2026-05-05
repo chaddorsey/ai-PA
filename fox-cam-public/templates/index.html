@@ -61,11 +61,10 @@
     {% endfor %}
   </main>
 
-  <!-- Autoplay-rejection scrim. Hidden by default; revealed when
-       live.js dispatches "fox-live:needs-tap" because iOS Safari
-       refused to autoplay a muted stream without a prior user
-       gesture. One tap calls play() on every grid <video>, which
-       lifts the user-activation lock globally for the page. -->
+  <!-- Autoplay-rejection scrim. Hidden by default; revealed by live.js
+       when iOS Safari refuses to autoplay a muted stream without a
+       prior user gesture. Behavior wiring lives in live.js (see
+       revealAutoplayScrim) so producer/consumer stay co-located. -->
   <div id="autoplay-scrim" class="autoplay-scrim" hidden role="button" tabindex="0"
        aria-label="Tap to start live cameras">
     <div class="autoplay-scrim-inner">
@@ -73,33 +72,6 @@
       <span class="autoplay-scrim-text">Tap to start live cameras</span>
     </div>
   </div>
-  <script>
-    (function () {
-      var scrim = document.getElementById("autoplay-scrim");
-      if (!scrim) return;
-      var dismiss = function () {
-        scrim.hidden = true;
-      };
-      var enable = function () {
-        var vids = document.querySelectorAll("video.grid-stream");
-        var attempts = [];
-        vids.forEach(function (v) {
-          var p = v.play();
-          if (p && typeof p.then === "function") attempts.push(p.catch(function () {}));
-        });
-        Promise.all(attempts).finally(dismiss);
-      };
-      // First needs-tap event reveals the scrim; subsequent fires are
-      // harmless (scrim already visible).
-      document.addEventListener("fox-live:needs-tap", function () {
-        scrim.hidden = false;
-      });
-      scrim.addEventListener("click", enable);
-      scrim.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); enable(); }
-      });
-    })();
-  </script>
 
   <script src="/static/panzoom.min.js?v={{ v }}"></script>
   <script src="/static/card.js?v={{ v }}"></script>

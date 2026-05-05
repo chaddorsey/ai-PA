@@ -11,17 +11,52 @@
   // playsinline set. The browser doesn't fire any error in that case
   // — video.play() returns a promise that rejects with NotAllowedError
   // and the video silently stays paused. We hook the promise from the
-  // explicit play() calls in tryWebRTC + runMSE and dispatch a single
-  // page-level "fox-live:needs-tap" event that the scrim listens for.
-  // One tap on the scrim then triggers play() on every cam — once any
-  // play() succeeds, the user-activation lock is lifted globally.
-  function notePlayRejection(video, promise) {
+  // explicit play() calls in tryWebRTC + runMSE.
+  //
+  // Gated on body.ios so non-iOS browsers (Chrome on Linux can also
+  // reject autoplay in backgrounded tabs / low-MEI origins) don't see
+  // the scrim. Desktop bundle stays untouched.
+  function notePlayRejection(promise) {
     if (!promise || typeof promise.then !== "function") return;
     promise.catch((err) => {
-      if (err && err.name === "NotAllowedError") {
-        document.dispatchEvent(new CustomEvent("fox-live:needs-tap"));
-      }
+      if (err && err.name !== "NotAllowedError") return;
+      if (!document.documentElement.classList.contains("ios")) return;
+      revealAutoplayScrim();
     });
+  }
+
+  // Scrim shown over the live grid when iOS refuses autoplay. One tap
+  // anywhere on the scrim calls play() on every grid <video>. Once any
+  // play() resolves the user-activation lock lifts globally; the scrim
+  // dismisses on first observed `playing` event from any grid stream.
+  let scrimEl = null;
+  function revealAutoplayScrim() {
+    if (!scrimEl) {
+      scrimEl = document.getElementById("autoplay-scrim");
+      if (!scrimEl) return;
+      const enable = () => {
+        const vids = document.querySelectorAll("video.grid-stream");
+        vids.forEach((v) => {
+          const p = v.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        });
+        // Don't dismiss here — wait for a real `playing` event below
+        // so we don't hide on a still-rejected attempt.
+      };
+      scrimEl.addEventListener("click", enable);
+      scrimEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); enable(); }
+      });
+      // Any cam reaching `playing` (initial success or recovery after
+      // retry) hides the scrim — covers the race where one cam starts
+      // before the user even taps.
+      document.querySelectorAll("video.grid-stream").forEach((v) => {
+        v.addEventListener("playing", () => {
+          if (scrimEl) scrimEl.hidden = true;
+        });
+      });
+    }
+    scrimEl.hidden = false;
   }
 
   // Chromium browsers (Chrome, Edge, Arc, Brave, Opera, etc.) replace
@@ -571,7 +606,7 @@
         // Force play() so we can detect autoplay-rejection on iOS.
         // Without this, ontrack sets srcObject but the video may sit
         // paused silently (no error event) until a user gesture.
-        notePlayRejection(video, video.play());
+        notePlayRejection(video.play());
         resolveConn();
       } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
         clearTimeout(timer);
@@ -683,7 +718,7 @@
         // Force play() once the MSE pipeline is wired so we can detect
         // autoplay rejection on iOS (autoplay attribute alone doesn't
         // surface a rejection event).
-        notePlayRejection(video, video.play());
+        notePlayRejection(video.play());
         flush();
       } catch (e) {
         console.error(`[${stream}] addSourceBuffer failed:`, e);
