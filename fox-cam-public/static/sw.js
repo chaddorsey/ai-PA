@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v39-remix-trim-zoom-download";
+const CACHE = "our-foxes-v40-toggle-margin-reset";
 
 const STATIC_ASSETS = [
   "/static/style.css",
