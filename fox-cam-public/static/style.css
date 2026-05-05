@@ -212,6 +212,10 @@ main {
   object-fit: contain;
   /* panzoom transforms the spotlight-stream; transform-origin top-left */
   transform-origin: 0 0;
+  /* Hand all touch gestures to panzoom — without this, iOS Safari
+     intercepts pinch on the <video> element before panzoom's pointer
+     events fire. Same pattern as .modal-video-wrap > video. */
+  touch-action: none;
 }
 
 /* Spotlight (high-res) video is dormant until needed. Hidden by default;

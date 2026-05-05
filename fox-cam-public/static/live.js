@@ -570,13 +570,13 @@
     });
   });
 
-  // iOS Safari (browser tab) doesn't expose MediaSource at all — only
-  // ManagedMediaSource on iOS 17.1+ behind a flag. WebRTC is the only
-  // viable live-streaming path on iOS. If WebRTC fails on iOS and we
-  // try to fall back to MSE, the runMSE function crashes immediately
-  // with "Can't find variable: MediaSource".
-  const HAS_MSE = typeof window.MediaSource !== "undefined" ||
-                  typeof window.ManagedMediaSource !== "undefined";
+  // iOS Safari (browser tab) doesn't expose MediaSource at all. iOS
+  // 17.1+ adds ManagedMediaSource, but its API + segment expectations
+  // differ enough that runMSE (which uses `new MediaSource()`) can't
+  // just swap the constructor. Only flag HAS_MSE when the legacy
+  // MediaSource is actually present — ManagedMediaSource counts as
+  // "no MSE for our pipeline".
+  const HAS_MSE = typeof window.MediaSource !== "undefined";
   const IS_IOS_LIKE = document.documentElement.classList.contains("ios");
 
   async function start(video, stream, status) {
@@ -644,10 +644,12 @@
     });
     connected.catch(() => {}); // pre-attach: silence unhandled-rejection warning
 
-    // 3s is enough for LAN ICE; longer just wastes user-visible time
-    // before the MSE fallback. The localStorage cache means most users
-    // only hit this once.
-    const timer = setTimeout(() => rejectConn(new Error("ICE timeout")), 3000);
+    // 3s is enough for LAN ICE on a desktop browser; iOS Safari often
+    // takes longer to gather candidates over cellular or contended
+    // wifi, so allow more headroom there. iOS has no MSE fallback —
+    // a premature timeout = blank cam.
+    const ICE_TIMEOUT_MS = IS_IOS_LIKE ? 6000 : 3000;
+    const timer = setTimeout(() => rejectConn(new Error("ICE timeout")), ICE_TIMEOUT_MS);
 
     pc.ontrack = (e) => {
       if (video.srcObject !== e.streams[0]) video.srcObject = e.streams[0];
