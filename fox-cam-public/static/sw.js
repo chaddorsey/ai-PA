@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v42-spotlight-rail-fit-cam4-fallback";
+const CACHE = "our-foxes-v43-rail-maxheight-cam4-recovery";
 
 const STATIC_ASSETS = [
   "/static/style.css",

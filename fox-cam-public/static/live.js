@@ -145,30 +145,44 @@
       console.error(`[${baseName}] spotlight start error:`, err);
       if (status) status.textContent = `hi-res error: ${err.message}`;
     });
-    // When the main stream actually starts playing (frames decoded),
-    // flip .spotlight-ready so CSS hides the substream and shows main.
-    // Then re-attach panzoom to the now-visible spotlight-stream so
-    // zoom acts on real pixels.
+    // When the main stream is decoding frames, flip .spotlight-ready
+    // so CSS hides the substream and shows main. Attached as a
+    // PERSISTENT listener so post-error recoveries (runMSE auto-retry)
+    // restore the high-res view automatically. Panzoom binding stays
+    // a one-shot — repeated panzoom() on the same element disposes
+    // and re-binds, which is wasteful but harmless.
     const onPlaying = () => {
+      if (!cam.classList.contains("is-spotlight")) return;  // stale
       cam.classList.add("spotlight-ready");
-      sv.removeEventListener("playing", onPlaying);
-      sv.removeEventListener("loadeddata", onPlaying);
-      attachPanzoom(cam, sv);
+      if (status) status.textContent = "live (hi-res)";
+    };
+    let panzoomBound = false;
+    const onLoadedData = () => {
+      if (!cam.classList.contains("is-spotlight")) return;
+      cam.classList.add("spotlight-ready");
+      if (!panzoomBound) {
+        panzoomBound = true;
+        attachPanzoom(cam, sv);
+      }
     };
     sv.addEventListener("playing", onPlaying);
-    sv.addEventListener("loadeddata", onPlaying);
+    sv.addEventListener("loadeddata", onLoadedData);
 
-    // Spotlight-stream errors (Cam 4's 4K main stream is the usual
-    // culprit — VideoToolbox throws on certain SPS configs) used to
-    // leave .spotlight-ready on while runMSE retried, hiding the
-    // grid-stream and collapsing the wrap to zero height. Drop the
-    // class on every error so the grid-stream substream is visible
-    // continuously while the high-res pipeline reconnects.
+    // Spotlight-stream errors (Cam 4's 4K main stream occasionally
+    // throws on certain SPS configs) used to leave .spotlight-ready
+    // on while runMSE retried, hiding the substream and collapsing
+    // the wrap. Drop the class so the substream is visible while the
+    // high-res pipeline reconnects; the `playing` listener above
+    // re-sets it on the next successful frame.
     const onSpotlightError = () => {
+      if (!cam.classList.contains("is-spotlight")) return;  // stale
       cam.classList.remove("spotlight-ready");
-      if (status) status.textContent = "hi-res hiccup — using sub";
+      if (status) status.textContent = "hi-res hiccup — retrying…";
     };
     sv.addEventListener("error", onSpotlightError);
+
+    // Stash refs so detachSpotlightStream can remove them cleanly.
+    sv._listeners = { onPlaying, onLoadedData, onSpotlightError };
   }
 
   // (Re)initialize panzoom on a specific video element. Called twice
@@ -217,6 +231,15 @@
     cam.classList.remove("spotlight-ready");
     const sv = cam.querySelector("video.spotlight-stream");
     if (sv) {
+      // Pull listeners we attached in attachSpotlightStream so the
+      // next spotlight-enter starts with a clean event surface.
+      const L = sv._listeners;
+      if (L) {
+        try { sv.removeEventListener("playing", L.onPlaying); } catch (_) {}
+        try { sv.removeEventListener("loadeddata", L.onLoadedData); } catch (_) {}
+        try { sv.removeEventListener("error", L.onSpotlightError); } catch (_) {}
+        sv._listeners = null;
+      }
       teardownVideo(sv);
       sv.style.transform = "";
       sv.style.transformOrigin = "";

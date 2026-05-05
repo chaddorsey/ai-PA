@@ -99,11 +99,10 @@ main {
   .live-layout[data-mode="spotlight"] {
     position: relative;
     height: calc(100vh - 80px);
-    /* Each rail cam is one implicit row at 1fr — they share column 2's
-       full height equally and shrink as the viewport shortens, instead
-       of bunching up at fixed 16:9 widths and overflowing. */
-    grid-auto-rows: minmax(0, 1fr);
-    overflow: hidden;
+    /* Rail scrolls if it overflows; the absolute spotlight stays
+       fixed relative to the container. */
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   .live-layout[data-mode="spotlight"] .cam.is-spotlight {
     position: absolute;
@@ -115,14 +114,17 @@ main {
     display: flex;
     flex-direction: column;
   }
-  /* Rail cams: drop the .video-wrap's 16:9 aspect-ratio and let it
-     flex-fill whatever height the cam was assigned. The video inside
-     keeps object-fit:contain so its native ratio is preserved with
-     letterbox bars, no stretching. */
+  /* Rail cams: cap each cam at one-third of available column-2 height
+     (minus the two 1rem gaps) so three thumbnails always fit without
+     overflow. The .video-wrap drops its 16:9 aspect-ratio and instead
+     fills whatever the cam was sized to; object-fit: contain on the
+     inner <video> preserves native ratio with letterboxing. The cap
+     uses min() so on tall viewports cams don't stretch absurdly. */
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    max-height: calc((100vh - 80px - 2rem) / 3);
     overflow: hidden;
   }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .video-wrap {
