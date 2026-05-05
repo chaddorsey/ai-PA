@@ -82,7 +82,40 @@
       .map((el) => el.dataset.eventId);
   }
 
-  // Keyboard shortcuts: ←/→ navigate, ESC closes (handled by <dialog>).
+  // Slide-animated navigation between cards inside the modal. The
+  // existing stage slides out in the direction of motion; the new
+  // content slides in from the opposite side. No modal close/reopen
+  // flash. Sequential (out → in) keeps the implementation simple
+  // without needing to render two stages simultaneously.
+  let sliding = false;
+  async function slideToCard(eventId, direction) {
+    if (sliding) return;
+    sliding = true;
+    const outClass = direction === "next" ? "sliding-out-left" : "sliding-out-right";
+    const inClass  = direction === "next" ? "sliding-in-from-right" : "sliding-in-from-left";
+    const oldStage = body.querySelector(".modal-stage");
+    if (oldStage) {
+      oldStage.classList.add(outClass);
+      await new Promise((res) => setTimeout(res, 260));
+    }
+    await window.openCardModal(eventId);
+    const newStage = body.querySelector(".modal-stage");
+    if (newStage) {
+      newStage.classList.add(inClass);
+      // Force a layout flush so the transition fires from off-screen.
+      newStage.getBoundingClientRect();
+      requestAnimationFrame(() => {
+        newStage.classList.add("sliding-in-active");
+      });
+      setTimeout(() => {
+        newStage.classList.remove(inClass, "sliding-in-active");
+      }, 380);
+    }
+    sliding = false;
+  }
+  window.slideToCard = slideToCard;
+
+  // Keyboard shortcuts: ←/→ navigate (with slide), ESC closes.
   document.addEventListener("keydown", (e) => {
     if (!dialog.open) return;
     if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
@@ -91,10 +124,11 @@
       if (!current) return;
       const i = siblings.indexOf(current.event_id);
       if (i < 0) return;
-      const target = e.key === "ArrowLeft" ? siblings[i - 1] : siblings[i + 1];
+      const direction = e.key === "ArrowLeft" ? "prev" : "next";
+      const target = direction === "prev" ? siblings[i - 1] : siblings[i + 1];
       if (target) {
         e.preventDefault();
-        window.openCardModal(target);
+        slideToCard(target, direction);
       }
     }
   });
@@ -158,16 +192,18 @@
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
 
-    // Wire prev/next nav.
+    // Wire prev/next nav with a slide animation between cards. The
+    // viewer only swaps content (no full-modal teardown), so the
+    // overall feeling is a single carousel of clips.
     const prevBtn = body.querySelector(".modal-nav.prev");
     const nextBtn = body.querySelector(".modal-nav.next");
     if (prevBtn && prevId) prevBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      window.openCardModal(prevId);
+      slideToCard(prevId, "prev");
     });
     if (nextBtn && nextId) nextBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      window.openCardModal(nextId);
+      slideToCard(nextId, "next");
     });
 
     // Pinch / scroll / drag to zoom into the video. Bound after the

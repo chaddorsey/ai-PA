@@ -45,18 +45,27 @@
   }
 
   async function load() {
+    // Filter row applies only to the "All" tab; every other bucket is
+    // itself a curated subset (My Faves, Group Faves, Remixes, No
+    // Foxes) where applying camera/time/date/species filters would
+    // both confuse the user and hide otherwise-relevant clips.
+    const onAll = bucket === "pending";
     const params = new URLSearchParams({
       bucket,
-      time_of_day: filterTime.value,
+      time_of_day: onAll ? filterTime.value : "any",
       limit,
       offset,
     });
-    if (filterCamera.value) params.append("camera", filterCamera.value);
-    if (filterSpecies.value) params.append("species_filter", filterSpecies.value);
+    if (onAll && filterCamera.value) params.append("camera", filterCamera.value);
+    if (onAll && filterSpecies.value) params.append("species_filter", filterSpecies.value);
+    // Status (Active/All/Archived) IS meaningful across buckets — a
+    // user might archive a favorite — so keep it always.
     if (filterStatus && filterStatus.value) params.append("status", filterStatus.value);
-    const range = dateRange();
-    if (range.since !== undefined) params.append("since", range.since);
-    if (range.until !== undefined) params.append("until", range.until);
+    if (onAll) {
+      const range = dateRange();
+      if (range.since !== undefined) params.append("since", range.since);
+      if (range.until !== undefined) params.append("until", range.until);
+    }
 
     let r;
     try {
@@ -120,11 +129,20 @@
     return wrap;
   }
 
+  // The filter row (camera/time/date/status/species) is meaningful only
+  // on the "All" tab — every other tab is itself a curated subset.
+  // Toggle a body class so CSS hides the filters bar when not on All.
+  function syncFiltersVisibility() {
+    document.body.classList.toggle("filters-hidden", bucket !== "pending");
+  }
+  syncFiltersVisibility();
+
   tabs.forEach((t) => {
     t.addEventListener("click", () => {
       tabs.forEach((x) => x.classList.remove("active"));
       t.classList.add("active");
       bucket = t.dataset.bucket;
+      syncFiltersVisibility();
       reset();
     });
   });

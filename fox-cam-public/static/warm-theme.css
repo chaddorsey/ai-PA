@@ -871,3 +871,30 @@ body.modal-open { overflow: hidden; }
   opacity: 0;
   pointer-events: none;
 }
+
+/* Filter bar hidden on non-All tabs (the bucket itself IS the filter) */
+body.filters-hidden .filters { display: none !important; }
+
+/* === Modal navigation slide animation === */
+.card-modal-body {
+  position: relative;
+  overflow: hidden;
+}
+.modal-stage {
+  transition: transform 0.32s cubic-bezier(.4,0,.2,1), opacity 0.25s ease;
+  will-change: transform;
+}
+.modal-stage.sliding-out-left  { transform: translateX(-100%); opacity: 0; }
+.modal-stage.sliding-out-right { transform: translateX( 100%); opacity: 0; }
+.modal-stage.sliding-in-from-right {
+  position: absolute; inset: 0;
+  transform: translateX(100%);
+}
+.modal-stage.sliding-in-from-left {
+  position: absolute; inset: 0;
+  transform: translateX(-100%);
+}
+.modal-stage.sliding-in-active {
+  transform: translateX(0);
+  opacity: 1;
+}
