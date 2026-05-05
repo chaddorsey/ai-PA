@@ -478,9 +478,43 @@ def list_highlights(
     hour_to: int | None = None,    # 0–23, exclusive (allows wrap, e.g. 18→6)
     limit: int = 100,
     offset: int = 0,
+    merge_overlaps: bool = True,
 ) -> list[dict[str, Any]]:
+    """List highlights with optional same-camera overlap dedup.
+
+    With merge_overlaps=True (default), events that overlap in time on
+    the same camera collapse to the longest one. MegaDetector tracks
+    each animal as its own object, so a mom-and-kits visit produces
+    N parallel events; the longest covers the full visit and is the
+    canonical card. Shorter overlapping siblings are hidden from the
+    listing but still exist in the DB for direct lookup.
+    """
     sql = "SELECT * FROM highlights WHERE fox_likelihood >= ?"
     args: list[Any] = [min_score]
+    if merge_overlaps:
+        # Hide events that have a strictly longer overlapping event on
+        # the same camera. Equality of duration is broken alphabetically
+        # by event_id (deterministic, picks one canonical winner).
+        sql += """
+          AND NOT EXISTS (
+            SELECT 1 FROM highlights h2
+            WHERE h2.camera = highlights.camera
+              AND h2.event_id != highlights.event_id
+              AND h2.start_time < COALESCE(highlights.end_time,
+                                            highlights.start_time + COALESCE(highlights.duration_s, 0))
+              AND COALESCE(h2.end_time,
+                           h2.start_time + COALESCE(h2.duration_s, 0)) > highlights.start_time
+              AND (
+                (COALESCE(h2.end_time, h2.start_time + COALESCE(h2.duration_s, 0)) - h2.start_time)
+                  > (COALESCE(highlights.end_time, highlights.start_time + COALESCE(highlights.duration_s, 0)) - highlights.start_time)
+                OR (
+                  (COALESCE(h2.end_time, h2.start_time + COALESCE(h2.duration_s, 0)) - h2.start_time)
+                    = (COALESCE(highlights.end_time, highlights.start_time + COALESCE(highlights.duration_s, 0)) - highlights.start_time)
+                  AND h2.event_id < highlights.event_id
+                )
+              )
+          )
+        """
     if camera:
         sql += " AND camera = ?"
         args.append(camera)
