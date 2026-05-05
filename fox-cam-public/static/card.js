@@ -239,14 +239,38 @@
         if (card) window.deliverBadge(card, "fox-3", "⭐ Mine", { badgeClass: "badge-mine" });
       }
     }));
-    bar.appendChild(actionBtn("🚫", "demote", h.my_demoted, () => {
-      const wasDemoted = h.my_demoted;
-      setAction(h.event_id, wasDemoted ? "clear" : "demote");
-      if (!wasDemoted && window.deliverBadge) {
+    // No Foxes button. Two semantics depending on the current bucket:
+    //  - In No Foxes view: button reads "↩ Restore" and unflags GLOBALLY
+    //    (clears every user's demote vote) after a warning, since
+    //    the bucket itself is shared/community-flagged.
+    //  - Anywhere else: per-user toggle of "I think this isn't a fox".
+    const inNoFoxesView = (document.querySelector(".tab.active")?.dataset.bucket) === "demoted";
+    if (inNoFoxesView) {
+      bar.appendChild(actionBtn("↩ Restore", "demote", false, async () => {
+        if (!confirm("Restore this clip to the main highlights view for everyone? It's currently flagged as 'No Foxes' by someone in the family — restoring will move it back into circulation for all users.")) return;
+        const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/unflag_no_foxes`,
+          { method: "POST", credentials: "same-origin" });
+        if (!r.ok) { alert("Couldn't restore."); return; }
+        const data = await r.json();
+        Object.assign(h, data.highlight || {});
         const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
-        if (card) window.deliverBadge(card, "frog", "🚫 Not a fox", { badgeClass: "badge-nofox" });
-      }
-    }));
+        if (card) {
+          card.style.transition = "opacity 0.3s, transform 0.3s";
+          card.style.opacity = "0";
+          card.style.transform = "scale(0.95)";
+          setTimeout(() => card.remove(), 300);
+        }
+      }));
+    } else {
+      bar.appendChild(actionBtn("🚫", "demote", h.my_demoted, () => {
+        const wasDemoted = h.my_demoted;
+        setAction(h.event_id, wasDemoted ? "clear" : "demote");
+        if (!wasDemoted && window.deliverBadge) {
+          const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+          if (card) window.deliverBadge(card, "frog", "🚫 Not a fox", { badgeClass: "badge-nofox" });
+        }
+      }));
+    }
     bar.appendChild(actionBtn("🔗", "share", false, () => copyShareLink(h.event_id)));
     // Remix link only once you've favorited the clip — encourages the
     // "love this moment, want to capture a piece of it" workflow.
@@ -366,7 +390,10 @@
     if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
     if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
     if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;
-    if (currentBucket === "demoted" && !h.my_demoted) shouldHide = true;
+    // No Foxes is a SHARED bucket (anyone-flagged → all see it). The
+    // card disappears only when the global demoted flag clears (which
+    // happens after the unflag-no-foxes endpoint wipes all votes).
+    if (currentBucket === "demoted" && !h.demoted) shouldHide = true;
 
     if (shouldHide) {
       card.style.transition = "opacity 0.3s";

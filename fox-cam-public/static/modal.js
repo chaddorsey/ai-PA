@@ -230,11 +230,29 @@
         }
       }
     ));
-    actionsBar.appendChild(actionBtn("🚫", "demote", h.my_demoted, async () => {
-      const wasDemoted = h.my_demoted;
-      const updated = await postAction(h.event_id, wasDemoted ? "clear" : "demote");
-      if (updated) { Object.assign(h, updated); renderViewer(h); }
-    }));
+    // No Foxes button. Shared/global semantics: in the No Foxes
+    // view it reads "↩ Restore" and globally clears all demote
+    // votes (with a warning) since the bucket is community-flagged.
+    const inNoFoxesView = (document.querySelector(".tab.active")?.dataset.bucket) === "demoted";
+    if (inNoFoxesView) {
+      actionsBar.appendChild(actionBtn("↩ Restore", "demote", false, async () => {
+        if (!confirm("Restore this clip to the main highlights view for everyone? It's currently flagged as 'No Foxes' by someone in the family — restoring will move it back into circulation for all users.")) return;
+        const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/unflag_no_foxes`,
+          { method: "POST", credentials: "same-origin" });
+        if (!r.ok) { alert("Couldn't restore."); return; }
+        const data = await r.json();
+        Object.assign(h, data.highlight || {});
+        // Card leaves the No Foxes bucket; close the modal so the
+        // gallery refreshes naturally on the user's next action.
+        window.closeCardModal();
+      }));
+    } else {
+      actionsBar.appendChild(actionBtn("🚫", "demote", h.my_demoted, async () => {
+        const wasDemoted = h.my_demoted;
+        const updated = await postAction(h.event_id, wasDemoted ? "clear" : "demote");
+        if (updated) { Object.assign(h, updated); renderViewer(h); }
+      }));
+    }
     actionsBar.appendChild(actionBtn("🔗 Share", "share", false, () => {
       const url = `${location.origin}/clip/${h.event_id}`;
       navigator.clipboard?.writeText(url).then(

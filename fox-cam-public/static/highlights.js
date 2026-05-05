@@ -45,10 +45,12 @@
   }
 
   async function load() {
-    // Filter row applies only to the "All" tab; every other bucket is
-    // itself a curated subset (My Faves, Group Faves, Remixes, No
-    // Foxes) where applying camera/time/date/species filters would
-    // both confuse the user and hide otherwise-relevant clips.
+    // Filters apply ONLY to the "All" tab. Every other bucket is
+    // itself a single-parameter curation (My Faves, Group Faves,
+    // Remixes, No Foxes) and applying camera/time/date/species/status
+    // on top would hide clips the viewer is asking to see. Within
+    // those buckets archived items render in a separate section at
+    // the bottom of the gallery instead.
     const onAll = bucket === "pending";
     const params = new URLSearchParams({
       bucket,
@@ -58,9 +60,8 @@
     });
     if (onAll && filterCamera.value) params.append("camera", filterCamera.value);
     if (onAll && filterSpecies.value) params.append("species_filter", filterSpecies.value);
-    // Status (Active/All/Archived) IS meaningful across buckets — a
-    // user might archive a favorite — so keep it always.
-    if (filterStatus && filterStatus.value) params.append("status", filterStatus.value);
+    if (onAll && filterStatus && filterStatus.value) params.append("status", filterStatus.value);
+    else if (!onAll) params.append("status", "any");   // include archives so we can split client-side
     if (onAll) {
       const range = dateRange();
       if (range.since !== undefined) params.append("since", range.since);
@@ -106,10 +107,31 @@
       loadMore.style.display = "none";
       return;
     }
-    for (const h of data.items) grid.appendChild(window.makeCard(h));
+
+    // Curated buckets render archived items in a separate section so
+    // a user can still see (and unarchive) clips they've put away
+    // without losing them from the bucket entirely.
+    const splitArchived = !onAll && offset === 0;
+    if (splitArchived) {
+      const active = data.items.filter((h) => !h.my_archived);
+      const archived = data.items.filter((h) => h.my_archived);
+      for (const h of active) grid.appendChild(window.makeCard(h));
+      if (archived.length) {
+        const sep = document.createElement("div");
+        sep.className = "section-divider";
+        sep.innerHTML = `<h3>📦 Archived <span class="muted">(${archived.length})</span></h3>`;
+        grid.appendChild(sep);
+        for (const h of archived) grid.appendChild(window.makeCard(h));
+      }
+    } else {
+      for (const h of data.items) grid.appendChild(window.makeCard(h));
+    }
     offset += data.items.length;
     loadMore.style.display = data.items.length === limit ? "" : "none";
   }
+
+  // onAll captured outside load() too so we don't recompute in the
+  // archived split logic above. Stored at the bottom of load().
 
   function buildEmptyState(b) {
     const empties = {

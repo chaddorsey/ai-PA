@@ -493,6 +493,35 @@ def delete_highlight(event_id: str) -> dict[str, Any]:
     return {"status": "deleted", "event_id": event_id}
 
 
+@app.post("/highlights/{event_id}/unflag_no_foxes")
+def unflag_no_foxes(event_id: str, body: ActionBody) -> dict[str, Any]:
+    """Restore a clip from the No Foxes bucket — globally.
+
+    "No Foxes" is shared: as soon as ANY user demotes a clip, it
+    moves to the No Foxes bucket for everyone (the curator's bucket
+    query keys off the aggregate `demoted=1` column). Clearing one
+    user's vote isn't enough to bring it back, because other users'
+    demotes still flag it. This endpoint clears ALL demote votes
+    across all users for a given highlight, returning it to the
+    main view for the entire family. Caller (proxy) is responsible
+    for showing the user a warning before invoking.
+    """
+    if not body.by:
+        raise HTTPException(status_code=400, detail="unflag requires a 'by' email")
+    if not db.get_highlight(DB_PATH, event_id):
+        raise HTTPException(status_code=404, detail="not found")
+    import time as _time
+    now = _time.time()
+    with db.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM highlight_user_actions WHERE highlight_id = ? AND action = 'demote'",
+            [event_id],
+        )
+        # _refresh_aggregate recomputes highlights.demoted from the per-user table.
+        db._refresh_aggregate(conn, event_id, body.by, now)
+    return {"status": "unflagged", "highlight": _highlight_with_state(event_id, body.by)}
+
+
 @app.post("/highlights/{event_id}/archive")
 def archive_event(event_id: str, body: ActionBody) -> dict[str, Any]:
     if not body.by:

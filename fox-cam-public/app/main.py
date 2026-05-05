@@ -717,6 +717,14 @@ async def archive(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "archive", _actor_email(request))
 
 
+@app.post("/api/actions/{event_id}/unflag_no_foxes")
+async def unflag_no_foxes(event_id: str, request: Request) -> Any:
+    """Globally clear all 'no foxes' votes for this highlight (any
+    family member can do this; the client is expected to surface a
+    warning first because the action affects every user)."""
+    return await _post_action(event_id, "unflag_no_foxes", _actor_email(request))
+
+
 @app.post("/api/actions/{event_id}/unarchive")
 async def unarchive(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "unarchive", _actor_email(request))

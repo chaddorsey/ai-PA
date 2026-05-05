@@ -898,3 +898,20 @@ body.filters-hidden .filters { display: none !important; }
   transform: translateX(0);
   opacity: 1;
 }
+
+/* Section divider used inside the gallery (e.g. "Archived" section
+   below active My Faves / Group Faves / Remixes items) */
+.grid .section-divider {
+  grid-column: 1 / -1;
+  margin: 22px 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(240, 90, 40, 0.3);
+}
+.grid .section-divider h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--color-ink);
+  margin: 0;
+}
+.grid .section-divider h3 .muted { color: var(--color-ink-soft); font-weight: 500; }
