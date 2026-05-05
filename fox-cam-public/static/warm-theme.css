@@ -848,8 +848,12 @@ body.modal-open { overflow: hidden; }
 /* === Modal: prev / next arrows on the video edges === */
 .modal-nav {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 8%;
+  /* Stop above the native video controls bar (typically the bottom
+     ~46px of the video element). Without this the gradient overlay
+     covers the play / fullscreen / triple-dot menu and can't be
+     clicked. */
+  bottom: 56px;
   width: 56px;
   display: flex;
   align-items: center;
@@ -862,18 +866,19 @@ body.modal-open { overflow: hidden; }
   opacity: 0;
   transition: opacity 0.2s ease, background 0.2s ease;
   pointer-events: auto;
+  outline: none;             /* drop browser's blue focus outline */
 }
 .modal-nav.prev { left: 0; }
 .modal-nav.next {
   right: 0;
   background: linear-gradient(270deg, rgba(0,0,0,0.45), transparent);
 }
-.modal-video-wrap:hover .modal-nav,
+.modal-video-wrap:hover .modal-nav { opacity: 1; }
+.modal-nav:hover { opacity: 1; }
+.modal-nav:focus { outline: none; }
 .modal-nav:focus-visible {
-  opacity: 1;
-}
-.modal-nav:hover {
-  opacity: 1;
+  outline: 2px solid var(--color-glow);
+  outline-offset: -3px;
 }
 .modal-nav .material-icons {
   font-size: 38px;
@@ -930,4 +935,12 @@ body.filters-hidden .filters { display: none !important; }
 @keyframes nav-badge-pulse {
   0%, 100% { transform: scale(1);   box-shadow: 0 0 0 2px var(--color-cream-deep), 0 0 0 0 rgba(240,90,40,0.5); }
   50%      { transform: scale(1.2); box-shadow: 0 0 0 2px var(--color-cream-deep), 0 0 0 5px rgba(240,90,40,0); }
+}
+
+/* Kill the iOS/Chrome default blue tap highlight on modal nav buttons */
+.modal-nav,
+.card-modal-close,
+.action-btn,
+.archive-toggle {
+  -webkit-tap-highlight-color: transparent;
 }

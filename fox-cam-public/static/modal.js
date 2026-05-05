@@ -127,15 +127,20 @@
     await new Promise((res) => setTimeout(res, 280));
 
     current = newH;
-    renderViewer(newH);   // replaces body.innerHTML with the new stage
+    // Render with the slide-in class already applied — the stage
+    // appears off-screen on its first paint, never at center.
+    renderViewer(newH, direction === "next" ? "right" : "left");
 
     const newStage = body.querySelector(".modal-stage");
     if (newStage) {
-      newStage.classList.add(inClass);
-      newStage.getBoundingClientRect();   // force reflow
+      newStage.getBoundingClientRect();   // force reflow before transition
       requestAnimationFrame(() => {
         newStage.classList.add("sliding-in-active");
       });
+      // After the transition completes, drop the slide classes so the
+      // stage returns to its natural (in-flow, transform-none) state.
+      // Removing the classes is fine because both target the same
+      // transform: translateX(0) endpoint — no visible change.
       setTimeout(() => {
         newStage.classList.remove(inClass, "sliding-in-active");
       }, 380);
@@ -179,7 +184,7 @@
   // Default viewer layout
   // ===========================================================================
 
-  function renderViewer(h) {
+  function renderViewer(h, slideInFrom) {
     teardownVideo();
 
     const speciesBadge = renderSpeciesBadge(h);
@@ -195,8 +200,13 @@
     const prevId = idx > 0 ? siblings[idx - 1] : null;
     const nextId = (idx >= 0 && idx < siblings.length - 1) ? siblings[idx + 1] : null;
 
+    // If we're sliding in from a side, bake the slide-in class into
+    // the initial HTML so the new stage is NEVER painted at the
+    // default position 0 between insertion and the requestAnimationFrame
+    // that triggers the slide-in transition.
+    const slideClass = slideInFrom ? ` sliding-in-from-${slideInFrom}` : "";
     body.innerHTML = `
-      <div class="modal-stage">
+      <div class="modal-stage${slideClass}">
         <div class="modal-video-wrap">
           <video class="modal-video" controls autoplay muted playsinline></video>
           <button class="modal-nav prev" type="button" aria-label="Previous clip" ${prevId ? "" : "disabled"}>
