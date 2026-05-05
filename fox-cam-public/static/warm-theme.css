@@ -1319,6 +1319,11 @@ body.filters-hidden .filters { display: none !important; }
   line-height: 1;
   display: block;
 }
+.view-toggle button svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
 .view-toggle button:hover { color: var(--color-ink); }
 .view-toggle button.active {
   background: var(--color-glow);

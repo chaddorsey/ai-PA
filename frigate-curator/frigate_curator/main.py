@@ -708,6 +708,86 @@ def update_remix(remix_id: str, body: RemixUpdateBody) -> dict[str, Any]:
     return {"remix": db.remix_get(DB_PATH, remix_id)}
 
 
+REMIX_DOWNLOAD_CACHE_ROOT = Path(os.environ.get(
+    "REMIX_DOWNLOAD_CACHE_ROOT", str(HIGHLIGHTS_ROOT / "remix-download-cache")
+))
+
+
+@app.get("/remixes/{remix_id}/download")
+def download_remix(remix_id: str, filename: str | None = None) -> FileResponse:
+    """Render the remix as a trimmed (+ cropped, if zoomed) MP4 for download.
+
+    Re-encodes via ffmpeg the first time and caches the result on disk
+    keyed by remix_id + a hash of the trim/zoom params, so subsequent
+    downloads are an instant FileResponse.
+    """
+    import hashlib
+    import subprocess
+
+    r = db.remix_get(DB_PATH, remix_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="remix not found")
+    h = db.get_highlight(DB_PATH, r["event_id"])
+    if not h:
+        raise HTTPException(status_code=404, detail="parent highlight not found")
+    src = HIGHLIGHTS_ROOT / h["clip_path"]
+    if not src.exists():
+        raise HTTPException(status_code=410, detail="parent clip file missing")
+
+    start_s = float(r.get("start_offset_s") or 0.0)
+    end_s = float(r.get("end_offset_s") or 0.0)
+    if end_s <= start_s:
+        raise HTTPException(status_code=400, detail="invalid trim range")
+    zoom_scale = float(r.get("zoom_scale") or 1.0)
+    zoom_x = float(r.get("zoom_x") if r.get("zoom_x") is not None else 0.5)
+    zoom_y = float(r.get("zoom_y") if r.get("zoom_y") is not None else 0.5)
+
+    key_src = f"{remix_id}|{start_s:.3f}|{end_s:.3f}|{zoom_scale:.3f}|{zoom_x:.4f}|{zoom_y:.4f}"
+    key_hash = hashlib.md5(key_src.encode()).hexdigest()[:12]
+    cache_dir = REMIX_DOWNLOAD_CACHE_ROOT
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{remix_id}_{key_hash}.mp4"
+
+    if not cache_path.exists():
+        vf = None
+        if zoom_scale > 1.01:
+            # iw/ih are input frame dimensions. cw,ch = crop window;
+            # cx,cy = crop top-left in pixel space, clamped to frame.
+            scale_expr = f"{zoom_scale:.6f}"
+            cw = f"iw/{scale_expr}"
+            ch = f"ih/{scale_expr}"
+            cx = f"max(0\\,min(iw-{cw}\\,iw*{zoom_x:.6f}-({cw})/2))"
+            cy = f"max(0\\,min(ih-{ch}\\,ih*{zoom_y:.6f}-({ch})/2))"
+            vf = f"crop={cw}:{ch}:{cx}:{cy}"
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-ss", f"{start_s:.3f}",
+            "-to", f"{end_s:.3f}",
+            "-i", str(src),
+        ]
+        if vf:
+            cmd += ["-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
+                    "-crf", "20", "-c:a", "aac", "-b:a", "128k"]
+        else:
+            cmd += ["-c", "copy"]
+        cmd += ["-movflags", "+faststart", str(cache_path)]
+
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            try: cache_path.unlink(missing_ok=True)
+            except Exception: pass
+            raise HTTPException(status_code=500, detail=f"ffmpeg failed: {e}") from e
+
+    safe_name = (filename or f"remix-{remix_id}.mp4")
+    safe_name = safe_name.replace('"', "").replace("\n", "").replace("\r", "")
+    return FileResponse(
+        cache_path, media_type="video/mp4", filename=safe_name,
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
+    )
+
+
 @app.delete("/remixes/{remix_id}")
 def delete_remix(remix_id: str, by: str | None = None) -> dict[str, Any]:
     r = db.remix_get(DB_PATH, remix_id)

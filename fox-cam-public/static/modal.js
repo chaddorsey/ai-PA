@@ -892,58 +892,73 @@
         </div>
       </div>
     `;
-    // Wire download icon (saves the parent .mp4 — remixes are
-    // sub-windows of the same source file). Filename includes the
-    // remix title so users can tell which one they downloaded.
+    // Wire download icon — produces a trimmed+cropped MP4 server-side
+    // (curator runs ffmpeg, caches the result) so the file matches
+    // exactly what the viewer is watching, not the full parent clip.
     const dlBtn = body.querySelector(".meta-download");
     if (dlBtn) {
       dlBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        triggerDownload(parentH || { event_id: remix.event_id, start_time: remix.start_offset_s, camera: parentH?.camera }, remix.title || "remix");
+        triggerRemixDownload(remix, parentH);
       });
     }
 
+    // Drop native controls — when we apply the saved zoom_scale via
+    // panzoom (transform: scale on the video element), native HTML5
+    // controls render at the transformed bottom edge and get clipped
+    // by the wrap's overflow. Users requested trim+zoom playback as
+    // intended over a scrubber. They can still tap to play/pause and
+    // pinch/scroll to interactively zoom.
     videoEl = body.querySelector(".modal-video");
-    videoEl.controls = true;
-    videoEl.setAttribute("controls", "");
+    videoEl.controls = false;
+    videoEl.removeAttribute("controls");
     videoEl.src = `/api/highlights/${encodeURIComponent(parentH.event_id)}/clip`;
     const wrap = body.querySelector(".modal-video-wrap");
 
-    // Seek to start_offset, stop at end_offset. Defensive: if
-    // metadata is already loaded by the time we attach the listener
-    // (cached video, instant seek), apply the seek immediately;
-    // otherwise wait for the loadedmetadata event.
+    // Seek + auto-pause within the trim window. Defensive against the
+    // metadata-already-loaded race.
     const seekToStart = () => {
       const startS = Number(remix.start_offset_s) || 0;
       try { videoEl.currentTime = startS; } catch {}
     };
-    if (videoEl.readyState >= 1 /* HAVE_METADATA */) {
-      seekToStart();
-    } else {
+    if (videoEl.readyState >= 1) seekToStart();
+    else {
       videoEl.addEventListener("loadedmetadata", seekToStart, { once: true });
-      // Also seek once the browser has buffered enough to start playing —
-      // ensures the user actually sees the trim window even if metadata
-      // load + autoplay raced.
       videoEl.addEventListener("loadeddata", seekToStart, { once: true });
     }
     videoEl.addEventListener("timeupdate", () => {
       const endS = Number(remix.end_offset_s) || 0;
       if (endS && videoEl.currentTime >= endS - 0.05) {
         videoEl.pause();
-        // Snap back to start so the next play resumes the trim window
-        // rather than continuing into the post-roll of the parent clip.
         videoEl.currentTime = Number(remix.start_offset_s) || 0;
       }
     });
+    // Tap-to-play-pause replacement for the native controls.
+    videoEl.addEventListener("click", (e) => {
+      if (videoEl.paused) videoEl.play().catch(() => {});
+      else videoEl.pause();
+    });
 
-    // Bind panzoom so the viewer can interactively pinch/scroll the
-    // playback. NOT auto-applying remix.zoom_scale on load: when the
-    // <video> element is transform: scale()'d, the native HTML5
-    // controls bar (rendered at the video's bottom edge) gets pushed
-    // outside the wrap's visible area, hiding the scrubber. Users can
-    // press +/⛶ buttons to re-engage zoom; the saved zoom region
-    // metadata is shown on the meta line for context.
+    // Bind panzoom + apply the saved zoom region so the viewer sees
+    // the remix as the creator framed it. Reapply on loadedmetadata
+    // so the video has real dimensions before zoom math.
     panzoomInstance = bindPanzoom(videoEl, wrap);
+    const applySavedZoom = () => {
+      if (!panzoomInstance) return;
+      if (!remix.zoom_scale || remix.zoom_scale <= 1.01) return;
+      try {
+        const r = wrap.getBoundingClientRect();
+        const cx = (Number(remix.zoom_x) || 0.5) * r.width;
+        const cy = (Number(remix.zoom_y) || 0.5) * r.height;
+        panzoomInstance.zoomAbs(0, 0, remix.zoom_scale);
+        panzoomInstance.moveTo(
+          r.width / 2 - cx * remix.zoom_scale,
+          r.height / 2 - cy * remix.zoom_scale
+        );
+      } catch (err) { /* ignore */ }
+    };
+    if (videoEl.readyState >= 1) applySavedZoom();
+    else videoEl.addEventListener("loadedmetadata", applySavedZoom, { once: true });
 
     body.querySelector("#rp-back").addEventListener("click", () => {
       renderViewer(parentH);
@@ -1054,6 +1069,26 @@
     filename += ".mp4";
     const a = document.createElement("a");
     a.href = `/api/highlights/${encodeURIComponent(h.event_id)}/clip?download=1&filename=${encodeURIComponent(filename)}`;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // Download a server-rendered trimmed + (when zoomed) cropped MP4 of
+  // a saved remix. First click pays the ffmpeg cost; later clicks hit
+  // the curator's cache instantly.
+  function triggerRemixDownload(remix, parentH) {
+    if (!remix || !remix.remix_id) return;
+    const stamp = parentH && parentH.start_time
+      ? new Date(parentH.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
+      : remix.remix_id;
+    const cam = (window.prettyCamera ? window.prettyCamera(parentH?.camera) : (parentH?.camera || "fox"))
+      .replace(/\s+/g, "-").toLowerCase();
+    const titlePart = (remix.title || "remix").replace(/[^a-z0-9-]+/gi, "-").slice(0, 40);
+    const filename = `${cam}-${stamp}-${titlePart}.mp4`;
+    const a = document.createElement("a");
+    a.href = `/api/remixes/${encodeURIComponent(remix.remix_id)}/download?filename=${encodeURIComponent(filename)}`;
     a.download = filename;
     document.body.appendChild(a);
     a.click();

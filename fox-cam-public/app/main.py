@@ -795,6 +795,23 @@ async def update_remix(remix_id: str, request: Request) -> Any:
     return r.json()
 
 
+@app.get("/api/remixes/{remix_id}/download")
+async def download_remix(remix_id: str, filename: str | None = None) -> StreamingResponse:
+    """Proxy curator's trimmed+cropped remix MP4 for download.
+
+    Curator does the ffmpeg work and caches the result, so subsequent
+    downloads are fast. Filename is forwarded so the browser saves the
+    file with a meaningful name including the remix title.
+    """
+    from urllib.parse import quote
+    safe = (filename or f"remix-{remix_id}.mp4").replace('"', "").replace("\n", "").replace("\r", "")
+    return await _proxy_curator(
+        f"/remixes/{remix_id}/download?filename={quote(safe)}",
+        "video/mp4",
+        extra_headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+    )
+
+
 @app.delete("/api/remixes/{remix_id}")
 async def delete_remix(remix_id: str, request: Request) -> Any:
     by = _actor_email(request)
