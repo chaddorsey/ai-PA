@@ -107,7 +107,11 @@ main {
     grid-template-columns: minmax(0, 1fr) 220px !important;
   }
   .live-layout[data-mode="spotlight"] .cam.is-spotlight {
-    position: absolute;
+    /* !important resists peeks.js setting inline position:relative on
+       this tile while it was in grid mode — without it, the prior
+       inline style wins over the class selector and the spotlight
+       falls into normal flow (collapse). */
+    position: absolute !important;
     left: 0;
     top: 0;
     /* Width = container width minus rail (220px) and gap (1rem). */

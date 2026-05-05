@@ -32,7 +32,13 @@
     if (!slot) {
       slot = document.createElement("div");
       slot.className = "peek-slot";
-      tile.style.position = "relative";  // ensure absolute child anchors here
+      // Only force position:relative when the tile is currently
+      // statically positioned. Spotlight mode sets the active cam to
+      // position:absolute via CSS — overwriting that here knocks the
+      // spotlight out of its container and collapses the layout
+      // (manifests as "Cam 4 collapses when the squirrel peeks out").
+      const pos = window.getComputedStyle(tile).position;
+      if (pos === "static") tile.style.position = "relative";
       tile.appendChild(slot);
     }
     return slot;
