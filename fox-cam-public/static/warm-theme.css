@@ -51,6 +51,7 @@ nav a {
   padding: 6px 14px;
   border-radius: 999px;
   transition: background 0.18s ease, color 0.18s ease;
+  position: relative;          /* anchor for the .nav-badge dot */
 }
 nav a.active, nav a:hover {
   color: var(--color-ink) !important;
@@ -289,16 +290,22 @@ nav a.active { background: var(--color-glow); color: white !important; }
   border-radius: 999px !important;
 }
 .nav-badge {
+  /* Hangs off the top-right corner of the Highlights nav pill, like a
+     notification dot on an iOS app icon. Stays the same color whether
+     the pill is the active orange or the inactive transparent pill —
+     the cream halo provides contrast against both. */
+  position: absolute;
+  top: -2px;
+  right: -2px;
   background: var(--color-glow);
   color: transparent;          /* hide any text content */
   border-radius: 999px;
   font-size: 0;
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   padding: 0;
-  margin-left: 6px;
+  margin: 0;
   display: inline-block;
-  vertical-align: 0.5em;
   box-shadow: 0 0 0 2px var(--color-cream-deep), 0 1px 4px rgba(240,90,40,0.5);
   /* Pulse subtly so the user notices new activity. */
   animation: nav-badge-pulse 2.4s ease-in-out infinite;
