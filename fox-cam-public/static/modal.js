@@ -919,25 +919,14 @@
       }
     });
 
-    // Apply saved zoom region (if any) via panzoom — for read-only
-    // playback, we just zoom-and-pan in once on load, no interactive
-    // controls. Bind panzoom anyway so the viewer can pinch/scroll
-    // to adjust.
+    // Bind panzoom so the viewer can interactively pinch/scroll the
+    // playback. NOT auto-applying remix.zoom_scale on load: when the
+    // <video> element is transform: scale()'d, the native HTML5
+    // controls bar (rendered at the video's bottom edge) gets pushed
+    // outside the wrap's visible area, hiding the scrubber. Users can
+    // press +/⛶ buttons to re-engage zoom; the saved zoom region
+    // metadata is shown on the meta line for context.
     panzoomInstance = bindPanzoom(videoEl, wrap);
-    if (panzoomInstance && remix.zoom_scale && remix.zoom_scale > 1.01) {
-      videoEl.addEventListener("loadedmetadata", () => {
-        const r = wrap.getBoundingClientRect();
-        const cx = (remix.zoom_x || 0.5) * r.width;
-        const cy = (remix.zoom_y || 0.5) * r.height;
-        try {
-          panzoomInstance.zoomAbs(0, 0, remix.zoom_scale);
-          panzoomInstance.moveTo(
-            r.width / 2 - cx * remix.zoom_scale,
-            r.height / 2 - cy * remix.zoom_scale
-          );
-        } catch (err) { /* ignore */ }
-      }, { once: true });
-    }
 
     body.querySelector("#rp-back").addEventListener("click", () => {
       renderViewer(parentH);

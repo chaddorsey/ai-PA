@@ -848,12 +848,12 @@ body.modal-open { overflow: hidden; }
    just the glyph at slug font-size. */
 .modal-meta-extra {
   display: inline-flex !important;
-  align-items: baseline !important;
+  align-items: center !important;
   gap: 8px;
 }
 .meta-download {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   background: transparent;
   border: none;
   padding: 0;
@@ -862,11 +862,6 @@ body.modal-open { overflow: hidden; }
   cursor: pointer;
   transition: color 0.15s ease, transform 0.1s ease;
   -webkit-tap-highlight-color: transparent;
-  /* Pin baseline of the icon's box to the slug's text baseline */
-  vertical-align: baseline;
-  position: relative;
-  top: 2px;       /* tiny optical nudge so the icon's heavy baseline
-                     reads aligned with the lowercase x-height */
 }
 .meta-download .material-icons {
   font-size: 18px;
@@ -1274,27 +1269,21 @@ body.filters-hidden .filters { display: none !important; }
 .remix-child .rx-title { font-weight: 500; font-size: 14px; }
 .remix-child .rx-meta { font-size: 12px; }
 
-/* Tabs row: tabs (left) + view-toggle (right) on a single line. The
-   tabs themselves scroll horizontally on narrower viewports rather
-   than wrapping below the toggle (which previously caused the toggle
-   to land on its own line above the All pill). */
+/* Tabs row: tabs (natural width, left) + view-toggle pushed to the
+   right via margin-left: auto. The cream pill that wraps the tabs
+   is sized to its content; the toggle floats off to the right. */
 .tabs-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: nowrap;
   margin-bottom: 16px;
 }
-.tabs-row .tabs {
-  margin-bottom: 0 !important;
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+.tabs-row .tabs { margin-bottom: 0 !important; flex-shrink: 0; }
+.tabs-row .view-toggle {
+  margin-left: auto;
+  align-self: center;
+  flex-shrink: 0;
 }
-.tabs-row .tabs::-webkit-scrollbar { display: none; }
-.tabs-row .view-toggle { flex-shrink: 0; align-self: center; }
 
 /* Remix list/grid toggle — icon-only square pills */
 .view-toggle {
