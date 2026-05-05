@@ -60,8 +60,19 @@
     try {
       r = await fetch(`/api/highlights?${params}`, { credentials: "same-origin" });
     } catch (err) {
+      // "Failed to fetch" usually means the request hit a CORS-blocked
+      // CF Access redirect — your team session expired or no longer
+      // covers this path. Offer a reload that triggers re-auth.
       console.error("[highlights] /api/highlights network error:", err);
-      grid.appendChild(window.infoCard(`Network error: ${err.message || err}`));
+      const card = document.createElement("div");
+      card.className = "empty-state";
+      card.innerHTML = `
+        <img src="/static/animals/Raccoon-1.svg" alt="" aria-hidden="true">
+        <p>Your session timed out.</p>
+        <p style="margin-top:8px;">
+          <a href="/highlights" style="color:#f05a28;font-weight:600;text-decoration:none;border:1.5px solid #f05a28;padding:8px 18px;border-radius:999px;">Sign in again →</a>
+        </p>`;
+      grid.appendChild(card);
       return;
     }
     if (!r.ok) {
