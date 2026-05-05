@@ -9,6 +9,8 @@ no-op.
 from __future__ import annotations
 
 import logging
+import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +21,32 @@ from .heuristics import fox_likelihood
 
 
 logger = logging.getLogger(__name__)
+
+
+_FFPROBE = shutil.which("ffprobe")
+
+
+def _probe_clip_duration(clip_path: Path) -> float | None:
+    """Return the on-disk clip's actual duration in seconds, or None.
+
+    Used to display the playback length on the card instead of the
+    tracked-object lifetime (the saved clip is bracketed by Frigate's
+    pre_capture + post_capture seconds, so a 5s tracked event lands
+    in a ~55s file).
+    """
+    if not _FFPROBE or not clip_path.exists():
+        return None
+    try:
+        out = subprocess.run(
+            [_FFPROBE, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(clip_path)],
+            capture_output=True, text=True, timeout=8,
+        )
+        v = (out.stdout or "").strip()
+        return float(v) if v else None
+    except Exception as e:
+        logger.debug("ffprobe failed on %s: %s", clip_path, e)
+        return None
 
 
 # Labels we care about. COCO-80 has no "fox" so we copy dog/cat AND
@@ -102,13 +130,20 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
         return
     client.download_thumbnail(event_id, thumb_dest)
 
+    # The on-disk clip's actual duration. Frigate records each event
+    # with pre_capture + tracked_window + post_capture seconds of
+    # video, so e.g. a 5s tracked object lands in a ~55s clip file.
+    # Use the file's real duration on the card so what the user sees
+    # matches the playback length.
+    clip_duration = _probe_clip_duration(clip_dest) or (end_time - start_time)
+
     db.upsert_highlight(db_path, {
         "event_id": event_id,
         "camera": camera,
         "label": label,
         "start_time": start_time,
         "end_time": end_time,
-        "duration_s": end_time - start_time,
+        "duration_s": clip_duration,
         "score": score,
         "fox_likelihood": likelihood,
         "clip_path": str(clip_dest.relative_to(highlights_root)),
@@ -180,6 +215,7 @@ def promote(client: FrigateClient, highlights_root: Path, db_path: Path, event_i
         return {"status": "no_clip"}
     client.download_thumbnail(event_id, thumb_dest)
 
+    clip_duration = _probe_clip_duration(clip_dest) or (end_time - start_time)
     now = time.time()
     db.upsert_highlight(db_path, {
         "event_id": event_id,
@@ -187,7 +223,7 @@ def promote(client: FrigateClient, highlights_root: Path, db_path: Path, event_i
         "label": label,
         "start_time": start_time,
         "end_time": end_time,
-        "duration_s": end_time - start_time,
+        "duration_s": clip_duration,
         "score": score,
         "fox_likelihood": likelihood,
         "clip_path": str(clip_dest.relative_to(highlights_root)),
