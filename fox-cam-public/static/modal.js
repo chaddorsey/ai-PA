@@ -904,6 +904,8 @@
     }
 
     videoEl = body.querySelector(".modal-video");
+    videoEl.controls = true;            // belt-and-suspenders: ensure
+    videoEl.setAttribute("controls", ""); // native scrubber renders
     videoEl.src = `/api/highlights/${encodeURIComponent(parentH.event_id)}/clip`;
     const wrap = body.querySelector(".modal-video-wrap");
 

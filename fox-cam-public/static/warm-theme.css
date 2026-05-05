@@ -842,33 +842,43 @@ body.modal-open { overflow: hidden; }
 }
 .modal-stage-remix-play .modal-back-pill { align-self: center; }
 
-/* === Download icon next to date/duration slug ============================ */
+/* === Download icon next to date/duration slug ===========================
+   Inline with the slug, baseline-aligned with the text so the icon
+   sits on the same writing line as "...17.8s". No box, no padding —
+   just the glyph at slug font-size. */
+.modal-meta-extra {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  gap: 8px;
+}
 .meta-download {
+  display: inline-flex;
+  align-items: baseline;
   background: transparent;
   border: none;
+  padding: 0;
+  margin: 0 0 0 4px;
   color: var(--color-ink-soft);
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  margin-left: 6px;
-  vertical-align: middle;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  transition: color 0.15s ease, transform 0.1s ease;
   -webkit-tap-highlight-color: transparent;
+  /* Pin baseline of the icon's box to the slug's text baseline */
+  vertical-align: baseline;
+  position: relative;
+  top: 2px;       /* tiny optical nudge so the icon's heavy baseline
+                     reads aligned with the lowercase x-height */
 }
-.meta-download .material-icons { font-size: 18px; }
+.meta-download .material-icons {
+  font-size: 18px;
+  line-height: 1;
+}
 .meta-download:hover {
-  background: rgba(240, 90, 40, 0.10);
   color: var(--color-glow);
   transform: translateY(-1px);
 }
 .meta-download:focus,
 .meta-download:focus-visible,
 .meta-download:active { outline: none; }
-.modal-meta-extra { display: inline-flex; align-items: center; gap: 4px; }
 
 /* Delete button — admin-only, distinguished by a red-ish hue */
 .action-btn.action-delete {
@@ -1264,16 +1274,27 @@ body.filters-hidden .filters { display: none !important; }
 .remix-child .rx-title { font-weight: 500; font-size: 14px; }
 .remix-child .rx-meta { font-size: 12px; }
 
-/* Tabs row: tabs (left) + view-toggle (right) on a single line */
+/* Tabs row: tabs (left) + view-toggle (right) on a single line. The
+   tabs themselves scroll horizontally on narrower viewports rather
+   than wrapping below the toggle (which previously caused the toggle
+   to land on its own line above the All pill). */
 .tabs-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   margin-bottom: 16px;
 }
-.tabs-row .tabs { margin-bottom: 0 !important; }
+.tabs-row .tabs {
+  margin-bottom: 0 !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs-row .tabs::-webkit-scrollbar { display: none; }
+.tabs-row .view-toggle { flex-shrink: 0; align-self: center; }
 
 /* Remix list/grid toggle — icon-only square pills */
 .view-toggle {
