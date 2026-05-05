@@ -1058,3 +1058,48 @@ body.filters-hidden .filters { display: none !important; }
 /* Drop the action-btn delete styling (no longer used; keeps from
    interfering if anything still references it) */
 .action-btn.action-delete { display: none !important; }
+
+/* === Zoom controls visible on hover everywhere ============================
+   The original style.css only shows .zoom-controls on the spotlight cam in
+   /live and inside the modal-stage-remix editor. The user wants pinch-zoom
+   discoverable on every video — modal viewer, modal remix-playback, and
+   any live tile (grid or spotlight). All show on hover; fade out otherwise. */
+.modal-video-wrap .zoom-controls,
+.modal-stage-remix .zoom-controls,
+.cam .video-wrap .zoom-controls {
+  display: flex !important;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+  bottom: 12px;
+  right: 12px;
+}
+.modal-video-wrap:hover .zoom-controls,
+.modal-stage-remix .modal-video-wrap:hover .zoom-controls,
+.cam:hover .video-wrap .zoom-controls,
+.cam .video-wrap:hover .zoom-controls,
+.cam .video-wrap:focus-within .zoom-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Stay visible while a zoom button is being interacted with */
+.zoom-controls .zoom-btn:hover ~ .zoom-controls,
+.zoom-controls:hover {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+/* Warm-theme zoom button styling — match the rest of the UI */
+.zoom-btn {
+  background: rgba(42, 24, 16, 0.72) !important;
+  color: white !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: 8px !important;
+  font-family: var(--font-display) !important;
+  width: 34px !important;
+  height: 34px !important;
+  -webkit-tap-highlight-color: transparent;
+}
+.zoom-btn:hover {
+  background: var(--color-glow) !important;
+  border-color: var(--color-glow) !important;
+}

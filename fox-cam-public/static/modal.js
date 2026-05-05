@@ -232,6 +232,11 @@
           <button class="modal-nav next" type="button" aria-label="Next clip" ${nextId ? "" : "disabled"}>
             <span class="material-icons">chevron_right</span>
           </button>
+          <div class="zoom-controls" aria-hidden="true">
+            <button class="zoom-btn zoom-in"  type="button" title="Zoom in"  aria-label="Zoom in">+</button>
+            <button class="zoom-btn zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
+            <button class="zoom-btn zoom-fit" type="button" title="Fit"      aria-label="Fit">⛶</button>
+          </div>
         </div>
         <div class="modal-meta">
           <h2 class="modal-title" id="card-modal-title">${escapeHtml((window.prettyCamera||(s=>s))(h.camera))} · ${t}</h2>
@@ -268,7 +273,35 @@
     // Pinch / scroll / drag to zoom into the video. Bound after the
     // video element exists so panzoom can measure its size on first
     // load.
-    bindPanzoom(videoEl, body.querySelector(".modal-video-wrap"));
+    const wrap = body.querySelector(".modal-video-wrap");
+    panzoomInstance = bindPanzoom(videoEl, wrap);
+    if (panzoomInstance) {
+      const zin = body.querySelector(".zoom-controls .zoom-in");
+      const zout = body.querySelector(".zoom-controls .zoom-out");
+      const zfit = body.querySelector(".zoom-controls .zoom-fit");
+      if (zin) zin.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const r = wrap.getBoundingClientRect();
+        panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
+      });
+      if (zout) zout.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const cur = panzoomInstance.getTransform().scale;
+        const next = cur / 1.5;
+        if (next <= 1.05) {
+          panzoomInstance.zoomAbs(0, 0, 1);
+          panzoomInstance.moveTo(0, 0);
+        } else {
+          const r = wrap.getBoundingClientRect();
+          panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
+        }
+      });
+      if (zfit) zfit.addEventListener("click", (e) => {
+        e.stopPropagation();
+        panzoomInstance.zoomAbs(0, 0, 1);
+        panzoomInstance.moveTo(0, 0);
+      });
+    }
 
     // Build action bar inline, mirroring card.js's row but routed back
     // through this modal so toggles update in place.
