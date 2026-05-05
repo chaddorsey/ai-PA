@@ -525,10 +525,29 @@
     }
     actionsBar.appendChild(actionBtn("🔗 Share", "share", false, () => {
       const url = `${location.origin}/clip/${h.event_id}`;
-      navigator.clipboard?.writeText(url).then(
-        () => flashToast(`Link copied`),
-        () => prompt("Copy this URL:", url)
-      );
+      // Prefer the native iOS / mobile-Chrome share sheet when
+      // available — opens system share with iMessage, AirDrop, Mail,
+      // etc. Fall back to clipboard on desktop or if share is denied.
+      if (navigator.share) {
+        navigator.share({
+          url,
+          title: "Our Foxes — clip",
+          text: "Fox cam clip",
+        }).catch((err) => {
+          // AbortError = user dismissed the sheet. Don't fall back to
+          // clipboard in that case (would be a surprise toast).
+          if (err && err.name === "AbortError") return;
+          navigator.clipboard?.writeText(url).then(
+            () => flashToast(`Link copied`),
+            () => prompt("Copy this URL:", url)
+          );
+        });
+      } else {
+        navigator.clipboard?.writeText(url).then(
+          () => flashToast(`Link copied`),
+          () => prompt("Copy this URL:", url)
+        );
+      }
     }));
     // Download the .mp4 file. Anchor with download attr + filename
     // derived from the start_time so the user lands a meaningful name.

@@ -6,6 +6,24 @@
 (function () {
   console.log("[live.js] loaded, version=7");
 
+  // Autoplay rejection: iOS Safari often refuses to start a muted
+  // video without a prior user gesture, even with autoplay+muted+
+  // playsinline set. The browser doesn't fire any error in that case
+  // — video.play() returns a promise that rejects with NotAllowedError
+  // and the video silently stays paused. We hook the promise from the
+  // explicit play() calls in tryWebRTC + runMSE and dispatch a single
+  // page-level "fox-live:needs-tap" event that the scrim listens for.
+  // One tap on the scrim then triggers play() on every cam — once any
+  // play() succeeds, the user-activation lock is lifted globally.
+  function notePlayRejection(video, promise) {
+    if (!promise || typeof promise.then !== "function") return;
+    promise.catch((err) => {
+      if (err && err.name === "NotAllowedError") {
+        document.dispatchEvent(new CustomEvent("fox-live:needs-tap"));
+      }
+    });
+  }
+
   // Chromium browsers (Chrome, Edge, Arc, Brave, Opera, etc.) replace
   // local IPs in WebRTC ICE candidates with `<uuid>.local` mDNS names
   // since Chrome 76 (2019) for privacy. go2rtc, running inside the
@@ -550,6 +568,10 @@
       if (pc.connectionState === "connected") {
         clearTimeout(timer);
         status.textContent = "live (WebRTC)";
+        // Force play() so we can detect autoplay-rejection on iOS.
+        // Without this, ontrack sets srcObject but the video may sit
+        // paused silently (no error event) until a user gesture.
+        notePlayRejection(video, video.play());
         resolveConn();
       } else if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
         clearTimeout(timer);
@@ -658,6 +680,10 @@
           console.error(`[${stream}] sourceBuffer error:`, e)
         );
         status.textContent = "live (MSE)";
+        // Force play() once the MSE pipeline is wired so we can detect
+        // autoplay rejection on iOS (autoplay attribute alone doesn't
+        // surface a rejection event).
+        notePlayRejection(video, video.play());
         flush();
       } catch (e) {
         console.error(`[${stream}] addSourceBuffer failed:`, e);

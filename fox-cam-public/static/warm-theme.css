@@ -1464,3 +1464,48 @@ body.ios .modal-nav { display: none !important; }
    pinch / two-finger pan work without browser interception). */
 .card-modal-body { touch-action: pan-y; }
 .modal-video-wrap > video { touch-action: none; }
+
+/* P1.7 — Autoplay-rejection scrim. Covers /live entirely so any tap
+   anywhere lifts the user-activation lock. Theme matches the warm
+   palette so it doesn't feel like an error state. */
+.autoplay-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(42, 24, 16, 0.78);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.autoplay-scrim[hidden] { display: none; }
+.autoplay-scrim-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  color: var(--color-cream);
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-align: center;
+  padding: 32px;
+}
+.autoplay-scrim-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  background: var(--color-glow);
+  color: white;
+  font-size: 48px;
+  line-height: 1;
+  box-shadow: 0 12px 40px rgba(240, 90, 40, 0.45);
+}
+.autoplay-scrim-text {
+  font-size: 19px;
+  letter-spacing: 0.01em;
+}
