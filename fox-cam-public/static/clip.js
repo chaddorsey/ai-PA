@@ -377,7 +377,7 @@
           zoom_y: zoomCenter?.y,
           zoom_scale: state.zoom,
         };
-        const r = await fetch(`/api/highlights/${h.event_id}/remix`, {
+        const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/remix`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),

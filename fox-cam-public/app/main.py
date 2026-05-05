@@ -649,17 +649,30 @@ async def mark_viewer_seen(request: Request) -> Any:
     return r.json()
 
 
-@app.post("/api/highlights/{event_id}/favorite")
+# Actions live at /api/actions/* rather than /api/highlights/{id}/{verb}
+# because /api/highlights/* is a path that ALSO matches the public Bypass
+# app at the Cloudflare Access edge (so anonymous viewers can pull
+# featured-clip thumbnails + media). Bypass strips the auth header for
+# everyone, including authed users — so a POST under /api/highlights/*
+# arrives without an email at the origin and gets rejected.
+#
+# /api/actions/* matches only the AUTHED Access app, so the email
+# header is always present here, and write actions persist correctly.
+
+@app.post("/api/actions/{event_id}/favorite")
+@app.post("/api/highlights/{event_id}/favorite")  # legacy alias
 async def favorite(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "favorite", _actor_email(request))
 
 
-@app.post("/api/highlights/{event_id}/demote")
+@app.post("/api/actions/{event_id}/demote")
+@app.post("/api/highlights/{event_id}/demote")  # legacy alias
 async def demote(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "demote", _actor_email(request))
 
 
-@app.post("/api/highlights/{event_id}/clear")
+@app.post("/api/actions/{event_id}/clear")
+@app.post("/api/highlights/{event_id}/clear")  # legacy alias
 async def clear(event_id: str, request: Request) -> Any:
     return await _post_action(event_id, "clear", _actor_email(request))
 
@@ -669,7 +682,8 @@ async def clear(event_id: str, request: Request) -> Any:
 # Proxies through to curator with viewer email forwarded as `by`.
 # ---------------------------------------------------------------------------
 
-@app.post("/api/highlights/{event_id}/remix")
+@app.post("/api/actions/{event_id}/remix")
+@app.post("/api/highlights/{event_id}/remix")  # legacy alias
 async def create_remix(event_id: str, request: Request) -> Any:
     body = await request.json()
     body["by"] = _actor_email(request)

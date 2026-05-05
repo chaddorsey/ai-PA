@@ -326,7 +326,11 @@
   }
 
   async function setAction(eventId, action) {
-    const r = await fetch(`/api/highlights/${eventId}/${action}`, { method: "POST" });
+    // /api/actions/* is gated by the authed Access app exclusively so
+    // the auth header reaches origin (the older /api/highlights/{id}/{action}
+    // path also matched the public Bypass app and lost the header).
+    const r = await fetch(`/api/actions/${encodeURIComponent(eventId)}/${action}`,
+      { method: "POST", credentials: "same-origin" });
     if (!r.ok) {
       console.error(`${action} failed`, r.status);
       return;
