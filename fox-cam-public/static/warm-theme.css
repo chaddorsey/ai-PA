@@ -1612,3 +1612,126 @@ html.ios .card-modal-replay {
   top: 8px !important;
   right: 60px !important;
 }
+
+/* Modal video-wrap height cap. Without this, in landscape the wrap's
+   16:9 aspect ratio + 92vw width can compute to a height that
+   exceeds modal max-height (92vh), and zoom-fit (bottom of column)
+   gets clipped below the modal. Cap to 70vh so the wrap never
+   exceeds visible modal area; meta + actions stay visible below. */
+.card-modal .modal-video-wrap {
+  max-height: 70vh;
+}
+
+/* Horizontal zoom-controls row in the modal viewer. Default column
+   layout had three 44pt iOS pills stacking ~140px tall, intruding
+   into the close-X area when the wrap is short (portrait phone).
+   Row layout keeps the column at a fixed ~44px tall, well below
+   close. */
+body.ios .modal-video-wrap .zoom-controls,
+html.ios .modal-video-wrap .zoom-controls {
+  flex-direction: row !important;
+  gap: 6px !important;
+  bottom: 12px !important;
+  right: 12px !important;
+}
+
+/* === Material-Icon-driven action buttons (modal + card action rows)
+   ----------------------------------------------------------------
+   .action-iconic strips the text-pill padding so a single glyph
+   reads as a tap-target, and pairs the icon with an optional small
+   count (e.g. for the favorite ⭐2 case). */
+.action-btn.action-iconic {
+  padding: 8px 10px !important;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 14px !important;
+  line-height: 1 !important;
+}
+.action-btn.action-iconic .material-icons {
+  font-size: 22px;
+  line-height: 1;
+}
+.action-btn.action-iconic .action-count {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  color: inherit;
+  margin-left: 2px;
+}
+/* When the button is .active (e.g. favorited, archived), the icon
+   inherits the white-on-glow color from the parent action-btn rule. */
+.action-btn.action-iconic.active .material-icons,
+.action-btn.action-iconic.active .action-count {
+  color: white !important;
+}
+
+/* "Not a fox" combo glyph: pets icon (paw) with a block icon
+   overlaid -45° in the upper-left corner. Two stacked Material
+   icons in a relatively-positioned span. */
+.not-fox-icon {
+  position: relative;
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
+.not-fox-icon .not-fox-base {
+  font-size: 22px;
+  line-height: 1;
+  display: block;
+}
+.not-fox-icon .not-fox-overlay {
+  position: absolute;
+  top: -2px;
+  left: -6px;
+  font-size: 14px;
+  color: #d33;
+  background: white;
+  border-radius: 50%;
+  transform: rotate(-45deg);
+  line-height: 1;
+}
+.action-btn.action-demote.active .not-fox-icon .not-fox-overlay {
+  background: var(--color-glow);
+  color: white;
+}
+
+/* Admin Feature text link — right-justified above the action row,
+   small, secondary visual weight. */
+.modal-feature-link {
+  display: block;
+  text-align: right;
+  margin: 0 14px 6px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-ink-soft);
+  text-decoration: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.modal-feature-link:hover {
+  color: var(--color-glow);
+}
+
+/* Card feature link — same look as modal-feature-link but anchored
+   to the card's action row. Appended last to .actions; CSS pushes
+   it to the right via margin-left:auto. */
+.actions .card-feature-link {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-ink-soft);
+  text-decoration: none;
+  padding: 6px 8px;
+  align-self: center;
+}
+.actions .card-feature-link:hover {
+  color: var(--color-glow);
+}

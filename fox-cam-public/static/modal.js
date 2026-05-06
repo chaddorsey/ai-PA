@@ -461,23 +461,29 @@
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     videoEl.currentTime = 0;
 
-    // iOS: drop the native control bar by default so swipe-to-next
-    // doesn't flash the controls overlay over a clip that's already
-    // autoplaying as desired. Tap toggles play/pause. Replay button
-    // covers restart, so we never need to auto-show controls on
-    // ended either. Non-iOS keeps the `controls` attribute from the
-    // template.
+    // iOS: video starts WITHOUT the native control bar so a swipe
+    // to the next clip doesn't flash an autoplay control overlay
+    // over an already-playing video. Tap on the video calls up the
+    // controls — iOS then handles its own auto-hide on idle. The
+    // `ended` event strips controls again so a finished clip
+    // doesn't pin the control bar visible (Replay button covers
+    // restart). Non-iOS keeps the template `controls` attribute.
     if (document.documentElement.classList.contains("ios")) {
       videoEl.controls = false;
       videoEl.removeAttribute("controls");
       videoEl.addEventListener("click", (e) => {
         if (e.target !== videoEl) return;        // ignore overlay clicks
-        if (videoEl.paused) videoEl.play().catch(() => {});
-        else videoEl.pause();
+        if (!videoEl.controls) {
+          // First tap: reveal controls. iOS handles auto-hide.
+          videoEl.controls = true;
+          videoEl.setAttribute("controls", "");
+        }
+        // Whether controls were just shown or already visible, let
+        // iOS handle the play/pause toggle through its native UI.
+        // (Don't toggle paused state ourselves — the user's tap
+        // is interpreted as "show controls"; their next tap on the
+        // play button toggles play.)
       });
-      // Belt-and-suspenders: in case anything tries to flip controls
-      // on (e.g. via the native ended → show-controls behavior),
-      // strip them every time playback ends.
       videoEl.addEventListener("ended", () => {
         videoEl.controls = false;
         videoEl.removeAttribute("controls");
@@ -508,12 +514,22 @@
                        ".zoom-controls .zoom-fit", panzoomInstance, wrap);
     }
 
-    // Build action bar inline, mirroring card.js's row but routed back
-    // through this modal so toggles update in place.
+    // Action row — Material Icons throughout for a flat, universal
+    // affordance vocabulary (no platform-specific glyph forks).
+    //   star          favorite
+    //   pets+block    "not a fox"
+    //   archive       archive / unarchive
+    //   content_cut   remix (only when favorited)
+    // Admin "Feature" sits as a separate text link above the row.
     const actionsBar = body.querySelector("#modal-actions");
-    actionsBar.appendChild(actionBtn(
-      h.my_favorited ? `⭐ ${h.favorite_count}` : "⭐",
-      "favorite", h.my_favorited,
+
+    // Favorite — filled star when active, outline when not. Count
+    // (when ≥2) renders inline as a small superscript-y span.
+    const favLabel = h.my_favorited
+      ? ICON("star") + (h.favorite_count > 1 ? `<span class="action-count">${h.favorite_count}</span>` : "")
+      : ICON("star_border");
+    actionsBar.appendChild(iconActionBtn(favLabel, "favorite", h.my_favorited,
+      h.my_favorited ? "Remove favorite" : "Favorite",
       async () => {
         const wasFav = h.my_favorited;
         const updated = await postAction(h.event_id, wasFav ? "clear" : "favorite");
@@ -525,70 +541,54 @@
               "fox-3", "⭐ Mine", { badgeClass: "badge-mine" });
           }
         }
-      }
-    ));
-    // No Foxes button. Shared/global semantics: in the No Foxes
-    // view it reads "↩ Restore" and globally clears all demote
-    // votes (with a warning) since the bucket is community-flagged.
+      }));
+
+    // Not-a-fox toggle. In the No Foxes view it becomes a single-tap
+    // GLOBAL restore (with confirm); elsewhere it's a per-user vote.
     const inNoFoxesView = (document.querySelector(".tab.active")?.dataset.bucket) === "demoted";
     if (inNoFoxesView) {
-      actionsBar.appendChild(actionBtn("↩ Restore", "demote", false, async () => {
+      actionsBar.appendChild(iconActionBtn(ICON("undo"), "demote", false, "Restore", async () => {
         if (!confirm("Restore this clip to the main highlights view for everyone? It's currently flagged as 'No Foxes' by someone in the family — restoring will move it back into circulation for all users.")) return;
         const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/unflag_no_foxes`,
           { method: "POST", credentials: "same-origin" });
         if (!r.ok) { alert("Couldn't restore."); return; }
         const data = await r.json();
         Object.assign(h, data.highlight || {});
-        // Card leaves the No Foxes bucket; close the modal so the
-        // gallery refreshes naturally on the user's next action.
         window.closeCardModal();
       }));
     } else {
-      actionsBar.appendChild(actionBtn("🚫", "demote", h.my_demoted, async () => {
-        const wasDemoted = h.my_demoted;
-        const updated = await postAction(h.event_id, wasDemoted ? "clear" : "demote");
-        if (updated) {
-          Object.assign(h, updated);
-          renderViewer(h);
-          // Mirror card.js shouldHide logic: if the demote/clear flips
-          // the card OUT of the active tab's bucket, remove its
-          // gallery card so the All view doesn't keep showing the
-          // now-flagged clip until a refresh.
-          const tab = document.querySelector(".tab.active");
-          const currentBucket = tab ? tab.dataset.bucket : null;
-          let shouldHide = false;
-          if (currentBucket === "pending" && h.demoted) shouldHide = true;
-          if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
-          if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
-          if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;
-          if (currentBucket === "demoted" && !h.demoted) shouldHide = true;
-          if (shouldHide) {
-            const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
-            if (card) {
-              card.style.transition = "opacity 0.3s, transform 0.3s";
-              card.style.opacity = "0";
-              card.style.transform = "scale(0.95)";
-              setTimeout(() => card.remove(), 300);
+      actionsBar.appendChild(iconActionBtn(NOT_FOX_ICON_HTML, "demote", h.my_demoted,
+        h.my_demoted ? "Restore (it IS a fox)" : "Not a fox",
+        async () => {
+          const wasDemoted = h.my_demoted;
+          const updated = await postAction(h.event_id, wasDemoted ? "clear" : "demote");
+          if (updated) {
+            Object.assign(h, updated);
+            renderViewer(h);
+            const tab = document.querySelector(".tab.active");
+            const currentBucket = tab ? tab.dataset.bucket : null;
+            let shouldHide = false;
+            if (currentBucket === "pending" && h.demoted) shouldHide = true;
+            if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
+            if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
+            if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;
+            if (currentBucket === "demoted" && !h.demoted) shouldHide = true;
+            if (shouldHide) {
+              const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+              if (card) {
+                card.style.transition = "opacity 0.3s, transform 0.3s";
+                card.style.opacity = "0";
+                card.style.transform = "scale(0.95)";
+                setTimeout(() => card.remove(), 300);
+              }
             }
           }
-        }
-      }));
+        }));
     }
-    // Sharing is in the meta-extra row above (link + share-sheet
-    // icons next to the duration). Action row keeps just the
-    // social/curatorial verbs (favorite, demote, remix, archive,
-    // feature, delete).
+
     if (h.my_favorited) {
-      actionsBar.appendChild(actionBtn("✂️ Remix", "remix", false,
+      actionsBar.appendChild(iconActionBtn(ICON("content_cut"), "remix", false, "Remix",
         () => renderRemixEditor(h)));
-    }
-    if (window.IS_ADMIN) {
-      const featured = !!h.featured;
-      actionsBar.appendChild(actionBtn(
-        featured ? "★ Featured" : "Feature",
-        "feature", featured,
-        async () => toggleFeature(h)
-      ));
     }
     // Delete (admin-only, irreversible) — rendered as a small red
     // text link in the upper-right corner of the modal's text area
@@ -621,10 +621,11 @@
       const metaArea = body.querySelector(".modal-meta");
       if (metaArea) metaArea.appendChild(deleteLink);
     }
-    // Archive toggle (per-user)
-    actionsBar.appendChild(actionBtn(
-      h.my_archived ? "🗃 Unarchive" : "🗃 Archive",
+    // Archive toggle (per-user) — Material archive / unarchive icons.
+    actionsBar.appendChild(iconActionBtn(
+      ICON(h.my_archived ? "unarchive" : "archive"),
       "archive", !!h.my_archived,
+      h.my_archived ? "Unarchive" : "Archive",
       async () => {
         const wasArchived = !!h.my_archived;
         const r = await fetch(
@@ -637,6 +638,25 @@
         renderViewer(h);
       }
     ));
+
+    // Admin Feature link — right-justified text link above the
+    // action row. Less prominent than a pill button (the action is
+    // editorial/curatorial, not a peer to favorite/archive) but
+    // still discoverable for admins.
+    if (window.IS_ADMIN) {
+      const featured = !!h.featured;
+      const featLink = document.createElement("a");
+      featLink.className = "modal-feature-link";
+      featLink.href = "javascript:void(0)";
+      featLink.textContent = featured ? "★ Featured" : "Feature";
+      featLink.title = featured ? "Unfeature" : "Promote to landing page";
+      featLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        toggleFeature(h);
+      });
+      // Insert above the actions bar (inside the modal-stage).
+      actionsBar.parentNode.insertBefore(featLink, actionsBar);
+    }
 
     // Existing remixes for this clip — list them below the actions
     // so the user can jump to a specific cut without leaving the
@@ -1114,6 +1134,22 @@
     return b;
   }
 
+  // Icon-content variant of actionBtn — accepts arbitrary HTML for
+  // the button label (Material Icon ligature, custom combo glyph,
+  // count-suffix span, etc.) instead of plain text. Matching CSS
+  // class .action-btn.action-iconic strips text padding and centers
+  // the glyph at hit-area floor.
+  function iconActionBtn(html, kind, active, ariaLabel, onClick) {
+    const b = document.createElement("button");
+    b.className = `action-btn action-${kind} action-iconic` + (active ? " active" : "");
+    b.type = "button";
+    b.setAttribute("aria-label", ariaLabel);
+    b.title = ariaLabel;
+    b.innerHTML = html;
+    b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+    return b;
+  }
+
   async function postAction(eventId, action) {
     const r = await fetch(`/api/actions/${encodeURIComponent(eventId)}/${action}`,
       { method: "POST", credentials: "same-origin" });
@@ -1208,22 +1244,23 @@
   // ---------------------------------------------------------------------
   // Share helpers
   // ---------------------------------------------------------------------
-  // SF-Symbols-style share glyph (square with up-arrow) — universal
-  // share-sheet icon. currentColor so the parent's color rules apply.
-  const SHARE_ICON_SVG = `
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-      <path fill="currentColor" d="M12 2.5c.27 0 .5.1.7.3l4 4a1 1 0 11-1.4 1.4L13 5.91V14a1 1 0 11-2 0V5.91L8.7 8.2a1 1 0 11-1.4-1.4l4-4c.2-.2.43-.3.7-.3zM5 11a2 2 0 00-2 2v6a2 2 0 002 2h14a2 2 0 002-2v-6a2 2 0 00-2-2h-3a1 1 0 100 2h3v6H5v-6h3a1 1 0 100-2H5z"/>
-    </svg>`;
+  // Material Icons — universal flat design. Loaded via the Google
+  // Fonts <link> in every template <head>. We just emit the ligature
+  // and the font renders the glyph at currentColor.
+  const ICON = (name) => `<span class="material-icons" aria-hidden="true">${name}</span>`;
 
-  // Chain-link glyph for the "copy link" affordance — fast, single
-  // action, no sheet animation.
-  const LINK_ICON_SVG = `
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-      <path fill="currentColor" d="M10.59 13.41a1 1 0 011.41 0l1 1a1 1 0 11-1.41 1.41l-1-1a1 1 0 010-1.41zM6.34 7.76l3.18-3.18a4.5 4.5 0 016.36 6.36l-1.06 1.06a1 1 0 11-1.41-1.41l1.06-1.06a2.5 2.5 0 10-3.54-3.54L7.76 9.17A1 1 0 116.34 7.76zm11.32 8.48l-3.18 3.18a4.5 4.5 0 01-6.36-6.36l1.06-1.06a1 1 0 111.41 1.41L9.53 14.47a2.5 2.5 0 003.54 3.54l3.18-3.18a1 1 0 011.41 1.41z"/>
-    </svg>`;
+  // "Not a fox" custom combo: pets icon (paw) with a block icon
+  // overlaid -45° to the upper-left. Universal "wildlife but not
+  // fox" affordance.
+  const NOT_FOX_ICON_HTML = `
+    <span class="not-fox-icon" aria-hidden="true">
+      <span class="material-icons not-fox-base">pets</span>
+      <span class="material-icons not-fox-overlay">block</span>
+    </span>`;
 
   // Build a "copy link" button — fast, deterministic. No sheet,
-  // no fallback prompt. Shows a toast on success.
+  // no fallback prompt. Shows a toast on success. Material Icon
+  // "link" (chain).
   function buildLinkButton(opts) {
     // opts: { pageUrl, label }
     const b = document.createElement("button");
@@ -1231,7 +1268,7 @@
     b.type = "button";
     b.setAttribute("aria-label", opts.label || "Copy link");
     b.title = opts.label || "Copy link";
-    b.innerHTML = LINK_ICON_SVG;
+    b.innerHTML = ICON("link");
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       copyLink(opts.pageUrl);
@@ -1258,15 +1295,15 @@
   //   Desktop → clipboard copy with toast.
   function buildShareButton(opts) {
     // opts: { pageUrl, label }
-    // Universal share-sheet button: SF-style square-with-up-arrow
-    // glyph, no text, on every platform. On non-Web-Share browsers
-    // doShare falls through to clipboard with a toast.
+    // Universal share-sheet button — Material Icon "ios_share"
+    // (square + up-arrow) used flat on every platform. On non-Web-
+    // Share browsers doShare falls through to clipboard.
     const b = document.createElement("button");
     b.className = "action-btn action-share action-icon-only";
     b.type = "button";
     b.setAttribute("aria-label", opts.label || "Share");
     b.title = opts.label || "Share";
-    b.innerHTML = SHARE_ICON_SVG;
+    b.innerHTML = ICON("ios_share");
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       doShare(opts).catch(() => {});

@@ -142,7 +142,14 @@
       wrap.addEventListener("mouseenter", showPreview);
       wrap.addEventListener("mouseleave", hidePreview);
     }
-    wrap.addEventListener("click", () => playInline(wrap, h));
+    // playInline replaces the thumbnail with a <video controls>.
+    // Skip it on /highlights — every card-tap opens the modal there,
+    // and the brief inline-controls overlay before the modal mounts
+    // is confusing. Clip permalink page (no #highlights element)
+    // still uses inline play.
+    if (!document.getElementById("highlights")) {
+      wrap.addEventListener("click", () => playInline(wrap, h));
+    }
     return wrap;
   }
 
@@ -230,30 +237,55 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
+  // Material Icon ligature helper.
+  function MI(name) {
+    return `<span class="material-icons" aria-hidden="true">${name}</span>`;
+  }
+  // "Not a fox" combo glyph: paw + block overlay.
+  const NOT_FOX_HTML = `
+    <span class="not-fox-icon" aria-hidden="true">
+      <span class="material-icons not-fox-base">pets</span>
+      <span class="material-icons not-fox-overlay">block</span>
+    </span>`;
+
+  function iconActionBtn(html, kind, active, label, onClick) {
+    const b = document.createElement("button");
+    b.className = `action-btn action-${kind} action-iconic` + (active ? " active" : "");
+    b.type = "button";
+    b.setAttribute("aria-label", label);
+    b.title = label;
+    b.innerHTML = html;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return b;
+  }
+
   function cardActions(h) {
     const bar = document.createElement("div");
     bar.className = "actions";
-    // Heart shows YOUR state; small "★ N" suffix when family has favorited too.
+
+    // Favorite — Material Icon star (filled when active, outline
+    // otherwise). Family count appears as a small inline badge.
     const favCount = h.favorite_count || 0;
-    const favLabel = favCount > 1 ? `⭐ ${favCount}` : "⭐";
-    bar.appendChild(actionBtn(favLabel, "favorite", h.my_favorited, () => {
-      const wasFav = h.my_favorited;
-      setAction(h.event_id, wasFav ? "clear" : "favorite");
-      // Newly favorited (toggling on): Fox-3 delivers the ⭐ Mine
-      // badge. Newly unfavorited: no animation (less is more).
-      if (!wasFav && window.deliverBadge) {
-        const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
-        if (card) window.deliverBadge(card, "fox-3", "⭐ Mine", { badgeClass: "badge-mine" });
-      }
-    }));
-    // No Foxes button. Two semantics depending on the current bucket:
-    //  - In No Foxes view: button reads "↩ Restore" and unflags GLOBALLY
-    //    (clears every user's demote vote) after a warning, since
-    //    the bucket itself is shared/community-flagged.
-    //  - Anywhere else: per-user toggle of "I think this isn't a fox".
+    const starHtml = h.my_favorited ? MI("star") : MI("star_border");
+    const countHtml = favCount > 1 ? `<span class="action-count">${favCount}</span>` : "";
+    bar.appendChild(iconActionBtn(starHtml + countHtml, "favorite", h.my_favorited,
+      h.my_favorited ? "Remove favorite" : "Favorite",
+      () => {
+        const wasFav = h.my_favorited;
+        setAction(h.event_id, wasFav ? "clear" : "favorite");
+        if (!wasFav && window.deliverBadge) {
+          const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+          if (card) window.deliverBadge(card, "fox-3", "⭐ Mine", { badgeClass: "badge-mine" });
+        }
+      }));
+
+    // Not-a-fox toggle (or global Restore in No Foxes view).
     const inNoFoxesView = (document.querySelector(".tab.active")?.dataset.bucket) === "demoted";
     if (inNoFoxesView) {
-      bar.appendChild(actionBtn("↩ Restore", "demote", false, async () => {
+      bar.appendChild(iconActionBtn(MI("undo"), "demote", false, "Restore", async () => {
         if (!confirm("Restore this clip to the main highlights view for everyone? It's currently flagged as 'No Foxes' by someone in the family — restoring will move it back into circulation for all users.")) return;
         const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/unflag_no_foxes`,
           { method: "POST", credentials: "same-origin" });
@@ -269,26 +301,28 @@
         }
       }));
     } else {
-      bar.appendChild(actionBtn("🚫", "demote", h.my_demoted, () => {
-        const wasDemoted = h.my_demoted;
-        setAction(h.event_id, wasDemoted ? "clear" : "demote");
-        if (!wasDemoted && window.deliverBadge) {
-          const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
-          if (card) window.deliverBadge(card, "frog", "🚫 Not a fox", { badgeClass: "badge-nofox" });
-        }
-      }));
+      bar.appendChild(iconActionBtn(NOT_FOX_HTML, "demote", h.my_demoted,
+        h.my_demoted ? "Restore (it IS a fox)" : "Not a fox",
+        () => {
+          const wasDemoted = h.my_demoted;
+          setAction(h.event_id, wasDemoted ? "clear" : "demote");
+          if (!wasDemoted && window.deliverBadge) {
+            const card = document.querySelector(`.highlight[data-event-id="${CSS.escape(h.event_id)}"]`);
+            if (card) window.deliverBadge(card, "frog", "🚫 Not a fox", { badgeClass: "badge-nofox" });
+          }
+        }));
     }
-    bar.appendChild(actionBtn("🔗", "share", false, () => copyShareLink(h.event_id)));
-    // Remix link only once you've favorited the clip — encourages the
-    // "love this moment, want to capture a piece of it" workflow.
-    // Routes to /clip/<id>?remix=1 which enters remix mode directly.
+
+    // Share — Material Icon link (chain) for the gallery card. Quick
+    // copy-to-clipboard with toast (no sheet animation; cards are
+    // for fast scanning).
+    bar.appendChild(iconActionBtn(MI("link"), "share", false, "Copy link",
+      () => copyShareLink(h.event_id)));
+
+    // Remix — Material Icon content_cut (scissors). Only shown after
+    // the user has favorited (the "love this moment" gating).
     if (h.my_favorited) {
-      bar.appendChild(actionBtn("✂️ Remix", "remix", false, () => {
-        // Open the remix editor inside the highlights modal in place
-        // of a full-page nav to /highlights/{id}/remix. Save/Cancel
-        // return to the in-modal viewer so the user never leaves the
-        // /highlights page (the standalone path's "Back to Our Foxes"
-        // link landed users on the public landing — disorienting).
+      bar.appendChild(iconActionBtn(MI("content_cut"), "remix", false, "Remix", () => {
         if (window.openCardModalInRemixMode) {
           window.openCardModalInRemixMode(h.event_id);
         } else {
@@ -296,15 +330,28 @@
         }
       }));
     }
-    // Promote-to-landing button: admins only. Already-featured clips
-    // get an unpromote toggle. The label reads as a celebratory verb
-    // ("Feature") when off, "Featured ★" when on.
+
+    // Admin Feature link — right-justified text link above the card
+    // action row. Less prominent than a peer-pill button: the action
+    // is editorial, not curatorial.
     if (window.IS_ADMIN) {
       const featured = !!h.featured;
-      const label = featured ? "★ Featured" : "Feature";
-      bar.appendChild(actionBtn(label, "feature", featured, () =>
-        toggleFeature(h)
-      ));
+      const featLink = document.createElement("a");
+      featLink.className = "card-feature-link";
+      featLink.href = "javascript:void(0)";
+      featLink.textContent = featured ? "★ Featured" : "Feature";
+      featLink.title = featured ? "Unfeature" : "Promote to landing page";
+      featLink.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFeature(h);
+      });
+      bar.parentElement || null;  // bar not yet attached
+      // Insert as a sibling above the action row by stashing on the
+      // bar; cardEl appends bar as the last child, so we can set a
+      // marker and let CSS float it. Simpler: prepend to bar with
+      // class so it self-aligns via CSS.
+      bar.appendChild(featLink);
     }
     return bar;
   }
