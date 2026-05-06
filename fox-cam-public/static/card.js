@@ -119,27 +119,26 @@
         if (!eventId || wrap.querySelector("video.preview")) return;
         const v = document.createElement("video");
         v.src = `/api/highlights/${eventId}/clip`;
+        // poster= shows the thumbnail INSIDE the video element
+        // until decoded frames are available. Native browser
+        // behavior — eliminates the black-rectangle stall during
+        // preload/buffer because the video element paints the
+        // poster bitmap, not its default black background. The
+        // poster vanishes the instant the first decoded frame
+        // arrives (iOS handles the swap natively).
+        v.poster = `/api/highlights/${eventId}/thumbnail`;
         v.muted = true;
         v.loop = true;
         v.playsInline = true;
-        // preload="auto" — hint to iOS that we want the buffer
-        // populated as fast as possible. Newer iOS PWAs honor this
-        // for muted+playsinline videos; older versions effectively
-        // treat it the same as "metadata" but it never hurts.
         v.preload = "auto";
         v.className = "preview";
         wrap.appendChild(v);
         applyPrerollSkip(v);
-        // No black-rectangle pause: the <img> thumbnail stays
-        // mounted under the video. The video starts at opacity 0
-        // (CSS) and only flips to .is-ready when its first frame
-        // is decoded.
-        v.addEventListener("loadeddata", () => {
-          v.classList.add("is-ready");
-        }, { once: true });
-        // Hold the orange-halo flash an extra 500ms past the
-        // `playing` event so it lands together with visible video
-        // motion (not before, when frames are still ramping up).
+        // Halo flash gated on `playing` + 500ms so it lands with
+        // visible video motion, not while frames are still ramping
+        // up. Re-check scrollAutoplayCurrent inside the timeout so
+        // a fast scroll doesn't paint a stale halo on an off-screen
+        // card.
         v.addEventListener("playing", () => {
           if (!card) return;
           if (scrollAutoplayCurrent !== wrap) return;

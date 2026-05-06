@@ -2295,16 +2295,7 @@ header {
   }
 }
 
-/* Cross-fade preview video over the thumbnail — eliminates the
-   black-rectangle stall while the <video> first decodes. We keep
-   the <img> thumbnail mounted under the video; the video starts
-   at opacity 0 and fades to 1 on its `loadeddata` event (first
-   frame ready). The user only ever sees the thumbnail or the
-   actual playing frame, never an empty video element. */
-.thumb-wrap > video.preview {
-  opacity: 0;
-  transition: opacity 0.18s ease;
-}
-.thumb-wrap > video.preview.is-ready {
-  opacity: 1;
-}
+/* No-black-frame on preview: the JS sets `poster=` to the same
+   thumbnail URL, so the video element paints the poster bitmap
+   while it's preloading/buffering. iOS Safari swaps to decoded
+   frames natively. No JS-side fade needed. */
