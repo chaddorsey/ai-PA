@@ -155,7 +155,12 @@ body.landing a:hover { color: var(--color-ink); }
    above the trees so it doesn't crowd the foreground decor. */
 .hero-text {
   position: absolute;
-  top: 32%;
+  /* Vertical anchor pushed lower (was 32%) to compensate for the
+     extra height the fox trio now adds above the wordmark. With
+     foxes sitting on top, centering at 32% used to lift the trio
+     past the viewport's top edge. 46% keeps the wordmark roughly
+     where it always sat while the foxes stay fully on-screen. */
+  top: 46%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 10;
@@ -164,12 +169,14 @@ body.landing a:hover { color: var(--color-ink); }
 }
 
 .hero-foxes {
-  /* Foxes sit above the wordmark, scaled to ~half the logotext width
-     so the trio reads as a graphic accent rather than competing for
-     attention with "Our Foxes". */
-  width: clamp(150px, 32vw, 360px);
+  /* Sized as a fraction of the wordmark so the trio reads as an
+     accent rather than competing with "Our Foxes". Heavy negative
+     margin-bottom pulls the wordmark up tight against the foxes —
+     visually they should almost touch with the cubs nestling into
+     the curve of "Our". */
+  width: clamp(150px, 30vw, 320px);
   display: block;
-  margin: 0 auto -1.2vw;
+  margin: 0 auto -3.5vw;
   filter: drop-shadow(0 6px 14px rgba(240, 90, 40, 0.30));
 }
 
