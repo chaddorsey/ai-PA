@@ -2295,7 +2295,21 @@ header {
   }
 }
 
-/* No-black-frame on preview: the JS sets `poster=` to the same
-   thumbnail URL, so the video element paints the poster bitmap
-   while it's preloading/buffering. iOS Safari swaps to decoded
-   frames natively. No JS-side fade needed. */
+/* No-black-frame on preview. Override the existing
+   .thumb-wrap .preview rule in style.css that runs a 120ms
+   opacity fade-in regardless of whether the video has decoded
+   frames — that fade was the source of the multi-second black
+   rectangle (video sat at opacity:1 with no frames, painting
+   its default black background until iOS finally decoded the
+   first frame).
+   The video now stays opacity:0 until JS adds .is-ready (on the
+   `playing` event — see card.js). The <img> thumbnail sitting
+   under it remains visible the entire time. */
+.thumb-wrap > video.preview {
+  animation: none !important;
+  opacity: 0 !important;
+  transition: opacity 0.2s ease !important;
+}
+.thumb-wrap > video.preview.is-ready {
+  opacity: 1 !important;
+}

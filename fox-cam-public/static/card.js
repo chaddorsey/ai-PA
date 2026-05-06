@@ -134,14 +134,19 @@
         v.className = "preview";
         wrap.appendChild(v);
         applyPrerollSkip(v);
-        // Halo flash gated on `playing` + 500ms so it lands with
-        // visible video motion, not while frames are still ramping
-        // up. Re-check scrollAutoplayCurrent inside the timeout so
-        // a fast scroll doesn't paint a stale halo on an off-screen
-        // card.
+        // The video element stays at opacity:0 (CSS) until the
+        // `playing` event fires — that's the moment iOS reports
+        // that decoded frames are ramping into the renderer.
+        // Adding .is-ready transitions opacity 0 → 1 over 0.2s,
+        // revealing the playing video. Until then the <img>
+        // thumbnail underneath is what the user sees, so there's
+        // no black-rectangle stall regardless of buffer time.
+        // Halo flash held an extra 500ms so it lands with
+        // unmistakable video motion, not the first decoded frame.
         v.addEventListener("playing", () => {
-          if (!card) return;
           if (scrollAutoplayCurrent !== wrap) return;
+          v.classList.add("is-ready");
+          if (!card) return;
           setTimeout(() => {
             if (!card || scrollAutoplayCurrent !== wrap) return;
             card.classList.remove("is-active-preview");
