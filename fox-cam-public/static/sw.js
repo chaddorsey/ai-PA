@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v91-manifest-tweaks";
+const CACHE = "our-foxes-v92-precache-html-shells";
 
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -41,21 +41,44 @@ const STATIC_ASSETS = [
   "/static/icons/favicon.svg",
 ];
 
+// HTML shells precached at install time so a cold OFFLINE launch
+// (PWA opened from Home Screen with no network) shows the gallery
+// or landing rather than the browser's offline error. The fetch
+// handler is network-first for these — when online, the user
+// always gets the freshest HTML; the cached copy is the offline
+// fallback. Without this list, the very first offline launch would
+// 404 since runtime cache is still empty.
+const HTML_SHELLS_TO_PRECACHE = [
+  "/",            // public landing
+  "/highlights",  // primary authed surface (most-likely PWA entry)
+  "/live",        // live grid HTML (streams won't work offline but
+                  // the chrome + bottom-tabs render so the user
+                  // can navigate to a cached /highlights)
+];
+
 self.addEventListener("install", (event) => {
-  // Pre-cache static assets so the first PWA launch has them ready,
-  // including offline-first cold opens.
+  // Pre-cache static assets + HTML shells so the first PWA launch
+  // (online OR offline) has them ready. We use individual put()
+  // calls instead of cache.addAll so a single 401 / redirect / 503
+  // doesn't abort the whole install — important because HTML
+  // shells require Cloudflare Access auth and the install context
+  // may or may not have a fresh CF cookie.
   event.waitUntil(
-    caches.open(CACHE).then((cache) =>
-      // Use individual put() calls so a single 401/redirect doesn't
-      // abort the whole install. addAll() is all-or-nothing.
-      Promise.all(STATIC_ASSETS.map((url) =>
+    caches.open(CACHE).then((cache) => {
+      const all = STATIC_ASSETS.concat(HTML_SHELLS_TO_PRECACHE);
+      return Promise.all(all.map((url) =>
         fetch(url, { credentials: "same-origin" })
           .then((r) => {
+            // Only cache successful HTML/asset responses. A 401
+            // (CF Access redirect) or 5xx is intentionally
+            // skipped so a stale auth-error doesn't poison the
+            // cache. The runtime fetch handler will populate
+            // these later on the user's next online visit.
             if (r.ok) return cache.put(url, r);
           })
-          .catch(() => {})
-      ))
-    )
+          .catch(() => { /* network unreachable at install — fine */ })
+      ));
+    })
   );
   self.skipWaiting();
 });
