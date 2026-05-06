@@ -23,16 +23,12 @@
   // server when rendering an authed page (see _identity_ctx in
   // app/main.py). Avoids a /api/whoami round-trip that's unreliable
   // because of Cloudflare Access bypass-path header stripping.
-  if (window.CURRENT_EMAIL) {
-    if (window.IS_ADMIN) document.body.classList.add("is-admin");
-    const el = document.getElementById("who-am-i");
-    if (el) {
-      const adminBadge = window.IS_ADMIN ? '<span class="admin-badge">admin</span>' : "";
-      el.innerHTML = `${adminBadge}<span class="email">${escapeHtml(window.CURRENT_EMAIL)}</span>` +
-        ' <a href="/cdn-cgi/access/logout" class="signout" title="Sign out" aria-label="Sign out">' +
-        '<span class="material-icons" aria-hidden="true">logout</span></a>';
-      el.hidden = false;
-    }
+  // Email + sign-out moved into the profile-popover (Account Circle
+  // button in the upper-right header); the inline who-am-i pill is
+  // redundant and stays hidden. We still flip the body.is-admin
+  // class so admin-only UI (Feature link, Delete) renders.
+  if (window.CURRENT_EMAIL && window.IS_ADMIN) {
+    document.body.classList.add("is-admin");
   }
 
   function escapeHtml(s) {

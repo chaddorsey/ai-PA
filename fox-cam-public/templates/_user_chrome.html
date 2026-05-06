@@ -1,0 +1,53 @@
+{# Upper-right user chrome: notifications bell + profile bug.
+
+   Both buttons open Popover-API panels (top-layer above any modal
+   or dialog). The notifications panel is currently a placeholder —
+   empty state until Web Push lands later in Phase 2. The profile
+   panel surfaces the user's email and the sign-out action; the
+   inline `who-am-i` pill in the nav is now redundant and stays
+   hidden on every page.
+
+   Required template kwargs: current_email, is_admin (from
+   _identity_ctx in app/main.py).
+#}
+<div class="user-chrome">
+  <button type="button"
+          class="chrome-btn notifications-btn"
+          popovertarget="notifications-popover"
+          aria-label="Notifications">
+    <span class="material-icons" aria-hidden="true">notifications</span>
+  </button>
+  <button type="button"
+          class="chrome-btn profile-btn"
+          popovertarget="profile-popover"
+          aria-label="Account">
+    <span class="material-icons" aria-hidden="true">account_circle</span>
+  </button>
+</div>
+
+<div id="notifications-popover" popover="auto" class="chrome-popover">
+  <div class="chrome-popover-header">
+    <span class="material-icons" aria-hidden="true">notifications</span>
+    <span>Notifications</span>
+  </div>
+  <div class="chrome-popover-empty">
+    <span class="material-icons" aria-hidden="true">notifications_off</span>
+    <p>No notifications yet</p>
+    <p class="muted">When push notifications go live you'll see fox alerts and remix likes here.</p>
+  </div>
+</div>
+
+<div id="profile-popover" popover="auto" class="chrome-popover">
+  <div class="chrome-popover-header">
+    <span class="material-icons" aria-hidden="true">account_circle</span>
+    <span>Account</span>
+  </div>
+  <div class="profile-info">
+    {% if is_admin %}<span class="profile-admin-badge">admin</span>{% endif %}
+    <span class="profile-email">{{ current_email or "" }}</span>
+  </div>
+  <a href="/cdn-cgi/access/logout" class="profile-action">
+    <span class="material-icons" aria-hidden="true">logout</span>
+    <span>Sign out</span>
+  </a>
+</div>

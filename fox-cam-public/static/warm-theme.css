@@ -1922,3 +1922,161 @@ nav a .nav-icon {
 .bottom-tab-label {
   white-space: nowrap;
 }
+
+/* === User chrome (upper-right): notifications bell + profile bug ====
+   Each button is a 36×36 round Material-icon glyph in font-brown
+   that opens an HTML popover-API panel below it. The popovers live
+   in the browser top layer above any open <dialog> (modal). */
+.user-chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.chrome-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-ink-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.chrome-btn:hover {
+  background: rgba(240, 90, 40, 0.10);
+  color: var(--color-glow);
+}
+.chrome-btn .material-icons {
+  font-size: 24px;
+  color: inherit;
+  line-height: 1;
+}
+/* Future: notifications-btn.has-unread will add a small dot. We
+   reserve the styling now so wiring it up is one line later. */
+.notifications-btn.has-unread::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-glow);
+  border: 2px solid var(--color-cream-deep);
+}
+.notifications-btn { position: relative; }
+
+/* Popover panels — anchored at top-right of viewport via fixed
+   positioning. The HTML Popover API auto-handles top-layer + light-
+   dismiss (click outside closes). */
+.chrome-popover {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  width: min(320px, 92vw);
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(240, 90, 40, 0.25);
+  border-radius: 14px;
+  background: var(--color-cream);
+  color: var(--color-ink);
+  box-shadow: 0 16px 40px rgba(42, 24, 16, 0.30);
+  font-family: var(--font-body);
+  overflow: hidden;
+}
+.chrome-popover::backdrop {
+  background: transparent;
+}
+.chrome-popover-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--color-cream-deep);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-ink);
+  border-bottom: 1px solid rgba(240, 90, 40, 0.18);
+}
+.chrome-popover-header .material-icons {
+  font-size: 20px;
+  color: var(--color-glow);
+}
+.chrome-popover-empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--color-ink-soft);
+  font-size: 14px;
+}
+.chrome-popover-empty .material-icons {
+  font-size: 36px;
+  color: var(--color-ink-soft);
+  opacity: 0.4;
+  display: block;
+  margin: 0 auto 8px;
+}
+.chrome-popover-empty p { margin: 4px 0; }
+.chrome-popover-empty .muted {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 12px;
+}
+
+/* Profile popover specifics — email row + sign-out action */
+.profile-info {
+  padding: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  border-bottom: 1px solid rgba(240, 90, 40, 0.10);
+}
+.profile-admin-badge {
+  background: var(--color-glow);
+  color: white;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.profile-email {
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-ink);
+  word-break: break-all;
+}
+.profile-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--color-ink);
+  text-decoration: none;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.profile-action:hover {
+  background: rgba(240, 90, 40, 0.08);
+  color: var(--color-glow);
+}
+.profile-action .material-icons {
+  font-size: 20px;
+  color: inherit;
+}
+
+/* Older inline who-am-i pill is now hidden everywhere — the profile
+   popover replaces it. (HTML still emits the empty span; we keep
+   the rule so any markup that references it remains consistent.) */
+.who-am-i { display: none !important; }
