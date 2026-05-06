@@ -910,6 +910,111 @@ async def mark_all_read(request: Request) -> Any:
     return r.json()
 
 
+# ---------------------------------------------------------------------------
+# Web Push proxies. The browser's `pushManager.subscribe` runs in the
+# service-worker scope; the resulting PushSubscription gets POSTed here
+# (with the user's CF Access email injected server-side as the owner).
+# Curator stores it and uses it as the delivery target.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/push/vapid-public-key")
+async def push_vapid_public_key() -> Any:
+    """Forwarded as-is — the public key is meant to be public, but
+    routing it through here means the client only ever sees one origin."""
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/push/vapid-public-key",
+                              timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=503, detail="push not configured")
+    return r.json()
+
+
+@app.post("/api/push/subscriptions")
+async def push_subscribe(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    body = await request.json()
+    # Inject the authed email server-side so the client can't spoof
+    # a subscription against a different user.
+    body["email"] = email
+    if "user_agent" not in body or not body["user_agent"]:
+        body["user_agent"] = request.headers.get("user-agent", "")
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/push/subscriptions",
+                               json=body, timeout=8.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.delete("/api/push/subscriptions")
+async def push_unsubscribe(request: Request, endpoint: str) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.delete(f"{CURATOR_API}/push/subscriptions",
+                                 params={"endpoint": endpoint}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/push/subscriptions")
+async def push_list_subscriptions(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/push/subscriptions",
+                              params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/push/preferences")
+async def push_get_preferences(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/push/preferences",
+                              params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/push/preferences")
+async def push_set_preference(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    body = await request.json()
+    body["email"] = email   # owner override
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/push/preferences",
+                               json=body, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/push/test")
+async def push_test(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/push/test",
+                               params={"email": email}, timeout=10.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
 @app.patch("/api/remixes/{remix_id}")
 async def update_remix(remix_id: str, request: Request) -> Any:
     body = await request.json()

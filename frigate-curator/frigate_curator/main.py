@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import classifier, curator, db, deep_dive, notify, sss_client
+from . import classifier, curator, db, deep_dive, notify, sss_client, web_push
 from .frigate_client import FrigateClient
 
 
@@ -38,6 +38,7 @@ def _load_dotenv(path: Path = Path("/Volumes/main-drive/ai-PA/.env")) -> None:
     allow = {
         "FRIGATE_PASS", "FRIGATE_USER", "FRIGATE_BASE_URL",
         "NTFY_TOPIC", "NTFY_BASE_URL", "FOX_PUBLIC_BASE_URL", "NOTIFY_THRESHOLD",
+        "VAPID_PRIVATE_KEY", "VAPID_PUBLIC_KEY", "VAPID_SUBJECT",
         "LITELLM_BASE_URL", "LITELLM_MASTER_KEY",
         "CLASSIFIER_ENABLED", "CLASSIFIER_MODEL", "CLASSIFIER_FRAMES",
         "SSS_BASE_URL", "SSS_USER", "SSS_PASS",
@@ -750,6 +751,26 @@ def like_remix(remix_id: str, email: str | None = None) -> dict[str, Any]:
                     "liker_email": email,
                 },
             )
+            # Best-effort Web Push to all of the author's subscribed
+            # devices (gated on their remix_like preference). Errors
+            # are swallowed inside web_push so the like flow never
+            # blocks on push delivery.
+            try:
+                liker_handle = email.split("@", 1)[0] if "@" in email else email
+                title = r.get("title") or "(untitled)"
+                public_base = notify._PUBLIC_BASE
+                web_push.send_to_user(
+                    DB_PATH, author, "remix_like",
+                    {
+                        "title": "New like on your remix",
+                        "body":  f"@{liker_handle} liked “{title}”",
+                        "url":   f"{public_base}/remix/{remix_id}",
+                        "tag":   f"remix-like-{remix_id}",
+                        "kind":  "remix_like",
+                    },
+                )
+            except Exception:
+                logger.exception("web_push remix_like failed for %s", remix_id)
     return {
         "remix_id": remix_id,
         "like_count": count,
@@ -793,6 +814,106 @@ def mark_all_read(email: str | None = None) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="email required")
     n = db.notif_mark_all_read(DB_PATH, email)
     return {"updated": n}
+
+
+# ---------------------------------------------------------------------------
+# Web Push — VAPID keys, subscriptions, preferences, test send
+# ---------------------------------------------------------------------------
+
+class PushSubscribeBody(BaseModel):
+    email: str
+    endpoint: str
+    keys: dict[str, str]
+    user_agent: str | None = None
+
+
+class PushPrefBody(BaseModel):
+    email: str
+    kind: str
+    enabled: bool
+
+
+@app.get("/push/vapid-public-key")
+def vapid_public_key() -> dict[str, Any]:
+    """Public VAPID key — meant to be public. The client fetches once
+    and passes it to pushManager.subscribe."""
+    if not web_push.is_configured():
+        raise HTTPException(status_code=503, detail="web push not configured")
+    return {"public_key": web_push.vapid_public_key()}
+
+
+@app.post("/push/subscriptions")
+def subscribe(body: PushSubscribeBody) -> dict[str, Any]:
+    """Idempotent on endpoint — re-subscribing a known device just
+    refreshes the keys + last_seen_at."""
+    p256dh = body.keys.get("p256dh", "")
+    auth = body.keys.get("auth", "")
+    if not (body.email and body.endpoint and p256dh and auth):
+        raise HTTPException(status_code=400, detail="missing fields")
+    sub_id = db.push_sub_save(
+        DB_PATH, email=body.email, endpoint=body.endpoint,
+        p256dh=p256dh, auth=auth, user_agent=body.user_agent,
+    )
+    return {"id": sub_id, "ok": True}
+
+
+@app.delete("/push/subscriptions")
+def unsubscribe(endpoint: str) -> dict[str, Any]:
+    ok = db.push_sub_delete_by_endpoint(DB_PATH, endpoint)
+    return {"deleted": ok}
+
+
+@app.get("/push/subscriptions")
+def list_subscriptions(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    subs = db.push_sub_list_for_email(DB_PATH, email)
+    # Don't leak the keys back to the client — just metadata for the
+    # "your devices" listing in the settings panel.
+    safe = [{"id": s["id"], "user_agent": s["user_agent"],
+             "created_at": s["created_at"], "last_seen_at": s["last_seen_at"]}
+            for s in subs]
+    return {"items": safe, "count": len(safe)}
+
+
+@app.get("/push/preferences")
+def get_preferences(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    prefs = db.push_pref_get_all(DB_PATH, email)
+    return {"preferences": prefs}
+
+
+@app.post("/push/preferences")
+def set_preference(body: PushPrefBody) -> dict[str, Any]:
+    if not body.email or not body.kind:
+        raise HTTPException(status_code=400, detail="email + kind required")
+    db.push_pref_set(DB_PATH, body.email, body.kind, body.enabled)
+    return {"ok": True, "kind": body.kind, "enabled": body.enabled}
+
+
+@app.post("/push/test")
+def push_test(email: str | None = None) -> dict[str, Any]:
+    """Operator/dev convenience — fires a synthetic push to every
+    subscribed device for `email`, regardless of preference. Used by
+    the Send Test Push button in the settings panel."""
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    if not web_push.is_configured():
+        raise HTTPException(status_code=503, detail="web push not configured")
+    subs = db.push_sub_list_for_email(DB_PATH, email)
+    sent = 0
+    for s in subs:
+        if web_push.send_to_subscription(
+            DB_PATH, s,
+            {"title": "Our Foxes — test push",
+             "body":  "If you can read this, push works on this device.",
+             "url":   f"{notify._PUBLIC_BASE}/highlights",
+             "tag":   "push-test",
+             "kind":  "test"},
+        ):
+            sent += 1
+    return {"sent": sent, "device_count": len(subs)}
 
 
 @app.patch("/remixes/{remix_id}")

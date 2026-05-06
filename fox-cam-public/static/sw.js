@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v94-remix-likes";
+const CACHE = "our-foxes-v95-web-push";
 
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -30,6 +30,8 @@ const STATIC_ASSETS = [
   "/static/landing.js",
   "/static/deliverers.js",
   "/static/notifications.js",
+  "/static/push-client.js",
+  "/static/push-settings.js",
   "/static/peeks.js",
   "/static/easter-eggs.js",
   "/static/panzoom.min.js",
@@ -155,4 +157,70 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Default: don't intercept.
+});
+
+
+// ---------------------------------------------------------------------
+// Web Push handlers — show the notification + route the click. Curator
+// fires these for remix_like and new_highlight events; payload shape:
+//   {title, body, url, tag?, kind?}
+//
+// iOS Safari (16.4+) supports Web Push only for installed PWAs. The
+// PushSubscription itself fails with NotAllowedError in non-PWA Safari
+// — we never get to this code path on iOS unless the app is on the
+// Home Screen, which is what we want.
+// ---------------------------------------------------------------------
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch { data = { title: "Our Foxes", body: event.data?.text?.() || "" }; }
+
+  const title = data.title || "Our Foxes";
+  const options = {
+    body:  data.body  || "",
+    icon:  "/static/icons/icon-192.png",
+    // 'badge' renders as a monochrome glyph in the Android status bar
+    // (and is silently ignored on iOS, where we don't have a separate
+    // badge asset to ship). Reusing the regular favicon is the right
+    // fallback until the user provides splash + badge artwork later
+    // in the Phase 2 second wave.
+    badge: "/static/icons/favicon.png",
+    // 'tag' coalesces repeats: a second push with the same tag
+    // replaces the first instead of stacking. For remix_like we tag
+    // by remix_id so a flurry of likes on one remix collapses into
+    // a single banner.
+    tag:   data.tag || data.kind || "fox-cam",
+    // Click target — picked up by the notificationclick handler below.
+    data:  { url: data.url || "/highlights", kind: data.kind || "" },
+    renotify: true,
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/highlights";
+  // Focus an existing visible client at this origin if one is open;
+  // otherwise spawn a new window. clientList includes uncontrolled
+  // pages too thanks to includeUncontrolled.
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    for (const c of all) {
+      try {
+        // Bring the existing PWA tab forward and ask it to navigate.
+        await c.focus();
+        if ("navigate" in c && c.url !== url) {
+          await c.navigate(url).catch(() => {});
+        }
+        return;
+      } catch { /* try next */ }
+    }
+    if (self.clients.openWindow) {
+      await self.clients.openWindow(url);
+    }
+  })());
 });

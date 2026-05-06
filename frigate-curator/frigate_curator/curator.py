@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import classifier, db, notify
+from . import classifier, db, notify, web_push
 from .frigate_client import FrigateClient
 from .heuristics import fox_likelihood
 
@@ -214,8 +214,32 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
         if verdict is not None and not verdict.is_wildlife:
             logger.info("Skipping notification for %s (species=%s)",
                         event_id, verdict.species)
-        elif notify.maybe_notify(fresh):
-            db.mark_notified(db_path, event_id, time.time())
+        else:
+            # Legacy ntfy.sh push (kept for the few subscribers still on
+            # ntfy.sh). This still fires when NTFY_TOPIC is set; new
+            # users get pushes via the Web Push path below.
+            sent_legacy = notify.maybe_notify(fresh)
+            # Web Push fan-out — every subscriber whose `new_highlight`
+            # preference is enabled gets a push. Fully replaces the
+            # single-topic ntfy.sh model with per-user targeting.
+            try:
+                if float(fresh.get("fox_likelihood") or 0.0) >= notify._THRESHOLD:
+                    cam = fresh.get("camera", "unknown")
+                    pct = int(round(float(fresh.get("fox_likelihood") or 0.0) * 100))
+                    public_base = notify._PUBLIC_BASE
+                    payload = {
+                        "title": f"Fox Cam — {cam} ({pct}%)",
+                        "body":  f"{fresh.get('label','?')} · "
+                                  f"{float(fresh.get('duration_s') or 0):.0f}s",
+                        "url":   f"{public_base}/clip/{event_id}",
+                        "tag":   f"highlight-{event_id}",
+                        "kind":  "new_highlight",
+                    }
+                    web_push.broadcast_kind(db_path, "new_highlight", payload)
+            except Exception:
+                logger.exception("web_push broadcast failed for %s", event_id)
+            if sent_legacy:
+                db.mark_notified(db_path, event_id, time.time())
 
 
 def promote(client: FrigateClient, highlights_root: Path, db_path: Path, event_id: str) -> dict:

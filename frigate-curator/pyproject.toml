@@ -7,6 +7,10 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
+    # Web Push (VAPID) — used by web_push.py to deliver remix-like and
+    # new-highlight notifications to subscribed PWA clients.
+    "pywebpush>=2.0",
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

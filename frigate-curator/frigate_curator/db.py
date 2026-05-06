@@ -133,7 +133,45 @@ _MIGRATIONS = [
     )""",
     "CREATE INDEX IF NOT EXISTS notif_recipient ON notifications (recipient_email, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS notif_unread ON notifications (recipient_email, read_at, created_at DESC)",
+    # Web Push subscriptions — one row per (user, device). Endpoint is
+    # the unique identifier the browser hands us; p256dh + auth are the
+    # crypto parameters needed to encrypt the push body. user_agent is
+    # captured at subscribe time so the settings panel can show the user
+    # which devices they've enabled.
+    """CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        email       TEXT NOT NULL,
+        endpoint    TEXT NOT NULL UNIQUE,
+        p256dh      TEXT NOT NULL,
+        auth        TEXT NOT NULL,
+        user_agent  TEXT,
+        created_at  REAL NOT NULL DEFAULT (strftime('%s','now')),
+        last_seen_at REAL
+    )""",
+    "CREATE INDEX IF NOT EXISTS push_sub_email ON push_subscriptions (email)",
+    # Per-user notification kind preferences. (email, kind) is the
+    # natural primary key. Defaults are applied in code (push_pref_get_all)
+    # so adding a new kind doesn't require a migration.
+    """CREATE TABLE IF NOT EXISTS push_preferences (
+        email       TEXT NOT NULL,
+        kind        TEXT NOT NULL,
+        enabled     INTEGER NOT NULL,
+        updated_at  REAL NOT NULL DEFAULT (strftime('%s','now')),
+        PRIMARY KEY (email, kind)
+    )""",
 ]
+
+
+# Notification kinds the system can emit. Defaults govern behavior when
+# the user has never explicitly toggled the kind. Kept here (not in the
+# DB) so adding a new kind doesn't require a migration. UI surfaces the
+# settings panel from this list.
+PUSH_KIND_DEFAULTS: dict[str, dict[str, Any]] = {
+    "remix_like":    {"enabled": True,  "label": "Likes on my remixes",
+                       "desc": "Push when someone likes a remix you created."},
+    "new_highlight": {"enabled": True,  "label": "New fox sightings",
+                       "desc": "Push when the den cameras spot a new fox."},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -887,3 +925,123 @@ def notif_mark_all_read(db_path: Path, email: str) -> int:
             [_time.time(), email],
         )
         return int(cur.rowcount)
+
+
+# ---------------------------------------------------------------------------
+# Web Push subscriptions + per-user kind preferences
+# ---------------------------------------------------------------------------
+
+def push_sub_save(db_path: Path, *, email: str, endpoint: str,
+                   p256dh: str, auth: str, user_agent: str | None = None
+                   ) -> int:
+    """Upsert a subscription keyed on endpoint. If the same browser
+    re-subscribes (e.g. after key rotation) we update the keys + email
+    rather than create a duplicate."""
+    import time as _time
+    now = _time.time()
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO push_subscriptions "
+            "(email, endpoint, p256dh, auth, user_agent, last_seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(endpoint) DO UPDATE SET "
+            "  email = excluded.email, p256dh = excluded.p256dh, "
+            "  auth = excluded.auth, user_agent = excluded.user_agent, "
+            "  last_seen_at = excluded.last_seen_at",
+            [email, endpoint, p256dh, auth, user_agent, now],
+        )
+        return int(cur.lastrowid or 0)
+
+
+def push_sub_list_for_email(db_path: Path, email: str
+                             ) -> list[dict[str, Any]]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, email, endpoint, p256dh, auth, user_agent, "
+            "       created_at, last_seen_at "
+            "FROM push_subscriptions WHERE email = ? "
+            "ORDER BY created_at DESC",
+            [email],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def push_sub_list_all_with_kind(db_path: Path, kind: str
+                                  ) -> list[dict[str, Any]]:
+    """All subscriptions whose owner has `kind` enabled. Used by the
+    new_highlight broadcast path. Defaults from PUSH_KIND_DEFAULTS apply
+    when the user has no explicit row for this kind."""
+    default_enabled = bool(PUSH_KIND_DEFAULTS.get(kind, {}).get("enabled", True))
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT s.id, s.email, s.endpoint, s.p256dh, s.auth, "
+            "       s.user_agent, p.enabled AS pref_enabled "
+            "FROM push_subscriptions s "
+            "LEFT JOIN push_preferences p "
+            "  ON p.email = s.email AND p.kind = ?",
+            [kind],
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        # NULL pref → fall back to default. Explicit 0/1 wins.
+        if d["pref_enabled"] is None:
+            if default_enabled:
+                out.append(d)
+        elif int(d["pref_enabled"]) == 1:
+            out.append(d)
+    return out
+
+
+def push_sub_delete_by_endpoint(db_path: Path, endpoint: str) -> bool:
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM push_subscriptions WHERE endpoint = ?", [endpoint]
+        )
+        return cur.rowcount > 0
+
+
+def push_pref_enabled_for(db_path: Path, email: str, kind: str) -> bool:
+    """Resolve the effective preference for one (email, kind), applying
+    PUSH_KIND_DEFAULTS when no explicit row exists."""
+    default_enabled = bool(PUSH_KIND_DEFAULTS.get(kind, {}).get("enabled", True))
+    with connect(db_path) as conn:
+        r = conn.execute(
+            "SELECT enabled FROM push_preferences WHERE email = ? AND kind = ?",
+            [email, kind],
+        ).fetchone()
+    if r is None:
+        return default_enabled
+    return int(r["enabled"]) == 1
+
+
+def push_pref_get_all(db_path: Path, email: str) -> dict[str, Any]:
+    """Return the full kind table merged with this user's overrides.
+    Shape suitable for the settings panel: {kind: {enabled, label, desc}}."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT kind, enabled FROM push_preferences WHERE email = ?",
+            [email],
+        ).fetchall()
+    overrides = {r["kind"]: int(r["enabled"]) == 1 for r in rows}
+    out: dict[str, Any] = {}
+    for kind, meta in PUSH_KIND_DEFAULTS.items():
+        out[kind] = {
+            "enabled": overrides.get(kind, bool(meta.get("enabled", True))),
+            "label":   meta.get("label", kind),
+            "desc":    meta.get("desc", ""),
+        }
+    return out
+
+
+def push_pref_set(db_path: Path, email: str, kind: str, enabled: bool
+                   ) -> None:
+    import time as _time
+    with connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO push_preferences (email, kind, enabled, updated_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(email, kind) DO UPDATE SET "
+            "  enabled = excluded.enabled, updated_at = excluded.updated_at",
+            [email, kind, 1 if enabled else 0, _time.time()],
+        )
