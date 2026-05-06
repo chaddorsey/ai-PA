@@ -2617,6 +2617,11 @@ button.remix-like-btn.pulse {
   background: rgba(240,90,40,0.10);
   border-radius: 8px;
 }
+/* Author `display: flex` on these rows overrides the UA's
+   `[hidden] { display: none }`. Restore the hide explicitly so
+   Resume + pause-active toggling actually swap the two rows. */
+.push-pause-row[hidden],
+.push-pause-active[hidden] { display: none; }
 .push-pause-active .material-icons {
   color: var(--color-glow);
   font-size: 18px;
