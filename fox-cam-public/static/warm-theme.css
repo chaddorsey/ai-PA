@@ -2781,3 +2781,15 @@ button.remix-like-btn.pulse {
 .push-test:hover { background: rgba(240,90,40,0.10); }
 .push-test:disabled { opacity: 0.55; cursor: progress; }
 .push-test .material-icons { font-size: 14px; }
+
+/* Header fox glyph (Live / Highlights / Clip pages) — replaces the
+   emoji prefix that used to live inside <h1>. Inline-block so it
+   aligns with the wordmark baseline; height tied to font-size for
+   crisp rendering at any DPR. */
+header h1 .brand-fox {
+  display: inline-block;
+  height: 1.3em;
+  width: auto;
+  vertical-align: -0.25em;
+  margin-right: 0.4em;
+}

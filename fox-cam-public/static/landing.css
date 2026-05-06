@@ -163,6 +163,16 @@ body.landing a:hover { color: var(--color-ink); }
   width: min(820px, 90vw);
 }
 
+.hero-foxes {
+  /* Foxes sit above the wordmark, scaled to ~half the logotext width
+     so the trio reads as a graphic accent rather than competing for
+     attention with "Our Foxes". */
+  width: clamp(150px, 32vw, 360px);
+  display: block;
+  margin: 0 auto -1.2vw;
+  filter: drop-shadow(0 6px 14px rgba(240, 90, 40, 0.30));
+}
+
 .hero-logotext {
   width: clamp(280px, 60vw, 720px);
   filter: drop-shadow(0 8px 18px rgba(240, 90, 40, 0.35));
@@ -267,8 +277,16 @@ body.landing.parallax-active .hero-layer { transition: none !important; }
 
 body.landing .hero-logotext { opacity: 0; transform: scale(0.6); transition: transform 0.55s cubic-bezier(.34,1.56,.64,1), opacity 0.4s ease; transition-delay: 0.85s; }
 body.landing.ready .hero-logotext { opacity: 1; transform: scale(1); }
+/* Foxes pop with the same overshoot as the wordmark, delayed so
+   they land ~250ms after the wordmark (logotext lands at 0.85+0.55
+   = 1.40s; foxes start at 1.10s and finish at 1.65s). */
+body.landing .hero-foxes { opacity: 0; transform: scale(0.4); transition: transform 0.55s cubic-bezier(.34,1.56,.64,1), opacity 0.4s ease; transition-delay: 1.10s; transform-origin: 50% 90%; }
+body.landing.ready .hero-foxes { opacity: 1; transform: scale(1); }
 
-body.landing .hero-dotcom { opacity: 0; transform: translateY(12px); transition: transform 0.4s ease, opacity 0.4s ease; transition-delay: 1.15s; }
+/* .com lands ~500ms after the foxes (foxes finish at 1.65s; .com
+   starts at 1.75s, finishes at 2.15s). Pushed back from the
+   previous 1.15s delay to give the foxes their solo beat. */
+body.landing .hero-dotcom { opacity: 0; transform: translateY(12px); transition: transform 0.4s ease, opacity 0.4s ease; transition-delay: 1.75s; }
 body.landing.ready .hero-dotcom { opacity: 1; transform: translateY(0); }
 
 /* CTA: never starts invisible. Plain visible from page load so a
@@ -475,6 +493,7 @@ body.landing .hero-cta { opacity: 1; transition: opacity 0.3s ease; transition-d
 
 @media (prefers-reduced-motion: reduce) {
   body.landing .hero-layer,
+  body.landing .hero-foxes,
   body.landing .hero-logotext,
   body.landing .hero-dotcom,
   body.landing .hero-cta,
@@ -485,7 +504,16 @@ body.landing .hero-cta { opacity: 1; transition: opacity 0.3s ease; transition-d
     animation: none !important;
   }
   body.landing .hero-layer { transform: none !important; opacity: 1 !important; }
+  body.landing .hero-foxes { transform: none !important; opacity: 1 !important; }
   body.landing .hero-logotext { transform: none !important; opacity: 1 !important; }
   body.landing .hero-dotcom { transform: none !important; opacity: 1 !important; }
   body.landing .hero-cta { transform: none !important; opacity: 1 !important; }
+}
+
+/* Landing header fox glyph — slightly taller than the inline h1 use
+   so it reads as a brand mark on the otherwise-empty header. */
+.landing-header img.brand-mark {
+  display: inline-block;
+  width: 38px;
+  height: auto;
 }
