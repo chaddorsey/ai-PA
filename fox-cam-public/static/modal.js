@@ -471,34 +471,39 @@
     if (document.documentElement.classList.contains("ios")) {
       videoEl.controls = false;
       videoEl.removeAttribute("controls");
-      // Tap-to-reveal-controls. The pan-block guard from
-      // bindPanzoom() is bound on the video at capture phase and
-      // calls stopPropagation, which prevents touch events from
-      // bubbling to the wrap. So the tap-reveal listener has to
-      // live on the video element directly (same element as the
-      // guard) — same-element listeners still fire after a sibling
-      // capture-phase listener stops propagation.
+      // Tap-to-reveal-controls. Bind on the WRAP in CAPTURE phase
+      // — capture phase walks root → target, so the wrap (parent)
+      // fires before the video-level pan-block guard runs. Whether
+      // the guard later calls stopPropagation doesn't matter; our
+      // tap-reveal already executed.
+      const wrapEl = body.querySelector(".modal-video-wrap");
       let tapStart = null;
-      videoEl.addEventListener("touchstart", (e) => {
-        if (e.touches.length !== 1) { tapStart = null; return; }
-        const t = e.touches[0];
-        tapStart = { x: t.clientX, y: t.clientY, time: Date.now() };
-      }, { passive: true });
-      videoEl.addEventListener("touchend", (e) => {
-        if (!tapStart) return;
-        const start = tapStart;
-        tapStart = null;
-        if (e.changedTouches.length !== 1) return;
-        if (Date.now() - start.time > 500) return;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - start.x;
-        const dy = t.clientY - start.y;
-        if (dx * dx + dy * dy > 64) return;
-        if (!videoEl.controls) {
-          videoEl.controls = true;
-          videoEl.setAttribute("controls", "");
-        }
-      }, { passive: true });
+      if (wrapEl) {
+        wrapEl.addEventListener("touchstart", (e) => {
+          if (e.touches.length !== 1) { tapStart = null; return; }
+          if (e.target.closest("button, .zoom-controls, .modal-nav")) {
+            tapStart = null;
+            return;
+          }
+          const t = e.touches[0];
+          tapStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+        }, true /* capture */);
+        wrapEl.addEventListener("touchend", (e) => {
+          if (!tapStart) return;
+          const start = tapStart;
+          tapStart = null;
+          if (e.changedTouches.length !== 1) return;
+          if (Date.now() - start.time > 500) return;
+          const t = e.changedTouches[0];
+          const dx = t.clientX - start.x;
+          const dy = t.clientY - start.y;
+          if (dx * dx + dy * dy > 64) return;
+          if (!videoEl.controls) {
+            videoEl.controls = true;
+            videoEl.setAttribute("controls", "");
+          }
+        }, true /* capture */);
+      }
       videoEl.addEventListener("ended", () => {
         videoEl.controls = false;
         videoEl.removeAttribute("controls");

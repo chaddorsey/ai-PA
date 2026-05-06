@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v73-controls-tap-restored-pending-bucket";
+const CACHE = "our-foxes-v74-tap-on-wrap-capture-fav-merge-bypass";
 
 const STATIC_ASSETS = [
   "/static/style.css",

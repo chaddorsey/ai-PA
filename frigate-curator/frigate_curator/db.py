@@ -511,8 +511,11 @@ def list_highlights(
         # Hide events that have a strictly longer overlapping event on
         # the same camera. Equality of duration is broken alphabetically
         # by event_id (deterministic, picks one canonical winner).
-        sql += """
-          AND NOT EXISTS (
+        # EXCEPTION: a user's own favorite always shows. The merge
+        # picks one canonical event per visit, but if the user has
+        # specifically faved a SHORTER overlapping sibling, that's
+        # their explicit choice — don't hide it.
+        merge_clause = """
             SELECT 1 FROM highlights h2
             WHERE h2.camera = highlights.camera
               AND h2.event_id != highlights.event_id
@@ -529,8 +532,18 @@ def list_highlights(
                   AND h2.event_id < highlights.event_id
                 )
               )
-          )
         """
+        if email:
+            sql += (
+                " AND (EXISTS ("
+                "   SELECT 1 FROM highlight_user_actions a "
+                "   WHERE a.highlight_id = highlights.event_id "
+                "     AND a.email = ? AND a.action = 'favorite')"
+                " OR NOT EXISTS (" + merge_clause + "))"
+            )
+            args.append(email)
+        else:
+            sql += " AND NOT EXISTS (" + merge_clause + ")"
     if camera:
         sql += " AND camera = ?"
         args.append(camera)

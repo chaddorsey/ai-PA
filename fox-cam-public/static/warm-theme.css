@@ -1643,7 +1643,7 @@ html.ios .card-modal-replay .material-icons {
    bar when it appears on tap. zoom-out + zoom-in stack above. */
 .modal-video-wrap .zoom-controls {
   flex-direction: column !important;
-  bottom: 36px !important;
+  bottom: 32px !important;
   right: 12px !important;
   gap: 6px;
 }
@@ -1718,11 +1718,10 @@ html.ios .card-modal-replay .material-icons {
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  /* Block sits at the upper-left of the paw — same vertical edge,
-     shifted half a diameter to the left so it crosses the paw's
-     leading edge with the "no" symbol reading clean above. */
-  top: 0;
-  left: -11px;
+  /* Block at upper-left of paw, slightly above and right of the
+     prior position so it sits cleanly on the paw's leading shoulder. */
+  top: -5px;
+  left: -8px;
   font-size: 22px;
   line-height: 1;
   display: block;
