@@ -560,9 +560,25 @@
 
   // Hook up the corner +/-/⛶ buttons + double-click + keyboard reset.
   function wireZoomControls(cam, pz, video) {
-    const btnIn  = cam.querySelector(".zoom-in");
-    const btnOut = cam.querySelector(".zoom-out");
-    const btnFit = cam.querySelector(".zoom-fit");
+    // Clone-and-replace each zoom button to drop any prior click
+    // listeners. This function gets called more than once per cam in
+    // the iOS spotlight path: setMode's rAF binds activeZoom + wires
+    // controls immediately; then attachSpotlightStream's bindIfReady
+    // fires when the WebRTC `playing` event lands and rebinds. Without
+    // dropping the prior listeners, the buttons end up calling
+    // smoothZoom on a disposed panzoom instance — manifesting as
+    // "click does nothing, occasionally moves the video" because the
+    // stale handler races the live one.
+    const cloneFresh = (sel) => {
+      const old = cam.querySelector(sel);
+      if (!old) return null;
+      const fresh = old.cloneNode(true);
+      old.parentNode.replaceChild(fresh, old);
+      return fresh;
+    };
+    const btnIn  = cloneFresh(".zoom-in");
+    const btnOut = cloneFresh(".zoom-out");
+    const btnFit = cloneFresh(".zoom-fit");
     // Anchor zoom to the WRAPPER's visible center, not the video's
     // bounding box. The video element moves under pan; the wrapper
     // doesn't. Using the wrapper guarantees button-zoom always pivots

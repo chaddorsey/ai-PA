@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v106-zoom-fix-grid-default";
+const CACHE = "our-foxes-v107-zoom-rebind-fix";
 
 const STATIC_ASSETS = [
   "/static/style.css",
