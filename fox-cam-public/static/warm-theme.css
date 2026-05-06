@@ -2262,34 +2262,35 @@ header {
 }
 
 /* === Active autoplay card flash + halo (phones) =====================
-   When a card enters the viewport-center band and starts playing
-   its preview, kick off a brief orange flash that settles into a
-   persistent glow halo. Removed (and the halo fades) when the
-   next card takes over. Animation re-triggers via JS reflow trick
-   so a single re-activation replays the flash. */
+   Fires only when the card's preview video actually starts playing
+   (the .is-active-preview class is added by JS on the video's
+   `playing` event, not on cross-in). Halo radiates outward to
+   approximately the card's full width via a large box-shadow blur
+   + spread, then settles into a persistent glow. Total animation
+   1.4s — twice the prior 0.7s. */
 .highlight.is-active-preview {
-  animation: card-active-flash 0.7s ease both;
+  animation: card-active-flash 1.4s ease both;
   box-shadow:
-    0 0 0 3px rgba(240, 90, 40, 0.45),
-    0 12px 32px rgba(240, 90, 40, 0.18) !important;
-  transition: box-shadow 0.45s ease, transform 0.2s ease;
+    0 0 0 3px rgba(240, 90, 40, 0.40),
+    0 0 50px 20px rgba(240, 90, 40, 0.22) !important;
+  transition: box-shadow 0.6s ease, transform 0.25s ease;
   transform: translateY(-2px);
-  z-index: 2;     /* above neighbours so the halo doesn't clip */
+  z-index: 2;
 }
 @keyframes card-active-flash {
   0% {
     box-shadow:
-      0 0 0 0   rgba(240, 90, 40, 0),
-      0 4px 14px rgba(240, 90, 40, 0.10);
+      0 0 0 0  rgba(240, 90, 40, 0),
+      0 0 0 0  rgba(240, 90, 40, 0);
   }
-  40% {
+  30% {
     box-shadow:
-      0 0 0 12px rgba(240, 90, 40, 0.50),
-      0 14px 36px rgba(240, 90, 40, 0.30);
+      0 0 0 16px rgba(240, 90, 40, 0.55),
+      0 0 110px 60px rgba(240, 90, 40, 0.45);
   }
   100% {
     box-shadow:
-      0 0 0 3px rgba(240, 90, 40, 0.45),
-      0 12px 32px rgba(240, 90, 40, 0.18);
+      0 0 0 3px  rgba(240, 90, 40, 0.40),
+      0 0 50px 20px rgba(240, 90, 40, 0.22);
   }
 }

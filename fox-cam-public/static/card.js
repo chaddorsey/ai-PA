@@ -115,14 +115,6 @@
         scrollAutoplayCurrent = bestEntry.target;
         const wrap = bestEntry.target;
         const card = wrap.closest(".highlight");
-        // Re-trigger the flash animation: remove + force reflow +
-        // add. Without the reflow tick, repeatedly activating the
-        // same DOM element wouldn't replay the keyframes.
-        if (card) {
-          card.classList.remove("is-active-preview");
-          void card.offsetWidth;
-          card.classList.add("is-active-preview");
-        }
         const eventId = wrap.dataset.previewEvent;
         if (!eventId || wrap.querySelector("video.preview")) return;
         const v = document.createElement("video");
@@ -134,6 +126,19 @@
         v.className = "preview";
         wrap.appendChild(v);
         applyPrerollSkip(v);
+        // Hold the flash + halo until the video is actually decoding
+        // frames. The `playing` event fires once playback truly
+        // begins (after enough buffered + first decoded frame), not
+        // just when play() resolves. Re-running with reflow trick
+        // so the keyframes replay if the same card cycles back to
+        // active.
+        v.addEventListener("playing", () => {
+          if (!card) return;
+          if (scrollAutoplayCurrent !== wrap) return;  // user scrolled past while loading
+          card.classList.remove("is-active-preview");
+          void card.offsetWidth;
+          card.classList.add("is-active-preview");
+        }, { once: true });
         v.play().catch(() => {});
       }
     }, {
