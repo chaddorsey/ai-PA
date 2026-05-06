@@ -930,11 +930,24 @@ body.modal-open { overflow: hidden; }
    currentColor"` attribute is stripped by some sanitizers. */
 .archive-toggle svg {
   display: block;
+  /* SVG is the sole flex item inside an inline-flex button. With
+     flex-shrink:1 (default) + min-width:auto the SVG can collapse
+     to its content min-size, which for an empty SVG is 0 — that's
+     why getBoundingClientRect was reporting width:0 even though
+     the width attribute + CSS width were both 18. flex:0 0 18px
+     pins the item at exactly 18px in both dimensions and forbids
+     any shrink. */
+  flex: 0 0 18px;
   width: 18px;
   height: 18px;
   fill: currentColor;
 }
 .archive-toggle svg path { fill: currentColor; }
+/* Some browsers add user-agent button padding that would push the
+   18px SVG against (or past) the 30px button's content edge once
+   we forbid shrink. Explicit padding:0 keeps the SVG centered
+   without the inline-flex rules fighting box-sizing. */
+.archive-toggle { padding: 0; }
 
 /* === Modal: prev / next arrows on the video edges === */
 .modal-nav {

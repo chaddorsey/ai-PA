@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v122-archive-svg-namespace";
+const CACHE = "our-foxes-v123-archive-flex-shrink";
 
 const STATIC_ASSETS = [
   "/static/style.css",
