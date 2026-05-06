@@ -994,6 +994,12 @@ header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }
   .live-layout[data-mode="spotlight"] {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 130px;
+    /* Evenly split the rail column into N equal-height rows so the
+       non-spotlight cams space themselves vertically rather than
+       collecting around the spotlight's row height. With minmax(0,1fr)
+       rows can shrink below content min-size, so 3+ cams divide the
+       column cleanly. */
+    grid-auto-rows: minmax(0, 1fr);
     gap: 6px;
     /* Fill the entire viewport — header is hidden. Padding inset
        respects safe-areas so the rail doesn't slip behind the iPhone
@@ -1005,9 +1011,8 @@ header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }
     position: fixed;
     inset: 0;
     margin: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    align-items: start;
+    overflow: hidden;
+    align-items: stretch;
   }
   .live-layout[data-mode="spotlight"] .cam.is-spotlight {
     grid-column: 1;
@@ -1037,11 +1042,23 @@ header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }
   }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) {
     grid-column: 2;
-    height: auto;
+    /* Each cam gets 1fr of column-2 height (via grid-auto-rows above).
+       The .video-wrap aspect-ratio: 16/9 would otherwise force a
+       fixed height; override to fill the row. */
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) h2 {
     font-size: 0.7rem;
     padding: 0.25rem 0.4rem;
+    flex: 0 0 auto;
+  }
+  .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .video-wrap {
+    aspect-ratio: auto;
+    flex: 1 1 auto;
+    min-height: 0;
   }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .status {
     display: none;
@@ -1121,3 +1138,42 @@ body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ============================================================
+   Prev / next arrow pills — vertically centered on the spotlight's
+   left + right edges. Hidden in grid mode; only the spotlight cam
+   shows them when in spotlight. Same dark-pill aesthetic as the
+   zoom/cam-controls so they read as part of the overlay set.
+   ============================================================ */
+.cam-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: rgba(15, 17, 22, 0.55);
+  color: #f0f0f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0.85;
+  z-index: 6;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  transition: opacity 120ms, background 120ms;
+  touch-action: manipulation;
+}
+.cam-nav:hover { opacity: 1; background: rgba(15, 17, 22, 0.9); }
+.cam-nav .material-icons { font-size: 26px; }
+.cam-nav-prev { left: 8px; }
+.cam-nav-next { right: 8px; }
+.live-layout[data-mode="spotlight"] .cam.is-spotlight .cam-nav {
+  display: inline-flex;
+}
+/* In CSS-fullscreen, lift them above the inflated cam's z-index so
+   the user can keep flipping through cams without exiting fullscreen. */
+body.cam-cssfs .cam-nav { z-index: 10001; }

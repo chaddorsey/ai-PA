@@ -74,6 +74,16 @@
           </button>
           <!-- airplay button injected here by live.js when supported -->
         </div>
+        <!-- Prev / next arrow pills, vertically centered on the
+             left + right edges of the spotlight cam. Tap to flip
+             through cams without going back to grid. Hidden in
+             grid mode + on non-spotlight cams via CSS. -->
+        <button class="cam-nav cam-nav-prev" aria-label="Previous camera">
+          <span class="material-icons">chevron_left</span>
+        </button>
+        <button class="cam-nav cam-nav-next" aria-label="Next camera">
+          <span class="material-icons">chevron_right</span>
+        </button>
       </div>
       <div class="status" id="s-{{ stream }}">connecting…</div>
     </section>

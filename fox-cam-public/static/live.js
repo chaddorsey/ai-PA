@@ -29,11 +29,20 @@
       const s = inst ? (inst.getTransform().scale || 1) : 1;
       if (s > 1.01) return;                                    // zoomed → allow
       if (e.touches && e.touches.length > 1) return;           // pinch → allow
+      if (e.pointerType && !e.isPrimary) return;               // pointer pinch → allow
       if (e.button !== undefined && e.button !== 0) return;    // mouse non-left → allow
+      // CRITICAL: stopImmediatePropagation also prevents OTHER
+      // listeners on the same element (panzoom's own start handler)
+      // from running. Plain stopPropagation only stops bubbling, not
+      // sibling listeners on the same target.
+      e.stopImmediatePropagation();
       e.stopPropagation();
     };
+    // Capture-phase. Caller is expected to bind THIS BEFORE creating
+    // the panzoom instance so our listener fires first at the target.
     target.addEventListener("mousedown", guard, true);
     target.addEventListener("touchstart", guard, true);
+    target.addEventListener("pointerdown", guard, true);
   }
 
   // Autoplay rejection: iOS Safari often refuses to start a muted
@@ -191,14 +200,17 @@
     if (!cam || !video || typeof window.panzoom !== "function") return;
     if (gridPanzooms.has(cam)) return;
     video.style.transformOrigin = "0 0";
-    let inst;
+    // Bind the no-pan guard BEFORE creating the panzoom instance so
+    // our capture-phase listener is registered first and fires before
+    // panzoom's own pointerdown / touchstart handler at the target.
+    let inst = null;
+    blockPanAtIdentity(video, () => inst);
     try {
       inst = window.panzoom(video, {
         maxZoom: 6, minZoom: 1, bounds: true,
         boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
       });
     } catch (e) { return; }
-    blockPanAtIdentity(video, () => inst);
     gridPanzooms.set(cam, inst);
     const wrap = video.parentElement;   // .video-wrap
     const zin  = wrap.querySelector(".zoom-controls .zoom-in");
@@ -375,6 +387,9 @@
       const dw = video.clientWidth || 1;
       return w > 0 ? Math.max(1.5, w / dw) : 4;
     };
+    // Bind guard BEFORE panzoom so its capture-phase listener is
+    // registered first and fires before panzoom's drag start handler.
+    blockPanAtIdentity(video, () => activeZoom);
     activeZoom = window.panzoom(video, {
       maxZoom: computeMax(),
       minZoom: 1,
@@ -383,7 +398,6 @@
       smoothScroll: false,
       zoomDoubleClickSpeed: 1,
     });
-    blockPanAtIdentity(video, () => activeZoom);
     const onMeta = () => { if (activeZoom) activeZoom.setMaxZoom(computeMax()); };
     if (video.videoWidth > 0) onMeta();
     else video.addEventListener("loadedmetadata", onMeta, { once: true });
@@ -489,6 +503,8 @@
           const dw = video.clientWidth || 1;
           return w > 0 ? Math.max(1.5, w / dw) : 4;
         };
+        // Guard BEFORE panzoom — see blockPanAtIdentity comment.
+        blockPanAtIdentity(video, () => activeZoom);
         activeZoom = window.panzoom(video, {
           maxZoom: computeMax(),
           minZoom: 1,
@@ -497,7 +513,6 @@
           smoothScroll: false,
           zoomDoubleClickSpeed: 1,
         });
-        blockPanAtIdentity(video, () => activeZoom);
         // Patch maxZoom in once the video reports its real resolution.
         const onMeta = () => {
           if (activeZoom) activeZoom.setMaxZoom(computeMax());
@@ -626,6 +641,7 @@
       if (target.tagName === "VIDEO" && target.controls) return;
       if (target.closest(".zoom-controls")) return;
       if (target.closest(".cam-controls")) return;
+      if (target.closest(".cam-nav")) return;
       const stream = cam.dataset.stream;
       const inSpotlight = cam.classList.contains("is-spotlight");
       if (inSpotlight && target.closest(".video-wrap")) return;
@@ -686,6 +702,7 @@
       const target = e.target;
       if (target.closest(".zoom-controls")) return;
       if (target.closest(".cam-controls")) return;
+      if (target.closest(".cam-nav")) return;
       if (target.tagName === "VIDEO" && target.controls) return;
       const inSpotlight = cam.classList.contains("is-spotlight");
       if (inSpotlight && target.closest(".video-wrap")) return;
@@ -1149,6 +1166,38 @@
         } catch {}
       }
     }
+
+    // Prev / next arrow pills — flip the spotlight to the previous /
+    // next cam in DOM order, wrapping around. We attach handlers per
+    // cam since each cam carries its own pair of buttons; jumpSpotlight
+    // looks up the currently-active cam dynamically rather than
+    // capturing `cam` so the wrap works even when a different cam is
+    // the spotlight.
+    const prevBtn = cam.querySelector(".cam-nav-prev");
+    const nextBtn = cam.querySelector(".cam-nav-next");
+    function jumpSpotlight(delta) {
+      const all = Array.from(document.querySelectorAll(".cam[data-stream]"));
+      if (all.length < 2) return;
+      const cur = all.findIndex((c) => c.classList.contains("is-spotlight"));
+      if (cur === -1) return;
+      const next = (cur + delta + all.length) % all.length;
+      setMode("spotlight", all[next].dataset.stream);
+    }
+    function bindNav(btn, delta) {
+      if (!btn) return;
+      let lastTs = 0;
+      const handler = (e) => {
+        const now = Date.now();
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (now - lastTs < 350) return;
+        lastTs = now;
+        jumpSpotlight(delta);
+      };
+      btn.addEventListener("click", handler);
+      btn.addEventListener("touchend", handler);
+    }
+    bindNav(prevBtn, -1);
+    bindNav(nextBtn, 1);
   });
 
   // -------------------------------------------------------------------
