@@ -61,6 +61,70 @@
   // Expose so clip.js can use the same logic on the permalink page.
   window.applyPrerollSkip = applyPrerollSkip;
 
+  // ---------------------------------------------------------------
+  // Scroll-into-view autoplay (TikTok / Instagram pattern). Phones
+  // only — desktop has hover-preview. The card most-visible in the
+  // viewport swaps thumbnail → muted looping <video>; as it scrolls
+  // out, the video tears down and the thumbnail returns. One card
+  // plays at a time. Honors prefers-reduced-motion + saveData.
+  // ---------------------------------------------------------------
+  let scrollAutoplayObserver = null;
+  let scrollAutoplayCurrent = null;
+
+  function ensureScrollAutoplayObserver() {
+    if (scrollAutoplayObserver !== null) return scrollAutoplayObserver;
+    if (!window.IntersectionObserver) return null;
+    if (!window.matchMedia || !window.matchMedia("(max-width: 720px)").matches) return null;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;
+    if (navigator.connection && navigator.connection.saveData) return null;
+
+    scrollAutoplayObserver = new IntersectionObserver((entries) => {
+      // Tear-down pass: any card now below 0.5 ratio drops its
+      // preview video. Independent of which card "wins" the next
+      // play slot — keeps memory bounded if the user scrolls fast.
+      for (const entry of entries) {
+        if (entry.intersectionRatio < 0.5) {
+          const v = entry.target.querySelector("video.preview");
+          if (v) { try { v.pause(); } catch (_) {} v.remove(); }
+          if (scrollAutoplayCurrent === entry.target) scrollAutoplayCurrent = null;
+        }
+      }
+      // Pick the highest-visibility card above 0.7. If a different
+      // card already has a preview video, leave it alone — we only
+      // start playing a new card once the prior one drops below 0.5
+      // (handled in the tear-down pass above on a separate scroll).
+      let bestEntry = null;
+      let bestRatio = 0.7;
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+          bestRatio = entry.intersectionRatio;
+          bestEntry = entry;
+        }
+      }
+      if (bestEntry && scrollAutoplayCurrent !== bestEntry.target) {
+        if (scrollAutoplayCurrent) {
+          const oldV = scrollAutoplayCurrent.querySelector("video.preview");
+          if (oldV) { try { oldV.pause(); } catch (_) {} oldV.remove(); }
+        }
+        scrollAutoplayCurrent = bestEntry.target;
+        const wrap = bestEntry.target;
+        const eventId = wrap.dataset.previewEvent;
+        if (!eventId || wrap.querySelector("video.preview")) return;
+        const v = document.createElement("video");
+        v.src = `/api/highlights/${eventId}/clip`;
+        v.muted = true;
+        v.loop = true;
+        v.playsInline = true;
+        v.preload = "metadata";
+        v.className = "preview";
+        wrap.appendChild(v);
+        applyPrerollSkip(v);
+        v.play().catch(() => {});
+      }
+    }, { threshold: [0.5, 0.7, 0.9] });
+    return scrollAutoplayObserver;
+  }
+
   window.makeCard = function makeCard(h) {
     const el = document.createElement("div");
     el.className = "highlight";
@@ -146,6 +210,18 @@
     // still uses inline play.
     if (!document.getElementById("highlights")) {
       wrap.addEventListener("click", () => playInline(wrap, h));
+    }
+    // Phone-only scroll-into-view autoplay: the singleton observer
+    // takes ownership of swapping the thumbnail in/out for a muted
+    // looping preview as this card crosses the viewport center.
+    // Stash event_id on the wrap so the observer doesn't need a
+    // closure for each card.
+    if (document.getElementById("highlights")) {
+      const obs = ensureScrollAutoplayObserver();
+      if (obs) {
+        wrap.dataset.previewEvent = h.event_id;
+        obs.observe(wrap);
+      }
     }
     return wrap;
   }
