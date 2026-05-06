@@ -31,57 +31,56 @@
   // Open / close
   // ===========================================================================
 
-  // Open the modal directly into the remix editor for `eventId`. Used
-  // by gallery cards' ✂️ Remix button so the user never leaves the
-  // /highlights page (Save/Cancel return to the modal viewer in
-  // place). Replaces the older `location.href = "/highlights/{id}/remix"`
-  // navigation that landed users on the standalone clip page with a
-  // dead-end "Back to Our Foxes" link.
+  // Fetch single-highlight metadata. Goes through /api/actions/* —
+  // the AUTHED Cloudflare Access path — so my_favorited / my_demoted
+  // reflect actual per-user state. (The /api/highlights/{id} alias is
+  // in the public Bypass app and CF strips the auth header there,
+  // returning my_favorited=false for everyone.)
+  async function fetchHighlightAuthed(eventId) {
+    const r = await fetch(
+      `/api/actions/${encodeURIComponent(eventId)}/highlight`,
+      { credentials: "same-origin" }
+    );
+    if (!r.ok) throw new Error(`fetch ${r.status}`);
+    return r.json();
+  }
+
+  function openLoadingDialog() {
+    if (dialog.open) return;
+    body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+    document.body.classList.add("modal-open");
+  }
+
+  function showModalLoadError() {
+    body.innerHTML = `<p style="padding:32px;text-align:center;color:#6b4a3a;">
+      Couldn't load this clip. <a href="javascript:window.closeCardModal()">Close</a></p>`;
+  }
+
+  // Open the modal directly into the remix editor. Used by gallery
+  // cards' ✂️ Remix button so the user never leaves /highlights —
+  // Save/Cancel return to the in-modal viewer.
   window.openCardModalInRemixMode = async function openCardModalInRemixMode(eventId) {
-    if (!dialog.open) {
-      body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "");
-      document.body.classList.add("modal-open");
-    }
+    openLoadingDialog();
     let h;
-    try {
-      const r = await fetch(`/api/highlights/${encodeURIComponent(eventId)}`,
-        { credentials: "same-origin" });
-      if (!r.ok) throw new Error(`fetch ${r.status}`);
-      h = await r.json();
-    } catch (err) {
-      body.innerHTML = `<p style="padding:32px;text-align:center;color:#6b4a3a;">
-        Couldn't load this clip. <a href="javascript:window.closeCardModal()">Close</a></p>`;
-      return;
-    }
+    try { h = await fetchHighlightAuthed(eventId); }
+    catch (err) { showModalLoadError(); return; }
     current = h;
+    currentRemix = null;
     renderRemixEditor(h);
   };
 
   window.openCardModal = async function openCardModal(eventId) {
-    // showModal throws if the dialog is already open. Guard so callers
-    // that don't know whether the modal is currently displayed (e.g.
-    // direct card clicks while a modal is open) don't crash.
-    if (!dialog.open) {
-      body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "");
-      document.body.classList.add("modal-open");
-    }
-
+    openLoadingDialog();
     let h;
-    try {
-      const r = await fetch(`/api/highlights/${encodeURIComponent(eventId)}`,
-        { credentials: "same-origin" });
-      if (!r.ok) throw new Error(`fetch ${r.status}`);
-      h = await r.json();
-    } catch (err) {
-      body.innerHTML = `<p style="padding:32px;text-align:center;color:#6b4a3a;">
-        Couldn't load this clip. <a href="javascript:window.closeCardModal()">Close</a></p>`;
-      return;
-    }
+    try { h = await fetchHighlightAuthed(eventId); }
+    catch (err) { showModalLoadError(); return; }
     current = h;
+    // Clear remix-mode pointer left over from a prior remix session.
+    // Without this, swipe-nav inside a regular highlight modal walks
+    // window.REMIX_NAV_LIST instead of the highlight siblings.
+    currentRemix = null;
     renderViewer(h);
   };
 
@@ -243,13 +242,8 @@
     const oldStage = body.querySelector(".modal-stage");
     if (oldStage) oldStage.classList.add(outClass);
     let newH = null;
-    try {
-      const r = await fetch(`/api/highlights/${encodeURIComponent(eventId)}`,
-        { credentials: "same-origin" });
-      if (r.ok) newH = await r.json();
-    } catch (err) {
-      console.error("[modal] slide fetch failed", err);
-    }
+    try { newH = await fetchHighlightAuthed(eventId); }
+    catch (err) { console.error("[modal] slide fetch failed", err); }
     if (!newH) { sliding = false; return; }
 
     // Wait for the slide-out to finish (~260ms) before swapping
@@ -258,6 +252,7 @@
     await new Promise((res) => setTimeout(res, 280));
 
     current = newH;
+    currentRemix = null;          // exiting any remix-mode swipe
     // Render with the slide-in class already applied — the stage
     // appears off-screen on its first paint, never at center.
     renderViewer(newH, direction === "next" ? "right" : "left");
@@ -555,19 +550,16 @@
       filename: clipFilename(h),
       label: "Share",
     }));
-    // Download icon — hidden on iOS, where Share-sheet's Save-to-Files
-    // gives the same result without leaving the PWA. Browser flow
-    // unchanged: anchor with download attr + meaningful filename.
+    // Download icon — anchor with download attr + meaningful
+    // filename. Wired here so it closes over the current `h`. Kept
+    // on iOS now that share is URL-only (Save-to-Files isn't exposed
+    // through a URL share, so download is the only file-save path).
     const dlBtn = body.querySelector(".meta-download");
     if (dlBtn) {
-      if (document.documentElement.classList.contains("ios")) {
-        dlBtn.style.display = "none";
-      } else {
-        dlBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          triggerDownload(h);
-        });
-      }
+      dlBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        triggerDownload(h);
+      });
     }
     if (h.my_favorited) {
       actionsBar.appendChild(actionBtn("✂️ Remix", "remix", false,
@@ -944,20 +936,16 @@
         </div>
       </div>
     `;
-    // Download icon: hidden on iOS (Share-sheet's Save-to-Files
-    // covers it without leaving the PWA). Browser flow unchanged —
-    // produces a trimmed+cropped MP4 server-side (curator ffmpeg,
-    // cached) so the file matches what the viewer is watching.
+    // Download icon — produces a trimmed+cropped MP4 server-side
+    // (curator runs ffmpeg, caches the result) so the file matches
+    // exactly what the viewer is watching. Kept on iOS now that
+    // share is URL-only.
     const dlBtn = body.querySelector(".meta-download");
     if (dlBtn) {
-      if (document.documentElement.classList.contains("ios")) {
-        dlBtn.style.display = "none";
-      } else {
-        dlBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          triggerRemixDownload(remix, parentH);
-        });
-      }
+      dlBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        triggerRemixDownload(remix, parentH);
+      });
     }
     // Share button — file-based on iOS (so Save-to-Files works in the
     // share sheet), URL-based otherwise. The clipUrl points to the
@@ -1143,6 +1131,19 @@
       { method: "POST", credentials: "same-origin" });
     if (!r.ok) { console.error(`${action} failed`, r.status); return null; }
     const data = await r.json();
+    // Mirror the action onto the gallery card behind the modal so
+    // the heart / outline / archive state stays in sync after close.
+    // Without this, favoriting in the modal looked correct in-modal
+    // but the underlying card on /highlights still showed unfilled.
+    if (data.highlight && window.makeCard) {
+      const card = document.querySelector(
+        `.highlight[data-event-id="${CSS.escape(eventId)}"]`
+      );
+      if (card && card.parentNode) {
+        const fresh = window.makeCard(data.highlight);
+        card.replaceWith(fresh);
+      }
+    }
     return data.highlight;
   }
 
@@ -1255,27 +1256,13 @@
   }
 
   async function doShare(opts) {
-    const { clipUrl, pageUrl, filename } = opts;
-    const isIOS = document.documentElement.classList.contains("ios");
-    // iOS: try to share the FILE so "Save to Files" appears in the
-    // sheet. Without files, the iOS share sheet only offers
-    // link-targeted actions (Messages, Mail) — no file save.
-    if (isIOS && navigator.share && navigator.canShare && clipUrl) {
-      try {
-        const r = await fetch(clipUrl, { credentials: "same-origin" });
-        if (!r.ok) throw new Error(`fetch ${r.status}`);
-        const blob = await r.blob();
-        const file = new File([blob], filename || "fox.mp4",
-                                { type: blob.type || "video/mp4" });
-        if (navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: filename });
-          return;
-        }
-      } catch (err) {
-        // Fall through to URL share / clipboard.
-      }
-    }
-    // Web Share with URL only — desktop Safari, mobile Chrome, etc.
+    const { pageUrl } = opts;
+    // URL-only share. iOS share sheet exposes Copy / Messages / Mail
+    // / AirDrop / etc. as sheet options. We previously fetched the
+    // clip and shared as a File so the sheet offered "Save to Files"
+    // — but the fetch is slow (full MP4 over the wire) and the user
+    // preferred the snappier link-share experience. Save-to-Files
+    // moves to the desktop Download path.
     if (navigator.share) {
       try {
         await navigator.share({
@@ -1286,17 +1273,17 @@
         return;
       } catch (err) {
         if (err && err.name === "AbortError") return;
+        // Other errors: silent fall-through to clipboard.
       }
     }
-    // Clipboard fallback.
     if (navigator.clipboard) {
       navigator.clipboard.writeText(pageUrl).then(
         () => flashToast("Link copied"),
-        () => prompt("Copy this URL:", pageUrl)
+        () => flashToast("Copy failed")
       );
-    } else {
-      prompt("Copy this URL:", pageUrl);
+      return;
     }
+    flashToast("Sharing not supported on this browser");
   }
 
   // Download a server-rendered trimmed + (when zoomed) cropped MP4 of

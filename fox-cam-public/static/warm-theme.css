@@ -1577,3 +1577,58 @@ html.ios .action-btn.action-share-iconly svg {
   min-height: 28px !important;
 }
 .meta-share-inline svg { display: block; }
+
+/* iOS: hide the gallery-card archive icon to avoid accidental taps
+   while scrolling. Archive remains reachable via the modal's action
+   row. The .archive-toggle inside the modal isn't a child of
+   .highlight, so this rule doesn't affect it. */
+body.ios .highlight .archive-toggle,
+html.ios .highlight .archive-toggle {
+  display: none !important;
+}
+
+/* iOS modal button layout fixes — avoid collisions with iOS native
+   video controls (mute/AirPlay top-right, scrubber bottom) and
+   ensure zoom-fit isn't clipped by a landscape modal's max-height. */
+body.ios .card-modal-close,
+html.ios .card-modal-close {
+  /* Pill background so the X stands out against the iOS native
+     video controls / chrome that may sit underneath. Pushed slightly
+     in from the dialog edge so it's never tangent to a native
+     mute/AirPlay glyph. */
+  background: rgba(0, 0, 0, 0.55) !important;
+  border-radius: 999px !important;
+  width: 44px !important;
+  height: 44px !important;
+  top: 8px !important;
+  right: 8px !important;
+  text-shadow: none !important;
+  font-size: 24px !important;
+}
+
+/* Replay (reload) button — push down so there's visible white gap
+   between it and the close X. Old top:84px was based on close height
+   32px; new close is 44px so we shift accordingly: 44 + 16 + 8 = 68
+   wait—keep at 84 since dialog-anchored. Add a pill background on iOS
+   for the same parity-with-close treatment. */
+body.ios .card-modal-replay,
+html.ios .card-modal-replay {
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  width: 44px !important;
+  height: 44px !important;
+  top: 64px !important;
+  right: 8px !important;
+}
+
+/* Zoom controls in the modal viewer: move from bottom-right of the
+   wrap to top-LEFT on iOS so a landscape modal (where wrap height
+   often exceeds modal max-height and clips the bottom) doesn't hide
+   them. iOS modal hides .modal-nav so the left edge is clear. */
+body.ios .modal-video-wrap .zoom-controls,
+html.ios .modal-video-wrap .zoom-controls {
+  top: 8px !important;
+  bottom: auto !important;
+  left: 8px !important;
+  right: auto !important;
+}

@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v64-remix-modal-share-zoom";
+const CACHE = "our-foxes-v65-modal-state-share-layout";
 
 const STATIC_ASSETS = [
   "/static/style.css",

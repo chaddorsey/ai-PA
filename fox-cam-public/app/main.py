@@ -694,6 +694,29 @@ async def mark_viewer_seen(request: Request) -> Any:
 # /api/actions/* matches only the AUTHED Access app, so the email
 # header is always present here, and write actions persist correctly.
 
+@app.get("/api/actions/{event_id}/highlight")
+async def get_highlight_authed(event_id: str, request: Request) -> Any:
+    """Single highlight metadata via the AUTHED path so my_favorited
+    is populated. /api/highlights/{id} is in a Cloudflare Access
+    Bypass app and CF strips the cf-access-authenticated-user-email
+    header on bypassed paths — meaning the curator can't tell which
+    user is asking. /api/actions/* is in the authed Access app, so
+    the email header arrives intact and the user-state lookup
+    succeeds. Modal fetches go through here so the heart reflects
+    actual per-user favorite state.
+    """
+    email = _actor_email(request)
+    params = {"email": email} if email else {}
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/highlights/{event_id}",
+                              params=params, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
 @app.post("/api/actions/{event_id}/favorite")
 @app.post("/api/highlights/{event_id}/favorite")  # legacy alias
 async def favorite(event_id: str, request: Request) -> Any:
