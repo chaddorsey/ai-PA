@@ -266,8 +266,15 @@ def get_highlight(event_id: str, email: str | None = None) -> dict[str, Any]:
     })
     # Attach remixes so the clip page can list them; also include the
     # count as a top-level field for parity with /highlights list rows.
-    h["remixes"] = db.remix_list_for_event(DB_PATH, event_id)
-    h["remix_count"] = len(h["remixes"])
+    rxs = db.remix_list_for_event(DB_PATH, event_id)
+    rids = [r["remix_id"] for r in rxs]
+    likes = db.remix_likes_bulk(DB_PATH, rids, email=email or None)
+    for r in rxs:
+        st = likes.get(r["remix_id"], {"like_count": 0, "my_liked": False})
+        r["like_count"] = st["like_count"]
+        r["my_liked"] = st["my_liked"]
+    h["remixes"] = rxs
+    h["remix_count"] = len(rxs)
     return h
 
 
@@ -673,26 +680,119 @@ def create_remix(event_id: str, body: RemixCreateBody) -> dict[str, Any]:
 
 
 @app.get("/remixes/{remix_id}")
-def get_remix(remix_id: str) -> dict[str, Any]:
+def get_remix(remix_id: str, email: str | None = None) -> dict[str, Any]:
     r = db.remix_get(DB_PATH, remix_id)
     if not r:
         raise HTTPException(status_code=404, detail="remix not found")
     h = db.get_highlight(DB_PATH, r["event_id"])
+    likes = db.remix_likes_for_remix(DB_PATH, remix_id, email=email)
+    r = dict(r)
+    r["like_count"] = likes["like_count"]
+    r["my_liked"] = likes["my_liked"]
     return {"remix": r, "highlight": h}
 
 
 @app.get("/remixes")
 def list_remixes(email: str | None = None,
                   event_id: str | None = None,
+                  created_by: str | None = None,
+                  liked_by_email: str | None = None,
                   limit: int = Query(default=100, ge=1, le=1000),
                   offset: int = Query(default=0, ge=0)) -> dict[str, Any]:
+    """`email` is the *viewer* — used purely for my_liked enrichment.
+    `created_by` filters by remix author (legacy fox-cam-public 'mine'
+    scope used to send this as `email`; the proxy now sends both).
+    `liked_by_email` restricts to remixes that user has liked (powers
+    the "Liked by Me" status filter on the Remix view)."""
     if event_id:
         items = db.remix_list_for_event(DB_PATH, event_id)
-    elif email:
-        items = db.remix_list_for_user(DB_PATH, email, limit=limit, offset=offset)
+    elif created_by:
+        items = db.remix_list_for_user(DB_PATH, created_by,
+                                        limit=limit, offset=offset)
     else:
         items = db.remix_list_recent(DB_PATH, limit=limit, offset=offset)
+    if liked_by_email:
+        keep = db.remix_ids_liked_by(DB_PATH, liked_by_email)
+        items = [it for it in items if it["remix_id"] in keep]
+    # Enrich with like_count + my_liked in one bulk query (avoids N+1).
+    rids = [it["remix_id"] for it in items]
+    likes = db.remix_likes_bulk(DB_PATH, rids, email=email)
+    for it in items:
+        st = likes.get(it["remix_id"], {"like_count": 0, "my_liked": False})
+        it["like_count"] = st["like_count"]
+        it["my_liked"] = st["my_liked"]
     return {"items": items, "count": len(items)}
+
+
+@app.post("/remixes/{remix_id}/like")
+def like_remix(remix_id: str, email: str | None = None) -> dict[str, Any]:
+    """Idempotent like. First-time-from-this-user generates an in-app
+    notification for the remix's author (skipped when liker == author).
+    """
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    r = db.remix_get(DB_PATH, remix_id)
+    if not r:
+        raise HTTPException(status_code=404, detail="remix not found")
+    count, was_new = db.remix_like_add(DB_PATH, remix_id, email)
+    if was_new:
+        author = r.get("created_by") or ""
+        # Don't notify yourself for liking your own remix.
+        if author and author.lower() != email.lower():
+            db.notif_create(
+                DB_PATH,
+                recipient_email=author,
+                kind="remix_like",
+                payload={
+                    "remix_id": remix_id,
+                    "remix_title": r.get("title") or "",
+                    "event_id": r.get("event_id"),
+                    "liker_email": email,
+                },
+            )
+    return {
+        "remix_id": remix_id,
+        "like_count": count,
+        "my_liked": True,
+        "was_new": was_new,
+    }
+
+
+@app.get("/notifications")
+def list_notifications(email: str | None = None,
+                        unread_only: bool = False,
+                        limit: int = Query(default=50, ge=1, le=200),
+                        offset: int = Query(default=0, ge=0)
+                        ) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    items = db.notif_list(DB_PATH, email, limit=limit, offset=offset,
+                           unread_only=unread_only)
+    return {"items": items, "count": len(items)}
+
+
+@app.get("/notifications/unread_count")
+def unread_count(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    return {"unread_count": db.notif_unread_count(DB_PATH, email)}
+
+
+@app.post("/notifications/{notif_id}/read")
+def mark_notification_read(notif_id: int, email: str | None = None
+                            ) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    ok = db.notif_mark_read(DB_PATH, notif_id, email)
+    return {"updated": ok}
+
+
+@app.post("/notifications/mark_all_read")
+def mark_all_read(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    n = db.notif_mark_all_read(DB_PATH, email)
+    return {"updated": n}
 
 
 @app.patch("/remixes/{remix_id}")

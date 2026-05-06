@@ -11,12 +11,14 @@
    _identity_ctx in app/main.py).
 #}
 <div class="user-chrome">
-  <button type="button"
-          class="chrome-btn notifications-btn"
-          popovertarget="notifications-popover"
-          aria-label="Notifications">
-    <span class="material-icons" aria-hidden="true">notifications</span>
-  </button>
+  <span class="notif-bell-wrap" id="notif-bell-wrap">
+    <button type="button"
+            class="chrome-btn notifications-btn"
+            popovertarget="notifications-popover"
+            aria-label="Notifications">
+      <span class="material-icons" aria-hidden="true">notifications</span>
+    </button>
+  </span>
   <button type="button"
           class="chrome-btn profile-btn"
           popovertarget="profile-popover"
@@ -30,12 +32,18 @@
     <span class="material-icons" aria-hidden="true">notifications</span>
     <span>Notifications</span>
   </div>
-  <div class="chrome-popover-empty">
-    <span class="material-icons" aria-hidden="true">notifications_off</span>
-    <p>No notifications yet</p>
-    <p class="muted">When push notifications go live you'll see fox alerts and remix likes here.</p>
-  </div>
+  <ul class="notif-list" id="notif-list">
+    <li class="notif-empty">
+      <span class="material-icons" aria-hidden="true">notifications_off</span>
+      <p>No notifications yet</p>
+      <p class="muted">Likes on your remixes will land here.</p>
+    </li>
+  </ul>
+  <button type="button" class="notif-mark-all" id="notif-mark-all" hidden>
+    Mark all read
+  </button>
 </div>
+<script src="/static/notifications.js?v={{ v }}"></script>
 
 <div id="profile-popover" popover="auto" class="chrome-popover">
   <div class="chrome-popover-header">

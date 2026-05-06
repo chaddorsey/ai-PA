@@ -67,7 +67,14 @@
     grid.classList.add("remix-list-view");
     let data;
     try {
-      const r = await fetch(`/api/remixes?limit=200`, { credentials: "same-origin" });
+      // "Liked by me" is a remix-tab-only status filter — pass it
+      // through as liked_by_me=1 so the proxy threads it on to the
+      // curator's liked_by_email filter.
+      const likedByMe = filterStatus && filterStatus.value === "liked-by-me";
+      const url = likedByMe
+        ? "/api/remixes?limit=200&liked_by_me=1"
+        : "/api/remixes?limit=200";
+      const r = await fetch(url, { credentials: "same-origin" });
       data = await r.json();
     } catch (err) {
       grid.appendChild(window.infoCard("Couldn't load remixes."));
@@ -142,6 +149,13 @@
         const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
         const title = r.title || "(untitled)";
         const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
+        // Filled-heart + count badge when likes exist. Hidden at 0.
+        const likeCount = Number(r.like_count || 0);
+        const likesBadge = likeCount > 0
+          ? `<span class="rx-likes" aria-label="${likeCount} like${likeCount === 1 ? "" : "s"}">
+               <span class="material-icons">favorite</span>${likeCount}
+             </span>`
+          : "";
         // Each child shows the parent highlight's full-frame thumbnail
         // (remixes are sub-windows of that frame so it's the right
         // visual identifier). Tree glyph stays for hierarchy clarity.
@@ -149,7 +163,7 @@
           <span class="rx-tree" aria-hidden="true">└─</span>
           <img class="rx-thumb" src="/api/highlights/${encodeURIComponent(g.event_id)}/thumbnail" alt="" loading="lazy">
           <div class="rx-text">
-            <div class="rx-line1"><span class="rx-title">${escapeHtml(title)}</span></div>
+            <div class="rx-line1"><span class="rx-title">${escapeHtml(title)}</span>${likesBadge}</div>
             <div class="rx-line2">
               <span class="rx-author">@${escapeHtml(username)}</span>
               <span class="rx-meta muted">${dur}s${zoom}</span>
@@ -196,10 +210,12 @@
     });
     if (filterable && filterCamera.value) params.append("camera", filterCamera.value);
     if (filterable && filterSpecies.value) params.append("species_filter", filterSpecies.value);
-    if (filterable && filterStatus && filterStatus.value && !noFoxes) {
+    if (filterable && filterStatus && filterStatus.value && !noFoxes
+        && filterStatus.value !== "liked-by-me") {
       // Within a normal bucket, the Status pulldown narrows the
       // archived/active overlay. (no-foxes is handled by the bucket
-      // override above, so we skip the extra status param.)
+      // override above, so we skip the extra status param. liked-by-me
+      // is remix-tab-only — treated as "any" everywhere else.)
       params.append("status", filterStatus.value);
     } else {
       params.append("status", "any");
@@ -313,6 +329,16 @@
     // Show the list/cards toggle only on the Remixes tab.
     const vt = document.getElementById("view-toggle");
     if (vt) vt.hidden = bucket !== "remixes";
+    // "Liked by Me" is a remix-tab-only Status filter. Hide elsewhere
+    // and clear the selection if the user leaves the remix tab while
+    // it's chosen so the next tab doesn't show an empty grid.
+    if (filterStatus) {
+      const opt = filterStatus.querySelector('option[value="liked-by-me"]');
+      if (opt) opt.hidden = bucket !== "remixes";
+      if (bucket !== "remixes" && filterStatus.value === "liked-by-me") {
+        filterStatus.value = "active";
+      }
+    }
   }
   syncFiltersVisibility();
 

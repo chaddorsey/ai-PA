@@ -720,10 +720,17 @@
           e.preventDefault();
           renderRemixPlayback(h, r);
         });
+        const likeCount = Number(r.like_count || 0);
+        const likesBadge = likeCount > 0
+          ? `<span class="rx-likes" aria-label="${likeCount} like${likeCount === 1 ? "" : "s"}">
+               <span class="material-icons">favorite</span>${likeCount}
+             </span>`
+          : "";
         item.innerHTML = `
           <span class="rx-author">@${escapeHtml(username)}</span>
           <span class="rx-title">${escapeHtml(titleText)}</span>
-          <span class="rx-meta muted">${dur}s${zoom}</span>`;
+          <span class="rx-meta muted">${dur}s${zoom}</span>
+          ${likesBadge}`;
         list.appendChild(item);
       }
       panel.appendChild(list);
@@ -998,7 +1005,10 @@
           <video class="modal-video" controls autoplay muted playsinline></video>
         </div>
         <div class="modal-meta">
-          <h2 class="modal-title"><span class="material-icons" aria-hidden="true" style="vertical-align:-4px;color:var(--color-glow);font-size:22px;margin-right:6px;">movie_edit</span>${escapeHtml(title)}</h2>
+          <h2 class="modal-title">
+            <button class="remix-like-btn" type="button" id="rp-like"
+                    aria-label="Like this remix"></button>
+            <span class="material-icons" aria-hidden="true" style="vertical-align:-4px;color:var(--color-glow);font-size:22px;margin-right:6px;">movie_edit</span>${escapeHtml(title)}</h2>
           <div class="modal-badges">
             <span class="modal-badge fox">@${escapeHtml(username)}</span>
             <span class="modal-meta-extra">
@@ -1010,6 +1020,57 @@
         </div>
       </div>
     `;
+    // Heart button — to the left of the title. Empty heart at 0 likes;
+    // filled heart + count when ≥1. Click adds a like; one-way (tap
+    // again is a no-op — Instagram pattern). Double-tap on the video
+    // surface fires the same handler.
+    const likeBtn = body.querySelector("#rp-like");
+    const renderHeart = () => {
+      const count = Number(remix.like_count || 0);
+      const liked = !!remix.my_liked;
+      const icon = (liked || count > 0) ? "favorite" : "favorite_border";
+      const countTxt = count > 0 ? `<span class="remix-like-count">${count}</span>` : "";
+      likeBtn.innerHTML = `<span class="material-icons">${icon}</span>${countTxt}`;
+      likeBtn.classList.toggle("liked", liked);
+      likeBtn.classList.toggle("has-likes", count > 0);
+    };
+    renderHeart();
+    const fireLike = async () => {
+      if (remix.my_liked) {
+        // Already liked — re-pulse for visual ack but don't POST.
+        likeBtn.classList.remove("pulse");
+        // force reflow so animation restarts
+        void likeBtn.offsetWidth;
+        likeBtn.classList.add("pulse");
+        return;
+      }
+      // Optimistic update. Roll back on failure.
+      remix.my_liked = true;
+      remix.like_count = Number(remix.like_count || 0) + 1;
+      renderHeart();
+      likeBtn.classList.remove("pulse");
+      void likeBtn.offsetWidth;
+      likeBtn.classList.add("pulse");
+      try {
+        const r = await fetch(
+          `/api/remixes/${encodeURIComponent(remix.remix_id)}/like`,
+          { method: "POST", credentials: "same-origin" });
+        if (!r.ok) throw new Error("like failed");
+        const j = await r.json();
+        remix.like_count = Number(j.like_count || remix.like_count);
+        remix.my_liked = !!j.my_liked;
+        renderHeart();
+      } catch (err) {
+        remix.my_liked = false;
+        remix.like_count = Math.max(0, Number(remix.like_count || 1) - 1);
+        renderHeart();
+      }
+    };
+    likeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fireLike();
+    });
     // Meta-extra row: link icon (copy URL) + share-sheet icon
     // (navigator.share). Same pattern as the regular highlight viewer
     // so the user has a single mental model. Replaces the legacy
@@ -1052,10 +1113,29 @@
         videoEl.currentTime = Number(remix.start_offset_s) || 0;
       }
     });
-    // Tap-to-play-pause replacement for the native controls.
+    // Tap-to-play-pause replacement for the native controls — but
+    // detect a fast double-tap and fire the like handler instead.
+    // First tap: defer play/pause toggle by ~280ms. Second tap inside
+    // window: cancel the toggle, fire like. Timer expires with no
+    // second tap: run the toggle.
+    let tapTimer = null;
+    let lastTapTs = 0;
     videoEl.addEventListener("click", (e) => {
-      if (videoEl.paused) videoEl.play().catch(() => {});
-      else videoEl.pause();
+      const now = Date.now();
+      if ((now - lastTapTs) < 280) {
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
+        lastTapTs = 0;
+        fireLike();
+        return;
+      }
+      lastTapTs = now;
+      if (tapTimer) clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => {
+        tapTimer = null;
+        lastTapTs = 0;
+        if (videoEl.paused) videoEl.play().catch(() => {});
+        else videoEl.pause();
+      }, 280);
     });
 
     // Bind panzoom only long enough to apply the saved view, then

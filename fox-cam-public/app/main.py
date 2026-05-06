@@ -794,9 +794,12 @@ async def create_remix(event_id: str, request: Request) -> Any:
 
 
 @app.get("/api/remixes/{remix_id}")
-async def get_remix(remix_id: str) -> Any:
+async def get_remix(remix_id: str, request: Request) -> Any:
+    email = _actor_email(request)
+    params = {"email": email} if email else {}
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/remixes/{remix_id}", timeout=8.0)
+        r = await client.get(f"{CURATOR_API}/remixes/{remix_id}",
+                              params=params, timeout=8.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -808,14 +811,100 @@ async def get_remix(remix_id: str) -> Any:
 async def list_remixes(request: Request,
                         event_id: str | None = None,
                         scope: str = Query(default="", regex="^(|mine|all)$"),
+                        liked_by_me: int = Query(default=0, ge=0, le=1),
                         limit: int = Query(default=50, ge=1, le=500),
                         offset: int = Query(default=0, ge=0)) -> Any:
+    """`email` (viewer) is always forwarded so my_liked + my_favorited
+    enrichment works. `scope=mine` filters to the viewer's own remixes
+    (forwarded as `created_by` to the curator — `email` is reserved for
+    viewer-state enrichment now). `liked_by_me=1` powers the Liked-by-Me
+    status filter on the Remix tab."""
     email = _actor_email(request)
     params: dict[str, Any] = {"limit": limit, "offset": offset}
-    if event_id: params["event_id"] = event_id
-    elif scope == "mine" and email: params["email"] = email
+    if email:
+        params["email"] = email
+    if event_id:
+        params["event_id"] = event_id
+    elif scope == "mine" and email:
+        params["created_by"] = email
+    if liked_by_me and email:
+        params["liked_by_email"] = email
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/remixes", params=params, timeout=10.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/remixes/{remix_id}/like")
+async def like_remix(remix_id: str, request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/remixes/{remix_id}/like",
+                               params={"email": email}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/notifications")
+async def list_notifications(request: Request,
+                              unread_only: int = Query(default=0, ge=0, le=1),
+                              limit: int = Query(default=50, ge=1, le=200),
+                              offset: int = Query(default=0, ge=0)) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            f"{CURATOR_API}/notifications",
+            params={"email": email, "unread_only": bool(unread_only),
+                    "limit": limit, "offset": offset},
+            timeout=8.0,
+        )
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/notifications/unread_count")
+async def unread_count(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        return {"unread_count": 0}
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/notifications/unread_count",
+                              params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        return {"unread_count": 0}
+    return r.json()
+
+
+@app.post("/api/notifications/{notif_id}/read")
+async def mark_notif_read(notif_id: int, request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/notifications/{notif_id}/read",
+                               params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/notifications/mark_all_read")
+async def mark_all_read(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/notifications/mark_all_read",
+                               params={"email": email}, timeout=5.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()

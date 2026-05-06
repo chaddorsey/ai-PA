@@ -110,6 +110,29 @@ _MIGRATIONS = [
     "ALTER TABLE highlights ADD COLUMN featured_by TEXT",
     "ALTER TABLE highlights ADD COLUMN featured_caption TEXT",
     "CREATE INDEX IF NOT EXISTS highlights_featured ON highlights (featured, featured_at DESC)",
+    # Per-user likes on remixes. PK enforces idempotency: a user can
+    # only like a remix once. Aggregate count is computed on demand
+    # (low row counts for now — premature to denormalize).
+    """CREATE TABLE IF NOT EXISTS remix_likes (
+        remix_id    TEXT NOT NULL,
+        email       TEXT NOT NULL,
+        created_at  REAL NOT NULL DEFAULT (strftime('%s','now')),
+        PRIMARY KEY (remix_id, email)
+    )""",
+    "CREATE INDEX IF NOT EXISTS remix_likes_email ON remix_likes (email, created_at DESC)",
+    # In-app notifications. payload is JSON-serialized — kind-specific
+    # fields live there so adding new notification types doesn't
+    # require a migration. read_at NULL = unread.
+    """CREATE TABLE IF NOT EXISTS notifications (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        recipient_email  TEXT NOT NULL,
+        kind             TEXT NOT NULL,
+        payload          TEXT NOT NULL,
+        created_at       REAL NOT NULL DEFAULT (strftime('%s','now')),
+        read_at          REAL
+    )""",
+    "CREATE INDEX IF NOT EXISTS notif_recipient ON notifications (recipient_email, created_at DESC)",
+    "CREATE INDEX IF NOT EXISTS notif_unread ON notifications (recipient_email, read_at, created_at DESC)",
 ]
 
 
@@ -712,3 +735,155 @@ def stats(db_path: Path) -> dict[str, Any]:
             "SELECT COUNT(*) AS n FROM highlights WHERE promoted = 1"
         ).fetchone()["n"]
     return {"total": total, "promoted": promoted, "by_camera": by_camera, "by_score": by_score}
+
+
+# ---------------------------------------------------------------------------
+# Remix likes + in-app notifications
+# ---------------------------------------------------------------------------
+
+def remix_like_add(db_path: Path, remix_id: str, email: str
+                    ) -> tuple[int, bool]:
+    """Idempotently add a like. Returns (current_like_count, was_new).
+    was_new=False means the user had already liked this remix — caller
+    should NOT generate a notification in that case."""
+    with connect(db_path) as conn:
+        before = conn.execute(
+            "SELECT 1 FROM remix_likes WHERE remix_id = ? AND email = ?",
+            [remix_id, email],
+        ).fetchone()
+        was_new = before is None
+        if was_new:
+            conn.execute(
+                "INSERT INTO remix_likes (remix_id, email) VALUES (?, ?)",
+                [remix_id, email],
+            )
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM remix_likes WHERE remix_id = ?",
+            [remix_id],
+        ).fetchone()["n"]
+    return int(count), was_new
+
+
+def remix_likes_for_remix(db_path: Path, remix_id: str,
+                           email: str | None = None) -> dict[str, Any]:
+    """Single-remix like state for the modal heart."""
+    with connect(db_path) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) AS n FROM remix_likes WHERE remix_id = ?",
+            [remix_id],
+        ).fetchone()["n"]
+        my_liked = False
+        if email:
+            r = conn.execute(
+                "SELECT 1 FROM remix_likes WHERE remix_id = ? AND email = ?",
+                [remix_id, email],
+            ).fetchone()
+            my_liked = r is not None
+    return {"like_count": int(count), "my_liked": bool(my_liked)}
+
+
+def remix_likes_bulk(db_path: Path, remix_ids: list[str],
+                      email: str | None = None) -> dict[str, dict[str, Any]]:
+    """Per-remix {like_count, my_liked} for list endpoints. Avoids N+1."""
+    if not remix_ids:
+        return {}
+    placeholders = ",".join("?" for _ in remix_ids)
+    out: dict[str, dict[str, Any]] = {
+        rid: {"like_count": 0, "my_liked": False} for rid in remix_ids
+    }
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT remix_id, COUNT(*) AS n FROM remix_likes "
+            f"WHERE remix_id IN ({placeholders}) GROUP BY remix_id",
+            remix_ids,
+        ).fetchall()
+        for r in rows:
+            out[r["remix_id"]]["like_count"] = int(r["n"])
+        if email:
+            mine = conn.execute(
+                f"SELECT remix_id FROM remix_likes "
+                f"WHERE email = ? AND remix_id IN ({placeholders})",
+                [email] + list(remix_ids),
+            ).fetchall()
+            for r in mine:
+                out[r["remix_id"]]["my_liked"] = True
+    return out
+
+
+def remix_ids_liked_by(db_path: Path, email: str) -> set[str]:
+    """All remix_ids that this user has liked. Powers the "Liked by Me"
+    status filter on the Remix view."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT remix_id FROM remix_likes WHERE email = ?", [email]
+        ).fetchall()
+    return {r["remix_id"] for r in rows}
+
+
+def notif_create(db_path: Path, *, recipient_email: str, kind: str,
+                  payload: dict[str, Any]) -> int:
+    import json as _json
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO notifications (recipient_email, kind, payload) "
+            "VALUES (?, ?, ?)",
+            [recipient_email, kind, _json.dumps(payload)],
+        )
+        return int(cur.lastrowid)
+
+
+def notif_list(db_path: Path, email: str, *, limit: int = 50,
+                offset: int = 0, unread_only: bool = False
+                ) -> list[dict[str, Any]]:
+    import json as _json
+    sql = ("SELECT * FROM notifications WHERE recipient_email = ?")
+    args: list[Any] = [email]
+    if unread_only:
+        sql += " AND read_at IS NULL"
+    sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    args += [limit, offset]
+    with connect(db_path) as conn:
+        rows = conn.execute(sql, args).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["payload"] = _json.loads(d["payload"]) if d["payload"] else {}
+        except Exception:
+            d["payload"] = {}
+        out.append(d)
+    return out
+
+
+def notif_unread_count(db_path: Path, email: str) -> int:
+    with connect(db_path) as conn:
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM notifications "
+            "WHERE recipient_email = ? AND read_at IS NULL",
+            [email],
+        ).fetchone()["n"]
+    return int(n)
+
+
+def notif_mark_read(db_path: Path, notif_id: int, email: str) -> bool:
+    """Mark a single notification read. Email check prevents one user
+    from clearing another user's notifications."""
+    import time as _time
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE notifications SET read_at = ? "
+            "WHERE id = ? AND recipient_email = ? AND read_at IS NULL",
+            [_time.time(), notif_id, email],
+        )
+        return cur.rowcount > 0
+
+
+def notif_mark_all_read(db_path: Path, email: str) -> int:
+    import time as _time
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE notifications SET read_at = ? "
+            "WHERE recipient_email = ? AND read_at IS NULL",
+            [_time.time(), email],
+        )
+        return int(cur.rowcount)

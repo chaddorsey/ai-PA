@@ -2321,3 +2321,155 @@ body.ios .highlight,
 html.ios .highlight {
   touch-action: manipulation;
 }
+
+/* ---------------------------------------------------------------
+   Remix likes — heart button on remix modal title row + on cards.
+   --------------------------------------------------------------- */
+
+/* Modal title row needs to be a flex container so the heart sits
+   inline-left of the title text + movie_edit glyph. */
+.modal-stage-remix-play .modal-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+button.remix-like-btn {
+  /* Reset native button styles. */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 2px 6px 2px 2px;
+  margin: 0 4px 0 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--color-glow);
+  border-radius: 999px;
+  transition: transform 0.15s ease, background 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.remix-like-btn .material-icons {
+  font-size: 24px;
+  color: var(--color-glow);
+  line-height: 1;
+}
+
+button.remix-like-btn .remix-like-count {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--color-glow);
+  line-height: 1;
+}
+
+button.remix-like-btn:hover { background: rgba(240,90,40,0.10); }
+button.remix-like-btn:active { transform: scale(0.94); }
+
+@keyframes remix-like-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.32); }
+  70%  { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+button.remix-like-btn.pulse {
+  animation: remix-like-pulse 0.55s ease both;
+}
+
+/* Filled-heart + count badge on remix list rows. */
+.rx-likes {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+  color: var(--color-glow);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+}
+.rx-likes .material-icons {
+  font-size: 16px;
+  color: var(--color-glow);
+}
+
+/* ---------------------------------------------------------------
+   Notifications popover — likes feed, unread dot, mark-all-read.
+   --------------------------------------------------------------- */
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.notif-item:last-child { border-bottom: 0; }
+.notif-item:hover { background: rgba(240,90,40,0.06); }
+.notif-item.unread {
+  background: rgba(240,90,40,0.08);
+}
+.notif-item .material-icons {
+  color: var(--color-glow);
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.notif-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--color-fg);
+  line-height: 1.35;
+}
+.notif-text .notif-liker { font-weight: 700; color: var(--color-glow); }
+.notif-text .notif-remix { font-style: italic; }
+.notif-time {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+.notif-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--color-muted);
+}
+.notif-mark-all {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: transparent;
+  border: 0;
+  padding: 8px;
+  margin-top: 4px;
+  color: var(--color-glow);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+/* Bell unread indicator — small orange dot at top-right of bell. */
+.notif-bell-wrap { position: relative; display: inline-flex; }
+.notif-bell-wrap.has-unread::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-glow);
+  border: 1.5px solid var(--color-cream);
+  pointer-events: none;
+}
