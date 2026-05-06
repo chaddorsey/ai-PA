@@ -591,7 +591,10 @@
             const tab = document.querySelector(".tab.active");
             const currentBucket = tab ? tab.dataset.bucket : null;
             let shouldHide = false;
-            if (currentBucket === "pending" && h.demoted) shouldHide = true;
+            // pending = "All". Hide only when CURRENT user demotes,
+            // not when another family member already had — otherwise
+            // a fresh favorite would vanish the card (see card.js).
+            if (currentBucket === "pending" && h.my_demoted) shouldHide = true;
             if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
             if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
             if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;

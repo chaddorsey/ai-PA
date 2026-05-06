@@ -447,7 +447,12 @@
     const tab = document.querySelector(".tab.active");
     const currentBucket = tab ? tab.dataset.bucket : null;
     let shouldHide = false;
-    if (currentBucket === "pending" && h.demoted) shouldHide = true;
+    // pending = "All" bucket. Hide a card here only when the CURRENT
+    // user demotes — using h.demoted (server aggregate) caused a
+    // newly-favorited clip to disappear from All if any OTHER family
+    // member had previously demoted it. The user's own action should
+    // be the only thing that hides their view.
+    if (currentBucket === "pending" && h.my_demoted) shouldHide = true;
     if (currentBucket === "favorites" && !h.favorited) shouldHide = true;
     if (currentBucket === "mine" && !h.my_favorited) shouldHide = true;
     if (currentBucket === "shared" && (h.favorite_count || 0) < 2) shouldHide = true;
