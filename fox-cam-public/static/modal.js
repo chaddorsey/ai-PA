@@ -710,7 +710,9 @@
       list.className = "modal-remixes-list";
       for (const r of h.remixes) {
         const dur = (r.end_offset_s - r.start_offset_s).toFixed(1);
-        const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
+        const username = r.created_by
+          ? (window.Profiles ? window.Profiles.displayName(r.created_by) : r.created_by.split("@")[0])
+          : "anonymous";
         const titleText = r.title || "(untitled)";
         const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
         const item = document.createElement("a");
@@ -990,7 +992,9 @@
   // ===========================================================================
   function renderRemixPlayback(parentH, remix) {
     teardownVideo();
-    const username = remix.created_by ? remix.created_by.split("@")[0] : "anonymous";
+    const username = remix.created_by
+      ? (window.Profiles ? window.Profiles.displayName(remix.created_by) : remix.created_by.split("@")[0])
+      : "anonymous";
     const dur = (remix.end_offset_s - remix.start_offset_s).toFixed(1);
     const title = remix.title || "(untitled)";
 

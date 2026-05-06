@@ -55,6 +55,17 @@
     <span class="profile-email">{{ current_email or "" }}</span>
   </div>
 
+  <section class="profile-name-section" id="profile-name-section">
+    <label class="profile-name-label" for="profile-name-input">Display name</label>
+    <div class="profile-name-row">
+      <input type="text" id="profile-name-input" maxlength="40"
+             autocomplete="off" autocapitalize="words" spellcheck="false"
+             placeholder="Your name">
+      <button type="button" class="profile-name-save" id="profile-name-save">Save</button>
+    </div>
+    <p class="profile-name-state muted" id="profile-name-state"></p>
+  </section>
+
   <section class="push-settings" id="push-settings">
     <!-- Master toggle row: title + iOS-style switch. Initial state
          off; first ON triggers Notification.requestPermission. -->
@@ -122,5 +133,24 @@
     <span>Sign out</span>
   </a>
 </div>
+<!-- First-login dialog. Shown by profile.js on the first authed
+     visit (when curator has no profile row for this user). User
+     can't dismiss without entering a name — display name shows up
+     in remixes, likes, push notifications, etc. so we want it set
+     before they can act. -->
+<dialog id="profile-onboarding" class="profile-onboarding">
+  <h2>Welcome!</h2>
+  <p>What should we call you in the app?</p>
+  <p class="muted">Family + friends will see this name on your remixes,
+    likes, and notifications.</p>
+  <input type="text" id="profile-onboarding-input" maxlength="40"
+         autocomplete="off" autocapitalize="words" spellcheck="false"
+         placeholder="Your name">
+  <button type="button" id="profile-onboarding-save">Save</button>
+  <p class="profile-onboarding-error muted" id="profile-onboarding-err"></p>
+</dialog>
+
+<script src="/static/profiles.js?v={{ v }}"></script>
+<script src="/static/profile-ui.js?v={{ v }}"></script>
 <script src="/static/push-client.js?v={{ v }}"></script>
 <script src="/static/push-settings.js?v={{ v }}"></script>

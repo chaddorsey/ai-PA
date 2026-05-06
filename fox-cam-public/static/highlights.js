@@ -146,7 +146,9 @@
         li.className = "remix-child";
         li.dataset.remixId = r.remix_id;
         const dur = (r.end_offset_s - r.start_offset_s).toFixed(1);
-        const username = r.created_by ? r.created_by.split("@")[0] : "anonymous";
+        const username = r.created_by
+          ? (window.Profiles ? window.Profiles.displayName(r.created_by) : r.created_by.split("@")[0])
+          : "anonymous";
         const title = r.title || "(untitled)";
         const zoom = (r.zoom_scale && r.zoom_scale > 1.01) ? ` · zoom ${r.zoom_scale.toFixed(1)}×` : "";
         // Filled-heart + count badge when likes exist. Hidden at 0.

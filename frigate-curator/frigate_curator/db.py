@@ -181,6 +181,15 @@ _MIGRATIONS = [
         created_at  REAL NOT NULL DEFAULT (strftime('%s','now'))
     )""",
     "CREATE INDEX IF NOT EXISTS push_schedule_email ON push_schedule_intervals (email)",
+    # User-set display names. CF Access supplies the email; this table
+    # lets users register a friendly name (shown wherever the UI used
+    # to show the bare email prefix). Email is the natural PK.
+    """CREATE TABLE IF NOT EXISTS user_profiles (
+        email         TEXT PRIMARY KEY,
+        display_name  TEXT NOT NULL,
+        created_at    REAL NOT NULL DEFAULT (strftime('%s','now')),
+        updated_at    REAL NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
 ]
 
 
@@ -1227,3 +1236,57 @@ def push_schedule_active(db_path: Path, email: str,
             if local_minutes >= s or local_minutes < e:
                 return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# User profiles (display names)
+# ---------------------------------------------------------------------------
+
+def profile_get(db_path: Path, email: str) -> dict[str, Any] | None:
+    with connect(db_path) as conn:
+        r = conn.execute(
+            "SELECT email, display_name, created_at, updated_at "
+            "FROM user_profiles WHERE email = ?", [email]
+        ).fetchone()
+    return dict(r) if r else None
+
+
+def profile_set(db_path: Path, email: str, display_name: str) -> None:
+    """Upsert a profile. display_name is normalised to single spaces +
+    trimmed; empty strings raise — callers pass a non-empty value."""
+    import time as _time
+    name = " ".join((display_name or "").split())
+    if not name:
+        raise ValueError("display_name cannot be empty")
+    with connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO user_profiles (email, display_name, updated_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(email) DO UPDATE SET "
+            "  display_name = excluded.display_name, "
+            "  updated_at = excluded.updated_at",
+            [email, name, _time.time()],
+        )
+
+
+def profile_list_all(db_path: Path) -> list[dict[str, Any]]:
+    """All profiles. Used by the client-side displayName lookup so we
+    cache one fetch per page load instead of N round-trips."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT email, display_name FROM user_profiles "
+            "ORDER BY display_name COLLATE NOCASE"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def display_name_for(db_path: Path, email: str) -> str:
+    """Resolve `email` to its display name, falling back to the email
+    prefix (the legacy behavior). Used server-side wherever a push or
+    log line wants a friendly name without forcing a network hop."""
+    if not email:
+        return "someone"
+    p = profile_get(db_path, email)
+    if p and p.get("display_name"):
+        return p["display_name"]
+    return email.split("@", 1)[0] if "@" in email else email

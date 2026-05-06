@@ -54,7 +54,10 @@
     li.dataset.notifId = n.id;
 
     if (n.kind === "remix_like") {
-      const liker = (n.payload?.liker_email || "").split("@")[0] || "someone";
+      const likerEmail = n.payload?.liker_email || "";
+      const liker = window.Profiles
+        ? window.Profiles.displayName(likerEmail)
+        : (likerEmail.split("@")[0] || "someone");
       const title = n.payload?.remix_title || "(untitled)";
       li.innerHTML = `
         <span class="material-icons" aria-hidden="true">favorite</span>

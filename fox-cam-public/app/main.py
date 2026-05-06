@@ -911,6 +911,55 @@ async def mark_all_read(request: Request) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# User profiles — friendly display name. CF Access supplies the email;
+# this layer is just a passthrough with the email server-injected so a
+# client can't write a name under another user's email.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/profile")
+async def get_my_profile(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/profile",
+                              params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/profile/all")
+async def list_profiles() -> Any:
+    """Public to all authed users — the names show up everywhere
+    (remix attributions, like notifications, etc.) so there's no
+    privacy delta vs. fetching them lazily one by one."""
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/profile/all", timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/profile")
+async def set_my_profile(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    body = await request.json()
+    body["email"] = email   # owner override
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/profile",
+                               json=body, timeout=5.0)
+    if r.status_code == 400:
+        raise HTTPException(status_code=400,
+                             detail=(r.json() or {}).get("detail", "bad request"))
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+# ---------------------------------------------------------------------------
 # Web Push proxies. The browser's `pushManager.subscribe` runs in the
 # service-worker scope; the resulting PushSubscription gets POSTed here
 # (with the user's CF Access email injected server-side as the owner).

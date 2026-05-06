@@ -756,14 +756,14 @@ def like_remix(remix_id: str, email: str | None = None) -> dict[str, Any]:
             # are swallowed inside web_push so the like flow never
             # blocks on push delivery.
             try:
-                liker_handle = email.split("@", 1)[0] if "@" in email else email
+                liker_handle = db.display_name_for(DB_PATH, email)
                 title = r.get("title") or "(untitled)"
                 public_base = notify._PUBLIC_BASE
                 web_push.send_to_user(
                     DB_PATH, author, "remix_like",
                     {
                         "title": "New like on your remix",
-                        "body":  f"@{liker_handle} liked “{title}”",
+                        "body":  f"{liker_handle} liked “{title}”",
                         "url":   f"{public_base}/remix/{remix_id}",
                         "tag":   f"remix-like-{remix_id}",
                         "kind":  "remix_like",
@@ -814,6 +814,41 @@ def mark_all_read(email: str | None = None) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="email required")
     n = db.notif_mark_all_read(DB_PATH, email)
     return {"updated": n}
+
+
+# ---------------------------------------------------------------------------
+# User profiles — friendly display name registry
+# ---------------------------------------------------------------------------
+
+class ProfileSetBody(BaseModel):
+    email: str
+    display_name: str
+
+
+@app.get("/profile")
+def profile_get(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    p = db.profile_get(DB_PATH, email)
+    return {"profile": p}
+
+
+@app.get("/profile/all")
+def profile_list_all() -> dict[str, Any]:
+    """Whole roster, used by the client to populate a one-fetch
+    {email: name} cache. Tiny payload — friends-and-family scale."""
+    return {"profiles": db.profile_list_all(DB_PATH)}
+
+
+@app.post("/profile")
+def profile_set(body: ProfileSetBody) -> dict[str, Any]:
+    if not body.email:
+        raise HTTPException(status_code=400, detail="email required")
+    try:
+        db.profile_set(DB_PATH, body.email, body.display_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"profile": db.profile_get(DB_PATH, body.email)}
 
 
 # ---------------------------------------------------------------------------

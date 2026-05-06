@@ -2793,3 +2793,126 @@ header h1 .brand-fox {
   vertical-align: -0.25em;
   margin-right: 0.4em;
 }
+
+/* ---------------------------------------------------------------
+   Display Name section inside the profile popover.
+   --------------------------------------------------------------- */
+.profile-name-section {
+  margin: 8px 0 2px;
+  padding: 8px 8px 6px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+.profile-name-label {
+  display: block;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--color-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.profile-name-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.profile-name-row input {
+  flex: 1 1 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid #d4cfc7;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: var(--color-fg);
+  min-width: 0;
+}
+.profile-name-row input:focus {
+  outline: 2px solid var(--color-glow);
+  outline-offset: -1px;
+}
+.profile-name-save {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--color-glow);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 12px;
+}
+.profile-name-save:hover { background: #c44a20; }
+.profile-name-save:disabled { opacity: 0.55; cursor: progress; }
+.profile-name-state {
+  margin: 4px 0 0;
+  font-size: 11px;
+}
+.profile-name-state.ok    { color: var(--color-glow); font-weight: 700; }
+.profile-name-state.warn  { color: #c0392b; }
+.profile-name-state:empty { display: none; }
+
+/* ---------------------------------------------------------------
+   First-login onboarding dialog (welcome!).
+   --------------------------------------------------------------- */
+.profile-onboarding {
+  border: 0;
+  border-radius: 14px;
+  padding: 22px 22px 18px;
+  width: min(380px, calc(100vw - 32px));
+  background: var(--color-cream);
+  color: var(--color-fg);
+  box-shadow: 0 18px 48px rgba(0,0,0,0.32);
+}
+.profile-onboarding::backdrop {
+  background: rgba(20, 14, 10, 0.45);
+  backdrop-filter: blur(2px);
+}
+.profile-onboarding h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  color: var(--color-glow);
+}
+.profile-onboarding p { margin: 6px 0; font-size: 14px; line-height: 1.4; }
+.profile-onboarding p.muted { color: var(--color-muted); font-size: 12px; }
+.profile-onboarding input {
+  display: block;
+  width: 100%;
+  margin: 12px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #d4cfc7;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 16px;
+  background: #fff;
+  color: var(--color-fg);
+}
+.profile-onboarding input:focus {
+  outline: 2px solid var(--color-glow);
+  outline-offset: -1px;
+}
+.profile-onboarding button {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding: 12px;
+  background: var(--color-glow);
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+}
+.profile-onboarding button:hover { background: #c44a20; }
+.profile-onboarding button:disabled { opacity: 0.55; cursor: progress; }
+.profile-onboarding-error {
+  color: #c0392b !important;
+  margin-top: 6px !important;
+  min-height: 1.2em;
+}
