@@ -208,7 +208,11 @@
     try {
       inst = window.panzoom(video, {
         maxZoom: 6, minZoom: 1, bounds: true,
-        boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
+        // 1.0 = entire video must remain inside the wrap; the corners
+        // can't be dragged past the viewport corners. (0.1 was the
+        // legacy behavior — let the thumbnail pan almost off — which
+        // doesn't match how a zoomed full-frame should feel.)
+        boundsPadding: 1.0, zoomDoubleClickSpeed: 1,
       });
     } catch (e) { return; }
     gridPanzooms.set(cam, inst);
@@ -394,7 +398,8 @@
       maxZoom: computeMax(),
       minZoom: 1,
       bounds: true,
-      boundsPadding: 0.95,
+      // 1.0 = video corners can't be dragged past the wrap's corners.
+      boundsPadding: 1.0,
       smoothScroll: false,
       zoomDoubleClickSpeed: 1,
     });

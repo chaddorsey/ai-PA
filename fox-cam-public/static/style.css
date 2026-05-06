@@ -1169,11 +1169,16 @@ body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap
 }
 .cam-nav:hover { opacity: 1; background: rgba(15, 17, 22, 0.9); }
 .cam-nav .material-icons { font-size: 26px; }
-.cam-nav-prev { left: 8px; }
-.cam-nav-next { right: 8px; }
-.live-layout[data-mode="spotlight"] .cam.is-spotlight .cam-nav {
+/* Position past the iPhone safe-area insets so the right arrow in
+   landscape doesn't slip behind the notch. max() falls back to 8px
+   on browsers that report 0 insets (e.g. browser-tab mode). */
+.cam-nav-prev { left:  max(8px, env(safe-area-inset-left)); }
+.cam-nav-next { right: max(8px, env(safe-area-inset-right)); }
+/* Arrows show ONLY in CSS-fullscreen mode. Standard spotlight (grid
+   on desktop, single-column on portrait phone, side-rail on
+   landscape phone) uses tap-on-rail-thumbnail to switch cams; the
+   floating arrows would clutter that view. */
+body.cam-cssfs .cam.is-spotlight .cam-nav {
   display: inline-flex;
+  z-index: 10001;
 }
-/* In CSS-fullscreen, lift them above the inflated cam's z-index so
-   the user can keep flipping through cams without exiting fullscreen. */
-body.cam-cssfs .cam-nav { z-index: 10001; }
