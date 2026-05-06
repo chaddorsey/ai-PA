@@ -182,13 +182,12 @@
     const zin  = wrap.querySelector(".zoom-controls .zoom-in");
     const zout = wrap.querySelector(".zoom-controls .zoom-out");
     const zfit = wrap.querySelector(".zoom-controls .zoom-fit");
-    if (zin) zin.addEventListener("click", (e) => {
-      e.stopPropagation();
+
+    const zoomInAction = () => {
       const r = wrap.getBoundingClientRect();
       inst.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
-    });
-    if (zout) zout.addEventListener("click", (e) => {
-      e.stopPropagation();
+    };
+    const zoomOutAction = () => {
       const cur = inst.getTransform().scale;
       const next = cur / 1.5;
       if (next <= 1.05) {
@@ -198,11 +197,42 @@
         const r = wrap.getBoundingClientRect();
         inst.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
       }
-    });
-    if (zfit) zfit.addEventListener("click", (e) => {
-      e.stopPropagation();
+    };
+    const zoomFitAction = () => {
       inst.zoomAbs(0, 0, 1);
       inst.moveTo(0, 0);
+    };
+
+    // Bind on BOTH click and pointerup. iOS Safari sometimes suppresses
+    // the synthesized click on a button when the parent's pointer
+    // events were captured by panzoom or our own touchstart latch —
+    // pointerup fires reliably in both cases. dedupeRecent prevents
+    // double-fire when both events do come through.
+    bindZoomBtn(zin, zoomInAction);
+    bindZoomBtn(zout, zoomOutAction);
+    bindZoomBtn(zfit, zoomFitAction);
+  }
+
+  // Wire a zoom-control button so it fires on both click and pointerup,
+  // de-duplicated within 400ms. stopPropagation prevents the parent
+  // .cam click handler from also receiving the event.
+  function bindZoomBtn(btn, action) {
+    if (!btn) return;
+    let lastFired = 0;
+    const fire = (e) => {
+      e.stopPropagation();
+      const now = Date.now();
+      if (now - lastFired < 400) return;
+      lastFired = now;
+      action();
+    };
+    btn.addEventListener("click", fire);
+    // pointerup covers iOS taps where click is suppressed.
+    btn.addEventListener("pointerup", (e) => {
+      // Only fire on a real release (not a drag-end). Pointer's button
+      // is 0 for left/touch on release; we accept both.
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      fire(e);
     });
   }
 

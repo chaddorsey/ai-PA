@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v58-recenttap-zoombtn-fix";
+const CACHE = "our-foxes-v59-zoombtn-pointerup-visible";
 
 const STATIC_ASSETS = [
   "/static/style.css",
