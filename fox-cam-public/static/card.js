@@ -284,9 +284,16 @@
     // Routes to /clip/<id>?remix=1 which enters remix mode directly.
     if (h.my_favorited) {
       bar.appendChild(actionBtn("✂️ Remix", "remix", false, () => {
-        // /highlights/{id}/remix is the authed-only remix editor.
-        // /clip/{id}?remix=1 is bypassed and would render anonymous.
-        location.href = `/highlights/${encodeURIComponent(h.event_id)}/remix`;
+        // Open the remix editor inside the highlights modal in place
+        // of a full-page nav to /highlights/{id}/remix. Save/Cancel
+        // return to the in-modal viewer so the user never leaves the
+        // /highlights page (the standalone path's "Back to Our Foxes"
+        // link landed users on the public landing — disorienting).
+        if (window.openCardModalInRemixMode) {
+          window.openCardModalInRemixMode(h.event_id);
+        } else {
+          location.href = `/highlights/${encodeURIComponent(h.event_id)}/remix`;
+        }
       }));
     }
     // Promote-to-landing button: admins only. Already-featured clips

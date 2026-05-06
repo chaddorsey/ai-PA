@@ -1539,3 +1539,41 @@ html.ios .cam .video-wrap .zoom-controls {
   opacity: 0.7 !important;
   pointer-events: auto !important;
 }
+
+/* iOS share button: icon-only, no pill chrome. The .action-share
+   classed button uses an SVG share glyph rendered inline. The
+   .action-share-iconly variant removes the pill chrome entirely so
+   the glyph reads as a system-style icon button. */
+body.ios .action-btn.action-share-iconly,
+html.ios .action-btn.action-share-iconly {
+  background: transparent !important;
+  border: none !important;
+  padding: 6px 8px !important;
+  color: var(--color-glow) !important;
+  min-width: 44px !important;   /* still meet HIG 44pt hit area */
+  min-height: 44px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+body.ios .action-btn.action-share-iconly svg,
+html.ios .action-btn.action-share-iconly svg {
+  display: block;
+}
+
+/* Inline share button inside the modal-meta-extra row (next to date/
+   duration in remix playback). Sits visually with the other meta-line
+   icons rather than as a row item. */
+.meta-share-inline {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 6px !important;
+  margin: 0 !important;
+  color: var(--color-glow) !important;
+  display: inline-flex !important;
+  align-items: center;
+  vertical-align: middle;
+  min-width: 28px !important;
+  min-height: 28px !important;
+}
+.meta-share-inline svg { display: block; }

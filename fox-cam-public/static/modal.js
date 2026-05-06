@@ -31,6 +31,34 @@
   // Open / close
   // ===========================================================================
 
+  // Open the modal directly into the remix editor for `eventId`. Used
+  // by gallery cards' ✂️ Remix button so the user never leaves the
+  // /highlights page (Save/Cancel return to the modal viewer in
+  // place). Replaces the older `location.href = "/highlights/{id}/remix"`
+  // navigation that landed users on the standalone clip page with a
+  // dead-end "Back to Our Foxes" link.
+  window.openCardModalInRemixMode = async function openCardModalInRemixMode(eventId) {
+    if (!dialog.open) {
+      body.innerHTML = '<p style="padding:32px;text-align:center;color:#6b4a3a;">Loading…</p>';
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      document.body.classList.add("modal-open");
+    }
+    let h;
+    try {
+      const r = await fetch(`/api/highlights/${encodeURIComponent(eventId)}`,
+        { credentials: "same-origin" });
+      if (!r.ok) throw new Error(`fetch ${r.status}`);
+      h = await r.json();
+    } catch (err) {
+      body.innerHTML = `<p style="padding:32px;text-align:center;color:#6b4a3a;">
+        Couldn't load this clip. <a href="javascript:window.closeCardModal()">Close</a></p>`;
+      return;
+    }
+    current = h;
+    renderRemixEditor(h);
+  };
+
   window.openCardModal = async function openCardModal(eventId) {
     // showModal throws if the dialog is already open. Guard so callers
     // that don't know whether the modal is currently displayed (e.g.
@@ -451,31 +479,8 @@
     const wrap = body.querySelector(".modal-video-wrap");
     panzoomInstance = bindPanzoom(videoEl, wrap);
     if (panzoomInstance) {
-      const zin = body.querySelector(".zoom-controls .zoom-in");
-      const zout = body.querySelector(".zoom-controls .zoom-out");
-      const zfit = body.querySelector(".zoom-controls .zoom-fit");
-      if (zin) zin.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const r = wrap.getBoundingClientRect();
-        panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
-      });
-      if (zout) zout.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const cur = panzoomInstance.getTransform().scale;
-        const next = cur / 1.5;
-        if (next <= 1.05) {
-          panzoomInstance.zoomAbs(0, 0, 1);
-          panzoomInstance.moveTo(0, 0);
-        } else {
-          const r = wrap.getBoundingClientRect();
-          panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
-        }
-      });
-      if (zfit) zfit.addEventListener("click", (e) => {
-        e.stopPropagation();
-        panzoomInstance.zoomAbs(0, 0, 1);
-        panzoomInstance.moveTo(0, 0);
-      });
+      wireZoomButtons(body, ".zoom-controls .zoom-in", ".zoom-controls .zoom-out",
+                       ".zoom-controls .zoom-fit", panzoomInstance, wrap);
     }
 
     // Build action bar inline, mirroring card.js's row but routed back
@@ -544,42 +549,25 @@
         }
       }));
     }
-    actionsBar.appendChild(actionBtn("🔗 Share", "share", false, () => {
-      const url = `${location.origin}/clip/${h.event_id}`;
-      // Prefer the native iOS / mobile-Chrome share sheet when
-      // available — opens system share with iMessage, AirDrop, Mail,
-      // etc. Fall back to clipboard on desktop or if share is denied.
-      if (navigator.share) {
-        navigator.share({
-          url,
-          title: "Our Foxes — clip",
-          text: "Fox cam clip",
-        }).catch((err) => {
-          // AbortError = user dismissed the sheet. Don't fall back to
-          // clipboard in that case (would be a surprise toast).
-          if (err && err.name === "AbortError") return;
-          navigator.clipboard?.writeText(url).then(
-            () => flashToast(`Link copied`),
-            () => prompt("Copy this URL:", url)
-          );
-        });
-      } else {
-        navigator.clipboard?.writeText(url).then(
-          () => flashToast(`Link copied`),
-          () => prompt("Copy this URL:", url)
-        );
-      }
+    actionsBar.appendChild(buildShareButton({
+      clipUrl: `/api/highlights/${encodeURIComponent(h.event_id)}/clip`,
+      pageUrl: `${location.origin}/clip/${h.event_id}`,
+      filename: clipFilename(h),
+      label: "Share",
     }));
-    // Download the .mp4 file. Anchor with download attr + filename
-    // derived from the start_time so the user lands a meaningful name.
-    // Download icon next to the date/duration slug. Wired here so it
-    // closes over the current `h`.
+    // Download icon — hidden on iOS, where Share-sheet's Save-to-Files
+    // gives the same result without leaving the PWA. Browser flow
+    // unchanged: anchor with download attr + meaningful filename.
     const dlBtn = body.querySelector(".meta-download");
     if (dlBtn) {
-      dlBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        triggerDownload(h);
-      });
+      if (document.documentElement.classList.contains("ios")) {
+        dlBtn.style.display = "none";
+      } else {
+        dlBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          triggerDownload(h);
+        });
+      }
     }
     if (h.my_favorited) {
       actionsBar.appendChild(actionBtn("✂️ Remix", "remix", false,
@@ -858,31 +846,8 @@
         zoomDisp.textContent = `zoom: ${t.scale.toFixed(2)}×`;
         updateTrimVisuals();
       });
-      const zin = body.querySelector(".zoom-in");
-      const zout = body.querySelector(".zoom-out");
-      const zfit = body.querySelector(".zoom-fit");
-      if (zin) zin.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const r = wrap.getBoundingClientRect();
-        panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
-      });
-      if (zout) zout.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const cur = panzoomInstance.getTransform().scale;
-        const next = cur / 1.5;
-        if (next <= 1.05) {
-          panzoomInstance.zoomAbs(0, 0, 1);
-          panzoomInstance.moveTo(0, 0);
-        } else {
-          const r = wrap.getBoundingClientRect();
-          panzoomInstance.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
-        }
-      });
-      if (zfit) zfit.addEventListener("click", (e) => {
-        e.stopPropagation();
-        panzoomInstance.zoomAbs(0, 0, 1);
-        panzoomInstance.moveTo(0, 0);
-      });
+      wireZoomButtons(body, ".zoom-in", ".zoom-out", ".zoom-fit",
+                       panzoomInstance, wrap);
     }
 
     cancelBtn.addEventListener("click", () => renderViewer(h));
@@ -972,21 +937,53 @@
               <button class="meta-download" type="button" title="Download remix clip" aria-label="Download clip">
                 <span class="material-icons">download</span>
               </button>
+              <span class="meta-share-slot"></span>
             </span>
           </div>
           <button class="modal-back-pill" type="button" id="rp-back">← See original highlight</button>
         </div>
       </div>
     `;
-    // Wire download icon — produces a trimmed+cropped MP4 server-side
-    // (curator runs ffmpeg, caches the result) so the file matches
-    // exactly what the viewer is watching, not the full parent clip.
+    // Download icon: hidden on iOS (Share-sheet's Save-to-Files
+    // covers it without leaving the PWA). Browser flow unchanged —
+    // produces a trimmed+cropped MP4 server-side (curator ffmpeg,
+    // cached) so the file matches what the viewer is watching.
     const dlBtn = body.querySelector(".meta-download");
     if (dlBtn) {
-      dlBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        triggerRemixDownload(remix, parentH);
+      if (document.documentElement.classList.contains("ios")) {
+        dlBtn.style.display = "none";
+      } else {
+        dlBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          triggerRemixDownload(remix, parentH);
+        });
+      }
+    }
+    // Share button — file-based on iOS (so Save-to-Files works in the
+    // share sheet), URL-based otherwise. The clipUrl points to the
+    // server-rendered trimmed+cropped MP4 so what gets shared matches
+    // the playback exactly.
+    const shareSlot = body.querySelector(".meta-share-slot");
+    const remixFilename = (() => {
+      const stamp = parentH && parentH.start_time
+        ? new Date(parentH.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
+        : remix.remix_id;
+      const cam = (window.prettyCamera ? window.prettyCamera(parentH?.camera) : (parentH?.camera || "fox"))
+        .replace(/\s+/g, "-").toLowerCase();
+      const titlePart = (remix.title || "remix").replace(/[^a-z0-9-]+/gi, "-").slice(0, 40);
+      return `${cam}-${stamp}-${titlePart}.mp4`;
+    })();
+    if (shareSlot) {
+      const remixShareBtn = buildShareButton({
+        clipUrl: `/api/remixes/${encodeURIComponent(remix.remix_id)}/download?filename=${encodeURIComponent(remixFilename)}`,
+        pageUrl: `${location.origin}/remix/${remix.remix_id}`,
+        filename: remixFilename,
+        label: "Share",
       });
+      // In the meta-extra slot the button should look like an icon,
+      // not a pill — drop the action-btn pill class for a tighter fit.
+      remixShareBtn.classList.add("meta-share-inline");
+      shareSlot.appendChild(remixShareBtn);
     }
 
     // Drop native controls — when we apply the saved zoom_scale via
@@ -1057,6 +1054,55 @@
   // what clip.js / live.js already use. The capital-P @panzoom/panzoom
   // library has a different API and isn't loaded.
   // ===========================================================================
+  // Wire +/-/⛶ zoom buttons against a panzoom instance, with two
+  // refinements over the original smoothZoom-on-click pattern:
+  //
+  // 1. Anchored zoom math: explicitly compute the post-zoom translate
+  //    so the wrap-center pixel stays fixed across the scale step.
+  //    smoothZoom(centerX, centerY, factor) was being defeated by
+  //    panzoom's bounds clamp inside small wraps (same bug fix that
+  //    was applied to live.js v60).
+  // 2. Dual binding on click + pointerup with 400ms de-dupe so iOS
+  //    taps fire even when the synthesized click is suppressed.
+  function wireZoomButtons(scope, inSel, outSel, fitSel, inst, wrap) {
+    const zin  = scope.querySelector(inSel);
+    const zout = scope.querySelector(outSel);
+    const zfit = scope.querySelector(fitSel);
+    const zoomToScale = (targetScale) => {
+      const r = wrap.getBoundingClientRect();
+      const t = inst.getTransform();
+      const s = t.scale || 1;
+      const wrapCx = r.width / 2;
+      const wrapCy = r.height / 2;
+      const cxL = (wrapCx - t.x) / s;
+      const cyL = (wrapCy - t.y) / s;
+      const sNew = Math.max(1, Math.min(6, targetScale));
+      const txNew = wrapCx - cxL * sNew;
+      const tyNew = wrapCy - cyL * sNew;
+      inst.zoomAbs(0, 0, sNew);
+      inst.moveTo(txNew, tyNew);
+    };
+    const bind = (btn, action) => {
+      if (!btn) return;
+      let last = 0;
+      const fire = (e) => {
+        e.stopPropagation();
+        const now = Date.now();
+        if (now - last < 400) return;
+        last = now;
+        action();
+      };
+      btn.addEventListener("click", fire);
+      btn.addEventListener("pointerup", (e) => {
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        fire(e);
+      });
+    };
+    bind(zin,  () => zoomToScale((inst.getTransform().scale || 1) * 1.5));
+    bind(zout, () => zoomToScale((inst.getTransform().scale || 1) / 1.5));
+    bind(zfit, () => { inst.zoomAbs(0, 0, 1); inst.moveTo(0, 0); });
+  }
+
   function bindPanzoom(videoTarget, wrapEl) {
     if (typeof window.panzoom !== "function" || !videoTarget || !wrapEl) {
       console.warn("[modal] panzoom missing", { hasLib: typeof window.panzoom });
@@ -1066,7 +1112,11 @@
       videoTarget.style.transformOrigin = "0 0";
       const inst = window.panzoom(videoTarget, {
         maxZoom: 6, minZoom: 1, bounds: true,
-        boundsPadding: 0.95, zoomDoubleClickSpeed: 1,
+        // 0.1 = only 10% of the element must remain visible. The
+        // previous 0.95 was unsatisfiable above ~1.05× zoom in any
+        // wrap and made panzoom snap to the top-left bound. Same fix
+        // landed in live.js for grid panzoom (v60).
+        boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
       });
       return inst;
     } catch (err) {
@@ -1143,22 +1193,110 @@
   // For remix mode, the source is still the parent clip (remixes are
   // virtual sub-windows); the suffix encodes the remix title so
   // multiple downloads off the same parent stay distinguishable.
-  function triggerDownload(h, suffix) {
-    if (!h || !h.event_id) return;
+  // Build a meaningful .mp4 filename for a highlight: cam-iso8601[-suffix].mp4
+  function clipFilename(h, suffix) {
+    if (!h || !h.event_id) return "fox.mp4";
     const stamp = h.start_time
       ? new Date(h.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
       : h.event_id;
     const cam = (window.prettyCamera ? window.prettyCamera(h.camera) : (h.camera || "fox"))
       .replace(/\s+/g, "-").toLowerCase();
-    let filename = `${cam}-${stamp}`;
-    if (suffix) filename += "-" + String(suffix).replace(/[^a-z0-9-]+/gi, "-").slice(0, 40);
-    filename += ".mp4";
+    let name = `${cam}-${stamp}`;
+    if (suffix) name += "-" + String(suffix).replace(/[^a-z0-9-]+/gi, "-").slice(0, 40);
+    return name + ".mp4";
+  }
+
+  function triggerDownload(h, suffix) {
+    const filename = clipFilename(h, suffix);
     const a = document.createElement("a");
     a.href = `/api/highlights/${encodeURIComponent(h.event_id)}/clip?download=1&filename=${encodeURIComponent(filename)}`;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
+  }
+
+  // ---------------------------------------------------------------------
+  // Share helpers
+  // ---------------------------------------------------------------------
+  // SF-Symbols-style share glyph (square with up-arrow) used on iOS in
+  // place of the 🔗 emoji label. Single SVG path, currentColor.
+  const SHARE_ICON_SVG = `
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M12 2.5c.27 0 .5.1.7.3l4 4a1 1 0 11-1.4 1.4L13 5.91V14a1 1 0 11-2 0V5.91L8.7 8.2a1 1 0 11-1.4-1.4l4-4c.2-.2.43-.3.7-.3zM5 11a2 2 0 00-2 2v6a2 2 0 002 2h14a2 2 0 002-2v-6a2 2 0 00-2-2h-3a1 1 0 100 2h3v6H5v-6h3a1 1 0 100-2H5z"/>
+    </svg>`;
+
+  // Build a share button that does the right thing per-platform:
+  //   iOS PWA / iOS Safari → navigator.share with a File of the clip
+  //     (so the share-sheet "Save to Files" option works without
+  //     leaving the PWA). URL-only fallback if file fetch fails.
+  //   Other Web Share-capable browsers → navigator.share({url}).
+  //   Desktop → clipboard copy with toast.
+  function buildShareButton(opts) {
+    // opts: { clipUrl, pageUrl, filename, label }
+    const isIOS = document.documentElement.classList.contains("ios");
+    const b = document.createElement("button");
+    b.className = "action-btn action-share";
+    b.type = "button";
+    b.setAttribute("aria-label", opts.label || "Share");
+    b.title = opts.label || "Share";
+    if (isIOS) {
+      // iOS: icon only, no text — universal share glyph.
+      b.classList.add("action-share-iconly");
+      b.innerHTML = SHARE_ICON_SVG;
+    } else {
+      b.textContent = `🔗 ${opts.label || "Share"}`;
+    }
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      doShare(opts).catch(() => {});
+    });
+    return b;
+  }
+
+  async function doShare(opts) {
+    const { clipUrl, pageUrl, filename } = opts;
+    const isIOS = document.documentElement.classList.contains("ios");
+    // iOS: try to share the FILE so "Save to Files" appears in the
+    // sheet. Without files, the iOS share sheet only offers
+    // link-targeted actions (Messages, Mail) — no file save.
+    if (isIOS && navigator.share && navigator.canShare && clipUrl) {
+      try {
+        const r = await fetch(clipUrl, { credentials: "same-origin" });
+        if (!r.ok) throw new Error(`fetch ${r.status}`);
+        const blob = await r.blob();
+        const file = new File([blob], filename || "fox.mp4",
+                                { type: blob.type || "video/mp4" });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: filename });
+          return;
+        }
+      } catch (err) {
+        // Fall through to URL share / clipboard.
+      }
+    }
+    // Web Share with URL only — desktop Safari, mobile Chrome, etc.
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          url: pageUrl,
+          title: "Our Foxes — clip",
+          text: "Fox cam clip",
+        });
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+      }
+    }
+    // Clipboard fallback.
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(pageUrl).then(
+        () => flashToast("Link copied"),
+        () => prompt("Copy this URL:", pageUrl)
+      );
+    } else {
+      prompt("Copy this URL:", pageUrl);
+    }
   }
 
   // Download a server-rendered trimmed + (when zoomed) cropped MP4 of
