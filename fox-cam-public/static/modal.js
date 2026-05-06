@@ -436,15 +436,22 @@
           <div class="modal-badges">${speciesBadge}${sharedBadge}${featuredBadge}
             <span class="modal-meta-extra">
               ${(h.duration_s || 0).toFixed(1)}s
-              <button class="meta-download" type="button" title="Download clip" aria-label="Download clip">
-                <span class="material-icons">download</span>
-              </button>
+              <span class="meta-share-slot"></span>
             </span>
           </div>
         </div>
         <div class="modal-actions" id="modal-actions"></div>
       </div>
     `;
+    // Meta-extra row gets two icon buttons:
+    //   link  — copy URL (fast, single action, no sheet animation)
+    //   share — universal share sheet (Messages / Mail / AirDrop / etc.)
+    const shareSlot = body.querySelector(".meta-share-slot");
+    if (shareSlot) {
+      const pageUrl = `${location.origin}/clip/${h.event_id}`;
+      shareSlot.appendChild(buildLinkButton({ pageUrl, label: "Copy link" }));
+      shareSlot.appendChild(buildShareButton({ pageUrl, label: "Share" }));
+    }
 
     // Attach the video stream. Always play from frame 0 in the modal —
     // applyPrerollSkip() jumps ~25s in to skip Frigate's pre-event
@@ -453,6 +460,29 @@
     videoEl = body.querySelector(".modal-video");
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     videoEl.currentTime = 0;
+
+    // iOS: drop the native control bar by default so swipe-to-next
+    // doesn't flash the controls overlay over a clip that's already
+    // autoplaying as desired. Tap toggles play/pause. Replay button
+    // covers restart, so we never need to auto-show controls on
+    // ended either. Non-iOS keeps the `controls` attribute from the
+    // template.
+    if (document.documentElement.classList.contains("ios")) {
+      videoEl.controls = false;
+      videoEl.removeAttribute("controls");
+      videoEl.addEventListener("click", (e) => {
+        if (e.target !== videoEl) return;        // ignore overlay clicks
+        if (videoEl.paused) videoEl.play().catch(() => {});
+        else videoEl.pause();
+      });
+      // Belt-and-suspenders: in case anything tries to flip controls
+      // on (e.g. via the native ended → show-controls behavior),
+      // strip them every time playback ends.
+      videoEl.addEventListener("ended", () => {
+        videoEl.controls = false;
+        videoEl.removeAttribute("controls");
+      });
+    }
 
     // Wire prev/next nav with a slide animation between cards. The
     // viewer only swaps content (no full-modal teardown), so the
@@ -544,23 +574,10 @@
         }
       }));
     }
-    actionsBar.appendChild(buildShareButton({
-      clipUrl: `/api/highlights/${encodeURIComponent(h.event_id)}/clip`,
-      pageUrl: `${location.origin}/clip/${h.event_id}`,
-      filename: clipFilename(h),
-      label: "Share",
-    }));
-    // Download icon — anchor with download attr + meaningful
-    // filename. Wired here so it closes over the current `h`. Kept
-    // on iOS now that share is URL-only (Save-to-Files isn't exposed
-    // through a URL share, so download is the only file-save path).
-    const dlBtn = body.querySelector(".meta-download");
-    if (dlBtn) {
-      dlBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        triggerDownload(h);
-      });
-    }
+    // Sharing is in the meta-extra row above (link + share-sheet
+    // icons next to the duration). Action row keeps just the
+    // social/curatorial verbs (favorite, demote, remix, archive,
+    // feature, delete).
     if (h.my_favorited) {
       actionsBar.appendChild(actionBtn("✂️ Remix", "remix", false,
         () => renderRemixEditor(h)));
@@ -926,9 +943,6 @@
             <span class="modal-badge fox">@${escapeHtml(username)}</span>
             <span class="modal-meta-extra">
               ${parentDate ? `${parentDate} · ` : ""}${dur}s
-              <button class="meta-download" type="button" title="Download remix clip" aria-label="Download clip">
-                <span class="material-icons">download</span>
-              </button>
               <span class="meta-share-slot"></span>
             </span>
           </div>
@@ -936,42 +950,16 @@
         </div>
       </div>
     `;
-    // Download icon — produces a trimmed+cropped MP4 server-side
-    // (curator runs ffmpeg, caches the result) so the file matches
-    // exactly what the viewer is watching. Kept on iOS now that
-    // share is URL-only.
-    const dlBtn = body.querySelector(".meta-download");
-    if (dlBtn) {
-      dlBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        triggerRemixDownload(remix, parentH);
-      });
-    }
-    // Share button — file-based on iOS (so Save-to-Files works in the
-    // share sheet), URL-based otherwise. The clipUrl points to the
-    // server-rendered trimmed+cropped MP4 so what gets shared matches
-    // the playback exactly.
+    // Meta-extra row: link icon (copy URL) + share-sheet icon
+    // (navigator.share). Same pattern as the regular highlight viewer
+    // so the user has a single mental model. Replaces the legacy
+    // download icon — share-sheet's "Save to Files" / right-click on
+    // the page-level remix permalink covers download intent.
+    const remixPageUrl = `${location.origin}/remix/${remix.remix_id}`;
     const shareSlot = body.querySelector(".meta-share-slot");
-    const remixFilename = (() => {
-      const stamp = parentH && parentH.start_time
-        ? new Date(parentH.start_time * 1000).toISOString().replace(/[:.]/g, "-").slice(0, 19)
-        : remix.remix_id;
-      const cam = (window.prettyCamera ? window.prettyCamera(parentH?.camera) : (parentH?.camera || "fox"))
-        .replace(/\s+/g, "-").toLowerCase();
-      const titlePart = (remix.title || "remix").replace(/[^a-z0-9-]+/gi, "-").slice(0, 40);
-      return `${cam}-${stamp}-${titlePart}.mp4`;
-    })();
     if (shareSlot) {
-      const remixShareBtn = buildShareButton({
-        clipUrl: `/api/remixes/${encodeURIComponent(remix.remix_id)}/download?filename=${encodeURIComponent(remixFilename)}`,
-        pageUrl: `${location.origin}/remix/${remix.remix_id}`,
-        filename: remixFilename,
-        label: "Share",
-      });
-      // In the meta-extra slot the button should look like an icon,
-      // not a pill — drop the action-btn pill class for a tighter fit.
-      remixShareBtn.classList.add("meta-share-inline");
-      shareSlot.appendChild(remixShareBtn);
+      shareSlot.appendChild(buildLinkButton({ pageUrl: remixPageUrl, label: "Copy link" }));
+      shareSlot.appendChild(buildShareButton({ pageUrl: remixPageUrl, label: "Share" }));
     }
 
     // Drop native controls — when we apply the saved zoom_scale via
@@ -1220,12 +1208,47 @@
   // ---------------------------------------------------------------------
   // Share helpers
   // ---------------------------------------------------------------------
-  // SF-Symbols-style share glyph (square with up-arrow) used on iOS in
-  // place of the 🔗 emoji label. Single SVG path, currentColor.
+  // SF-Symbols-style share glyph (square with up-arrow) — universal
+  // share-sheet icon. currentColor so the parent's color rules apply.
   const SHARE_ICON_SVG = `
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
       <path fill="currentColor" d="M12 2.5c.27 0 .5.1.7.3l4 4a1 1 0 11-1.4 1.4L13 5.91V14a1 1 0 11-2 0V5.91L8.7 8.2a1 1 0 11-1.4-1.4l4-4c.2-.2.43-.3.7-.3zM5 11a2 2 0 00-2 2v6a2 2 0 002 2h14a2 2 0 002-2v-6a2 2 0 00-2-2h-3a1 1 0 100 2h3v6H5v-6h3a1 1 0 100-2H5z"/>
     </svg>`;
+
+  // Chain-link glyph for the "copy link" affordance — fast, single
+  // action, no sheet animation.
+  const LINK_ICON_SVG = `
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M10.59 13.41a1 1 0 011.41 0l1 1a1 1 0 11-1.41 1.41l-1-1a1 1 0 010-1.41zM6.34 7.76l3.18-3.18a4.5 4.5 0 016.36 6.36l-1.06 1.06a1 1 0 11-1.41-1.41l1.06-1.06a2.5 2.5 0 10-3.54-3.54L7.76 9.17A1 1 0 116.34 7.76zm11.32 8.48l-3.18 3.18a4.5 4.5 0 01-6.36-6.36l1.06-1.06a1 1 0 111.41 1.41L9.53 14.47a2.5 2.5 0 003.54 3.54l3.18-3.18a1 1 0 011.41 1.41z"/>
+    </svg>`;
+
+  // Build a "copy link" button — fast, deterministic. No sheet,
+  // no fallback prompt. Shows a toast on success.
+  function buildLinkButton(opts) {
+    // opts: { pageUrl, label }
+    const b = document.createElement("button");
+    b.className = "action-btn action-link action-icon-only";
+    b.type = "button";
+    b.setAttribute("aria-label", opts.label || "Copy link");
+    b.title = opts.label || "Copy link";
+    b.innerHTML = LINK_ICON_SVG;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      copyLink(opts.pageUrl);
+    });
+    return b;
+  }
+
+  function copyLink(url) {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(
+        () => flashToast("Link copied"),
+        () => flashToast("Copy failed")
+      );
+    } else {
+      flashToast("Copy not supported on this browser");
+    }
+  }
 
   // Build a share button that does the right thing per-platform:
   //   iOS PWA / iOS Safari → navigator.share with a File of the clip
@@ -1234,20 +1257,16 @@
   //   Other Web Share-capable browsers → navigator.share({url}).
   //   Desktop → clipboard copy with toast.
   function buildShareButton(opts) {
-    // opts: { clipUrl, pageUrl, filename, label }
-    const isIOS = document.documentElement.classList.contains("ios");
+    // opts: { pageUrl, label }
+    // Universal share-sheet button: SF-style square-with-up-arrow
+    // glyph, no text, on every platform. On non-Web-Share browsers
+    // doShare falls through to clipboard with a toast.
     const b = document.createElement("button");
-    b.className = "action-btn action-share";
+    b.className = "action-btn action-share action-icon-only";
     b.type = "button";
     b.setAttribute("aria-label", opts.label || "Share");
     b.title = opts.label || "Share";
-    if (isIOS) {
-      // iOS: icon only, no text — universal share glyph.
-      b.classList.add("action-share-iconly");
-      b.innerHTML = SHARE_ICON_SVG;
-    } else {
-      b.textContent = `🔗 ${opts.label || "Share"}`;
-    }
+    b.innerHTML = SHARE_ICON_SVG;
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       doShare(opts).catch(() => {});
@@ -1265,10 +1284,12 @@
     // moves to the desktop Download path.
     if (navigator.share) {
       try {
+        // Pass URL only (omit text). iOS's "Copy" share-sheet action
+        // copies whichever of url/text is provided; with both, it
+        // copies the text. We want the URL on clipboard.
         await navigator.share({
           url: pageUrl,
           title: "Our Foxes — clip",
-          text: "Fox cam clip",
         });
         return;
       } catch (err) {

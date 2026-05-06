@@ -1042,14 +1042,13 @@ body.filters-hidden .filters { display: none !important; }
   color: white !important;
 }
 
-/* Replay button — curved-arrow Material icon, sits below the × with
-   1.5× the X's height worth of gap between them.
-   X is 32px tall, top:4px → its bottom is at 36px. Gap of 1.5×32 = 48
-   pushes the replay's top to 36+48 = 84px. */
+/* Replay button — curved-arrow Material icon, sits to the LEFT of
+   the close × so the top-right reads as a single chrome row.
+   8px right gutter + 32px close width + 8px gap = 48px from right. */
 .card-modal-replay {
   position: absolute;
-  top: 84px;
-  right: 8px;
+  top: 4px;
+  right: 48px;
   z-index: 10;
   width: 32px;
   height: 32px;
@@ -1540,43 +1539,40 @@ html.ios .cam .video-wrap .zoom-controls {
   pointer-events: auto !important;
 }
 
-/* iOS share button: icon-only, no pill chrome. The .action-share
-   classed button uses an SVG share glyph rendered inline. The
-   .action-share-iconly variant removes the pill chrome entirely so
-   the glyph reads as a system-style icon button. */
-body.ios .action-btn.action-share-iconly,
-html.ios .action-btn.action-share-iconly {
+/* Icon-only buttons inside the modal-meta-extra row. Used for both
+   the link (copy URL) and share-sheet (navigator.share) buttons.
+   Render as transparent system-style icons — no pill chrome — so
+   they sit cleanly next to the duration / date metadata.
+   The action-icon-only modifier strips the .action-btn pill
+   styling regardless of platform; (hover:none) bumps the hit area
+   to the 44pt HIG floor on touch. */
+.action-btn.action-icon-only {
   background: transparent !important;
   border: none !important;
-  padding: 6px 8px !important;
-  color: var(--color-glow) !important;
-  min-width: 44px !important;   /* still meet HIG 44pt hit area */
-  min-height: 44px !important;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-body.ios .action-btn.action-share-iconly svg,
-html.ios .action-btn.action-share-iconly svg {
-  display: block;
-}
-
-/* Inline share button inside the modal-meta-extra row (next to date/
-   duration in remix playback). Sits visually with the other meta-line
-   icons rather than as a row item. */
-.meta-share-inline {
-  background: transparent !important;
-  border: none !important;
-  padding: 0 6px !important;
-  margin: 0 !important;
+  padding: 4px 6px !important;
+  margin: 0 2px !important;
   color: var(--color-glow) !important;
   display: inline-flex !important;
   align-items: center;
+  justify-content: center;
   vertical-align: middle;
+  font-size: inherit !important;
   min-width: 28px !important;
   min-height: 28px !important;
 }
-.meta-share-inline svg { display: block; }
+.action-btn.action-icon-only:hover {
+  background: rgba(240, 90, 40, 0.08) !important;
+  border-radius: 999px !important;
+  transform: none !important;
+}
+.action-btn.action-icon-only svg { display: block; }
+@media (hover: none) {
+  .action-btn.action-icon-only {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    padding: 8px 10px !important;
+  }
+}
 
 /* iOS: hide the gallery-card archive icon to avoid accidental taps
    while scrolling. Archive remains reachable via the modal's action
@@ -1587,15 +1583,14 @@ html.ios .highlight .archive-toggle {
   display: none !important;
 }
 
-/* iOS modal button layout fixes — avoid collisions with iOS native
-   video controls (mute/AirPlay top-right, scrubber bottom) and
-   ensure zoom-fit isn't clipped by a landscape modal's max-height. */
+/* iOS modal button layout — close X + replay both as 44pt pills in
+   the top-right corner, replay LEFT of close (single chrome row).
+   Zoom controls stay at the wrap's bottom-right so reaching is
+   one-thumb-friendly. */
 body.ios .card-modal-close,
 html.ios .card-modal-close {
-  /* Pill background so the X stands out against the iOS native
-     video controls / chrome that may sit underneath. Pushed slightly
-     in from the dialog edge so it's never tangent to a native
-     mute/AirPlay glyph. */
+  /* Pill background so the X is distinct from iOS native video
+     controls underneath. */
   background: rgba(0, 0, 0, 0.55) !important;
   border-radius: 999px !important;
   width: 44px !important;
@@ -1606,29 +1601,14 @@ html.ios .card-modal-close {
   font-size: 24px !important;
 }
 
-/* Replay (reload) button — push down so there's visible white gap
-   between it and the close X. Old top:84px was based on close height
-   32px; new close is 44px so we shift accordingly: 44 + 16 + 8 = 68
-   wait—keep at 84 since dialog-anchored. Add a pill background on iOS
-   for the same parity-with-close treatment. */
+/* Replay sits LEFT of the close X. 8 (right gutter) + 44 (close
+   width) + 8 (gap) = 60px from the right edge. */
 body.ios .card-modal-replay,
 html.ios .card-modal-replay {
   background: rgba(0, 0, 0, 0.55);
   border-radius: 999px;
   width: 44px !important;
   height: 44px !important;
-  top: 64px !important;
-  right: 8px !important;
-}
-
-/* Zoom controls in the modal viewer: move from bottom-right of the
-   wrap to top-LEFT on iOS so a landscape modal (where wrap height
-   often exceeds modal max-height and clips the bottom) doesn't hide
-   them. iOS modal hides .modal-nav so the left edge is clear. */
-body.ios .modal-video-wrap .zoom-controls,
-html.ios .modal-video-wrap .zoom-controls {
   top: 8px !important;
-  bottom: auto !important;
-  left: 8px !important;
-  right: auto !important;
+  right: 60px !important;
 }
