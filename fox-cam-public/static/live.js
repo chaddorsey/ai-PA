@@ -560,25 +560,13 @@
 
   // Hook up the corner +/-/⛶ buttons + double-click + keyboard reset.
   function wireZoomControls(cam, pz, video) {
-    // Clone-and-replace each zoom button to drop any prior click
-    // listeners. This function gets called more than once per cam in
-    // the iOS spotlight path: setMode's rAF binds activeZoom + wires
-    // controls immediately; then attachSpotlightStream's bindIfReady
-    // fires when the WebRTC `playing` event lands and rebinds. Without
-    // dropping the prior listeners, the buttons end up calling
-    // smoothZoom on a disposed panzoom instance — manifesting as
-    // "click does nothing, occasionally moves the video" because the
-    // stale handler races the live one.
-    const cloneFresh = (sel) => {
-      const old = cam.querySelector(sel);
-      if (!old) return null;
-      const fresh = old.cloneNode(true);
-      old.parentNode.replaceChild(fresh, old);
-      return fresh;
-    };
-    const btnIn  = cloneFresh(".zoom-in");
-    const btnOut = cloneFresh(".zoom-out");
-    const btnFit = cloneFresh(".zoom-fit");
+    // Always update the cam's "current panzoom" pointer so click
+    // handlers (bound once below) operate on the live instance.
+    // Repeated calls from setMode's rAF + attachSpotlightStream's
+    // bindIfReady just refresh this pointer.
+    cam._spotlightPz = pz;
+    cam._spotlightVideo = video;
+
     // Anchor zoom to the WRAPPER's visible center, not the video's
     // bounding box. The video element moves under pan; the wrapper
     // doesn't. Using the wrapper guarantees button-zoom always pivots
@@ -586,68 +574,89 @@
     const wrap = cam.querySelector(".video-wrap");
 
     const zoomAt = (factor, x, y) => {
+      const cur = cam._spotlightPz;
+      if (!cur) return;
       if (x === undefined || y === undefined) {
         const r = wrap.getBoundingClientRect();
         x = r.left + r.width / 2;
         y = r.top + r.height / 2;
       }
-      pz.smoothZoom(x, y, factor);
+      cur.smoothZoom(x, y, factor);
     };
 
     const reset = () => {
-      // Reset transform: scale 1, translate 0,0. video element's
-      // transform-origin is 0,0 so this re-aligns it to the wrap.
-      pz.zoomAbs(0, 0, 1);
-      pz.moveTo(0, 0);
+      const cur = cam._spotlightPz;
+      if (!cur) return;
+      cur.zoomAbs(0, 0, 1);
+      cur.moveTo(0, 0);
     };
 
-    btnIn  && btnIn.addEventListener("click", (e) => { e.stopPropagation(); zoomAt(1.5); });
-    btnOut && btnOut.addEventListener("click", (e) => {
-      e.stopPropagation();
-      // If zooming out would put us at or below 1×, snap to identity
-      // transform rather than animate to a partial state. The bounds
-      // constraint at minZoom=1 otherwise leaves the video pinned to
-      // an edge when the prior pan offset can't shrink with scale —
-      // hence the "Cam 4 zoom-out lands left of center" weirdness.
-      const cur = pz.getTransform().scale;
-      if (cur / 1.5 <= 1.05) reset();
-      else zoomAt(1 / 1.5);
-    });
-    btnFit && btnFit.addEventListener("click", (e) => { e.stopPropagation(); reset(); });
+    // Bind once per cam — re-binds wouldn't add anything, the lookup
+    // of cam._spotlightPz at click time always returns the live one.
+    if (!cam._zoomWired) {
+      cam._zoomWired = true;
+      const btnIn  = cam.querySelector(".zoom-in");
+      const btnOut = cam.querySelector(".zoom-out");
+      const btnFit = cam.querySelector(".zoom-fit");
 
-    // Double-click anywhere on the video = zoom 2× at cursor.
-    const onDbl = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      zoomAt(2, ev.clientX, ev.clientY);
-    };
-    video.addEventListener("dblclick", onDbl);
+      // Same touchend+click+debounce pattern used for fullscreen /
+      // airplay / nav — iOS PWA standalone occasionally swallows the
+      // synthesized click after touchend, but touchend lands either
+      // way. 350ms debounce keeps a single press from firing twice.
+      const bindBtn = (btn, fn) => {
+        if (!btn) return;
+        let last = 0;
+        const handler = (e) => {
+          const now = Date.now();
+          if (e) { e.stopPropagation(); }
+          if (now - last < 350) {
+            if (e && e.preventDefault) e.preventDefault();
+            return;
+          }
+          last = now;
+          fn();
+        };
+        btn.addEventListener("click", handler);
+        btn.addEventListener("touchend", handler);
+      };
+      bindBtn(btnIn,  () => { flashCamToast("zoom in");  zoomAt(1.5); });
+      bindBtn(btnOut, () => {
+        flashCamToast("zoom out");
+        const cur = cam._spotlightPz;
+        if (!cur) return;
+        const s = cur.getTransform().scale;
+        if (s / 1.5 <= 1.05) reset();
+        else zoomAt(1 / 1.5);
+      });
+      bindBtn(btnFit, () => { flashCamToast("zoom fit"); reset(); });
 
-    // Track zoom state so cursor reflects pan-vs-zoom-in.
+      // Double-click anywhere inside the wrap = zoom 2× at cursor.
+      // Bound on .video-wrap (not the video) so it doesn't matter
+      // which video is currently visible — same lookup-at-fire-time
+      // pattern as the buttons above.
+      wrap.addEventListener("dblclick", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        zoomAt(2, ev.clientX, ev.clientY);
+      });
+
+      // Esc / 0 resets while spotlight is active. Single document-level
+      // listener; references cam._spotlightPz at fire time.
+      document.addEventListener("keydown", (ev) => {
+        if (!cam.classList.contains("is-spotlight")) return;
+        if (ev.key !== "Escape" && ev.key !== "0") return;
+        const cur = cam._spotlightPz;
+        if (cur) { cur.moveTo(0, 0); cur.zoomAbs(0, 0, 1); }
+      });
+    }
+
+    // Track zoom state so cursor reflects pan-vs-zoom-in. Per-pz
+    // listener, so it's bound on every rebind. Cleaned up by the
+    // panzoom's own dispose() — no leak.
     pz.on("zoom", () => {
       const t = pz.getTransform();
       cam.classList.toggle("is-zoomed", t.scale > 1.01);
     });
-
-    // Esc / 0 key resets while spotlight is active.
-    const onKey = (ev) => {
-      if (!cam.classList.contains("is-spotlight")) return;
-      if (ev.key === "Escape" || ev.key === "0") {
-        pz.moveTo(0, 0);
-        pz.zoomAbs(0, 0, 1);
-      }
-    };
-    document.addEventListener("keydown", onKey);
-
-    // Stash cleanup for dispose() so we don't leak listeners.
-    const origDispose = pz.dispose.bind(pz);
-    pz.dispose = () => {
-      try {
-        video.removeEventListener("dblclick", onDbl);
-        document.removeEventListener("keydown", onKey);
-      } catch (_) {}
-      origDispose();
-    };
   }
 
   // Track pointer-down position per cam so we can distinguish a real
