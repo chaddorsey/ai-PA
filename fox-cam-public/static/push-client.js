@@ -103,6 +103,21 @@
     // Ship the PushSubscription up to the server. The server-side
     // proxy injects the authed CF-Access email — the client never sets
     // it, so it can't subscribe a different user.
+    const ok = await postSubscriptionToServer(sub);
+    if (!ok) {
+      // Server rejected — undo the subscribe so we don't end up with
+      // a client-side push registration the server doesn't know about.
+      try { await sub.unsubscribe(); } catch {}
+      throw new Error(`server subscribe failed`);
+    }
+    return sub;
+  }
+
+  async function postSubscriptionToServer(sub) {
+    // Idempotent on endpoint — curator's push_sub_save upserts and
+    // refreshes last_seen_at. Used both at initial subscribe time and
+    // by ensureServerSync to repair ghost subscriptions where the
+    // local PushSubscription survived but the server-side row didn't.
     const json = sub.toJSON();
     const r = await fetch("/api/push/subscriptions", {
       method: "POST",
@@ -114,13 +129,30 @@
         user_agent: navigator.userAgent,
       }),
     });
-    if (!r.ok) {
-      // Server rejected — undo the subscribe so we don't end up with
-      // a client-side push registration the server doesn't know about.
-      try { await sub.unsubscribe(); } catch {}
-      throw new Error(`server subscribe failed: ${r.status}`);
+    return r.ok;
+  }
+
+  async function ensureServerSync() {
+    // Called on every settings render when the device reports
+    // cap === "subscribed". If the curator doesn't have this device
+    // in its subscriptions list (e.g. ghost local sub from a failed
+    // first-deploy POST, or DB wiped between deploys), re-POST so the
+    // next push has a target. Cheap because the GET is small and the
+    // POST is idempotent on endpoint.
+    try {
+      const sub = await getSubscription();
+      if (!sub) return false;
+      const r = await fetch("/api/push/subscriptions",
+                             { credentials: "same-origin" });
+      if (!r.ok) return false;
+      const j = await r.json();
+      if (Number(j.count || 0) > 0) return true;
+      // Server has zero subs for this user but we have a local one →
+      // self-heal by re-POSTing the local subscription up.
+      return await postSubscriptionToServer(sub);
+    } catch {
+      return false;
     }
-    return sub;
   }
 
   async function unsubscribe() {
@@ -170,7 +202,7 @@
 
   window.PushClient = {
     SUPPORTED, isPwa, isIos,
-    capabilityState, subscribe, unsubscribe,
+    capabilityState, subscribe, unsubscribe, ensureServerSync,
     getPreferences, setPreference, sendTestPush,
   };
 })();

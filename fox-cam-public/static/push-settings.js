@@ -51,6 +51,10 @@
       setState("Notifications are on for this device.", "ok");
       disableBtn.hidden = false;
       testBtn.hidden = false;
+      // Self-heal: if server doesn't know about this device (ghost
+      // local sub, deploy mishap, DB reset), re-POST it now so the
+      // next push finds a target. Idempotent on endpoint.
+      window.PushClient.ensureServerSync().catch(() => {});
       await renderPreferences();
       prefsList.hidden = false;
       return;
