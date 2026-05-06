@@ -201,7 +201,14 @@
 
     const img = document.createElement("img");
     img.src = `/api/highlights/${h.event_id}/thumbnail`;
-    img.loading = "lazy";
+    // Eager loading on /highlights so thumbnails are decoded by
+    // the time the user scrolls a card into the autoplay center
+    // band — lazy-loaded thumbnails were leaving brief gaps where
+    // neither the img nor the not-yet-buffered video had pixels
+    // to paint, exposing the wrap's fallback background.
+    if (!document.getElementById("highlights")) {
+      img.loading = "lazy";
+    }
     img.alt = "";
     wrap.appendChild(img);
 

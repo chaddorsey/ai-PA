@@ -2295,16 +2295,9 @@ header {
   }
 }
 
-/* No-black-frame on preview. Override the existing
-   .thumb-wrap .preview rule in style.css that runs a 120ms
-   opacity fade-in regardless of whether the video has decoded
-   frames — that fade was the source of the multi-second black
-   rectangle (video sat at opacity:1 with no frames, painting
-   its default black background until iOS finally decoded the
-   first frame).
-   The video now stays opacity:0 until JS adds .is-ready (on the
-   `playing` event — see card.js). The <img> thumbnail sitting
-   under it remains visible the entire time. */
+/* No-black-frame on preview. Override the existing 120ms opacity
+   fade-in in style.css; video stays at opacity:0 until JS adds
+   .is-ready on the `playing` event. */
 .thumb-wrap > video.preview {
   animation: none !important;
   opacity: 0 !important;
@@ -2312,4 +2305,16 @@ header {
 }
 .thumb-wrap > video.preview.is-ready {
   opacity: 1 !important;
+}
+
+/* Thumb-wrap fallback background. style.css sets background:#000
+   so any moment without an img-loaded or video-decoded frame
+   shows pure black (worst-case the user reads as a "video black
+   rectangle"). On phones the gallery is the dominant surface;
+   swap to a cream tone so loading gaps blend with the theme
+   instead of standing out as black voids. */
+@media (max-width: 720px) {
+  .highlight .thumb-wrap {
+    background: var(--color-cream-deep) !important;
+  }
 }
