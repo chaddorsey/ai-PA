@@ -122,22 +122,33 @@
         v.muted = true;
         v.loop = true;
         v.playsInline = true;
-        v.preload = "metadata";
+        // preload="auto" — hint to iOS that we want the buffer
+        // populated as fast as possible. Newer iOS PWAs honor this
+        // for muted+playsinline videos; older versions effectively
+        // treat it the same as "metadata" but it never hurts.
+        v.preload = "auto";
         v.className = "preview";
         wrap.appendChild(v);
         applyPrerollSkip(v);
-        // Hold the flash + halo until the video is actually decoding
-        // frames. The `playing` event fires once playback truly
-        // begins (after enough buffered + first decoded frame), not
-        // just when play() resolves. Re-running with reflow trick
-        // so the keyframes replay if the same card cycles back to
-        // active.
+        // No black-rectangle pause: the <img> thumbnail stays
+        // mounted under the video. The video starts at opacity 0
+        // (CSS) and only flips to .is-ready when its first frame
+        // is decoded.
+        v.addEventListener("loadeddata", () => {
+          v.classList.add("is-ready");
+        }, { once: true });
+        // Hold the orange-halo flash an extra 500ms past the
+        // `playing` event so it lands together with visible video
+        // motion (not before, when frames are still ramping up).
         v.addEventListener("playing", () => {
           if (!card) return;
-          if (scrollAutoplayCurrent !== wrap) return;  // user scrolled past while loading
-          card.classList.remove("is-active-preview");
-          void card.offsetWidth;
-          card.classList.add("is-active-preview");
+          if (scrollAutoplayCurrent !== wrap) return;
+          setTimeout(() => {
+            if (!card || scrollAutoplayCurrent !== wrap) return;
+            card.classList.remove("is-active-preview");
+            void card.offsetWidth;
+            card.classList.add("is-active-preview");
+          }, 500);
         }, { once: true });
         v.play().catch(() => {});
       }
