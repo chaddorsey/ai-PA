@@ -705,4 +705,80 @@
     el.innerHTML = `<div class="meta">${msg}</div>`;
     return el;
   };
+
+  // ---------------------------------------------------------------
+  // Double-tap-to-favorite (iOS only).
+  //
+  // Single-tap opens the modal (existing behavior, owned by modal.js's
+  // document-level click delegation). Double-tap should fire favorite
+  // INSTEAD of opening the modal — so we intercept clicks at the
+  // capture phase on /highlights, defer the modal-open by ~280ms to
+  // allow a second tap to arrive, and:
+  //   - second tap arrives within window → cancel modal timer, fire
+  //     favorite + heart-pulse animation.
+  //   - timer expires with no second tap → fire modal-open.
+  //   - card was already favorited → second tap re-pulses the heart
+  //     (visual ack) but still cancels the modal so the gesture has
+  //     consistent meaning. Use the visible ⭐ button to unfavorite.
+  //
+  // The 280ms window is the tradeoff: long enough to catch most
+  // double-taps, short enough that single-tap latency stays
+  // perceptibly snappy. CSS `touch-action: manipulation` on
+  // .highlight removes the browser's own 300ms double-tap-zoom
+  // detection delay.
+  // ---------------------------------------------------------------
+  if (document.documentElement.classList.contains("ios")) {
+    const TAP_WINDOW = 280;
+    let lastTap = { time: 0, eventId: null };
+    let pendingOpenTimer = null;
+
+    document.addEventListener("click", (e) => {
+      if (!document.getElementById("highlights")) return;
+      const card = e.target.closest(".highlight[data-event-id]");
+      if (!card) return;
+      // Action buttons + archive toggle handle their own clicks.
+      if (e.target.closest("button, .action-btn, .archive-toggle, .species-why, a")) {
+        return;
+      }
+      const eventId = card.dataset.eventId;
+      const now = Date.now();
+
+      // Always intercept the click — modal.js's bubble-phase
+      // listener at document level would otherwise open the modal
+      // immediately on every tap.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      if (lastTap.eventId === eventId && (now - lastTap.time) < TAP_WINDOW) {
+        // Double-tap detected.
+        if (pendingOpenTimer) { clearTimeout(pendingOpenTimer); pendingOpenTimer = null; }
+        lastTap = { time: 0, eventId: null };
+        const alreadyFav = card.classList.contains("is-favorited");
+        if (alreadyFav) {
+          // Already favorited: re-pulse the heart for visual ack,
+          // don't unfavorite (Instagram pattern is one-way).
+          if (window.deliverBadge) {
+            window.deliverBadge(card, "fox-3", "⭐ Mine",
+              { badgeClass: "badge-mine" });
+          }
+        } else {
+          setAction(eventId, "favorite");
+          if (window.deliverBadge) {
+            window.deliverBadge(card, "fox-3", "⭐ Mine",
+              { badgeClass: "badge-mine" });
+          }
+        }
+        return;
+      }
+
+      // Single tap — defer the modal-open so a second tap can
+      // arrive and cancel it.
+      lastTap = { time: now, eventId };
+      pendingOpenTimer = setTimeout(() => {
+        pendingOpenTimer = null;
+        lastTap = { time: 0, eventId: null };
+        if (window.openCardModal) window.openCardModal(eventId);
+      }, TAP_WINDOW);
+    }, true);  // capture phase — fires before modal.js's bubble listener
+  }
 })();

@@ -2313,3 +2313,11 @@ header {
 .thumb-wrap > video.preview.is-ready {
   opacity: 1 !important;
 }
+
+/* iOS — suppress the 300ms double-tap-zoom detection on gallery
+   cards so the deferred-tap detection in card.js (TAP_WINDOW =
+   280ms) is the only tap-latency overhead. */
+body.ios .highlight,
+html.ios .highlight {
+  touch-action: manipulation;
+}
