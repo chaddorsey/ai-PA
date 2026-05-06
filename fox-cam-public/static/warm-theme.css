@@ -1018,7 +1018,7 @@ body.filters-hidden .filters { display: none !important; }
   object-fit: cover !important;
 }
 
-/* === Modal close × — remove rectangle, just the glyph upper-right ======== */
+/* === Modal close button (Material Icon close) === */
 .card-modal-close {
   top: 4px !important;
   right: 8px !important;
@@ -1027,14 +1027,17 @@ body.filters-hidden .filters { display: none !important; }
   background: transparent !important;
   box-shadow: none !important;
   color: white !important;
-  font-size: 30px !important;
-  font-weight: 400 !important;
   line-height: 1 !important;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
   padding: 0 !important;
+}
+.card-modal-close .material-icons {
+  font-size: 28px;
+  line-height: 1;
+  color: inherit;
 }
 .card-modal-close:hover {
   background: transparent !important;
@@ -1547,23 +1550,28 @@ html.ios .cam .video-wrap .zoom-controls {
    styling regardless of platform; (hover:none) bumps the hit area
    to the 44pt HIG floor on touch. */
 .action-btn.action-icon-only {
-  background: transparent !important;
-  border: none !important;
-  padding: 4px 6px !important;
-  margin: 0 2px !important;
+  background: var(--color-cream) !important;
+  border: 1.5px solid var(--color-glow) !important;
+  border-radius: 999px !important;
+  padding: 6px 8px !important;
+  margin: 0 3px !important;
   color: var(--color-glow) !important;
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
   vertical-align: middle;
   font-size: inherit !important;
-  min-width: 28px !important;
-  min-height: 28px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
 }
 .action-btn.action-icon-only:hover {
-  background: rgba(240, 90, 40, 0.08) !important;
-  border-radius: 999px !important;
+  background: rgba(240, 90, 40, 0.10) !important;
   transform: none !important;
+}
+.action-btn.action-icon-only .material-icons {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-glow);
 }
 .action-btn.action-icon-only svg { display: block; }
 @media (hover: none) {
@@ -1637,10 +1645,12 @@ html.ios .modal-video-wrap .zoom-controls {
 
 /* === Material-Icon-driven action buttons (modal + card action rows)
    ----------------------------------------------------------------
-   .action-iconic strips the text-pill padding so a single glyph
-   reads as a tap-target, and pairs the icon with an optional small
-   count (e.g. for the favorite ⭐2 case). */
+   Visual: cream pill, orange outline, orange icon. Active state
+   inverts to solid orange with white icons. */
 .action-btn.action-iconic {
+  background: var(--color-cream) !important;
+  border: 1.5px solid var(--color-glow) !important;
+  color: var(--color-glow) !important;
   padding: 8px 10px !important;
   min-width: 44px;
   min-height: 44px;
@@ -1651,9 +1661,15 @@ html.ios .modal-video-wrap .zoom-controls {
   font-size: 14px !important;
   line-height: 1 !important;
 }
+.action-btn.action-iconic:hover {
+  background: rgba(240, 90, 40, 0.10) !important;
+  color: var(--color-glow) !important;
+  border-color: var(--color-glow) !important;
+}
 .action-btn.action-iconic .material-icons {
   font-size: 22px;
   line-height: 1;
+  color: var(--color-glow);
 }
 .action-btn.action-iconic .action-count {
   font-family: var(--font-display);
@@ -1662,16 +1678,19 @@ html.ios .modal-video-wrap .zoom-controls {
   color: inherit;
   margin-left: 2px;
 }
-/* When the button is .active (e.g. favorited, archived), the icon
-   inherits the white-on-glow color from the parent action-btn rule. */
+.action-btn.action-iconic.active {
+  background: var(--color-glow) !important;
+  border-color: var(--color-glow) !important;
+  color: white !important;
+}
 .action-btn.action-iconic.active .material-icons,
 .action-btn.action-iconic.active .action-count {
   color: white !important;
 }
 
-/* "Not a fox" combo glyph: pets icon (paw) with a block icon
-   overlaid -45° in the upper-left corner. Two stacked Material
-   icons in a relatively-positioned span. */
+/* "Not a fox" combo glyph: pets (paw, font-brown) with block icon
+   overlaid centered in its native orientation, transparent
+   background, orange — reads as "no fox" without rotation. */
 .not-fox-icon {
   position: relative;
   display: inline-block;
@@ -1683,21 +1702,24 @@ html.ios .modal-video-wrap .zoom-controls {
   font-size: 22px;
   line-height: 1;
   display: block;
+  color: var(--color-ink-soft) !important;
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  top: -2px;
-  left: -6px;
-  font-size: 14px;
-  color: #d33;
-  background: white;
-  border-radius: 50%;
-  transform: rotate(-45deg);
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  font-size: 22px;
   line-height: 1;
+  display: block;
+  color: var(--color-glow) !important;
+  background: transparent !important;
+  /* native orientation, no rotation */
 }
+.action-btn.action-demote.active .not-fox-icon .not-fox-base,
 .action-btn.action-demote.active .not-fox-icon .not-fox-overlay {
-  background: var(--color-glow);
-  color: white;
+  color: white !important;
 }
 
 /* Admin Feature text link — right-justified above the action row,
@@ -1734,4 +1756,14 @@ html.ios .modal-video-wrap .zoom-controls {
 }
 .actions .card-feature-link:hover {
   color: var(--color-glow);
+}
+
+/* Zoom buttons (live cams + modal viewer) hosting Material Icons.
+   The base .zoom-btn rule in style.css uses font-size for plus/
+   minus glyphs; with Material Icon ligatures we want the icon
+   sized via .material-icons specifically. */
+.zoom-btn .material-icons {
+  font-size: 20px;
+  line-height: 1;
+  color: inherit;
 }

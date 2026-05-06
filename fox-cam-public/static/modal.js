@@ -426,9 +426,9 @@
             <span class="material-icons">chevron_right</span>
           </button>
           <div class="zoom-controls" aria-hidden="true">
-            <button class="zoom-btn zoom-in"  type="button" title="Zoom in"  aria-label="Zoom in">+</button>
-            <button class="zoom-btn zoom-out" type="button" title="Zoom out" aria-label="Zoom out">−</button>
-            <button class="zoom-btn zoom-fit" type="button" title="Fit"      aria-label="Fit">⛶</button>
+            <button class="zoom-btn zoom-in"  type="button" title="Zoom in"  aria-label="Zoom in"><span class="material-icons">add</span></button>
+            <button class="zoom-btn zoom-out" type="button" title="Zoom out" aria-label="Zoom out"><span class="material-icons">remove</span></button>
+            <button class="zoom-btn zoom-fit" type="button" title="Fit"      aria-label="Fit"><span class="material-icons">crop_free</span></button>
           </div>
         </div>
         <div class="modal-meta">
@@ -471,19 +471,23 @@
     if (document.documentElement.classList.contains("ios")) {
       videoEl.controls = false;
       videoEl.removeAttribute("controls");
-      videoEl.addEventListener("click", (e) => {
-        if (e.target !== videoEl) return;        // ignore overlay clicks
-        if (!videoEl.controls) {
-          // First tap: reveal controls. iOS handles auto-hide.
-          videoEl.controls = true;
-          videoEl.setAttribute("controls", "");
-        }
-        // Whether controls were just shown or already visible, let
-        // iOS handle the play/pause toggle through its native UI.
-        // (Don't toggle paused state ourselves — the user's tap
-        // is interpreted as "show controls"; their next tap on the
-        // play button toggles play.)
-      });
+      // Bind the tap-to-reveal-controls handler on the WRAP rather
+      // than the video itself. anvaka panzoom calls preventDefault
+      // on touchstart against the video element, which suppresses
+      // the synthesized click on iOS. Pointer events still bubble
+      // to the wrap, where panzoom isn't bound, so click fires
+      // there reliably. Skip when the tap originates from a
+      // visible overlay (zoom buttons, etc.).
+      const wrap = body.querySelector(".modal-video-wrap");
+      if (wrap) {
+        wrap.addEventListener("click", (e) => {
+          if (e.target.closest("button, .zoom-controls, .modal-nav")) return;
+          if (!videoEl.controls) {
+            videoEl.controls = true;
+            videoEl.setAttribute("controls", "");
+          }
+        });
+      }
       videoEl.addEventListener("ended", () => {
         videoEl.controls = false;
         videoEl.removeAttribute("controls");
@@ -703,9 +707,9 @@
         <div class="modal-video-wrap">
           <video class="modal-video" muted playsinline></video>
           <div class="zoom-controls" aria-hidden="true">
-            <button class="zoom-btn zoom-in"  type="button" title="Zoom in">+</button>
-            <button class="zoom-btn zoom-out" type="button" title="Zoom out">−</button>
-            <button class="zoom-btn zoom-fit" type="button" title="Fit">⛶</button>
+            <button class="zoom-btn zoom-in"  type="button" title="Zoom in"><span class="material-icons">add</span></button>
+            <button class="zoom-btn zoom-out" type="button" title="Zoom out"><span class="material-icons">remove</span></button>
+            <button class="zoom-btn zoom-fit" type="button" title="Fit"><span class="material-icons">crop_free</span></button>
           </div>
         </div>
         <div class="remix-controls">
@@ -1268,7 +1272,7 @@
     b.type = "button";
     b.setAttribute("aria-label", opts.label || "Copy link");
     b.title = opts.label || "Copy link";
-    b.innerHTML = ICON("link");
+    b.innerHTML = ICON("insert_link");
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       copyLink(opts.pageUrl);
