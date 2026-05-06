@@ -1472,11 +1472,17 @@ body.filters-hidden .filters { display: none !important; }
 html.ios .modal-nav,
 body.ios .modal-nav { display: none !important; }
 
-/* P1.8 — Gesture coexistence. The dialog body allows vertical scroll +
-   horizontal swipe; the video wrap delegates everything to panzoom (so
-   pinch / two-finger pan work without browser interception). */
-.card-modal-body { touch-action: pan-y; }
-.modal-video-wrap > video { touch-action: none; }
+/* P1.8 — Gesture coexistence. The dialog body's default touch-action
+   allows native scroll + iOS video-control taps. touch-action: none
+   on the video applies ONLY to remix mode where panzoom owns
+   gestures and the native controls are explicitly disabled. The
+   regular highlight viewer keeps native iOS video controls (play /
+   pause / scrubber / AirPlay), so its video must let the browser
+   handle touch normally. */
+.modal-stage-remix .modal-video-wrap > video,
+.modal-stage-remix-play .modal-video-wrap > video {
+  touch-action: none;
+}
 
 /* P1.7 — Autoplay-rejection scrim. Covers /live entirely so any tap
    anywhere lifts the user-activation lock. Theme matches the warm
