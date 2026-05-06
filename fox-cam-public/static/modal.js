@@ -1282,13 +1282,24 @@
   // and the font renders the glyph at currentColor.
   const ICON = (name) => `<span class="material-icons" aria-hidden="true">${name}</span>`;
 
+  // Link 2 (Material Symbols' explicit "Link 2" variant — the 45°
+  // diagonal two-loop chain). The Material Icons font's `link`
+  // ligature renders a slightly different geometry; this inline
+  // SVG is the canonical Link 2 path the user requested.
+  const LINK2_ICON_SVG = `
+    <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M318-120q-82 0-140-58t-58-140q0-40 15-76t43-64l134-133 56 56-134 134q-17 17-25.5 38.5T200-318q0 49 34.5 83.5T318-200q23 0 45-8.5t39-25.5l133-134 57 57-134 133q-28 28-64 43t-76 15Zm79-220-57-57 223-223 57 57-223 223Zm251-28-56-57 134-133q17-17 25-38t8-44q0-50-34-85t-84-35q-23 0-44.5 8.5T558-726L425-592l-57-56 134-134q28-28 64-43t76-15q82 0 139.5 58T839-641q0 39-14.5 75T782-502L648-368Z"/>
+    </svg>`;
+
   // "Not a fox" custom combo: pets icon (paw) with a block icon
-  // overlaid -45° to the upper-left. Universal "wildlife but not
-  // fox" affordance.
+  // overlaid at the upper-left of the paw. The block uses Material
+  // Symbols (variable font) at wght=700, GRAD=200 so its strokes
+  // are bolder and its grade higher — needed because at wght=400
+  // the block icon's strokes vanished into the paw's pads.
   const NOT_FOX_ICON_HTML = `
     <span class="not-fox-icon" aria-hidden="true">
       <span class="material-icons not-fox-base">pets</span>
-      <span class="material-icons not-fox-overlay">block</span>
+      <span class="material-symbols-outlined not-fox-overlay">block</span>
     </span>`;
 
   // Build a "copy link" button — fast, deterministic. No sheet,
@@ -1301,7 +1312,7 @@
     b.type = "button";
     b.setAttribute("aria-label", opts.label || "Copy link");
     b.title = opts.label || "Copy link";
-    b.innerHTML = ICON("link");
+    b.innerHTML = LINK2_ICON_SVG;
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       copyLink(opts.pageUrl);

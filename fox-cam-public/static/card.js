@@ -241,11 +241,21 @@
   function MI(name) {
     return `<span class="material-icons" aria-hidden="true">${name}</span>`;
   }
-  // "Not a fox" combo glyph: paw + block overlay.
+
+  // Link 2 inline SVG (Material Symbols' canonical 45° two-loop
+  // chain). Used in place of the `link` ligature so the rendering
+  // matches what the user explicitly requested.
+  const LINK2_ICON_SVG = `
+    <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M318-120q-82 0-140-58t-58-140q0-40 15-76t43-64l134-133 56 56-134 134q-17 17-25.5 38.5T200-318q0 49 34.5 83.5T318-200q23 0 45-8.5t39-25.5l133-134 57 57-134 133q-28 28-64 43t-76 15Zm79-220-57-57 223-223 57 57-223 223Zm251-28-56-57 134-133q17-17 25-38t8-44q0-50-34-85t-84-35q-23 0-44.5 8.5T558-726L425-592l-57-56 134-134q28-28 64-43t76-15q82 0 139.5 58T839-641q0 39-14.5 75T782-502L648-368Z"/>
+    </svg>`;
+  // "Not a fox" combo glyph: paw + block overlay. Block uses
+  // Material Symbols (variable font) at wght=700, GRAD=200 so its
+  // strokes stand out clean against the paw.
   const NOT_FOX_HTML = `
     <span class="not-fox-icon" aria-hidden="true">
       <span class="material-icons not-fox-base">pets</span>
-      <span class="material-icons not-fox-overlay">block</span>
+      <span class="material-symbols-outlined not-fox-overlay">block</span>
     </span>`;
 
   function iconActionBtn(html, kind, active, label, onClick) {
@@ -316,7 +326,7 @@
     // Share — Material Icon link (chain) for the gallery card. Quick
     // copy-to-clipboard with toast (no sheet animation; cards are
     // for fast scanning).
-    bar.appendChild(iconActionBtn(MI("link"), "share", false, "Copy link",
+    bar.appendChild(iconActionBtn(LINK2_ICON_SVG, "share", false, "Copy link",
       () => copyShareLink(h.event_id)));
 
     // Remix — Material Icon content_cut (scissors). Only shown after

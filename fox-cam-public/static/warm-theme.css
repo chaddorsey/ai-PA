@@ -1718,8 +1718,6 @@ html.ios .card-modal-replay .material-icons {
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  /* Block at upper-left of paw, slightly above and right of the
-     prior position so it sits cleanly on the paw's leading shoulder. */
   top: -5px;
   left: -8px;
   font-size: 22px;
@@ -1727,6 +1725,13 @@ html.ios .card-modal-replay .material-icons {
   display: block;
   color: var(--color-glow) !important;
   background: transparent !important;
+  /* Material Symbols variable font: weight 700, grade 200 so the
+     block's outline strokes don't vanish into the paw's toe pads. */
+  font-variation-settings:
+    "wght" 700,
+    "GRAD" 200,
+    "opsz" 24,
+    "FILL" 0;
 }
 .action-btn.action-demote.active .not-fox-icon .not-fox-base,
 .action-btn.action-demote.active .not-fox-icon .not-fox-overlay {
