@@ -344,13 +344,8 @@
     // restore the high-res view automatically. Panzoom binding stays
     // a one-shot — repeated panzoom() on the same element disposes
     // and re-binds, which is wasteful but harmless.
-    const onPlaying = () => {
-      if (!cam.classList.contains("is-spotlight")) return;  // stale
-      cam.classList.add("spotlight-ready");
-      if (status) status.textContent = "live (hi-res)";
-    };
     let panzoomBound = false;
-    const onLoadedData = () => {
+    const bindIfReady = () => {
       if (!cam.classList.contains("is-spotlight")) return;
       cam.classList.add("spotlight-ready");
       if (!panzoomBound) {
@@ -358,6 +353,18 @@
         attachPanzoom(cam, sv);
       }
     };
+    const onPlaying = () => {
+      if (!cam.classList.contains("is-spotlight")) return;  // stale
+      cam.classList.add("spotlight-ready");
+      if (status) status.textContent = "live (hi-res)";
+      // WebRTC on iOS frequently fires `playing` without firing
+      // `loadeddata` (MediaStream srcObject doesn't go through the
+      // same media-element load steps as a src= blob URL). Bind
+      // panzoom from BOTH events so the zoom buttons end up on the
+      // spotlight-stream regardless of which arrives first.
+      bindIfReady();
+    };
+    const onLoadedData = () => bindIfReady();
     sv.addEventListener("playing", onPlaying);
     sv.addEventListener("loadeddata", onLoadedData);
 
@@ -1222,17 +1229,20 @@
   });
 
   // -------------------------------------------------------------------
-  // Auto-spotlight on load — open the first cam in spotlight mode so
-  // the page lands on a usable, large hero stream rather than a grid
-  // of thumbnails. User can still tap the spotlight to collapse to
-  // grid (existing toggle), or tap a rail thumbnail to switch.
+  // Auto-spotlight on load — phone-only.
+  //
+  // On phone viewports a stack-of-thumbnails grid wastes the screen,
+  // so we land in spotlight on cam 1. On desktop / iPad we keep the
+  // 2×2 (or N×N) grid as the default; the user opts in to spotlight
+  // by clicking a tile.
   //
   // Defer until next frame so the cam.forEach init pass above has
   // installed click handlers and the grid streams have started; that
   // way attachSpotlightStream lands cleanly on a cam that's already
   // got a substream playing.
   // -------------------------------------------------------------------
-  if (cams.length > 0) {
+  const isPhone = window.matchMedia("(max-width: 720px)").matches;
+  if (isPhone && cams.length > 0) {
     requestAnimationFrame(() => {
       setMode("spotlight", cams[0].dataset.stream);
       // Apply rail-index custom property so the mobile horizontal
