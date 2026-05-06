@@ -646,18 +646,36 @@
   }
 
   // Archive toggle — top-right corner of every card. Uses the
-  // explicit Material Symbols archive SVG (box + down-arrow,
-  // shared with the modal action row) so the glyph is consistent
-  // across surfaces.
-  const ARCHIVE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path fill="currentColor" d="m480-240 160-160-56-56-64 64v-168h-80v168l-64-64-56 56 160 160ZM200-640v440h560v-440H200Zm0 520q-33 0-56.5-23.5T120-200v-499q0-14 4.5-27t13.5-24l50-61q11-14 27.5-21.5T250-840h460q18 0 34.5 7.5T772-811l50 61q9 11 13.5 24t4.5 27v499q0 33-23.5 56.5T760-120H200Zm16-600h528l-34-40H250l-34 40Zm264 300Z"/></svg>`;
-  const UNARCHIVE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false"><path fill="currentColor" d="M480-560 320-400l56 56 64-64v168h80v-168l64 64 56-56-160-160ZM200-640v440h560v-440H200Zm0 520q-33 0-56.5-23.5T120-200v-499q0-14 4.5-27t13.5-24l50-61q11-14 27.5-21.5T250-840h460q18 0 34.5 7.5T772-811l50 61q9 11 13.5 24t4.5 27v499q0 33-23.5 56.5T760-120H200Zm16-600h528l-34-40H250l-34 40Zm264 300Z"/></svg>`;
+  // Material Symbols archive path (box + down-arrow, shared with
+  // the modal action row). Built via createElementNS so the SVG
+  // ends up in the SVG namespace; setting innerHTML on a button
+  // works in spec but on some browsers (and through some HTML
+  // sanitisation paths) the inner <svg>/<path> end up as
+  // HTMLUnknownElement and don't render. The explicit-namespace
+  // path is bulletproof.
+  const ARCHIVE_PATH_DOWN = "m480-240 160-160-56-56-64 64v-168h-80v168l-64-64-56 56 160 160ZM200-640v440h560v-440H200Zm0 520q-33 0-56.5-23.5T120-200v-499q0-14 4.5-27t13.5-24l50-61q11-14 27.5-21.5T250-840h460q18 0 34.5 7.5T772-811l50 61q9 11 13.5 24t4.5 27v499q0 33-23.5 56.5T760-120H200Zm16-600h528l-34-40H250l-34 40Zm264 300Z";
+  const ARCHIVE_PATH_UP   = "M480-560 320-400l56 56 64-64v168h80v-168l64 64 56-56-160-160ZM200-640v440h560v-440H200Zm0 520q-33 0-56.5-23.5T120-200v-499q0-14 4.5-27t13.5-24l50-61q11-14 27.5-21.5T250-840h460q18 0 34.5 7.5T772-811l50 61q9 11 13.5 24t4.5 27v499q0 33-23.5 56.5T760-120H200Zm16-600h528l-34-40H250l-34 40Zm264 300Z";
+  function buildArchiveSvg(pathD) {
+    const SVGNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("viewBox", "0 -960 960 960");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.setAttribute("width", "18");
+    svg.setAttribute("height", "18");
+    const p = document.createElementNS(SVGNS, "path");
+    p.setAttribute("d", pathD);
+    p.setAttribute("fill", "currentColor");
+    svg.appendChild(p);
+    return svg;
+  }
   function archiveToggle(h) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "archive-toggle" + (h.my_archived ? " is-archived" : "");
     btn.title = h.my_archived ? "Unarchive (move back to Active)" : "Archive (hide from Active)";
     btn.setAttribute("aria-label", btn.title);
-    btn.innerHTML = h.my_archived ? UNARCHIVE_SVG : ARCHIVE_SVG;
+    btn.appendChild(buildArchiveSvg(h.my_archived ? ARCHIVE_PATH_UP : ARCHIVE_PATH_DOWN));
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
