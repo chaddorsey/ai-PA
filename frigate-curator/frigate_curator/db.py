@@ -679,6 +679,29 @@ def list_highlights(
             args.append(email)
         else:
             sql += " AND demoted = 0"
+        # Hide non-wildlife classifier verdicts from the default
+        # Active view. Frigate fires motion events on things like
+        # branches + light shifts; MegaDetector correctly labels
+        # them species='none'. Saving the clip is fine (the DB is
+        # the audit trail), but cluttering the gallery with empty
+        # clips isn't useful. NULL species (unclassified yet) is
+        # kept — those clips might still be wildlife once the
+        # classifier catches up. Same for user-favorited clips.
+        if email:
+            sql += (
+                " AND (species IS NULL OR species NOT IN "
+                "       ('none','person','vehicle','error') "
+                "  OR EXISTS ("
+                "   SELECT 1 FROM highlight_user_actions a "
+                "   WHERE a.highlight_id = highlights.event_id "
+                "     AND a.email = ? AND a.action = 'favorite'))"
+            )
+            args.append(email)
+        else:
+            sql += (
+                " AND (species IS NULL OR species NOT IN "
+                "       ('none','person','vehicle','error'))"
+            )
     # bucket == "all" → no extra filter
 
     # Time-of-day filter (uses local-time hour of start_time).
