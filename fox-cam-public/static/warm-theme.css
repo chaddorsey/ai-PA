@@ -1630,25 +1630,18 @@ html.ios .card-modal-replay {
   max-height: 70vh;
 }
 
-/* Vertical zoom-controls stack in the modal viewer, with replay at
-   the bottom of the column. The whole stack is lifted one icon-
-   diameter (44px) above the wrap bottom so the iOS native control
-   bar (which appears at the very bottom of the video on tap) doesn't
-   sit underneath the buttons. Top-down order: zoom-in, zoom-out,
-   zoom-fit, zoom-replay. */
+/* Vertical zoom-controls stack in the modal viewer.
+   - zoom-fit (reset) anchors the stack bottom at 44px from wrap
+     bottom (where replay used to sit, minus 8px) so it clears the
+     iOS native control bar that surfaces on tap.
+   - zoom-out and zoom-in stack above it.
+   - Replay stays in its prior top-right position next to the close X. */
 .modal-video-wrap .zoom-controls {
   flex-direction: column !important;
-  bottom: 52px !important;     /* 8 base + 44 diameter */
+  bottom: 44px !important;
   right: 12px !important;
   gap: 6px;
 }
-.zoom-btn.zoom-replay { /* shares zoom-btn sizing + tap-target */ }
-
-/* Hide the legacy dialog-anchored replay (top-right). Replay now
-   lives at the bottom of the zoom-controls stack inside the wrap. */
-.card-modal-replay { display: none !important; }
-body.ios .card-modal-replay,
-html.ios .card-modal-replay { display: none !important; }
 
 /* === Material-Icon-driven action buttons (modal + card action rows)
    ----------------------------------------------------------------
@@ -1720,8 +1713,11 @@ html.ios .card-modal-replay { display: none !important; }
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  top: -22px;          /* up an icon-diameter from the paw */
-  left: 5.5px;         /* right a quarter-diameter from the paw */
+  /* Block sits 11px down + 11px left of the paw — half a diameter
+     each direction so the block lands across the paw's lower-left,
+     reading as "no fox". */
+  top: 11px;
+  left: -11px;
   font-size: 22px;
   line-height: 1;
   display: block;

@@ -429,7 +429,6 @@
             <button class="zoom-btn zoom-in"  type="button" title="Zoom in"  aria-label="Zoom in"><span class="material-icons">add</span></button>
             <button class="zoom-btn zoom-out" type="button" title="Zoom out" aria-label="Zoom out"><span class="material-icons">remove</span></button>
             <button class="zoom-btn zoom-fit" type="button" title="Fit"      aria-label="Fit"><span class="material-icons">crop_free</span></button>
-            <button class="zoom-btn zoom-replay" type="button" title="Replay from start" aria-label="Replay from start"><span class="material-icons">replay</span></button>
           </div>
         </div>
         <div class="modal-meta">
@@ -536,21 +535,6 @@
     if (panzoomInstance) {
       wireZoomButtons(body, ".zoom-controls .zoom-in", ".zoom-controls .zoom-out",
                        ".zoom-controls .zoom-fit", panzoomInstance, wrap);
-    }
-    // Replay button now lives at the bottom of the vertical zoom-
-    // controls stack instead of top-right of the dialog (avoids
-    // colliding with iOS native video controls when they appear
-    // bottom-center). Wire it here so it closes over videoEl.
-    const stackReplay = body.querySelector(".zoom-controls .zoom-replay");
-    if (stackReplay) {
-      stackReplay.addEventListener("click", (e) => {
-        e.stopPropagation();
-        try {
-          videoEl.currentTime = 0;
-          const p = videoEl.play();
-          if (p && typeof p.catch === "function") p.catch(() => {});
-        } catch (_) {}
-      });
     }
 
     // Action row — Material Icons throughout for a flat, universal
@@ -1145,19 +1129,24 @@
     }
     try {
       videoTarget.style.transformOrigin = "0 0";
-      let inst;
-      const noPanAtIdentity = (e) => {
-        const s = inst ? (inst.getTransform().scale || 1) : 1;
-        if (s > 1.01) return false;
-        if (e && e.touches && e.touches.length > 1) return false;
-        return true;
-      };
-      inst = window.panzoom(videoTarget, {
+      const inst = window.panzoom(videoTarget, {
         maxZoom: 6, minZoom: 1, bounds: true,
         boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
-        beforeMouseDown: noPanAtIdentity,
-        beforeTouch: noPanAtIdentity,
       });
+      // Pin pan at scale 1: anvaka panzoom doesn't honor a hook for
+      // touch (only mouse). Use capture-phase stopPropagation
+      // listeners that fire BEFORE panzoom's bubble-phase touchstart
+      // listener. Multi-touch (pinch) and zoomed states allow pan
+      // through.
+      const guard = (e) => {
+        const s = inst ? (inst.getTransform().scale || 1) : 1;
+        if (s > 1.01) return;
+        if (e.touches && e.touches.length > 1) return;
+        if (e.button !== undefined && e.button !== 0) return;
+        e.stopPropagation();
+      };
+      videoTarget.addEventListener("mousedown", guard, true);
+      videoTarget.addEventListener("touchstart", guard, true);
       return inst;
     } catch (err) {
       console.warn("[modal] panzoom init failed", err);
