@@ -625,6 +625,7 @@
     const spotlightToggle = (target) => {
       if (target.tagName === "VIDEO" && target.controls) return;
       if (target.closest(".zoom-controls")) return;
+      if (target.closest(".cam-controls")) return;
       const stream = cam.dataset.stream;
       const inSpotlight = cam.classList.contains("is-spotlight");
       if (inSpotlight && target.closest(".video-wrap")) return;
@@ -684,6 +685,7 @@
       // filter kills the synthesized button click.
       const target = e.target;
       if (target.closest(".zoom-controls")) return;
+      if (target.closest(".cam-controls")) return;
       if (target.tagName === "VIDEO" && target.controls) return;
       const inSpotlight = cam.classList.contains("is-spotlight");
       if (inSpotlight && target.closest(".video-wrap")) return;
@@ -1026,26 +1028,49 @@
       e.preventDefault();
       e.stopPropagation();
       const v = pickActiveVideo();
+      const wrap = cam.querySelector(".video-wrap") || cam;
+      console.log("[live] fs click", {
+        v: !!v, hasWebkitEnter: !!(v && v.webkitEnterFullscreen),
+        hasReqFs: !!(wrap.requestFullscreen),
+        hasWebkitReq: !!(wrap.webkitRequestFullscreen),
+      });
       if (!v) return;
-      // iOS Safari: webkitEnterFullscreen on the <video> pops the
-      // native player. Standard requestFullscreen does NOT work on
-      // iOS Safari for non-iframe elements.
-      if (typeof v.webkitEnterFullscreen === "function") {
-        try { v.webkitEnterFullscreen(); return; } catch {}
+
+      // Try the standard Fullscreen API on the wrap first — works in
+      // iOS Safari 16.4+ and modern Chrome/Firefox/Safari, including
+      // PWA standalone. Falls through to webkitEnterFullscreen on the
+      // video element which is the iOS-specific fallback that pops
+      // the native player.
+      if (wrap.requestFullscreen) {
+        wrap.requestFullscreen().catch((err) => {
+          console.warn("[live] requestFullscreen failed", err);
+          // Fallback: native iOS video player.
+          if (typeof v.webkitEnterFullscreen === "function") {
+            try { v.webkitEnterFullscreen(); }
+            catch (e2) { console.warn("[live] webkitEnter failed", e2); }
+          }
+        });
+        return;
       }
-      const target = cam.querySelector(".video-wrap") || cam;
-      const req = target.requestFullscreen ||
-                   target.webkitRequestFullscreen;
-      if (req) {
-        try { req.call(target); } catch {}
+      if (typeof v.webkitEnterFullscreen === "function") {
+        try { v.webkitEnterFullscreen(); return; }
+        catch (err) { console.warn("[live] webkitEnter throw", err); }
+      }
+      if (wrap.webkitRequestFullscreen) {
+        try { wrap.webkitRequestFullscreen(); }
+        catch (err) { console.warn("[live] webkitReqFs throw", err); }
       }
     });
 
     // AirPlay support probe. The grid-stream is the always-playing
     // element, so attach the listener there. We add the picker button
-    // only if the API exists AND a route exists.
+    // only if the API exists.
     const probe = cam.querySelector("video.grid-stream");
-    if (probe && typeof probe.webkitShowPlaybackTargetPicker === "function") {
+    const hasPicker = probe && (
+      typeof probe.webkitShowPlaybackTargetPicker === "function"
+    );
+    console.log("[live] airplay probe", { hasPicker, isIos: IS_IOS_LIKE });
+    if (hasPicker) {
       const apBtn = document.createElement("button");
       apBtn.className = "cam-ctrl cam-airplay";
       apBtn.title = "AirPlay";
@@ -1055,24 +1080,34 @@
         e.preventDefault();
         e.stopPropagation();
         const v = pickActiveVideo();
+        console.log("[live] airplay click",
+                     { v: !!v, fn: !!(v && v.webkitShowPlaybackTargetPicker) });
         if (!v) return;
         const fn = v.webkitShowPlaybackTargetPicker;
         if (typeof fn === "function") {
-          try { fn.call(v); } catch {}
+          try { fn.call(v); }
+          catch (err) { console.warn("[live] airplay throw", err); }
         }
       });
-      // Hide until we know a route is available. iOS Safari fires the
-      // event with `availability` "available" when a target is on the
-      // network. If the platform lacks the event we just show the
-      // button unconditionally — the picker will just say "No devices".
-      apBtn.hidden = true;
+      // Show by default — even when no receiver is currently announced
+      // the picker will just say "No devices found", which is more
+      // discoverable than no button. The availability event flips
+      // visibility off only when the platform explicitly tells us
+      // there's no path (some iPad PWAs emit availability="not-available"
+      // on cellular).
+      apBtn.hidden = false;
       try {
         probe.addEventListener(
           "webkitplaybacktargetavailabilitychanged",
-          (ev) => { apBtn.hidden = (ev.availability !== "available"); },
+          (ev) => {
+            console.log("[live] airplay availability", ev.availability);
+            // Only hide on explicit "not-available"; treat anything
+            // else as available enough to surface the picker.
+            apBtn.hidden = (ev.availability === "not-available");
+          },
         );
-      } catch {
-        apBtn.hidden = false;
+      } catch (err) {
+        console.warn("[live] availability listener attach failed", err);
       }
       ctrlSlot.appendChild(apBtn);
     }

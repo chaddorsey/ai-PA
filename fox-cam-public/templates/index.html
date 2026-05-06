@@ -51,8 +51,8 @@
                point .spotlight-ready flips on the cam and CSS swaps
                which video is visible. The substream keeps playing
                throughout, so spotlight feels instant. -->
-        <video class="grid-stream" id="v-{{ stream }}" data-stream="{{ stream }}_sub" autoplay muted playsinline></video>
-        <video class="spotlight-stream" data-base="{{ stream }}" autoplay muted playsinline></video>
+        <video class="grid-stream" id="v-{{ stream }}" data-stream="{{ stream }}_sub" autoplay muted playsinline x-webkit-airplay="allow"></video>
+        <video class="spotlight-stream" data-base="{{ stream }}" autoplay muted playsinline x-webkit-airplay="allow"></video>
         <div class="zoom-controls" aria-hidden="true">
           <button class="zoom-btn zoom-in"  title="Zoom in"  aria-label="Zoom in"><span class="material-icons">add</span></button>
           <button class="zoom-btn zoom-out" title="Zoom out" aria-label="Zoom out"><span class="material-icons">remove</span></button>
@@ -66,7 +66,11 @@
         <div class="cam-controls" aria-hidden="true">
           <button class="cam-ctrl cam-fullscreen" title="Fullscreen"
                   aria-label="Fullscreen">
-            <span class="material-icons">fullscreen</span>
+            <!-- open_in_full is the diagonal double-arrow that's
+                 unambiguously "expand" — the previous `fullscreen`
+                 four-corner arrows looked too much like the zoom-fit
+                 (`crop_free`) icon next to it. -->
+            <span class="material-icons">open_in_full</span>
           </button>
           <!-- airplay button injected here by live.js when supported -->
         </div>
