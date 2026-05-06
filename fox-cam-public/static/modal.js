@@ -359,6 +359,17 @@
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
+
+    // Vertical swipe-down on phones → dismiss the bottom sheet.
+    // Threshold higher than horizontal nav (100px) so pull-to-scroll
+    // intent doesn't fire close. Only on viewports where the modal
+    // is rendered as a sheet.
+    const isPhoneSheet = window.matchMedia("(max-width: 720px)").matches;
+    if (isPhoneSheet && dy > 100 && Math.abs(dy) > Math.abs(dx) * 1.5) {
+      window.closeCardModal();
+      return;
+    }
+
     if (Math.abs(dx) < 60) return;
     if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
     navigateModal(dx > 0 ? "prev" : "next", null);
