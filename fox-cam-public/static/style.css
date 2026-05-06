@@ -974,29 +974,55 @@ header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }
 .cam-ctrl .material-icons { font-size: 18px; }
 
 /* ============================================================
-   Landscape phone spotlight: side-rail (rather than bottom rail).
-   Vertical viewport is too short to fit a usable spotlight + a
-   bottom rail; a right-side rail like the desktop layout works
-   better. iPad portrait stays in the standard mobile flow.
+   Landscape phone spotlight: side-rail layout.
+   Hides header + bottom-tabs so the spotlight + rail fill the
+   viewport. Spotlight pins as a sticky tile in column 1; rail
+   stacks vertically in column 2 and scrolls the layout if more
+   than ~3 cams accumulate. iPad landscape stays on the desktop
+   rules — only iPhone-sized landscape (≤500px height) hits this.
    ============================================================ */
 @media (orientation: landscape) and (max-height: 500px) {
   body.spotlight-mode { overflow: hidden; }
+  body.spotlight-mode > header { display: none; }
+  /* bottom-tabs already hidden at this width by the warm-theme rules */
+
   .live-layout[data-mode="spotlight"] {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 140px !important;
-    gap: 8px;
-    padding: 8px;
-    height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr) 130px;
+    gap: 6px;
+    /* Fill the entire viewport — header is hidden. Padding inset
+       respects safe-areas so the rail doesn't slip behind the iPhone
+       notch / home indicator. */
+    padding: max(6px, env(safe-area-inset-top))
+             max(6px, env(safe-area-inset-right))
+             max(6px, env(safe-area-inset-bottom))
+             max(6px, env(safe-area-inset-left));
+    position: fixed;
+    inset: 0;
+    margin: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    align-items: start;
   }
   .live-layout[data-mode="spotlight"] .cam.is-spotlight {
     grid-column: 1;
-    grid-row: 1 / span 99;
-    position: relative;
+    grid-row: 1 / -1;
+    /* Pin to top of layout while rail scrolls past in column 2. */
+    position: sticky;
+    top: 0;
+    align-self: start;
+    /* Constrain to viewport so the spotlight never grows taller than
+       the screen even when rail items pad the grid out. */
+    max-height: calc(100dvh
+                      - max(6px, env(safe-area-inset-top))
+                      - max(6px, env(safe-area-inset-bottom)));
+    height: calc(100dvh
+                  - max(6px, env(safe-area-inset-top))
+                  - max(6px, env(safe-area-inset-bottom)));
     display: flex;
     flex-direction: column;
     margin: 0;
-    height: 100%;
+    min-height: 0;
   }
   .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap {
     aspect-ratio: auto;
@@ -1009,10 +1035,62 @@ header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }
     height: auto;
   }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) h2 {
-    font-size: 0.75rem;
-    padding: 0.3rem 0.5rem;
+    font-size: 0.7rem;
+    padding: 0.25rem 0.4rem;
   }
   .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .status {
     display: none;
   }
 }
+
+/* ============================================================
+   CSS-based fullscreen toggle.
+   requestFullscreen + webkitEnterFullscreen are flaky in iOS PWA
+   standalone — sometimes they reject silently, sometimes the
+   native player closes immediately. CSS fullscreen always works:
+   it just inflates the spotlight cam to fill the viewport while
+   hiding chrome. The fullscreen button toggles body.cam-cssfs;
+   tapping again exits.
+   ============================================================ */
+body.cam-cssfs > header,
+body.cam-cssfs > nav.bottom-tabs,
+body.cam-cssfs .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) {
+  display: none !important;
+}
+body.cam-cssfs .live-layout[data-mode="spotlight"] {
+  display: block !important;
+  position: fixed !important;
+  inset: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100dvh !important;
+  background: #000 !important;
+  grid-template-columns: none !important;
+  overflow: hidden !important;
+}
+body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight {
+  position: absolute !important;
+  inset: 0 !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  width: auto !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  z-index: 10000 !important;
+}
+body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight h2,
+body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight .status {
+  display: none !important;
+}
+body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap {
+  aspect-ratio: auto !important;
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+}
+/* Icon swap on the fullscreen button is handled by JS — see
+   live.js setting .material-icons textContent to "close_fullscreen"
+   when entering and "open_in_full" when exiting. */

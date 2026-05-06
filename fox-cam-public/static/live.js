@@ -1024,53 +1024,42 @@
       return cam.querySelector("video.grid-stream");
     }
 
+    // Fullscreen — primary path is a CSS class that inflates the
+    // spotlight to fill the viewport. Always works, no permission
+    // gates. We ALSO attempt the standard Fullscreen API in parallel
+    // for desktop browsers where it gives the native ESC-to-exit and
+    // system gestures, but if it rejects we just fall back to the CSS
+    // toggle which is already active.
+    // Fullscreen — CSS-class toggle is always-works primary path
+    // (requestFullscreen + webkitEnterFullscreen are flaky in iOS PWA
+    // standalone, so we don't depend on them). Try the native API in
+    // parallel for desktop's ESC + system gestures.
     fsBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const v = pickActiveVideo();
-      const wrap = cam.querySelector(".video-wrap") || cam;
-      console.log("[live] fs click", {
-        v: !!v, hasWebkitEnter: !!(v && v.webkitEnterFullscreen),
-        hasReqFs: !!(wrap.requestFullscreen),
-        hasWebkitReq: !!(wrap.webkitRequestFullscreen),
-      });
-      if (!v) return;
-
-      // Try the standard Fullscreen API on the wrap first — works in
-      // iOS Safari 16.4+ and modern Chrome/Firefox/Safari, including
-      // PWA standalone. Falls through to webkitEnterFullscreen on the
-      // video element which is the iOS-specific fallback that pops
-      // the native player.
-      if (wrap.requestFullscreen) {
-        wrap.requestFullscreen().catch((err) => {
-          console.warn("[live] requestFullscreen failed", err);
-          // Fallback: native iOS video player.
-          if (typeof v.webkitEnterFullscreen === "function") {
-            try { v.webkitEnterFullscreen(); }
-            catch (e2) { console.warn("[live] webkitEnter failed", e2); }
-          }
-        });
-        return;
-      }
-      if (typeof v.webkitEnterFullscreen === "function") {
-        try { v.webkitEnterFullscreen(); return; }
-        catch (err) { console.warn("[live] webkitEnter throw", err); }
-      }
-      if (wrap.webkitRequestFullscreen) {
-        try { wrap.webkitRequestFullscreen(); }
-        catch (err) { console.warn("[live] webkitReqFs throw", err); }
+      const isFs = document.body.classList.toggle("cam-cssfs");
+      const icon = fsBtn.querySelector(".material-icons");
+      if (icon) icon.textContent = isFs ? "close_fullscreen" : "open_in_full";
+      const wrap = cam.querySelector(".video-wrap");
+      if (isFs) {
+        if (wrap && wrap.requestFullscreen) {
+          wrap.requestFullscreen().catch(() => { /* CSS layer is active */ });
+        }
+      } else {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
       }
     });
 
-    // AirPlay support probe. The grid-stream is the always-playing
-    // element, so attach the listener there. We add the picker button
-    // only if the API exists.
-    const probe = cam.querySelector("video.grid-stream");
-    const hasPicker = probe && (
-      typeof probe.webkitShowPlaybackTargetPicker === "function"
+    // AirPlay button — always added on iOS-like devices since the
+    // fallback path (toggle native video controls) works even when
+    // webkitShowPlaybackTargetPicker is unavailable in the PWA.
+    const probeVid = cam.querySelector("video.grid-stream");
+    const hasPicker = probeVid && (
+      typeof probeVid.webkitShowPlaybackTargetPicker === "function"
     );
-    console.log("[live] airplay probe", { hasPicker, isIos: IS_IOS_LIKE });
-    if (hasPicker) {
+    if (IS_IOS_LIKE || hasPicker) {
       const apBtn = document.createElement("button");
       apBtn.className = "cam-ctrl cam-airplay";
       apBtn.title = "AirPlay";
@@ -1080,36 +1069,37 @@
         e.preventDefault();
         e.stopPropagation();
         const v = pickActiveVideo();
-        console.log("[live] airplay click",
-                     { v: !!v, fn: !!(v && v.webkitShowPlaybackTargetPicker) });
         if (!v) return;
-        const fn = v.webkitShowPlaybackTargetPicker;
-        if (typeof fn === "function") {
-          try { fn.call(v); }
-          catch (err) { console.warn("[live] airplay throw", err); }
+        // Primary: pop the system AirPlay picker directly.
+        if (typeof v.webkitShowPlaybackTargetPicker === "function") {
+          try {
+            v.webkitShowPlaybackTargetPicker();
+            return;
+          } catch (err) {
+            console.warn("[live] airplay picker threw", err);
+          }
         }
+        // Fallback: enable native video controls so the user can tap
+        // the AirPlay icon iOS adds to its standard player UI when a
+        // receiver is on the network. Toggling controls here is the
+        // only path that reliably works inside an iOS PWA.
+        v.controls = !v.controls;
+        apBtn.classList.toggle("active", v.controls);
       });
-      // Show by default — even when no receiver is currently announced
-      // the picker will just say "No devices found", which is more
-      // discoverable than no button. The availability event flips
-      // visibility off only when the platform explicitly tells us
-      // there's no path (some iPad PWAs emit availability="not-available"
-      // on cellular).
-      apBtn.hidden = false;
-      try {
-        probe.addEventListener(
-          "webkitplaybacktargetavailabilitychanged",
-          (ev) => {
-            console.log("[live] airplay availability", ev.availability);
-            // Only hide on explicit "not-available"; treat anything
-            // else as available enough to surface the picker.
-            apBtn.hidden = (ev.availability === "not-available");
-          },
-        );
-      } catch (err) {
-        console.warn("[live] availability listener attach failed", err);
-      }
       ctrlSlot.appendChild(apBtn);
+      // Probe may flip availability later; we keep the button visible
+      // either way (the picker shows "No devices" if none — better
+      // than hiding the button and leaving the user with no path).
+      if (probeVid) {
+        try {
+          probeVid.addEventListener(
+            "webkitplaybacktargetavailabilitychanged",
+            (ev) => {
+              apBtn.classList.toggle(
+                "ap-available", ev.availability === "available");
+            });
+        } catch {}
+      }
     }
   });
 
