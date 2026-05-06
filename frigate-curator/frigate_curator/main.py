@@ -830,7 +830,20 @@ class PushSubscribeBody(BaseModel):
 class PushPrefBody(BaseModel):
     email: str
     kind: str
-    enabled: bool
+    enabled: bool | None = None
+    value: str | None = None
+
+
+class PushPauseBody(BaseModel):
+    email: str
+    paused_until: float | None = None
+
+
+class PushScheduleAddBody(BaseModel):
+    email: str
+    start_min: int
+    end_min: int
+    tz_offset_min: int = 0
 
 
 @app.get("/push/vapid-public-key")
@@ -888,8 +901,60 @@ def get_preferences(email: str | None = None) -> dict[str, Any]:
 def set_preference(body: PushPrefBody) -> dict[str, Any]:
     if not body.email or not body.kind:
         raise HTTPException(status_code=400, detail="email + kind required")
-    db.push_pref_set(DB_PATH, body.email, body.kind, body.enabled)
-    return {"ok": True, "kind": body.kind, "enabled": body.enabled}
+    if body.enabled is None and body.value is None:
+        raise HTTPException(status_code=400,
+                             detail="enabled or value required")
+    db.push_pref_set(DB_PATH, body.email, body.kind,
+                      enabled=body.enabled, value=body.value)
+    return {"ok": True, "kind": body.kind,
+            "enabled": body.enabled, "value": body.value}
+
+
+@app.get("/push/pause")
+def get_pause(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    until = db.push_pause_get(DB_PATH, email)
+    return {"paused_until": until,
+            "active": db.push_pause_active(DB_PATH, email)}
+
+
+@app.post("/push/pause")
+def set_pause(body: PushPauseBody) -> dict[str, Any]:
+    if not body.email:
+        raise HTTPException(status_code=400, detail="email required")
+    db.push_pause_set(DB_PATH, body.email, body.paused_until)
+    return {"ok": True, "paused_until": body.paused_until}
+
+
+@app.get("/push/schedule")
+def get_schedule(email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    return {"intervals": db.push_schedule_list(DB_PATH, email)}
+
+
+@app.post("/push/schedule")
+def add_schedule_interval(body: PushScheduleAddBody) -> dict[str, Any]:
+    if not body.email:
+        raise HTTPException(status_code=400, detail="email required")
+    try:
+        new_id = db.push_schedule_add(
+            DB_PATH, body.email,
+            int(body.start_min), int(body.end_min),
+            int(body.tz_offset_min),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"id": new_id}
+
+
+@app.delete("/push/schedule/{interval_id}")
+def delete_schedule_interval(interval_id: int,
+                              email: str | None = None) -> dict[str, Any]:
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    return {"deleted": db.push_schedule_delete(DB_PATH, interval_id, email)}
 
 
 @app.post("/push/test")

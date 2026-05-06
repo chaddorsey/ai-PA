@@ -225,15 +225,21 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
             try:
                 if float(fresh.get("fox_likelihood") or 0.0) >= notify._THRESHOLD:
                     cam = fresh.get("camera", "unknown")
-                    pct = int(round(float(fresh.get("fox_likelihood") or 0.0) * 100))
+                    likelihood = float(fresh.get("fox_likelihood") or 0.0)
+                    duration = float(fresh.get("duration_s") or 0.0)
+                    pct = int(round(likelihood * 100))
                     public_base = notify._PUBLIC_BASE
                     payload = {
                         "title": f"Fox Cam — {cam} ({pct}%)",
-                        "body":  f"{fresh.get('label','?')} · "
-                                  f"{float(fresh.get('duration_s') or 0):.0f}s",
+                        "body":  f"{fresh.get('label','?')} · {duration:.0f}s",
                         "url":   f"{public_base}/clip/{event_id}",
                         "tag":   f"highlight-{event_id}",
                         "kind":  "new_highlight",
+                        # Enrichment fields used by the per-user
+                        # severity filter inside web_push.send_*.
+                        "camera":         cam,
+                        "fox_likelihood": likelihood,
+                        "duration_s":     duration,
                     }
                     web_push.broadcast_kind(db_path, "new_highlight", payload)
             except Exception:

@@ -180,14 +180,76 @@
     return j.preferences || {};
   }
 
-  async function setPreference(kind, enabled) {
+  async function setPreference(kind, fields) {
+    // `fields` may carry {enabled} or {value} or both. Anything not
+    // present is preserved server-side.
+    const body = Object.assign({ kind }, fields || {});
     const r = await fetch("/api/push/preferences", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, enabled }),
+      body: JSON.stringify(body),
     });
     if (!r.ok) throw new Error(`pref save failed: ${r.status}`);
+    return r.json();
+  }
+
+  async function getPause() {
+    const r = await fetch("/api/push/pause",
+                           { credentials: "same-origin" });
+    if (!r.ok) return { paused_until: null, active: false };
+    return r.json();
+  }
+
+  async function setPause(secondsFromNow) {
+    // null/undefined/0 → resume immediately. Otherwise, server stores
+    // a unix-epoch absolute, computed here so client and server agree
+    // even if their clocks drift.
+    const paused_until = secondsFromNow
+      ? Math.floor(Date.now() / 1000) + Number(secondsFromNow)
+      : null;
+    const r = await fetch("/api/push/pause", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paused_until }),
+    });
+    if (!r.ok) throw new Error(`pause save failed: ${r.status}`);
+    return r.json();
+  }
+
+  async function getSchedule() {
+    const r = await fetch("/api/push/schedule",
+                           { credentials: "same-origin" });
+    if (!r.ok) return { intervals: [] };
+    return r.json();
+  }
+
+  async function addScheduleInterval(startMin, endMin) {
+    const r = await fetch("/api/push/schedule", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        start_min: Number(startMin),
+        end_min: Number(endMin),
+        // Date.getTimezoneOffset(): minutes BEHIND UTC. So in EDT
+        // (UTC-4) it returns 240. Curator stores this with each
+        // interval and uses it in push_schedule_active to convert
+        // the current UTC wall-clock back to the user's local
+        // minute-of-day for the membership check.
+        tz_offset_min: new Date().getTimezoneOffset(),
+      }),
+    });
+    if (!r.ok) throw new Error(`schedule add failed: ${r.status}`);
+    return r.json();
+  }
+
+  async function removeScheduleInterval(id) {
+    const r = await fetch(
+      `/api/push/schedule/${encodeURIComponent(id)}`,
+      { method: "DELETE", credentials: "same-origin" });
+    if (!r.ok) throw new Error(`schedule delete failed: ${r.status}`);
     return r.json();
   }
 
@@ -204,5 +266,7 @@
     SUPPORTED, isPwa, isIos,
     capabilityState, subscribe, unsubscribe, ensureServerSync,
     getPreferences, setPreference, sendTestPush,
+    getPause, setPause,
+    getSchedule, addScheduleInterval, removeScheduleInterval,
   };
 })();

@@ -93,19 +93,69 @@ def send_to_subscription(db_path: Path, sub: dict[str, Any],
         return False
 
 
+def _user_filters_pass(db_path: Path, email: str) -> bool:
+    """Pause + quiet-hours gate. Both checks short-circuit BEFORE we
+    iterate subscriptions so a paused user costs one DB hit, not one
+    per device."""
+    if db.push_pause_active(db_path, email):
+        return False
+    if db.push_schedule_active(db_path, email):
+        return False
+    return True
+
+
+def _severity_passes(db_path: Path, email: str, kind: str,
+                      payload: dict[str, Any]) -> bool:
+    """new_highlight has a per-user severity radio — all / clusters /
+    high. Other kinds skip this check."""
+    if kind != "new_highlight":
+        return True
+    severity = db.push_pref_value_for(db_path, email, "new_highlight") or "all"
+    if severity == "all":
+        return True
+    if severity == "high":
+        # Either confidence ≥ 85% or a long sighting (≥ 30s) qualifies.
+        likelihood = float(payload.get("fox_likelihood") or 0.0)
+        duration = float(payload.get("duration_s") or 0.0)
+        return likelihood >= 0.85 or duration >= 30.0
+    if severity == "clusters":
+        # Two or more highlights on the same camera within the last
+        # 10 minutes (this one + at least one prior). Cheap query
+        # against the existing highlights table.
+        import time as _time
+        cam = payload.get("camera")
+        if not cam:
+            return True
+        window_start = (_time.time() - 600.0)
+        with db.connect(db_path) as conn:
+            n = conn.execute(
+                "SELECT COUNT(*) AS n FROM highlights "
+                "WHERE camera = ? AND start_time >= ?",
+                [cam, window_start],
+            ).fetchone()["n"]
+        return int(n) >= 2
+    return True
+
+
 def send_to_user(db_path: Path, email: str, kind: str,
                   payload: dict[str, Any]) -> int:
     """Send `payload` to all of `email`'s subscribed devices, IFF the
-    user has `kind` enabled in their preferences. Returns the count of
-    successful deliveries.
+    user has `kind` enabled, isn't paused, isn't in a quiet-hours
+    window, and the severity filter passes for this kind. Returns the
+    count of successful deliveries.
 
-    The payload is the JSON the service worker will see in its `push`
-    event handler — recommended shape:
+    Recommended payload shape:
         {"title": "...", "body": "...", "url": "/...", "tag": "..."}
+    `payload` may also carry `camera` / `duration_s` / `fox_likelihood`
+    so the severity filter has the data it needs.
     """
     if not is_configured():
         return 0
     if not db.push_pref_enabled_for(db_path, email, kind):
+        return 0
+    if not _user_filters_pass(db_path, email):
+        return 0
+    if not _severity_passes(db_path, email, kind, payload):
         return 0
     subs = db.push_sub_list_for_email(db_path, email)
     sent = 0
@@ -117,14 +167,24 @@ def send_to_user(db_path: Path, email: str, kind: str,
 
 def broadcast_kind(db_path: Path, kind: str,
                     payload: dict[str, Any]) -> int:
-    """Send `payload` to every subscription whose owner has `kind`
-    enabled. Used by the new-highlight broadcast path (replaces the
-    old single-topic ntfy.sh fan-out). Returns delivery count."""
+    """Fan-out broadcast that respects every per-user filter:
+    pause, quiet hours, kind enabled, severity. Delivers to a device
+    iff its owner clears all gates."""
     if not is_configured():
         return 0
     subs = db.push_sub_list_all_with_kind(db_path, kind)
-    sent = 0
+    # Group subs by owner so we apply user-level filters once per user
+    # rather than once per device.
+    by_email: dict[str, list[dict]] = {}
     for s in subs:
-        if send_to_subscription(db_path, s, payload):
-            sent += 1
+        by_email.setdefault(s["email"], []).append(s)
+    sent = 0
+    for email, devices in by_email.items():
+        if not _user_filters_pass(db_path, email):
+            continue
+        if not _severity_passes(db_path, email, kind, payload):
+            continue
+        for s in devices:
+            if send_to_subscription(db_path, s, payload):
+                sent += 1
     return sent

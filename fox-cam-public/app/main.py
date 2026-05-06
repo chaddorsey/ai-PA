@@ -1015,6 +1015,78 @@ async def push_test(request: Request) -> Any:
     return r.json()
 
 
+# ---- Pause / schedule proxies --------------------------------------------
+
+@app.get("/api/push/pause")
+async def push_get_pause(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/push/pause",
+                              params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/push/pause")
+async def push_set_pause(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    body = await request.json()
+    body["email"] = email
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/push/pause",
+                               json=body, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.get("/api/push/schedule")
+async def push_get_schedule(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/push/schedule",
+                              params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.post("/api/push/schedule")
+async def push_add_schedule(request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    body = await request.json()
+    body["email"] = email
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/push/schedule",
+                               json=body, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
+@app.delete("/api/push/schedule/{interval_id}")
+async def push_delete_schedule(interval_id: int, request: Request) -> Any:
+    email = _actor_email(request)
+    if not email:
+        raise HTTPException(status_code=401, detail="auth required")
+    async with httpx.AsyncClient() as client:
+        r = await client.delete(
+            f"{CURATOR_API}/push/schedule/{interval_id}",
+            params={"email": email}, timeout=5.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    return r.json()
+
+
 @app.patch("/api/remixes/{remix_id}")
 async def update_remix(remix_id: str, request: Request) -> Any:
     body = await request.json()

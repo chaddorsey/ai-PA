@@ -159,6 +159,28 @@ _MIGRATIONS = [
         updated_at  REAL NOT NULL DEFAULT (strftime('%s','now')),
         PRIMARY KEY (email, kind)
     )""",
+    # Optional extra value for prefs that need more than a boolean
+    # (e.g. new_highlight severity threshold). NULL when unused.
+    "ALTER TABLE push_preferences ADD COLUMN value TEXT",
+    # Pause-all-notifications-until — single row per user. A NULL or
+    # past timestamp means not paused.
+    """CREATE TABLE IF NOT EXISTS push_pause (
+        email         TEXT PRIMARY KEY,
+        paused_until  REAL,
+        updated_at    REAL NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
+    # Recurring quiet hours — minute-of-day windows in the user's local
+    # time. start_min/end_min are 0–1439. If start_min > end_min the
+    # window crosses midnight (e.g. 22:00 → 07:00).
+    """CREATE TABLE IF NOT EXISTS push_schedule_intervals (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        email       TEXT NOT NULL,
+        start_min   INTEGER NOT NULL,
+        end_min     INTEGER NOT NULL,
+        tz_offset_min INTEGER NOT NULL DEFAULT 0,
+        created_at  REAL NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
+    "CREATE INDEX IF NOT EXISTS push_schedule_email ON push_schedule_intervals (email)",
 ]
 
 
@@ -169,8 +191,20 @@ _MIGRATIONS = [
 PUSH_KIND_DEFAULTS: dict[str, dict[str, Any]] = {
     "remix_like":    {"enabled": True,  "label": "Likes on my remixes",
                        "desc": "Push when someone likes a remix you created."},
-    "new_highlight": {"enabled": True,  "label": "New fox sightings",
-                       "desc": "Push when the den cameras spot a new fox."},
+    "new_highlight": {"enabled": True,  "label": "New sightings",
+                       "desc": "Notify me of fox or wildlife activity",
+                       # Value gates the severity filter applied by
+                       # web_push.broadcast_kind. UI surfaces these as
+                       # radio buttons inside the New sightings panel.
+                       "default_value": "all",
+                       "options": [
+                           {"value": "all",
+                            "label": "All suspected sightings"},
+                           {"value": "clusters",
+                            "label": "More than one sighting within a short period"},
+                           {"value": "high",
+                            "label": "High activity / extended sightings only"},
+                       ]},
 }
 
 
@@ -1017,31 +1051,179 @@ def push_pref_enabled_for(db_path: Path, email: str, kind: str) -> bool:
 
 def push_pref_get_all(db_path: Path, email: str) -> dict[str, Any]:
     """Return the full kind table merged with this user's overrides.
-    Shape suitable for the settings panel: {kind: {enabled, label, desc}}."""
+    Shape: {kind: {enabled, value, label, desc, default_value, options}}.
+    Caller-friendly — UI just iterates and renders."""
     with connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT kind, enabled FROM push_preferences WHERE email = ?",
+            "SELECT kind, enabled, value FROM push_preferences WHERE email = ?",
             [email],
         ).fetchall()
-    overrides = {r["kind"]: int(r["enabled"]) == 1 for r in rows}
+    overrides = {r["kind"]: {"enabled": int(r["enabled"]) == 1,
+                              "value":   r["value"]}
+                 for r in rows}
     out: dict[str, Any] = {}
     for kind, meta in PUSH_KIND_DEFAULTS.items():
+        ov = overrides.get(kind, {})
         out[kind] = {
-            "enabled": overrides.get(kind, bool(meta.get("enabled", True))),
-            "label":   meta.get("label", kind),
-            "desc":    meta.get("desc", ""),
+            "enabled":       ov.get("enabled", bool(meta.get("enabled", True))),
+            "value":         ov.get("value") or meta.get("default_value"),
+            "default_value": meta.get("default_value"),
+            "label":         meta.get("label", kind),
+            "desc":          meta.get("desc", ""),
+            "options":       meta.get("options", []),
         }
     return out
 
 
-def push_pref_set(db_path: Path, email: str, kind: str, enabled: bool
-                   ) -> None:
+def push_pref_value_for(db_path: Path, email: str, kind: str) -> str | None:
+    """Just the value (severity etc.) — used by the broadcast filter."""
+    default = PUSH_KIND_DEFAULTS.get(kind, {}).get("default_value")
+    with connect(db_path) as conn:
+        r = conn.execute(
+            "SELECT value FROM push_preferences WHERE email = ? AND kind = ?",
+            [email, kind],
+        ).fetchone()
+    if r is None or r["value"] is None:
+        return default
+    return r["value"]
+
+
+def push_pref_set(db_path: Path, email: str, kind: str,
+                   enabled: bool | None = None,
+                   value: str | None = None) -> None:
+    """Upsert; either field may be left as None to preserve existing.
+    UI sends one field at a time so the other survives untouched."""
+    import time as _time
+    with connect(db_path) as conn:
+        existing = conn.execute(
+            "SELECT enabled, value FROM push_preferences "
+            "WHERE email = ? AND kind = ?",
+            [email, kind],
+        ).fetchone()
+        if existing is None:
+            cur_enabled = 1 if (enabled is True) else 0
+            if enabled is None:
+                # Unknown: fall back to declared default.
+                cur_enabled = 1 if PUSH_KIND_DEFAULTS.get(kind, {}).get(
+                    "enabled", True) else 0
+            cur_value = value
+        else:
+            cur_enabled = int(existing["enabled"]) if enabled is None else (
+                1 if enabled else 0)
+            cur_value = existing["value"] if value is None else value
+        conn.execute(
+            "INSERT INTO push_preferences (email, kind, enabled, value, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(email, kind) DO UPDATE SET "
+            "  enabled = excluded.enabled, value = excluded.value, "
+            "  updated_at = excluded.updated_at",
+            [email, kind, cur_enabled, cur_value, _time.time()],
+        )
+
+
+# ---- Pause + schedule -----------------------------------------------------
+
+def push_pause_get(db_path: Path, email: str) -> float | None:
+    with connect(db_path) as conn:
+        r = conn.execute(
+            "SELECT paused_until FROM push_pause WHERE email = ?", [email]
+        ).fetchone()
+    if r is None:
+        return None
+    until = r["paused_until"]
+    if until is None:
+        return None
+    return float(until)
+
+
+def push_pause_set(db_path: Path, email: str,
+                    paused_until: float | None) -> None:
+    """`paused_until` is a unix-epoch float; None clears the pause."""
     import time as _time
     with connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO push_preferences (email, kind, enabled, updated_at) "
-            "VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(email, kind) DO UPDATE SET "
-            "  enabled = excluded.enabled, updated_at = excluded.updated_at",
-            [email, kind, 1 if enabled else 0, _time.time()],
+            "INSERT INTO push_pause (email, paused_until, updated_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(email) DO UPDATE SET "
+            "  paused_until = excluded.paused_until, "
+            "  updated_at = excluded.updated_at",
+            [email, paused_until, _time.time()],
         )
+
+
+def push_pause_active(db_path: Path, email: str,
+                       *, now: float | None = None) -> bool:
+    import time as _time
+    until = push_pause_get(db_path, email)
+    if until is None:
+        return False
+    return until > (now or _time.time())
+
+
+def push_schedule_list(db_path: Path, email: str) -> list[dict[str, Any]]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT id, start_min, end_min, tz_offset_min "
+            "FROM push_schedule_intervals "
+            "WHERE email = ? ORDER BY start_min ASC",
+            [email],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def push_schedule_add(db_path: Path, email: str,
+                       start_min: int, end_min: int,
+                       tz_offset_min: int = 0) -> int:
+    if not (0 <= start_min <= 1439 and 0 <= end_min <= 1439):
+        raise ValueError("start_min / end_min must be in [0, 1439]")
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "INSERT INTO push_schedule_intervals "
+            "(email, start_min, end_min, tz_offset_min) "
+            "VALUES (?, ?, ?, ?)",
+            [email, start_min, end_min, tz_offset_min],
+        )
+        return int(cur.lastrowid or 0)
+
+
+def push_schedule_delete(db_path: Path, interval_id: int, email: str
+                          ) -> bool:
+    """Email check prevents one user from deleting another's intervals."""
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "DELETE FROM push_schedule_intervals WHERE id = ? AND email = ?",
+            [interval_id, email],
+        )
+        return cur.rowcount > 0
+
+
+def push_schedule_active(db_path: Path, email: str,
+                          *, now: float | None = None) -> bool:
+    """True iff the current wall-clock time falls inside any of this
+    user's quiet-hours intervals. Each interval carries its own
+    tz_offset_min (captured at create-time from the browser's
+    Date.getTimezoneOffset, so DST shifts apply automatically when the
+    user re-saves the schedule)."""
+    import time as _time
+    intervals = push_schedule_list(db_path, email)
+    if not intervals:
+        return False
+    now_ts = now or _time.time()
+    for it in intervals:
+        # Convert wall-clock UTC to the interval's local minute-of-day.
+        # tz_offset_min is what JavaScript's Date.getTimezoneOffset()
+        # returns: positive when local is BEHIND UTC. So local = UTC -
+        # tz_offset_min.
+        local_minutes = (int(now_ts // 60) - int(it["tz_offset_min"])) % 1440
+        s, e = int(it["start_min"]), int(it["end_min"])
+        if s == e:
+            continue   # zero-width window — ignore
+        if s < e:
+            if s <= local_minutes < e:
+                return True
+        else:
+            # Wraps midnight — e.g. 22:00 → 07:00 means in window when
+            # local_minutes >= 22:00 OR < 07:00.
+            if local_minutes >= s or local_minutes < e:
+                return True
+    return False

@@ -56,33 +56,65 @@
   </div>
 
   <section class="push-settings" id="push-settings">
-    <div class="push-settings-header">
-      <span class="material-icons" aria-hidden="true">notifications_active</span>
-      <span>Push notifications</span>
+    <!-- Master toggle row: title + iOS-style switch. Initial state
+         off; first ON triggers Notification.requestPermission. -->
+    <div class="push-row push-row-master">
+      <div class="push-row-text">
+        <span class="material-icons" aria-hidden="true">notifications_active</span>
+        <span class="push-row-label">Push notifications</span>
+      </div>
+      <label class="push-switch">
+        <input type="checkbox" id="push-master-toggle">
+        <span class="push-switch-track"></span>
+      </label>
     </div>
+
     <div class="push-state" id="push-state-msg">Checking…</div>
-
-    <div class="push-actions">
-      <button type="button" class="push-enable" id="push-enable" hidden>
-        <span class="material-icons" aria-hidden="true">notifications</span>
-        Enable
-      </button>
-      <button type="button" class="push-disable" id="push-disable" hidden>
-        <span class="material-icons" aria-hidden="true">notifications_off</span>
-        Disable
-      </button>
-      <button type="button" class="push-test" id="push-test" hidden>
-        <span class="material-icons" aria-hidden="true">send</span>
-        Send test push
-      </button>
-    </div>
-
-    <ul class="push-prefs" id="push-prefs" hidden></ul>
-
     <p class="push-pwa-hint" id="push-pwa-hint" hidden>
       To enable push on iPhone, first add Our Foxes to your Home
       Screen (Share → Add to Home Screen) and open it from there.
     </p>
+
+    <!-- Everything below is gated on master ON + active subscription.
+         Hidden via the .push-locked class on the section root. -->
+    <div class="push-detail" id="push-detail">
+
+      <!-- Pause notifications ----------------------------------- -->
+      <div class="push-section">
+        <div class="push-section-h">Pause notifications</div>
+        <div class="push-pause-row" id="push-pause-row">
+          <span class="push-pause-prompt">Pause for:</span>
+          <a href="#" class="push-pause-link" data-hours="1">1 hour</a>
+          <a href="#" class="push-pause-link" data-hours="2">2 hours</a>
+          <a href="#" class="push-pause-link" data-hours="4">4 hours</a>
+          <a href="#" class="push-pause-link" data-hours="8">8 hours</a>
+        </div>
+        <div class="push-pause-active" id="push-pause-active" hidden>
+          <span class="material-icons" aria-hidden="true">pause_circle</span>
+          <span class="push-pause-msg" id="push-pause-msg"></span>
+          <a href="#" class="push-resume-link" id="push-resume-link">Resume</a>
+        </div>
+      </div>
+
+      <!-- Notification schedule --------------------------------- -->
+      <div class="push-section">
+        <div class="push-section-h">Notification schedule</div>
+        <div class="push-section-sub">Disable notifications from:</div>
+        <ul class="push-schedule" id="push-schedule"></ul>
+        <button type="button" class="push-add-interval" id="push-add-interval">
+          <span class="material-icons" aria-hidden="true">add</span>
+          Add another interval
+        </button>
+      </div>
+
+      <!-- Per-kind preferences ---------------------------------- -->
+      <ul class="push-prefs" id="push-prefs"></ul>
+
+      <button type="button" class="push-test" id="push-test">
+        <span class="material-icons" aria-hidden="true">send</span>
+        Send test push
+      </button>
+    </div>
   </section>
 
   <a href="/cdn-cgi/access/logout" class="profile-action">
