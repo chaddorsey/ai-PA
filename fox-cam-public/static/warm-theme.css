@@ -1706,6 +1706,20 @@ html.ios .card-modal-replay .material-icons {
   line-height: 1;
   color: var(--color-glow);
 }
+/* Inline SVG glyphs (archive / unarchive — Material Symbols path
+   strings rendered via innerHTML) need the same explicit sizing +
+   color treatment that .material-icons gets. Without these rules
+   the SVG inherits inline-baseline behavior and drops below the
+   button's content box. */
+.action-btn.action-iconic svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  fill: var(--color-glow);
+}
+.action-btn.action-iconic svg path { fill: currentColor; }
+.action-btn.action-iconic.active svg,
+.action-btn.action-iconic.active svg path { fill: white; }
 .action-btn.action-iconic .action-count {
   font-family: var(--font-display);
   font-weight: 600;
