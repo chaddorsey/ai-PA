@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v124-hover-survives-archive";
+const CACHE = "our-foxes-v125-severity-descs";
 
 const STATIC_ASSETS = [
   "/static/style.css",

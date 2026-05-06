@@ -205,14 +205,20 @@ PUSH_KIND_DEFAULTS: dict[str, dict[str, Any]] = {
                        # Value gates the severity filter applied by
                        # web_push.broadcast_kind. UI surfaces these as
                        # radio buttons inside the New sightings panel.
+                       # `desc` on each option is a short sub-line
+                       # summarising the empirical trigger so users
+                       # can pick by what they want, not just a label.
                        "default_value": "all",
                        "options": [
                            {"value": "all",
-                            "label": "All suspected sightings"},
+                            "label": "All suspected sightings",
+                            "desc": "Ping for every new wildlife clip."},
                            {"value": "clusters",
-                            "label": "More than one sighting within a short period"},
+                            "label": "More than one sighting within a short period",
+                            "desc": "Two or more events on the same camera within 2 minutes — fires when they come back out."},
                            {"value": "high",
-                            "label": "High activity / extended sightings only"},
+                            "label": "High activity / extended sightings only",
+                            "desc": "Three+ events in 2 min, a 45-second-or-longer sighting, or very high confidence — fires when they're really out and playing."},
                        ]},
 }
 

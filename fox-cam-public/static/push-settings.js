@@ -243,10 +243,19 @@
         const checked = (meta.value || meta.default_value) === opt.value;
         const r = document.createElement("label");
         r.className = "push-pref-option";
+        // Two-line layout: bold label up top, muted sub-line beneath
+        // explains the empirical trigger so users pick by intent,
+        // not just by label name.
+        const subLine = opt.desc
+          ? `<span class="push-pref-option-desc">${opt.desc}</span>`
+          : "";
         r.innerHTML = `
           <input type="radio" name="${groupName}" id="${optId}"
                  value="${opt.value}" ${checked ? "checked" : ""}>
-          <span>${opt.label}</span>`;
+          <span class="push-pref-option-text">
+            <span class="push-pref-option-label">${opt.label}</span>
+            ${subLine}
+          </span>`;
         const radio = r.querySelector("input");
         radio.addEventListener("change", async () => {
           if (!radio.checked) return;
