@@ -210,7 +210,13 @@
 
     function showPreview() {
       clearTimeout(pendingHide);
-      if (preview) { preview.play().catch(() => {}); return; }
+      if (preview) {
+        preview.play().catch(() => {});
+        // Re-reveal in case a prior hidePreview's transition out
+        // dropped is-ready. Cheap class re-add.
+        preview.classList.add("is-ready");
+        return;
+      }
       preview = document.createElement("video");
       preview.src = `/api/highlights/${h.event_id}/clip`;
       preview.muted = true;
@@ -218,6 +224,15 @@
       preview.playsInline = true;
       preview.preload = "metadata";
       preview.className = "preview";
+      // CSS gates .preview at opacity:0 until .is-ready lands —
+      // primarily for the phone scroll-autoplay path's
+      // black-rectangle suppression, but desktop hover hits the
+      // same selector. Add .is-ready when the first decoded frame
+      // arrives so the fade-in matches the original 0.2s ease
+      // reveal instead of the video staying invisible.
+      preview.addEventListener("playing", () => {
+        preview && preview.classList.add("is-ready");
+      }, { once: true });
       wrap.appendChild(preview);
       applyPrerollSkip(preview);
       preview.play().catch(() => {});
