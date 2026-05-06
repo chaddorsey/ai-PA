@@ -996,6 +996,26 @@
   }
 
   // -------------------------------------------------------------------
+  // Tiny toast helper — short visible confirmation that a button
+  // press registered. Useful while we're chasing event-routing bugs
+  // on iOS PWA. Dismisses itself after 1s.
+  // -------------------------------------------------------------------
+  let _camToastEl = null;
+  function flashCamToast(msg) {
+    if (!_camToastEl) {
+      _camToastEl = document.createElement("div");
+      _camToastEl.className = "cam-toast";
+      document.body.appendChild(_camToastEl);
+    }
+    _camToastEl.textContent = msg;
+    _camToastEl.classList.add("show");
+    clearTimeout(_camToastEl._t);
+    _camToastEl._t = setTimeout(() => {
+      _camToastEl.classList.remove("show");
+    }, 1000);
+  }
+
+  // -------------------------------------------------------------------
   // Spotlight overlay controls — fullscreen + AirPlay.
   //
   // Fullscreen: prefer the iOS-native player path (video.webkitEnter
@@ -1034,12 +1054,12 @@
     // (requestFullscreen + webkitEnterFullscreen are flaky in iOS PWA
     // standalone, so we don't depend on them). Try the native API in
     // parallel for desktop's ESC + system gestures.
-    fsBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    const handleFsClick = (e) => {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
       const isFs = document.body.classList.toggle("cam-cssfs");
       const icon = fsBtn.querySelector(".material-icons");
       if (icon) icon.textContent = isFs ? "close_fullscreen" : "open_in_full";
+      flashCamToast(`fullscreen ${isFs ? "on" : "off"}`);
       const wrap = cam.querySelector(".video-wrap");
       if (isFs) {
         if (wrap && wrap.requestFullscreen) {
@@ -1050,7 +1070,22 @@
           document.exitFullscreen().catch(() => {});
         }
       }
-    });
+    };
+    // Debounced wrapper — handle both touchend AND click on iOS where
+    // either path may fire first depending on whether some upstream
+    // listener swallowed the synthesized click.
+    let lastFsToggle = 0;
+    const debouncedFsHandler = (e) => {
+      const now = Date.now();
+      if (now - lastFsToggle < 350) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        return;
+      }
+      lastFsToggle = now;
+      handleFsClick(e);
+    };
+    fsBtn.addEventListener("click", debouncedFsHandler);
+    fsBtn.addEventListener("touchend", debouncedFsHandler);
 
     // AirPlay button — always added on iOS-like devices since the
     // fallback path (toggle native video controls) works even when
@@ -1065,15 +1100,15 @@
       apBtn.title = "AirPlay";
       apBtn.setAttribute("aria-label", "AirPlay");
       apBtn.innerHTML = `<span class="material-icons">airplay</span>`;
-      apBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      const handleApClick = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
         const v = pickActiveVideo();
-        if (!v) return;
+        if (!v) { flashCamToast("airplay: no video"); return; }
         // Primary: pop the system AirPlay picker directly.
         if (typeof v.webkitShowPlaybackTargetPicker === "function") {
           try {
             v.webkitShowPlaybackTargetPicker();
+            flashCamToast("airplay picker");
             return;
           } catch (err) {
             console.warn("[live] airplay picker threw", err);
@@ -1085,7 +1120,20 @@
         // only path that reliably works inside an iOS PWA.
         v.controls = !v.controls;
         apBtn.classList.toggle("active", v.controls);
-      });
+        flashCamToast(`controls ${v.controls ? "on" : "off"}`);
+      };
+      let lastApToggle = 0;
+      const debouncedApHandler = (e) => {
+        const now = Date.now();
+        if (now - lastApToggle < 350) {
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          return;
+        }
+        lastApToggle = now;
+        handleApClick(e);
+      };
+      apBtn.addEventListener("click", debouncedApHandler);
+      apBtn.addEventListener("touchend", debouncedApHandler);
       ctrlSlot.appendChild(apBtn);
       // Probe may flip availability later; we keep the button visible
       // either way (the picker shows "No devices" if none — better

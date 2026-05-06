@@ -94,7 +94,12 @@ main {
 /* Desktop: pin the layout to viewport so page scroll doesn't move the
    spotlight. The spotlight cam is absolutely positioned to occupy
    column 1's full height; the grid only really uses column 2. */
-@media (min-width: 721px) {
+/* Desktop / iPad spotlight. Gated on min-height: 501px so iPhone
+   landscape (height ~393px) DOESN'T match this block — it gets the
+   landscape-phone rules further down instead. Without this guard
+   the desktop rules' !important on grid-template-columns and
+   position would override the landscape-phone rules. */
+@media (min-width: 721px) and (min-height: 501px) {
   body.spotlight-mode { overflow: hidden; }
   .live-layout[data-mode="spotlight"] {
     position: relative;
@@ -1094,3 +1099,25 @@ body.cam-cssfs .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap
 /* Icon swap on the fullscreen button is handled by JS — see
    live.js setting .material-icons textContent to "close_fullscreen"
    when entering and "open_in_full" when exiting. */
+
+/* Tiny toast for live-cam button press confirmation. Lives at the
+   top center of the viewport, above any spotlight chrome. */
+.cam-toast {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  padding: 6px 12px;
+  background: rgba(15, 17, 22, 0.85);
+  color: #fff;
+  font-size: 13px;
+  border-radius: 999px;
+  z-index: 99999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.cam-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
