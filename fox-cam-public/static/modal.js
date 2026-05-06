@@ -429,19 +429,7 @@
     // see the entire clip from the beginning.
     videoEl = body.querySelector(".modal-video");
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
-    // iOS Safari 16+ may leave a programmatically-srced <video> in an
-    // unstarted state and render its "media unavailable" placeholder
-    // (play icon with a slash) when src is set on a video that just
-    // entered the DOM. Forcing .load() kicks the resource selection
-    // algorithm and gets autoplay+muted+playsinline behaving as
-    // expected. Same defense in renderRemixPlayback / renderRemixEditor
-    // applies but those paths control playback manually so the symptom
-    // is hidden by their explicit play() loop.
-    try { videoEl.load(); } catch (_) {}
-    // Don't set currentTime = 0 here — the video starts at 0 by
-    // default, and assigning currentTime before metadata is loaded
-    // can be a no-op or, on iOS, can interfere with the resource
-    // selection retry that .load() just kicked off.
+    videoEl.currentTime = 0;
 
     // Wire prev/next nav with a slide animation between cards. The
     // viewer only swaps content (no full-modal teardown), so the

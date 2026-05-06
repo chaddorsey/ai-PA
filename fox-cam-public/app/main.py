@@ -842,7 +842,7 @@ async def _post_action(event_id: str, action: str, by: str | None) -> Any:
 
 
 @app.get("/api/highlights/{event_id}/clip")
-async def highlight_clip(event_id: str, download: int = 0,
+async def highlight_clip(event_id: str, request: Request, download: int = 0,
                           filename: str | None = None) -> StreamingResponse:
     # Per-id media is reachable without auth because /api/highlights/*
     # is in a Cloudflare Access Bypass app (so anonymous viewers can
@@ -856,28 +856,52 @@ async def highlight_clip(event_id: str, download: int = 0,
         safe = (filename or f"{event_id}.mp4").replace('"', '').replace("\n", "").replace("\r", "")
         extra["Content-Disposition"] = f'attachment; filename="{safe}"'
     return await _proxy_curator(f"/highlights/{event_id}/clip", "video/mp4",
-                                 extra_headers=extra)
+                                 extra_headers=extra, request=request)
 
 
 @app.get("/api/highlights/{event_id}/thumbnail")
-async def highlight_thumb(event_id: str) -> StreamingResponse:
-    return await _proxy_curator(f"/highlights/{event_id}/thumbnail", "image/jpeg")
+async def highlight_thumb(event_id: str, request: Request) -> StreamingResponse:
+    return await _proxy_curator(f"/highlights/{event_id}/thumbnail", "image/jpeg",
+                                 request=request)
 
 
 async def _proxy_curator(path: str, media_type: str,
-                          extra_headers: dict[str, str] | None = None) -> StreamingResponse:
+                          extra_headers: dict[str, str] | None = None,
+                          request: Request | None = None) -> StreamingResponse:
+    # Forward the Range header so curator (FastAPI FileResponse, which
+    # supports Range natively) can return 206 Partial Content. Without
+    # this, iOS Safari refuses to play <video> elements past a brief
+    # scrubber preview — the spec requires byte-range loading and
+    # treats a 200 with full content as a non-seekable stream.
+    upstream_headers: dict[str, str] = {}
+    if request is not None:
+        rng = request.headers.get("range")
+        if rng:
+            upstream_headers["Range"] = rng
     async with httpx.AsyncClient() as client:
-        async with client.stream("GET", f"{CURATOR_API}{path}", timeout=30.0) as r:
+        async with client.stream(
+            "GET", f"{CURATOR_API}{path}",
+            headers=upstream_headers, timeout=30.0,
+        ) as r:
             if r.status_code == 404:
                 raise HTTPException(status_code=404, detail="not found")
-            if r.status_code != 200:
+            # Both 200 (full) and 206 (partial) are success — propagate
+            # the upstream status code unchanged so the browser knows
+            # whether this is a Range response.
+            if r.status_code not in (200, 206):
                 raise HTTPException(status_code=502, detail="curator error")
             content = await r.aread()
-    headers = {"Cache-Control": "private, max-age=300"}
+    upstream_status = r.status_code
+    headers = {"Cache-Control": "private, max-age=300", "Accept-Ranges": "bytes"}
+    # Forward the headers iOS Safari needs to honor a Range response.
+    for h in ("content-range", "content-length"):
+        if h in r.headers:
+            headers[h.title()] = r.headers[h]
     if extra_headers:
         headers.update(extra_headers)
     return StreamingResponse(
         iter([content]),
         media_type=media_type,
         headers=headers,
+        status_code=upstream_status,
     )
