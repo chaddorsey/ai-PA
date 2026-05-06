@@ -1052,22 +1052,31 @@
       else videoEl.pause();
     });
 
-    // Bind panzoom + apply the saved zoom region so the viewer sees
-    // the remix as the creator framed it. Reapply on loadedmetadata
-    // so the video has real dimensions before zoom math.
+    // Bind panzoom only long enough to apply the saved view, then
+    // PAUSE it. Remix playback shows the creator's frozen frame —
+    // viewers shouldn't be able to drag or pinch-zoom around. With
+    // panzoom paused, its event listeners are removed, so taps on
+    // the video bubble cleanly to the dialog swipe handler and the
+    // entire sheet becomes a swipe-nav target.
     panzoomInstance = bindPanzoom(videoEl, wrap);
     const applySavedZoom = () => {
       if (!panzoomInstance) return;
-      if (!remix.zoom_scale || remix.zoom_scale <= 1.01) return;
       try {
-        const r = wrap.getBoundingClientRect();
-        const cx = (Number(remix.zoom_x) || 0.5) * r.width;
-        const cy = (Number(remix.zoom_y) || 0.5) * r.height;
-        panzoomInstance.zoomAbs(0, 0, remix.zoom_scale);
-        panzoomInstance.moveTo(
-          r.width / 2 - cx * remix.zoom_scale,
-          r.height / 2 - cy * remix.zoom_scale
-        );
+        if (remix.zoom_scale && remix.zoom_scale > 1.01) {
+          const r = wrap.getBoundingClientRect();
+          const cx = (Number(remix.zoom_x) || 0.5) * r.width;
+          const cy = (Number(remix.zoom_y) || 0.5) * r.height;
+          panzoomInstance.zoomAbs(0, 0, remix.zoom_scale);
+          panzoomInstance.moveTo(
+            r.width / 2 - cx * remix.zoom_scale,
+            r.height / 2 - cy * remix.zoom_scale
+          );
+        }
+        // Freeze: pause unbinds panzoom's pointer listeners so
+        // touches on the video pass through to dialog swipe nav.
+        if (typeof panzoomInstance.pause === "function") {
+          panzoomInstance.pause();
+        }
       } catch (err) { /* ignore */ }
     };
     if (videoEl.readyState >= 1) applySavedZoom();
@@ -1148,8 +1157,11 @@
       // touch (only mouse). Use capture-phase stopPropagation
       // listeners that fire BEFORE panzoom's bubble-phase touchstart
       // listener. Multi-touch (pinch) and zoomed states allow pan
-      // through.
+      // through. In remix-playback mode the panzoom is paused right
+      // after the saved view is applied — let touches bubble to the
+      // dialog swipe handler so the full card is a swipe-nav target.
       const guard = (e) => {
+        if (videoTarget.closest(".modal-stage-remix-play")) return;
         const s = inst ? (inst.getTransform().scale || 1) : 1;
         if (s > 1.01) return;
         if (e.touches && e.touches.length > 1) return;

@@ -829,7 +829,9 @@ body.modal-open { overflow: hidden; }
   display: inline-flex;
   align-items: center;
   margin: 14px auto 0;
-  background: white;
+  /* Cream pill matches the modal sheet theme; orange outline + label
+     keeps the brand accent. */
+  background: var(--color-cream);
   border: 1.5px solid rgba(240, 90, 40, 0.35);
   color: var(--color-glow);
   font-family: var(--font-display);
@@ -1881,15 +1883,22 @@ nav a .nav-icon {
     background: var(--color-cream-deep);
     border-top: 2px solid rgba(240, 90, 40, 0.18);
     box-shadow: 0 -2px 12px rgba(240, 90, 40, 0.08);
-    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
+    /* Equal L/R padding (12px each side, plus iOS landscape safe-
+       area). Symmetric so the leftmost (Live) and rightmost (Group
+       Faves) tabs sit equidistant from the screen edge. */
+    padding:
+      6px
+      max(12px, env(safe-area-inset-right))
+      max(6px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+    box-sizing: border-box;
   }
-  /* Page bottom-padding so the gallery's last cards aren't hidden
-     behind the fixed strip. ~64 of bottom-tab height + safe-area
-     padding keeps Load More reachable. */
   body { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
-  /* Hide the top in-page tab strip on phones — the bottom tabs
-     now drive bucket selection. */
   .tabs-row { display: none !important; }
+  /* Top nav links retired on phones — bottom tabs are the primary
+     nav surface. The header keeps brand + user-chrome (notifications
+     + profile) as the upper-row chrome. */
+  header > nav { display: none !important; }
 }
 .bottom-tab {
   flex: 1 1 0;
@@ -1912,12 +1921,14 @@ nav a .nav-icon {
 .bottom-tab .material-icons {
   font-size: 22px;
   line-height: 1;
+  color: inherit;
 }
-.bottom-tab.active {
-  color: var(--color-glow);
-}
+/* Active state: orange icon AND label. !important defeats earlier
+   .material-icons color cascades. */
+.bottom-tab.active,
+.bottom-tab.active .bottom-tab-label,
 .bottom-tab.active .material-icons {
-  color: var(--color-glow);
+  color: var(--color-glow) !important;
 }
 .bottom-tab-label {
   white-space: nowrap;
@@ -1932,6 +1943,16 @@ nav a .nav-icon {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  /* Baseline-align the chrome group with the h1 brand text in the
+     header (which uses align-items: baseline). align-self promotes
+     the flex item to the parent's baseline track so the icon
+     buttons sit on the same baseline as "🦊 Our Foxes". */
+  align-self: baseline;
+  /* Don't wrap to a second header row on narrow viewports. */
+  flex-shrink: 0;
+}
+header {
+  flex-wrap: nowrap !important;
 }
 .chrome-btn {
   width: 36px;
@@ -2089,7 +2110,10 @@ nav a .nav-icon {
   .card-modal {
     width: 100vw !important;
     max-width: 100vw !important;
-    max-height: 92dvh !important;
+    /* Extend the sheet to nearly fill the viewport with only 6px
+       between the bottom of its content (back pill, etc.) and the
+       screen edge. iOS safe-area is honored in the inner padding. */
+    max-height: calc(100dvh - 6px) !important;
     margin: 0 !important;
     /* The browser positions a dialog opened via showModal() in the
        top layer; explicit bottom:0 inside the layer keeps the
