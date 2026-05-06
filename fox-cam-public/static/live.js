@@ -174,7 +174,11 @@
     try {
       inst = window.panzoom(video, {
         maxZoom: 6, minZoom: 1, bounds: true,
-        boundsPadding: 0.95, zoomDoubleClickSpeed: 1,
+        // boundsPadding: 0.1 = 10% must remain visible. The previous
+        // 0.95 (95%) was unsatisfiable above ~1.05× zoom in a small
+        // grid tile and caused the panning math to clamp to the
+        // top-left bound on every zoom-in.
+        boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
       });
     } catch (e) { return; }
     gridPanzooms.set(cam, inst);
@@ -183,21 +187,37 @@
     const zout = wrap.querySelector(".zoom-controls .zoom-out");
     const zfit = wrap.querySelector(".zoom-controls .zoom-fit");
 
-    const zoomInAction = () => {
+    // Anchored zoom around the wrap center using explicit math
+    // instead of smoothZoom(): in a small grid tile, bounds:true +
+    // boundsPadding:0.95 makes smoothZoom snap to its nearest valid
+    // position (= top-left), which presents as "first tap recenters
+    // up-left, second tap does nothing".
+    //
+    // Algorithm: translate the video so the wrap-center pixel stays
+    // fixed across the scale change.
+    //   s, (tx, ty) = current scale, translate
+    //   wrap center in element-local coords:
+    //       cxL = (wrap.width/2 - tx) / s
+    //       cyL = (wrap.height/2 - ty) / s
+    //   for target scale s', set:
+    //       tx' = wrap.width/2  - cxL * s'
+    //       ty' = wrap.height/2 - cyL * s'
+    function zoomToScale(targetScale) {
       const r = wrap.getBoundingClientRect();
-      inst.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1.5);
-    };
-    const zoomOutAction = () => {
-      const cur = inst.getTransform().scale;
-      const next = cur / 1.5;
-      if (next <= 1.05) {
-        inst.zoomAbs(0, 0, 1);
-        inst.moveTo(0, 0);
-      } else {
-        const r = wrap.getBoundingClientRect();
-        inst.smoothZoom(r.left + r.width/2, r.top + r.height/2, 1/1.5);
-      }
-    };
+      const t = inst.getTransform();
+      const s = t.scale || 1;
+      const wrapCx = r.width / 2;
+      const wrapCy = r.height / 2;
+      const cxL = (wrapCx - t.x) / s;
+      const cyL = (wrapCy - t.y) / s;
+      const sNew = Math.max(1, Math.min(6, targetScale));
+      const txNew = wrapCx - cxL * sNew;
+      const tyNew = wrapCy - cyL * sNew;
+      inst.zoomAbs(0, 0, sNew);
+      inst.moveTo(txNew, tyNew);
+    }
+    const zoomInAction  = () => zoomToScale((inst.getTransform().scale || 1) * 1.5);
+    const zoomOutAction = () => zoomToScale((inst.getTransform().scale || 1) / 1.5);
     const zoomFitAction = () => {
       inst.zoomAbs(0, 0, 1);
       inst.moveTo(0, 0);
