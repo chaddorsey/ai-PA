@@ -184,7 +184,11 @@ body.landing a:hover { color: var(--color-ink); }
   width: clamp(280px, 60vw, 720px);
   filter: drop-shadow(0 8px 18px rgba(240, 90, 40, 0.35));
   display: block;
-  margin: 0 auto;
+  /* Negative top margin pulls the wordmark up ~40px relative to
+     where its natural top edge would sit under the trio. The .com
+     sits via its own -22% top margin so it follows along; the
+     trio stays fixed. */
+  margin: -40px auto 0;
 }
 
 .hero-dotcom {
@@ -284,10 +288,10 @@ body.landing.parallax-active .hero-layer { transition: none !important; }
 
 body.landing .hero-logotext { opacity: 0; transform: scale(0.6); transition: transform 0.55s cubic-bezier(.34,1.56,.64,1), opacity 0.4s ease; transition-delay: 0.85s; }
 body.landing.ready .hero-logotext { opacity: 1; transform: scale(1); }
-/* Foxes pop with the same overshoot as the wordmark, delayed so
-   they land ~250ms after the wordmark (logotext lands at 0.85+0.55
-   = 1.40s; foxes start at 1.10s and finish at 1.65s). */
-body.landing .hero-foxes { opacity: 0; transform: scale(0.4); transition: transform 0.55s cubic-bezier(.34,1.56,.64,1), opacity 0.4s ease; transition-delay: 1.10s; transform-origin: 50% 90%; }
+/* Foxes pop with the same overshoot as the wordmark. Delay 1.00s
+   means they finish at 1.55s — 150ms after the wordmark (was 1.10s
+   for a 250ms gap; user requested the trio arrive 100ms earlier). */
+body.landing .hero-foxes { opacity: 0; transform: scale(0.4); transition: transform 0.55s cubic-bezier(.34,1.56,.64,1), opacity 0.4s ease; transition-delay: 1.00s; transform-origin: 50% 90%; }
 body.landing.ready .hero-foxes { opacity: 1; transform: scale(1); }
 
 /* .com lands ~500ms after the foxes (foxes finish at 1.65s; .com
