@@ -856,6 +856,11 @@ body.modal-open { overflow: hidden; }
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  /* Match the regular modal's bottom-spacing — its action row has
+     padding-bottom: 22px (.modal-actions). Without this, the back
+     pill sits 16px lower than the regular modal's button baseline
+     and protrudes below the iOS bottom line. */
+  padding-bottom: 22px;
 }
 .modal-stage-remix-play .modal-back-pill { align-self: center; }
 

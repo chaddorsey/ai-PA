@@ -659,9 +659,11 @@
       const metaArea = body.querySelector(".modal-meta");
       if (metaArea) metaArea.appendChild(deleteLink);
     }
-    // Archive toggle (per-user) — Material archive / unarchive icons.
+    // Archive toggle (per-user) — explicit Material Symbols SVG so
+    // the archive glyph matches the user's intended design (box +
+    // arrow), not the flatter `archive` ligature in Material Icons.
     actionsBar.appendChild(iconActionBtn(
-      ICON(h.my_archived ? "unarchive" : "archive"),
+      h.my_archived ? UNARCHIVE_ICON_SVG : ARCHIVE_ICON_SVG,
       "archive", !!h.my_archived,
       h.my_archived ? "Unarchive" : "Archive",
       async () => {
@@ -1316,6 +1318,20 @@
   const LINK2_ICON_SVG = `
     <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
       <path fill="currentColor" d="M318-120q-82 0-140-58t-58-140q0-40 15-76t43-64l134-133 56 56-134 134q-17 17-25.5 38.5T200-318q0 49 34.5 83.5T318-200q23 0 45-8.5t39-25.5l133-134 57 57-134 133q-28 28-64 43t-76 15Zm79-220-57-57 223-223 57 57-223 223Zm251-28-56-57 134-133q17-17 25-38t8-44q0-50-34-85t-84-35q-23 0-44.5 8.5T558-726L425-592l-57-56 134-134q28-28 64-43t76-15q82 0 139.5 58T839-641q0 39-14.5 75T782-502L648-368Z"/>
+    </svg>`;
+
+  // Archive — the explicit Material Symbols glyph the user provided
+  // (box with downward arrow + lid line). Replaces the Material
+  // Icons font's `archive` ligature which renders a flatter version.
+  const ARCHIVE_ICON_SVG = `
+    <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="m480-240 160-160-56-56-64 64v-168h-80v168l-64-64-56 56 160 160ZM200-640v440h560v-440H200Zm0 520q-33 0-56.5-23.5T120-200v-499q0-14 4.5-27t13.5-24l50-61q11-14 27.5-21.5T250-840h460q18 0 34.5 7.5T772-811l50 61q9 11 13.5 24t4.5 27v499q0 33-23.5 56.5T760-120H200Zm16-600h528l-34-40H250l-34 40Zm264 300Z"/>
+    </svg>`;
+  // Unarchive — same box, arrow flipped UP (out of box). Mirror the
+  // archive path along its vertical center.
+  const UNARCHIVE_ICON_SVG = `
+    <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22" viewBox="0 -960 960 960" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M480-560 320-400l56 56 64-64v168h80v-168l64 64 56-56-160-160ZM200-640v440h560v-440H200Zm0 520q-33 0-56.5-23.5T120-200v-499q0-14 4.5-27t13.5-24l50-61q11-14 27.5-21.5T250-840h460q18 0 34.5 7.5T772-811l50 61q9 11 13.5 24t4.5 27v499q0 33-23.5 56.5T760-120H200Zm16-600h528l-34-40H250l-34 40Zm264 300Z"/>
     </svg>`;
 
   // "Not a fox" custom combo: pets icon (paw) with a block icon
