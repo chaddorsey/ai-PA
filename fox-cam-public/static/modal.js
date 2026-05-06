@@ -429,6 +429,7 @@
             <button class="zoom-btn zoom-in"  type="button" title="Zoom in"  aria-label="Zoom in"><span class="material-icons">add</span></button>
             <button class="zoom-btn zoom-out" type="button" title="Zoom out" aria-label="Zoom out"><span class="material-icons">remove</span></button>
             <button class="zoom-btn zoom-fit" type="button" title="Fit"      aria-label="Fit"><span class="material-icons">crop_free</span></button>
+            <button class="zoom-btn zoom-replay" type="button" title="Replay from start" aria-label="Replay from start"><span class="material-icons">replay</span></button>
           </div>
         </div>
         <div class="modal-meta">
@@ -535,6 +536,21 @@
     if (panzoomInstance) {
       wireZoomButtons(body, ".zoom-controls .zoom-in", ".zoom-controls .zoom-out",
                        ".zoom-controls .zoom-fit", panzoomInstance, wrap);
+    }
+    // Replay button now lives at the bottom of the vertical zoom-
+    // controls stack instead of top-right of the dialog (avoids
+    // colliding with iOS native video controls when they appear
+    // bottom-center). Wire it here so it closes over videoEl.
+    const stackReplay = body.querySelector(".zoom-controls .zoom-replay");
+    if (stackReplay) {
+      stackReplay.addEventListener("click", (e) => {
+        e.stopPropagation();
+        try {
+          videoEl.currentTime = 0;
+          const p = videoEl.play();
+          if (p && typeof p.catch === "function") p.catch(() => {});
+        } catch (_) {}
+      });
     }
 
     // Action row — Material Icons throughout for a flat, universal
@@ -1129,13 +1145,18 @@
     }
     try {
       videoTarget.style.transformOrigin = "0 0";
-      const inst = window.panzoom(videoTarget, {
+      let inst;
+      const noPanAtIdentity = (e) => {
+        const s = inst ? (inst.getTransform().scale || 1) : 1;
+        if (s > 1.01) return false;
+        if (e && e.touches && e.touches.length > 1) return false;
+        return true;
+      };
+      inst = window.panzoom(videoTarget, {
         maxZoom: 6, minZoom: 1, bounds: true,
-        // 0.1 = only 10% of the element must remain visible. The
-        // previous 0.95 was unsatisfiable above ~1.05× zoom in any
-        // wrap and made panzoom snap to the top-left bound. Same fix
-        // landed in live.js for grid panzoom (v60).
         boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
+        beforeMouseDown: noPanAtIdentity,
+        beforeTouch: noPanAtIdentity,
       });
       return inst;
     } catch (err) {
@@ -1397,16 +1418,27 @@
     const t = document.createElement("div");
     t.className = "toast show";
     t.textContent = msg;
-    // When a <dialog> is open via showModal(), it lives in the
-    // browser's "top layer" which paints above every regular DOM
-    // element regardless of z-index. Toasts appended to <body> end
-    // up behind the modal and the user never sees them. Route the
-    // toast inside the open dialog so it inherits the same top-
-    // layer stacking. Falls back to body otherwise.
-    const target = (dialog && dialog.open) ? dialog : document.body;
-    target.appendChild(t);
+    // Use the HTML popover API to place the toast in its own top-
+    // layer slot. <dialog>.showModal() also uses the top layer, but
+    // a popover declared after the dialog stacks ABOVE it. Earlier
+    // we tried appending the toast inside the dialog, which worked
+    // but triggered a brief backdrop repaint (modal "blinks white")
+    // when the toast was removed. The popover path keeps the toast
+    // independent of the dialog's child list.
+    document.body.appendChild(t);
+    if (typeof t.showPopover === "function") {
+      try {
+        t.setAttribute("popover", "manual");
+        t.showPopover();
+      } catch (_) {
+        // older browser quirks: ignore, toast still renders via z-index
+      }
+    }
     setTimeout(() => t.classList.remove("show"), 1700);
-    setTimeout(() => t.remove(), 2100);
+    setTimeout(() => {
+      try { if (t.hidePopover) t.hidePopover(); } catch (_) {}
+      t.remove();
+    }, 2100);
   }
 
   // ===========================================================================

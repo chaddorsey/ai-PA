@@ -1630,18 +1630,25 @@ html.ios .card-modal-replay {
   max-height: 70vh;
 }
 
-/* Horizontal zoom-controls row in the modal viewer. Default column
-   layout had three 44pt iOS pills stacking ~140px tall, intruding
-   into the close-X area when the wrap is short (portrait phone).
-   Row layout keeps the column at a fixed ~44px tall, well below
-   close. */
-body.ios .modal-video-wrap .zoom-controls,
-html.ios .modal-video-wrap .zoom-controls {
-  flex-direction: row !important;
-  gap: 6px !important;
-  bottom: 12px !important;
+/* Vertical zoom-controls stack in the modal viewer, with replay at
+   the bottom of the column. The whole stack is lifted one icon-
+   diameter (44px) above the wrap bottom so the iOS native control
+   bar (which appears at the very bottom of the video on tap) doesn't
+   sit underneath the buttons. Top-down order: zoom-in, zoom-out,
+   zoom-fit, zoom-replay. */
+.modal-video-wrap .zoom-controls {
+  flex-direction: column !important;
+  bottom: 52px !important;     /* 8 base + 44 diameter */
   right: 12px !important;
+  gap: 6px;
 }
+.zoom-btn.zoom-replay { /* shares zoom-btn sizing + tap-target */ }
+
+/* Hide the legacy dialog-anchored replay (top-right). Replay now
+   lives at the bottom of the zoom-controls stack inside the wrap. */
+.card-modal-replay { display: none !important; }
+body.ios .card-modal-replay,
+html.ios .card-modal-replay { display: none !important; }
 
 /* === Material-Icon-driven action buttons (modal + card action rows)
    ----------------------------------------------------------------
@@ -1688,21 +1695,24 @@ html.ios .modal-video-wrap .zoom-controls {
   color: white !important;
 }
 
-/* "Not a fox" combo glyph: paw (pets) base in font-brown, block
-   icon overlaid in native orientation offset down-left by half a
-   diameter so the two glyphs partially overlap rather than stack
-   exactly. Container is 1.5× the icon size to fit the offset. */
+/* "Not a fox" combo glyph. Paw (pets, font-brown) is the base; block
+   (orange, transparent bg, native orientation) sits UP an icon-
+   diameter and RIGHT a quarter-diameter from the paw. Container is
+   sized to the paw (22×22) and overflow is allowed so the block
+   spills above; the entire combo is then bottom-aligned with the
+   other 22px icons in the row via vertical-align. */
 .not-fox-icon {
   position: relative;
   display: inline-block;
-  width: 33px;        /* 22 (icon) + 11 (half-diameter offset) */
-  height: 33px;
-  vertical-align: middle;
+  width: 22px;
+  height: 22px;
+  vertical-align: bottom;
+  overflow: visible;
 }
 .not-fox-icon .not-fox-base {
   position: absolute;
   top: 0;
-  right: 0;            /* paw at top-right of container */
+  left: 0;
   font-size: 22px;
   line-height: 1;
   display: block;
@@ -1710,14 +1720,13 @@ html.ios .modal-video-wrap .zoom-controls {
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  top: 11px;           /* down half a diameter */
-  left: 0;             /* and left half a diameter */
+  top: -22px;          /* up an icon-diameter from the paw */
+  left: 5.5px;         /* right a quarter-diameter from the paw */
   font-size: 22px;
   line-height: 1;
   display: block;
   color: var(--color-glow) !important;
   background: transparent !important;
-  /* native orientation, no rotation */
 }
 .action-btn.action-demote.active .not-fox-icon .not-fox-base,
 .action-btn.action-demote.active .not-fox-icon .not-fox-overlay {
@@ -1768,4 +1777,21 @@ html.ios .modal-video-wrap .zoom-controls {
   font-size: 20px;
   line-height: 1;
   color: inherit;
+}
+
+/* Toast as popover element — when shown via .showPopover() the
+   element enters the browser top layer above any open <dialog>.
+   Override the popover default frame so it renders as our normal
+   inline toast pill. */
+.toast[popover] {
+  margin: 0;
+  border: 1px solid #2a2f37;
+  background: #232830;
+  color: #f5f5f5;
+  inset: auto;
+  /* re-establish the normal positioning from .toast */
+  position: fixed;
+  bottom: 1.2rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
 }

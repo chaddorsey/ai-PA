@@ -170,6 +170,16 @@
     if (!cam || !video || typeof window.panzoom !== "function") return;
     if (gridPanzooms.has(cam)) return;
     video.style.transformOrigin = "0 0";
+    // Suppress single-finger drags when the video isn't zoomed —
+    // otherwise a casual swipe makes the video float around (panzoom
+    // happily pans an at-scale-1 element). Pinch (multi-touch) and
+    // wheel-to-zoom remain allowed so the user can still zoom IN.
+    const noPanAtIdentity = (e) => {
+      const s = inst ? (inst.getTransform().scale || 1) : 1;
+      if (s > 1.01) return false;                            // zoomed → allow pan
+      if (e && e.touches && e.touches.length > 1) return false;  // pinch → allow
+      return true;                                           // ignore single-finger drag
+    };
     let inst;
     try {
       inst = window.panzoom(video, {
@@ -179,6 +189,8 @@
         // grid tile and caused the panning math to clamp to the
         // top-left bound on every zoom-in.
         boundsPadding: 0.1, zoomDoubleClickSpeed: 1,
+        beforeMouseDown: noPanAtIdentity,
+        beforeTouch: noPanAtIdentity,
       });
     } catch (e) { return; }
     gridPanzooms.set(cam, inst);
@@ -357,6 +369,12 @@
       const dw = video.clientWidth || 1;
       return w > 0 ? Math.max(1.5, w / dw) : 4;
     };
+    const noPanAtIdentity = (e) => {
+      const s = activeZoom ? (activeZoom.getTransform().scale || 1) : 1;
+      if (s > 1.01) return false;
+      if (e && e.touches && e.touches.length > 1) return false;
+      return true;
+    };
     activeZoom = window.panzoom(video, {
       maxZoom: computeMax(),
       minZoom: 1,
@@ -364,6 +382,8 @@
       boundsPadding: 0.95,
       smoothScroll: false,
       zoomDoubleClickSpeed: 1,
+      beforeMouseDown: noPanAtIdentity,
+      beforeTouch: noPanAtIdentity,
     });
     const onMeta = () => { if (activeZoom) activeZoom.setMaxZoom(computeMax()); };
     if (video.videoWidth > 0) onMeta();
@@ -470,6 +490,12 @@
           const dw = video.clientWidth || 1;
           return w > 0 ? Math.max(1.5, w / dw) : 4;
         };
+        const noPanAtIdentity = (e) => {
+          const s = activeZoom ? (activeZoom.getTransform().scale || 1) : 1;
+          if (s > 1.01) return false;
+          if (e && e.touches && e.touches.length > 1) return false;
+          return true;
+        };
         activeZoom = window.panzoom(video, {
           maxZoom: computeMax(),
           minZoom: 1,
@@ -477,6 +503,8 @@
           boundsPadding: 0.95,
           smoothScroll: false,
           zoomDoubleClickSpeed: 1,
+          beforeMouseDown: noPanAtIdentity,
+          beforeTouch: noPanAtIdentity,
         });
         // Patch maxZoom in once the video reports its real resolution.
         const onMeta = () => {
