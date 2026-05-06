@@ -15,9 +15,18 @@
   // gallery page (e.g., card.js was loaded somewhere else); bail out.
   if (!grid || !loadMore) return;
 
-  let bucket = "pending";
+  // Initial bucket comes from the server (parsed from ?bucket= query),
+  // so a deep link or refresh restores the correct view. Falls back
+  // to "pending" (= "All").
+  let bucket = window.INITIAL_BUCKET || "pending";
   let offset = 0;
   const limit = 30;
+  // Mark the matching top-tab active to mirror what the bottom tabs
+  // already do (server-side via active_view). Both surfaces stay in
+  // sync as the user clicks around.
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.bucket === bucket);
+  });
 
   // window.IS_ADMIN is injected by the server in highlights.html.
 
@@ -162,16 +171,26 @@
     // buckets we always pass status=any so the curator returns both
     // active + archived; the frontend then splits them into an
     // "Archived" section below the active items.
-    const filterable = bucket !== "demoted";
+    // Status="no-foxes" overrides bucket → demoted. The user picked
+    // "show me what was rejected as not-a-fox"; that's a global
+    // bucket query, not a refinement of Clips/Faves/Group/Remixes.
+    // The bottom-tab pill stays on whatever was previously active
+    // (no need to flip its visual state — Status drives the view).
+    const noFoxes = filterStatus && filterStatus.value === "no-foxes";
+    const effectiveBucket = noFoxes ? "demoted" : bucket;
+    const filterable = effectiveBucket !== "demoted";
     const params = new URLSearchParams({
-      bucket,
+      bucket: effectiveBucket,
       time_of_day: filterable ? filterTime.value : "any",
       limit,
       offset,
     });
     if (filterable && filterCamera.value) params.append("camera", filterCamera.value);
     if (filterable && filterSpecies.value) params.append("species_filter", filterSpecies.value);
-    if (bucket === "pending" && filterStatus && filterStatus.value) {
+    if (filterable && filterStatus && filterStatus.value && !noFoxes) {
+      // Within a normal bucket, the Status pulldown narrows the
+      // archived/active overlay. (no-foxes is handled by the bucket
+      // override above, so we skip the extra status param.)
       params.append("status", filterStatus.value);
     } else {
       params.append("status", "any");
@@ -304,14 +323,49 @@
     });
   }
 
+  // Switch the in-page bucket without a full navigation. Used by the
+  // top desktop tabs AND the bottom-tab nav on phones. Updates URL
+  // via pushState so back/forward + share/refresh all work.
+  function switchBucket(nextBucket) {
+    bucket = nextBucket;
+    document.querySelectorAll(".tab").forEach((x) =>
+      x.classList.toggle("active", x.dataset.bucket === nextBucket));
+    document.querySelectorAll(".bottom-tab[data-bucket]").forEach((x) =>
+      x.classList.toggle("active", x.dataset.bucket === nextBucket));
+    // Keep the URL honest so refresh / share preserves the view.
+    const newUrl = nextBucket === "pending"
+      ? "/highlights"
+      : `/highlights?bucket=${encodeURIComponent(nextBucket)}`;
+    if (location.pathname + location.search !== newUrl) {
+      history.pushState({ bucket: nextBucket }, "", newUrl);
+    }
+    syncFiltersVisibility();
+    reset();
+  }
+
   tabs.forEach((t) => {
-    t.addEventListener("click", () => {
-      tabs.forEach((x) => x.classList.remove("active"));
-      t.classList.add("active");
-      bucket = t.dataset.bucket;
-      syncFiltersVisibility();
-      reset();
+    t.addEventListener("click", () => switchBucket(t.dataset.bucket));
+  });
+
+  // Bottom-tab nav: intercept the four /highlights tabs (Clips, My
+  // Faves, Group Faves, Remixes) so they switch in place instead of
+  // navigating. Live and non-bucket tabs do a real nav.
+  document.querySelectorAll(".bottom-tab[data-bucket]").forEach((tab) => {
+    tab.addEventListener("click", (e) => {
+      // Already on /highlights → in-place switch.
+      if (location.pathname === "/highlights") {
+        e.preventDefault();
+        switchBucket(tab.dataset.bucket);
+      }
+      // else: let the browser navigate to /highlights?bucket=...
     });
+  });
+
+  // Browser back/forward — re-render the gallery for the new bucket.
+  window.addEventListener("popstate", () => {
+    const params = new URLSearchParams(location.search);
+    const next = params.get("bucket") || "pending";
+    if (next !== bucket) switchBucket(next);
   });
 
   filterCamera.addEventListener("change", reset);

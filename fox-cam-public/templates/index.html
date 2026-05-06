@@ -63,6 +63,8 @@
     {% endfor %}
   </main>
 
+  {% include "_bottom_tabs.html" with context %}
+
   <!-- Autoplay-rejection scrim. Hidden by default; revealed by live.js
        when iOS Safari refuses to autoplay a muted stream without a
        prior user gesture. Behavior wiring lives in live.js (see

@@ -1,0 +1,36 @@
+{# Fixed bottom-row tab nav. Visible on phones (≤720px) only — desktop
+   keeps the existing top nav. Live triggers a real navigation; the
+   four /highlights tabs use ?bucket= URL state so highlights.js can
+   handle the bucket switch in place via history.pushState (no full
+   page reload, snappy native feel).
+
+   active_view: "live" | "clips" | "mine" | "shared" | "remixes" | ""
+                — controls which tab gets .active styling.
+                Pages render this via _bottom_tabs.html include kwarg.
+#}
+<nav class="bottom-tabs" aria-label="Primary">
+  <a href="/live" data-tab="live" class="bottom-tab{% if active_view == 'live' %} active{% endif %}">
+    <span class="material-icons" aria-hidden="true">live_tv</span>
+    <span class="bottom-tab-label">Live</span>
+  </a>
+  <a href="/highlights" data-tab="clips" data-bucket="pending"
+     class="bottom-tab{% if active_view == 'clips' %} active{% endif %}">
+    <span class="material-icons" aria-hidden="true">video_library</span>
+    <span class="bottom-tab-label">Clips</span>
+  </a>
+  <a href="/highlights?bucket=mine" data-tab="mine" data-bucket="mine"
+     class="bottom-tab{% if active_view == 'mine' %} active{% endif %}">
+    <span class="material-icons" aria-hidden="true">star</span>
+    <span class="bottom-tab-label">My Faves</span>
+  </a>
+  <a href="/highlights?bucket=shared" data-tab="shared" data-bucket="shared"
+     class="bottom-tab{% if active_view == 'shared' %} active{% endif %}">
+    <span class="material-icons" aria-hidden="true">hotel_class</span>
+    <span class="bottom-tab-label">Group Faves</span>
+  </a>
+  <a href="/highlights?bucket=remixes" data-tab="remixes" data-bucket="remixes"
+     class="bottom-tab{% if active_view == 'remixes' %} active{% endif %}">
+    <span class="material-icons" aria-hidden="true">movie_edit</span>
+    <span class="bottom-tab-label">Remixes</span>
+  </a>
+</nav>

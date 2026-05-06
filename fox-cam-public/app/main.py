@@ -199,6 +199,7 @@ def live_page(request: Request) -> HTMLResponse:
             "request": request,
             "streams": sorted(PUBLIC_STREAMS),
             "v": ASSET_VERSION,
+            "active_view": "live",
             **_identity_ctx(request),
         },
     )
@@ -221,13 +222,26 @@ def _identity_ctx(request: Request) -> dict[str, Any]:
 
 
 @app.get("/highlights", response_class=HTMLResponse)
-def highlights_page(request: Request) -> HTMLResponse:
+def highlights_page(request: Request, bucket: str | None = None) -> HTMLResponse:
+    """Highlights gallery. Bottom-tab nav uses ?bucket= to pick the
+    initial view (also restored from URL on refresh / share). Map the
+    bucket to the matching active_view label so the bottom-tab pill
+    highlights correctly on first paint."""
+    bucket_to_view = {
+        "mine": "mine",
+        "shared": "shared",
+        "remixes": "remixes",
+        "demoted": "clips",   # demoted lives under Clips → Status filter
+    }
+    active_view = bucket_to_view.get(bucket or "", "clips")
     return templates.TemplateResponse(
         "highlights.html",
         {
             "request": request,
             "streams": sorted(PUBLIC_STREAMS),
             "v": ASSET_VERSION,
+            "initial_bucket": bucket or "pending",
+            "active_view": active_view,
             **_identity_ctx(request),
         },
     )
@@ -248,7 +262,8 @@ async def remix_edit(event_id: str, request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "clip.html",
         {"request": request, "event_id": event_id, "v": ASSET_VERSION,
-         "force_remix_mode": True, **_identity_ctx(request)},
+         "force_remix_mode": True, "active_view": "clips",
+         **_identity_ctx(request)},
     )
 
 
@@ -263,7 +278,7 @@ async def clip_permalink(event_id: str, request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "clip.html",
         {"request": request, "event_id": event_id, "v": ASSET_VERSION,
-         **_identity_ctx(request)},
+         "active_view": "clips", **_identity_ctx(request)},
     )
 
 
@@ -275,7 +290,8 @@ async def remix_permalink(remix_id: str, request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "clip.html",
         {"request": request, "event_id": "", "remix_id": remix_id,
-         "v": ASSET_VERSION, **_identity_ctx(request)},
+         "v": ASSET_VERSION, "active_view": "remixes",
+         **_identity_ctx(request)},
     )
 
 

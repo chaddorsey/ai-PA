@@ -25,6 +25,7 @@
   <script>
     window.CURRENT_EMAIL = {{ (current_email or '')|tojson }};
     window.IS_ADMIN = {{ (is_admin or false)|tojson }};
+    window.INITIAL_BUCKET = {{ (initial_bucket or 'pending')|tojson }};
   </script>
   <header>
     <h1>🦊 Our Foxes</h1>
@@ -37,11 +38,12 @@
   <main>
     <div class="tabs-row">
       <div class="tabs">
-        <button class="tab active" data-bucket="pending"><span class="material-icons tab-icon" aria-hidden="true">video_library</span>All</button>
+        <button class="tab" data-bucket="pending"><span class="material-icons tab-icon" aria-hidden="true">video_library</span>All</button>
         <button class="tab" data-bucket="mine"><span class="material-icons tab-icon" aria-hidden="true">star</span>My Faves</button>
         <button class="tab" data-bucket="shared"><span class="material-icons tab-icon" aria-hidden="true">hotel_class</span>Group Faves</button>
         <button class="tab" data-bucket="remixes"><span class="material-icons tab-icon" aria-hidden="true">movie_edit</span>Remixes</button>
-        <button class="tab" data-bucket="demoted"><span class="not-fox-icon tab-icon" aria-hidden="true"><span class="material-icons not-fox-base">pets</span><span class="material-symbols-outlined not-fox-overlay">block</span></span>No Foxes</button>
+        <!-- No Foxes moved out of the top tab strip — accessible
+             via the Status filter pulldown ("No Foxes" option). -->
       </div>
       <div id="view-toggle" class="view-toggle" hidden>
         <button data-view="list" class="active" type="button" title="List view" aria-label="List view">
@@ -83,6 +85,7 @@
           <option value="active" selected>Active</option>
           <option value="any">All</option>
           <option value="archived">Archived</option>
+          <option value="no-foxes">No Foxes</option>
         </select>
       </label>
       <label>Species:
@@ -97,6 +100,8 @@
     <div id="highlights" class="grid"></div>
     <button id="load-more">Load more</button>
   </main>
+
+  {% include "_bottom_tabs.html" with context %}
 
   <!-- Card-detail modal. Opened by clicking a card; closed via the X
        button, clicking the backdrop, or ESC. The body is rebuilt by
