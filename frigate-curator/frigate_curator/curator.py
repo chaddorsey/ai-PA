@@ -203,45 +203,54 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
                     event_id, verdict.species, verdict.confidence,
                     verdict.is_wildlife)
 
-    # Push notification (no-op if NTFY_TOPIC unset or below threshold).
-    # Gated on classifier verdict if available — don't ping family for
-    # 'person'/'vehicle'/'none' even if the heuristic likelihood is high.
+    # Push notification. Two pipelines:
+    #   1) Legacy ntfy.sh — uses its own NOTIFY_THRESHOLD (gated inside
+    #      maybe_notify). Kept for the handful of users still
+    #      subscribed via the ntfy app.
+    #   2) Web Push — fires for every clip that would appear in the
+    #      Active gallery (i.e. species NOT in the suppress list, or
+    #      unclassified). The per-user severity filter inside
+    #      web_push.broadcast_kind ("all" / "clusters" / "high") then
+    #      decides whether each subscriber actually receives the push.
+    #      No global likelihood threshold here — that decision moves
+    #      to the user via the Notification preferences panel.
+    SUPPRESS_SPECIES = {"none", "person", "vehicle", "error"}
     fresh = db.get_highlight(db_path, event_id)
     if fresh:
-        # If we have a classifier verdict, only notify on actual wildlife.
-        # If no verdict (classifier disabled or errored), fall back to
-        # the heuristic's notification path.
-        if verdict is not None and not verdict.is_wildlife:
+        species = ((verdict.species if verdict else fresh.get("species")) or "").lower()
+        if species in SUPPRESS_SPECIES:
             logger.info("Skipping notification for %s (species=%s)",
-                        event_id, verdict.species)
+                        event_id, species)
         else:
-            # Legacy ntfy.sh push (kept for the few subscribers still on
-            # ntfy.sh). This still fires when NTFY_TOPIC is set; new
-            # users get pushes via the Web Push path below.
             sent_legacy = notify.maybe_notify(fresh)
-            # Web Push fan-out — every subscriber whose `new_highlight`
-            # preference is enabled gets a push. Fully replaces the
-            # single-topic ntfy.sh model with per-user targeting.
             try:
-                if float(fresh.get("fox_likelihood") or 0.0) >= notify._THRESHOLD:
-                    cam = fresh.get("camera", "unknown")
-                    likelihood = float(fresh.get("fox_likelihood") or 0.0)
-                    duration = float(fresh.get("duration_s") or 0.0)
-                    pct = int(round(likelihood * 100))
-                    public_base = notify._PUBLIC_BASE
-                    payload = {
-                        "title": f"Fox Cam — {cam} ({pct}%)",
-                        "body":  f"{fresh.get('label','?')} · {duration:.0f}s",
-                        "url":   f"{public_base}/clip/{event_id}",
-                        "tag":   f"highlight-{event_id}",
-                        "kind":  "new_highlight",
-                        # Enrichment fields used by the per-user
-                        # severity filter inside web_push.send_*.
-                        "camera":         cam,
-                        "fox_likelihood": likelihood,
-                        "duration_s":     duration,
-                    }
-                    web_push.broadcast_kind(db_path, "new_highlight", payload)
+                cam = fresh.get("camera", "unknown")
+                likelihood = float(fresh.get("fox_likelihood") or 0.0)
+                duration = float(fresh.get("duration_s") or 0.0)
+                pct = int(round(likelihood * 100))
+                public_base = notify._PUBLIC_BASE
+                # Title shows percentage only when the heuristic is
+                # confident; otherwise just the camera name to avoid
+                # parading a 0% next to a "raccoon" classification.
+                title = (f"Fox Cam — {cam} ({pct}%)" if likelihood >= notify._THRESHOLD
+                         else f"Our Foxes — {cam}")
+                # Body prefers the classifier's species over Frigate's
+                # generic label when we have one — "raccoon · 12s" beats
+                # "animal · 12s".
+                body_subject = species if species else (fresh.get("label") or "motion")
+                payload = {
+                    "title": title,
+                    "body":  f"{body_subject} · {duration:.0f}s",
+                    "url":   f"{public_base}/clip/{event_id}",
+                    "tag":   f"highlight-{event_id}",
+                    "kind":  "new_highlight",
+                    # Enrichment fields used by the per-user severity
+                    # filter inside web_push.send_*.
+                    "camera":         cam,
+                    "fox_likelihood": likelihood,
+                    "duration_s":     duration,
+                }
+                web_push.broadcast_kind(db_path, "new_highlight", payload)
             except Exception:
                 logger.exception("web_push broadcast failed for %s", event_id)
             if sent_legacy:
