@@ -1800,3 +1800,64 @@ html.ios .card-modal-replay .material-icons {
   left: 50%;
   transform: translateX(-50%) translateY(0);
 }
+
+/* === Nav + tab Material Icons (per-tab affordance) ====================== */
+nav a .nav-icon {
+  font-size: 18px;
+  vertical-align: -4px;
+  margin-right: 6px;
+  line-height: 1;
+}
+.tab .tab-icon {
+  font-size: 16px;
+  vertical-align: -3px;
+  margin-right: 6px;
+  line-height: 1;
+}
+/* Tab-sized not-fox combo: smaller paw + smaller block, same offset
+   ratio. The combo is inline with the tab text; the absolute block
+   needs space to extend up-left so we widen the container. */
+.tab .not-fox-icon.tab-icon {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+  margin-right: 8px;
+  overflow: visible;
+}
+.tab .not-fox-icon.tab-icon .not-fox-base {
+  font-size: 16px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: inherit !important;
+}
+.tab .not-fox-icon.tab-icon .not-fox-overlay {
+  font-size: 16px;
+  position: absolute;
+  top: -3px;
+  left: -6px;
+  color: inherit !important;
+}
+.tab.active .not-fox-icon .not-fox-base,
+.tab.active .not-fox-icon .not-fox-overlay { color: white !important; }
+
+/* Sign-out link as Material Icon */
+.who-am-i .signout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 90, 40, 0.4);
+  text-decoration: none;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.who-am-i .signout .material-icons {
+  font-size: 18px;
+  color: inherit;
+}

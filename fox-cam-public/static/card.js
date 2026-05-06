@@ -29,7 +29,8 @@
     if (el) {
       const adminBadge = window.IS_ADMIN ? '<span class="admin-badge">admin</span>' : "";
       el.innerHTML = `${adminBadge}<span class="email">${escapeHtml(window.CURRENT_EMAIL)}</span>` +
-        ' <a href="/cdn-cgi/access/logout" class="signout" title="Sign out">sign out</a>';
+        ' <a href="/cdn-cgi/access/logout" class="signout" title="Sign out" aria-label="Sign out">' +
+        '<span class="material-icons" aria-hidden="true">logout</span></a>';
       el.hidden = false;
     }
   }

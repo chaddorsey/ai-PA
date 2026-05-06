@@ -29,19 +29,19 @@
   <header>
     <h1>🦊 Our Foxes</h1>
     <nav>
-      <a href="/live">Live</a>
-      <a href="/highlights" class="active">Highlights<span id="new-count" class="nav-badge" hidden>0</span></a>
+      <a href="/live"><span class="material-icons nav-icon" aria-hidden="true">live_tv</span>Live</a>
+      <a href="/highlights" class="active"><span class="material-icons nav-icon" aria-hidden="true">video_library</span>Highlights<span id="new-count" class="nav-badge" hidden>0</span></a>
       <span class="who-am-i" id="who-am-i" hidden></span>
     </nav>
   </header>
   <main>
     <div class="tabs-row">
       <div class="tabs">
-        <button class="tab active" data-bucket="pending">All</button>
-        <button class="tab" data-bucket="mine">⭐ My Faves</button>
-        <button class="tab" data-bucket="shared"><span class="dual-star" aria-hidden="true"></span>Group Faves</button>
-        <button class="tab" data-bucket="remixes">🎬 Remixes</button>
-        <button class="tab" data-bucket="demoted">🚫 No Foxes</button>
+        <button class="tab active" data-bucket="pending"><span class="material-icons tab-icon" aria-hidden="true">video_library</span>All</button>
+        <button class="tab" data-bucket="mine"><span class="material-icons tab-icon" aria-hidden="true">star</span>My Faves</button>
+        <button class="tab" data-bucket="shared"><span class="material-icons tab-icon" aria-hidden="true">hotel_class</span>Group Faves</button>
+        <button class="tab" data-bucket="remixes"><span class="material-icons tab-icon" aria-hidden="true">movie_edit</span>Remixes</button>
+        <button class="tab" data-bucket="demoted"><span class="not-fox-icon tab-icon" aria-hidden="true"><span class="material-icons not-fox-base">pets</span><span class="material-symbols-outlined not-fox-overlay">block</span></span>No Foxes</button>
       </div>
       <div id="view-toggle" class="view-toggle" hidden>
         <button data-view="list" class="active" type="button" title="List view" aria-label="List view">
