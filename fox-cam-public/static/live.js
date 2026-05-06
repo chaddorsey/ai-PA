@@ -314,19 +314,30 @@
     const baseName = sv.dataset.base;
     sv.dataset.stream = baseName;          // main stream
     const status = cam.querySelector(".status");
-    // No MSE on this browser (iOS Safari): the substream the cam is
-    // already playing via its grid-stream <video> has to be the
-    // spotlight view too. Skip the hi-res attach entirely so we don't
-    // crash on `new MediaSource()`.
-    if (!HAS_MSE) {
-      if (status) status.textContent = "live (sub)";
-      return;
-    }
     if (status) status.textContent = "loading hi-res…";
-    runMSE(sv, baseName, status).catch((err) => {
-      console.error(`[${baseName}] spotlight start error:`, err);
-      if (status) status.textContent = `hi-res error: ${err.message}`;
-    });
+    if (!HAS_MSE) {
+      // iOS path: legacy MediaSource isn't exposed, but WebRTC works
+      // and the substream is already playing via the grid-stream
+      // <video>. Try a parallel WebRTC connection to the MAIN stream
+      // (no `_sub` suffix) on the spotlight-stream <video>; on
+      // success, the `playing` listener below flips spotlight-ready
+      // and CSS swaps from substream → main. On failure (ICE
+      // timeout, server reject, decoder unable to handle the main
+      // bitrate) we silently keep the substream — visible quality
+      // is the same as before, no regression.
+      tryWebRTC(sv, baseName, status).then(() => {
+        // status.textContent is already set to "live (WebRTC)" by
+        // tryWebRTC's connectionstatechange handler.
+      }).catch((err) => {
+        console.warn(`[${baseName}] spotlight WebRTC failed, keeping substream:`, err.message);
+        if (status) status.textContent = "live (sub)";
+      });
+    } else {
+      runMSE(sv, baseName, status).catch((err) => {
+        console.error(`[${baseName}] spotlight start error:`, err);
+        if (status) status.textContent = `hi-res error: ${err.message}`;
+      });
+    }
     // When the main stream is decoding frames, flip .spotlight-ready
     // so CSS hides the substream and shows main. Attached as a
     // PERSISTENT listener so post-error recoveries (runMSE auto-retry)
@@ -444,6 +455,11 @@
     video._onVideoError = null;
     try { if (video._ws) video._ws.close(); } catch (_) {}
     video._ws = null;
+    // Close the WebRTC peer connection if one was attached (set on
+    // tryWebRTC success). Otherwise the PC + media tracks linger
+    // until GC, holding a TURN/STUN allocation and decoder context.
+    try { if (video._pc) video._pc.close(); } catch (_) {}
+    video._pc = null;
     try {
       video.pause();
       video.srcObject = null;
