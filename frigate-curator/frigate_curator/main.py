@@ -222,6 +222,7 @@ def list_highlights(
             min_score=min_score, bucket=bucket,
             hour_from=hour_from, hour_to=hour_to,
             limit=limit, offset=offset,
+            email=email,
         )
 
     # Attach per-user vote data + remix counts to every card, then

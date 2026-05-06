@@ -489,11 +489,12 @@ def list_highlights(
     until: float | None = None,
     min_score: float = 0.0,
     bucket: str | None = None,  # "all" | "favorites" | "demoted" | "pending"
-    hour_from: int | None = None,  # 0–23, inclusive
-    hour_to: int | None = None,    # 0–23, exclusive (allows wrap, e.g. 18→6)
+    hour_from: int | None = None,
+    hour_to: int | None = None,
     limit: int = 100,
     offset: int = 0,
     merge_overlaps: bool = True,
+    email: str | None = None,
 ) -> list[dict[str, Any]]:
     """List highlights with optional same-camera overlap dedup.
 
@@ -546,8 +547,21 @@ def list_highlights(
     elif bucket == "demoted":
         sql += " AND demoted = 1"
     elif bucket == "pending" or bucket is None:
-        # default: hide demoted from main view; show everything else
-        sql += " AND demoted = 0"
+        # Hide demoted from the main view UNLESS the current viewer
+        # has personally favorited the clip — a user's own favorite
+        # rescues a globally-demoted clip back into their All view.
+        # Without this, faving a clip another family member already
+        # demoted made the card silently disappear from All.
+        if email:
+            sql += (
+                " AND (demoted = 0 OR EXISTS ("
+                "   SELECT 1 FROM highlight_user_actions a "
+                "   WHERE a.highlight_id = highlights.event_id "
+                "     AND a.email = ? AND a.action = 'favorite'))"
+            )
+            args.append(email)
+        else:
+            sql += " AND demoted = 0"
     # bucket == "all" → no extra filter
 
     # Time-of-day filter (uses local-time hour of start_time).

@@ -1597,28 +1597,34 @@ html.ios .highlight .archive-toggle {
    one-thumb-friendly. */
 body.ios .card-modal-close,
 html.ios .card-modal-close {
-  /* Pill background so the X is distinct from iOS native video
-     controls underneath. */
   background: rgba(0, 0, 0, 0.55) !important;
   border-radius: 999px !important;
-  width: 44px !important;
-  height: 44px !important;
+  width: 36px !important;
+  height: 36px !important;
   top: 8px !important;
   right: 8px !important;
   text-shadow: none !important;
-  font-size: 24px !important;
+  font-size: 20px !important;
+}
+body.ios .card-modal-close .material-icons,
+html.ios .card-modal-close .material-icons {
+  font-size: 22px !important;
 }
 
-/* Replay sits LEFT of the close X. 8 (right gutter) + 44 (close
-   width) + 8 (gap) = 60px from the right edge. */
+/* Replay sits LEFT of the close X. 8 (right gutter) + 36 (close
+   width) + 6 (gap) = 50px from the right edge. */
 body.ios .card-modal-replay,
 html.ios .card-modal-replay {
   background: rgba(0, 0, 0, 0.55);
   border-radius: 999px;
-  width: 44px !important;
-  height: 44px !important;
+  width: 36px !important;
+  height: 36px !important;
   top: 8px !important;
-  right: 60px !important;
+  right: 50px !important;
+}
+body.ios .card-modal-replay .material-icons,
+html.ios .card-modal-replay .material-icons {
+  font-size: 22px !important;
 }
 
 /* Modal video-wrap height cap. Without this, in landscape the wrap's
@@ -1630,15 +1636,14 @@ html.ios .card-modal-replay {
   max-height: 70vh;
 }
 
-/* Vertical zoom-controls stack in the modal viewer.
-   - zoom-fit (reset) anchors the stack bottom at 44px from wrap
-     bottom (where replay used to sit, minus 8px) so it clears the
-     iOS native control bar that surfaces on tap.
-   - zoom-out and zoom-in stack above it.
-   - Replay stays in its prior top-right position next to the close X. */
+/* Vertical zoom-controls stack in the modal viewer. zoom-fit
+   anchors the stack at bottom: 36 (8px lower than the previous
+   44, per request) so the stack visually moves further down toward
+   the wrap bottom while still leaving room for iOS native control
+   bar when it appears on tap. zoom-out + zoom-in stack above. */
 .modal-video-wrap .zoom-controls {
   flex-direction: column !important;
-  bottom: 44px !important;
+  bottom: 36px !important;
   right: 12px !important;
   gap: 6px;
 }
@@ -1713,10 +1718,10 @@ html.ios .card-modal-replay {
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  /* Block sits 11px down + 11px left of the paw — half a diameter
-     each direction so the block lands across the paw's lower-left,
-     reading as "no fox". */
-  top: 11px;
+  /* Block sits at the upper-left of the paw — same vertical edge,
+     shifted half a diameter to the left so it crosses the paw's
+     leading edge with the "no" symbol reading clean above. */
+  top: 0;
   left: -11px;
   font-size: 22px;
   line-height: 1;

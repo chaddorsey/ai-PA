@@ -471,42 +471,34 @@
     if (document.documentElement.classList.contains("ios")) {
       videoEl.controls = false;
       videoEl.removeAttribute("controls");
-      // Tap-to-reveal-controls. anvaka panzoom on the video calls
-      // preventDefault on touchstart, which suppresses BOTH the
-      // synthesized click on the video AND its bubbling to the
-      // wrap. Listen for touchend directly (touch events fire
-      // regardless of preventDefault on touchstart) and recognize
-      // a tap as: single finger, short duration, minimal movement,
-      // and not landing on an overlay button. On a real tap, set
-      // controls = true and let iOS handle native auto-hide.
-      const wrap = body.querySelector(".modal-video-wrap");
-      if (wrap) {
-        let tapStart = null;
-        wrap.addEventListener("touchstart", (e) => {
-          if (e.touches.length !== 1) { tapStart = null; return; }
-          if (e.target.closest("button, .zoom-controls, .modal-nav")) {
-            tapStart = null;
-            return;
-          }
-          const t = e.touches[0];
-          tapStart = { x: t.clientX, y: t.clientY, time: Date.now() };
-        }, { passive: true });
-        wrap.addEventListener("touchend", (e) => {
-          if (!tapStart) return;
-          const start = tapStart;
-          tapStart = null;
-          if (e.changedTouches.length !== 1) return;
-          if (Date.now() - start.time > 500) return;
-          const t = e.changedTouches[0];
-          const dx = t.clientX - start.x;
-          const dy = t.clientY - start.y;
-          if (dx * dx + dy * dy > 64) return;     // ~8px = drag, not tap
-          if (!videoEl.controls) {
-            videoEl.controls = true;
-            videoEl.setAttribute("controls", "");
-          }
-        }, { passive: true });
-      }
+      // Tap-to-reveal-controls. The pan-block guard from
+      // bindPanzoom() is bound on the video at capture phase and
+      // calls stopPropagation, which prevents touch events from
+      // bubbling to the wrap. So the tap-reveal listener has to
+      // live on the video element directly (same element as the
+      // guard) — same-element listeners still fire after a sibling
+      // capture-phase listener stops propagation.
+      let tapStart = null;
+      videoEl.addEventListener("touchstart", (e) => {
+        if (e.touches.length !== 1) { tapStart = null; return; }
+        const t = e.touches[0];
+        tapStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+      }, { passive: true });
+      videoEl.addEventListener("touchend", (e) => {
+        if (!tapStart) return;
+        const start = tapStart;
+        tapStart = null;
+        if (e.changedTouches.length !== 1) return;
+        if (Date.now() - start.time > 500) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (dx * dx + dy * dy > 64) return;
+        if (!videoEl.controls) {
+          videoEl.controls = true;
+          videoEl.setAttribute("controls", "");
+        }
+      }, { passive: true });
       videoEl.addEventListener("ended", () => {
         videoEl.controls = false;
         videoEl.removeAttribute("controls");
