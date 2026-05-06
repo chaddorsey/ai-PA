@@ -932,3 +932,131 @@ body.is-anonymous main.clip-page {
   border-color: #c47e2a;
 }
 header nav { display: flex; align-items: center; gap: 1.25rem; flex: 1; }
+
+/* ============================================================
+   Spotlight overlay controls — fullscreen + AirPlay (live cams)
+   ============================================================ */
+.cam-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+  /* Mirror the touch-action behavior from .zoom-btn so iOS routes a
+     tap through to click without a 300ms double-tap-zoom delay. */
+}
+.live-layout[data-mode="spotlight"] .cam.is-spotlight .cam-controls {
+  display: flex;
+}
+.cam-ctrl {
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(15, 17, 22, 0.55);
+  color: #f0f0f0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  transition: opacity 120ms, background 120ms;
+  touch-action: manipulation;
+}
+.cam-ctrl:hover { opacity: 1; background: rgba(15, 17, 22, 0.9); }
+.cam-controls:hover .cam-ctrl { opacity: 0.85; }
+.cam-ctrl .material-icons { font-size: 18px; }
+
+/* ============================================================
+   Mobile spotlight: spotlight pinned upper, non-spotlight cams
+   as a horizontally-scrolling rail above the bottom-tabs.
+   ============================================================ */
+@media (max-width: 720px) {
+  /* The layout itself becomes the rail strip — the spotlight cam
+     pulls itself out of the strip via position: fixed. Keeps every
+     .cam a direct child of #live-main (videos can't be re-parented
+     without tearing down MSE blob URLs on Chromium), while still
+     producing a clean horizontal scroll strip + hero spotlight. */
+  body.spotlight-mode { overflow: hidden; }
+
+  .live-layout[data-mode="spotlight"] {
+    display: block !important;
+    grid-template-columns: none !important;
+    position: fixed;
+    bottom: calc(54px + env(safe-area-inset-bottom));
+    left: 0;
+    right: 0;
+    height: 116px;
+    margin: 0;
+    padding: 4px 8px;
+    background: rgba(20, 22, 28, 0.85);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    z-index: 5;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+
+  .live-layout[data-mode="spotlight"] .cam.is-spotlight {
+    /* Lifted out of the rail strip; pinned to the upper viewport. */
+    position: fixed !important;
+    top: 56px;
+    left: 0;
+    right: 0;
+    bottom: calc(54px + 116px + env(safe-area-inset-bottom));
+    margin: 0;
+    width: auto;
+    height: auto;
+    z-index: 4;
+    grid-column: auto;
+    border-radius: 0;
+  }
+  .live-layout[data-mode="spotlight"] .cam.is-spotlight h2 {
+    /* Header on top so the spotlight video gets the rest of the box. */
+    flex: 0 0 auto;
+  }
+  .live-layout[data-mode="spotlight"] .cam.is-spotlight .video-wrap {
+    aspect-ratio: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+  }
+
+  .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) {
+    display: inline-block;
+    width: 168px;
+    height: 100%;
+    margin: 0 6px 0 0;
+    vertical-align: top;
+    border-radius: 8px;
+    overflow: hidden;
+    scroll-snap-align: start;
+    /* Tap target for swap-to-spotlight stays clickable thanks to
+       existing handlers wired in live.js. */
+  }
+  .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) h2,
+  .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .status {
+    display: none;
+  }
+  .live-layout[data-mode="spotlight"] .cam:not(.is-spotlight) .video-wrap {
+    aspect-ratio: auto;
+    height: 100%;
+    border-radius: 8px;
+  }
+
+  /* Smaller fullscreen / airplay buttons on phone — fit comfortably
+     in the spotlight without crowding the zoom stack. */
+  .live-layout[data-mode="spotlight"] .cam-ctrl {
+    width: 36px;
+    height: 36px;
+    opacity: 0.85;
+  }
+}

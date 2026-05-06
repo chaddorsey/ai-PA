@@ -58,6 +58,18 @@
           <button class="zoom-btn zoom-out" title="Zoom out" aria-label="Zoom out"><span class="material-icons">remove</span></button>
           <button class="zoom-btn zoom-fit" title="Fit"      aria-label="Fit"><span class="material-icons">crop_free</span></button>
         </div>
+        <!-- Spotlight-only overlay: fullscreen + AirPlay. Hidden by
+             default; CSS shows them only when their .cam is the
+             spotlight. AirPlay is iOS-Safari-only so the button is
+             added by live.js after probing for support, not in this
+             template. -->
+        <div class="cam-controls" aria-hidden="true">
+          <button class="cam-ctrl cam-fullscreen" title="Fullscreen"
+                  aria-label="Fullscreen">
+            <span class="material-icons">fullscreen</span>
+          </button>
+          <!-- airplay button injected here by live.js when supported -->
+        </div>
       </div>
       <div class="status" id="s-{{ stream }}">connecting…</div>
     </section>

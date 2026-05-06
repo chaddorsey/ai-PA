@@ -992,4 +992,126 @@
 
     video._ws = ws;
   }
+
+  // -------------------------------------------------------------------
+  // Spotlight overlay controls — fullscreen + AirPlay.
+  //
+  // Fullscreen: prefer the iOS-native player path (video.webkitEnter
+  // Fullscreen) which gives the user the standard system chrome on
+  // iOS. Falls back to the wrap's requestFullscreen on desktop. We
+  // attach to the spotlight-stream when ready, else the grid-stream.
+  //
+  // AirPlay: Safari-only. webkitShowPlaybackTargetPicker on the video
+  // pops the system AirPlay picker. The button is hidden until we get
+  // a "currentplaybacktargetiswirelesschanged" or "playbacktarget
+  // availabilitychanged" event indicating routes actually exist —
+  // showing a button that does nothing if no Apple TVs are around is
+  // worse than not having it.
+  // -------------------------------------------------------------------
+  cams.forEach((cam) => {
+    const fsBtn = cam.querySelector(".cam-fullscreen");
+    const ctrlSlot = cam.querySelector(".cam-controls");
+    if (!fsBtn || !ctrlSlot) return;
+
+    function pickActiveVideo() {
+      // Prefer the high-res spotlight stream when it's actually
+      // playing; otherwise the substream the user is currently seeing.
+      const spot = cam.querySelector("video.spotlight-stream");
+      if (cam.classList.contains("is-spotlight") &&
+          cam.classList.contains("spotlight-ready")) return spot;
+      return cam.querySelector("video.grid-stream");
+    }
+
+    fsBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const v = pickActiveVideo();
+      if (!v) return;
+      // iOS Safari: webkitEnterFullscreen on the <video> pops the
+      // native player. Standard requestFullscreen does NOT work on
+      // iOS Safari for non-iframe elements.
+      if (typeof v.webkitEnterFullscreen === "function") {
+        try { v.webkitEnterFullscreen(); return; } catch {}
+      }
+      const target = cam.querySelector(".video-wrap") || cam;
+      const req = target.requestFullscreen ||
+                   target.webkitRequestFullscreen;
+      if (req) {
+        try { req.call(target); } catch {}
+      }
+    });
+
+    // AirPlay support probe. The grid-stream is the always-playing
+    // element, so attach the listener there. We add the picker button
+    // only if the API exists AND a route exists.
+    const probe = cam.querySelector("video.grid-stream");
+    if (probe && typeof probe.webkitShowPlaybackTargetPicker === "function") {
+      const apBtn = document.createElement("button");
+      apBtn.className = "cam-ctrl cam-airplay";
+      apBtn.title = "AirPlay";
+      apBtn.setAttribute("aria-label", "AirPlay");
+      apBtn.innerHTML = `<span class="material-icons">airplay</span>`;
+      apBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const v = pickActiveVideo();
+        if (!v) return;
+        const fn = v.webkitShowPlaybackTargetPicker;
+        if (typeof fn === "function") {
+          try { fn.call(v); } catch {}
+        }
+      });
+      // Hide until we know a route is available. iOS Safari fires the
+      // event with `availability` "available" when a target is on the
+      // network. If the platform lacks the event we just show the
+      // button unconditionally — the picker will just say "No devices".
+      apBtn.hidden = true;
+      try {
+        probe.addEventListener(
+          "webkitplaybacktargetavailabilitychanged",
+          (ev) => { apBtn.hidden = (ev.availability !== "available"); },
+        );
+      } catch {
+        apBtn.hidden = false;
+      }
+      ctrlSlot.appendChild(apBtn);
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // Auto-spotlight on load — open the first cam in spotlight mode so
+  // the page lands on a usable, large hero stream rather than a grid
+  // of thumbnails. User can still tap the spotlight to collapse to
+  // grid (existing toggle), or tap a rail thumbnail to switch.
+  //
+  // Defer until next frame so the cam.forEach init pass above has
+  // installed click handlers and the grid streams have started; that
+  // way attachSpotlightStream lands cleanly on a cam that's already
+  // got a substream playing.
+  // -------------------------------------------------------------------
+  if (cams.length > 0) {
+    requestAnimationFrame(() => {
+      setMode("spotlight", cams[0].dataset.stream);
+      // Apply rail-index custom property so the mobile horizontal
+      // rail can lay out non-spotlight cams left-to-right.
+      assignRailIndex();
+    });
+  }
+
+  function assignRailIndex() {
+    let idx = 0;
+    cams.forEach((c) => {
+      if (c.classList.contains("is-spotlight")) {
+        c.style.removeProperty("--rail-idx");
+      } else {
+        c.style.setProperty("--rail-idx", String(idx++));
+      }
+    });
+  }
+
+  // Re-assign rail-index whenever the spotlight changes. We can't hook
+  // setMode directly without restructuring, so observe the class change.
+  const railObserver = new MutationObserver(() => assignRailIndex());
+  cams.forEach((c) => railObserver.observe(c,
+    { attributes: true, attributeFilter: ["class"] }));
 })();
