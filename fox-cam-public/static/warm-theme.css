@@ -920,6 +920,21 @@ body.modal-open { overflow: hidden; }
   font-size: 18px;
   line-height: 1;
 }
+/* Explicit sizing for the inline SVG glyph (Material Symbols
+   archive / unarchive shape baked into card.js as a string). The SVG
+   carries width/height attributes but a `display: inline` baseline
+   inside the inline-flex button drops the glyph below the bounding
+   box on some browsers; force display: block + 18px square to mirror
+   the .material-icons sibling rule. fill: currentColor makes the
+   path color follow the button's color even if the inline `fill="
+   currentColor"` attribute is stripped by some sanitizers. */
+.archive-toggle svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.archive-toggle svg path { fill: currentColor; }
 
 /* === Modal: prev / next arrows on the video edges === */
 .modal-nav {
