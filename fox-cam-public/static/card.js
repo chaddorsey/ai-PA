@@ -78,23 +78,27 @@
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;
     if (navigator.connection && navigator.connection.saveData) return null;
 
+    // rootMargin "-40% 0 -40% 0" shrinks the observation root to the
+    // center 20% band of the viewport. Cards only "intersect" the
+    // root when their pixels are in this band — i.e., the card is
+    // approximately centered on screen. This makes autoplay feel
+    // intentional (your eye is on the card before it plays) instead
+    // of pre-firing as it scrolls into view.
     scrollAutoplayObserver = new IntersectionObserver((entries) => {
-      // Tear-down pass: any card now below 0.5 ratio drops its
-      // preview video. Independent of which card "wins" the next
-      // play slot — keeps memory bounded if the user scrolls fast.
+      // Tear down any card that left the center band.
       for (const entry of entries) {
-        if (entry.intersectionRatio < 0.5) {
+        if (!entry.isIntersecting) {
           const v = entry.target.querySelector("video.preview");
           if (v) { try { v.pause(); } catch (_) {} v.remove(); }
+          const card = entry.target.closest(".highlight");
+          if (card) card.classList.remove("is-active-preview");
           if (scrollAutoplayCurrent === entry.target) scrollAutoplayCurrent = null;
         }
       }
-      // Pick the highest-visibility card above 0.7. If a different
-      // card already has a preview video, leave it alone — we only
-      // start playing a new card once the prior one drops below 0.5
-      // (handled in the tear-down pass above on a separate scroll).
+      // Pick the card with the highest intersection within the
+      // center band as the winner.
       let bestEntry = null;
-      let bestRatio = 0.7;
+      let bestRatio = 0.4;
       for (const entry of entries) {
         if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
           bestRatio = entry.intersectionRatio;
@@ -105,9 +109,20 @@
         if (scrollAutoplayCurrent) {
           const oldV = scrollAutoplayCurrent.querySelector("video.preview");
           if (oldV) { try { oldV.pause(); } catch (_) {} oldV.remove(); }
+          const oldCard = scrollAutoplayCurrent.closest(".highlight");
+          if (oldCard) oldCard.classList.remove("is-active-preview");
         }
         scrollAutoplayCurrent = bestEntry.target;
         const wrap = bestEntry.target;
+        const card = wrap.closest(".highlight");
+        // Re-trigger the flash animation: remove + force reflow +
+        // add. Without the reflow tick, repeatedly activating the
+        // same DOM element wouldn't replay the keyframes.
+        if (card) {
+          card.classList.remove("is-active-preview");
+          void card.offsetWidth;
+          card.classList.add("is-active-preview");
+        }
         const eventId = wrap.dataset.previewEvent;
         if (!eventId || wrap.querySelector("video.preview")) return;
         const v = document.createElement("video");
@@ -121,7 +136,10 @@
         applyPrerollSkip(v);
         v.play().catch(() => {});
       }
-    }, { threshold: [0.5, 0.7, 0.9] });
+    }, {
+      rootMargin: "-40% 0px -40% 0px",
+      threshold: [0, 0.5, 0.85],
+    });
     return scrollAutoplayObserver;
   }
 

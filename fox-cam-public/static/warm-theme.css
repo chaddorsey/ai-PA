@@ -2260,3 +2260,36 @@ header {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* === Active autoplay card flash + halo (phones) =====================
+   When a card enters the viewport-center band and starts playing
+   its preview, kick off a brief orange flash that settles into a
+   persistent glow halo. Removed (and the halo fades) when the
+   next card takes over. Animation re-triggers via JS reflow trick
+   so a single re-activation replays the flash. */
+.highlight.is-active-preview {
+  animation: card-active-flash 0.7s ease both;
+  box-shadow:
+    0 0 0 3px rgba(240, 90, 40, 0.45),
+    0 12px 32px rgba(240, 90, 40, 0.18) !important;
+  transition: box-shadow 0.45s ease, transform 0.2s ease;
+  transform: translateY(-2px);
+  z-index: 2;     /* above neighbours so the halo doesn't clip */
+}
+@keyframes card-active-flash {
+  0% {
+    box-shadow:
+      0 0 0 0   rgba(240, 90, 40, 0),
+      0 4px 14px rgba(240, 90, 40, 0.10);
+  }
+  40% {
+    box-shadow:
+      0 0 0 12px rgba(240, 90, 40, 0.50),
+      0 14px 36px rgba(240, 90, 40, 0.30);
+  }
+  100% {
+    box-shadow:
+      0 0 0 3px rgba(240, 90, 40, 0.45),
+      0 12px 32px rgba(240, 90, 40, 0.18);
+  }
+}
