@@ -177,9 +177,19 @@
     el.appendChild(archiveToggle(h));
     const isNew = h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD;
     if (isNew) el.classList.add("is-new");
-    el.appendChild(cardThumb(h));
+    const thumbWrap = cardThumb(h);
+    el.appendChild(thumbWrap);
     el.appendChild(cardMeta(h));
     el.appendChild(cardActions(h));
+
+    // Hover-preview is gated on the card root so moving the cursor
+    // onto sibling overlays (archive pill, featured pin) doesn't
+    // count as leaving the preview area. iOS-skip is enforced inside
+    // cardThumb already (no _showPreview on iOS).
+    if (!document.documentElement.classList.contains("ios") && thumbWrap._showPreview) {
+      el.addEventListener("mouseenter", thumbWrap._showPreview);
+      el.addEventListener("mouseleave", thumbWrap._hidePreview);
+    }
 
     // Squirrel delivers the ✨ NEW badge on cards that arrived since
     // the viewer's last seen. Fired once per card via IntersectionObserver
@@ -252,10 +262,15 @@
     // Tap on a card opens the modal (highlights.js) or plays inline
     // (clip page) — both more useful than a hover preview that the
     // user has to discover.
-    if (!document.documentElement.classList.contains("ios")) {
-      wrap.addEventListener("mouseenter", showPreview);
-      wrap.addEventListener("mouseleave", hidePreview);
-    }
+    //
+    // Hover is bound at the .highlight (card root) level by makeCard,
+    // not on .thumb-wrap directly: the archive-toggle pill sits over
+    // the thumb's top-right corner via position:absolute and would
+    // otherwise trigger mouseleave on the wrap when the cursor moved
+    // onto it (visibly snapping the preview back to the thumbnail).
+    // Stash the show/hide handlers so makeCard can reach them.
+    wrap._showPreview = showPreview;
+    wrap._hidePreview = hidePreview;
     // playInline replaces the thumbnail with a <video controls>.
     // Skip it on /highlights — every card-tap opens the modal there,
     // and the brief inline-controls overlay before the modal mounts
