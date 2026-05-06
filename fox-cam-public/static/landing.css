@@ -184,11 +184,12 @@ body.landing a:hover { color: var(--color-ink); }
   width: clamp(280px, 60vw, 720px);
   filter: drop-shadow(0 8px 18px rgba(240, 90, 40, 0.35));
   display: block;
-  /* Negative top margin pulls the wordmark up ~40px relative to
-     where its natural top edge would sit under the trio. The .com
-     sits via its own -22% top margin so it follows along; the
-     trio stays fixed. */
-  margin: -40px auto 0;
+  /* Larger negative pull: our-foxes-logo.png has ~30% transparent
+     top padding, so the IMG element's top sits well above where
+     the visible "Our" lettering starts. Overlap aggressively so
+     the letters tuck just beneath the lowest cubs. The .com chains
+     off the wordmark's bottom margin so it follows along. */
+  margin: -8vw auto 0;
 }
 
 .hero-dotcom {
