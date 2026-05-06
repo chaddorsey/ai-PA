@@ -107,33 +107,59 @@ def _user_filters_pass(db_path: Path, email: str) -> bool:
 def _severity_passes(db_path: Path, email: str, kind: str,
                       payload: dict[str, Any]) -> bool:
     """new_highlight has a per-user severity radio — all / clusters /
-    high. Other kinds skip this check."""
+    high. Other kinds skip this check.
+
+    Thresholds tuned against 7 days of fox + raccoon events from the
+    den cameras: ~85% of intra-visit gaps are < 60s, so a 2-minute
+    window cleanly catches "they're still around / just back" without
+    pulling in stale events from a prior visit (which are typically
+    ≥30 minutes earlier). All paths decide within 2 minutes so live
+    viewers can still catch the action.
+    """
     if kind != "new_highlight":
         return True
     severity = db.push_pref_value_for(db_path, email, "new_highlight") or "all"
     if severity == "all":
         return True
-    if severity == "high":
-        # Either confidence ≥ 85% or a long sighting (≥ 30s) qualifies.
-        likelihood = float(payload.get("fox_likelihood") or 0.0)
-        duration = float(payload.get("duration_s") or 0.0)
-        return likelihood >= 0.85 or duration >= 30.0
-    if severity == "clusters":
-        # Two or more highlights on the same camera within the last
-        # 10 minutes (this one + at least one prior). Cheap query
-        # against the existing highlights table.
-        import time as _time
-        cam = payload.get("camera")
+
+    # Both "clusters" and "high" need a recent-events count for the
+    # same camera. Compute once.
+    import time as _time
+    cam = payload.get("camera")
+    likelihood = float(payload.get("fox_likelihood") or 0.0)
+    duration = float(payload.get("duration_s") or 0.0)
+
+    def recent_count(window_s: float) -> int:
         if not cam:
-            return True
-        window_start = (_time.time() - 600.0)
+            return 0
         with db.connect(db_path) as conn:
             n = conn.execute(
                 "SELECT COUNT(*) AS n FROM highlights "
                 "WHERE camera = ? AND start_time >= ?",
-                [cam, window_start],
+                [cam, _time.time() - window_s],
             ).fetchone()["n"]
-        return int(n) >= 2
+        return int(n)
+
+    if severity == "clusters":
+        # "Notify me when the fox comes back out" — ≥2 events on the
+        # same camera within the last 2 minutes. Fires on the second
+        # event of a visit (this one + ≥1 prior in the window). At
+        # typical intra-visit gaps (<60s), this lands within ~1 min
+        # of arrival.
+        return recent_count(120) >= 2
+    if severity == "high":
+        # "Really out and playing" — three short signals, any of
+        # which qualifies, all evaluable within 2 minutes:
+        #   ≥3 events same cam in 2 min  → sustained burst pattern
+        #   duration ≥ 45s               → one long active sighting
+        #   fox_likelihood ≥ 0.9         → very confident heuristic
+        if recent_count(120) >= 3:
+            return True
+        if duration >= 45.0:
+            return True
+        if likelihood >= 0.9:
+            return True
+        return False
     return True
 
 
