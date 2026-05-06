@@ -705,7 +705,7 @@
     if (Array.isArray(h.remixes) && h.remixes.length) {
       const panel = document.createElement("div");
       panel.className = "modal-remixes";
-      panel.innerHTML = `<h3 class="modal-remixes-h">🎬 Remixes <span class="muted">(${h.remixes.length})</span></h3>`;
+      panel.innerHTML = `<h3 class="modal-remixes-h"><span class="material-icons" aria-hidden="true">movie_edit</span>Remixes <span class="muted">(${h.remixes.length})</span></h3>`;
       const list = document.createElement("div");
       list.className = "modal-remixes-list";
       for (const r of h.remixes) {
@@ -998,7 +998,7 @@
           <video class="modal-video" controls autoplay muted playsinline></video>
         </div>
         <div class="modal-meta">
-          <h2 class="modal-title">🎬 ${escapeHtml(title)}</h2>
+          <h2 class="modal-title"><span class="material-icons" aria-hidden="true" style="vertical-align:-4px;color:var(--color-glow);font-size:22px;margin-right:6px;">movie_edit</span>${escapeHtml(title)}</h2>
           <div class="modal-badges">
             <span class="modal-badge fox">@${escapeHtml(username)}</span>
             <span class="modal-meta-extra">

@@ -393,81 +393,69 @@
   // beforehand so newly-arrived clips get the ✨ NEW badge.
   // ---------------------------------------------------------------
   if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) {
-    const main = grid.parentElement;
-    if (main) {
-      main.style.position = main.style.position || "relative";
-      const ptr = document.createElement("div");
-      ptr.className = "ptr-indicator";
-      ptr.innerHTML = '<span class="material-icons" aria-hidden="true">refresh</span>';
-      main.insertBefore(ptr, main.firstChild);
+    const ptr = document.createElement("div");
+    ptr.className = "ptr-indicator";
+    ptr.innerHTML = '<span class="material-icons" aria-hidden="true">refresh</span>';
+    document.body.appendChild(ptr);
 
-      const THRESHOLD = 70;
-      const MAX_PULL = 110;
-      let startY = 0;
-      let pulling = false;
-      let pullDist = 0;
+    const THRESHOLD = 70;
+    const MAX_PULL = 100;
+    let startY = 0;
+    let pulling = false;
+    let pullDist = 0;
 
-      const setPull = (dist) => {
-        const visible = Math.min(dist, MAX_PULL);
-        ptr.style.transform = `translate(-50%, ${visible - 40}px)`;
-        ptr.style.opacity = String(Math.min(1, visible / THRESHOLD));
-      };
-      const hide = () => {
-        ptr.classList.remove("visible", "spinning");
-        ptr.style.transform = "translate(-50%, -100%)";
-        ptr.style.opacity = "0";
-      };
+    const setHeight = (h) => {
+      ptr.style.height = `${h}px`;
+      ptr.style.transition = "none";   // raw drag → no easing
+    };
+    const collapse = () => {
+      ptr.style.transition = "height 0.18s ease";
+      ptr.style.height = "0";
+      ptr.classList.remove("spinning");
+    };
 
-      document.addEventListener("touchstart", (e) => {
-        if (window.scrollY > 2) { pulling = false; return; }
-        if (e.touches.length !== 1) { pulling = false; return; }
-        // Don't start a pull on interactive elements that have their
-        // own touch behavior (bottom tabs, popovers, buttons inside
-        // the gallery cards). Modal handles its own touch via the
-        // dialog listener; if the modal is open, don't fire PTR.
-        if (document.querySelector(".card-modal[open]")) { pulling = false; return; }
-        if (e.target.closest(".bottom-tabs, .chrome-popover, .chrome-btn, button")) {
-          pulling = false; return;
-        }
-        startY = e.touches[0].clientY;
-        pulling = true;
-        pullDist = 0;
-      }, { passive: true });
+    document.addEventListener("touchstart", (e) => {
+      if (window.scrollY > 2) { pulling = false; return; }
+      if (e.touches.length !== 1) { pulling = false; return; }
+      if (document.querySelector(".card-modal[open]")) { pulling = false; return; }
+      if (e.target.closest(".bottom-tabs, .chrome-popover, .chrome-btn, button")) {
+        pulling = false; return;
+      }
+      startY = e.touches[0].clientY;
+      pulling = true;
+      pullDist = 0;
+    }, { passive: true });
 
-      document.addEventListener("touchmove", (e) => {
-        if (!pulling) return;
-        if (e.touches.length !== 1) { pulling = false; hide(); return; }
-        const t = e.touches[0];
-        pullDist = Math.max(0, t.clientY - startY);
-        if (pullDist > 4) ptr.classList.add("visible");
-        setPull(pullDist);
-      }, { passive: true });
+    document.addEventListener("touchmove", (e) => {
+      if (!pulling) return;
+      if (e.touches.length !== 1) { pulling = false; collapse(); return; }
+      const t = e.touches[0];
+      pullDist = Math.max(0, t.clientY - startY);
+      // Strip height grows with the pull (rubber-banded by Math.min).
+      // Up to MAX_PULL pixels of band before plateau.
+      setHeight(Math.min(pullDist, MAX_PULL));
+    }, { passive: true });
 
-      document.addEventListener("touchend", () => {
-        if (!pulling) return;
-        pulling = false;
-        if (pullDist > THRESHOLD) {
-          // Lock to threshold position + spin.
-          ptr.classList.add("visible", "spinning");
-          ptr.style.transform = `translate(-50%, ${THRESHOLD - 40}px)`;
-          ptr.style.opacity = "1";
-          // New clips since refresh moment get the NEW badge.
-          window.LAST_SEEN_AT_PAGELOAD = Math.floor(Date.now() / 1000);
-          reset();
-          // Hide indicator after the gallery's had a chance to
-          // re-render. reset() fires synchronously but the fetch is
-          // async; 700ms covers a typical local API response.
-          setTimeout(() => {
-            hide();
-            fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" })
-              .catch(() => {});
-          }, 700);
-        } else {
-          hide();
-        }
-        pullDist = 0;
-      });
-    }
+    document.addEventListener("touchend", () => {
+      if (!pulling) return;
+      pulling = false;
+      if (pullDist > THRESHOLD) {
+        // Lock at threshold height + spin.
+        ptr.style.transition = "height 0.18s ease";
+        ptr.style.height = `${THRESHOLD}px`;
+        ptr.classList.add("spinning");
+        window.LAST_SEEN_AT_PAGELOAD = Math.floor(Date.now() / 1000);
+        reset();
+        setTimeout(() => {
+          collapse();
+          fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" })
+            .catch(() => {});
+        }, 700);
+      } else {
+        collapse();
+      }
+      pullDist = 0;
+    });
   }
 
   // Capture last-seen-at BEFORE marking as seen, so cards rendered on

@@ -638,6 +638,13 @@ body.modal-open { overflow: hidden; }
   font-size: 15px;
   color: var(--color-ink);
   margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.modal-remixes-h .material-icons {
+  font-size: 18px;
+  color: var(--color-glow);
 }
 .modal-remixes-h .muted { color: var(--color-ink-soft); font-weight: 500; }
 .modal-remixes-list {
@@ -2217,33 +2224,34 @@ header {
   color: var(--color-ink);
 }
 
-/* === Pull-to-refresh indicator (phones only) ===========================
-   Hovers above the gallery from off-screen-top via translateY(-100%).
-   The JS in highlights.js animates `transform` proportional to pull
-   distance; on threshold-pass the .spinning class kicks in the
-   refresh-rotate animation. */
+/* === Pull-to-refresh strip (phones only) ===============================
+   Full-width orange field pinned to the very top of the viewport.
+   Hidden by default (height: 0); the JS animates `height`
+   proportional to pull distance and locks at threshold while the
+   white Material `refresh` icon spins. The strip runs under the
+   iOS status bar, so safe-area-inset-top padding pushes the icon
+   below the notch. */
 .ptr-indicator {
-  position: absolute;
+  position: fixed;
   top: 0;
-  left: 50%;
-  transform: translate(-50%, -100%);
-  width: 40px;
-  height: 40px;
-  border-radius: 999px;
-  background: var(--color-cream);
-  border: 1.5px solid var(--color-glow);
-  box-shadow: 0 4px 12px rgba(240, 90, 40, 0.20);
+  left: 0;
+  right: 0;
+  height: 0;
+  overflow: hidden;
+  background: var(--color-glow);
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  z-index: 30;
-  opacity: 0;
-  transition: transform 0.18s ease, opacity 0.15s ease;
+  z-index: 100;
+  padding-top: env(safe-area-inset-top);
+  box-sizing: content-box;
+  transition: height 0.18s ease;
 }
 .ptr-indicator .material-icons {
-  font-size: 22px;
-  color: var(--color-glow);
+  font-size: 24px;
+  color: white;
+  line-height: 1;
 }
 .ptr-indicator.spinning .material-icons {
   animation: ptr-spin 0.85s linear infinite;
