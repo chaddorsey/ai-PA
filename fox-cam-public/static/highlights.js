@@ -384,6 +384,92 @@
   if (filterStatus) filterStatus.addEventListener("change", reset);
   loadMore.addEventListener("click", load);
 
+  // ---------------------------------------------------------------
+  // Pull-to-refresh — phones only (≤720px). The native iOS Safari
+  // bouncy overscroll at scroll-top doesn't give us a refresh
+  // affordance, so we add one: when the user pulls down past
+  // ~70px while at scrollY=0, fire reset() to refetch the gallery
+  // (without a full page reload). Capture LAST_SEEN_AT_PAGELOAD
+  // beforehand so newly-arrived clips get the ✨ NEW badge.
+  // ---------------------------------------------------------------
+  if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) {
+    const main = grid.parentElement;
+    if (main) {
+      main.style.position = main.style.position || "relative";
+      const ptr = document.createElement("div");
+      ptr.className = "ptr-indicator";
+      ptr.innerHTML = '<span class="material-icons" aria-hidden="true">refresh</span>';
+      main.insertBefore(ptr, main.firstChild);
+
+      const THRESHOLD = 70;
+      const MAX_PULL = 110;
+      let startY = 0;
+      let pulling = false;
+      let pullDist = 0;
+
+      const setPull = (dist) => {
+        const visible = Math.min(dist, MAX_PULL);
+        ptr.style.transform = `translate(-50%, ${visible - 40}px)`;
+        ptr.style.opacity = String(Math.min(1, visible / THRESHOLD));
+      };
+      const hide = () => {
+        ptr.classList.remove("visible", "spinning");
+        ptr.style.transform = "translate(-50%, -100%)";
+        ptr.style.opacity = "0";
+      };
+
+      document.addEventListener("touchstart", (e) => {
+        if (window.scrollY > 2) { pulling = false; return; }
+        if (e.touches.length !== 1) { pulling = false; return; }
+        // Don't start a pull on interactive elements that have their
+        // own touch behavior (bottom tabs, popovers, buttons inside
+        // the gallery cards). Modal handles its own touch via the
+        // dialog listener; if the modal is open, don't fire PTR.
+        if (document.querySelector(".card-modal[open]")) { pulling = false; return; }
+        if (e.target.closest(".bottom-tabs, .chrome-popover, .chrome-btn, button")) {
+          pulling = false; return;
+        }
+        startY = e.touches[0].clientY;
+        pulling = true;
+        pullDist = 0;
+      }, { passive: true });
+
+      document.addEventListener("touchmove", (e) => {
+        if (!pulling) return;
+        if (e.touches.length !== 1) { pulling = false; hide(); return; }
+        const t = e.touches[0];
+        pullDist = Math.max(0, t.clientY - startY);
+        if (pullDist > 4) ptr.classList.add("visible");
+        setPull(pullDist);
+      }, { passive: true });
+
+      document.addEventListener("touchend", () => {
+        if (!pulling) return;
+        pulling = false;
+        if (pullDist > THRESHOLD) {
+          // Lock to threshold position + spin.
+          ptr.classList.add("visible", "spinning");
+          ptr.style.transform = `translate(-50%, ${THRESHOLD - 40}px)`;
+          ptr.style.opacity = "1";
+          // New clips since refresh moment get the NEW badge.
+          window.LAST_SEEN_AT_PAGELOAD = Math.floor(Date.now() / 1000);
+          reset();
+          // Hide indicator after the gallery's had a chance to
+          // re-render. reset() fires synchronously but the fetch is
+          // async; 700ms covers a typical local API response.
+          setTimeout(() => {
+            hide();
+            fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" })
+              .catch(() => {});
+          }, 700);
+        } else {
+          hide();
+        }
+        pullDist = 0;
+      });
+    }
+  }
+
   // Capture last-seen-at BEFORE marking as seen, so cards rendered on
   // this visit get the NEW badge. After load, post /api/viewer/seen so
   // the next visit's count starts fresh. ALL paths still call load(),

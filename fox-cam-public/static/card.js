@@ -174,7 +174,10 @@
       ? `<span class="new-badge">NEW</span> ` : "";
     const remixCount = h.remix_count || 0;
     const remixHTML = remixCount > 0
-      ? `<a class="remix-count-link" href="/clip/${h.event_id}#remixes" title="View remixes">🎬 ${remixCount}</a>`
+      ? `<a class="remix-count-link" href="/clip/${h.event_id}#remixes" title="View remixes">` +
+        `<span class="material-icons" aria-hidden="true">movie_edit</span>` +
+        `<span class="remix-count-num">${remixCount}</span>` +
+        `</a>`
       : "";
     const cam = window.prettyCamera ? window.prettyCamera(h.camera) : h.camera;
     div.innerHTML = `
