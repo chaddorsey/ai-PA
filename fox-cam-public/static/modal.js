@@ -471,22 +471,41 @@
     if (document.documentElement.classList.contains("ios")) {
       videoEl.controls = false;
       videoEl.removeAttribute("controls");
-      // Bind the tap-to-reveal-controls handler on the WRAP rather
-      // than the video itself. anvaka panzoom calls preventDefault
-      // on touchstart against the video element, which suppresses
-      // the synthesized click on iOS. Pointer events still bubble
-      // to the wrap, where panzoom isn't bound, so click fires
-      // there reliably. Skip when the tap originates from a
-      // visible overlay (zoom buttons, etc.).
+      // Tap-to-reveal-controls. anvaka panzoom on the video calls
+      // preventDefault on touchstart, which suppresses BOTH the
+      // synthesized click on the video AND its bubbling to the
+      // wrap. Listen for touchend directly (touch events fire
+      // regardless of preventDefault on touchstart) and recognize
+      // a tap as: single finger, short duration, minimal movement,
+      // and not landing on an overlay button. On a real tap, set
+      // controls = true and let iOS handle native auto-hide.
       const wrap = body.querySelector(".modal-video-wrap");
       if (wrap) {
-        wrap.addEventListener("click", (e) => {
-          if (e.target.closest("button, .zoom-controls, .modal-nav")) return;
+        let tapStart = null;
+        wrap.addEventListener("touchstart", (e) => {
+          if (e.touches.length !== 1) { tapStart = null; return; }
+          if (e.target.closest("button, .zoom-controls, .modal-nav")) {
+            tapStart = null;
+            return;
+          }
+          const t = e.touches[0];
+          tapStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+        }, { passive: true });
+        wrap.addEventListener("touchend", (e) => {
+          if (!tapStart) return;
+          const start = tapStart;
+          tapStart = null;
+          if (e.changedTouches.length !== 1) return;
+          if (Date.now() - start.time > 500) return;
+          const t = e.changedTouches[0];
+          const dx = t.clientX - start.x;
+          const dy = t.clientY - start.y;
+          if (dx * dx + dy * dy > 64) return;     // ~8px = drag, not tap
           if (!videoEl.controls) {
             videoEl.controls = true;
             videoEl.setAttribute("controls", "");
           }
-        });
+        }, { passive: true });
       }
       videoEl.addEventListener("ended", () => {
         videoEl.controls = false;
@@ -1272,7 +1291,7 @@
     b.type = "button";
     b.setAttribute("aria-label", opts.label || "Copy link");
     b.title = opts.label || "Copy link";
-    b.innerHTML = ICON("insert_link");
+    b.innerHTML = ICON("link");
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       copyLink(opts.pageUrl);
@@ -1378,7 +1397,14 @@
     const t = document.createElement("div");
     t.className = "toast show";
     t.textContent = msg;
-    document.body.appendChild(t);
+    // When a <dialog> is open via showModal(), it lives in the
+    // browser's "top layer" which paints above every regular DOM
+    // element regardless of z-index. Toasts appended to <body> end
+    // up behind the modal and the user never sees them. Route the
+    // toast inside the open dialog so it inherits the same top-
+    // layer stacking. Falls back to body otherwise.
+    const target = (dialog && dialog.open) ? dialog : document.body;
+    target.appendChild(t);
     setTimeout(() => t.classList.remove("show"), 1700);
     setTimeout(() => t.remove(), 2100);
   }

@@ -1688,17 +1688,21 @@ html.ios .modal-video-wrap .zoom-controls {
   color: white !important;
 }
 
-/* "Not a fox" combo glyph: pets (paw, font-brown) with block icon
-   overlaid centered in its native orientation, transparent
-   background, orange — reads as "no fox" without rotation. */
+/* "Not a fox" combo glyph: paw (pets) base in font-brown, block
+   icon overlaid in native orientation offset down-left by half a
+   diameter so the two glyphs partially overlap rather than stack
+   exactly. Container is 1.5× the icon size to fit the offset. */
 .not-fox-icon {
   position: relative;
   display: inline-block;
-  width: 22px;
-  height: 22px;
+  width: 33px;        /* 22 (icon) + 11 (half-diameter offset) */
+  height: 33px;
   vertical-align: middle;
 }
 .not-fox-icon .not-fox-base {
+  position: absolute;
+  top: 0;
+  right: 0;            /* paw at top-right of container */
   font-size: 22px;
   line-height: 1;
   display: block;
@@ -1706,10 +1710,8 @@ html.ios .modal-video-wrap .zoom-controls {
 }
 .not-fox-icon .not-fox-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 22px;
-  height: 22px;
+  top: 11px;           /* down half a diameter */
+  left: 0;             /* and left half a diameter */
   font-size: 22px;
   line-height: 1;
   display: block;

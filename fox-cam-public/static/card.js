@@ -316,7 +316,7 @@
     // Share — Material Icon link (chain) for the gallery card. Quick
     // copy-to-clipboard with toast (no sheet animation; cards are
     // for fast scanning).
-    bar.appendChild(iconActionBtn(MI("insert_link"), "share", false, "Copy link",
+    bar.appendChild(iconActionBtn(MI("link"), "share", false, "Copy link",
       () => copyShareLink(h.event_id)));
 
     // Remix — Material Icon content_cut (scissors). Only shown after
