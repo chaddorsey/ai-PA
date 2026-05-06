@@ -399,10 +399,11 @@ nav a.active { background: var(--color-glow); color: white !important; }
 }
 /* PWA / notched-device safety: when launched standalone, the home
    indicator sits at the bottom of the viewport and the modal can
-   extend under it. Capability-shaped (any device with insets), not
-   iOS-specific — env() = 0 elsewhere makes this a no-op there. */
+   extend under it. The 6px floor gives a visible gap between the
+   last interactive element (back pill / action row) and the screen
+   bottom even in browser-tab mode where env() = 0. */
 .card-modal-body {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
 }
 .card-modal::backdrop {
   background: rgba(42, 24, 16, 0.7);
@@ -1900,6 +1901,19 @@ nav a .nav-icon {
      + profile) as the upper-row chrome. */
   header > nav { display: none !important; }
 }
+/* The `nav a.active` rule earlier in this file paints a solid orange
+   pill on any active <a> inside any <nav>. Bottom-tabs are <a>
+   inside <nav class="bottom-tabs">, so without these explicit
+   resets they'd inherit that orange "blob" background. Force the
+   bottom-tab look — transparent fill, color shift only. */
+nav.bottom-tabs a.bottom-tab,
+nav.bottom-tabs a.bottom-tab.active,
+nav.bottom-tabs a.bottom-tab:hover {
+  background: transparent !important;
+}
+nav.bottom-tabs a.bottom-tab.active {
+  color: var(--color-glow) !important;
+}
 .bottom-tab {
   flex: 1 1 0;
   display: flex;
@@ -1993,13 +2007,17 @@ header {
 }
 .notifications-btn { position: relative; }
 
-/* Popover panels — anchored at top-right of viewport via fixed
-   positioning. The HTML Popover API auto-handles top-layer + light-
-   dismiss (click outside closes). */
+/* Popover panels — anchored at the top-right of the viewport via
+   fixed positioning with explicit right + auto left so the browser's
+   default centered placement (when no anchor positioning is
+   available) doesn't pull them to mid-screen. The HTML Popover API
+   auto-handles top-layer + light-dismiss. */
 .chrome-popover {
-  position: fixed;
-  top: 60px;
-  right: 16px;
+  position: fixed !important;
+  top: 60px !important;
+  right: 12px !important;
+  left: auto !important;
+  bottom: auto !important;
   width: min(320px, 92vw);
   margin: 0;
   padding: 0;

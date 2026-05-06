@@ -113,10 +113,19 @@
           <span class="remix-group-title">${cam} <span class="muted">·</span> ${t}</span>
           ${speciesPill}${countPill}
         </a>`;
-      // Hijack click to open original-highlight modal in place.
+      // In remix-list view, tapping the group header opens the
+      // group's first (most recent) remix in remix-playback mode —
+      // not the parent highlight. Keeps the user in remix-nav space
+      // so swipes traverse REMIX_NAV_LIST instead of jumping to
+      // sibling highlight clips.
       header.querySelector("a").addEventListener("click", (e) => {
         e.preventDefault();
-        if (window.openCardModal) window.openCardModal(g.event_id);
+        const firstRemix = g.remixes[0];
+        if (firstRemix && window.openRemixModal) {
+          window.openRemixModal(firstRemix.remix_id);
+        } else if (window.openCardModal) {
+          window.openCardModal(g.event_id);
+        }
       });
       block.appendChild(header);
 

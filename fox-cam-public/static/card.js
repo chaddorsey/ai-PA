@@ -326,10 +326,10 @@
     bar.appendChild(iconActionBtn(LINK2_ICON_SVG, "share", false, "Copy link",
       () => copyShareLink(h.event_id)));
 
-    // Remix — Material Icon content_cut (scissors). Only shown after
-    // the user has favorited (the "love this moment" gating).
+    // Remix — Material Icon movie_edit (matches the bottom Remixes
+    // tab). Only shown after the user has favorited.
     if (h.my_favorited) {
-      bar.appendChild(iconActionBtn(MI("content_cut"), "remix", false, "Remix", () => {
+      bar.appendChild(iconActionBtn(MI("movie_edit"), "remix", false, "Remix", () => {
         if (window.openCardModalInRemixMode) {
           window.openCardModalInRemixMode(h.event_id);
         } else {

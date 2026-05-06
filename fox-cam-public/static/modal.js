@@ -191,6 +191,10 @@
     teardownVideo();
     body.innerHTML = "";
     current = null;
+    // Reset remix-mode pointer too — without this, opening a regular
+    // highlight modal next would still see currentRemix as truthy
+    // and swipes would route through stale REMIX_NAV_LIST entries.
+    currentRemix = null;
     document.body.classList.remove("modal-open");
     if (typeof dialog.close === "function") dialog.close();
     else dialog.removeAttribute("open");
@@ -621,7 +625,7 @@
     }
 
     if (h.my_favorited) {
-      actionsBar.appendChild(iconActionBtn(ICON("content_cut"), "remix", false, "Remix",
+      actionsBar.appendChild(iconActionBtn(ICON("movie_edit"), "remix", false, "Remix",
         () => renderRemixEditor(h)));
     }
     // Delete (admin-only, irreversible) — rendered as a small red
