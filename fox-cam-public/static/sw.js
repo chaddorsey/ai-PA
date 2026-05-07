@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v125-severity-descs";
+const CACHE = "our-foxes-v126-relative-push-urls";
 
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -200,9 +200,24 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+// Normalize a notification's click target to a same-origin path. iOS
+// routes the tap into the installed PWA only when the URL we hand to
+// clients.openWindow / client.navigate is either relative or shares
+// the SW's origin — an absolute URL that happens to match origin can
+// still get punted to Safari on some iOS 17+ builds. Stripping the
+// origin to a pure path sidesteps both branches.
+function sameOriginPath(raw, fallback) {
+  try {
+    const u = new URL(raw, self.location.origin);
+    if (u.origin === self.location.origin) return u.pathname + u.search + u.hash;
+  } catch { /* fall through */ }
+  return fallback;
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || "/highlights";
+  const raw = event.notification.data?.url || "/highlights";
+  const url = sameOriginPath(raw, "/highlights");
   // Focus an existing visible client at this origin if one is open;
   // otherwise spawn a new window. clientList includes uncontrolled
   // pages too thanks to includeUncontrolled.
@@ -214,8 +229,14 @@ self.addEventListener("notificationclick", (event) => {
     for (const c of all) {
       try {
         // Bring the existing PWA tab forward and ask it to navigate.
+        // Compare against the existing client's *path*, not its full
+        // URL — `c.url` is absolute, `url` is relative, so a naive
+        // string compare always mismatches and forces a re-navigation
+        // that throws away in-page state (paused video, scroll pos).
         await c.focus();
-        if ("navigate" in c && c.url !== url) {
+        let cPath = c.url;
+        try { cPath = new URL(c.url).pathname; } catch {}
+        if ("navigate" in c && cPath !== url.split("?")[0].split("#")[0]) {
           await c.navigate(url).catch(() => {});
         }
         return;

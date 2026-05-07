@@ -228,7 +228,6 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
                 likelihood = float(fresh.get("fox_likelihood") or 0.0)
                 duration = float(fresh.get("duration_s") or 0.0)
                 pct = int(round(likelihood * 100))
-                public_base = notify._PUBLIC_BASE
                 # Title shows percentage only when the heuristic is
                 # confident; otherwise just the camera name to avoid
                 # parading a 0% next to a "raccoon" classification.
@@ -241,7 +240,12 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
                 payload = {
                     "title": title,
                     "body":  f"{body_subject} · {duration:.0f}s",
-                    "url":   f"{public_base}/clip/{event_id}",
+                    # Same-origin RELATIVE path — iOS routes a tap on a
+                    # PWA-context push back into the installed PWA only
+                    # when the URL is relative (or the origin matches
+                    # the SW's). Absolute URLs sometimes hand off to
+                    # Safari on iOS 17+, even from inside the PWA SW.
+                    "url":   f"/clip/{event_id}",
                     "tag":   f"highlight-{event_id}",
                     "kind":  "new_highlight",
                     # Enrichment fields used by the per-user severity
