@@ -608,12 +608,54 @@ class FeaturedBody(BaseModel):
 
 @app.get("/featured")
 def list_featured_endpoint(limit: int = Query(default=6, ge=1, le=24)) -> dict[str, Any]:
-    """Public list of featured highlights for the landing page.
+    """Public list of featured items (highlights + remixes) for the
+    landing page, merged and sorted by featured_at DESC.
 
-    Returns the same row shape as /highlights so card.js can render
-    them without a parallel code path.
+    Each item carries a "type" discriminator the client uses to pick
+    the right render path + permalink shape:
+      type="highlight" → fields match /highlights row; permalink /clip/{id}
+      type="remix"     → fields match /remixes row + nested .highlight;
+                         permalink /remix/{id}; thumbnail/clip URLs use
+                         the parent highlight's event_id.
+
+    `highlights` is also returned at the top level for backwards
+    compatibility with any client still keying off that shape.
     """
-    return {"highlights": db.list_featured(DB_PATH, limit=limit)}
+    hls = db.list_featured(DB_PATH, limit=limit)
+    rmx = db.list_featured_remixes(DB_PATH, limit=limit)
+    items: list[dict[str, Any]] = []
+    for h in hls:
+        items.append({"type": "highlight", **h})
+    for r in rmx:
+        items.append({"type": "remix", **r})
+    # Merge sort by featured_at DESC; break ties with items list order.
+    items.sort(key=lambda x: x.get("featured_at") or 0, reverse=True)
+    items = items[:limit]
+    return {"items": items, "highlights": hls}
+
+
+@app.post("/remixes/{remix_id}/feature")
+def feature_remix(remix_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="feature requires a 'by' email")
+    caption = (body.caption or "").strip() or None
+    if caption and len(caption) > 140:
+        raise HTTPException(status_code=400, detail="caption max 140 chars")
+    r = db.set_remix_featured(DB_PATH, remix_id, featured=True,
+                              by=body.by, caption=caption)
+    if r is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "featured", "remix": r}
+
+
+@app.post("/remixes/{remix_id}/unfeature")
+def unfeature_remix(remix_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="unfeature requires a 'by' email")
+    r = db.set_remix_featured(DB_PATH, remix_id, featured=False)
+    if r is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "unfeatured", "remix": r}
 
 
 @app.post("/highlights/{event_id}/feature")

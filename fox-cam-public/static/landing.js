@@ -92,7 +92,13 @@
         Couldn't load today's highlights — try again in a moment.</p>`;
       return;
     }
-    const items = (data && data.highlights) || [];
+    // Server returns a unified `items` array of {type:"highlight"|"remix",
+    // ...} sorted by featured_at DESC. Fall back to the legacy
+    // `highlights`-only shape for older curator builds. Each item carries
+    // its own permalink shape + media URLs (see buildCard).
+    const items = (data && data.items) ||
+                  ((data && data.highlights) || []).map((h) =>
+                    Object.assign({ type: "highlight" }, h));
     if (!items.length) {
       // Empty state: friendly woodland-quiet message.
       grid.innerHTML = `
@@ -110,22 +116,44 @@
     }
   }
 
-  function buildCard(h) {
-    const card = document.createElement("a");
-    card.className = "featured-card";
-    card.href = `/clip/${encodeURIComponent(h.event_id)}`;
-    card.setAttribute("aria-label", h.featured_caption || `Highlight from ${prettyTime(h.start_time)}`);
+  function buildCard(item) {
+    // Normalize: a "remix" item carries its own remix_id/title plus a
+    // nested `highlight` with the parent clip's metadata. Pull whatever
+    // the card needs out of either source so the rendering branch below
+    // doesn't have to care which type it's looking at.
+    const isRemix = item.type === "remix";
+    const parent  = isRemix ? (item.highlight || {}) : item;
+    const hrefId  = isRemix ? item.remix_id : item.event_id;
+    const href    = isRemix ? `/remix/${encodeURIComponent(hrefId)}`
+                            : `/clip/${encodeURIComponent(hrefId)}`;
+    // Thumbnail comes from the parent highlight either way (parent clip
+    // thumb is already public-bypassed; remix-specific frame extraction
+    // would be a follow-up).
+    const thumbUrl = `/api/highlights/${encodeURIComponent(parent.event_id)}/thumbnail`;
+    // Hover preview: full clip for highlights, trimmed remix MP4 for
+    // remixes — so the user previews exactly what they'll see when they
+    // tap. Both endpoints support range requests.
+    const videoUrl = isRemix
+      ? `/api/remixes/${encodeURIComponent(hrefId)}/clip`
+      : `/api/highlights/${encodeURIComponent(parent.event_id)}/clip`;
 
-    // Thumbnail (always loaded; video lazy-loaded on hover for bandwidth).
+    const card = document.createElement("a");
+    card.className = "featured-card" + (isRemix ? " featured-remix" : "");
+    card.href = href;
+    card.setAttribute(
+      "aria-label",
+      item.featured_caption ||
+      (isRemix ? `Remix${item.title ? ': ' + item.title : ''}`
+               : `Highlight from ${prettyTime(parent.start_time)}`)
+    );
+
     const thumb = document.createElement("img");
     thumb.className = "thumb";
-    thumb.src = `/api/highlights/${encodeURIComponent(h.event_id)}/thumbnail`;
+    thumb.src = thumbUrl;
     thumb.alt = "";
     thumb.loading = "lazy";
     card.appendChild(thumb);
 
-    // Hover-autoplay video (created on first hover to avoid loading 6 clips
-    // unnecessarily on page load; mobile gets only the thumbnail).
     let videoEl = null;
     function ensureVideo() {
       if (videoEl) return videoEl;
@@ -134,7 +162,7 @@
       videoEl.loop = true;
       videoEl.playsInline = true;
       videoEl.preload = "metadata";
-      videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
+      videoEl.src = videoUrl;
       card.appendChild(videoEl);
       return videoEl;
     }
@@ -150,27 +178,39 @@
       });
     }
 
-    // Badges — species + shared (if multi-favorited)
+    // Badges — species (from parent), shared count (highlight-only),
+    // and a "remix" tag so the type is obvious at a glance.
     const badges = document.createElement("div");
     badges.className = "badges";
-    if (h.species && h.species !== "person" && h.species !== "vehicle") {
+    if (isRemix) {
       const b = document.createElement("span");
-      b.className = "badge fox";
-      b.textContent = prettyLabel(h.species);
+      b.className = "badge remix";
+      b.textContent = "✂ Remix";
       badges.appendChild(b);
     }
-    if ((h.favorite_count || 0) >= 2) {
+    if (parent.species && parent.species !== "person" && parent.species !== "vehicle") {
+      const b = document.createElement("span");
+      b.className = "badge fox";
+      b.textContent = prettyLabel(parent.species);
+      badges.appendChild(b);
+    }
+    if (!isRemix && (parent.favorite_count || 0) >= 2) {
       const b = document.createElement("span");
       b.className = "badge shared";
-      b.textContent = `★ ${h.favorite_count}`;
+      b.textContent = `★ ${parent.favorite_count}`;
       badges.appendChild(b);
     }
     if (badges.children.length) card.appendChild(badges);
 
-    // Caption (admin-written) or default to time of day
+    // Caption: prefer admin-written, then remix's own title, then a
+    // sensible default (time-of-day for highlights, "Remix" for remixes
+    // without a title).
     const cap = document.createElement("div");
     cap.className = "caption";
-    cap.textContent = h.featured_caption || prettyTime(h.start_time);
+    cap.textContent = item.featured_caption ||
+                      (isRemix
+                        ? (item.title || "Remix")
+                        : prettyTime(parent.start_time));
     card.appendChild(cap);
 
     return card;

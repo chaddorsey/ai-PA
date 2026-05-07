@@ -502,6 +502,36 @@ async def admin_delete_highlight(event_id: str, request: Request) -> Any:
     return r.json()
 
 
+@app.post("/api/admin/remixes/{remix_id}/feature")
+async def admin_feature_remix(remix_id: str, request: Request) -> Any:
+    """Promote a remix to the public landing page (admin-only)."""
+    admin_email = _require_admin(request)
+    body = await request.json() if request.headers.get("content-length") else {}
+    payload = {"by": admin_email, "caption": body.get("caption")}
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/remixes/{remix_id}/feature",
+                              json=payload, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.post("/api/admin/remixes/{remix_id}/unfeature")
+async def admin_unfeature_remix(remix_id: str, request: Request) -> Any:
+    """Remove a remix from the public landing page (admin-only)."""
+    admin_email = _require_admin(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/remixes/{remix_id}/unfeature",
+                              json={"by": admin_email}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
 @app.post("/api/admin/highlights/{event_id}/unfeature")
 async def admin_unfeature(event_id: str, request: Request) -> Any:
     """Remove a highlight from the public landing page (admin-only)."""

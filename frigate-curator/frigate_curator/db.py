@@ -110,6 +110,15 @@ _MIGRATIONS = [
     "ALTER TABLE highlights ADD COLUMN featured_by TEXT",
     "ALTER TABLE highlights ADD COLUMN featured_caption TEXT",
     "CREATE INDEX IF NOT EXISTS highlights_featured ON highlights (featured, featured_at DESC)",
+    # Landing-page featured remixes — admin-curated subset of remixes
+    # shown to anonymous visitors alongside featured highlights. Schema
+    # mirrors highlights' featured columns so both sources can be
+    # merged into a single ordered list at /featured time.
+    "ALTER TABLE remixes ADD COLUMN featured INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE remixes ADD COLUMN featured_at REAL",
+    "ALTER TABLE remixes ADD COLUMN featured_by TEXT",
+    "ALTER TABLE remixes ADD COLUMN featured_caption TEXT",
+    "CREATE INDEX IF NOT EXISTS remixes_featured ON remixes (featured, featured_at DESC)",
     # Per-user likes on remixes. PK enforces idempotency: a user can
     # only like a remix once. Aggregate count is computed on demand
     # (low row counts for now — premature to denormalize).
@@ -774,6 +783,65 @@ def list_featured(db_path: Path, *, limit: int = 6) -> list[dict[str, Any]]:
             [limit],
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def set_remix_featured(
+    db_path: Path,
+    remix_id: str,
+    *,
+    featured: bool,
+    by: str | None = None,
+    caption: str | None = None,
+) -> dict[str, Any] | None:
+    """Promote / unpromote a REMIX for the public landing page. Mirrors
+    set_featured() but on the remixes table. Returns the updated row,
+    or None if the remix doesn't exist."""
+    now = time.time()
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM remixes WHERE remix_id = ?", [remix_id]
+        ).fetchone()
+        if not row:
+            return None
+        if featured:
+            conn.execute(
+                "UPDATE remixes SET featured = 1, featured_at = ?, featured_by = ?, "
+                "featured_caption = ? WHERE remix_id = ?",
+                [now, by, caption, remix_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE remixes SET featured = 0, featured_at = NULL, featured_by = NULL, "
+                "featured_caption = NULL WHERE remix_id = ?",
+                [remix_id],
+            )
+        out = conn.execute(
+            "SELECT * FROM remixes WHERE remix_id = ?", [remix_id]
+        ).fetchone()
+    return dict(out) if out else None
+
+
+def list_featured_remixes(db_path: Path, *, limit: int = 6) -> list[dict[str, Any]]:
+    """Featured remixes for the public landing page, newest first. Each
+    row is enriched with the parent highlight under "highlight" so
+    callers don't need a second round-trip to render the card (camera,
+    species, thumbnail path are all on the parent)."""
+    with connect(db_path) as conn:
+        remix_rows = conn.execute(
+            "SELECT * FROM remixes WHERE featured = 1 "
+            "ORDER BY featured_at DESC LIMIT ?",
+            [limit],
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in remix_rows:
+            r = dict(r)
+            h = conn.execute(
+                "SELECT * FROM highlights WHERE event_id = ?",
+                [r["event_id"]],
+            ).fetchone()
+            r["highlight"] = dict(h) if h else None
+            out.append(r)
+    return out
 
 
 def set_action(db_path: Path, event_id: str, action: str, by: str | None) -> dict[str, Any] | None:

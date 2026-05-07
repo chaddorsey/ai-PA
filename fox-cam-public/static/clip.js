@@ -85,6 +85,15 @@
       else if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
     }
 
+    // Admin-only: a "Feature on landing" / "Unfeature" toggle on the
+    // remix permalink page. Same UX shape as the existing highlight
+    // feature button (card.js:toggleFeature) — prompt for an optional
+    // caption on promote, confirm on unpromote. Server re-checks
+    // ADMIN_EMAILS so the client-side IS_ADMIN flag is purely cosmetic.
+    if (remix && window.IS_ADMIN) {
+      mountRemixFeatureButton(fresh, remix);
+    }
+
     // Show existing remixes below the clip (read-only view).
     if (!remix) {
       const panel = document.getElementById("remix-panel");
@@ -102,6 +111,68 @@
   } catch (e) {
     console.error(e);
     if (card) card.querySelector(".meta").textContent = `Error: ${e.message}`;
+  }
+
+  // ---------------------------------------------------------------
+  // Admin: feature/unfeature toggle button on remix permalink view.
+  // Appended into the card's action area. Same prompt/confirm UX as
+  // the highlight version in card.js so admins have one mental model.
+  // ---------------------------------------------------------------
+  function mountRemixFeatureButton(cardEl, remixObj) {
+    if (!cardEl || !remixObj) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "remix-feature-btn admin-only";
+    function paint() {
+      btn.textContent = remixObj.featured
+        ? "★ Unfeature from landing"
+        : "★ Feature on landing";
+      btn.classList.toggle("is-featured", !!remixObj.featured);
+    }
+    paint();
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.disabled = true;
+      try {
+        let url, body;
+        if (remixObj.featured) {
+          if (!confirm("Remove this remix from the public landing page?")) {
+            btn.disabled = false; return;
+          }
+          url  = `/api/admin/remixes/${encodeURIComponent(remixObj.remix_id)}/unfeature`;
+          body = "{}";
+        } else {
+          const cap = (prompt(
+            "Optional caption (≤140 chars):",
+            remixObj.featured_caption || remixObj.title || ""
+          ) || "").trim();
+          if (cap.length > 140) {
+            alert("Caption must be 140 characters or fewer.");
+            btn.disabled = false; return;
+          }
+          url  = `/api/admin/remixes/${encodeURIComponent(remixObj.remix_id)}/feature`;
+          body = JSON.stringify({ caption: cap || null });
+        }
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          credentials: "same-origin",
+        });
+        if (r.status === 403) { alert("Admin only."); return; }
+        if (!r.ok) { alert("Couldn't update featured status."); return; }
+        const data = await r.json();
+        Object.assign(remixObj, data.remix || {});
+        paint();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    // Drop into the card's bottom action row if one exists; otherwise
+    // append to the card itself so it's at least visible.
+    const actionsRow = cardEl.querySelector(".actions") || cardEl;
+    actionsRow.appendChild(btn);
   }
 
   // ---------------------------------------------------------------

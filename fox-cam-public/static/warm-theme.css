@@ -904,6 +904,38 @@ body.modal-open { overflow: hidden; }
 .meta-download:focus-visible,
 .meta-download:active { outline: none; }
 
+/* Remix permalink: admin-only "Feature on landing" toggle. Same shape
+   language as the rest of the card actions but with a slightly muted
+   border to read as a curation tool rather than a primary action.
+   When the remix is currently featured, lean warm to mirror the
+   landing-page badge color. */
+.remix-feature-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 14px;
+  border: 1px solid rgba(40, 50, 70, 0.25);
+  border-radius: var(--radius-pill, 20px);
+  background: transparent;
+  color: var(--color-ink, #2b2b2b);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.remix-feature-btn:hover {
+  background: rgba(40, 50, 70, 0.06);
+  border-color: rgba(40, 50, 70, 0.45);
+}
+.remix-feature-btn.is-featured {
+  background: var(--color-warm, #f6c98a);
+  border-color: var(--color-warm, #f6c98a);
+  color: var(--color-ink, #2b2b2b);
+}
+.remix-feature-btn:disabled { opacity: 0.55; cursor: progress; }
+
 /* Delete button — admin-only, distinguished by a red-ish hue */
 .action-btn.action-delete {
   border-color: rgba(180, 30, 30, 0.4) !important;

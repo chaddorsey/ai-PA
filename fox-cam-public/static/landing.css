@@ -417,6 +417,13 @@ body.landing .hero-cta { opacity: 1; transition: opacity 0.3s ease; transition-d
 
 .featured-card .badge.shared { background: var(--color-warm); color: var(--color-ink); }
 .featured-card .badge.fox    { background: var(--color-glow); color: white; }
+/* Remix badge: subtle slate so the family-curated nature reads as
+   "made by us" rather than "system-tagged species." */
+.featured-card .badge.remix  {
+  background: rgba(40, 50, 70, 0.92);
+  color: white;
+  letter-spacing: 0.02em;
+}
 
 /* --------------------------------------------------------------------------
    ABOUT STRIP — 3 columns w/ icons
