@@ -138,6 +138,13 @@ async def require_cf_access(request: Request, call_next):
     # bypass rules at the edge for these paths.
     if path == "/" or path == "/clip" or path.startswith("/clip/"):
         return await call_next(request)
+    # Remix permalinks — same posture as /clip/. The page itself
+    # renders OG cards for shared links and the inline trimmed MP4
+    # is needed for iMessage / Slack / Twitter rich previews. Knowing
+    # the remix_id (a random short hash) is the only gate; LIST stays
+    # authed so anonymous can't enumerate.
+    if path.startswith("/remix/"):
+        return await call_next(request)
     if path in ("/api/featured", "/api/whoami"):
         return await call_next(request)
     if path.startswith("/api/featured/"):
@@ -153,6 +160,15 @@ async def require_cf_access(request: Request, call_next):
     # Single-highlight metadata for the permalink page (anonymous can
     # view only featured ones; the route handler enforces).
     if path.startswith("/api/highlights/") and path.count("/") == 3:
+        return await call_next(request)
+    # Remix metadata + inline clip for OG cards + landing-page features.
+    # /api/remixes/{id}            → metadata JSON (server-side OG fetch
+    #                                 also uses curator directly, but
+    #                                 client JS uses this proxy)
+    # /api/remixes/{id}/clip       → inline trimmed MP4 (og:video target)
+    if path.startswith("/api/remixes/") and (
+        path.count("/") == 3 or path.endswith("/clip")
+    ):
         return await call_next(request)
     # Static assets: served behind the same auth gate (no CDN bypass)
     jwt = request.headers.get("cf-access-jwt-assertion")
@@ -286,12 +302,115 @@ async def clip_permalink(event_id: str, request: Request) -> HTMLResponse:
 async def remix_permalink(remix_id: str, request: Request) -> HTMLResponse:
     """Permalink for a saved remix (sub-clip + zoom region).
     Shares the clip.html template; client JS detects the route and
-    fetches /api/remixes/<id> instead of /api/highlights/<id>."""
+    fetches /api/remixes/<id> instead of /api/highlights/<id>.
+
+    We also fetch the remix metadata server-side here — *only* to
+    populate Open Graph / Twitter Card meta tags so iMessage / Slack /
+    Twitter / etc. crawlers (which don't run JS) get a rich preview
+    card with thumbnail + inline video. The client still does its own
+    fetch on render; the server-side fetch is a one-shot for the
+    crawler's benefit and is tolerant of curator being slow or down
+    (we just skip the OG tags in that case rather than 502 the page).
+    """
+    og: dict[str, Any] | None = None
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{CURATOR_API}/remixes/{remix_id}", timeout=3.0)
+        if r.status_code == 200:
+            data = r.json()
+            og = _build_remix_og(data, request)
+    except Exception:
+        # Curator timeout / unreachable — render the shell without OG
+        # tags. Crawler still gets a 200; preview just won't be rich.
+        og = None
     return templates.TemplateResponse(
         "clip.html",
         {"request": request, "event_id": "", "remix_id": remix_id,
-         "v": ASSET_VERSION, "active_view": "remixes",
+         "v": ASSET_VERSION, "active_view": "remixes", "og": og,
          **_identity_ctx(request)},
+    )
+
+
+def _build_remix_og(data: dict[str, Any], request: Request) -> dict[str, Any] | None:
+    """Construct the Open Graph context dict for a remix permalink.
+
+    `data` is the JSON shape returned by curator's GET /remixes/{id} —
+    {"remix": {...}, "highlight": {...}}. We pull a thumbnail from the
+    PARENT highlight (already public via the existing CF Access bypass)
+    and an inline-streamable video from the new /api/remixes/{id}/clip
+    proxy. The base URL comes from the request so OG URLs stay on the
+    same public host the user shared from (ourfoxes.com vs
+    foxes.cd-ai-pa.work).
+    """
+    remix = data.get("remix") or {}
+    hl = data.get("highlight") or {}
+    if not remix:
+        return None
+
+    # request.base_url uses request.url.scheme — which is always 'http'
+    # behind Cloudflare Tunnel since we terminate TLS at the edge. Pull
+    # the real scheme from X-Forwarded-Proto so OG URLs come out https
+    # (Apple's LinkPresentation rejects http resources for og:image and
+    # og:video on iOS 16+).
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme) or "https"
+    host = request.headers.get("host") or request.url.netloc
+    base = f"{proto}://{host}"
+    remix_id = remix.get("remix_id")
+    event_id = remix.get("event_id") or hl.get("event_id")
+    start_s = float(remix.get("start_offset_s") or 0.0)
+    end_s = float(remix.get("end_offset_s") or 0.0)
+    duration = max(0.0, end_s - start_s)
+    title_user = (remix.get("title") or "").strip()
+    species = (hl.get("species") or "").strip().lower()
+    species_label = species if species and species not in {"none", "?", ""} else "fox"
+    camera = (hl.get("camera") or "").strip()
+    cam_label = camera.replace("_", " ") if camera else ""
+
+    # Title: prefer the user-given remix title, fall back to a
+    # generated one. Keep under ~60 chars so iMessage doesn't elide.
+    if title_user:
+        og_title = f"{title_user} · {duration:.0f}s"
+    else:
+        og_title = f"Fox remix · {duration:.0f}s"
+
+    # Description: short factual subline. iMessage uses ~90 chars
+    # before truncating.
+    desc_bits: list[str] = []
+    if species_label:
+        desc_bits.append(species_label.capitalize())
+    if cam_label:
+        desc_bits.append(f"on {cam_label}")
+    desc_bits.append(f"{duration:.0f}s remix")
+    og_desc = " · ".join(desc_bits)
+
+    og_url = f"{base}/remix/{remix_id}"
+    og_image = f"{base}/api/highlights/{event_id}/thumbnail" if event_id else None
+    og_video = f"{base}/api/remixes/{remix_id}/clip"
+
+    return {
+        "title": og_title,
+        "description": og_desc,
+        "url": og_url,
+        "image": og_image,
+        "video": og_video,
+        "video_type": "video/mp4",
+        "site_name": "Our Foxes",
+    }
+
+
+@app.get("/api/remixes/{remix_id}/clip")
+async def remix_clip(remix_id: str, request: Request) -> StreamingResponse:
+    """Inline-streamable trimmed remix MP4 — proxy to curator's
+    /remixes/{id}/download?inline=1.
+
+    Used as the og:video target for rich iMessage / social cards;
+    also safe for any future <video src=...> embedding. Same auth
+    posture as /api/highlights/{id}/clip — must be in the CF Access
+    Bypass app for crawlers + anonymous family/friends to fetch.
+    """
+    return await _proxy_curator(
+        f"/remixes/{remix_id}/download?inline=true",
+        "video/mp4", request=request,
     )
 
 

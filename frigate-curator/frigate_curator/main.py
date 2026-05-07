@@ -1036,12 +1036,18 @@ REMIX_DOWNLOAD_CACHE_ROOT = Path(os.environ.get(
 
 
 @app.get("/remixes/{remix_id}/download")
-def download_remix(remix_id: str, filename: str | None = None) -> FileResponse:
+def download_remix(remix_id: str, filename: str | None = None,
+                    inline: bool = False) -> FileResponse:
     """Render the remix as a trimmed (+ cropped, if zoomed) MP4 for download.
 
     Re-encodes via ffmpeg the first time and caches the result on disk
     keyed by remix_id + a hash of the trim/zoom params, so subsequent
     downloads are an instant FileResponse.
+
+    `inline=true` drops the Content-Disposition: attachment header so
+    the bytes can be embedded directly in an iMessage / OG video card
+    instead of being interpreted as a forced download. Same cache file
+    is reused across both modes — only the response headers differ.
     """
     import hashlib
     import subprocess
@@ -1104,6 +1110,11 @@ def download_remix(remix_id: str, filename: str | None = None) -> FileResponse:
 
     safe_name = (filename or f"remix-{remix_id}.mp4")
     safe_name = safe_name.replace('"', "").replace("\n", "").replace("\r", "")
+    if inline:
+        # No Content-Disposition: attachment → user-agent renders inline.
+        # OG video crawlers (Apple LinkPresentation, Twitter, etc.) need
+        # this to embed the player; download buttons don't.
+        return FileResponse(cache_path, media_type="video/mp4")
     return FileResponse(
         cache_path, media_type="video/mp4", filename=safe_name,
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   {% include "_ios_detect.html" %}
-  <title>Our Foxes — Clip</title>
+  <title>{% if og %}{{ og.title }} · Our Foxes{% else %}Our Foxes — Clip{% endif %}</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
   <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png">
@@ -16,6 +16,39 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Our Foxes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  {# ------------------------------------------------------------------
+     Open Graph / Twitter Card tags — populated server-side for /remix/
+     permalinks so iMessage / Slack / Twitter / Facebook crawlers (which
+     don't run JS) get a rich preview with thumbnail + inline video.
+     The og dict is built in main.py:_build_remix_og from curator data;
+     when absent (e.g. /clip/ pages, or curator unreachable at render
+     time) we fall through and the link gets a plain title-only preview.
+     ------------------------------------------------------------------ #}
+  {% if og %}
+  <meta property="og:type" content="video.other">
+  <meta property="og:title" content="{{ og.title }}">
+  <meta property="og:description" content="{{ og.description }}">
+  <meta property="og:url" content="{{ og.url }}">
+  <meta property="og:site_name" content="{{ og.site_name }}">
+  {% if og.image %}
+  <meta property="og:image" content="{{ og.image }}">
+  <meta property="og:image:alt" content="{{ og.title }}">
+  {% endif %}
+  {% if og.video %}
+  <meta property="og:video" content="{{ og.video }}">
+  <meta property="og:video:secure_url" content="{{ og.video }}">
+  <meta property="og:video:type" content="{{ og.video_type }}">
+  {% endif %}
+  <meta name="twitter:card" content="{{ 'player' if og.video else 'summary_large_image' }}">
+  <meta name="twitter:title" content="{{ og.title }}">
+  <meta name="twitter:description" content="{{ og.description }}">
+  {% if og.image %}<meta name="twitter:image" content="{{ og.image }}">{% endif %}
+  {% if og.video %}
+  <meta name="twitter:player" content="{{ og.video }}">
+  <meta name="twitter:player:stream" content="{{ og.video }}">
+  <meta name="twitter:player:stream:content_type" content="{{ og.video_type }}">
+  {% endif %}
+  {% endif %}
   <link rel="stylesheet" href="/static/style.css?v={{ v }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
