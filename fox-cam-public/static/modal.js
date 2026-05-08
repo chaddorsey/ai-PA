@@ -1085,6 +1085,13 @@
     if (shareSlot) {
       shareSlot.appendChild(buildLinkButton({ pageUrl: remixPageUrl, label: "Copy link" }));
       shareSlot.appendChild(buildShareButton({ pageUrl: remixPageUrl, label: "Share" }));
+      // Admin-only: feature/unfeature toggle next to the share buttons.
+      // Same icon vocabulary as the existing landing-page card badge so
+      // there's one star-shape mental model across the app. Server
+      // re-checks ADMIN_EMAILS — the IS_ADMIN flag here is cosmetic.
+      if (window.IS_ADMIN) {
+        shareSlot.appendChild(buildFeatureRemixButton({ remix }));
+      }
     }
 
     // Drop native controls — when we apply the saved zoom_scale via
@@ -1513,6 +1520,73 @@
       return;
     }
     flashToast("Sharing not supported on this browser");
+  }
+
+  // Admin-only "Feature / Unfeature" toggle for a remix, mounted next
+  // to the share buttons on the remix-playback modal. The icon is a
+  // Material star — outline when unfeatured, filled when featured.
+  // Click flow mirrors the highlight feature button (card.js:
+  // toggleFeature) and the remix permalink button (clip.js:
+  // mountRemixFeatureButton): prompt for caption on promote, confirm
+  // on unpromote. The remix object passed in is mutated in place so
+  // the caller sees the new featured state without a re-fetch.
+  function buildFeatureRemixButton(opts) {
+    const { remix } = opts;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "action-btn action-feature action-icon-only";
+    function paint() {
+      const featured = !!remix.featured;
+      b.setAttribute("aria-label",
+        featured ? "Unfeature from landing" : "Feature on landing");
+      b.title = featured ? "Unfeature from landing" : "Feature on landing";
+      b.innerHTML = ICON(featured ? "star" : "star_border");
+      // .active is the convention used by the existing highlight feature
+      // button — reusing it picks up the warm-theme background swap for
+      // free (see warm-theme.css:.action-btn.action-feature.active).
+      b.classList.toggle("active", featured);
+    }
+    paint();
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (b.disabled) return;
+      b.disabled = true;
+      try {
+        let url, body;
+        if (remix.featured) {
+          if (!confirm("Remove this remix from the public landing page?")) return;
+          url = `/api/admin/remixes/${encodeURIComponent(remix.remix_id)}/unfeature`;
+          body = "{}";
+        } else {
+          const cap = (prompt(
+            "Optional caption (≤140 chars):",
+            remix.featured_caption || remix.title || ""
+          ) || "").trim();
+          if (cap.length > 140) {
+            alert("Caption must be 140 characters or fewer.");
+            return;
+          }
+          url = `/api/admin/remixes/${encodeURIComponent(remix.remix_id)}/feature`;
+          body = JSON.stringify({ caption: cap || null });
+        }
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          credentials: "same-origin",
+        });
+        if (r.status === 403) { flashToast("Admin only"); return; }
+        if (!r.ok) { flashToast("Couldn't update featured status"); return; }
+        const data = await r.json();
+        Object.assign(remix, data.remix || {});
+        paint();
+        flashToast(remix.featured ? "Featured on landing" : "Removed from landing");
+      } finally {
+        b.disabled = false;
+      }
+    });
+    return b;
   }
 
   // Download a server-rendered trimmed + (when zoomed) cropped MP4 of
