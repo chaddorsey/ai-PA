@@ -74,15 +74,21 @@
     const img = fresh.querySelector("img");
     if (img) {
       videoEl = document.createElement("video");
-      // Native iOS controls on for both highlights and remixes:
-      // - Lets iOS handle fullscreen/auto-hide-on-play correctly.
-      // - A custom tap-to-toggle handler fights iOS's tap-to-show-
-      //   controls behavior; previous attempt made fullscreen and
-      //   replay-from-start both unreliable. Reverted to the simplest
-      //   possible setup; trim-window enforcement happens via play-
-      //   event interception (applyRemixPlayback below).
       videoEl.src = `/api/highlights/${highlight.event_id}/clip`;
-      videoEl.controls = true;
+      // Controls policy:
+      //   - Raw highlight (/clip/{id}, no remix): native iOS controls.
+      //     The user comes here to scrub / fullscreen the full clip;
+      //     no zoom transform is applied so the controls render
+      //     correctly in their native footprint.
+      //   - Remix (/remix/{id}): controls=false. Native controls render
+      //     as children of the <video> element in iOS, so they get
+      //     scaled along with our `transform: scale(zoom_scale)` and
+      //     end up sized/oriented for the original (unzoomed) frame
+      //     instead of the visible (zoomed) one — huge misaligned play
+      //     and rewind buttons. The modal solves this the same way
+      //     (modal.js:renderRemixPlayback). We add a custom tap-to-
+      //     play-pause handler so the gesture still works.
+      videoEl.controls = !remix;
       videoEl.autoplay = true;
       videoEl.muted = true;
       videoEl.playsInline = true;
@@ -93,8 +99,29 @@
       videoEl.preload = "auto";
       img.replaceWith(videoEl);
 
-      if (remix) applyRemixPlayback(videoEl, wrap, remix);
-      else if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
+      if (remix) {
+        applyRemixPlayback(videoEl, wrap, remix);
+        attachTapToPlayPause(videoEl);
+      } else if (window.applyPrerollSkip) {
+        window.applyPrerollSkip(videoEl);
+      }
+    }
+
+    // Tap-to-play-pause for remix permalinks where we drop native
+    // controls. iOS's built-in "tap to play" overlay (the floating
+    // ▶ on paused inline videos) still shows for the paused state
+    // as a system-level affordance, so the user always has visual
+    // feedback that a tap will start playback. Our handler just
+    // toggles play/pause; the overlay sorts itself out automatically.
+    function attachTapToPlayPause(video) {
+      video.addEventListener("click", (e) => {
+        // Stop here so the wrap's click listener doesn't do its own
+        // thing on top — even though it now bails when a video
+        // exists, belt-and-suspenders.
+        e.stopPropagation();
+        if (video.paused) video.play().catch(() => {});
+        else video.pause();
+      });
     }
 
     // Admin-only: a "Feature on landing" / "Unfeature" toggle on the
