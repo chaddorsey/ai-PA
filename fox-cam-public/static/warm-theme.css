@@ -916,6 +916,167 @@ body.modal-open { overflow: hidden; }
 .meta-download:focus-visible,
 .meta-download:active { outline: none; }
 
+/* ============================================================
+   Recover-clip dialog (admin-only, /highlights)
+   ============================================================
+   Native <dialog> styled as a centered card on desktop and a
+   bottom-sheet on phones. HTML5 date/time inputs give us iOS
+   wheel pickers + Android calendar pickers for free; CSS just
+   gives them a coherent appearance against our warm theme.
+*/
+.recover-dialog {
+  border: none;
+  padding: 0;
+  border-radius: 16px;
+  background: var(--color-bg, #fffaf3);
+  color: var(--color-ink, #2b2b2b);
+  box-shadow: 0 16px 48px rgba(40, 30, 20, 0.25);
+  max-width: 480px;
+  width: calc(100% - 32px);
+  max-height: 92vh;
+  overflow: visible;
+}
+.recover-dialog::backdrop {
+  background: rgba(20, 14, 8, 0.55);
+  backdrop-filter: blur(2px);
+}
+.recover-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 22px 18px;
+  font-family: inherit;
+}
+.recover-title {
+  margin: 0;
+  font-family: var(--font-display, inherit);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-ink, #2b2b2b);
+}
+.recover-help {
+  margin: -6px 0 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.recover-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.recover-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink-soft, #5b4a3c);
+}
+.recover-form input[type="date"],
+.recover-form input[type="time"],
+.recover-form input[type="text"],
+.recover-form select {
+  font: inherit;
+  font-size: 16px;          /* iOS uses 16px to suppress zoom-on-focus */
+  padding: 10px 12px;
+  border: 1px solid rgba(40, 30, 20, 0.18);
+  border-radius: 10px;
+  background: white;
+  color: var(--color-ink, #2b2b2b);
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 44px;         /* touch target */
+}
+.recover-form select {
+  /* Custom chevron — appearance:none nukes the native one. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%235b4a3c' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+.recover-form input:focus,
+.recover-form select:focus {
+  outline: none;
+  border-color: var(--color-glow, #f05a28);
+  box-shadow: 0 0 0 3px rgba(240, 90, 40, 0.18);
+}
+.recover-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 420px) {
+  .recover-row {
+    /* Single-column on narrow phones — date and time each get the
+       full width. iOS native pickers benefit from the room. */
+    grid-template-columns: 1fr;
+  }
+}
+.recover-error {
+  background: rgba(180, 30, 30, 0.08);
+  border: 1px solid rgba(180, 30, 30, 0.3);
+  color: #8a1818;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.recover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+.recover-btn-cancel,
+.recover-btn-submit {
+  font: inherit;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 10px 18px;
+  border-radius: var(--radius-pill, 20px);
+  cursor: pointer;
+  min-height: 44px;
+  border: 1px solid transparent;
+}
+.recover-btn-cancel {
+  background: transparent;
+  border-color: rgba(40, 30, 20, 0.25);
+  color: var(--color-ink, #2b2b2b);
+}
+.recover-btn-cancel:hover { background: rgba(40, 30, 20, 0.05); }
+.recover-btn-submit {
+  background: var(--color-glow, #f05a28);
+  color: white;
+}
+.recover-btn-submit:hover { filter: brightness(0.95); }
+.recover-btn-submit:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+@media (max-width: 480px) {
+  /* Bottom-sheet treatment on phones — slide up from the bottom
+     edge with full-width form, native pickers can use the keyboard
+     space comfortably. */
+  .recover-dialog {
+    max-width: none;
+    width: 100%;
+    margin: 0 auto auto;
+    border-radius: 16px 16px 0 0;
+    bottom: 0;
+    top: auto;
+    transform: none;
+    max-height: 88vh;
+  }
+  .recover-form {
+    padding: 18px 18px 22px;
+  }
+  .recover-actions {
+    flex-direction: column-reverse;
+    gap: 10px;
+  }
+  .recover-actions button {
+    width: 100%;
+  }
+}
+
 /* Admin-only "Recover clip" button on the /highlights tabs row. Lives
    alongside the Remixes view-toggle; styled as a subtle pill so it
    reads as a tool, not a primary action. Hidden in the template via

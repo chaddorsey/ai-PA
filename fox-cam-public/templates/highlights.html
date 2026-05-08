@@ -65,6 +65,70 @@
       </button>
       {% endif %}
     </div>
+
+    {% if is_admin %}
+    {# Admin-only dialog for the "Recover clip" flow. Native HTML5
+       date/time inputs give us iOS wheel pickers + Android calendar
+       pickers for free; the dialog element handles modal/escape. #}
+    <dialog id="recover-dialog" class="recover-dialog">
+      <form method="dialog" id="recover-form" class="recover-form">
+        <h2 class="recover-title">Recover clip from recordings</h2>
+        <p class="recover-help muted">
+          Pulls full-resolution footage from SSS for an arbitrary
+          time window. Use when the detector missed something you
+          saw on cam.
+        </p>
+
+        <label class="recover-field">
+          <span class="recover-label">Camera</span>
+          <select id="recover-camera" required>
+            <option value="fox_den_1">Fox Cam 1</option>
+            <option value="fox_den_2" selected>Fox Cam 2</option>
+            <option value="fox_den_3">Fox Cam 3</option>
+            <option value="fox_den_4">Fox Cam 4</option>
+          </select>
+        </label>
+
+        <div class="recover-row">
+          <label class="recover-field recover-field-date">
+            <span class="recover-label">Date</span>
+            <input type="date" id="recover-date" required>
+          </label>
+          <label class="recover-field recover-field-time">
+            <span class="recover-label">Start time</span>
+            <input type="time" id="recover-start" step="1" required>
+          </label>
+        </div>
+
+        <label class="recover-field">
+          <span class="recover-label">Duration</span>
+          <select id="recover-duration" required>
+            <option value="30">30 seconds</option>
+            <option value="60">1 minute</option>
+            <option value="120" selected>2 minutes</option>
+            <option value="180">3 minutes</option>
+            <option value="300">5 minutes</option>
+            <option value="600">10 minutes (max)</option>
+          </select>
+        </label>
+
+        <label class="recover-field">
+          <span class="recover-label">Caption <span class="muted">(optional)</span></span>
+          <input type="text" id="recover-caption" maxlength="140"
+                 placeholder="e.g. Fox on the hill — missed by detector">
+        </label>
+
+        <div id="recover-error" class="recover-error" hidden role="alert"></div>
+
+        <div class="recover-actions">
+          <button type="button" id="recover-cancel" class="recover-btn-cancel">Cancel</button>
+          <button type="submit" id="recover-submit" class="recover-btn-submit">
+            <span class="recover-submit-label">Recover</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+    {% endif %}
     <div class="filters">
       <span class="filters-label" id="filters-label">Filter</span>
       <label>Time:

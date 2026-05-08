@@ -393,115 +393,150 @@
     t.addEventListener("click", () => switchBucket(t.dataset.bucket));
   });
 
-  // Admin "Recover clip" button — opens a small inline form that POSTs
-  // /api/admin/highlights/manual to recover a clip from raw recordings
-  // for an arbitrary time window. Foundational primitive that the
-  // future deeper-dive review surface will build on; for now driven by
-  // this button. Server enforces ADMIN_EMAILS and validates the camera
-  // + max window, so the client UX is minimal-prompt.
+  // Admin "Recover clip" button + dialog — opens the dialog defined in
+  // highlights.html and POSTs /api/admin/highlights/manual on submit.
+  // Foundational primitive that the future deeper-dive review surface
+  // will build on; for now driven by this dialog. Server enforces
+  // ADMIN_EMAILS + max-window, so the client validation here is just
+  // for snappy feedback before the round-trip.
   const recoverBtn = document.getElementById("admin-recover-btn");
-  if (recoverBtn) {
-    const cameras = (window.CAMERAS && Array.isArray(window.CAMERAS))
-      ? window.CAMERAS : ["fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4"];
-    recoverBtn.addEventListener("click", async () => {
-      // Two-step prompt to keep the surface tiny. We could promote this
-      // to a real modal with date/time pickers later — the same backend
-      // endpoint won't change.
-      const cam = (prompt(
-        `Camera (one of: ${cameras.join(", ")})`,
-        cameras[1] || cameras[0]) || "").trim();
-      if (!cam) return;
-      const startStr = (prompt(
-        "Start time (local, e.g. 2026-05-08 00:25:00 or 12:25 AM today):",
-        ""
-      ) || "").trim();
-      if (!startStr) return;
-      const endStr = (prompt(
-        "End time (same format) — max 10 minutes after start:",
-        ""
-      ) || "").trim();
-      if (!endStr) return;
-      const start = parseLocalTimeInput(startStr);
-      const end = parseLocalTimeInput(endStr);
-      if (!start || !end) {
-        alert("Couldn't parse one of the times. Try '2026-05-08 00:25:00' or '12:25 AM today'.");
+  const recoverDialog = document.getElementById("recover-dialog");
+  if (recoverBtn && recoverDialog && typeof recoverDialog.showModal === "function") {
+    const formCamera   = document.getElementById("recover-camera");
+    const formDate     = document.getElementById("recover-date");
+    const formStart    = document.getElementById("recover-start");
+    const formDuration = document.getElementById("recover-duration");
+    const formCaption  = document.getElementById("recover-caption");
+    const formError    = document.getElementById("recover-error");
+    const formSubmit   = document.getElementById("recover-submit");
+    const formCancel   = document.getElementById("recover-cancel");
+    const submitLabel  = formSubmit.querySelector(".recover-submit-label");
+    const recoverForm  = document.getElementById("recover-form");
+
+    function openDialog() {
+      // Default to "right now minus 5 minutes" — convenient for the
+      // common case ("I just saw a fox"), still scrollable to any
+      // earlier moment.
+      const now = new Date(Date.now() - 5 * 60 * 1000);
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mi = String(now.getMinutes()).padStart(2, "0");
+      formDate.value  = `${yyyy}-${mm}-${dd}`;
+      formStart.value = `${hh}:${mi}:00`;
+      // Date input clamps: SSS retention is ~weeks, but the past is
+      // the only direction that makes sense. Cap "max" at today;
+      // server will reject any out-of-retention attempt anyway.
+      formDate.max = `${yyyy}-${mm}-${dd}`;
+      formCaption.value = "";
+      formError.hidden = true;
+      formError.textContent = "";
+      formSubmit.disabled = false;
+      submitLabel.textContent = "Recover";
+      recoverDialog.showModal();
+      // Mobile autofocus dance: focus the camera select so the user
+      // doesn't tap-then-tap to start. Wrap in rAF so the modal has
+      // mounted by the time we focus.
+      requestAnimationFrame(() => formCamera.focus());
+    }
+
+    function closeDialog() {
+      try { recoverDialog.close(); } catch {}
+    }
+
+    function showError(msg) {
+      formError.textContent = msg;
+      formError.hidden = false;
+    }
+
+    recoverBtn.addEventListener("click", openDialog);
+    formCancel.addEventListener("click", (e) => {
+      e.preventDefault();
+      closeDialog();
+    });
+    // Backdrop tap closes the dialog (default <dialog> doesn't on iOS).
+    recoverDialog.addEventListener("click", (e) => {
+      if (e.target === recoverDialog) closeDialog();
+    });
+
+    recoverForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      formError.hidden = true;
+
+      // Build a local Date from date + time inputs. Native inputs hand
+      // back ISO-ish strings (YYYY-MM-DD, HH:MM:SS) and we want LOCAL
+      // interpretation to match what the user typed.
+      const [y, mo, d] = formDate.value.split("-").map(Number);
+      const [h, mi, s] = formStart.value.split(":").map(Number);
+      if (!y || !mo || !d || isNaN(h) || isNaN(mi)) {
+        showError("Pick a valid date and start time.");
         return;
       }
-      if (end - start > 600) {
-        alert("Window too long — max 10 minutes.");
+      const startDt = new Date(y, mo - 1, d, h, mi, s || 0);
+      const startEpoch = Math.floor(startDt.getTime() / 1000);
+      const dur = parseInt(formDuration.value, 10);
+      const endEpoch = startEpoch + dur;
+      if (endEpoch <= startEpoch) {
+        showError("Duration must be positive.");
         return;
       }
-      const caption = (prompt("Optional caption (≤140 chars):", "") || "").trim() || null;
-      recoverBtn.disabled = true;
-      recoverBtn.textContent = "Recovering…";
+      if (startDt.getTime() > Date.now()) {
+        showError("Start time can't be in the future.");
+        return;
+      }
+
+      formSubmit.disabled = true;
+      submitLabel.textContent = "Recovering…";
+
       try {
         const r = await fetch("/api/admin/highlights/manual", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
           body: JSON.stringify({
-            camera: cam,
-            start_time: start,
-            end_time: end,
+            camera: formCamera.value,
+            start_time: startEpoch,
+            end_time: endEpoch,
             label: "manual",
-            caption,
+            caption: formCaption.value.trim() || null,
           }),
         });
-        if (r.status === 403) { alert("Admin only."); return; }
-        const data = await r.json();
-        if (!r.ok) {
-          alert(`Recover failed: ${data.detail || r.status}`);
+        if (r.status === 403) {
+          showError("Admin only.");
           return;
         }
-        const h = data.highlight;
-        const dur = (h && h.duration_s) ? h.duration_s.toFixed(1) : "?";
-        alert(`Recovered ${dur}s clip from ${data.segment_count} segment(s). Refreshing gallery.`);
-        reset();
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          showError(data.detail || `Recover failed (HTTP ${r.status}).`);
+          return;
+        }
+        // Success — close the dialog and refresh the gallery so the
+        // new highlight is visible. We surface a brief toast via
+        // window.flashToast if present so the success isn't silent.
+        closeDialog();
+        if (typeof window.flashToast === "function") {
+          const dur = (data.highlight && data.highlight.duration_s)
+            ? data.highlight.duration_s.toFixed(1) : "?";
+          window.flashToast(`Recovered ${dur}s clip — added to All`);
+        }
+        // Switch to the All bucket so the new clip is immediately
+        // visible (manual highlights have promoted=1 → land in All).
+        if (bucket !== "pending") switchBucket("pending");
+        else reset();
       } catch (err) {
-        alert(`Recover failed: ${err.message || err}`);
+        showError(`Recover failed: ${err.message || err}`);
       } finally {
-        recoverBtn.disabled = false;
-        recoverBtn.innerHTML =
-          '<span class="material-icons" aria-hidden="true">video_call</span>' +
-          '<span class="admin-recover-label">Recover clip</span>';
+        formSubmit.disabled = false;
+        submitLabel.textContent = "Recover";
       }
     });
-  }
-
-  // Lightweight local-time parser. Accepts:
-  //   "YYYY-MM-DD HH:MM[:SS]" (24-hour, local)
-  //   "HH:MM[:SS] AM/PM today" / "HH:MM[:SS] AM/PM yesterday"
-  //   "HH:MM[:SS]" (assumed today)
-  // Returns epoch seconds, or null if unparseable.
-  function parseLocalTimeInput(s) {
-    if (!s) return null;
-    s = s.trim();
-    // ISO-ish absolute: YYYY-MM-DD HH:MM[:SS]
-    const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-    if (isoMatch) {
-      const [, y, mo, d, h, m, sec] = isoMatch;
-      const dt = new Date(+y, +mo - 1, +d, +h, +m, +(sec || 0));
-      return Math.floor(dt.getTime() / 1000);
-    }
-    // HH:MM[:SS] [AM|PM] [today|yesterday]
-    const tMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?(?:\s+(today|yesterday))?$/i);
-    if (tMatch) {
-      let [, hh, mm, ss, ampm, day] = tMatch;
-      hh = +hh; mm = +mm; ss = +(ss || 0);
-      if (ampm) {
-        ampm = ampm.toLowerCase();
-        if (ampm === "pm" && hh < 12) hh += 12;
-        if (ampm === "am" && hh === 12) hh = 0;
-      }
-      const base = new Date();
-      if ((day || "").toLowerCase() === "yesterday") base.setDate(base.getDate() - 1);
-      base.setHours(hh, mm, ss, 0);
-      return Math.floor(base.getTime() / 1000);
-    }
-    // Fall back to Date constructor (handles a lot of edge cases).
-    const t = Date.parse(s);
-    if (!isNaN(t)) return Math.floor(t / 1000);
-    return null;
+  } else if (recoverBtn) {
+    // <dialog> not supported (very old browsers): fall back to disabling
+    // the button rather than the previous prompt() flow. This branch
+    // shouldn't actually fire on any device we support today.
+    recoverBtn.disabled = true;
+    recoverBtn.title = "This browser doesn't support modal dialogs.";
   }
 
   // Bottom-tab nav: intercept the four /highlights tabs (Clips, My
