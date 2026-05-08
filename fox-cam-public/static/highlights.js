@@ -451,6 +451,21 @@
     }
 
     recoverBtn.addEventListener("click", openDialog);
+    // The dialog is also reachable from the profile popover row,
+    // which is the only entry point on phones (.tabs-row is hidden
+    // there). Profile-ui.js wires that button cross-page; on this
+    // page it closes the popover then dispatches a 'recover-open'
+    // event we listen for here.
+    document.addEventListener("recover-open", openDialog);
+    // ?recover=1 query param: navigated here from another page via
+    // the profile popover row. Auto-open the dialog after first paint.
+    if (new URLSearchParams(location.search).get("recover") === "1") {
+      requestAnimationFrame(openDialog);
+      // Strip the param from the URL so a refresh doesn't reopen.
+      const u = new URL(location.href);
+      u.searchParams.delete("recover");
+      history.replaceState(history.state, "", u.toString());
+    }
     formCancel.addEventListener("click", (e) => {
       e.preventDefault();
       closeDialog();

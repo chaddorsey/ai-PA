@@ -106,4 +106,27 @@
 
   // Defer to next tick so Profiles' lazy fetch can settle.
   setTimeout(maybeShowOnboarding, 100);
+
+  // ----- Admin: "Recover clip" entry from the profile popover -------
+  // The actual dialog lives on /highlights. From any other page the
+  // popover button navigates to /highlights?recover=1; highlights.js
+  // sees the param on init and auto-opens the dialog. From /highlights
+  // we close the popover and dispatch a 'recover-open' event that
+  // highlights.js listens for. Either way the user clicks once and
+  // ends up in the dialog.
+  const recoverBtn = document.getElementById("profile-action-recover");
+  if (recoverBtn) {
+    recoverBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const pop = document.getElementById("profile-popover");
+      if (pop && typeof pop.hidePopover === "function" && pop.matches(":popover-open")) {
+        try { pop.hidePopover(); } catch {}
+      }
+      if (location.pathname === "/highlights") {
+        document.dispatchEvent(new CustomEvent("recover-open"));
+      } else {
+        location.href = "/highlights?recover=1";
+      }
+    });
+  }
 })();

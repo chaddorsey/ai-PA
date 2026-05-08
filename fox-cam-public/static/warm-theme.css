@@ -2425,6 +2425,18 @@ header {
   font-size: 20px;
   color: inherit;
 }
+/* Reset <button> defaults so the admin "Recover clip" row matches
+   the visual + click affordance of the <a class="profile-action"> rows
+   above and below it (sign-out etc). */
+button.profile-action {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
 
 /* Older inline who-am-i pill is now hidden everywhere — the profile
    popover replaces it. (HTML still emits the empty span; we keep
