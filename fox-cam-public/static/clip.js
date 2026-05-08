@@ -74,15 +74,29 @@
     const img = fresh.querySelector("img");
     if (img) {
       videoEl = document.createElement("video");
+      // For REMIX permalinks: drop native controls. Two reasons:
+      //   1. iOS Safari only auto-hides controls during *smooth* playback
+      //      and never on tap — they hover over the bottom of the frame
+      //      blocking the action. Modal playback uses the same no-controls
+      //      pattern (see modal.js:renderRemixPlayback) and got positive
+      //      feedback; this aligns the surfaces.
+      //   2. With zoom_scale applied via CSS transform the controls
+      //      render at the transformed bottom edge and get clipped.
+      // For raw highlight permalinks (no remix), keep controls so users
+      // can scrub the full clip — that's the main reason to land here.
       videoEl.src = `/api/highlights/${highlight.event_id}/clip`;
-      videoEl.controls = true;
+      videoEl.controls = !remix;
       videoEl.autoplay = true;
       videoEl.muted = true;
       videoEl.playsInline = true;
       img.replaceWith(videoEl);
 
-      if (remix) applyRemixPlayback(videoEl, wrap, remix);
-      else if (window.applyPrerollSkip) window.applyPrerollSkip(videoEl);
+      if (remix) {
+        applyRemixPlayback(videoEl, wrap, remix);
+        attachTapToPlayPause(videoEl);
+      } else if (window.applyPrerollSkip) {
+        window.applyPrerollSkip(videoEl);
+      }
     }
 
     // Admin-only: a "Feature on landing" / "Unfeature" toggle on the
@@ -178,14 +192,46 @@
   // ---------------------------------------------------------------
   // Remix playback (read-only) — used on /remix/<id>
   // ---------------------------------------------------------------
+  // Defensive against three real-world races we've debugged in
+  // production:
+  //   a) `loadedmetadata` already fired before this function runs
+  //      (videoEl.src is set on creation, the event can race the next
+  //      microtask). Pre-check readyState handles that.
+  //   b) iOS Safari sometimes rejects a `currentTime = X` write while
+  //      readyState is still HAVE_METADATA (1) and only honors it once
+  //      HAVE_CURRENT_DATA (2) lands. Listen to `loadeddata` too, and
+  //      the seek becomes idempotent (same `start` either way).
+  //   c) iOS autoplay starts playback from t=0 in parallel with our
+  //      seek; tiny visible jump from frame 0 → start frame. We seek
+  //      once more on the first `playing` event to mask it.
   function applyRemixPlayback(video, wrap, remix) {
-    const start = remix.start_offset_s || 0;
-    const end = remix.end_offset_s;
-    const seek = () => { try { video.currentTime = start; } catch (_) {} };
-    if (video.readyState >= 1) seek();
-    else video.addEventListener("loadedmetadata", seek, { once: true });
+    const start = Number(remix.start_offset_s) || 0;
+    const end   = Number(remix.end_offset_s) || 0;
+    let didInitialSeek = false;
+    const seekToStart = () => {
+      try { video.currentTime = start; didInitialSeek = true; } catch (_) {}
+    };
+    if (video.readyState >= 1) seekToStart();
+    else {
+      video.addEventListener("loadedmetadata", seekToStart, { once: true });
+      video.addEventListener("loadeddata", seekToStart, { once: true });
+    }
+    // First `playing` after attach: nudge currentTime to start once
+    // more — covers the autoplay-races-our-seek case.
+    video.addEventListener("playing", () => {
+      if (!didInitialSeek) seekToStart();
+      else if (start > 0 && video.currentTime < start - 0.05) {
+        try { video.currentTime = start; } catch (_) {}
+      }
+    }, { once: true });
+    // Loop within the trim window — pause + rewind to start so the
+    // viewer sees the remix on a loop without controls. Mirrors the
+    // modal's behavior (modal.js:renderRemixPlayback).
     video.addEventListener("timeupdate", () => {
-      if (typeof end === "number" && video.currentTime >= end) video.pause();
+      if (end && video.currentTime >= end - 0.05) {
+        video.pause();
+        try { video.currentTime = start; } catch (_) {}
+      }
     });
     if (remix.zoom_scale && remix.zoom_scale > 1.01 && wrap) {
       const applyZoom = () => {
@@ -201,6 +247,18 @@
       if (video.readyState >= 1) applyZoom();
       else video.addEventListener("loadedmetadata", applyZoom, { once: true });
     }
+  }
+
+  // Tap-to-play-pause replacement for the native controls. Used on
+  // remix permalinks where we drop `controls` (see videoEl creation
+  // above for why). One tap toggles; double-tap is reserved for a
+  // future like gesture (mirroring modal.js) but unused here for now.
+  function attachTapToPlayPause(video) {
+    video.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    });
   }
 
   // ---------------------------------------------------------------

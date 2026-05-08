@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v129-featured-mark";
+const CACHE = "our-foxes-v130-remix-permalink-playback";
 
 const STATIC_ASSETS = [
   "/static/style.css",
