@@ -583,6 +583,19 @@ def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # busy_timeout: how long a writer waits for the write lock before
+    # erroring with "database is locked." Python's sqlite3 default is
+    # 0ms so any writer collision (curator's polling thread + classifier
+    # update + API user-actions writes + manual highlight inserts) all
+    # racing produced sqlite3.OperationalError 5xx in the API. 5000ms
+    # easily absorbs normal contention bursts; if it ever takes longer,
+    # something deeper is wrong and the error is meaningful.
+    conn.execute("PRAGMA busy_timeout=5000")
+    # cache_size in pages (negative = KB). 64MB is plenty for a DB
+    # of this size and keeps the hot working set resident across
+    # connections — eliminates the cold-cache 2.6s first-query
+    # latency that was making the gallery feel laggy on first paint.
+    conn.execute("PRAGMA cache_size=-65536")
     try:
         yield conn
     finally:
