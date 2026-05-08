@@ -143,7 +143,7 @@
       ul.className = "remix-children";
       for (const r of g.remixes) {
         const li = document.createElement("li");
-        li.className = "remix-child";
+        li.className = "remix-child" + (r.featured ? " is-featured" : "");
         li.dataset.remixId = r.remix_id;
         const dur = (r.end_offset_s - r.start_offset_s).toFixed(1);
         const username = r.created_by
@@ -158,6 +158,15 @@
                <span class="material-icons">favorite</span>${likeCount}
              </span>`
           : "";
+        // Featured-on-landing indicator — inline filled star before the
+        // title. Tooltip explains; visible to everyone (read-only) so
+        // non-admins also see at-a-glance which remixes are landing-
+        // page material. Admin promote/unpromote still happens through
+        // the modal's star action button.
+        const featuredMark = r.featured
+          ? `<span class="rx-featured" aria-label="Featured on landing"
+                   title="Featured on landing"><span class="material-icons">star</span></span>`
+          : "";
         // Each child shows the parent highlight's full-frame thumbnail
         // (remixes are sub-windows of that frame so it's the right
         // visual identifier). Tree glyph stays for hierarchy clarity.
@@ -165,7 +174,7 @@
           <span class="rx-tree" aria-hidden="true">└─</span>
           <img class="rx-thumb" src="/api/highlights/${encodeURIComponent(g.event_id)}/thumbnail" alt="" loading="lazy">
           <div class="rx-text">
-            <div class="rx-line1"><span class="rx-title">${escapeHtml(title)}</span>${likesBadge}</div>
+            <div class="rx-line1">${featuredMark}<span class="rx-title">${escapeHtml(title)}</span>${likesBadge}</div>
             <div class="rx-line2">
               <span class="rx-author">@${escapeHtml(username)}</span>
               <span class="rx-meta muted">${dur}s${zoom}</span>

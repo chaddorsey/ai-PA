@@ -1359,6 +1359,28 @@ body.filters-hidden .filters { display: none !important; }
 }
 .remix-child .rx-title { font-weight: 500; font-size: 14px; }
 .remix-child .rx-meta { font-size: 12px; }
+/* Featured-on-landing indicator: filled gold star before the title. The
+   star color matches warm-theme's --color-warm so it reads as
+   curated/celebrated rather than alarming. The wrapping span is
+   inline-flex so the icon vertically centers against the title text
+   without an awkward baseline drop. */
+.remix-child .rx-featured {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  color: var(--color-warm, #f0a020);
+  vertical-align: -3px;
+}
+.remix-child .rx-featured .material-icons { font-size: 16px; }
+/* Subtle row-level styling on the featured remix so it pops in scan
+   without screaming — a thin warm left border + warmer hover state. */
+.remix-child.is-featured {
+  border-left: 3px solid var(--color-warm, #f0a020);
+  padding-left: calc(var(--remix-child-pad-left, 12px) - 3px);
+}
+.remix-child.is-featured:hover {
+  background: rgba(240, 160, 32, 0.06);
+}
 
 /* Tabs row: tabs (natural width, left) + view-toggle pushed to the
    right via margin-left: auto. The cream pill that wraps the tabs
