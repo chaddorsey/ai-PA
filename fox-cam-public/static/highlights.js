@@ -393,6 +393,117 @@
     t.addEventListener("click", () => switchBucket(t.dataset.bucket));
   });
 
+  // Admin "Recover clip" button — opens a small inline form that POSTs
+  // /api/admin/highlights/manual to recover a clip from raw recordings
+  // for an arbitrary time window. Foundational primitive that the
+  // future deeper-dive review surface will build on; for now driven by
+  // this button. Server enforces ADMIN_EMAILS and validates the camera
+  // + max window, so the client UX is minimal-prompt.
+  const recoverBtn = document.getElementById("admin-recover-btn");
+  if (recoverBtn) {
+    const cameras = (window.CAMERAS && Array.isArray(window.CAMERAS))
+      ? window.CAMERAS : ["fox_den_1", "fox_den_2", "fox_den_3", "fox_den_4"];
+    recoverBtn.addEventListener("click", async () => {
+      // Two-step prompt to keep the surface tiny. We could promote this
+      // to a real modal with date/time pickers later — the same backend
+      // endpoint won't change.
+      const cam = (prompt(
+        `Camera (one of: ${cameras.join(", ")})`,
+        cameras[1] || cameras[0]) || "").trim();
+      if (!cam) return;
+      const startStr = (prompt(
+        "Start time (local, e.g. 2026-05-08 00:25:00 or 12:25 AM today):",
+        ""
+      ) || "").trim();
+      if (!startStr) return;
+      const endStr = (prompt(
+        "End time (same format) — max 10 minutes after start:",
+        ""
+      ) || "").trim();
+      if (!endStr) return;
+      const start = parseLocalTimeInput(startStr);
+      const end = parseLocalTimeInput(endStr);
+      if (!start || !end) {
+        alert("Couldn't parse one of the times. Try '2026-05-08 00:25:00' or '12:25 AM today'.");
+        return;
+      }
+      if (end - start > 600) {
+        alert("Window too long — max 10 minutes.");
+        return;
+      }
+      const caption = (prompt("Optional caption (≤140 chars):", "") || "").trim() || null;
+      recoverBtn.disabled = true;
+      recoverBtn.textContent = "Recovering…";
+      try {
+        const r = await fetch("/api/admin/highlights/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            camera: cam,
+            start_time: start,
+            end_time: end,
+            label: "manual",
+            caption,
+          }),
+        });
+        if (r.status === 403) { alert("Admin only."); return; }
+        const data = await r.json();
+        if (!r.ok) {
+          alert(`Recover failed: ${data.detail || r.status}`);
+          return;
+        }
+        const h = data.highlight;
+        const dur = (h && h.duration_s) ? h.duration_s.toFixed(1) : "?";
+        alert(`Recovered ${dur}s clip from ${data.segment_count} segment(s). Refreshing gallery.`);
+        reset();
+      } catch (err) {
+        alert(`Recover failed: ${err.message || err}`);
+      } finally {
+        recoverBtn.disabled = false;
+        recoverBtn.innerHTML =
+          '<span class="material-icons" aria-hidden="true">video_call</span>' +
+          '<span class="admin-recover-label">Recover clip</span>';
+      }
+    });
+  }
+
+  // Lightweight local-time parser. Accepts:
+  //   "YYYY-MM-DD HH:MM[:SS]" (24-hour, local)
+  //   "HH:MM[:SS] AM/PM today" / "HH:MM[:SS] AM/PM yesterday"
+  //   "HH:MM[:SS]" (assumed today)
+  // Returns epoch seconds, or null if unparseable.
+  function parseLocalTimeInput(s) {
+    if (!s) return null;
+    s = s.trim();
+    // ISO-ish absolute: YYYY-MM-DD HH:MM[:SS]
+    const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (isoMatch) {
+      const [, y, mo, d, h, m, sec] = isoMatch;
+      const dt = new Date(+y, +mo - 1, +d, +h, +m, +(sec || 0));
+      return Math.floor(dt.getTime() / 1000);
+    }
+    // HH:MM[:SS] [AM|PM] [today|yesterday]
+    const tMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?(?:\s+(today|yesterday))?$/i);
+    if (tMatch) {
+      let [, hh, mm, ss, ampm, day] = tMatch;
+      hh = +hh; mm = +mm; ss = +(ss || 0);
+      if (ampm) {
+        ampm = ampm.toLowerCase();
+        if (ampm === "pm" && hh < 12) hh += 12;
+        if (ampm === "am" && hh === 12) hh = 0;
+      }
+      const base = new Date();
+      if ((day || "").toLowerCase() === "yesterday") base.setDate(base.getDate() - 1);
+      base.setHours(hh, mm, ss, 0);
+      return Math.floor(base.getTime() / 1000);
+    }
+    // Fall back to Date constructor (handles a lot of edge cases).
+    const t = Date.parse(s);
+    if (!isNaN(t)) return Math.floor(t / 1000);
+    return null;
+  }
+
   // Bottom-tab nav: intercept the four /highlights tabs (Clips, My
   // Faves, Group Faves, Remixes) so they switch in place instead of
   // navigating. Live and non-bucket tabs do a real nav.

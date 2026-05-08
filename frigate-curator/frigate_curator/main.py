@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,10 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from . import classifier, curator, db, deep_dive, notify, sss_client, web_push
+from . import (
+    classifier, curator, db, deep_dive, manual_highlight, notify,
+    sss_client, web_push,
+)
 from .frigate_client import FrigateClient
 
 
@@ -604,6 +608,105 @@ def _highlight_with_state(event_id: str, email: str) -> dict[str, Any]:
 class FeaturedBody(BaseModel):
     by: str | None = None      # admin email
     caption: str | None = None  # optional short blurb (≤140 chars)
+
+
+class ManualHighlightBody(BaseModel):
+    """Recover a clip from raw Frigate recordings for a window where
+    detection missed (silent wedge, motion-mask edge, anything spotted
+    by eye that the pipeline didn't catch). Foundational primitive for
+    the future deeper-dive review surface; for now driven by an
+    admin-only button on /highlights.
+    """
+    camera: str
+    start_time: float          # epoch seconds (local — same scale as
+                               # highlights.start_time everywhere else)
+    end_time: float
+    label: str = "manual"
+    caption: str | None = None
+    by: str | None = None      # admin email for audit
+
+
+# Frigate's recordings dir on the host (curator runs as a launchd
+# process so it can read this directly without docker exec).
+FRIGATE_RECORDINGS_ROOT = Path(os.environ.get(
+    "FRIGATE_RECORDINGS_ROOT",
+    "/Volumes/main-drive/ai-PA/frigate/media/recordings",
+))
+
+
+@app.post("/highlights/manual")
+def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
+    """Build a highlight clip from raw recording segments for an
+    arbitrary time window. Used to recover clips during silent-wedge
+    gaps; the same primitive will back any future timeline-scrubber
+    review surface.
+
+    Inserts a row with source='manual' so the rest of the pipeline can
+    distinguish recovered clips from real-time-detected ones (e.g. for
+    classifier opt-out, retention rules, audit).
+    """
+    cam = body.camera.strip()
+    if not cam:
+        raise HTTPException(status_code=400, detail="camera required")
+    # Validate against the active config so a typo in the camera name
+    # doesn't silently produce an empty result. Avoids relying on
+    # filesystem-existence which could be a transient mount issue.
+    try:
+        cfg = _client.get_config() or {}
+        known = set((cfg.get("cameras") or {}).keys())
+    except Exception:
+        known = set()
+    if known and cam not in known:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown camera {cam!r} (known: {sorted(known)})",
+        )
+
+    try:
+        result = manual_highlight.recover_window(
+            recordings_root=FRIGATE_RECORDINGS_ROOT,
+            highlights_root=HIGHLIGHTS_ROOT,
+            camera=cam,
+            start_time=body.start_time,
+            end_time=body.end_time,
+        )
+    except manual_highlight.RecoverError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("manual_highlight: recover failed")
+        raise HTTPException(status_code=500, detail="recover failed")
+
+    # Insert as a normal highlight row. score=1.0 so it sorts as
+    # confident; fox_likelihood=0.0 because we haven't classified it.
+    # source='manual' is the discriminator anything downstream (UI
+    # filters, classifier, retention, audit) can branch on.
+    row = {
+        "event_id":       result.event_id,
+        "camera":         result.camera,
+        "label":          body.label or "manual",
+        "start_time":     result.start_time,
+        "end_time":       result.end_time,
+        "duration_s":     result.duration_s,
+        "score":          1.0,
+        "fox_likelihood": 0.0,
+        "clip_path":      str(result.clip_path.relative_to(HIGHLIGHTS_ROOT)),
+        "thumb_path":     (str(result.thumb_path.relative_to(HIGHLIGHTS_ROOT))
+                           if result.thumb_path else None),
+        "promoted":       1,
+        "promoted_at":    time.time(),
+        "notes":          body.caption,
+        "source":         "manual",
+    }
+    db.upsert_highlight(DB_PATH, row)
+    logger.info(
+        "manual highlight created: %s (%s, %.1fs, %d segments)",
+        result.event_id, result.camera, result.duration_s, result.segment_count,
+    )
+    return {
+        "status": "created",
+        "highlight": db.get_highlight(DB_PATH, result.event_id),
+        "segment_count": result.segment_count,
+    }
 
 
 @app.get("/featured")

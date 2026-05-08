@@ -916,6 +916,36 @@ body.modal-open { overflow: hidden; }
 .meta-download:focus-visible,
 .meta-download:active { outline: none; }
 
+/* Admin-only "Recover clip" button on the /highlights tabs row. Lives
+   alongside the Remixes view-toggle; styled as a subtle pill so it
+   reads as a tool, not a primary action. Hidden in the template via
+   {% if is_admin %} so only admins ever render it. */
+.admin-recover-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  padding: 6px 12px;
+  border: 1px solid rgba(40, 50, 70, 0.25);
+  border-radius: var(--radius-pill, 20px);
+  background: transparent;
+  color: var(--color-ink, #2b2b2b);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.admin-recover-btn:hover {
+  background: rgba(40, 50, 70, 0.06);
+  border-color: rgba(40, 50, 70, 0.45);
+}
+.admin-recover-btn:disabled { opacity: 0.55; cursor: progress; }
+.admin-recover-btn .material-icons { font-size: 16px; }
+@media (max-width: 640px) {
+  .admin-recover-btn .admin-recover-label { display: none; }
+}
+
 /* Remix permalink: admin-only "Feature on landing" toggle. Same shape
    language as the rest of the card actions but with a slightly muted
    border to read as a curation tool rather than a primary action.

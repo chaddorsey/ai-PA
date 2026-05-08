@@ -472,6 +472,35 @@ async def get_featured(limit: int = 6) -> Any:
     return r.json()
 
 
+@app.post("/api/admin/highlights/manual")
+async def admin_manual_highlight(request: Request) -> Any:
+    """Recover a clip from raw recordings for an arbitrary time window
+    (admin-only). Foundational primitive that the future deeper-dive
+    review surface will build on; for now driven by an admin button on
+    /highlights for recovering clips during silent-wedge gaps."""
+    admin_email = _require_admin(request)
+    body = await request.json()
+    payload = {
+        "camera":     body.get("camera"),
+        "start_time": body.get("start_time"),
+        "end_time":   body.get("end_time"),
+        "label":      body.get("label") or "manual",
+        "caption":    body.get("caption"),
+        "by":         admin_email,
+    }
+    async with httpx.AsyncClient() as client:
+        # Generous timeout — first call may need to ffmpeg-concat several
+        # segments end-to-end. Cap is enforced server-side at 10 min
+        # window so worst case is bounded.
+        r = await client.post(f"{CURATOR_API}/highlights/manual",
+                              json=payload, timeout=180.0)
+    if r.status_code == 400:
+        raise HTTPException(status_code=400, detail=r.json().get("detail", "bad request"))
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
 @app.post("/api/admin/highlights/{event_id}/feature")
 async def admin_feature(event_id: str, request: Request) -> Any:
     """Promote a highlight to the public landing page (admin-only)."""
