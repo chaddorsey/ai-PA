@@ -74,54 +74,38 @@
     const img = fresh.querySelector("img");
     if (img) {
       videoEl = document.createElement("video");
-      videoEl.src = `/api/highlights/${highlight.event_id}/clip`;
-      // Controls policy:
-      //   - Raw highlight (/clip/{id}, no remix): native iOS controls.
-      //     The user comes here to scrub / fullscreen the full clip;
-      //     no zoom transform is applied so the controls render
-      //     correctly in their native footprint.
-      //   - Remix (/remix/{id}): controls=false. Native controls render
-      //     as children of the <video> element in iOS, so they get
-      //     scaled along with our `transform: scale(zoom_scale)` and
-      //     end up sized/oriented for the original (unzoomed) frame
-      //     instead of the visible (zoomed) one — huge misaligned play
-      //     and rewind buttons. The modal solves this the same way
-      //     (modal.js:renderRemixPlayback). We add a custom tap-to-
-      //     play-pause handler so the gesture still works.
-      videoEl.controls = !remix;
+      // Source policy:
+      //   - Raw highlight (/clip/{id}, no remix): the full parent clip.
+      //   - Remix (/remix/{id}): the server-rendered trimmed + cropped
+      //     MP4 from /api/remixes/{id}/clip. Treating remixes as actual
+      //     clips at the playback layer means iOS native controls render
+      //     correctly (no zoom transform to scale them), the scrubber
+      //     spans the remix duration not the parent's, fullscreen +
+      //     AirPlay just work, and there's no "what if I scrub past
+      //     end_offset_s" to handle. Same asset iMessage previews and
+      //     the future "download as clip" flow use, so all surfaces
+      //     converge on one media URL.
+      //
+      //     First-time view triggers an ffmpeg transcode in curator
+      //     (~1-3s for typical durations); subsequent views are instant
+      //     cache hits. We could pre-warm on remix create / feature in a
+      //     follow-up.
+      videoEl.src = remix
+        ? `/api/remixes/${encodeURIComponent(remix.remix_id)}/clip`
+        : `/api/highlights/${encodeURIComponent(highlight.event_id)}/clip`;
+      videoEl.controls = true;
       videoEl.autoplay = true;
       videoEl.muted = true;
       videoEl.playsInline = true;
-      // preload="auto" forces iOS to buffer enough to honor an early
-      // currentTime seek. With "metadata" only (the iOS default for
-      // small inline players) the seek frequently fails silently
-      // because the byte range for our start_offset_s isn't loaded yet.
       videoEl.preload = "auto";
       img.replaceWith(videoEl);
 
-      if (remix) {
-        applyRemixPlayback(videoEl, wrap, remix);
-        attachTapToPlayPause(videoEl);
-      } else if (window.applyPrerollSkip) {
+      // Raw highlights still get the preroll skip (parent clips have a
+      // few seconds of pre-event buffer that's tedious to wait through).
+      // Remix MP4s are already trimmed server-side so this doesn't apply.
+      if (!remix && window.applyPrerollSkip) {
         window.applyPrerollSkip(videoEl);
       }
-    }
-
-    // Tap-to-play-pause for remix permalinks where we drop native
-    // controls. iOS's built-in "tap to play" overlay (the floating
-    // ▶ on paused inline videos) still shows for the paused state
-    // as a system-level affordance, so the user always has visual
-    // feedback that a tap will start playback. Our handler just
-    // toggles play/pause; the overlay sorts itself out automatically.
-    function attachTapToPlayPause(video) {
-      video.addEventListener("click", (e) => {
-        // Stop here so the wrap's click listener doesn't do its own
-        // thing on top — even though it now bails when a video
-        // exists, belt-and-suspenders.
-        e.stopPropagation();
-        if (video.paused) video.play().catch(() => {});
-        else video.pause();
-      });
     }
 
     // Admin-only: a "Feature on landing" / "Unfeature" toggle on the
@@ -212,71 +196,6 @@
     // append to the card itself so it's at least visible.
     const actionsRow = cardEl.querySelector(".actions") || cardEl;
     actionsRow.appendChild(btn);
-  }
-
-  // ---------------------------------------------------------------
-  // Remix playback (read-only) — used on /remix/<id>
-  // ---------------------------------------------------------------
-  // Trim window enforcement that survives autoplay races, replays via
-  // native controls, and iOS-Safari's preload quirks. Three hooks:
-  //
-  //   1. canplay (one-shot, with readyState pre-check) — first chance
-  //      iOS will RELIABLY honor a currentTime write. We seek here
-  //      rather than on loadedmetadata because iOS sometimes drops
-  //      seeks at readyState=1 without erroring.
-  //   2. play event (every time) — if currentTime is outside the trim
-  //      window, slam it back to start BEFORE the frame renders.
-  //      Catches: native-control replay button, scrubber jumping out,
-  //      autoplay racing our initial seek.
-  //   3. timeupdate — pause when we hit end; do NOT also rewind here
-  //      (the rewind happens on the next play, hook #2). Pausing-and-
-  //      rewinding in the same tick caused iOS to display the wrong
-  //      poster frame and the user couldn't tell the clip ended.
-  function applyRemixPlayback(video, wrap, remix) {
-    const start = Number(remix.start_offset_s) || 0;
-    const end   = Number(remix.end_offset_s) || 0;
-    const inWindow = (t) =>
-      t >= start - 0.05 && (!end || t < end - 0.05);
-
-    const seekToStart = () => {
-      try { video.currentTime = start; } catch (_) {}
-    };
-    // Hook 1: initial seek as soon as iOS will accept it.
-    if (video.readyState >= 3) seekToStart();           // HAVE_FUTURE_DATA
-    else {
-      video.addEventListener("canplay", seekToStart, { once: true });
-      // Belt-and-suspenders for non-iOS: if loadeddata fires first
-      // and currentTime is at 0, kick it to start. Idempotent.
-      video.addEventListener("loadeddata", () => {
-        if (video.currentTime < start - 0.05) seekToStart();
-      }, { once: true });
-    }
-    // Hook 2: every play tick — clamp currentTime into the trim window.
-    // This is what fixes "replay starts mid-clip": when the user hits
-    // the native play button after the remix has paused at end, this
-    // handler catches it before the first frame and seeks to start.
-    video.addEventListener("play", () => {
-      if (!inWindow(video.currentTime)) seekToStart();
-    });
-    // Hook 3: pause at end.
-    video.addEventListener("timeupdate", () => {
-      if (end && video.currentTime >= end - 0.05) video.pause();
-    });
-
-    if (remix.zoom_scale && remix.zoom_scale > 1.01 && wrap) {
-      const applyZoom = () => {
-        const r = wrap.getBoundingClientRect();
-        const cx = remix.zoom_x ?? 0.5;
-        const cy = remix.zoom_y ?? 0.5;
-        const s = remix.zoom_scale;
-        const tx = (r.width / 2) - (cx * r.width * s);
-        const ty = (r.height / 2) - (cy * r.height * s);
-        video.style.transformOrigin = "0 0";
-        video.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
-      };
-      if (video.readyState >= 1) applyZoom();
-      else video.addEventListener("loadedmetadata", applyZoom, { once: true });
-    }
   }
 
   // ---------------------------------------------------------------
