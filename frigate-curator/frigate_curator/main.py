@@ -626,20 +626,17 @@ class ManualHighlightBody(BaseModel):
     by: str | None = None      # admin email for audit
 
 
-# Frigate's recordings dir on the host (curator runs as a launchd
-# process so it can read this directly without docker exec).
-FRIGATE_RECORDINGS_ROOT = Path(os.environ.get(
-    "FRIGATE_RECORDINGS_ROOT",
-    "/Volumes/main-drive/ai-PA/frigate/media/recordings",
-))
-
-
 @app.post("/highlights/manual")
 def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
-    """Build a highlight clip from raw recording segments for an
-    arbitrary time window. Used to recover clips during silent-wedge
-    gaps; the same primitive will back any future timeline-scrubber
-    review surface.
+    """Build a highlight clip from continuously-recorded SSS footage
+    for an arbitrary time window. Used to recover clips during
+    silent-wedge gaps (where Frigate's own recording also stopped) and
+    to back any future timeline-scrubber review surface.
+
+    Source is SSS via deep_dive.fetch_window — Frigate's motion-
+    triggered recordings gap out during the same wedges we're trying
+    to recover from, but SSS records 24/7 at full resolution so the
+    footage is always there as long as we're inside SSS retention.
 
     Inserts a row with source='manual' so the rest of the pipeline can
     distinguish recovered clips from real-time-detected ones (e.g. for
@@ -649,8 +646,9 @@ def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
     if not cam:
         raise HTTPException(status_code=400, detail="camera required")
     # Validate against the active config so a typo in the camera name
-    # doesn't silently produce an empty result. Avoids relying on
-    # filesystem-existence which could be a transient mount issue.
+    # doesn't silently produce an empty result. Frigate's camera names
+    # match SSS's via the SSS camera_id_map, so checking against the
+    # Frigate config is sufficient.
     try:
         cfg = _client.get_config() or {}
         known = set((cfg.get("cameras") or {}).keys())
@@ -664,7 +662,7 @@ def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
 
     try:
         result = manual_highlight.recover_window(
-            recordings_root=FRIGATE_RECORDINGS_ROOT,
+            deep_dive_cache_root=DEEP_DIVE_CACHE_ROOT,
             highlights_root=HIGHLIGHTS_ROOT,
             camera=cam,
             start_time=body.start_time,
@@ -699,13 +697,13 @@ def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
     }
     db.upsert_highlight(DB_PATH, row)
     logger.info(
-        "manual highlight created: %s (%s, %.1fs, %d segments)",
-        result.event_id, result.camera, result.duration_s, result.segment_count,
+        "manual highlight created: %s (%s, %.1fs, SSS chunk %d)",
+        result.event_id, result.camera, result.duration_s, result.sss_chunk_id,
     )
     return {
         "status": "created",
         "highlight": db.get_highlight(DB_PATH, result.event_id),
-        "segment_count": result.segment_count,
+        "sss_chunk_id": result.sss_chunk_id,
     }
 
 
