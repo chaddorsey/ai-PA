@@ -744,8 +744,21 @@
   // Remix editor — swaps in-place inside the modal body
   // ===========================================================================
 
-  function renderRemixEditor(h) {
+  function renderRemixEditor(h, opts) {
+    // opts: { editing?: existingRemix }
+    //   editing absent → create-new flow (POST /api/actions/{id}/remix).
+    //   editing present → edit-existing flow: state is pre-filled from
+    //     the existing remix's bounds + zoom + title; Save uses PATCH
+    //     /api/remixes/{remix_id}; on success the existing remix entry
+    //     in h.remixes is replaced (not unshifted) so order is
+    //     preserved and a stale duplicate isn't created.
+    const editing = opts && opts.editing ? opts.editing : null;
     teardownVideo();
+
+    const saveLabel = editing ? "Update Remix" : "Save Remix";
+    const headerNote = editing
+      ? `<span class="muted small">Editing remix · changes save back to the existing link.</span>`
+      : `<span class="muted small">Drag the orange handles to trim. Pinch / scroll the video to zoom.</span>`;
 
     body.innerHTML = `
       <div class="modal-stage modal-stage-remix">
@@ -773,15 +786,13 @@
         </div>
         <div class="remix-meta-row">
           <input id="modal-remix-title" type="text" maxlength="80"
-            placeholder="Title (optional)">
+            placeholder="Title (optional)" value="${editing && editing.title ? escapeHtml(editing.title) : ""}">
           <span class="muted small" id="modal-trim-display"></span>
         </div>
         <div class="remix-actions-row">
-          <button id="modal-remix-save"   class="primary" type="button" disabled>Save Remix</button>
+          <button id="modal-remix-save"   class="primary" type="button" disabled>${saveLabel}</button>
           <button id="modal-remix-cancel" type="button">Cancel</button>
-          <span class="muted small">
-            Drag the orange handles to trim. Pinch / scroll the video to zoom.
-          </span>
+          ${headerNote}
         </div>
       </div>
     `;
@@ -841,9 +852,20 @@
     }
 
     videoEl.addEventListener("loadedmetadata", () => {
-      state.start = 0;
-      state.end = videoEl.duration || 0;
-      initialState = { start: 0, end: state.end };
+      if (editing) {
+        // Pre-fill bounds from the existing remix. initialState mirrors
+        // these so the save button stays disabled until the user
+        // actually changes something.
+        state.start = Number(editing.start_offset_s) || 0;
+        state.end   = Number(editing.end_offset_s) || (videoEl.duration || 0);
+      } else {
+        state.start = 0;
+        state.end = videoEl.duration || 0;
+      }
+      initialState = { start: state.start, end: state.end };
+      // Seek video to the trim start so the first visible frame is the
+      // remix's first frame, not t=0 of the parent.
+      try { videoEl.currentTime = state.start; } catch (_) {}
       updateTrimVisuals();
       updatePlayhead();
     });
@@ -926,13 +948,39 @@
       });
       wireZoomButtons(body, ".zoom-in", ".zoom-out", ".zoom-fit",
                        panzoomInstance, wrap);
+      // Pre-apply the existing remix's saved zoom on edit. Wait until
+      // metadata so wrap dimensions are settled. The math here mirrors
+      // the inverse of the save-time math: zoom_x/y is normalized
+      // [0,1] center-of-interest; we translate so that point lands at
+      // the wrap's geometric center after the zoomAbs.
+      if (editing && editing.zoom_scale && editing.zoom_scale > 1.01) {
+        const applyEditingZoom = () => {
+          try {
+            const r = wrap.getBoundingClientRect();
+            const cx = (Number(editing.zoom_x) || 0.5) * r.width;
+            const cy = (Number(editing.zoom_y) || 0.5) * r.height;
+            panzoomInstance.zoomAbs(0, 0, editing.zoom_scale);
+            panzoomInstance.moveTo(
+              r.width / 2 - cx * editing.zoom_scale,
+              r.height / 2 - cy * editing.zoom_scale
+            );
+          } catch (_) {}
+        };
+        if (videoEl.readyState >= 1) applyEditingZoom();
+        else videoEl.addEventListener("loadedmetadata", applyEditingZoom, { once: true });
+      }
     }
 
-    cancelBtn.addEventListener("click", () => renderViewer(h));
+    cancelBtn.addEventListener("click", () => {
+      // On edit cancel, return to the playback view of the unchanged
+      // remix; on create cancel, the regular highlight viewer.
+      if (editing) renderRemixPlayback(h, editing);
+      else renderViewer(h);
+    });
 
     saveBtn.addEventListener("click", async () => {
       saveBtn.disabled = true;
-      saveBtn.textContent = "Saving…";
+      saveBtn.textContent = editing ? "Updating…" : "Saving…";
       const transform = panzoomInstance?.getTransform?.() ?? { scale: 1, x: 0, y: 0 };
       const payload = {
         title: titleInp.value.trim() || null,
@@ -950,36 +998,60 @@
         payload.zoom_y = (r.height / 2 - transform.y) / (r.height * transform.scale);
       }
       try {
-        const r = await fetch(`/api/actions/${encodeURIComponent(h.event_id)}/remix`, {
-          method: "POST",
+        const url = editing
+          ? `/api/remixes/${encodeURIComponent(editing.remix_id)}`
+          : `/api/actions/${encodeURIComponent(h.event_id)}/remix`;
+        const method = editing ? "PATCH" : "POST";
+        const r = await fetch(url, {
+          method,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
           credentials: "same-origin",
         });
         if (!r.ok) {
-          alert("Couldn't save remix.");
+          alert(editing ? "Couldn't update remix." : "Couldn't save remix.");
           saveBtn.disabled = false;
-          saveBtn.textContent = "Save Remix";
+          saveBtn.textContent = editing ? "Update Remix" : "Save Remix";
           return;
         }
         const data = await r.json();
-        // Surgical local merge — only the remix list + count change
-        // after a remix save. Avoiding a refetch keeps the user's
-        // in-modal state authoritative (saving a remix used to wipe
-        // an in-modal ⭐ Mine because the refresh fetch's view of
-        // my_favorited could lag the just-issued favorite POST).
+        const savedRemix = (data && data.remix) ? data.remix : null;
+
+        // Surgical local merge so we don't refetch the highlight (which
+        // could clobber other in-modal state racing the save).
         h.remixes = Array.isArray(h.remixes) ? h.remixes.slice() : [];
-        if (data && data.remix) h.remixes.unshift(data.remix);
-        h.remix_count = (h.remix_count || 0) + 1;
-        renderViewer(h);
-        if (window.deliverBadge) {
+        if (editing && savedRemix) {
+          // Replace existing entry in place; preserve order so the
+          // remixes panel doesn't visually reshuffle.
+          const idx = h.remixes.findIndex((x) => x.remix_id === editing.remix_id);
+          if (idx >= 0) h.remixes[idx] = savedRemix;
+          else h.remixes.unshift(savedRemix);
+        } else {
+          if (savedRemix) h.remixes.unshift(savedRemix);
+          h.remix_count = (h.remix_count || 0) + 1;
+        }
+
+        // After save, edit-mode goes back to the playback view of the
+        // (now updated) remix; create-mode returns to the regular
+        // highlight viewer. The rendered MP4's cache key includes the
+        // trim+zoom params, so playback will hit a fresh transcode if
+        // params changed — but the curator pre-warm hook on PATCH/POST
+        // started that transcode in the background already, so by the
+        // time the playback's <video> resolves the URL it's likely
+        // already a cache hit.
+        if (editing && savedRemix) {
+          renderRemixPlayback(h, savedRemix);
+        } else {
+          renderViewer(h);
+        }
+        if (!editing && window.deliverBadge) {
           window.deliverBadge(body.querySelector(".modal-stage"),
             "raccoon-2", "🎬 Remixed", { badgeClass: "badge-remix" });
         }
       } catch (err) {
-        alert("Network error saving remix.");
+        alert(editing ? "Network error updating remix." : "Network error saving remix.");
         saveBtn.disabled = false;
-        saveBtn.textContent = "Save Remix";
+        saveBtn.textContent = editing ? "Update Remix" : "Save Remix";
       }
     });
   }
@@ -1006,7 +1078,7 @@
     body.innerHTML = `
       <div class="modal-stage modal-stage-remix-play">
         <div class="modal-video-wrap">
-          <video class="modal-video" controls autoplay muted playsinline></video>
+          <video class="modal-video" controls autoplay muted playsinline preload="auto"></video>
         </div>
         <div class="modal-meta">
           <h2 class="modal-title">
@@ -1092,92 +1164,34 @@
       if (window.IS_ADMIN) {
         shareSlot.appendChild(buildFeatureRemixButton({ remix }));
       }
+      // Edit button: visible to the remix's creator OR an admin. Opens
+      // the editor in "edit existing remix" mode (renderRemixEditor
+      // with opts.editing) — pre-fills bounds, zoom, and title; saves
+      // via PATCH instead of POST. The cache key on the rendered MP4
+      // hashes the trim+zoom params, so a successful save naturally
+      // produces a new cache file via the curator pre-warm hook on
+      // PATCH; viewers next time hit a warm cache.
+      const isCreator = remix.created_by &&
+        window.CURRENT_EMAIL &&
+        remix.created_by.toLowerCase() === window.CURRENT_EMAIL.toLowerCase();
+      if (window.IS_ADMIN || isCreator) {
+        shareSlot.appendChild(buildEditRemixButton({ remix, parentH }));
+      }
     }
 
-    // Drop native controls — when we apply the saved zoom_scale via
-    // panzoom (transform: scale on the video element), native HTML5
-    // controls render at the transformed bottom edge and get clipped
-    // by the wrap's overflow. Users requested trim+zoom playback as
-    // intended over a scrubber. They can still tap to play/pause and
-    // pinch/scroll to interactively zoom.
+    // Playback source: server-rendered, trimmed + cropped MP4. Treats
+    // remixes as actual clips at the playback layer — native iOS
+    // controls render correctly (no client-side transform to scale
+    // them with), the scrubber spans the remix duration, fullscreen +
+    // AirPlay just work, and there's no trim-window enforcement to
+    // implement client-side. Same asset the /remix/{id} permalink and
+    // iMessage og:video previews use; one source of truth.
+    //
+    // First-ever view triggers an ffmpeg transcode on curator (~1-3s),
+    // but we now pre-warm at remix-create / feature / edit time so this
+    // path is normally an instant cache hit.
     videoEl = body.querySelector(".modal-video");
-    videoEl.controls = false;
-    videoEl.removeAttribute("controls");
-    videoEl.src = `/api/highlights/${encodeURIComponent(parentH.event_id)}/clip`;
-    const wrap = body.querySelector(".modal-video-wrap");
-
-    // Seek + auto-pause within the trim window. Defensive against the
-    // metadata-already-loaded race.
-    const seekToStart = () => {
-      const startS = Number(remix.start_offset_s) || 0;
-      try { videoEl.currentTime = startS; } catch {}
-    };
-    if (videoEl.readyState >= 1) seekToStart();
-    else {
-      videoEl.addEventListener("loadedmetadata", seekToStart, { once: true });
-      videoEl.addEventListener("loadeddata", seekToStart, { once: true });
-    }
-    videoEl.addEventListener("timeupdate", () => {
-      const endS = Number(remix.end_offset_s) || 0;
-      if (endS && videoEl.currentTime >= endS - 0.05) {
-        videoEl.pause();
-        videoEl.currentTime = Number(remix.start_offset_s) || 0;
-      }
-    });
-    // Tap-to-play-pause replacement for the native controls — but
-    // detect a fast double-tap and fire the like handler instead.
-    // First tap: defer play/pause toggle by ~280ms. Second tap inside
-    // window: cancel the toggle, fire like. Timer expires with no
-    // second tap: run the toggle.
-    let tapTimer = null;
-    let lastTapTs = 0;
-    videoEl.addEventListener("click", (e) => {
-      const now = Date.now();
-      if ((now - lastTapTs) < 280) {
-        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; }
-        lastTapTs = 0;
-        fireLike();
-        return;
-      }
-      lastTapTs = now;
-      if (tapTimer) clearTimeout(tapTimer);
-      tapTimer = setTimeout(() => {
-        tapTimer = null;
-        lastTapTs = 0;
-        if (videoEl.paused) videoEl.play().catch(() => {});
-        else videoEl.pause();
-      }, 280);
-    });
-
-    // Bind panzoom only long enough to apply the saved view, then
-    // PAUSE it. Remix playback shows the creator's frozen frame —
-    // viewers shouldn't be able to drag or pinch-zoom around. With
-    // panzoom paused, its event listeners are removed, so taps on
-    // the video bubble cleanly to the dialog swipe handler and the
-    // entire sheet becomes a swipe-nav target.
-    panzoomInstance = bindPanzoom(videoEl, wrap);
-    const applySavedZoom = () => {
-      if (!panzoomInstance) return;
-      try {
-        if (remix.zoom_scale && remix.zoom_scale > 1.01) {
-          const r = wrap.getBoundingClientRect();
-          const cx = (Number(remix.zoom_x) || 0.5) * r.width;
-          const cy = (Number(remix.zoom_y) || 0.5) * r.height;
-          panzoomInstance.zoomAbs(0, 0, remix.zoom_scale);
-          panzoomInstance.moveTo(
-            r.width / 2 - cx * remix.zoom_scale,
-            r.height / 2 - cy * remix.zoom_scale
-          );
-        }
-        // Freeze: pause unbinds panzoom's pointer listeners so
-        // touches on the video pass through to dialog swipe nav.
-        if (typeof panzoomInstance.pause === "function") {
-          panzoomInstance.pause();
-        }
-      } catch (err) { /* ignore */ }
-    };
-    if (videoEl.readyState >= 1) applySavedZoom();
-    else videoEl.addEventListener("loadedmetadata", applySavedZoom, { once: true });
+    videoEl.src = `/api/remixes/${encodeURIComponent(remix.remix_id)}/clip`;
 
     body.querySelector("#rp-back").addEventListener("click", () => {
       renderViewer(parentH);
@@ -1585,6 +1599,29 @@
       } finally {
         b.disabled = false;
       }
+    });
+    return b;
+  }
+
+  // Edit-this-remix button: opens the editor on the parent highlight
+  // with the existing remix's bounds + zoom + title pre-filled. Save
+  // path uses PATCH /api/remixes/{id} via renderRemixEditor's
+  // opts.editing mode. Visible to the remix's creator and to admins.
+  function buildEditRemixButton(opts) {
+    const { remix, parentH } = opts;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "action-btn action-edit-remix action-icon-only";
+    b.setAttribute("aria-label", "Edit this remix");
+    b.title = "Edit this remix";
+    b.innerHTML = ICON("edit");
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // renderRemixEditor will switch into "editing existing" mode when
+      // passed the remix object; bounds, zoom, and title are pulled
+      // from there at render time.
+      renderRemixEditor(parentH, { editing: remix });
     });
     return b;
   }

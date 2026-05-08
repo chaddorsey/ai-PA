@@ -645,6 +645,11 @@ def feature_remix(remix_id: str, body: FeaturedBody) -> dict[str, Any]:
                               by=body.by, caption=caption)
     if r is None:
         raise HTTPException(status_code=404, detail="not found")
+    # Featured remixes appear on the public landing page where any
+    # anonymous visitor can hover-preview them. Pre-warm so the first
+    # such hover doesn't pay the ffmpeg cost. Idempotent: cache hits
+    # return immediately when the file already exists.
+    _prewarm_remix_async(remix_id)
     return {"status": "featured", "remix": r}
 
 
@@ -719,6 +724,11 @@ def create_remix(event_id: str, body: RemixCreateBody) -> dict[str, Any]:
         zoom_x=body.zoom_x, zoom_y=body.zoom_y, zoom_scale=body.zoom_scale,
         notes=body.notes,
     )
+    # Pre-warm the rendered MP4 cache in a background thread. Removes
+    # the ffmpeg latency from the first viewer's load, which matters
+    # most for the creator (about to share it) and for any iMessage
+    # link-preview crawler that hits og:video right after the share.
+    _prewarm_remix_async(remix_id)
     return {"remix_id": remix_id, "remix": db.remix_get(DB_PATH, remix_id)}
 
 
@@ -1069,6 +1079,12 @@ def update_remix(remix_id: str, body: RemixUpdateBody) -> dict[str, Any]:
         zoom_x=body.zoom_x, zoom_y=body.zoom_y,
         zoom_scale=body.zoom_scale, notes=body.notes,
     )
+    # The cache key on the rendered MP4 hashes the trim+zoom params, so
+    # any param change here means the next playback would otherwise
+    # trigger a fresh transcode in the foreground (slow first view).
+    # Pre-warm in the background so the editor's "Save" feels snappy
+    # and the next viewer hits a warm cache.
+    _prewarm_remix_async(remix_id)
     return {"remix": db.remix_get(DB_PATH, remix_id)}
 
 
@@ -1077,19 +1093,24 @@ REMIX_DOWNLOAD_CACHE_ROOT = Path(os.environ.get(
 ))
 
 
-@app.get("/remixes/{remix_id}/download")
-def download_remix(remix_id: str, filename: str | None = None,
-                    inline: bool = False) -> FileResponse:
-    """Render the remix as a trimmed (+ cropped, if zoomed) MP4 for download.
+def _ensure_remix_rendered(remix_id: str) -> Path:
+    """Transcode-or-cache-hit: returns the path to the rendered MP4 for
+    `remix_id`, doing the ffmpeg work if no cached file exists yet.
 
-    Re-encodes via ffmpeg the first time and caches the result on disk
-    keyed by remix_id + a hash of the trim/zoom params, so subsequent
-    downloads are an instant FileResponse.
+    Cache key includes a hash of the trim + zoom params so a re-edit
+    that changes any of those naturally produces a new cached file
+    without explicit invalidation. Old files linger until a future GC
+    sweep but don't break anything.
 
-    `inline=true` drops the Content-Disposition: attachment header so
-    the bytes can be embedded directly in an iMessage / OG video card
-    instead of being interpreted as a forced download. Same cache file
-    is reused across both modes — only the response headers differ.
+    Raises HTTPException for the same conditions the download endpoint
+    surfaced inline (404 missing remix/parent, 410 missing source,
+    400 invalid trim, 500 ffmpeg fail).
+
+    Used by:
+      - GET /remixes/{id}/download (the existing endpoint)
+      - the pre-warm hooks fired in background threads when a remix
+        is created or featured, so first-view latency is eaten by the
+        creator/admin instead of by viewers.
     """
     import hashlib
     import subprocess
@@ -1118,38 +1139,74 @@ def download_remix(remix_id: str, filename: str | None = None,
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{remix_id}_{key_hash}.mp4"
 
-    if not cache_path.exists():
-        vf = None
-        if zoom_scale > 1.01:
-            # iw/ih are input frame dimensions. cw,ch = crop window;
-            # cx,cy = crop top-left in pixel space, clamped to frame.
-            scale_expr = f"{zoom_scale:.6f}"
-            cw = f"iw/{scale_expr}"
-            ch = f"ih/{scale_expr}"
-            cx = f"max(0\\,min(iw-{cw}\\,iw*{zoom_x:.6f}-({cw})/2))"
-            cy = f"max(0\\,min(ih-{ch}\\,ih*{zoom_y:.6f}-({ch})/2))"
-            vf = f"crop={cw}:{ch}:{cx}:{cy}"
+    if cache_path.exists():
+        return cache_path
 
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-ss", f"{start_s:.3f}",
-            "-to", f"{end_s:.3f}",
-            "-i", str(src),
-        ]
-        if vf:
-            cmd += ["-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
-                    "-crf", "20", "-c:a", "aac", "-b:a", "128k"]
-        else:
-            cmd += ["-c", "copy"]
-        cmd += ["-movflags", "+faststart", str(cache_path)]
+    vf = None
+    if zoom_scale > 1.01:
+        scale_expr = f"{zoom_scale:.6f}"
+        cw = f"iw/{scale_expr}"
+        ch = f"ih/{scale_expr}"
+        cx = f"max(0\\,min(iw-{cw}\\,iw*{zoom_x:.6f}-({cw})/2))"
+        cy = f"max(0\\,min(ih-{ch}\\,ih*{zoom_y:.6f}-({ch})/2))"
+        vf = f"crop={cw}:{ch}:{cx}:{cy}"
 
+    cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", f"{start_s:.3f}",
+        "-to", f"{end_s:.3f}",
+        "-i", str(src),
+    ]
+    if vf:
+        cmd += ["-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
+                "-crf", "20", "-c:a", "aac", "-b:a", "128k"]
+    else:
+        cmd += ["-c", "copy"]
+    cmd += ["-movflags", "+faststart", str(cache_path)]
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        try: cache_path.unlink(missing_ok=True)
+        except Exception: pass
+        raise HTTPException(status_code=500, detail=f"ffmpeg failed: {e}") from e
+    return cache_path
+
+
+def _prewarm_remix_async(remix_id: str) -> None:
+    """Fire-and-forget: spawn a daemon thread to render the MP4 if not
+    already cached. Swallows exceptions (logs them) — pre-warm is best-
+    effort and the on-demand download path will still work for any
+    remix that didn't get pre-warmed.
+    """
+    import threading
+
+    def run():
         try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            try: cache_path.unlink(missing_ok=True)
-            except Exception: pass
-            raise HTTPException(status_code=500, detail=f"ffmpeg failed: {e}") from e
+            _ensure_remix_rendered(remix_id)
+            logger.info("prewarm: remix %s rendered", remix_id)
+        except Exception:
+            logger.exception("prewarm: failed for remix %s", remix_id)
 
+    t = threading.Thread(target=run, name=f"prewarm-{remix_id}", daemon=True)
+    t.start()
+
+
+@app.get("/remixes/{remix_id}/download")
+def download_remix(remix_id: str, filename: str | None = None,
+                    inline: bool = False) -> FileResponse:
+    """Render the remix as a trimmed (+ cropped, if zoomed) MP4 for download.
+
+    Re-encodes via ffmpeg the first time and caches the result on disk
+    keyed by remix_id + a hash of the trim/zoom params, so subsequent
+    downloads are an instant FileResponse.
+
+    `inline=true` drops the Content-Disposition: attachment header so
+    the bytes can be embedded directly in an iMessage / OG video card
+    instead of being interpreted as a forced download. Same cache file
+    is reused across both modes — only the response headers differ.
+    """
+    cache_path = _ensure_remix_rendered(remix_id)
     safe_name = (filename or f"remix-{remix_id}.mp4")
     safe_name = safe_name.replace('"', "").replace("\n", "").replace("\r", "")
     if inline:
