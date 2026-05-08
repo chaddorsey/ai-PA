@@ -1,16 +1,21 @@
 """
 letta-bg-fix-sidecar — transparent proxy in front of Letta that rewrites
-`background: true` → `background: false` on POST /v1/conversations/{id}/messages.
+`stream_tokens: true` → `stream_tokens: false` on
+POST /v1/conversations/{id}/messages.
 
-Issue #99: pa-web-ui's letta-code v0.24.10 subprocess sets background:true
-when calling Letta's conversations message endpoint, but Letta's bg-path
-streaming pipeline doesn't emit assistant content events for that
-combination — runs complete cleanly with stop_reason=end_turn but
-persist only the user_message. The foreground (bg=False) path on the
-SAME endpoint streams + persists correctly.
+Issue #99: pa-web-ui's letta-code v0.24.10 subprocess sets
+stream_tokens:true on the conversations endpoint. With Letta v0.16.7 +
+letta_v1_agent + chatgpt_oauth/gpt-5.4, that combination silently
+drops assistant content — runs complete cleanly (stop_reason=end_turn,
+real completion tokens) but persist only the user_message. Setting
+stream_tokens:false makes assistant_message persist every time.
 
-This sidecar keeps letta-code v0.24.10 + memfs working while the upstream
-bug is unaddressed. All other traffic passes through unchanged.
+Bisected 2026-05-08 (3x baseline STALLED, 3x stream_tokens=false
+PERSISTED). The `background` flag had no effect on persistence in
+either direction; the offending field is stream_tokens.
+
+This sidecar keeps letta-code v0.24.10 + memfs working while the
+upstream bug is unaddressed. All other traffic passes through unchanged.
 
 Health check: GET /health → 200 OK.
 """
@@ -37,8 +42,9 @@ async def health(request: web.Request) -> web.Response:
 
 
 def maybe_rewrite_body(method: str, path: str, body: bytes) -> tuple[bytes, bool]:
-    """If this is a POST /v1/conversations/{id}/messages with background:true,
-    rewrite to background:false. Otherwise pass body through unchanged.
+    """If this is a POST /v1/conversations/{id}/messages with
+    stream_tokens:true, rewrite to stream_tokens:false. Otherwise pass
+    body through unchanged.
 
     Returns (body, was_rewritten).
     """
@@ -55,10 +61,10 @@ def maybe_rewrite_body(method: str, path: str, body: bytes) -> tuple[bytes, bool
         payload: dict[str, Any] = json.loads(body)
     except (ValueError, TypeError):
         return body, False
-    if not isinstance(payload, dict) or payload.get("background") is not True:
+    if not isinstance(payload, dict) or payload.get("stream_tokens") is not True:
         return body, False
 
-    payload["background"] = False
+    payload["stream_tokens"] = False
     return json.dumps(payload).encode(), True
 
 
@@ -69,9 +75,25 @@ async def proxy(request: web.Request) -> web.StreamResponse:
         url += f"?{request.query_string}"
 
     body = await request.read() if request.can_read_body else b""
+    is_conv_msg = (
+        request.method == "POST"
+        and tail.startswith("v1/conversations/")
+        and tail.endswith("/messages")
+    )
+    if is_conv_msg and body:
+        try:
+            with open("/tmp/last-conv-msg-body.json", "wb") as f:
+                f.write(body)
+            log.info(
+                "conv-msg body captured to /tmp/last-conv-msg-body.json (%d bytes, keys=%s)",
+                len(body),
+                list(json.loads(body).keys()),
+            )
+        except Exception as e:
+            log.warning("failed to capture body: %s", e)
     body, rewritten = maybe_rewrite_body(request.method, "/" + tail, body)
     if rewritten:
-        log.info("rewrote background:true → false for %s %s", request.method, tail)
+        log.info("rewrote stream_tokens:true → false for %s %s", request.method, tail)
 
     # Forward all headers except hop-by-hop / size-affecting ones.
     skip = {"host", "content-length", "connection", "keep-alive",
