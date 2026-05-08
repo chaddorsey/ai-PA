@@ -509,7 +509,14 @@
       console.error("[highlights] /api/viewer/state failed:", err);
     })
     .finally(() => {
-      load();
+      // reset() (not load()) so the initial render dispatches based on
+      // the current bucket — including bucket="remixes" which routes
+      // to loadRemixesList(). Calling load() directly here was the
+      // reason a fresh navigation to /highlights?bucket=remixes (e.g.
+      // tapping the bottom-nav Remixes tab from /clip or /live) showed
+      // the clips view on first paint, then switched to the list only
+      // when the tab was clicked again (same-page switchBucket→reset).
+      reset();
       fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" }).catch(() => {});
     });
 })();
