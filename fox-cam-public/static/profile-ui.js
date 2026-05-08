@@ -22,7 +22,8 @@
   async function loadInputFromProfile() {
     if (!input) return;
     try {
-      const p = await window.Profiles.getMine();
+      const r = await window.Profiles.getMine();
+      const p = (r && r.ok) ? r.profile : null;
       input.value = (p && p.display_name) || "";
     } catch { /* ignore */ }
   }

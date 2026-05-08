@@ -1099,9 +1099,14 @@ async def get_my_profile(request: Request) -> Any:
     email = _actor_email(request)
     if not email:
         raise HTTPException(status_code=401, detail="auth required")
+    # 15s timeout — covers cold-cache curator paths (first /profile
+    # call after restart can hit ~10s while SQLite warms its page
+    # cache + WAL state). With the client-side fix, a timeout no
+    # longer triggers the onboarding dialog, but a successful fetch
+    # at 8s is still better UX than a 502.
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/profile",
-                              params={"email": email}, timeout=5.0)
+                              params={"email": email}, timeout=15.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1113,7 +1118,7 @@ async def list_profiles() -> Any:
     (remix attributions, like notifications, etc.) so there's no
     privacy delta vs. fetching them lazily one by one."""
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/profile/all", timeout=5.0)
+        r = await client.get(f"{CURATOR_API}/profile/all", timeout=15.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1128,7 +1133,7 @@ async def set_my_profile(request: Request) -> Any:
     body["email"] = email   # owner override
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{CURATOR_API}/profile",
-                               json=body, timeout=5.0)
+                               json=body, timeout=15.0)
     if r.status_code == 400:
         raise HTTPException(status_code=400,
                              detail=(r.json() or {}).get("detail", "bad request"))

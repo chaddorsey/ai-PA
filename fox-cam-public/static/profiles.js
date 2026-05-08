@@ -68,16 +68,25 @@
     return loadAll();
   }
 
+  // Returns:
+  //   { ok: true, profile: {...} | null }  on a successful fetch
+  //   { ok: false }                         on network / 5xx / timeout
+  //
+  // Critically NOT collapsing "couldn't fetch" into "no profile":
+  // the onboarding dialog uses this to decide whether to prompt for
+  // a name. A transient curator timeout used to return null and fire
+  // the dialog at users whose profile already existed — see
+  // needsOnboarding() below for the discrimination.
   async function getMine() {
-    if (!_myEmail) return null;
+    if (!_myEmail) return { ok: true, profile: null };
     try {
       const r = await fetch("/api/profile",
                              { credentials: "same-origin" });
-      if (!r.ok) return null;
+      if (!r.ok) return { ok: false };
       const j = await r.json();
-      return j.profile || null;
+      return { ok: true, profile: j.profile || null };
     } catch {
-      return null;
+      return { ok: false };
     }
   }
 
@@ -101,11 +110,15 @@
     return r.json();
   }
 
-  // True if the current authed user has no profile yet — the
-  // first-login prompt watches this to decide whether to surface.
+  // True ONLY if we successfully fetched the profile and it has no
+  // display_name set. Failures (timeouts, 5xx, network errors) →
+  // false: don't prompt the user to set their name based on what
+  // might just be a transient API blip.
   async function needsOnboarding() {
     if (!_myEmail) return false;
-    const p = await getMine();
+    const result = await getMine();
+    if (!result.ok) return false;
+    const p = result.profile;
     return !(p && p.display_name);
   }
 
