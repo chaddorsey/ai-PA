@@ -283,6 +283,13 @@ def get_highlight(event_id: str, email: str | None = None) -> dict[str, Any]:
     return h
 
 
+# Cache-Control: clips + thumbnails are immutable once written (manual
+# re-edits produce different event_ids; existing files never change in
+# place). Browser caches them for the session — drastically cuts gallery
+# re-fetch load on the dominant pattern of the same user re-rendering.
+_IMMUTABLE_CACHE = {"Cache-Control": "private, max-age=3600, immutable"}
+
+
 @app.get("/highlights/{event_id}/clip")
 def get_highlight_clip(event_id: str) -> FileResponse:
     h = db.get_highlight(DB_PATH, event_id)
@@ -291,7 +298,7 @@ def get_highlight_clip(event_id: str) -> FileResponse:
     path = HIGHLIGHTS_ROOT / h["clip_path"]
     if not path.exists():
         raise HTTPException(status_code=410, detail="clip file missing")
-    return FileResponse(path, media_type="video/mp4")
+    return FileResponse(path, media_type="video/mp4", headers=_IMMUTABLE_CACHE)
 
 
 @app.get("/highlights/{event_id}/thumbnail")
@@ -302,7 +309,7 @@ def get_highlight_thumb(event_id: str) -> FileResponse:
     path = HIGHLIGHTS_ROOT / h["thumb_path"]
     if not path.exists():
         raise HTTPException(status_code=410, detail="thumbnail file missing")
-    return FileResponse(path, media_type="image/jpeg")
+    return FileResponse(path, media_type="image/jpeg", headers=_IMMUTABLE_CACHE)
 
 
 @app.get("/stats")

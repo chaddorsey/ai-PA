@@ -1429,7 +1429,12 @@ async def _proxy_curator(path: str, media_type: str,
                 raise HTTPException(status_code=502, detail="curator error")
             content = await r.aread()
     upstream_status = r.status_code
-    headers = {"Cache-Control": "private, max-age=300", "Accept-Ranges": "bytes"}
+    # Highlight clips + thumbnails are immutable once written. Aggressive
+    # cache means a user scrolling/re-rendering the gallery hits browser
+    # cache instead of re-fetching — which is the dominant load pattern
+    # and the only easy lever once the curator is responding correctly.
+    headers = {"Cache-Control": "private, max-age=3600, immutable",
+               "Accept-Ranges": "bytes"}
     # Forward the headers iOS Safari needs to honor a Range response.
     for h in ("content-range", "content-length"):
         if h in r.headers:
