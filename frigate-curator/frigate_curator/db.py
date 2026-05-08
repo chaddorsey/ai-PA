@@ -639,43 +639,13 @@ def list_highlights(
     """
     sql = "SELECT * FROM highlights WHERE fox_likelihood >= ?"
     args: list[Any] = [min_score]
-    if merge_overlaps:
-        # Hide events that have a strictly longer overlapping event on
-        # the same camera. Equality of duration is broken alphabetically
-        # by event_id (deterministic, picks one canonical winner).
-        # EXCEPTION: a user's own favorite always shows. The merge
-        # picks one canonical event per visit, but if the user has
-        # specifically faved a SHORTER overlapping sibling, that's
-        # their explicit choice — don't hide it.
-        merge_clause = """
-            SELECT 1 FROM highlights h2
-            WHERE h2.camera = highlights.camera
-              AND h2.event_id != highlights.event_id
-              AND h2.start_time < COALESCE(highlights.end_time,
-                                            highlights.start_time + COALESCE(highlights.duration_s, 0))
-              AND COALESCE(h2.end_time,
-                           h2.start_time + COALESCE(h2.duration_s, 0)) > highlights.start_time
-              AND (
-                (COALESCE(h2.end_time, h2.start_time + COALESCE(h2.duration_s, 0)) - h2.start_time)
-                  > (COALESCE(highlights.end_time, highlights.start_time + COALESCE(highlights.duration_s, 0)) - highlights.start_time)
-                OR (
-                  (COALESCE(h2.end_time, h2.start_time + COALESCE(h2.duration_s, 0)) - h2.start_time)
-                    = (COALESCE(highlights.end_time, highlights.start_time + COALESCE(highlights.duration_s, 0)) - highlights.start_time)
-                  AND h2.event_id < highlights.event_id
-                )
-              )
-        """
-        if email:
-            sql += (
-                " AND (EXISTS ("
-                "   SELECT 1 FROM highlight_user_actions a "
-                "   WHERE a.highlight_id = highlights.event_id "
-                "     AND a.email = ? AND a.action = 'favorite')"
-                " OR NOT EXISTS (" + merge_clause + "))"
-            )
-            args.append(email)
-        else:
-            sql += " AND NOT EXISTS (" + merge_clause + ")"
+    # Note: the merge_overlaps dedup that used to live here as a
+    # correlated EXISTS subquery now happens in Python on the result
+    # set (see _apply_merge_overlaps below). The SQL was re-running
+    # the inner search per outer row even with indexes — produced
+    # 1-3s tail latency on a 700-row table and got worse with growth.
+    # Python is O(N²) per camera but for our N (<200/cam) that's
+    # under 10ms, well below the SQL roundtrip cost.
     if camera:
         sql += " AND camera = ?"
         args.append(camera)
@@ -744,11 +714,90 @@ def list_highlights(
             sql += f" AND ({hour_expr} >= ? OR {hour_expr} < ?)"
             args.extend([hour_from, hour_to])
 
-    sql += " ORDER BY start_time DESC LIMIT ? OFFSET ?"
-    args.extend([limit, offset])
+    sql += " ORDER BY start_time DESC"
+    # When merge_overlaps is on, the Python dedup may drop a meaningful
+    # fraction of rows (overlapping siblings of the same visit), so we
+    # need to over-fetch then re-paginate. A 1000-row cap is well
+    # above any reasonable filtered window and keeps memory bounded.
+    # When merge_overlaps is off, just push LIMIT/OFFSET into SQL.
+    fav_email_for_dedup = email
+    if merge_overlaps:
+        sql += " LIMIT 1000"
+    else:
+        sql += " LIMIT ? OFFSET ?"
+        args.extend([limit, offset])
     with connect(db_path) as conn:
-        rows = conn.execute(sql, args).fetchall()
-    return [dict(r) for r in rows]
+        rows = [dict(r) for r in conn.execute(sql, args).fetchall()]
+        if merge_overlaps:
+            fav_ids: set[str] = set()
+            if fav_email_for_dedup:
+                fav_ids = {
+                    r["highlight_id"] for r in conn.execute(
+                        "SELECT highlight_id FROM highlight_user_actions "
+                        "WHERE email = ? AND action = 'favorite'",
+                        [fav_email_for_dedup],
+                    ).fetchall()
+                }
+    if merge_overlaps:
+        rows = _apply_merge_overlaps(rows, favorited_ids=fav_ids)
+        rows = rows[offset:offset + limit]
+    return rows
+
+
+def _apply_merge_overlaps(
+    rows: list[dict[str, Any]],
+    favorited_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Hide events that have a strictly-longer overlapping event on
+    the same camera. Equality of duration is broken alphabetically by
+    event_id (deterministic, picks one canonical winner).
+
+    A user's own favorited event is never hidden — the merge picks one
+    canonical event per visit, but if the viewer specifically faved a
+    shorter overlapping sibling, that's their explicit choice.
+
+    Replaces the old correlated EXISTS subquery in SQL. Implemented as
+    a sweep-line over start-time-sorted events per camera so the
+    inner loop is bounded by the cluster's concurrent size, not by
+    total row count. Runs in <10ms on 1000 rows in practice.
+    """
+    favorited_ids = favorited_ids or set()
+    by_cam: dict[str, list[tuple[float, float, float, str]]] = {}
+    for r in rows:
+        s = r["start_time"]
+        e = r.get("end_time")
+        if e is None:
+            e = s + (r.get("duration_s") or 0)
+        by_cam.setdefault(r["camera"], []).append((s, e, e - s, r["event_id"]))
+
+    hidden: set[str] = set()
+    for sized in by_cam.values():
+        # Sort by start_time ascending for the sweep.
+        sized.sort(key=lambda x: x[0])
+        # `active` is the list of in-progress events whose end_time
+        # exceeds the current sweep position. As we scan forward, we
+        # discard active entries that have ended before the current
+        # event begins — those can't overlap with anything from here on.
+        active: list[tuple[float, float, float, str]] = []
+        for cur in sized:
+            cs, ce, cd, cid = cur
+            # Drop active entries whose end <= current start (no overlap
+            # possible). This keeps `active` bounded to actual concurrent
+            # events — typically 1-5 in fox-cam data even during clusters.
+            if active:
+                active = [a for a in active if a[1] > cs]
+            for a in active:
+                as_, ae, ad, aid = a
+                # Both directions: if longer, the other is hidden.
+                # Tie broken by smaller event_id (matches the SQL).
+                if ad > cd or (ad == cd and aid < cid):
+                    hidden.add(cid)
+                if cd > ad or (cd == ad and cid < aid):
+                    hidden.add(aid)
+            active.append(cur)
+    if favorited_ids:
+        hidden -= favorited_ids
+    return [r for r in rows if r["event_id"] not in hidden]
 
 
 def set_featured(
