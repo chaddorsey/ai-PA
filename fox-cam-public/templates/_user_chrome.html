@@ -128,20 +128,6 @@
     </div>
   </section>
 
-  {% if is_admin %}
-  {# Admin actions — currently just clip recovery. The desktop /highlights
-     tabs row also has a "Recover clip" button; this popover row is the
-     mobile-friendly entry point (mobile hides .tabs-row entirely in
-     favor of the bottom-tab nav). Only renders on /highlights since
-     that's where the dialog lives in the DOM. #}
-  <button type="button" id="profile-action-recover" class="profile-action profile-action-admin"
-          data-only-page="/highlights"
-          title="Recover a clip from raw recordings (admin)">
-    <span class="material-icons" aria-hidden="true">video_call</span>
-    <span>Recover clip…</span>
-  </button>
-  {% endif %}
-
   <a href="/cdn-cgi/access/logout" class="profile-action">
     <span class="material-icons" aria-hidden="true">logout</span>
     <span>Sign out</span>

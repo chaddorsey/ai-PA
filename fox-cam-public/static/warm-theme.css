@@ -1077,34 +1077,44 @@ body.modal-open { overflow: hidden; }
   }
 }
 
-/* Admin-only "Recover clip" button on the /highlights tabs row. Lives
-   alongside the Remixes view-toggle; styled as a subtle pill so it
-   reads as a tool, not a primary action. Hidden in the template via
-   {% if is_admin %} so only admins ever render it. */
-.admin-recover-btn {
+/* Admin-only "Recover clip" entry — a quiet text link at the trailing
+   edge of the /highlights filters row. Mirrors the visual weight of
+   the filter selects (intentionally low-emphasis) and renders the
+   same on desktop and mobile. The icon doubles as a touch-target
+   anchor on phones; the label gives the affordance a name. Hidden
+   in the template via {% if is_admin %} so only admins see it. */
+.admin-recover-link {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-left: 12px;
-  padding: 6px 12px;
-  border: 1px solid rgba(40, 50, 70, 0.25);
-  border-radius: var(--radius-pill, 20px);
-  background: transparent;
-  color: var(--color-ink, #2b2b2b);
+  gap: 4px;
+  padding: 6px 8px;
+  margin-left: auto;          /* push to trailing edge of .filters */
+  color: var(--color-glow, #f05a28);
   font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
   cursor: pointer;
-  transition: background 120ms, border-color 120ms;
+  border-radius: 6px;
 }
-.admin-recover-btn:hover {
-  background: rgba(40, 50, 70, 0.06);
-  border-color: rgba(40, 50, 70, 0.45);
+.admin-recover-link:hover {
+  background: rgba(240, 90, 40, 0.06);
+  text-decoration: none;
 }
-.admin-recover-btn:disabled { opacity: 0.55; cursor: progress; }
-.admin-recover-btn .material-icons { font-size: 16px; }
-@media (max-width: 640px) {
-  .admin-recover-btn .admin-recover-label { display: none; }
+.admin-recover-link:disabled { opacity: 0.55; cursor: progress; }
+.admin-recover-link .material-icons { font-size: 16px; }
+@media (max-width: 480px) {
+  /* Tighter on phones; the label still shows but smaller font + less
+     padding so the link doesn't dominate the filters row. */
+  .admin-recover-link {
+    font-size: 12px;
+    padding: 4px 6px;
+  }
 }
 
 /* Remix permalink: admin-only "Feature on landing" toggle. Same shape
@@ -2338,10 +2348,32 @@ header {
   color: var(--color-ink);
   box-shadow: 0 16px 40px rgba(42, 24, 16, 0.30);
   font-family: var(--font-body);
-  overflow: hidden;
+  /* Cap height + scroll inside the popover. Without max-height +
+     overflow-y:auto, the popover overflows the viewport on phones
+     and rows past the visible edge (notably "Sign out") aren't
+     reachable. With overscroll-behavior:contain + iOS momentum
+     scrolling, touchmove events stay inside the popover instead
+     of falling through to the body. Account for the safe-area
+     bottom inset (notch / home indicator) so the last row clears
+     the gesture handle on full-screen iOS PWAs. */
+  max-height: min(80vh, calc(100vh - 80px - env(safe-area-inset-bottom)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .chrome-popover::backdrop {
   background: transparent;
+}
+/* Lock body scroll while a chrome popover is open. Belt-and-suspenders
+   alongside overscroll-behavior:contain on the popover itself —
+   handles iOS Safari edge cases where overscroll-behavior alone
+   wasn't enough to keep page scroll from drifting under the open
+   popover. :has() is supported on Safari 15.4+ (well within our
+   iOS 16.4+ PWA push baseline). */
+body:has(.chrome-popover:popover-open) {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: pan-x;  /* permits horizontal-only swipe gestures */
 }
 .chrome-popover-header {
   display: flex;

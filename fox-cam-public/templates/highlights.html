@@ -57,13 +57,6 @@
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 3h8v8H3V3zm10 0h8v8h-8V3zM3 13h8v8H3v-8zm10 0h8v8h-8v-8z"/></svg>
         </button>
       </div>
-      {% if is_admin %}
-      <button id="admin-recover-btn" class="admin-recover-btn admin-only" type="button"
-              title="Recover a clip from raw recordings for a time window (admin)">
-        <span class="material-icons" aria-hidden="true">video_call</span>
-        <span class="admin-recover-label">Recover clip</span>
-      </button>
-      {% endif %}
     </div>
 
     {% if is_admin %}
@@ -172,6 +165,19 @@
           <option value="unclassified">Not yet classified</option>
         </select>
       </label>
+      {% if is_admin %}
+      {# Admin-only entry to the manual clip-recovery dialog. Lives at
+         the trailing edge of the filters row — same neighborhood as
+         the other admin-ish controls and visible on every viewport
+         (the .tabs-row-based button was hidden on phones). Renders
+         as a subtle text link rather than a pill so it doesn't
+         compete with the filter selects for visual weight. #}
+      <button id="admin-recover-btn" class="admin-recover-link admin-only" type="button"
+              title="Recover a clip from raw recordings for a time window (admin)">
+        <span class="material-icons" aria-hidden="true">video_call</span>
+        <span class="admin-recover-link-label">Recover clip…</span>
+      </button>
+      {% endif %}
     </div>
     <div id="highlights" class="grid"></div>
     <button id="load-more">Load more</button>
