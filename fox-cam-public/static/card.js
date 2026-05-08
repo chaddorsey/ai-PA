@@ -276,8 +276,20 @@
     // and the brief inline-controls overlay before the modal mounts
     // is confusing. Clip permalink page (no #highlights element)
     // still uses inline play.
+    //
+    // CRITICAL: bail if a <video> already exists in the wrap. Clip /
+    // remix permalinks have clip.js pre-install a video element with
+    // remix trim + zoom set up; without this guard, every tap on the
+    // iOS native controls (play button, scrubber, fullscreen, rewind-
+    // 10) bubbles here and runs playInline, which DESTROYS the
+    // pre-configured video and replaces it with a fresh one starting
+    // at t=0 — looks like "tap restarts from mid clip" because the
+    // user expected the remix start, got the parent-clip start.
     if (!document.getElementById("highlights")) {
-      wrap.addEventListener("click", () => playInline(wrap, h));
+      wrap.addEventListener("click", (e) => {
+        if (wrap.querySelector("video")) return;
+        playInline(wrap, h);
+      });
     }
     // Phone-only scroll-into-view autoplay: the singleton observer
     // takes ownership of swapping the thumbnail in/out for a muted
