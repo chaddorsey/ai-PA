@@ -16,23 +16,22 @@
 #      can only see from the outside. Hit three times in 36 hours.
 #
 # Strategy: poll Frigate's /api/stats once a minute (called by
-# launchd). Track two counters with separate hysteresis:
+# launchd). Track three counters with separate hysteresis:
 #
 #   wedge_hard:    ALL cams det_fps=0 AND any cam_fps>0.5  (≥3 in a row)
 #   wedge_silent:  zero events in EVENT_WINDOW_SEC AND a recording file
 #                  was written in the last RECORDING_WINDOW_SEC AND all
-#                  cams det+cam alive (≥3 in a row).
+#                  cams det+cam alive (≥3 in a row). Catches "detector
+#                  is silent but motion is happening" within ~13 min.
+#   wedge_frozen:  zero events in DEEP_FREEZE_WINDOW_SEC AND no recent
+#                  recordings AND all cam_fps>0.5 (≥3 in a row).
+#                  Fallback for the "everything but capture stopped"
+#                  failure mode where motion recording AND object
+#                  detection both silenced together (seen 2026-05-08).
+#                  Tier-1 returns healthy_quiet there because
+#                  rec_signal=='quiet'; this tier catches it at ~33 min.
 #
-# The recording-activity check is what lets us tighten the silent-wedge
-# window aggressively without false-positiving on legit quiet periods:
-# Frigate writes 10s motion-triggered segments under
-# /media/frigate/recordings/<date>/<hour>/<cam>/. If recordings are
-# being written but zero events fire, that's *motion without
-# detections* — the high-confidence silent-wedge signature. If no
-# recordings have been written either, the scene is genuinely quiet
-# and we DON'T restart.
-#
-# Either tier-1 or tier-2 trips a docker-compose restart frigate.
+# Any of the three trips a docker-compose restart frigate.
 #
 # Run via ~/Library/LaunchAgents/com.ai-pa.frigate-watchdog.plist
 # (StartInterval=60). Logs to ~/Library/Logs/frigate-watchdog/.
@@ -42,6 +41,7 @@ STATE_DIR=/tmp/frigate-watchdog
 mkdir -p "$STATE_DIR"
 STATE_HARD="$STATE_DIR/hard"
 STATE_SILENT="$STATE_DIR/silent"
+STATE_FROZEN="$STATE_DIR/frozen"
 LOG_DIR="$HOME/Library/Logs/frigate-watchdog"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/watchdog.log"
@@ -58,6 +58,15 @@ EVENT_WINDOW_SEC=600
 # easily covers normal pacing while staying short enough to be a
 # meaningful "recent activity" signal.
 RECORDING_WINDOW_SEC=300
+
+# Long-window fallback for the "everything frozen" failure mode seen
+# 2026-05-08 ~00:02-00:34: silent wedge that took out object detection
+# AND motion recording at the same time. The motion-gated tier-1
+# check returns healthy_quiet here (no recordings = scene "quiet" by
+# the heuristic), so without this fallback the wedge would never
+# self-recover. 30 min is short enough to bound missed-clip damage,
+# long enough to ride out genuinely-empty overnight stretches.
+DEEP_FREEZE_WINDOW_SEC=1800
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
@@ -88,6 +97,20 @@ except Exception:
     print(-1)
 " 2>/dev/null || echo -1)
 
+# Long-window event count for the deep-freeze fallback. Reuses the
+# same /api/events endpoint with a wider `after` so we can tell apart
+# "tier-1 false-quiet for 10 min" from "actually nothing for 30 min".
+since_long=$(($(date +%s) - DEEP_FREEZE_WINDOW_SEC))
+events_long_json=$(docker exec frigate sh -c "wget -qO- --timeout=5 'http://127.0.0.1:5000/api/events?after=$since_long&limit=5&include_thumbnails=0'" 2>/dev/null || true)
+events_long_count=$(echo "$events_long_json" | /usr/bin/env python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.read())
+    print(len(data) if isinstance(data, list) else -1)
+except Exception:
+    print(-1)
+" 2>/dev/null || echo -1)
+
 # Recording-activity check: any motion segment file written in the
 # last RECORDING_WINDOW_SEC seconds. We use `find -mmin` (rounded to
 # minutes); convert seconds to minutes with a ceil. Output is "yes"
@@ -110,9 +133,10 @@ fi
 
 # Classify the stats payload into hard / silent / healthy. Pure verdict
 # string output makes the bash case-statement below easy to read.
-verdict=$(echo "$stats" | EVENTS="$events_count" REC_SIGNAL="$rec_signal" /usr/bin/env python3 -c "
+verdict=$(echo "$stats" | EVENTS="$events_count" EVENTS_LONG="$events_long_count" REC_SIGNAL="$rec_signal" /usr/bin/env python3 -c "
 import sys, json, os
 events = int(os.environ.get('EVENTS', '-1'))
+events_long = int(os.environ.get('EVENTS_LONG', '-1'))
 rec_signal = os.environ.get('REC_SIGNAL', 'unknown')
 try:
     s = json.loads(sys.stdin.read())
@@ -131,16 +155,27 @@ if all_det_zero and any_cam_active:
     print('wedged_hard')
 elif (events == 0 and all_det_alive and all_cam_active
       and rec_signal == 'motion'):
-    # Detector running fine, every cam streaming, motion segments
-    # being written to disk → motion exists but no events. The
-    # high-confidence silent-wedge signature. Tight window OK
-    # because rec_signal=='motion' rules out legitimate quiet.
+    # Tier 1 (silent wedge with motion): detector running fine, every
+    # cam streaming, motion segments being written to disk → motion
+    # exists but no events. High-confidence silent-wedge signature.
+    # Tight 10-min window OK because rec_signal=='motion' rules out
+    # legitimate quiet.
     print('wedged_silent')
+elif (events_long == 0 and all_cam_active and rec_signal != 'motion'):
+    # Tier 2 (deep freeze): no events for the LONG window AND
+    # recordings have stopped (or are unreadable) AND cams are still
+    # streaming. This is the failure mode seen 2026-05-08 ~00:02 where
+    # both detection AND motion recording silenced together — tier 1
+    # never fires because rec_signal=='quiet' there. 30-min window
+    # tolerates legitimately empty overnight stretches; cam_fps gate
+    # prevents firing during a real outage.
+    print('wedged_frozen')
 elif events == 0 and rec_signal == 'quiet' and all_cam_active:
-    # No events AND no recordings AND cams streaming → scene is
-    # genuinely quiet. Don't restart, but it IS healthy.
+    # Short window: no events, no recordings, cams streaming. Could
+    # be early in a freeze OR genuinely quiet. Sit tight; tier 2
+    # will catch it if it persists past DEEP_FREEZE_WINDOW_SEC.
     print('healthy_quiet')
-elif events < 0 or rec_signal == 'unknown':
+elif events < 0 or events_long < 0 or rec_signal == 'unknown':
     # Couldn't read events or recordings dir — don't escalate,
     # don't reset either.
     print('signals_unknown')
@@ -150,6 +185,7 @@ else:
 
 prev_hard=$(cat "$STATE_HARD" 2>/dev/null || echo 0)
 prev_silent=$(cat "$STATE_SILENT" 2>/dev/null || echo 0)
+prev_frozen=$(cat "$STATE_FROZEN" 2>/dev/null || echo 0)
 
 restart_frigate() {
     local reason="$1"
@@ -159,6 +195,7 @@ restart_frigate() {
         /opt/homebrew/bin/docker-compose restart frigate >> "$LOG" 2>&1
     echo 0 > "$STATE_HARD"
     echo 0 > "$STATE_SILENT"
+    echo 0 > "$STATE_FROZEN"
     echo "$(ts) restart issued" >> "$LOG"
 }
 
@@ -179,12 +216,21 @@ case "$verdict" in
             restart_frigate "silent wedge — 0 events in ${EVENT_WINDOW_SEC}s but motion recording active, $n checks"
         fi
         ;;
+    wedged_frozen)
+        n=$((prev_frozen + 1))
+        echo "$n" > "$STATE_FROZEN"
+        echo "$(ts) verdict=wedged_frozen consecutive=$n events_in_${DEEP_FREEZE_WINDOW_SEC}s=0 rec_signal=$rec_signal" >> "$LOG"
+        if [[ $n -ge 3 ]]; then
+            restart_frigate "deep freeze — 0 events in ${DEEP_FREEZE_WINDOW_SEC}s, no motion recordings, $n checks"
+        fi
+        ;;
     healthy|healthy_quiet)
-        if [[ "$prev_hard" != "0" || "$prev_silent" != "0" ]]; then
-            echo "$(ts) verdict=$verdict (was hard=$prev_hard silent=$prev_silent)" >> "$LOG"
+        if [[ "$prev_hard" != "0" || "$prev_silent" != "0" || "$prev_frozen" != "0" ]]; then
+            echo "$(ts) verdict=$verdict (was hard=$prev_hard silent=$prev_silent frozen=$prev_frozen)" >> "$LOG"
         fi
         echo 0 > "$STATE_HARD"
         echo 0 > "$STATE_SILENT"
+        echo 0 > "$STATE_FROZEN"
         ;;
     signals_unknown)
         # Stats good, events API or recordings dir blip. Don't change
