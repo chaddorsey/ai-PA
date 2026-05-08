@@ -580,6 +580,18 @@ body.modal-open { overflow: hidden; }
 .highlight .thumb-wrap > video {
   pointer-events: none;
 }
+/* Clip / remix permalink cards (clip.js adds .clip-permalink-card on the
+   .highlight): the user actually interacts with the video here — native
+   iOS controls (play/pause, scrubber, fullscreen, rewind-10) need taps
+   to land on the <video>, not get swallowed by the click-delegation
+   pattern used on /highlights. Without this override, taps on the
+   controls do nothing because pointer-events: none routes them past the
+   video to the wrap, which then bails (card.js sees video already
+   exists). Override applies only on permalink pages so /highlights
+   modal-opening behavior is unchanged. */
+.highlight.clip-permalink-card .thumb-wrap > video {
+  pointer-events: auto;
+}
 
 /* === Modal trim editor: thicker, yellow scrubber === */
 .modal-stage-remix .trim-track {
