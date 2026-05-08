@@ -566,7 +566,23 @@ def mark_notified(db_path: Path, event_id: str, ts: float) -> None:
 
 
 def init(db_path: Path) -> None:
+    """One-time database initialization.
+
+    journal_mode=WAL is set HERE (once at startup), not in connect()
+    per call. PRAGMA journal_mode requires an exclusive DB lock to
+    evaluate even when WAL is already active, and N threads racing
+    to set it on first-connection-per-call serialized 20 concurrent
+    requests behind that lock — visible to users as 500 timeouts on
+    burst gallery loads. journal_mode persists in the DB file header
+    across reconnects, so doing it once is sufficient.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    boot = sqlite3.connect(str(db_path), isolation_level=None)
+    try:
+        boot.execute("PRAGMA journal_mode=WAL")
+        boot.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        boot.close()
     with connect(db_path) as conn:
         conn.executescript(_SCHEMA_BASE)
         for stmt in _MIGRATIONS:
@@ -581,20 +597,17 @@ def init(db_path: Path) -> None:
 def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(db_path), isolation_level=None)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # NOTE: journal_mode=WAL is set ONCE in init(), not here. Setting
+    # it per-connection serializes burst loads behind an exclusive
+    # DB lock (~7s 20-parallel stalls) even though it's a no-op when
+    # WAL is already active.
     conn.execute("PRAGMA synchronous=NORMAL")
     # busy_timeout: how long a writer waits for the write lock before
     # erroring with "database is locked." Python's sqlite3 default is
-    # 0ms so any writer collision (curator's polling thread + classifier
-    # update + API user-actions writes + manual highlight inserts) all
-    # racing produced sqlite3.OperationalError 5xx in the API. 5000ms
-    # easily absorbs normal contention bursts; if it ever takes longer,
-    # something deeper is wrong and the error is meaningful.
+    # 0ms — any concurrent-write collision throws OperationalError
+    # which surfaces as a 500 in the API.
     conn.execute("PRAGMA busy_timeout=5000")
-    # cache_size in pages (negative = KB). 64MB is plenty for a DB
-    # of this size and keeps the hot working set resident across
-    # connections — eliminates the cold-cache 2.6s first-query
-    # latency that was making the gallery feel laggy on first paint.
+    # cache_size in pages (negative = KB). 64MB is plenty for the DB.
     conn.execute("PRAGMA cache_size=-65536")
     try:
         yield conn
