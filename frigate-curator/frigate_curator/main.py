@@ -1151,6 +1151,21 @@ def _ensure_remix_rendered(remix_id: str) -> Path:
         cy = f"max(0\\,min(ih-{ch}\\,ih*{zoom_y:.6f}-({ch})/2))"
         vf = f"crop={cw}:{ch}:{cx}:{cy}"
 
+    # Atomic write: each invocation transcodes to a unique temp file
+    # under the cache dir, then renames into place. Without this, two
+    # concurrent renders for the same remix (e.g. the pre-warm thread
+    # racing the modal's <video src=...> request right after PATCH)
+    # both write to the same cache_path simultaneously and the loser
+    # produces a corrupt file — black frames in the player. Same-
+    # filesystem rename on POSIX is atomic, so any reader sees either
+    # the old file (none, in this branch), or a fully-written one.
+    import tempfile as _tempfile
+    tmp_fd, tmp_name = _tempfile.mkstemp(
+        dir=str(cache_dir), prefix=f"{remix_id}_", suffix=".part.mp4"
+    )
+    os.close(tmp_fd)
+    tmp_path = Path(tmp_name)
+
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-ss", f"{start_s:.3f}",
@@ -1162,14 +1177,27 @@ def _ensure_remix_rendered(remix_id: str) -> Path:
                 "-crf", "20", "-c:a", "aac", "-b:a", "128k"]
     else:
         cmd += ["-c", "copy"]
-    cmd += ["-movflags", "+faststart", str(cache_path)]
+    cmd += ["-movflags", "+faststart", str(tmp_path)]
 
     try:
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        try: cache_path.unlink(missing_ok=True)
+        try: tmp_path.unlink(missing_ok=True)
         except Exception: pass
         raise HTTPException(status_code=500, detail=f"ffmpeg failed: {e}") from e
+
+    # Atomic rename into final location. If a parallel thread already
+    # finished and renamed first, our rename just overwrites with an
+    # equivalent file — both transcodes produce identical bytes for
+    # the same params (modulo any non-determinism in libx264, which
+    # for our preset is negligible and harmless). Either way readers
+    # always see a complete file.
+    try:
+        os.replace(tmp_path, cache_path)
+    except Exception:
+        try: tmp_path.unlink(missing_ok=True)
+        except Exception: pass
+        raise
     return cache_path
 
 
