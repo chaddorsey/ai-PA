@@ -1489,6 +1489,33 @@ services:
       - "component=gmail"
       - "network=pa-internal"
 
+  # ----------------------------------------------------------------------
+  # letta-bg-fix-sidecar — issue #99 mitigation. Transparent proxy in front
+  # of Letta that rewrites `background: true` → `false` on
+  # POST /v1/conversations/{id}/messages. Letta v0.16.7's bg path for that
+  # endpoint silently drops assistant content; the foreground path works.
+  # All other traffic passes through unchanged. Tracked in #100 — fold into
+  # a proper letta-code patch once we've ratified.
+  # ----------------------------------------------------------------------
+  letta-bg-fix-sidecar:
+    build:
+      context: ./letta-bg-fix-sidecar
+    container_name: letta-bg-fix-sidecar
+    restart: unless-stopped
+    networks: [pa-internal]
+    depends_on:
+      letta:
+        condition: service_healthy
+    environment:
+      - LETTA_UPSTREAM_URL=http://letta:8283
+      - PORT=8284
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8284/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
   pa-web-ui:
     build:
       # Build context bumped to repo root so Dockerfile can COPY the
@@ -1508,9 +1535,15 @@ services:
         condition: service_healthy
       gws-bridge:
         condition: service_healthy
+      letta-bg-fix-sidecar:
+        condition: service_healthy
     environment:
       - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
       - LETTA_BASE_URL=http://letta:8283
+      # Subprocess (letta-code) traffic flows through letta-bg-fix-sidecar to
+      # rewrite background:true → false on POST /v1/conversations/{id}/messages
+      # (issue #99). pa-web-ui's own Flask→Letta calls keep using LETTA_BASE_URL.
+      - LETTA_SUBPROCESS_BASE_URL=http://letta-bg-fix-sidecar:8284
       # Path C patched letta-code lives at /usr/local/bin/letta in the image
       # (patched in pa-web-ui/Dockerfile). Setting LETTA_CODE_BIN here makes
       # letta-code's subagent shim mechanism propagate the patched binary to

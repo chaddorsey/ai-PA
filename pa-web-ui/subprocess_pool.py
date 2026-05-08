@@ -93,6 +93,12 @@ DEFAULT_ALLOWED_TOOLS: Tuple[str, ...] = (
 DEFAULT_CWD = os.environ.get("PA_WEB_UI_SUBPROCESS_CWD", "/workspace-safe")
 LETTA_BINARY = os.environ.get("PA_WEB_UI_LETTA_BINARY", "letta")
 LETTA_BASE_URL = os.environ.get("LETTA_BASE_URL", "http://letta:8283")
+# Subprocess-only override. Lets us route letta-code's /v1/conversations/{id}/messages
+# traffic through letta-bg-fix-sidecar (issue #99) while leaving pa-web-ui's own
+# Flask→Letta calls pointed at Letta directly.
+LETTA_SUBPROCESS_BASE_URL = os.environ.get(
+    "LETTA_SUBPROCESS_BASE_URL", LETTA_BASE_URL
+)
 
 # Ring buffer byte cap — Unit 1.3. Per the plan's R7b, retain events back to
 # the most recent completed turn or ~2MB whichever is smaller; clients below
@@ -642,7 +648,7 @@ class SubprocessRegistry:
         reader_factory: Optional[Callable[..., threading.Thread]] = None,
         cwd: str = DEFAULT_CWD,
         letta_binary: str = LETTA_BINARY,
-        letta_base_url: str = LETTA_BASE_URL,
+        letta_base_url: str = LETTA_SUBPROCESS_BASE_URL,
         allowed_tools: Tuple[str, ...] = DEFAULT_ALLOWED_TOOLS,
         disallowed_tools: Tuple[str, ...] = DEFAULT_DISALLOWED_TOOLS,
         yolo: bool = True,
