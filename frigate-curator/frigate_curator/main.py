@@ -73,6 +73,12 @@ HIGHLIGHTS_ROOT = Path(os.environ.get("HIGHLIGHTS_ROOT", "/Volumes/main-filestor
 DB_PATH = Path(os.environ.get("CURATOR_DB", str(HIGHLIGHTS_ROOT / "index.db")))
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "5"))
 
+# How far back to walk Frigate's event history on curator startup.
+# Default 1h is fine for normal restarts; bump via env when recovering
+# from a longer outage (e.g. main-filestore disconnect 2026-05-09: set
+# to 86400 once, restart curator, let it catch up, then unset).
+BOOTSTRAP_LOOKBACK_S = float(os.environ.get("BOOTSTRAP_LOOKBACK_S", "3600"))
+
 # Notification config. NTFY_TOPIC empty disables all push (default).
 # Set in .env to a long unguessable string; share with family in the
 # ntfy iOS/Android app. Threshold is fox_likelihood; 0.55 ≈ "above
@@ -141,6 +147,7 @@ def _startup() -> None:
             "highlights_root": HIGHLIGHTS_ROOT,
             "db_path": DB_PATH,
             "poll_interval_s": POLL_INTERVAL_S,
+            "bootstrap_lookback_s": BOOTSTRAP_LOOKBACK_S,
         },
         name="curator-loop",
         daemon=True,
