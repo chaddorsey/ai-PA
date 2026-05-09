@@ -597,16 +597,20 @@ def init(db_path: Path) -> None:
 def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(db_path), isolation_level=None)
     conn.row_factory = sqlite3.Row
+    # busy_timeout MUST be the first PRAGMA. Python sqlite3's default
+    # is 0ms; if any subsequent PRAGMA needs to wait for a lock (e.g.
+    # synchronous=NORMAL collides with a writer in WAL mode), it
+    # raises OperationalError immediately without busy_timeout in
+    # effect. Backfill load 2026-05-09 hit this — every API request
+    # 500'd because the polling thread held a writer lock just long
+    # enough that synchronous=NORMAL on a fresh API connection would
+    # collide. With busy_timeout=5000 set first, all subsequent
+    # PRAGMAs and queries get the wait window.
+    conn.execute("PRAGMA busy_timeout=5000")
     # NOTE: journal_mode=WAL is set ONCE in init(), not here. Setting
     # it per-connection serializes burst loads behind an exclusive
-    # DB lock (~7s 20-parallel stalls) even though it's a no-op when
-    # WAL is already active.
+    # DB lock even though it's a no-op when WAL is already active.
     conn.execute("PRAGMA synchronous=NORMAL")
-    # busy_timeout: how long a writer waits for the write lock before
-    # erroring with "database is locked." Python's sqlite3 default is
-    # 0ms — any concurrent-write collision throws OperationalError
-    # which surfaces as a 500 in the API.
-    conn.execute("PRAGMA busy_timeout=5000")
     # cache_size in pages (negative = KB). 64MB is plenty for the DB.
     conn.execute("PRAGMA cache_size=-65536")
     try:
