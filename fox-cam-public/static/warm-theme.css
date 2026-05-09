@@ -917,6 +917,135 @@ body.modal-open { overflow: hidden; }
 .meta-download:active { outline: none; }
 
 /* ============================================================
+   Recovery tray — floating chips for in-flight clip recoveries
+   ============================================================
+   Persistent across dialog close so the user can keep browsing
+   while SSS pulls run in the background. Position-fixed,
+   pointer-events scoped to the chips themselves so the rest of
+   the page is fully clickable underneath. Multiple recoveries
+   stack vertically.
+*/
+.recovery-tray {
+  position: fixed;
+  z-index: 50;             /* above gallery, below modal/dialog */
+  pointer-events: none;    /* chips re-enable; tray itself is transparent */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Desktop: pinned top-right, narrow column. */
+  top: calc(64px + env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  width: 340px;
+  max-width: calc(100vw - 24px);
+}
+@media (max-width: 600px) {
+  .recovery-tray {
+    /* Phone: bottom-center, above the bottom-tabs nav. The bottom-
+       tab nav reserves 64px + safe-area; sit 12px above that. */
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom) + 12px);
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+  }
+}
+.recovery-chip {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-bg, #fffaf3);
+  border: 1px solid rgba(40, 30, 20, 0.18);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 18px rgba(40, 30, 20, 0.18);
+  font-family: inherit;
+  font-size: 13px;
+  /* Slide in animation. Subtle so it doesn't yank attention. */
+  animation: recovery-chip-in 240ms ease-out;
+}
+@keyframes recovery-chip-in {
+  from { transform: translateY(-8px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.recovery-chip.pending {
+  border-color: rgba(240, 90, 40, 0.35);
+}
+.recovery-chip.ready {
+  border-color: rgba(70, 140, 70, 0.4);
+  background: #f0faef;
+}
+.recovery-chip.failed {
+  border-color: rgba(180, 30, 30, 0.4);
+  background: #fff1f1;
+}
+.recovery-chip-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(240, 90, 40, 0.25);
+  border-top-color: var(--color-glow, #f05a28);
+  border-radius: 50%;
+  animation: recovery-spin 700ms linear infinite;
+  flex-shrink: 0;
+}
+@keyframes recovery-spin {
+  to { transform: rotate(360deg); }
+}
+.recovery-chip-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.recovery-chip.ready  .recovery-chip-icon { color: #2d7a2d; }
+.recovery-chip.failed .recovery-chip-icon { color: #b41e1e; }
+.recovery-chip-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.recovery-chip-title {
+  font-weight: 600;
+  color: var(--color-ink, #2b2b2b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recovery-chip-meta {
+  font-size: 12px;
+  color: var(--color-ink-soft, #5b4a3c);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recovery-chip-close {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--color-ink-soft, #5b4a3c);
+  padding: 6px 8px;
+  margin: -6px -4px -6px 0;   /* expand hit target without enlarging visual */
+  border-radius: 6px;
+  flex-shrink: 0;
+  /* iOS 44px touch target via padding */
+  min-width: 32px;
+  min-height: 32px;
+}
+.recovery-chip-close:hover {
+  background: rgba(40, 30, 20, 0.06);
+  color: var(--color-ink, #2b2b2b);
+}
+
+/* ============================================================
    Recover-clip dialog (admin-only, /highlights)
    ============================================================
    Native <dialog> styled as a centered card on desktop and a

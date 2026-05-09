@@ -474,10 +474,14 @@ async def get_featured(limit: int = 6) -> Any:
 
 @app.post("/api/admin/highlights/manual")
 async def admin_manual_highlight(request: Request) -> Any:
-    """Recover a clip from raw recordings for an arbitrary time window
-    (admin-only). Foundational primitive that the future deeper-dive
-    review surface will build on; for now driven by an admin button on
-    /highlights for recovering clips during silent-wedge gaps."""
+    """Kick off async recovery (admin-only). Returns a task_id
+    immediately; client polls /api/admin/highlights/manual/{id}/status
+    for progress.
+
+    Curator does the actual SSS pull + ffmpeg cut in a background
+    thread. This endpoint just queues + returns. Sync response avoids
+    Cloudflare's 100s edge timeout (524) and recovers cleanly from
+    transient SSS network drops."""
     admin_email = _require_admin(request)
     body = await request.json()
     payload = {
@@ -489,13 +493,28 @@ async def admin_manual_highlight(request: Request) -> Any:
         "by":         admin_email,
     }
     async with httpx.AsyncClient() as client:
-        # Generous timeout — first call may need to ffmpeg-concat several
-        # segments end-to-end. Cap is enforced server-side at 10 min
-        # window so worst case is bounded.
         r = await client.post(f"{CURATOR_API}/highlights/manual",
-                              json=payload, timeout=180.0)
+                              json=payload, timeout=10.0)
     if r.status_code == 400:
         raise HTTPException(status_code=400, detail=r.json().get("detail", "bad request"))
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.get("/api/admin/highlights/manual/{task_id}/status")
+async def admin_manual_highlight_status(task_id: str, request: Request) -> Any:
+    """Poll status of an in-flight recovery. States: pending, ready,
+    failed. Once 'ready' the matching highlight row is in the DB and
+    the client can refresh the gallery."""
+    _require_admin(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.get(
+            f"{CURATOR_API}/highlights/manual/{task_id}/status",
+            timeout=8.0,
+        )
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="task not found")
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
     return r.json()

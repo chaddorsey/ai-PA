@@ -640,29 +640,122 @@ class ManualHighlightBody(BaseModel):
     by: str | None = None      # admin email for audit
 
 
+# In-memory tracker for in-flight manual recoveries. Keyed by task_id
+# (= the synthetic event_id we generate up-front so the client can poll
+# even before the highlight row exists). Synchronous endpoint can't
+# work for SSS recoveries reliably: chunks are often >700MB, downloads
+# can take 2+ minutes, Cloudflare cuts the response off at ~100s and
+# returns 524, and a transient SSS connection drop produces 502 with
+# no recovery path. Async pattern decouples the API response from the
+# work duration entirely.
+#
+# Status states:
+#   pending  — work in flight (chunk download, ffmpeg cut, thumbnail)
+#   ready    — done, highlight row inserted in DB
+#   failed   — work errored; `error` carries the message
+_recovery_tasks: dict[str, dict[str, Any]] = {}
+_recovery_tasks_lock = threading.Lock()
+
+
+def _do_manual_recovery(
+    task_id: str,
+    camera: str,
+    start_time: float,
+    end_time: float,
+    label: str,
+    caption: str | None,
+) -> None:
+    """Background worker — runs the actual recover_window + DB insert.
+
+    Updates the task tracker on every state change so the polling
+    endpoint sees progress. Exceptions are caught + recorded; the
+    foreground caller never sees them, only the polling endpoint does.
+    """
+    try:
+        with _recovery_tasks_lock:
+            _recovery_tasks[task_id]["stage"] = "fetching"
+        result = manual_highlight.recover_window(
+            deep_dive_cache_root=DEEP_DIVE_CACHE_ROOT,
+            highlights_root=HIGHLIGHTS_ROOT,
+            camera=camera,
+            start_time=start_time,
+            end_time=end_time,
+            event_id=task_id,  # match the up-front-generated id
+        )
+        row = {
+            "event_id":       result.event_id,
+            "camera":         result.camera,
+            "label":          label,
+            "start_time":     result.start_time,
+            "end_time":       result.end_time,
+            "duration_s":     result.duration_s,
+            "score":          1.0,
+            "fox_likelihood": 0.0,
+            "clip_path":      str(result.clip_path.relative_to(HIGHLIGHTS_ROOT)),
+            "thumb_path":     (str(result.thumb_path.relative_to(HIGHLIGHTS_ROOT))
+                               if result.thumb_path else None),
+            "promoted":       1,
+            "promoted_at":    time.time(),
+            "notes":          caption,
+            "source":         "manual",
+        }
+        db.upsert_highlight(DB_PATH, row)
+        logger.info(
+            "manual highlight created: %s (%s, %.1fs, SSS chunk %d)",
+            result.event_id, result.camera, result.duration_s, result.sss_chunk_id,
+        )
+        with _recovery_tasks_lock:
+            _recovery_tasks[task_id].update({
+                "status": "ready",
+                "stage": "done",
+                "duration_s": result.duration_s,
+                "sss_chunk_id": result.sss_chunk_id,
+            })
+    except manual_highlight.RecoverError as e:
+        with _recovery_tasks_lock:
+            _recovery_tasks[task_id].update({
+                "status": "failed",
+                "stage": "error",
+                "error": str(e),
+            })
+    except Exception as e:
+        logger.exception("manual_highlight: recover failed (task %s)", task_id)
+        with _recovery_tasks_lock:
+            _recovery_tasks[task_id].update({
+                "status": "failed",
+                "stage": "error",
+                "error": f"unexpected: {type(e).__name__}: {e}",
+            })
+
+
 @app.post("/highlights/manual")
 def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
-    """Build a highlight clip from continuously-recorded SSS footage
-    for an arbitrary time window. Used to recover clips during
-    silent-wedge gaps (where Frigate's own recording also stopped) and
-    to back any future timeline-scrubber review surface.
+    """Kick off an async recovery and return a task_id (== eventual
+    event_id) immediately. Client polls /highlights/manual/{id}/status
+    for progress.
 
     Source is SSS via deep_dive.fetch_window — Frigate's motion-
     triggered recordings gap out during the same wedges we're trying
     to recover from, but SSS records 24/7 at full resolution so the
     footage is always there as long as we're inside SSS retention.
 
-    Inserts a row with source='manual' so the rest of the pipeline can
-    distinguish recovered clips from real-time-detected ones (e.g. for
-    classifier opt-out, retention rules, audit).
+    The async pattern is required because SSS chunk downloads regularly
+    exceed Cloudflare's 100s edge timeout (chunks are 700MB-1.5GB)
+    and transient SSS disconnects need to fail without retroactively
+    breaking the API call.
     """
+    import secrets
     cam = body.camera.strip()
     if not cam:
         raise HTTPException(status_code=400, detail="camera required")
-    # Validate against the active config so a typo in the camera name
-    # doesn't silently produce an empty result. Frigate's camera names
-    # match SSS's via the SSS camera_id_map, so checking against the
-    # Frigate config is sufficient.
+    if body.end_time <= body.start_time:
+        raise HTTPException(status_code=400, detail="end_time must exceed start_time")
+    duration = body.end_time - body.start_time
+    if duration > manual_highlight.MAX_WINDOW_SEC:
+        raise HTTPException(
+            status_code=400,
+            detail=f"window too long ({duration:.0f}s > {manual_highlight.MAX_WINDOW_SEC}s max)",
+        )
     try:
         cfg = _client.get_config() or {}
         known = set((cfg.get("cameras") or {}).keys())
@@ -674,51 +767,51 @@ def create_manual_highlight(body: ManualHighlightBody) -> dict[str, Any]:
             detail=f"unknown camera {cam!r} (known: {sorted(known)})",
         )
 
-    try:
-        result = manual_highlight.recover_window(
-            deep_dive_cache_root=DEEP_DIVE_CACHE_ROOT,
-            highlights_root=HIGHLIGHTS_ROOT,
-            camera=cam,
-            start_time=body.start_time,
-            end_time=body.end_time,
-        )
-    except manual_highlight.RecoverError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        logger.exception("manual_highlight: recover failed")
-        raise HTTPException(status_code=500, detail="recover failed")
+    # Generate the task_id (= eventual event_id) up front. Same shape
+    # as manual_highlight.recover_window's internal scheme so the row
+    # that lands in the DB has the predictable id we returned.
+    task_id = (f"manual-{cam}-{int(body.start_time)}"
+               f"-{secrets.token_urlsafe(4).rstrip('=').replace('-','x').replace('_','y')}")
+    with _recovery_tasks_lock:
+        _recovery_tasks[task_id] = {
+            "status": "pending",
+            "stage": "queued",
+            "camera": cam,
+            "start_time": body.start_time,
+            "end_time": body.end_time,
+            "created_at": time.time(),
+        }
+    threading.Thread(
+        target=_do_manual_recovery,
+        kwargs={
+            "task_id": task_id,
+            "camera": cam,
+            "start_time": body.start_time,
+            "end_time": body.end_time,
+            "label": body.label or "manual",
+            "caption": body.caption,
+        },
+        name=f"manual-recover-{task_id[:24]}",
+        daemon=True,
+    ).start()
+    return {"task_id": task_id, "event_id": task_id, "status": "pending"}
 
-    # Insert as a normal highlight row. score=1.0 so it sorts as
-    # confident; fox_likelihood=0.0 because we haven't classified it.
-    # source='manual' is the discriminator anything downstream (UI
-    # filters, classifier, retention, audit) can branch on.
-    row = {
-        "event_id":       result.event_id,
-        "camera":         result.camera,
-        "label":          body.label or "manual",
-        "start_time":     result.start_time,
-        "end_time":       result.end_time,
-        "duration_s":     result.duration_s,
-        "score":          1.0,
-        "fox_likelihood": 0.0,
-        "clip_path":      str(result.clip_path.relative_to(HIGHLIGHTS_ROOT)),
-        "thumb_path":     (str(result.thumb_path.relative_to(HIGHLIGHTS_ROOT))
-                           if result.thumb_path else None),
-        "promoted":       1,
-        "promoted_at":    time.time(),
-        "notes":          body.caption,
-        "source":         "manual",
-    }
-    db.upsert_highlight(DB_PATH, row)
-    logger.info(
-        "manual highlight created: %s (%s, %.1fs, SSS chunk %d)",
-        result.event_id, result.camera, result.duration_s, result.sss_chunk_id,
-    )
-    return {
-        "status": "created",
-        "highlight": db.get_highlight(DB_PATH, result.event_id),
-        "sss_chunk_id": result.sss_chunk_id,
-    }
+
+@app.get("/highlights/manual/{task_id}/status")
+def manual_recovery_status(task_id: str) -> dict[str, Any]:
+    """Poll the in-memory task tracker. Once a task is 'ready', the
+    matching highlight row is in the DB and the client should refetch
+    the gallery."""
+    with _recovery_tasks_lock:
+        task = _recovery_tasks.get(task_id)
+        if task is None:
+            # Task was either never created OR already pruned. If the
+            # event_id exists as a real highlight, the client can treat
+            # that as success.
+            if db.get_highlight(DB_PATH, task_id):
+                return {"status": "ready", "stage": "done"}
+            raise HTTPException(status_code=404, detail="task not found")
+        return dict(task)
 
 
 @app.get("/featured")

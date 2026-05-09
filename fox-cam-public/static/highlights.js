@@ -479,9 +479,6 @@
       e.preventDefault();
       formError.hidden = true;
 
-      // Build a local Date from date + time inputs. Native inputs hand
-      // back ISO-ish strings (YYYY-MM-DD, HH:MM:SS) and we want LOCAL
-      // interpretation to match what the user typed.
       const [y, mo, d] = formDate.value.split("-").map(Number);
       const [h, mi, s] = formStart.value.split(":").map(Number);
       if (!y || !mo || !d || isNaN(h) || isNaN(mi)) {
@@ -502,9 +499,11 @@
       }
 
       formSubmit.disabled = true;
-      submitLabel.textContent = "Recovering…";
+      submitLabel.textContent = "Queuing…";
 
       try {
+        // POST returns immediately with a task_id. The actual SSS pull
+        // + ffmpeg work happens in a background thread on curator.
         const r = await fetch("/api/admin/highlights/manual", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -517,35 +516,162 @@
             caption: formCaption.value.trim() || null,
           }),
         });
-        if (r.status === 403) {
-          showError("Admin only.");
-          return;
-        }
+        if (r.status === 403) { showError("Admin only."); return; }
         const data = await r.json().catch(() => ({}));
         if (!r.ok) {
-          showError(data.detail || `Recover failed (HTTP ${r.status}).`);
+          showError(data.detail || `Couldn't start recovery (HTTP ${r.status}).`);
           return;
         }
-        // Success — close the dialog and refresh the gallery so the
-        // new highlight is visible. We surface a brief toast via
-        // window.flashToast if present so the success isn't silent.
+        // Got a task_id back. Close dialog immediately, hand off to
+        // the persistent tray banner that polls in the background.
+        // User can navigate, do other things; banner updates the
+        // gallery when the recovery lands.
         closeDialog();
-        if (typeof window.flashToast === "function") {
-          const dur = (data.highlight && data.highlight.duration_s)
-            ? data.highlight.duration_s.toFixed(1) : "?";
-          window.flashToast(`Recovered ${dur}s clip — added to All`);
-        }
-        // Switch to the All bucket so the new clip is immediately
-        // visible (manual highlights have promoted=1 → land in All).
-        if (bucket !== "pending") switchBucket("pending");
-        else reset();
+        startRecoveryTray({
+          taskId: data.task_id || data.event_id,
+          camera: formCamera.value,
+          startLabel: `${formDate.value} ${formStart.value}`,
+          duration: dur,
+        });
       } catch (err) {
-        showError(`Recover failed: ${err.message || err}`);
+        showError(`Couldn't start recovery: ${err.message || err}`);
       } finally {
         formSubmit.disabled = false;
         submitLabel.textContent = "Recover";
       }
     });
+
+  // -----------------------------------------------------------------
+  // Recovery tray — persistent floating banners that poll for status
+  // -----------------------------------------------------------------
+  // Created when a recovery is queued; sticks around through gallery
+  // navigation/scroll. Each chip polls /status every 4s. On 'ready':
+  // success, refresh gallery, fade out after 4s. On 'failed': red
+  // banner with error, requires manual close. Multiple recoveries
+  // stack vertically.
+  //
+  // Why a tray instead of keeping the dialog open: SSS chunk pulls
+  // can take 30s-3min depending on chunk size + network. Forcing the
+  // user to stare at a progress dialog for that long is bad UX. The
+  // tray banner is unobtrusive, lets the user keep working, and
+  // surfaces the result when ready.
+  const recoveryTray = document.getElementById("recovery-tray");
+
+  function startRecoveryTray(opts) {
+    if (!recoveryTray) {
+      // Fallback to a flashToast if tray markup is missing.
+      if (typeof window.flashToast === "function") {
+        window.flashToast(`Recovery queued — ${opts.camera}`);
+      }
+      pollRecovery(opts.taskId, opts);
+      return;
+    }
+    const chip = document.createElement("div");
+    chip.className = "recovery-chip pending";
+    chip.dataset.taskId = opts.taskId;
+    chip.innerHTML = `
+      <span class="recovery-chip-spinner" aria-hidden="true"></span>
+      <div class="recovery-chip-text">
+        <div class="recovery-chip-title">Recovering ${escapeHtml(opts.camera)} · ${escapeHtml(String(opts.duration))}s</div>
+        <div class="recovery-chip-meta">${escapeHtml(opts.startLabel)} · pulling from SSS…</div>
+      </div>
+      <button type="button" class="recovery-chip-close" aria-label="Hide">×</button>
+    `;
+    chip.querySelector(".recovery-chip-close").addEventListener("click", () => {
+      chip.remove();
+    });
+    recoveryTray.appendChild(chip);
+    pollRecovery(opts.taskId, opts, chip);
+  }
+
+  async function pollRecovery(taskId, opts, chip) {
+    const startedAt = Date.now();
+    const POLL_MS = 4000;
+    const POLL_TIMEOUT_MS = 8 * 60 * 1000;  // 8 min hard cap
+    while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+      try {
+        const r = await fetch(
+          `/api/admin/highlights/manual/${encodeURIComponent(taskId)}/status`,
+          { credentials: "same-origin" });
+        if (r.ok) {
+          const data = await r.json();
+          if (data.status === "ready") {
+            renderChipReady(chip, opts);
+            // Refresh gallery so the new clip is visible. Switch to
+            // 'pending' bucket if user is elsewhere — that's where
+            // manual recoveries land.
+            if (bucket !== "pending") switchBucket("pending");
+            else reset();
+            return;
+          }
+          if (data.status === "failed") {
+            renderChipFailed(chip, data.error || "Unknown error");
+            return;
+          }
+          // Still pending — update chip with current stage if available.
+          if (chip && data.stage) {
+            const meta = chip.querySelector(".recovery-chip-meta");
+            if (meta) {
+              const stageMsg = {
+                queued: "queued…",
+                fetching: "pulling from SSS…",
+                done: "finishing up…",
+              }[data.stage] || `${data.stage}…`;
+              meta.textContent = `${opts.startLabel} · ${stageMsg}`;
+            }
+          }
+        }
+      } catch {
+        // Network blip — keep polling. Hard cap protects against
+        // infinite loops if curator restarts mid-recovery.
+      }
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+    renderChipFailed(chip, "timed out polling — check gallery in a minute");
+  }
+
+  function renderChipReady(chip, opts) {
+    if (!chip) {
+      if (typeof window.flashToast === "function") {
+        window.flashToast(`Recovered ${opts.camera}`);
+      }
+      return;
+    }
+    chip.classList.remove("pending");
+    chip.classList.add("ready");
+    chip.innerHTML = `
+      <span class="recovery-chip-icon" aria-hidden="true">✓</span>
+      <div class="recovery-chip-text">
+        <div class="recovery-chip-title">Recovered ${escapeHtml(opts.camera)} · ${escapeHtml(String(opts.duration))}s</div>
+        <div class="recovery-chip-meta">${escapeHtml(opts.startLabel)} · added to gallery</div>
+      </div>
+      <button type="button" class="recovery-chip-close" aria-label="Dismiss">×</button>
+    `;
+    chip.querySelector(".recovery-chip-close").addEventListener("click", () => chip.remove());
+    // Auto-dismiss after 6s — user has noticed it; let the chrome clear.
+    setTimeout(() => { try { chip.remove(); } catch {} }, 6000);
+  }
+
+  function renderChipFailed(chip, errorMsg) {
+    if (!chip) {
+      if (typeof window.flashToast === "function") {
+        window.flashToast(`Recovery failed: ${errorMsg}`);
+      }
+      return;
+    }
+    chip.classList.remove("pending");
+    chip.classList.add("failed");
+    chip.innerHTML = `
+      <span class="recovery-chip-icon" aria-hidden="true">✗</span>
+      <div class="recovery-chip-text">
+        <div class="recovery-chip-title">Recovery failed</div>
+        <div class="recovery-chip-meta">${escapeHtml(errorMsg)}</div>
+      </div>
+      <button type="button" class="recovery-chip-close" aria-label="Dismiss">×</button>
+    `;
+    chip.querySelector(".recovery-chip-close").addEventListener("click", () => chip.remove());
+    // Don't auto-dismiss errors — user should see and decide.
+  }
   } else if (recoverBtn) {
     // <dialog> not supported (very old browsers): fall back to disabling
     // the button rather than the previous prompt() flow. This branch

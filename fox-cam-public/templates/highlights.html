@@ -121,6 +121,12 @@
         </div>
       </form>
     </dialog>
+
+    {# Floating "recovery in progress" banner. Lives outside the dialog so
+       it survives dismissal — submit fires, dialog closes immediately,
+       banner appears and polls for completion. Multiple recoveries can
+       stack. JS appends new chips to this container. #}
+    <div id="recovery-tray" class="recovery-tray" aria-live="polite"></div>
     {% endif %}
     <div class="filters">
       <span class="filters-label" id="filters-label">Filter</span>

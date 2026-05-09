@@ -99,6 +99,7 @@ def recover_window(
     camera: str,
     start_time: float,
     end_time: float,
+    event_id: str | None = None,
 ) -> RecoverResult:
     """Build a manual highlight clip from SSS for the given window.
 
@@ -138,9 +139,12 @@ def recover_window(
         raise RecoverError(f"SSS fetch failed: {e}") from e
 
     # Synthetic event_id: stable + filesystem-safe + unguessable so a
-    # leaked URL doesn't reveal a predictable namespace.
-    event_id = (f"manual-{camera}-{int(start_time)}"
-                f"-{secrets.token_urlsafe(4).rstrip('=').replace('-','x').replace('_','y')}")
+    # leaked URL doesn't reveal a predictable namespace. Caller can
+    # supply one (the async task path generates it up-front so the
+    # status-polling endpoint can reference the eventual row id).
+    if event_id is None:
+        event_id = (f"manual-{camera}-{int(start_time)}"
+                    f"-{secrets.token_urlsafe(4).rstrip('=').replace('-','x').replace('_','y')}")
 
     # Mirror the day-bucketed layout that curator.promote() uses so
     # backups + retention sweeps treat manual clips like any other
