@@ -1508,19 +1508,20 @@ body.filters-hidden .filters { display: none !important; }
 /* Stop Chrome from rendering accent-color halos via :focus-visible */
 .modal-nav:focus-visible { outline-style: none !important; }
 
-/* Admin-only Delete link tucked into the upper-right corner of the
-   modal's text area. Small, red, with no fill — designed to be hard
-   to click by accident. */
+/* Per-user Archive link tucked into the upper-right corner of the
+   modal's text area. Small, muted, underlined — same restrained
+   visual treatment the old admin Delete link used so it's
+   discoverable but not easy to hit by accident. */
 .modal-meta { position: relative; }
-.modal-meta-delete {
+.modal-meta-archive {
   position: absolute;
   top: 14px;
   right: 18px;
   font-family: var(--font-body);
   font-size: 11px;
-  color: #b41e1e;
+  color: var(--color-ink-soft);
   text-decoration: underline;
-  text-decoration-color: rgba(180, 30, 30, 0.4);
+  text-decoration-color: rgba(107, 74, 58, 0.4);
   text-underline-offset: 2px;
   opacity: 0.6;
   transition: opacity 0.18s ease, color 0.18s ease;
@@ -1528,11 +1529,11 @@ body.filters-hidden .filters { display: none !important; }
   letter-spacing: 0.02em;
   -webkit-tap-highlight-color: transparent;
 }
-.modal-meta-delete:hover,
-.modal-meta-delete:focus-visible {
-  color: #8a1818;
+.modal-meta-archive:hover,
+.modal-meta-archive:focus-visible {
+  color: var(--color-glow);
   opacity: 1;
-  text-decoration-color: #8a1818;
+  text-decoration-color: var(--color-glow);
 }
 
 /* Drop the action-btn delete styling (no longer used; keeps from

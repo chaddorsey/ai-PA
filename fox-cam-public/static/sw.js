@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v157-hls-keep-on-network-err";
+const CACHE = "our-foxes-v158-archive-text-link";
 
 const STATIC_ASSETS = [
   "/static/style.css",
