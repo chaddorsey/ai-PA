@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import classifier, db, notify, web_push
+from . import classifier, db, hls, notify, web_push
 from .frigate_client import FrigateClient
 from .heuristics import fox_likelihood
 
@@ -188,6 +188,19 @@ def _process_event(client: FrigateClient, highlights_root: Path, db_path: Path, 
         "Saved %s [%s] camera=%s label=%s likelihood=%.2f duration=%.1fs",
         event_id, _fmt(start_time), camera, label, likelihood, end_time - start_time,
     )
+
+    # NOTE: HLS prewarm at ingestion time is *intentionally* not fired
+    # here. ffmpeg's segment writes contend with SQLite reads on the
+    # same `main-filestore` volume, and a stream of new events can
+    # serialize enough I/O behind the prewarm to time out concurrent
+    # /api/highlights API requests at the 30s proxy ceiling — the
+    # symptom is users seeing 500s on the gallery list.
+    #
+    # The lazy-render path on /highlights/{id}/hls/index.m3u8 still
+    # exists, fires only when a user actually opens an HLS-aware
+    # modal, and is throttled to a single concurrent ffmpeg via the
+    # semaphore in hls.py. The Phase 5 backfill script does
+    # explicit, throttled bulk rendering.
 
     # Wildlife classification (no-op if disabled). Updates DB with
     # species + confidence; notification gating below uses the result.

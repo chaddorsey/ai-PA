@@ -240,6 +240,11 @@
 
   function teardownVideo() {
     if (videoEl) {
+      // Detach any hls.js instance first so the MediaSource buffer
+      // is released cleanly. Without this, hls.js holds onto
+      // segment data + listeners until GC, which on iOS can also
+      // briefly hold the network connection open.
+      if (window.detachHls) window.detachHls(videoEl);
       try { videoEl.pause(); } catch {}
       videoEl.removeAttribute("src");
       videoEl.load();
@@ -511,20 +516,26 @@
     // buffer, but for an opened/slid modal card the user expects to
     // see the entire clip from the beginning.
     videoEl = body.querySelector(".modal-video");
-    videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     videoEl.currentTime = 0;
-    // Force the element to begin its load() pipeline immediately
-    // rather than waiting for the next event-loop tick. Combined
-    // with preload="auto" + autoplay attributes in the template,
-    // this gets iOS Safari sending Range requests to the proxy on
-    // the SAME tick as the modal open — by the time renderViewer
-    // returns, the video is already buffering, not idle. The play()
-    // is best-effort; autoplay attribute handles it on most paths
-    // but iOS quirks (low-power mode, src reassignment on an
-    // already-running element) can leave it paused without an
-    // explicit kick.
-    try { videoEl.load(); } catch {}
-    videoEl.play().catch(() => {});
+    // Attach HLS as the primary source with MP4 as fallback. iOS
+    // Safari uses HLS natively (4-sec segments → first frame in <1s);
+    // Chrome/Firefox lazy-load hls.js and stream segments via MSE.
+    // Either way, if the manifest 404s (unrendered legacy clip,
+    // ffmpeg failure), the helper transparently swaps to the .mp4
+    // URL — same playback behavior as before HLS shipped.
+    if (window.attachHlsSource) {
+      window.attachHlsSource(
+        videoEl,
+        `/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8`,
+        `/api/highlights/${encodeURIComponent(h.event_id)}/clip`,
+      );
+    } else {
+      // Defensive fallback if hls-helper.js failed to load: original
+      // direct-MP4 path so the modal still plays something.
+      videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
+      try { videoEl.load(); } catch {}
+      videoEl.play().catch(() => {});
+    }
 
     // iOS: video starts WITHOUT the native control bar so a swipe
     // to the next clip doesn't flash an autoplay control overlay
@@ -849,7 +860,19 @@
 
     // ---- Wire the editor: video, trim, zoom, save/cancel ------------------
     videoEl = body.querySelector(".modal-video");
-    videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
+    // HLS-first with MP4 fallback. Trim editor needs frame-accurate
+    // seeking — both HLS and MP4 paths support that via currentTime
+    // assignment, so the editor logic below is unchanged.
+    if (window.attachHlsSource) {
+      window.attachHlsSource(
+        videoEl,
+        `/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8`,
+        `/api/highlights/${encodeURIComponent(h.event_id)}/clip`,
+        { startPlay: false },  // editor pauses at start by default
+      );
+    } else {
+      videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
+    }
 
     const wrap = body.querySelector(".modal-video-wrap");
     const playPause = body.querySelector("#modal-remix-pp");
@@ -1331,6 +1354,36 @@
       };
       videoTarget.addEventListener("mousedown", guard, true);
       videoTarget.addEventListener("touchstart", guard, true);
+
+      // Hide native video controls whenever the user zooms in. iOS
+      // Safari renders its overlay scrubber/play button as part of
+      // the <video> element's render tree, so a CSS transform on the
+      // video drags the controls along with it — they slide off
+      // screen the moment the user pinches. Toggling controls=false
+      // on zoom-in keeps the gesture clean (the controls don't
+      // distort and can't end up unreachable). When the user returns
+      // to scale 1.0 (double-tap, zoom-fit button, or pinch-to-1),
+      // we restore controls so playback can be paused/seeked again.
+      // Doesn't fight the iOS-specific tap-to-reveal flow because
+      // the controls just go absent at scale > 1 — tap is a no-op.
+      let prevAtZoom = false;
+      inst.on && inst.on("transform", () => {
+        const scale = (inst.getTransform && inst.getTransform().scale) || 1;
+        const atZoom = scale > 1.01;
+        if (atZoom && !prevAtZoom) {
+          videoTarget.dataset.controlsBeforeZoom =
+            videoTarget.controls ? "1" : "0";
+          videoTarget.controls = false;
+          videoTarget.removeAttribute("controls");
+        } else if (!atZoom && prevAtZoom) {
+          if (videoTarget.dataset.controlsBeforeZoom === "1") {
+            videoTarget.controls = true;
+            videoTarget.setAttribute("controls", "");
+          }
+          delete videoTarget.dataset.controlsBeforeZoom;
+        }
+        prevAtZoom = atZoom;
+      });
       return inst;
     } catch (err) {
       console.warn("[modal] panzoom init failed", err);

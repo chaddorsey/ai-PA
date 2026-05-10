@@ -152,9 +152,11 @@ async def require_cf_access(request: Request, call_next):
     # Per-clip media that the public landing + permalink need: the
     # thumbnail and clip files for any *featured* highlight. These
     # endpoints check featured-ness before serving (see below).
+    # /hls/* covers both index.m3u8 and seg_NNN.ts — same auth posture
+    # as /clip since it's the same media surface, just chunked.
     if path.startswith("/api/highlights/") and (
         path.endswith("/thumbnail") or path.endswith("/clip")
-        or path.endswith(".mp4")
+        or path.endswith(".mp4") or "/hls/" in path
     ):
         return await call_next(request)
     # Single-highlight metadata for the permalink page (anonymous can
@@ -1534,6 +1536,37 @@ async def highlight_thumb(event_id: str, request: Request) -> StreamingResponse:
                                  request=request)
 
 
+@app.get("/api/highlights/{event_id}/hls/index.m3u8")
+async def highlight_hls_manifest(event_id: str, request: Request) -> Any:
+    """HLS manifest proxy. Same auth posture as /clip — public Bypass
+    app, unguessable event_id is the gate. Curator may take ~5-15s if
+    pre-warm hasn't completed for this clip yet (lazy-render path);
+    once it lands, the file is served at FileResponse speed (single-
+    digit ms)."""
+    return await _proxy_curator(
+        f"/highlights/{event_id}/hls/index.m3u8",
+        "application/vnd.apple.mpegurl",
+        request=request,
+    )
+
+
+@app.get("/api/highlights/{event_id}/hls/{filename}")
+async def highlight_hls_segment(event_id: str, filename: str,
+                                  request: Request) -> Any:
+    """HLS .ts segment proxy. Filename is validated again here even
+    though the curator endpoint also validates — defense in depth so
+    a directory-escape attempt never leaves this process. mpegts
+    media-type lets iOS Safari + hls.js dispatch correctly."""
+    if not (filename.startswith("seg_") and filename.endswith(".ts")
+            and "/" not in filename and ".." not in filename):
+        raise HTTPException(status_code=400, detail="invalid segment name")
+    return await _proxy_curator(
+        f"/highlights/{event_id}/hls/{filename}",
+        "video/mp2t",
+        request=request,
+    )
+
+
 # Long-lived httpx client for media proxy. Re-using one client across
 # requests means TCP connections to the curator are pooled (default 100
 # keepalive sockets) instead of being torn down + redialed per request.
@@ -1569,9 +1602,14 @@ async def _close_media_client() -> None:
 # touches the same clip URL. ETag is the lever that turns a "30s
 # re-download every time you reopen the modal" into a "instant 304
 # Not Modified" — the previous proxy version stripped it.
+#
+# `cache-control` is forwarded so endpoints with non-default cache
+# semantics (e.g. HLS manifests need short cache + must-revalidate
+# rather than the immutable default) keep their settings instead of
+# being overridden by the proxy's blanket `immutable`.
 _FORWARD_RESP_HEADERS = (
     "etag", "last-modified", "content-range", "content-length",
-    "accept-ranges",
+    "accept-ranges", "cache-control",
 )
 # Headers from the inbound request the upstream needs to honor cache
 # revalidation + range. Without forwarding If-None-Match upstream the

@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import (
-    classifier, curator, db, deep_dive, manual_highlight, notify,
+    classifier, curator, db, deep_dive, hls, manual_highlight, notify,
     sss_client, web_push,
 )
 from .frigate_client import FrigateClient
@@ -401,6 +401,78 @@ def get_highlight_thumb(event_id: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(status_code=410, detail="thumbnail file missing")
     return FileResponse(path, media_type="image/jpeg", headers=_IMMUTABLE_CACHE)
+
+
+# HLS manifests can change in principle (e.g., if we ever re-segment
+# an existing clip), so they get a short max-age and `must-revalidate`.
+# In practice they're frozen-once-written, but `private, max-age=60`
+# leaves a small revalidation window for anything that does shift.
+_HLS_MANIFEST_CACHE = {"Cache-Control": "private, max-age=60, must-revalidate"}
+
+
+@app.get("/highlights/{event_id}/hls/index.m3u8")
+def get_highlight_hls_manifest(event_id: str) -> FileResponse:
+    """HLS manifest. Non-blocking: if the bundle hasn't been rendered
+    yet, kicks off prewarm in a background thread and returns 404
+    immediately so the client's <video> falls through to its next
+    <source> (the original .mp4). Avoids blocking the user 5-30s on
+    first click for legacy clips that haven't been backfilled, and
+    for newly-created clips opened in the brief window between save
+    and prewarm completion. The next user to open the same clip
+    (after the background render finishes) gets HLS.
+
+    404 also covers the genuine ffmpeg-can't-segment-this-source
+    case; the MP4 fallback works there too. Self-healing."""
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="not found")
+    clip_relpath = h["clip_path"]
+    if not hls.is_rendered(HIGHLIGHTS_ROOT, clip_relpath):
+        # Fire prewarm in background; client will see 404 and fall
+        # through to MP4 source. By the next visit the bundle exists.
+        hls.prewarm_hls_async(HIGHLIGHTS_ROOT, clip_relpath)
+        raise HTTPException(status_code=404, detail="hls not yet rendered")
+    out_dir = hls.hls_dir_for(HIGHLIGHTS_ROOT, clip_relpath)
+    manifest_path = out_dir / "index.m3u8"
+    if not manifest_path.exists():
+        raise HTTPException(status_code=404, detail="hls manifest missing")
+    return FileResponse(
+        manifest_path,
+        media_type="application/vnd.apple.mpegurl",
+        headers=_HLS_MANIFEST_CACHE,
+    )
+
+
+@app.get("/highlights/{event_id}/hls/{filename}")
+def get_highlight_hls_segment(event_id: str, filename: str) -> FileResponse:
+    """HLS .ts segment. Segments are immutable once written so we use
+    the same long-cache headers as the source clip + thumbnail. Path
+    components are constrained: only files matching seg_NNN.ts under
+    the event's HLS dir are served — defends against ../-style escape
+    and against accidental serves of stray files."""
+    if not (filename.startswith("seg_") and filename.endswith(".ts")
+            and "/" not in filename and ".." not in filename):
+        raise HTTPException(status_code=400, detail="invalid segment name")
+    h = db.get_highlight(DB_PATH, event_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="not found")
+    out_dir = hls.hls_dir_for(HIGHLIGHTS_ROOT, h["clip_path"])
+    seg_path = out_dir / filename
+    if not seg_path.exists():
+        raise HTTPException(status_code=404, detail="segment missing")
+    # Defensive: confirm the resolved path is still inside out_dir
+    # after symlink resolution. Filename validation above should make
+    # this redundant but the cost is negligible and the failure mode
+    # of a directory-traversal slip is bad.
+    try:
+        seg_path.resolve().relative_to(out_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="path escape")
+    return FileResponse(
+        seg_path,
+        media_type="video/mp2t",
+        headers=_IMMUTABLE_CACHE,
+    )
 
 
 @app.get("/stats")

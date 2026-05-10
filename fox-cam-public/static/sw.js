@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v149-clip-cache-headers";
+const CACHE = "our-foxes-v150-hls-playback";
 
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -37,6 +37,8 @@ const STATIC_ASSETS = [
   "/static/peeks.js",
   "/static/easter-eggs.js",
   "/static/panzoom.min.js",
+  "/static/hls.min.js",
+  "/static/hls-helper.js",
   "/static/manifest.webmanifest",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",

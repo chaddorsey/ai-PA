@@ -90,15 +90,29 @@
       //     (~1-3s for typical durations); subsequent views are instant
       //     cache hits. We could pre-warm on remix create / feature in a
       //     follow-up.
-      videoEl.src = remix
-        ? `/api/remixes/${encodeURIComponent(remix.remix_id)}/clip`
-        : `/api/highlights/${encodeURIComponent(highlight.event_id)}/clip`;
       videoEl.controls = true;
       videoEl.autoplay = true;
       videoEl.muted = true;
       videoEl.playsInline = true;
       videoEl.preload = "auto";
       img.replaceWith(videoEl);
+
+      // Highlights stream via HLS (4-sec segments → first frame in <1s
+      // on iOS, hls.js fallback for other browsers). Remixes are
+      // small one-off transcodes that don't have HLS — direct MP4 is
+      // fine. attachHlsSource handles the 404→MP4 fallback for any
+      // highlight that hasn't been backfilled yet.
+      if (remix) {
+        videoEl.src = `/api/remixes/${encodeURIComponent(remix.remix_id)}/clip`;
+      } else if (window.attachHlsSource) {
+        window.attachHlsSource(
+          videoEl,
+          `/api/highlights/${encodeURIComponent(highlight.event_id)}/hls/index.m3u8`,
+          `/api/highlights/${encodeURIComponent(highlight.event_id)}/clip`,
+        );
+      } else {
+        videoEl.src = `/api/highlights/${encodeURIComponent(highlight.event_id)}/clip`;
+      }
 
       // Raw highlights still get the preroll skip (parent clips have a
       // few seconds of pre-event buffer that's tedious to wait through).
@@ -240,7 +254,18 @@
     stage.hidden = false;
 
     const video = document.getElementById("remix-video");
-    video.src = `/api/highlights/${h.event_id}/clip`;
+    // Remix editor source is the parent highlight — same HLS-first
+    // posture as the playback views.
+    if (window.attachHlsSource) {
+      window.attachHlsSource(
+        video,
+        `/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8`,
+        `/api/highlights/${encodeURIComponent(h.event_id)}/clip`,
+        { startPlay: false },
+      );
+    } else {
+      video.src = `/api/highlights/${h.event_id}/clip`;
+    }
     video.muted = true;
     video.playsInline = true;
     video.autoplay = true;
