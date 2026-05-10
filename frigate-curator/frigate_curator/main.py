@@ -202,6 +202,25 @@ _client = FrigateClient(FRIGATE_BASE_URL, FRIGATE_USER, FRIGATE_PASS)
 
 
 @app.on_event("startup")
+async def _bump_threadpool() -> None:
+    # Every endpoint in this module is sync `def`, which means each
+    # request — including a 2 MB HLS segment FileResponse streaming
+    # over CF tunnel — occupies one anyio threadpool slot for the
+    # duration of the response. Default capacity is 40. iOS Safari's
+    # HLS player opens 6 concurrent segment fetches per clip; if a
+    # second device or a hot-reload doubles that, plus the curator
+    # loop's httpx call, we can starve the small request that's
+    # competing for a slot — empirically a manifest GET that should
+    # be 16 ms ends up at 5+ s. 200 gives ~33× headroom for the
+    # practical worst case (3 devices × 6 connections × buffered
+    # streams) without changing the sync handler shape.
+    import anyio
+    anyio.to_thread.current_default_thread_limiter().total_tokens = 200
+    logger.info("anyio threadpool: total_tokens=%d",
+                anyio.to_thread.current_default_thread_limiter().total_tokens)
+
+
+@app.on_event("startup")
 def _startup() -> None:
     HIGHLIGHTS_ROOT.mkdir(parents=True, exist_ok=True)
     db.init(DB_PATH)
