@@ -455,6 +455,36 @@ backup_host_data() {
         ((host_backup_count++)) || true
     fi
 
+    # 11. Frigate Curator SQLite DB (foxcam highlights, remixes,
+    #     user actions, profiles, push subs). Lives on main-drive
+    #     (the SSD) as of 2026-05-10 — see frigate-curator/main.py
+    #     for the rationale (resilience to main-filestore disconnect).
+    #
+    #     Uses sqlite3 .backup which is the online backup API — safe
+    #     to run while curator has the DB open; produces a consistent
+    #     snapshot without coordinating with the curator process.
+    #     Falls through to cp(1) if sqlite3 isn't available.
+    local curator_db="/Volumes/main-drive/ai-PA/curator-data/index.db"
+    if [[ -f "$curator_db" ]]; then
+        log "Backing up Frigate Curator DB..."
+        local out="$backup_dir/frigate-curator-index_$TIMESTAMP.db"
+        if command -v sqlite3 >/dev/null 2>&1; then
+            sqlite3 "$curator_db" ".backup '$out'" 2>/dev/null \
+                || log_warning "sqlite3 .backup failed; falling back to cp"
+        fi
+        # If .backup didn't produce the file, fall back to a plain copy
+        # (less consistent but better than nothing).
+        [[ -f "$out" ]] || cp "$curator_db" "$out" 2>/dev/null
+        if [[ -f "$out" ]]; then
+            gzip "$out" 2>/dev/null
+            local size=$(du -h "$out.gz" 2>/dev/null | cut -f1)
+            log_success "Frigate Curator DB backed up ($size)"
+            ((host_backup_count++)) || true
+        else
+            log_warning "Frigate Curator DB backup had issues"
+        fi
+    fi
+
     log_success "Host data backup complete: $host_backup_count items backed up"
 }
 
