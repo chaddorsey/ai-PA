@@ -97,16 +97,23 @@
         document.body.classList.add("modal-open");
       }
       renderViewer(cached);
-      // Background refresh — ignore failures, the cached render is
-      // fully usable. On success, only re-render if the modal is
-      // still showing this same clip (the user may have swiped to
-      // a different card by the time we return).
+      // Background refresh — pulls per-user state (my_favorited,
+      // my_archived) that the public-bypass cached row has wrong.
+      // We update `current` so action handlers that read it see the
+      // fresh values, and we patch the visible bits (heart fill,
+      // archive class) imperatively. We do NOT call renderViewer()
+      // again — that rebuilds the DOM including the <video> element,
+      // which detaches the in-flight HLS load mid-fetch. iOS Safari
+      // then fires 'error' on the now-orphaned element, the
+      // attachHlsSource error handler swaps src to /clip on the
+      // detached element (which still triggers byte-range fetches
+      // even on detached video), and you end up with TWO parallel
+      // video loads (HLS for the new element, MP4 for the orphaned
+      // one) competing for bandwidth. Black rectangle, 60-90s wait.
       fetchHighlightAuthed(eventId).then((fresh) => {
-        if (current && current.event_id === eventId
-            && JSON.stringify(fresh) !== JSON.stringify(cached)) {
-          current = fresh;
-          renderViewer(fresh);
-        }
+        if (!current || current.event_id !== eventId) return;
+        current = fresh;
+        applyFreshUserState(fresh);
       }).catch(() => {});
       return;
     }
@@ -237,6 +244,43 @@
     if (typeof dialog.close === "function") dialog.close();
     else dialog.removeAttribute("open");
   };
+
+  // Imperatively patch per-user state (heart fill, archive class)
+  // without rebuilding the modal DOM. Used by openCardModal's
+  // background refresh so fresh authed values can surface without
+  // disturbing the in-flight video load.
+  //
+  // CRITICAL: must NOT touch .modal-video or its panzoom binding.
+  // Any change there detaches the in-flight HLS load mid-fetch, iOS
+  // Safari fires error on the orphaned element, attachHlsSource's
+  // error handler swaps src to /clip on the detached element, and
+  // you end up with TWO parallel video loads (HLS new element, MP4
+  // orphan) competing for bandwidth. Black-rectangle bug.
+  //
+  // For now this only updates the .is-favorited / .is-archived
+  // classes on the modal root and a fav-count badge if one exists.
+  // The heart-button visual state derives from those classes via
+  // CSS. Other per-user surfaces will fall behind by up to one
+  // modal-open cycle, which is acceptable since they self-correct
+  // on the next page interaction.
+  function applyFreshUserState(h) {
+    if (!body) return;
+    try {
+      const stage = body.querySelector(".modal-stage");
+      if (stage) {
+        stage.classList.toggle("is-favorited", !!h.my_favorited);
+        stage.classList.toggle("is-archived", !!h.my_archived);
+        stage.classList.toggle("is-demoted", !!h.my_demoted);
+      }
+      const favCount = body.querySelector(".fav-count");
+      if (favCount && typeof h.favorite_count === "number") {
+        favCount.textContent = h.favorite_count > 0 ? `· ${h.favorite_count}` : "";
+      }
+    } catch (_) {
+      // Best-effort — if the DOM shape changed, fall back silently.
+      // Stale state for one modal-open cycle isn't a regression.
+    }
+  }
 
   function teardownVideo() {
     if (videoEl) {
