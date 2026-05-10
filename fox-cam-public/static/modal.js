@@ -553,8 +553,22 @@
     // tick as the element's creation.
     const _hlsUrl = `/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8`;
     const _mp4Url = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
+    // Only fall back to MP4 byte-ranges when the *manifest itself* is
+    // unavailable (MEDIA_ERR_SRC_NOT_SUPPORTED = 4). MEDIA_ERR_NETWORK
+    // (2) fires for transient CF-tunnel segment stalls — iOS Safari's
+    // HLS player already retries those internally before raising the
+    // event. The previous unconditional fallback was tripping on every
+    // segment hiccup and committing playback to the slow MP4 byte-range
+    // path the HLS work was meant to avoid (observed: 30+ s clip loads
+    // with multiple /clip 206s in proxy logs even though HLS coverage
+    // is 100%). With 100% HLS coverage, code-4 events are rare; an
+    // occasional broken video on a genuinely missing manifest is far
+    // better UX than dropping every clip with a transient hiccup into
+    // the 30s slow path.
     const _errSwap = (
       `if(this.dataset.fallback)return;` +
+      `var c=(this.error&&this.error.code)||0;` +
+      `if(c!==4)return;` +
       `this.dataset.fallback='1';` +
       `this.src='${_mp4Url}';` +
       `this.load();` +
