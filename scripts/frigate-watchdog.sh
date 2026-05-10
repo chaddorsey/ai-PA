@@ -64,9 +64,17 @@ RECORDING_WINDOW_SEC=300
 # AND motion recording at the same time. The motion-gated tier-1
 # check returns healthy_quiet here (no recordings = scene "quiet" by
 # the heuristic), so without this fallback the wedge would never
-# self-recover. 30 min is short enough to bound missed-clip damage,
-# long enough to ride out genuinely-empty overnight stretches.
-DEEP_FREEZE_WINDOW_SEC=1800
+# self-recover.
+#
+# Bumped from 1800s to 7200s on 2026-05-10 after the 30-min window
+# turned out to false-positive on daytime quiet stretches: gaps of
+# 60-90 min between fox visits are routine, and the original window
+# was triggering 5-6 restarts per quiet hour, each one wiping any
+# in-flight detection. Tier 1 (silent_wedge + motion) still catches
+# the higher-confidence failure mode within 13 min; tier 2 only
+# fires when motion recording is silent too, which legitimately
+# allows a longer window.
+DEEP_FREEZE_WINDOW_SEC=7200
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
