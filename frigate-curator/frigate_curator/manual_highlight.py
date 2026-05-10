@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import deep_dive
 
@@ -37,10 +37,10 @@ logger = logging.getLogger(__name__)
 _FFMPEG = shutil.which("ffmpeg")
 _FFPROBE = shutil.which("ffprobe")
 
-# Cap the max window so a typo can't ask for an hour-long render. SSS
-# chunks are usually 5 min so 10 min may straddle a chunk boundary —
-# deep_dive.fetch_window handles single chunks today; if we ever need
-# >chunk-length recovery we'll need to teach it to stitch.
+# Cap the max window so a typo can't ask for an hour-long render. The
+# RangeExport path on the server side stitches across chunks for us, so
+# 10 min straddling a 5-min boundary is fine; the cap is purely a sanity
+# check on UI input.
 MAX_WINDOW_SEC = 600  # 10 minutes
 
 
@@ -100,13 +100,18 @@ def recover_window(
     start_time: float,
     end_time: float,
     event_id: str | None = None,
+    progress_callback: Optional[Callable[[str, int], None]] = None,
 ) -> RecoverResult:
     """Build a manual highlight clip from SSS for the given window.
 
-    Pulls via deep_dive.fetch_window (which handles SSS auth, chunk
-    location, single-flight locking, and ffmpeg cut), then copies the
-    cached MP4 into the highlights dir as a permanent clip and
-    generates a thumbnail.
+    Pulls via deep_dive.fetch_window (which handles SSS auth, server-
+    side RangeExport with cross-chunk stitching, single-flight locking,
+    and zip-segment concat), then copies the cached MP4 into the
+    highlights dir as a permanent clip and generates a thumbnail.
+
+    progress_callback receives (stage, percent) updates from the SSS
+    export — caller can wire it to a UI status indicator. Stages:
+    "exporting" / "downloading" with percent 0-100.
 
     Raises RecoverError on validation failure or upstream SSS / ffmpeg
     failure. Caller is responsible for inserting the resulting paths
@@ -134,9 +139,23 @@ def recover_window(
             target_ts=midpoint,
             before_s=half,
             after_s=half,
+            progress_callback=progress_callback,
         )
     except deep_dive.DeepDiveError as e:
         raise RecoverError(f"SSS fetch failed: {e}") from e
+
+    # SSS download done. Post-processing (large-file copy + ffprobe +
+    # thumbnail) can take ~5-10s for a 5-min recording — emit a
+    # 'saving' stage so the chip flips off "downloading 100%" instead
+    # of looking stuck.
+    def _saving(percent: int) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback("saving", percent)
+        except Exception:
+            pass
+    _saving(0)
 
     # Synthetic event_id: stable + filesystem-safe + unguessable so a
     # leaked URL doesn't reveal a predictable namespace. Caller can
@@ -164,11 +183,14 @@ def recover_window(
         shutil.copy2(dd.path, clip_path)
     except Exception as e:
         raise RecoverError(f"copy from deep-dive cache failed: {e}") from e
+    _saving(70)
 
     actual_duration = _probe_duration(clip_path) or duration
+    _saving(85)
     thumb_ok = _generate_thumbnail(
         clip_path, thumb_path, offset_s=min(actual_duration / 2, 2.0)
     )
+    _saving(100)
 
     return RecoverResult(
         event_id=event_id,

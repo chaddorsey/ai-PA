@@ -10,23 +10,28 @@ Repeat requests for the same window return the cached MP4 instantly.
 Single-flight via per-key lock so simultaneous clicks don't fan out
 into duplicate SS pulls.
 
-Latency budget for a cold fetch (uncached):
-  SSS auth (cached SID):      ~0ms
-  Recording.List call:        ~500ms
-  Chunk download (5min, 250MB): 1-5s on LAN
-  ffmpeg cut (-c copy):       ~1-2s
-  Total:                      ~3-8s typical
+Latency budget for a cold fetch via RangeExport (server-side cut):
+  SSS auth (cached SID):       ~0ms
+  RangeExport kickoff:         ~500ms
+  Server export (45-sec window): 5-30s typical
+  Download windowed MP4 (~10MB): 1-3s on LAN
+  Total:                       ~6-35s typical
+RangeExport pays the per-request server-side encode but saves us from
+shipping 700MB-1.5GB of chunk data — and SSS regularly drops large-
+chunk downloads at 3-30%, while the windowed extract reliably finishes.
 """
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 import tempfile
 import threading
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from . import sss_client
 
@@ -65,17 +70,60 @@ def _key_lock(key: str) -> threading.Lock:
         return lock
 
 
+def _zip_to_mp4(zip_path: Path, dest: Path) -> None:
+    """Concat the MP4 segments inside a RangeExport ZIP into a single
+    MP4 at dest. Triggered when SSS reports the window straddles a
+    codec or resolution change (rare for our single-camera setup but
+    documented as possible in the SSS API)."""
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(td_path)
+        # Sort by name — SSS names segments in temporal order.
+        segments = sorted(
+            p for p in td_path.iterdir() if p.suffix.lower() == ".mp4"
+        )
+        if not segments:
+            raise DeepDiveError(
+                f"RangeExport zip {zip_path} contained no MP4 segments"
+            )
+        if len(segments) == 1:
+            shutil.copy2(segments[0], dest)
+            return
+        list_file = td_path / "concat.txt"
+        list_file.write_text(
+            "\n".join(f"file '{p.as_posix()}'" for p in segments) + "\n"
+        )
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "concat", "-safe", "0", "-i", str(list_file),
+            # Drop audio (SSS PCM_alaw doesn't repackage cleanly in mp4).
+            "-an", "-c", "copy", str(dest),
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            raise DeepDiveError(f"ffmpeg concat failed: {e}") from e
+
+
 def fetch_window(
     cache_root: Path,
     camera: str,
     target_ts: float,
     before_s: float = 15.0,
     after_s: float = 30.0,
+    progress_callback: Optional[Callable[[str, int], None]] = None,
 ) -> DeepDiveResult:
     """Pull a window from SSS centered on (target_ts - before_s, +after_s).
 
     Cached at cache_root / <camera> / <camera>_<ts>_<before>_<after>.mp4.
     Returns the cached path on repeat requests (idempotent).
+
+    progress_callback receives (stage, percent) updates so callers can
+    feed UI status indicators. Stages emitted: "exporting" (server
+    building the cut, percent = SSS-reported progress) and
+    "downloading" (transferring the result). On a cache hit, no
+    callbacks fire.
     """
     client = sss_client.get_client()
     if client is None:
@@ -100,53 +148,56 @@ def fetch_window(
                 duration_s=duration_s, chunk_id=0,
             )
 
-        # Locate the SSS chunk that contains the start of our window.
-        start_ts = target_ts - before_s
-        chunk = client.find_chunk(cam_id, start_ts)
-        if chunk is None:
-            raise DeepDiveError(
-                f"no SSS chunk covers {start_ts} (camera {camera}); "
-                "may be past retention"
-            )
+        from_ts = target_ts - before_s
+        to_ts = target_ts + after_s
 
-        # Download chunk to a per-camera scratch area. We could share
-        # the chunk across windows but for v1 simplicity we keep one
-        # chunk per fetch and rely on cache_path for the cut output.
-        chunks_dir = cache_root / "_chunks"
-        chunks_dir.mkdir(parents=True, exist_ok=True)
-        chunk_path = chunks_dir / f"sss_{cam_id}_{chunk['id']}.mp4"
-        t0 = time.monotonic()
-        client.download_chunk(chunk["id"], chunk_path)
-        dl_dt = time.monotonic() - t0
-        logger.info("fetched chunk %d (%dMB) in %.1fs",
-                    chunk["id"], chunk_path.stat().st_size // 1_000_000, dl_dt)
-
-        # Compute offset within the chunk and cut.
-        offset_s = max(0.0, start_ts - chunk["startTime"])
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-ss", f"{offset_s:.2f}", "-i", str(chunk_path),
-            "-t", f"{duration_s:.2f}",
-            # Drop audio (SSS PCM_alaw doesn't repackage cleanly in mp4).
-            "-an", "-c:v", "copy", str(cache_path),
-        ]
+        # Use SSS RangeExport: server-side cut spans chunk boundaries
+        # and ships ~tens of MB instead of forcing us through a 700MB-
+        # 1.5GB chunk download (which SSS regularly drops mid-stream).
+        # The trade-off is a per-request server encode of 5-30s for the
+        # typical 45-sec deep-dive window; for short manual recoveries
+        # we'd otherwise be downloading the wrong order of magnitude.
         t0 = time.monotonic()
         try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            raise DeepDiveError(f"ffmpeg cut failed: {e}") from e
-        cut_dt = time.monotonic() - t0
-        logger.info("cut window (%ds @ offset %.1fs) in %.1fs",
-                    int(duration_s), offset_s, cut_dt)
+            export_path, file_ext = client.range_export(
+                camera_id=cam_id,
+                from_ts=from_ts,
+                to_ts=to_ts,
+                dest=cache_path,
+                progress_callback=progress_callback,
+            )
+        except sss_client.SSSError as e:
+            raise DeepDiveError(f"SSS RangeExport failed: {e}") from e
+        export_dt = time.monotonic() - t0
 
-        # Optional: keep the chunk on disk only briefly. For now we
-        # leave it; subsequent windows from the same chunk are free.
-        # A janitor follow-up (F22?) can prune chunks that haven't been
-        # touched in N days.
+        if file_ext == "mp4":
+            logger.info(
+                "RangeExport window %s [%.0f, %.0f] (%dMB) in %.1fs",
+                camera, from_ts, to_ts,
+                cache_path.stat().st_size // 1_000_000, export_dt,
+            )
+        elif file_ext == "zip":
+            # Codec or resolution changed mid-window. Concat the
+            # segments before exposing the result via cache_path.
+            logger.info(
+                "RangeExport returned zip for %s [%.0f, %.0f]; concat'ing",
+                camera, from_ts, to_ts,
+            )
+            try:
+                _zip_to_mp4(export_path, cache_path)
+            finally:
+                try:
+                    export_path.unlink()
+                except FileNotFoundError:
+                    pass
+        else:
+            raise DeepDiveError(
+                f"unexpected RangeExport file_ext {file_ext!r}"
+            )
 
         return DeepDiveResult(
             path=cache_path, cache_hit=False,
-            duration_s=duration_s, chunk_id=chunk["id"],
+            duration_s=duration_s, chunk_id=0,
         )
 
 

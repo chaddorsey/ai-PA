@@ -111,6 +111,75 @@ logger = logging.getLogger("frigate_curator")
 
 
 # ---------------------------------------------------------------------------
+# Tiny TTL + single-flight cache for hot list endpoints.
+#
+# Why:
+#   Mobile loads of /highlights and /remixes are bursty — a single page
+#   open can fan out 3-5 parallel calls, and N family devices loading
+#   the gallery at the same time multiply that. Without coalescing we
+#   pay the same SQL cost N times, and a cold curator can take 20-30s
+#   on the first call (SQLite page cache priming). That blew past the
+#   proxy's 10s timeout and surfaced as "Can't load remixes" 500s.
+#
+# How:
+#   Per-key lock — first caller computes, others wait on the same lock,
+#   then read from cache. TTL of 5s coalesces a burst without making
+#   user actions (fav/archive) feel laggy, since optimistic UI flips
+#   the heart locally and the next refresh after 5s pulls fresh state.
+#   Bounded growth: prune expired keys on every miss, hard-cap entries.
+#
+# What's NOT covered: write paths don't invalidate the cache directly.
+# A favorite/archive that the user makes won't be reflected in the
+# next list call for up to 5s. That's acceptable here because the UI
+# tracks per-card state optimistically.
+class _TTLCache:
+    def __init__(self, ttl_s: float, max_entries: int = 256):
+        self.ttl_s = ttl_s
+        self.max_entries = max_entries
+        self._cache: dict[Any, tuple[float, Any]] = {}
+        self._key_locks: dict[Any, threading.Lock] = {}
+        self._lock = threading.Lock()
+
+    def get_or_compute(self, key: Any, compute) -> Any:
+        # Fast path: fresh hit, no lock dance.
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry and time.monotonic() - entry[0] < self.ttl_s:
+                return entry[1]
+            per_key_lock = self._key_locks.get(key)
+            if per_key_lock is None:
+                per_key_lock = threading.Lock()
+                self._key_locks[key] = per_key_lock
+        # Single-flight: serialize concurrent misses on the same key.
+        with per_key_lock:
+            with self._lock:
+                entry = self._cache.get(key)
+                if entry and time.monotonic() - entry[0] < self.ttl_s:
+                    return entry[1]
+            result = compute()
+            now = time.monotonic()
+            with self._lock:
+                # Opportunistic pruning: if we're full, drop expired
+                # keys first; if still full, drop oldest.
+                if len(self._cache) >= self.max_entries:
+                    expired = [k for k, (t, _) in self._cache.items()
+                               if now - t >= self.ttl_s]
+                    for k in expired:
+                        self._cache.pop(k, None)
+                        self._key_locks.pop(k, None)
+                    if len(self._cache) >= self.max_entries:
+                        oldest = min(self._cache.items(), key=lambda kv: kv[1][0])[0]
+                        self._cache.pop(oldest, None)
+                        self._key_locks.pop(oldest, None)
+                self._cache[key] = (now, result)
+            return result
+
+
+_highlights_cache = _TTLCache(ttl_s=5.0)
+_remixes_cache = _TTLCache(ttl_s=5.0)
+
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
@@ -177,6 +246,21 @@ def list_highlights(
     email: str | None = Query(default=None, description="viewer email for 'mine' bucket"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    cache_key = ("hl", camera, since, until, min_score, bucket,
+                 time_of_day, status, email, limit, offset)
+    return _highlights_cache.get_or_compute(
+        cache_key,
+        lambda: _list_highlights_uncached(
+            camera, since, until, min_score, bucket, time_of_day,
+            status, email, limit, offset,
+        ),
+    )
+
+
+def _list_highlights_uncached(
+    camera, since, until, min_score, bucket, time_of_day, status,
+    email, limit, offset,
 ) -> dict[str, Any]:
     # Day = 6am–6pm local; Night = 6pm–6am local (wraps midnight)
     hour_from = hour_to = None
@@ -671,9 +755,21 @@ def _do_manual_recovery(
     endpoint sees progress. Exceptions are caught + recorded; the
     foreground caller never sees them, only the polling endpoint does.
     """
+    def _on_progress(stage: str, percent: int) -> None:
+        # Forwards SSS RangeExport progress into the task tracker so
+        # the UI chip can show "Exporting 47%" / "Downloading…" rather
+        # than a generic spinner. Called from the manual_highlight
+        # → deep_dive → sss_client chain on every progress poll.
+        with _recovery_tasks_lock:
+            t = _recovery_tasks.get(task_id)
+            if t is not None:
+                t["stage"] = stage
+                t["progress"] = max(0, min(100, int(percent)))
+
     try:
         with _recovery_tasks_lock:
             _recovery_tasks[task_id]["stage"] = "fetching"
+            _recovery_tasks[task_id]["progress"] = 0
         result = manual_highlight.recover_window(
             deep_dive_cache_root=DEEP_DIVE_CACHE_ROOT,
             highlights_root=HIGHLIGHTS_ROOT,
@@ -681,6 +777,7 @@ def _do_manual_recovery(
             start_time=start_time,
             end_time=end_time,
             event_id=task_id,  # match the up-front-generated id
+            progress_callback=_on_progress,
         )
         row = {
             "event_id":       result.event_id,
@@ -708,6 +805,7 @@ def _do_manual_recovery(
             _recovery_tasks[task_id].update({
                 "status": "ready",
                 "stage": "done",
+                "progress": 100,
                 "duration_s": result.duration_s,
                 "sss_chunk_id": result.sss_chunk_id,
             })
@@ -965,6 +1063,19 @@ def list_remixes(email: str | None = None,
     scope used to send this as `email`; the proxy now sends both).
     `liked_by_email` restricts to remixes that user has liked (powers
     the "Liked by Me" status filter on the Remix view)."""
+    cache_key = ("rmx", email, event_id, created_by, liked_by_email,
+                 limit, offset)
+    return _remixes_cache.get_or_compute(
+        cache_key,
+        lambda: _list_remixes_uncached(
+            email, event_id, created_by, liked_by_email, limit, offset,
+        ),
+    )
+
+
+def _list_remixes_uncached(
+    email, event_id, created_by, liked_by_email, limit, offset,
+) -> dict[str, Any]:
     if event_id:
         items = db.remix_list_for_event(DB_PATH, event_id)
     elif created_by:
@@ -1384,7 +1495,14 @@ def _ensure_remix_rendered(remix_id: str) -> Path:
         cmd += ["-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
                 "-crf", "20", "-c:a", "aac", "-b:a", "128k"]
     else:
-        cmd += ["-c", "copy"]
+        # Stream-copy video. Audio is re-encoded to AAC because manual-
+        # recovery clips from SSS carry PCM_alaw (8kHz security-cam
+        # audio) which MP4's mux table doesn't recognize — `-c copy`
+        # bombs out with "Could not find tag for codec pcm_alaw" and
+        # the renderer 500s. AAC re-encode is a few hundred ms even on
+        # a 5-min clip and works for AAC inputs (no-op pass) and for
+        # sources with no audio stream at all.
+        cmd += ["-c:v", "copy", "-c:a", "aac", "-b:a", "128k"]
     cmd += ["-movflags", "+faststart", str(tmp_path)]
 
     try:
