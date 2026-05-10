@@ -70,6 +70,34 @@
   // ---------------------------------------------------------------
   let scrollAutoplayObserver = null;
   let scrollAutoplayCurrent = null;
+  // Suspended state: when a modal is open we pause the scroll-autoplay
+  // singleton so its in-progress MP4 byte-range fetches don't compete
+  // for bandwidth with the modal's video load. iOS Safari with five
+  // concurrent <video> elements (one in the modal + ~4 visible cards
+  // each with a preview) saturates the CF tunnel + WD drive — the
+  // modal's HLS segments never arrive in time, video controls just
+  // spin. Suspended on every openCardModal, restored on close.
+  let scrollAutoplaySuspended = false;
+  function suspendScrollAutoplay() {
+    scrollAutoplaySuspended = true;
+    // Tear down whatever's currently playing in the gallery so its
+    // in-flight Range requests stop.
+    if (scrollAutoplayCurrent) {
+      const v = scrollAutoplayCurrent.querySelector("video.preview");
+      if (v) { try { v.pause(); } catch (_) {} v.remove(); }
+      const card = scrollAutoplayCurrent.closest(".highlight");
+      if (card) card.classList.remove("is-active-preview");
+      scrollAutoplayCurrent = null;
+    }
+  }
+  function resumeScrollAutoplay() {
+    scrollAutoplaySuspended = false;
+    // The next IntersectionObserver tick will pick up a new winner.
+    // No need to manually re-attach a video here.
+  }
+  // Expose so modal.js can flip the state on open/close.
+  window.suspendScrollAutoplay = suspendScrollAutoplay;
+  window.resumeScrollAutoplay = resumeScrollAutoplay;
 
   function ensureScrollAutoplayObserver() {
     if (scrollAutoplayObserver !== null) return scrollAutoplayObserver;
@@ -93,6 +121,21 @@
     // (0.2) so a partially-visible card still wins as long as it's
     // the most prominent in the band.
     scrollAutoplayObserver = new IntersectionObserver((entries) => {
+      // While the modal is open, the gallery is occluded — don't
+      // start any new previews and tear down anything that's still
+      // running. Returning here means the observer still fires on
+      // intersection changes (cheap), but nothing actually loads.
+      if (scrollAutoplaySuspended) {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            const v = entry.target.querySelector("video.preview");
+            if (v) { try { v.pause(); } catch (_) {} v.remove(); }
+            const card = entry.target.closest(".highlight");
+            if (card) card.classList.remove("is-active-preview");
+          }
+        }
+        return;
+      }
       // Tear down any card that left the center band.
       for (const entry of entries) {
         if (!entry.isIntersecting) {

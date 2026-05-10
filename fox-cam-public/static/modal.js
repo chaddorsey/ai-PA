@@ -89,6 +89,14 @@
     const cached = (window.HIGHLIGHTS_BY_ID && window.HIGHLIGHTS_BY_ID[eventId]) || null;
     currentRemix = null;
 
+    // Suspend gallery scroll-autoplay BEFORE the modal mounts. Each
+    // scroll-autoplay <video> in the gallery streams MP4 in the
+    // background; with 4-5 visible cards each holding their own
+    // in-flight Range requests, the modal's HLS manifest+segments
+    // can't get through the CF tunnel fast enough — the user sees
+    // spinning controls for 20-90s. Resumed in closeCardModal.
+    if (window.suspendScrollAutoplay) window.suspendScrollAutoplay();
+
     if (cached) {
       current = cached;
       if (!dialog.open) {
@@ -243,6 +251,10 @@
     document.body.classList.remove("modal-open");
     if (typeof dialog.close === "function") dialog.close();
     else dialog.removeAttribute("open");
+    // Restore the gallery scroll-autoplay observer; the next
+    // intersection tick will reattach a preview to whichever card
+    // is currently in the center band.
+    if (window.resumeScrollAutoplay) window.resumeScrollAutoplay();
   };
 
   // Imperatively patch per-user state (heart fill, archive class)
