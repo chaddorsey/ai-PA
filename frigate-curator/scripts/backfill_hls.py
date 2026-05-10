@@ -70,7 +70,6 @@ def main() -> int:
     print(f"HLS backfill starting", flush=True)
     print(f"  DB:               {DB_PATH}", flush=True)
     print(f"  HIGHLIGHTS_ROOT:  {HIGHLIGHTS_ROOT}", flush=True)
-    print(f"  process nice:     {os.nice(0)}  (lower = higher priority)", flush=True)
 
     with db.connect(DB_PATH) as conn:
         rows = conn.execute(
