@@ -25,7 +25,7 @@ import asyncio
 import httpx
 import websockets
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -430,7 +430,7 @@ async def get_highlight(event_id: str, request: Request) -> Any:
     params = {"email": email} if email else {}
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/highlights/{event_id}",
-                              params=params, timeout=8.0)
+                              params=params, timeout=30.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -466,7 +466,7 @@ async def get_featured(limit: int = 6) -> Any:
         raise HTTPException(status_code=400, detail="limit out of range")
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/featured",
-                              params={"limit": limit}, timeout=5.0)
+                              params={"limit": limit}, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -820,7 +820,7 @@ async def list_highlights(
     if email:
         params["email"] = email
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/highlights", params=params, timeout=10.0)
+        r = await client.get(f"{CURATOR_API}/highlights", params=params, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     body = r.json()
@@ -841,6 +841,115 @@ async def list_highlights(
         body["items"] = kept
         body["count"] = len(kept)
     return body
+
+
+# ---------------------------------------------------------------------------
+# Composite bootstrap endpoint — collapses the 5-7 parallel API calls a
+# fresh page-load fires into one round-trip. Mobile devices (especially
+# through the Cloudflare tunnel) pay 200-300ms per round-trip; with one
+# endpoint instead of seven, total network latency on a cold open drops
+# from ~1.5s wall to ~300ms wall.
+#
+# The payload is a union of the per-endpoint responses, keyed by their
+# logical name. Each sub-call has a per-call default so one failing
+# curator endpoint can't break the whole page — the page renders with
+# best-effort partial data and individual sections retry per their own
+# logic. This makes the bootstrap a strict perf optimization rather
+# than a new failure mode.
+#
+# JS clients should still call individual /api/* endpoints for refreshes,
+# bucket switches, and fav/archive writes — bootstrap is for *first-load
+# of the page* only.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bootstrap")
+async def bootstrap(
+    request: Request,
+    bucket: str = Query(default="pending", regex="^(pending|all|favorites|demoted|mine|shared|remixes)$"),
+    time_of_day: str = Query(default="any", regex="^(any|day|night)$"),
+    status: str = Query(default="active", regex="^(any|active|archived)$"),
+    species_filter: str = Query(default="", regex="^(|wildlife|fox|unclassified)$"),
+    limit: int = Query(default=30, ge=1, le=200),
+    since: float | None = Query(default=None),
+    until: float | None = Query(default=None),
+    featured_limit: int = Query(default=6, ge=1, le=24),
+) -> Any:
+    email = _actor_email(request)
+    is_admin = _is_admin(request)
+
+    # Per-call helper that swallows exceptions and returns a default —
+    # ensures asyncio.gather doesn't unwind the whole bootstrap on a
+    # single sub-call failure.
+    async def safe_get(client: httpx.AsyncClient, path: str,
+                       params: dict[str, Any] | None = None,
+                       timeout: float = 25.0,
+                       default: Any = None) -> Any:
+        try:
+            r = await client.get(f"{CURATOR_API}{path}",
+                                  params=params or {}, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            logging.warning("bootstrap sub-call failed: %s %s", path, e)
+        return default
+
+    hl_params: dict[str, Any] = {
+        "bucket": bucket, "time_of_day": time_of_day, "status": status,
+        "limit": limit, "offset": 0,
+    }
+    if since is not None: hl_params["since"] = since
+    if until is not None: hl_params["until"] = until
+    if email: hl_params["email"] = email
+
+    profile_params = {"email": email} if email else {}
+    viewer_params = {"email": email} if email else {}
+    unread_params = {"email": email} if email else {}
+
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(
+            safe_get(client, "/highlights", hl_params,
+                     default={"items": [], "count": 0}),
+            safe_get(client, "/profile", profile_params, default=None),
+            safe_get(client, "/profile/all",
+                     default={"users": []}),
+            safe_get(client, "/viewer/state", viewer_params,
+                     default={"last_seen_ts": 0, "new_count": 0}),
+            safe_get(client, "/notifications/unread_count",
+                     unread_params, default={"count": 0}),
+            safe_get(client, "/featured", {"limit": featured_limit},
+                     default={"items": [], "highlights": []}),
+        )
+    highlights, profile, profile_all, viewer_state, unread, featured = results
+
+    # Apply species_filter to highlights.items (matches /api/highlights
+    # behavior — curator doesn't know about the wildlife/fox/unclassified
+    # synthetic buckets).
+    if highlights and species_filter:
+        items = highlights.get("items", [])
+        if species_filter == "wildlife":
+            kept = [h for h in items if h.get("species") not in
+                    (None, "", "none", "person", "vehicle", "error")]
+        elif species_filter == "fox":
+            kept = [h for h in items if h.get("species") == "fox"]
+        elif species_filter == "unclassified":
+            kept = [h for h in items if not h.get("species")]
+        else:
+            kept = items
+        highlights = {**highlights, "items": kept, "count": len(kept)}
+
+    return {
+        "highlights": highlights,
+        "profile": profile,
+        "profile_all": profile_all,
+        "viewer_state": viewer_state,
+        "unread_count": unread,
+        "featured": featured,
+        "whoami": {
+            "authed": bool(email),
+            "admin": is_admin,
+            "email": email,
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -878,7 +987,7 @@ async def get_viewer_state(request: Request) -> Any:
     email = _actor_email(request)
     async with httpx.AsyncClient() as client:
         params = {"email": email} if email else {}
-        r = await client.get(f"{CURATOR_API}/viewer/state", params=params, timeout=5.0)
+        r = await client.get(f"{CURATOR_API}/viewer/state", params=params, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -922,7 +1031,7 @@ async def get_highlight_authed(event_id: str, request: Request) -> Any:
     params = {"email": email} if email else {}
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/highlights/{event_id}",
-                              params=params, timeout=8.0)
+                              params=params, timeout=30.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -996,7 +1105,7 @@ async def get_remix(remix_id: str, request: Request) -> Any:
     params = {"email": email} if email else {}
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/remixes/{remix_id}",
-                              params=params, timeout=8.0)
+                              params=params, timeout=30.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -1027,7 +1136,7 @@ async def list_remixes(request: Request,
     if liked_by_me and email:
         params["liked_by_email"] = email
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/remixes", params=params, timeout=10.0)
+        r = await client.get(f"{CURATOR_API}/remixes", params=params, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1040,7 +1149,7 @@ async def like_remix(remix_id: str, request: Request) -> Any:
         raise HTTPException(status_code=401, detail="auth required")
     async with httpx.AsyncClient() as client:
         r = await client.post(f"{CURATOR_API}/remixes/{remix_id}/like",
-                               params={"email": email}, timeout=8.0)
+                               params={"email": email}, timeout=30.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -1061,7 +1170,7 @@ async def list_notifications(request: Request,
             f"{CURATOR_API}/notifications",
             params={"email": email, "unread_only": bool(unread_only),
                     "limit": limit, "offset": offset},
-            timeout=8.0,
+            timeout=30.0,
         )
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
@@ -1075,7 +1184,7 @@ async def unread_count(request: Request) -> Any:
         return {"unread_count": 0}
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/notifications/unread_count",
-                              params={"email": email}, timeout=5.0)
+                              params={"email": email}, timeout=30.0)
     if r.status_code != 200:
         return {"unread_count": 0}
     return r.json()
@@ -1125,7 +1234,7 @@ async def get_my_profile(request: Request) -> Any:
     # at 8s is still better UX than a 502.
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/profile",
-                              params={"email": email}, timeout=15.0)
+                              params={"email": email}, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1137,7 +1246,7 @@ async def list_profiles() -> Any:
     (remix attributions, like notifications, etc.) so there's no
     privacy delta vs. fetching them lazily one by one."""
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{CURATOR_API}/profile/all", timeout=15.0)
+        r = await client.get(f"{CURATOR_API}/profile/all", timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1219,7 +1328,7 @@ async def push_list_subscriptions(request: Request) -> Any:
         raise HTTPException(status_code=401, detail="auth required")
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/push/subscriptions",
-                              params={"email": email}, timeout=5.0)
+                              params={"email": email}, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1232,7 +1341,7 @@ async def push_get_preferences(request: Request) -> Any:
         raise HTTPException(status_code=401, detail="auth required")
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/push/preferences",
-                              params={"email": email}, timeout=5.0)
+                              params={"email": email}, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1275,7 +1384,7 @@ async def push_get_pause(request: Request) -> Any:
         raise HTTPException(status_code=401, detail="auth required")
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/push/pause",
-                              params={"email": email}, timeout=5.0)
+                              params={"email": email}, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1303,7 +1412,7 @@ async def push_get_schedule(request: Request) -> Any:
         raise HTTPException(status_code=401, detail="auth required")
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/push/schedule",
-                              params={"email": email}, timeout=5.0)
+                              params={"email": email}, timeout=30.0)
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail="curator error")
     return r.json()
@@ -1342,8 +1451,12 @@ async def push_delete_schedule(interval_id: int, request: Request) -> Any:
 async def update_remix(remix_id: str, request: Request) -> Any:
     body = await request.json()
     async with httpx.AsyncClient() as client:
+        # 30s matches the read-side ceiling. Cold-curator PATCH on a
+        # newly-restarted process can take 10-15s while SQLite warms
+        # its page cache; the previous 10s ceiling surfaced as a
+        # spurious "couldn't update remix" 500 to the user.
         r = await client.patch(f"{CURATOR_API}/remixes/{remix_id}",
-                                json=body, timeout=10.0)
+                                json=body, timeout=30.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code != 200:
@@ -1373,7 +1486,7 @@ async def delete_remix(remix_id: str, request: Request) -> Any:
     by = _actor_email(request)
     async with httpx.AsyncClient() as client:
         r = await client.delete(f"{CURATOR_API}/remixes/{remix_id}",
-                                 params={"by": by} if by else {}, timeout=10.0)
+                                 params={"by": by} if by else {}, timeout=30.0)
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
     if r.status_code == 403:
@@ -1388,7 +1501,7 @@ async def _post_action(event_id: str, action: str, by: str | None) -> Any:
         r = await client.post(
             f"{CURATOR_API}/highlights/{event_id}/{action}",
             json={"by": by},
-            timeout=10.0,
+            timeout=30.0,
         )
     if r.status_code == 404:
         raise HTTPException(status_code=404, detail="not found")
@@ -1421,48 +1534,146 @@ async def highlight_thumb(event_id: str, request: Request) -> StreamingResponse:
                                  request=request)
 
 
+# Long-lived httpx client for media proxy. Re-using one client across
+# requests means TCP connections to the curator are pooled (default 100
+# keepalive sockets) instead of being torn down + redialed per request.
+# Per-Range-request handshake savings compound: a single video play can
+# fire 20+ range requests through this proxy, and each saved handshake
+# is real time off iOS Safari's "first frame ready" budget. The client
+# is closed at app shutdown.
+_media_client: httpx.AsyncClient | None = None
+
+
+def _get_media_client() -> httpx.AsyncClient:
+    global _media_client
+    if _media_client is None:
+        _media_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=300.0,
+                                  write=30.0, pool=10.0),
+            limits=httpx.Limits(max_keepalive_connections=64,
+                                 max_connections=128),
+        )
+    return _media_client
+
+
+@app.on_event("shutdown")
+async def _close_media_client() -> None:
+    global _media_client
+    if _media_client is not None:
+        await _media_client.aclose()
+        _media_client = None
+
+
+# Headers worth forwarding from the upstream (curator) response to the
+# browser so iOS Safari can do conditional GETs the next time it
+# touches the same clip URL. ETag is the lever that turns a "30s
+# re-download every time you reopen the modal" into a "instant 304
+# Not Modified" — the previous proxy version stripped it.
+_FORWARD_RESP_HEADERS = (
+    "etag", "last-modified", "content-range", "content-length",
+    "accept-ranges",
+)
+# Headers from the inbound request the upstream needs to honor cache
+# revalidation + range. Without forwarding If-None-Match upstream the
+# curator can't return 304, so the browser never sees a fast revalidate.
+_FORWARD_REQ_HEADERS = (
+    "range", "if-none-match", "if-modified-since",
+)
+
+
 async def _proxy_curator(path: str, media_type: str,
                           extra_headers: dict[str, str] | None = None,
-                          request: Request | None = None) -> StreamingResponse:
-    # Forward the Range header so curator (FastAPI FileResponse, which
-    # supports Range natively) can return 206 Partial Content. Without
-    # this, iOS Safari refuses to play <video> elements past a brief
-    # scrubber preview — the spec requires byte-range loading and
-    # treats a 200 with full content as a non-seekable stream.
+                          request: Request | None = None) -> Any:
+    # True passthrough streaming. The earlier implementation looked like
+    # streaming (async with client.stream) but called `await r.aread()`,
+    # which buffered the *entire* upstream body before returning the
+    # StreamingResponse. For 30s clips at substream resolution that was
+    # a few MB and felt fine; for the 260 MB manual-recovery clips it
+    # exceeded the 30s timeout long before iOS Safari saw byte 1, and
+    # the client got a 500 with no clue why. Worse, every Range request
+    # forced the proxy to download the *full* file from curator even
+    # though the browser only asked for one chunk.
+    #
+    # The fix is to keep the upstream connection open across the
+    # generator's lifetime: build the request, send with stream=True,
+    # peek at status + headers, then yield bytes from aiter_bytes()
+    # directly. The httpx response and client stay alive until
+    # StreamingResponse is fully consumed (or the client disconnects),
+    # at which point the generator's finally clause closes them.
+    #
+    # Per-operation timeouts: connect=10s (curator is local but might be
+    # restarting), read=300s (any single chunk read should be fast, but
+    # large clips on slow mobile links can stretch the overall stream).
+    # We cap _per chunk_ rather than overall duration so a slow client
+    # can still finish a long clip.
     upstream_headers: dict[str, str] = {}
     if request is not None:
-        rng = request.headers.get("range")
-        if rng:
-            upstream_headers["Range"] = rng
-    async with httpx.AsyncClient() as client:
-        async with client.stream(
-            "GET", f"{CURATOR_API}{path}",
-            headers=upstream_headers, timeout=30.0,
-        ) as r:
-            if r.status_code == 404:
-                raise HTTPException(status_code=404, detail="not found")
-            # Both 200 (full) and 206 (partial) are success — propagate
-            # the upstream status code unchanged so the browser knows
-            # whether this is a Range response.
-            if r.status_code not in (200, 206):
-                raise HTTPException(status_code=502, detail="curator error")
-            content = await r.aread()
-    upstream_status = r.status_code
+        for h in _FORWARD_REQ_HEADERS:
+            v = request.headers.get(h)
+            if v:
+                upstream_headers[h.title() if h != "if-none-match" else "If-None-Match"] = v
+
+    client = _get_media_client()
+    req = client.build_request(
+        "GET", f"{CURATOR_API}{path}", headers=upstream_headers,
+    )
+    r = await client.send(req, stream=True)
+    if r.status_code == 404:
+        await r.aclose()
+        raise HTTPException(status_code=404, detail="not found")
+    # 304 Not Modified means the browser's cached copy is still valid —
+    # short-circuit with an empty 304 (no body) so iOS Safari plays
+    # straight from cache. Forward ETag + Last-Modified so the next
+    # If-None-Match cycle keeps working.
+    if r.status_code == 304:
+        cache_headers: dict[str, str] = {
+            "Cache-Control": "private, max-age=3600, immutable",
+            "Accept-Ranges": "bytes",
+        }
+        for h in _FORWARD_RESP_HEADERS:
+            if h in r.headers:
+                cache_headers[h.title()] = r.headers[h]
+        if extra_headers:
+            cache_headers.update(extra_headers)
+        await r.aclose()
+        return Response(status_code=304, headers=cache_headers)
+    if r.status_code not in (200, 206):
+        await r.aclose()
+        raise HTTPException(status_code=502, detail="curator error")
+
     # Highlight clips + thumbnails are immutable once written. Aggressive
-    # cache means a user scrolling/re-rendering the gallery hits browser
-    # cache instead of re-fetching — which is the dominant load pattern
-    # and the only easy lever once the curator is responding correctly.
-    headers = {"Cache-Control": "private, max-age=3600, immutable",
-               "Accept-Ranges": "bytes"}
-    # Forward the headers iOS Safari needs to honor a Range response.
-    for h in ("content-range", "content-length"):
+    # cache + ETag/Last-Modified passthrough means iOS Safari can do an
+    # If-None-Match revalidate on every clip reopen and the curator
+    # answers 304 in single-digit ms — the difference between "snappy
+    # second open" and "30s redownload because the proxy quietly
+    # stripped the validators".
+    response_headers = {"Cache-Control": "private, max-age=3600, immutable",
+                        "Accept-Ranges": "bytes"}
+    for h in _FORWARD_RESP_HEADERS:
         if h in r.headers:
-            headers[h.title()] = r.headers[h]
+            response_headers[h.title()] = r.headers[h]
     if extra_headers:
-        headers.update(extra_headers)
+        response_headers.update(extra_headers)
+
+    async def chunked():
+        try:
+            # 256 KB chunks balance two concerns: smaller chunks add
+            # per-iteration async overhead (each yield bounces through
+            # uvicorn's queue), but larger chunks delay first-byte to
+            # the browser. iOS Safari's video element pipelines Range
+            # requests of 1-2 MB; 256 KB chunks let the StreamingResponse
+            # write 4-8 chunks per Range and stay close to the wire.
+            async for chunk in r.aiter_bytes(chunk_size=256 * 1024):
+                yield chunk
+        finally:
+            # Don't close the shared client — only this response object.
+            # The httpx.AsyncClient is module-level and reused across
+            # requests for connection pooling.
+            await r.aclose()
+
     return StreamingResponse(
-        iter([content]),
+        chunked(),
         media_type=media_type,
-        headers=headers,
-        status_code=upstream_status,
+        headers=response_headers,
+        status_code=r.status_code,
     )
