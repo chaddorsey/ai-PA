@@ -42,6 +42,7 @@ Failures (corrupted source, unsupported codec, etc.):
 """
 from __future__ import annotations
 
+import fcntl
 import logging
 import os
 import shutil
@@ -54,14 +55,27 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-# Cap concurrent ffmpeg invocations across the whole process. ffmpeg's
-# output is many small files on the same volume as the SQLite DB; two
-# or more racing ffmpegs saturate disk I/O and starve the API path.
-# A semaphore of 1 means each new render queues behind the previous
-# one — slower throughput on bulk renders but the API stays
-# responsive. Backfill scripts that want concurrency should use their
-# own out-of-band ffmpeg pool (with `nice -n 19` ideally), not this
-# module's prewarm helper.
+# Cap concurrent ffmpeg invocations across the whole *system*, not just
+# this process. The WD-Elements USB enclosure has modest random-write
+# bandwidth, and a single ffmpeg already saturates it; two
+# simultaneous renders cut throughput in half AND make the disk so
+# busy that even a `find` walk hangs behind them.
+#
+# Two coordination layers:
+#   1. _render_semaphore — in-process, threading-safe. Cheap; covers
+#      multiple modal-open daemon threads inside the curator process.
+#   2. RENDER_LOCK_PATH + fcntl.flock — across all processes that
+#      import this module (curator daemon + backfill script + any
+#      future tools). Exclusive lock means at most one ffmpeg in the
+#      entire system at a time, regardless of how many processes are
+#      trying to render.
+#
+# Lock file lives in /tmp because:
+#   - It's writable from every process without permission shenanigans
+#   - It survives across process restarts (the lock state doesn't, but
+#     the file does, which is what we need)
+#   - It's not on main-filestore so a drive disconnect won't break it
+RENDER_LOCK_PATH = Path("/tmp/frigate-curator-hls-render.lock")
 _render_semaphore = threading.Semaphore(1)
 
 
@@ -111,19 +125,30 @@ def ensure_hls_rendered(
     if manifest.exists():
         return out_dir
 
-    # Hold the semaphore across the *entire* tmp_dir lifecycle, not
-    # just the ffmpeg call. The earlier draft put tmp_dir setup
-    # outside the semaphore, which let two concurrent prewarms race:
-    # both saw `if not is_rendered`, both did `shutil.rmtree(tmp_dir)`
-    # + `tmp_dir.mkdir()`, both queued for the semaphore. Whichever
-    # acquired second would `rmtree` the first's freshly-renamed
-    # `_hls/` *during* ffmpeg's writes — surfaced as exit status 254
-    # with "Failed to open file '..._hls.tmp/seg_000.ts'" in today's
-    # logs. Inside the semaphore, only one thread ever touches
-    # tmp_dir at a time.
-    with _render_semaphore:
+    # Acquire BOTH the in-process semaphore and the on-disk fcntl
+    # lock before doing any tmp_dir work. The semaphore alone isn't
+    # enough — backfill_hls.py runs in a separate process from the
+    # curator daemon, and a per-process semaphore can't coordinate
+    # across them. Without the file lock, both processes would
+    # happily run ffmpegs simultaneously, halving disk throughput
+    # and (worse) potentially racing on the same _hls.tmp/ directory.
+    #
+    # Order matters: take the in-process lock first so threads inside
+    # the same process queue cheaply (no syscall), then the file
+    # lock for cross-process coordination. Reverse order would let
+    # multiple threads in this process pile on the file lock.
+    RENDER_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _render_semaphore, open(RENDER_LOCK_PATH, "w") as _lock_fd:
+        # Blocking flock waits until any other process holding LOCK_EX
+        # releases. The `with open(...)` closes the fd on exit, which
+        # releases the lock. The flock is taken AFTER the in-process
+        # semaphore so threads in the same process don't all queue
+        # on a syscall — the cheap semaphore handles same-process
+        # serialization, the flock handles cross-process.
+        fcntl.flock(_lock_fd.fileno(), fcntl.LOCK_EX)
+
         # Re-check the published manifest now that we've serialized.
-        # A previous queued thread may have rendered while we waited.
+        # Another process or thread may have rendered while we waited.
         if (out_dir / "index.m3u8").exists():
             return out_dir
 
@@ -164,9 +189,9 @@ def ensure_hls_rendered(
 
         # Atomic publish. os.replace is the POSIX atomic rename on
         # the same filesystem — no reader can ever see a half-written
-        # manifest. Done inside the semaphore so the next queued
-        # thread sees the published manifest immediately on its
-        # is_rendered re-check above and skips its own render.
+        # manifest. Done inside the locks so the next queued process
+        # sees the published manifest immediately on its is_rendered
+        # re-check above and skips its own render.
         try:
             os.replace(tmp_dir, out_dir)
         except OSError as e:
