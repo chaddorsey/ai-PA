@@ -111,43 +111,50 @@ def ensure_hls_rendered(
     if manifest.exists():
         return out_dir
 
-    # Atomic rename: build into a sibling tmp dir, swap on success.
-    # If a previous run was interrupted, the tmp dir may still exist
-    # with partial output — wipe it so this run starts clean.
-    tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
-    if tmp_dir.exists():
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-    tmp_dir.mkdir(parents=True, exist_ok=False)
-
-    cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(src),
-        # Stream-copy video (preserves resolution/quality, fast).
-        "-c:v", "copy",
-        # Audio: re-encode to AAC. Tolerates AAC inputs (re-pass),
-        # pcm_alaw inputs (the SSS-sourced manual recoveries), and
-        # sources with no audio stream at all (ffmpeg skips silently).
-        "-c:a", "aac", "-b:a", audio_bitrate,
-        "-hls_time", str(segment_seconds),
-        "-hls_playlist_type", "vod",
-        "-hls_segment_type", "mpegts",
-        # independent_segments lets iOS Safari decode each .ts on its
-        # own without backreferencing the previous one — required for
-        # the pipelined-fetch performance HLS is meant to deliver.
-        "-hls_flags", "independent_segments",
-        "-hls_segment_filename", str(tmp_dir / "seg_%03d.ts"),
-        "-f", "hls", str(tmp_dir / "index.m3u8"),
-    ]
-    # Acquire the global render slot before invoking ffmpeg. If
-    # another render is already in flight we wait — this is a daemon
-    # thread, the queueing latency hits the prewarm caller (best-
-    # effort), not any user-facing request. Re-check is_rendered
-    # after acquiring in case a concurrent thread won the race and
-    # finished while we waited.
+    # Hold the semaphore across the *entire* tmp_dir lifecycle, not
+    # just the ffmpeg call. The earlier draft put tmp_dir setup
+    # outside the semaphore, which let two concurrent prewarms race:
+    # both saw `if not is_rendered`, both did `shutil.rmtree(tmp_dir)`
+    # + `tmp_dir.mkdir()`, both queued for the semaphore. Whichever
+    # acquired second would `rmtree` the first's freshly-renamed
+    # `_hls/` *during* ffmpeg's writes — surfaced as exit status 254
+    # with "Failed to open file '..._hls.tmp/seg_000.ts'" in today's
+    # logs. Inside the semaphore, only one thread ever touches
+    # tmp_dir at a time.
     with _render_semaphore:
+        # Re-check the published manifest now that we've serialized.
+        # A previous queued thread may have rendered while we waited.
         if (out_dir / "index.m3u8").exists():
-            shutil.rmtree(tmp_dir, ignore_errors=True)
             return out_dir
+
+        # Atomic rename: build into a sibling tmp dir, swap on success.
+        # If a previous run was interrupted, the tmp dir may still
+        # exist with partial output — wipe so this run starts clean.
+        tmp_dir = out_dir.with_name(out_dir.name + ".tmp")
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        tmp_dir.mkdir(parents=True, exist_ok=False)
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(src),
+            # Stream-copy video (preserves resolution/quality, fast).
+            "-c:v", "copy",
+            # Audio: re-encode to AAC. Tolerates AAC inputs (re-pass),
+            # pcm_alaw inputs (the SSS-sourced manual recoveries),
+            # and sources with no audio stream (ffmpeg skips silently).
+            "-c:a", "aac", "-b:a", audio_bitrate,
+            "-hls_time", str(segment_seconds),
+            "-hls_playlist_type", "vod",
+            "-hls_segment_type", "mpegts",
+            # independent_segments lets iOS Safari decode each .ts
+            # on its own without backreferencing the previous one —
+            # required for the pipelined-fetch performance HLS is
+            # meant to deliver.
+            "-hls_flags", "independent_segments",
+            "-hls_segment_filename", str(tmp_dir / "seg_%03d.ts"),
+            "-f", "hls", str(tmp_dir / "index.m3u8"),
+        ]
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
@@ -155,15 +162,18 @@ def ensure_hls_rendered(
             shutil.rmtree(tmp_dir, ignore_errors=True)
             return None
 
-    # Atomic publish. os.replace is the POSIX atomic rename on the
-    # same filesystem — no reader can ever see a half-written manifest.
-    try:
-        os.replace(tmp_dir, out_dir)
-    except OSError as e:
-        logger.exception("hls: rename %s -> %s failed: %s",
-                         tmp_dir, out_dir, e)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        return None
+        # Atomic publish. os.replace is the POSIX atomic rename on
+        # the same filesystem — no reader can ever see a half-written
+        # manifest. Done inside the semaphore so the next queued
+        # thread sees the published manifest immediately on its
+        # is_rendered re-check above and skips its own render.
+        try:
+            os.replace(tmp_dir, out_dir)
+        except OSError as e:
+            logger.exception("hls: rename %s -> %s failed: %s",
+                             tmp_dir, out_dir, e)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return None
 
     n_segs = sum(1 for p in out_dir.iterdir()
                  if p.name.startswith("seg_") and p.suffix == ".ts")

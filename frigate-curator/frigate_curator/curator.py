@@ -113,21 +113,42 @@ def run_loop(
 
 
 def _tick(client: FrigateClient, highlights_root: Path, db_path: Path, since: float) -> float:
+    import sqlite3
     events = client.list_events(after=since, labels=list(INTERESTING_LABELS))
     if not events:
         return since
 
+    # Frigate returns events sorted by start_time DESC (newest first).
+    # Process them OLDEST-FIRST so the cursor advances chronologically
+    # — if a DB error halts the loop mid-batch, the next tick picks up
+    # exactly where we stopped instead of jumping past unfinished work.
+    # The `2026-05-10 disconnect lost ~5h of events` incident motivated
+    # this: previously the cursor advanced regardless of whether the
+    # save succeeded, so a transient DB outage permanently lost any
+    # events that arrived during it.
     new_max = since
-    for event in events:
+    for event in reversed(events):
         end = event.get("end_time")
         if end is None:
             # Still in progress; we'll see it again next tick when ended.
             continue
-        new_max = max(new_max, end)
         try:
             _process_event(client, highlights_root, db_path, event)
+        except sqlite3.OperationalError as e:
+            # DB unreachable (typical cause: main-drive or main-filestore
+            # disconnect mid-tick). Halt cursor advance so this event +
+            # everything newer is retried on the next tick. The outer
+            # _run loop catches the broader Exception path; we return
+            # the still-stale cursor so it's preserved across ticks.
+            logger.error("Cursor halted at event %s: DB unavailable: %s",
+                         event.get("id"), e)
+            return new_max
         except Exception:
+            # Per-event failure (corrupt clip, classifier API down,
+            # ffmpeg edge case, etc). Advance past it — retrying the
+            # same event forever is worse than skipping one bad clip.
             logger.exception("Failed to process event %s", event.get("id"))
+        new_max = max(new_max, end)
     return new_max
 
 
