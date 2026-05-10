@@ -78,12 +78,20 @@
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return null;
     if (navigator.connection && navigator.connection.saveData) return null;
 
-    // rootMargin "-40% 0 -40% 0" shrinks the observation root to the
-    // center 20% band of the viewport. Cards only "intersect" the
-    // root when their pixels are in this band — i.e., the card is
-    // approximately centered on screen. This makes autoplay feel
-    // intentional (your eye is on the card before it plays) instead
-    // of pre-firing as it scrolls into view.
+    // rootMargin "-25% 0 -25% 0" shrinks the observation root to the
+    // center 50% band of the viewport. Cards "intersect" the root
+    // whenever their pixels are anywhere in that band — i.e., the
+    // card has crossed roughly a quarter of the way into the screen.
+    // Originally tuned tighter (-40%, center 20%) for "intentional"
+    // feel, but on phones with normal scroll speed cards never sat
+    // there long enough for the video to start buffering before the
+    // user moved past — net experience was no autoplay at all. The
+    // looser band gives iOS Safari a meaningful preload window
+    // *before* the card is dead-centered, so by the time the user
+    // is actually looking at it the video has decoded enough frames
+    // to play immediately. The bestRatio threshold below stays low
+    // (0.2) so a partially-visible card still wins as long as it's
+    // the most prominent in the band.
     scrollAutoplayObserver = new IntersectionObserver((entries) => {
       // Tear down any card that left the center band.
       for (const entry of entries) {
@@ -98,7 +106,7 @@
       // Pick the card with the highest intersection within the
       // center band as the winner.
       let bestEntry = null;
-      let bestRatio = 0.4;
+      let bestRatio = 0.2;
       for (const entry of entries) {
         if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
           bestRatio = entry.intersectionRatio;
@@ -157,8 +165,8 @@
         v.play().catch(() => {});
       }
     }, {
-      rootMargin: "-40% 0px -40% 0px",
-      threshold: [0, 0.5, 0.85],
+      rootMargin: "-25% 0px -25% 0px",
+      threshold: [0, 0.25, 0.5, 0.75],
     });
     return scrollAutoplayObserver;
   }

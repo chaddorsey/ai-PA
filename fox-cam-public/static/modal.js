@@ -72,15 +72,53 @@
   };
 
   window.openCardModal = async function openCardModal(eventId) {
+    // Fast path: render immediately from the gallery's cached row.
+    // The card the user just tapped came from /api/highlights (or
+    // /api/bootstrap on first load); we have the full payload in
+    // window.HIGHLIGHTS_BY_ID. Setting <video src> happens on the
+    // SAME tick as the tap, so iOS Safari starts byte-range loading
+    // ~200-500ms earlier than if we'd blocked on a fresh fetch.
+    //
+    // We then re-fetch in the background through the AUTHED
+    // /api/actions/* path to refresh per-user state (fav/archive)
+    // that may have changed on another device. Cached payloads from
+    // the public Bypass app have my_favorited=false for everyone
+    // because CF Access strips the auth header there — so this
+    // background refresh is what makes the heart correct after the
+    // initial paint.
+    const cached = (window.HIGHLIGHTS_BY_ID && window.HIGHLIGHTS_BY_ID[eventId]) || null;
+    currentRemix = null;
+
+    if (cached) {
+      current = cached;
+      if (!dialog.open) {
+        if (typeof dialog.showModal === "function") dialog.showModal();
+        else dialog.setAttribute("open", "");
+        document.body.classList.add("modal-open");
+      }
+      renderViewer(cached);
+      // Background refresh — ignore failures, the cached render is
+      // fully usable. On success, only re-render if the modal is
+      // still showing this same clip (the user may have swiped to
+      // a different card by the time we return).
+      fetchHighlightAuthed(eventId).then((fresh) => {
+        if (current && current.event_id === eventId
+            && JSON.stringify(fresh) !== JSON.stringify(cached)) {
+          current = fresh;
+          renderViewer(fresh);
+        }
+      }).catch(() => {});
+      return;
+    }
+
+    // Slow path: no cached row (modal opened from a permalink, deep
+    // link, or notification — not from the gallery grid). Block on
+    // the fetch as before.
     openLoadingDialog();
     let h;
     try { h = await fetchHighlightAuthed(eventId); }
     catch (err) { showModalLoadError(); return; }
     current = h;
-    // Clear remix-mode pointer left over from a prior remix session.
-    // Without this, swipe-nav inside a regular highlight modal walks
-    // window.REMIX_NAV_LIST instead of the highlight siblings.
-    currentRemix = null;
     renderViewer(h);
   };
 
@@ -433,7 +471,7 @@
     body.innerHTML = `
       <div class="modal-stage${slideClass}">
         <div class="modal-video-wrap">
-          <video class="modal-video" controls autoplay muted playsinline></video>
+          <video class="modal-video" controls autoplay muted playsinline preload="auto" poster="/api/highlights/${encodeURIComponent(h.event_id)}/thumbnail"></video>
           <button class="modal-nav prev" type="button" aria-label="Previous clip" tabindex="-1" ${prevId ? "" : "disabled"}>
             <span class="material-icons">chevron_left</span>
           </button>
@@ -475,6 +513,18 @@
     videoEl = body.querySelector(".modal-video");
     videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     videoEl.currentTime = 0;
+    // Force the element to begin its load() pipeline immediately
+    // rather than waiting for the next event-loop tick. Combined
+    // with preload="auto" + autoplay attributes in the template,
+    // this gets iOS Safari sending Range requests to the proxy on
+    // the SAME tick as the modal open — by the time renderViewer
+    // returns, the video is already buffering, not idle. The play()
+    // is best-effort; autoplay attribute handles it on most paths
+    // but iOS quirks (low-power mode, src reassignment on an
+    // already-running element) can leave it paused without an
+    // explicit kick.
+    try { videoEl.load(); } catch {}
+    videoEl.play().catch(() => {});
 
     // iOS: video starts WITHOUT the native control bar so a swipe
     // to the next clip doesn't flash an autoplay control overlay
@@ -763,7 +813,7 @@
     body.innerHTML = `
       <div class="modal-stage modal-stage-remix">
         <div class="modal-video-wrap">
-          <video class="modal-video" muted playsinline></video>
+          <video class="modal-video" muted playsinline preload="auto" poster="/api/highlights/${encodeURIComponent(h.event_id)}/thumbnail"></video>
           <div class="zoom-controls" aria-hidden="true">
             <button class="zoom-btn zoom-in"  type="button" title="Zoom in"><span class="material-icons">add</span></button>
             <button class="zoom-btn zoom-out" type="button" title="Zoom out"><span class="material-icons">remove</span></button>
@@ -1078,7 +1128,7 @@
     body.innerHTML = `
       <div class="modal-stage modal-stage-remix-play">
         <div class="modal-video-wrap">
-          <video class="modal-video" controls autoplay muted playsinline preload="auto"></video>
+          <video class="modal-video" controls autoplay muted playsinline preload="auto" poster="/api/highlights/${encodeURIComponent(parentH.event_id)}/thumbnail"></video>
         </div>
         <div class="modal-meta">
           <h2 class="modal-title">

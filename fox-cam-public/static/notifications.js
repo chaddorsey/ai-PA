@@ -38,6 +38,21 @@
   }
 
   async function refreshUnreadDot() {
+    // Bootstrap fast-path. Only consume the bootstrap value the FIRST
+    // time refreshUnreadDot fires per page-load (subsequent calls —
+    // e.g. after the user dismisses a notification — must hit the
+    // network so the badge reflects the current state).
+    if (window.BOOTSTRAP_DATA_PROMISE && !window._BOOTSTRAP_NOTIF_CONSUMED) {
+      window._BOOTSTRAP_NOTIF_CONSUMED = true;
+      try {
+        const boot = await window.BOOTSTRAP_DATA_PROMISE;
+        if (boot && boot.unread_count) {
+          const n = Number(boot.unread_count.unread_count || 0);
+          bellWrap.classList.toggle("has-unread", n > 0);
+          return;
+        }
+      } catch {}
+    }
     try {
       const r = await fetch("/api/notifications/unread_count",
                             { credentials: "same-origin" });

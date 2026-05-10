@@ -20,24 +20,36 @@
     if (_cache) return _cache;
     if (_cachePromise) return _cachePromise;
     _cachePromise = (async () => {
-      try {
-        const r = await fetch("/api/profile/all",
-                               { credentials: "same-origin" });
-        if (!r.ok) throw new Error(`profile/all ${r.status}`);
-        const j = await r.json();
-        const out = {};
-        for (const p of (j.profiles || [])) {
-          if (p && p.email) out[p.email.toLowerCase()] = p.display_name;
-        }
-        _cache = out;
-        return out;
-      } catch (err) {
-        console.warn("[profiles] couldn't load roster", err);
-        _cache = {};
-        return _cache;
-      } finally {
-        _cachePromise = null;
+      // Bootstrap fast-path: page kicked off /api/bootstrap on load
+      // which already includes profile_all. Consume it instead of
+      // firing a duplicate /api/profile/all fetch.
+      let j = null;
+      if (window.BOOTSTRAP_DATA_PROMISE) {
+        try {
+          const boot = await window.BOOTSTRAP_DATA_PROMISE;
+          if (boot && boot.profile_all) j = boot.profile_all;
+        } catch {}
       }
+      if (!j) {
+        try {
+          const r = await fetch("/api/profile/all",
+                                 { credentials: "same-origin" });
+          if (!r.ok) throw new Error(`profile/all ${r.status}`);
+          j = await r.json();
+        } catch (err) {
+          console.warn("[profiles] couldn't load roster", err);
+          _cache = {};
+          _cachePromise = null;
+          return _cache;
+        }
+      }
+      const out = {};
+      for (const p of (j.profiles || [])) {
+        if (p && p.email) out[p.email.toLowerCase()] = p.display_name;
+      }
+      _cache = out;
+      _cachePromise = null;
+      return out;
     })();
     return _cachePromise;
   }
@@ -79,6 +91,20 @@
   // needsOnboarding() below for the discrimination.
   async function getMine() {
     if (!_myEmail) return { ok: true, profile: null };
+    // Bootstrap fast-path. Same caveat as needsOnboarding(): we only
+    // accept a positive result (got the bootstrap, has a profile).
+    // A null profile in the bootstrap could mean "user has no profile
+    // yet" OR "the curator sub-call failed and defaulted to null" —
+    // since we can't distinguish, fall through to the explicit fetch
+    // so the onboarding logic stays correct.
+    if (window.BOOTSTRAP_DATA_PROMISE) {
+      try {
+        const boot = await window.BOOTSTRAP_DATA_PROMISE;
+        if (boot && boot.profile && boot.profile.profile) {
+          return { ok: true, profile: boot.profile.profile };
+        }
+      } catch {}
+    }
     try {
       const r = await fetch("/api/profile",
                              { credentials: "same-origin" });

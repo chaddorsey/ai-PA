@@ -237,44 +237,80 @@
       if (range.until !== undefined) params.append("until", range.until);
     }
 
-    let r;
-    try {
-      r = await fetch(`/api/highlights?${params}`, { credentials: "same-origin" });
-    } catch (err) {
-      // "Failed to fetch" usually means the request hit a CORS-blocked
-      // CF Access redirect — your team session expired or no longer
-      // covers this path. Offer a reload that triggers re-auth.
-      console.error("[highlights] /api/highlights network error:", err);
-      const card = document.createElement("div");
-      card.className = "empty-state";
-      card.innerHTML = `
-        <img src="/static/animals/Raccoon-1.svg" alt="" aria-hidden="true">
-        <p>Your session timed out.</p>
-        <p style="margin-top:8px;">
-          <a href="/highlights" style="color:#f05a28;font-weight:600;text-decoration:none;border:1.5px solid #f05a28;padding:8px 18px;border-radius:999px;">Sign in again →</a>
-        </p>`;
-      grid.appendChild(card);
-      return;
+    let data = null;
+
+    // First-load fast path: if the page kicked off /api/bootstrap on
+    // open, consume its highlights payload instead of firing a
+    // duplicate /api/highlights call. Only valid for offset=0 (the
+    // bootstrap fetched the first page) and only on the very first
+    // render (subsequent bucket switches and filter changes go
+    // through the normal fetch path so the gallery reflects the
+    // user's current selections).
+    if (window.BOOTSTRAP_DATA_PROMISE && offset === 0
+        && !window._BOOTSTRAP_HL_CONSUMED) {
+      try {
+        const boot = await window.BOOTSTRAP_DATA_PROMISE;
+        if (boot && boot.highlights
+            && Array.isArray(boot.highlights.items)) {
+          data = boot.highlights;
+        }
+      } catch (err) {
+        console.warn("[highlights] bootstrap read failed, falling back", err);
+      }
+      window._BOOTSTRAP_HL_CONSUMED = true;
     }
-    if (!r.ok) {
-      const ct = r.headers.get("content-type") || "";
-      let detail = `${r.status}`;
-      try { detail += " — " + (ct.includes("json") ? JSON.stringify(await r.json()) : (await r.text()).slice(0, 200)); } catch {}
-      console.error("[highlights] /api/highlights non-ok:", r.status, r.url);
-      grid.appendChild(window.infoCard(`Server returned ${detail}. (URL: ${r.url})`));
-      return;
-    }
-    let data;
-    try { data = await r.json(); }
-    catch (err) {
-      console.error("[highlights] /api/highlights parse error:", err);
-      grid.appendChild(window.infoCard(`Couldn't parse highlights response.`));
-      return;
+
+    if (!data) {
+      let r;
+      try {
+        r = await fetch(`/api/highlights?${params}`, { credentials: "same-origin" });
+      } catch (err) {
+        // "Failed to fetch" usually means the request hit a CORS-blocked
+        // CF Access redirect — your team session expired or no longer
+        // covers this path. Offer a reload that triggers re-auth.
+        console.error("[highlights] /api/highlights network error:", err);
+        const card = document.createElement("div");
+        card.className = "empty-state";
+        card.innerHTML = `
+          <img src="/static/animals/Raccoon-1.svg" alt="" aria-hidden="true">
+          <p>Your session timed out.</p>
+          <p style="margin-top:8px;">
+            <a href="/highlights" style="color:#f05a28;font-weight:600;text-decoration:none;border:1.5px solid #f05a28;padding:8px 18px;border-radius:999px;">Sign in again →</a>
+          </p>`;
+        grid.appendChild(card);
+        return;
+      }
+      if (!r.ok) {
+        const ct = r.headers.get("content-type") || "";
+        let detail = `${r.status}`;
+        try { detail += " — " + (ct.includes("json") ? JSON.stringify(await r.json()) : (await r.text()).slice(0, 200)); } catch {}
+        console.error("[highlights] /api/highlights non-ok:", r.status, r.url);
+        grid.appendChild(window.infoCard(`Server returned ${detail}. (URL: ${r.url})`));
+        return;
+      }
+      try { data = await r.json(); }
+      catch (err) {
+        console.error("[highlights] /api/highlights parse error:", err);
+        grid.appendChild(window.infoCard(`Couldn't parse highlights response.`));
+        return;
+      }
     }
     if (data.items.length === 0 && offset === 0) {
       grid.appendChild(buildEmptyState(bucket));
       loadMore.style.display = "none";
       return;
+    }
+
+    // Index every highlight we render by event_id so the modal can
+    // open instantly using the already-fetched row instead of blocking
+    // on a fresh /api/actions/{id}/highlight call. The modal still
+    // re-fetches the authoritative version in the background so any
+    // freshly-changed per-user state (fav/archive set on another
+    // device 30s ago) corrects within ~300ms — but the *first paint*
+    // happens with no network round-trip at all.
+    if (!window.HIGHLIGHTS_BY_ID) window.HIGHLIGHTS_BY_ID = {};
+    for (const h of data.items) {
+      if (h && h.event_id) window.HIGHLIGHTS_BY_ID[h.event_id] = h;
     }
 
     // Curated buckets render archived items in a separate section so
@@ -608,16 +644,27 @@
             renderChipFailed(chip, data.error || "Unknown error");
             return;
           }
-          // Still pending — update chip with current stage if available.
+          // Still pending — update chip with current stage. RangeExport
+          // path emits 'exporting' (server building the cut), then
+          // 'downloading' (transferring it), then 'saving' (copy +
+          // thumbnail). For long windows the curator auto-segments and
+          // the same stages cycle across N sub-exports; the percent
+          // it reports is already overall progress, not per-segment.
           if (chip && data.stage) {
             const meta = chip.querySelector(".recovery-chip-meta");
             if (meta) {
-              const stageMsg = {
+              const baseMsg = {
                 queued: "queued…",
-                fetching: "pulling from SSS…",
+                fetching: "starting export…",
+                exporting: "Synology is cutting the clip",
+                downloading: "downloading clip",
+                saving: "saving to gallery",
                 done: "finishing up…",
               }[data.stage] || `${data.stage}…`;
-              meta.textContent = `${opts.startLabel} · ${stageMsg}`;
+              const pct = (typeof data.progress === "number" && data.progress > 0)
+                ? ` · ${data.progress}%`
+                : "";
+              meta.textContent = `${opts.startLabel} · ${baseMsg}${pct}`;
             }
           }
         }
@@ -787,23 +834,34 @@
   // the next visit's count starts fresh. ALL paths still call load(),
   // even when /api/viewer/state errors — without that, a single 401 on
   // viewer/state would leave the gallery empty forever.
-  fetch("/api/viewer/state", { credentials: "same-origin" })
-    .then((r) => r.ok ? r.json() : null)
-    .then((s) => {
-      window.LAST_SEEN_AT_PAGELOAD = (s && s.last_seen_at) || 0;
-    })
-    .catch((err) => {
-      console.error("[highlights] /api/viewer/state failed:", err);
-    })
-    .finally(() => {
-      // reset() (not load()) so the initial render dispatches based on
-      // the current bucket — including bucket="remixes" which routes
-      // to loadRemixesList(). Calling load() directly here was the
-      // reason a fresh navigation to /highlights?bucket=remixes (e.g.
-      // tapping the bottom-nav Remixes tab from /clip or /live) showed
-      // the clips view on first paint, then switched to the list only
-      // when the tab was clicked again (same-page switchBucket→reset).
-      reset();
-      fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" }).catch(() => {});
-    });
+  //
+  // Tries the bootstrap payload first; falls back to /api/viewer/state
+  // on bootstrap miss / failure.
+  (async () => {
+    let viewerState = null;
+    if (window.BOOTSTRAP_DATA_PROMISE) {
+      try {
+        const boot = await window.BOOTSTRAP_DATA_PROMISE;
+        if (boot && boot.viewer_state) viewerState = boot.viewer_state;
+      } catch {}
+    }
+    if (!viewerState) {
+      try {
+        const r = await fetch("/api/viewer/state", { credentials: "same-origin" });
+        if (r.ok) viewerState = await r.json();
+      } catch (err) {
+        console.error("[highlights] /api/viewer/state failed:", err);
+      }
+    }
+    window.LAST_SEEN_AT_PAGELOAD = (viewerState && viewerState.last_seen_at) || 0;
+    // reset() (not load()) so the initial render dispatches based on
+    // the current bucket — including bucket="remixes" which routes
+    // to loadRemixesList(). Calling load() directly here was the
+    // reason a fresh navigation to /highlights?bucket=remixes (e.g.
+    // tapping the bottom-nav Remixes tab from /clip or /live) showed
+    // the clips view on first paint, then switched to the list only
+    // when the tab was clicked again (same-page switchBucket→reset).
+    reset();
+    fetch("/api/viewer/seen", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  })();
 })();
