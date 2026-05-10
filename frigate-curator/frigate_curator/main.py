@@ -70,7 +70,21 @@ FRIGATE_BASE_URL = os.environ.get("FRIGATE_BASE_URL", "https://localhost:8971")
 FRIGATE_USER = os.environ.get("FRIGATE_USER", "admin")
 FRIGATE_PASS = os.environ.get("FRIGATE_PASS", "")  # set in .env
 HIGHLIGHTS_ROOT = Path(os.environ.get("HIGHLIGHTS_ROOT", "/Volumes/main-filestore/frigate-highlights"))
-DB_PATH = Path(os.environ.get("CURATOR_DB", str(HIGHLIGHTS_ROOT / "index.db")))
+# DB lives on the SSD (main-drive), not on the bulk media volume
+# (main-filestore). Two reasons:
+#   1) Resilience — main-filestore is a USB-attached WD Elements
+#      whose enclosure has dropped offline twice now under sustained
+#      I/O. When that happens the API used to go down hard because
+#      every read hit a sqlite "unable to open database file". With
+#      the DB on the SSD, only the static-media endpoints (/clip,
+#      /thumbnail, /hls/*.ts) 404 — gallery list, fav/archive,
+#      notifications, modal metadata, remix metadata, and bootstrap
+#      all keep working.
+#   2) Performance — the SSD is faster for the 1MB DB's hot working
+#      set. The bulk volume is fine for the 24GB+ of clip media.
+# CURATOR_DB env override still wins if set explicitly.
+_DEFAULT_DB_PATH = Path("/Volumes/main-drive/ai-PA/curator-data/index.db")
+DB_PATH = Path(os.environ.get("CURATOR_DB", str(_DEFAULT_DB_PATH)))
 POLL_INTERVAL_S = float(os.environ.get("POLL_INTERVAL_S", "5"))
 
 # How far back to walk Frigate's event history on curator startup.
