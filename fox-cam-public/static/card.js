@@ -100,6 +100,24 @@
   window.resumeScrollAutoplay = resumeScrollAutoplay;
 
   function ensureScrollAutoplayObserver() {
+    // Scroll-autoplay disabled 2026-05-10 after extensive iOS Safari
+    // debugging: the IntersectionObserver was attaching <video>
+    // preview elements with src=/api/highlights/{id}/clip to whichever
+    // card was in the viewport center band, streaming MP4 byte-ranges
+    // in the background. iOS Safari does not drain in-flight Range
+    // requests when the <video> is removed from the DOM — leftover
+    // requests continue draining for 30-60s. With a few cards' worth
+    // of leftover requests in flight, iOS's HTTP connection pool
+    // saturates and the modal's HLS manifest+segments can't get
+    // through the CF tunnel — the user sees spinning controls.
+    //
+    // The teardown-on-modal-open + cross-tab suspend logic could not
+    // overcome iOS's in-flight Range request behavior reliably.
+    // Disabled for now; re-introduce only with a fundamentally
+    // different design (e.g., MediaSource with a small pre-encoded
+    // preview clip that doesn't compete with full-clip Range fetches).
+    return null;
+    /* eslint-disable no-unreachable */
     if (scrollAutoplayObserver !== null) return scrollAutoplayObserver;
     if (!window.IntersectionObserver) return null;
     if (!window.matchMedia || !window.matchMedia("(max-width: 720px)").matches) return null;
