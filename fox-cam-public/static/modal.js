@@ -529,26 +529,41 @@
     // default position 0 between insertion and the requestAnimationFrame
     // that triggers the slide-in transition.
     const slideClass = slideInFrom ? ` sliding-in-from-${slideInFrom}` : "";
-    // Declarative HLS-first source attachment. iOS Safari natively
-    // picks the first <source> it can play; if the manifest 404s
-    // (unrendered legacy clip), the second <source> wins. This
-    // beats the prior JS-driven attachHlsSource flow because:
-    //   1. No race with renderViewer re-renders or detached element
-    //      error handlers — the browser owns source selection.
-    //   2. Works even if hls-helper.js failed to load or threw
-    //      during init for whatever reason.
-    //   3. iOS Safari prefers HLS without any JS at all, which is
-    //      the dominant user agent for this app.
-    // The hls-helper.js path is still active for non-Apple browsers
-    // (Chrome, Firefox) — invoked below if window.attachHlsSource
-    // is defined, since those browsers can't play .m3u8 natively
-    // and need MSE+hls.js to stream segments.
+    // SINGLE-source HLS attachment with JS error fallback to MP4.
+    //
+    // History of this approach:
+    //   - First we set videoEl.src=hlsUrl from JS via attachHlsSource.
+    //     That worked for Chrome/Firefox via hls.js but had subtle
+    //     iOS issues (orphaned-element error handlers).
+    //   - Then we tried two declarative <source> tags (HLS + MP4)
+    //     hoping iOS would pick HLS. iOS DID pick HLS, but it ALSO
+    //     fetched the MP4 source in parallel during preflight —
+    //     a known iOS Safari behavior that eats bandwidth and made
+    //     the modal feel slow even when HLS was working.
+    //   - This version embeds ONLY the HLS source. iOS picks it,
+    //     fetches the manifest + segments, no MP4 traffic. If the
+    //     manifest 404s (legacy clip without HLS yet), the inline
+    //     `onerror` swaps src to /clip and the video plays MP4.
+    //     One source = one fetch path = no preflight contention.
+    //
+    // The onerror handler is inline rather than in a JS function
+    // because it MUST fire on the specific element instance — any
+    // detached/replaced element confusion that bit us before is
+    // sidestepped by binding the handler in HTML on the same
+    // tick as the element's creation.
+    const _hlsUrl = `/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8`;
+    const _mp4Url = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
+    const _errSwap = (
+      `if(this.dataset.fallback)return;` +
+      `this.dataset.fallback='1';` +
+      `this.src='${_mp4Url}';` +
+      `this.load();` +
+      `this.play().catch(()=>{});`
+    );
     body.innerHTML = `
       <div class="modal-stage${slideClass}">
         <div class="modal-video-wrap">
-          <video class="modal-video" controls autoplay muted playsinline preload="auto" poster="/api/highlights/${encodeURIComponent(h.event_id)}/thumbnail">
-            <source src="/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8" type="application/vnd.apple.mpegurl">
-            <source src="/api/highlights/${encodeURIComponent(h.event_id)}/clip" type="video/mp4">
+          <video class="modal-video" controls autoplay muted playsinline preload="auto" poster="/api/highlights/${encodeURIComponent(h.event_id)}/thumbnail" src="${_hlsUrl}" onerror="${_errSwap}">
           </video>
           <button class="modal-nav prev" type="button" aria-label="Previous clip" tabindex="-1" ${prevId ? "" : "disabled"}>
             <span class="material-icons">chevron_left</span>
@@ -590,32 +605,33 @@
     // see the entire clip from the beginning.
     videoEl = body.querySelector(".modal-video");
     videoEl.currentTime = 0;
-    // For Safari (canPlayType returns truthy for HLS), the declarative
-    // <source> tags above handle source selection natively — DON'T
-    // overwrite videoEl.src here. iOS Safari uses HLS natively (4-sec
-    // segments → first frame in <1s) without any JS intervention.
+    // Safari already has src=HLS set in the HTML above; the browser
+    // started loading on parser-insert. Don't touch it here. For
+    // non-Safari (canPlayType returns ""), Safari's HLS src will
+    // fail load → trigger onerror → swap to MP4. That's the
+    // safety net for Chrome/Firefox if hls.js doesn't kick in.
     //
-    // For Chrome/Firefox/Edge, canPlayType returns "" — the browser
-    // ignores the .m3u8 source. The helper kicks in to lazy-load
-    // hls.js, probe the manifest, and stream segments via MSE.
-    // (The hls.js path also sets videoEl.src to mp4Url as final
-    // fallback if hls.js can't play.)
+    // For Chrome/Firefox/Edge proper HLS, attachHlsSource lazy-
+    // loads hls.js and attaches MSE-based playback. It calls
+    // detachHls() first which clears any prior _foxHls — but
+    // critically, the inline `src=hlsUrl` is ALREADY set, which
+    // means hls.js sees a non-empty src. Override by re-setting
+    // before attaching. This is what attachHlsSource expects.
     const canPlayHls = !!videoEl.canPlayType("application/vnd.apple.mpegurl");
     if (!canPlayHls && window.attachHlsSource) {
+      // Clear the inline src so attachHlsSource's load logic owns it.
+      videoEl.removeAttribute("src");
+      videoEl.removeAttribute("onerror");
       window.attachHlsSource(
         videoEl,
         `/api/highlights/${encodeURIComponent(h.event_id)}/hls/index.m3u8`,
         `/api/highlights/${encodeURIComponent(h.event_id)}/clip`,
       );
-    } else if (!canPlayHls) {
-      // Non-Safari with no helper available — fall back to MP4 src=
-      // so something plays. Rare combination (helper script failed
-      // to load on a non-Apple browser) but covered defensively.
-      videoEl.src = `/api/highlights/${encodeURIComponent(h.event_id)}/clip`;
     }
-    // Force the load pipeline to start now (Safari with <source> tags
-    // sometimes idles waiting for an explicit kick).
-    try { videoEl.load(); } catch {}
+    // Safari path: src is already set declaratively, browser is
+    // already loading. play() is best-effort because autoplay
+    // attribute should handle it but iOS quirks (low-power mode,
+    // first interaction missing) sometimes need the explicit kick.
     videoEl.play().catch(() => {});
 
     // iOS: video starts WITHOUT the native control bar so a swipe
