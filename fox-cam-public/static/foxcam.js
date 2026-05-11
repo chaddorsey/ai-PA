@@ -173,6 +173,16 @@
   function openPlayer(card) {
     const hls = card.dataset.hls;
     const mp4 = card.dataset.mp4;
+    const thumb = card.querySelector(".foxcam-card-thumb");
+    // Set the poster to the same thumbnail the card was showing so
+    // the overlay paints something immediately instead of going to
+    // a black rectangle while the manifest loads + first segment
+    // arrives over CF tunnel.
+    if (thumb && thumb.src) {
+      playerVideo.poster = thumb.src;
+    } else {
+      playerVideo.removeAttribute("poster");
+    }
     // Show the dialog FIRST. Setting a video source while the
     // element is still inside a display:none dialog causes iOS
     // Safari (and sometimes Chrome) to silently defer the load —

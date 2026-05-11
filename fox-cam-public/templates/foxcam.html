@@ -42,7 +42,13 @@
     <button type="button" class="foxcam-player-close" aria-label="Close">
       <span class="material-icons" aria-hidden="true">close</span>
     </button>
-    <video class="foxcam-player-video" controls playsinline preload="auto"></video>
+    {# muted + autoplay + playsinline is the iOS Safari recipe for
+       reliable autoplay; without `muted` iOS refuses to start playback
+       even from a user-gesture-initiated showModal(), leaving a black
+       rectangle until the user manually taps the (auto-hidden) native
+       controls. Users can unmute via the controls; the speaker icon
+       is right there. #}
+    <video class="foxcam-player-video" controls muted autoplay playsinline preload="auto"></video>
   </dialog>
 
   <script src="/static/hls.min.js?v={{ v }}"></script>
