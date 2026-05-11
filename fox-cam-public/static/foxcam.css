@@ -154,7 +154,14 @@
 /* Screen-overlay clip player. Native <dialog> for top-layer z-index
  * + auto-modal behavior. Native video controls + the browser's own
  * fullscreen button satisfy the "video controls and full screen
- * option" requirement without us re-implementing them. */
+ * option" requirement without us re-implementing them.
+ *
+ * Closed-state must stay display:none — applying display:flex
+ * unconditionally would render the dialog (and its empty <video>)
+ * as a permanent black panel at the bottom of the page even when
+ * no clip is open. The :modal selector covers the showModal() open
+ * state across browsers; the [open] fallback covers the non-modal
+ * .show() form just in case. */
 .foxcam-player {
   border: none;
   background: rgba(0, 0, 0, 0.92);
@@ -164,6 +171,9 @@
   height: 100vh;
   max-width: 100vw;
   max-height: 100vh;
+}
+.foxcam-player[open],
+.foxcam-player:modal {
   display: flex;
   align-items: center;
   justify-content: center;
