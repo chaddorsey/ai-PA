@@ -2244,24 +2244,30 @@ html.ios .card-modal-replay .material-icons {
 /* foxcam.stream share toggle button — mirrors the landing-page
    Feature button's bright-orange active state so contributors get a
    strong visual confirmation that the clip / remix is currently on
-   foxcam.stream. Off state uses the same warm-cream surface as the
-   feature button; on state flips to glow-orange with white icon. */
+   foxcam.stream.
+   `!important` is required across the board to win over the generic
+   .action-btn.action-icon-only rules in this file, which themselves
+   use !important to lock down the icon-pill chrome. The same pattern
+   .action-feature.active uses below. */
 .action-btn.action-foxcam-share .material-symbols-outlined {
   font-size: 22px;
   line-height: 1;
+  color: inherit;
 }
 .action-btn.action-foxcam-share {
-  background: #fff4e6;
-  color: var(--color-glow);
-  border-color: var(--color-glow);
+  background: #fff4e6 !important;
+  color: var(--color-glow) !important;
+  border-color: var(--color-glow) !important;
 }
-.action-btn.action-foxcam-share:hover { background: #ffe7c9; }
+.action-btn.action-foxcam-share:hover {
+  background: #ffe7c9 !important;
+}
 .action-btn.action-foxcam-share.active {
-  background: var(--color-glow);
-  color: white;
+  background: var(--color-glow) !important;
+  color: white !important;
 }
 .action-btn.action-foxcam-share.active:hover {
-  background: #ff7044;
+  background: #ff7044 !important;
 }
 
 /* Temporary banner shown after a foxcam.stream toggle. Slides down
