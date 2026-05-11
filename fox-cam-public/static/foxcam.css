@@ -1,0 +1,206 @@
+/* foxcam.stream — public gallery surface.
+ *
+ * Inherits warm-theme.css for the cream palette, fonts, and base
+ * resets. This file holds only the foxcam-specific layout: the
+ * stripped-down header, the card grid, the play-on-hover thumbs, and
+ * the screen-overlay clip player. No bottom-tab nav, no auth chrome,
+ * no per-clip action UI. */
+
+.foxcam-body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  margin: 0;
+  min-height: 100vh;
+}
+
+.foxcam-header {
+  padding: 20px 22px 14px;
+  text-align: center;
+  border-bottom: 1px solid rgba(240, 90, 40, 0.10);
+}
+.foxcam-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.foxcam-title .brand-fox {
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.08));
+}
+
+@media (max-width: 600px) {
+  .foxcam-title { font-size: 22px; }
+  .foxcam-title .brand-fox { width: 28px; height: 28px; }
+  .foxcam-header { padding: 14px 14px 10px; }
+}
+
+.foxcam-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  padding: 18px 22px 40px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+@media (max-width: 600px) {
+  .foxcam-gallery {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 10px 24px;
+  }
+}
+
+.foxcam-loading {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--color-ink-soft);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.foxcam-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--color-ink-soft);
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+
+/* Individual clip card. Aspect ratio matches the source 16:9 clips.
+ * The thumbnail is the resting state; on hover (or focus on desktop),
+ * a hidden <video> takes over and plays muted from the start. On
+ * mobile, there's no hover — tapping the card opens the overlay
+ * player directly. */
+.foxcam-card {
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 3px 12px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(240, 90, 40, 0.08);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.foxcam-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 10px 20px rgba(0, 0, 0, 0.06);
+}
+
+.foxcam-card-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #1a1410;
+  overflow: hidden;
+}
+.foxcam-card-thumb,
+.foxcam-card-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.foxcam-card-video {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+.foxcam-card.is-playing .foxcam-card-video {
+  opacity: 1;
+}
+.foxcam-card.is-playing .foxcam-card-thumb {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.foxcam-card-caption {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.foxcam-card-cam {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink);
+  letter-spacing: -0.005em;
+}
+.foxcam-card-time {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--color-ink-soft);
+}
+@media (max-width: 600px) {
+  .foxcam-card-caption { padding: 8px 10px 10px; }
+  .foxcam-card-cam { font-size: 13px; }
+  .foxcam-card-time { font-size: 11px; }
+}
+
+/* Screen-overlay clip player. Native <dialog> for top-layer z-index
+ * + auto-modal behavior. Native video controls + the browser's own
+ * fullscreen button satisfy the "video controls and full screen
+ * option" requirement without us re-implementing them. */
+.foxcam-player {
+  border: none;
+  background: rgba(0, 0, 0, 0.92);
+  padding: 0;
+  margin: 0;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.foxcam-player::backdrop {
+  background: rgba(0, 0, 0, 0.85);
+}
+.foxcam-player-video {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  background: #000;
+  object-fit: contain;
+}
+.foxcam-player-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.foxcam-player-close:hover,
+.foxcam-player-close:focus-visible {
+  background: rgba(0, 0, 0, 0.75);
+}
+.foxcam-player-close .material-icons {
+  font-size: 24px;
+  line-height: 1;
+}

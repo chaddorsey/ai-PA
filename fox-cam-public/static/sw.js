@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v158-archive-text-link";
+const CACHE = "our-foxes-v159-foxcam-stream";
 
 const STATIC_ASSETS = [
   "/static/style.css",
@@ -39,6 +39,8 @@ const STATIC_ASSETS = [
   "/static/panzoom.min.js",
   "/static/hls.min.js",
   "/static/hls-helper.js",
+  "/static/foxcam.css",
+  "/static/foxcam.js",
   "/static/manifest.webmanifest",
   "/static/icons/icon-192.png",
   "/static/icons/icon-512.png",

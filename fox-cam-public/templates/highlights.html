@@ -28,6 +28,8 @@
   <script>
     window.CURRENT_EMAIL = {{ (current_email or '')|tojson }};
     window.IS_ADMIN = {{ (is_admin or false)|tojson }};
+    window.IS_FOXCAM_CONTRIBUTOR = {{ (is_foxcam_contributor or false)|tojson }};
+    window.IS_FOXCAM_ADMIN = {{ (is_foxcam_admin or false)|tojson }};
     window.INITIAL_BUCKET = {{ (initial_bucket or 'pending')|tojson }};
 
     // Bootstrap kickoff: fire the composite /api/bootstrap fetch as

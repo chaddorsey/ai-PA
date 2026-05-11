@@ -61,6 +61,8 @@
   <script>
     window.CURRENT_EMAIL = {{ (current_email or '')|tojson }};
     window.IS_ADMIN = {{ (is_admin or false)|tojson }};
+    window.IS_FOXCAM_CONTRIBUTOR = {{ (is_foxcam_contributor or false)|tojson }};
+    window.IS_FOXCAM_ADMIN = {{ (is_foxcam_admin or false)|tojson }};
   </script>
   <header>
     <h1><img class="brand-fox" src="/static/animals/fox-alone.svg" alt="" aria-hidden="true">Our Foxes</h1>

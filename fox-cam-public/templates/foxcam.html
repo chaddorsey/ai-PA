@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  {% include "_ios_detect.html" %}
+  <title>foxcam.stream</title>
+  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/icons/favicon.png" type="image/png" sizes="32x32">
+  <meta name="theme-color" content="#f05a28">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="foxcam.stream">
+  <link rel="stylesheet" href="/static/style.css?v={{ v }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="/static/warm-theme.css?v={{ v }}">
+  <link rel="stylesheet" href="/static/foxcam.css?v={{ v }}">
+
+  <meta property="og:title" content="foxcam.stream">
+  <meta property="og:description" content="Foxes caught on camera.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://foxcam.stream">
+</head>
+<body class="foxcam-body">
+  <header class="foxcam-header">
+    <h1 class="foxcam-title">
+      <img class="brand-fox" src="/static/animals/fox-alone.svg" alt="" aria-hidden="true">
+      foxcam.stream
+    </h1>
+  </header>
+
+  <main class="foxcam-gallery" id="foxcam-gallery">
+    <div class="foxcam-loading">Loading…</div>
+  </main>
+
+  {# Screen-overlay player. Opens when a card is clicked; native video
+     controls + fullscreen are provided by the browser. A close button
+     in the corner dismisses it; tapping outside the video also closes. #}
+  <dialog id="foxcam-player" class="foxcam-player" aria-label="Clip player">
+    <button type="button" class="foxcam-player-close" aria-label="Close">
+      <span class="material-icons" aria-hidden="true">close</span>
+    </button>
+    <video class="foxcam-player-video" controls playsinline preload="auto"></video>
+  </dialog>
+
+  <script src="/static/hls.min.js?v={{ v }}"></script>
+  <script src="/static/hls-helper.js?v={{ v }}"></script>
+  <script src="/static/foxcam.js?v={{ v }}"></script>
+</body>
+</html>

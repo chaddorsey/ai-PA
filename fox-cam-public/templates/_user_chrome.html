@@ -52,8 +52,15 @@
   </div>
   <div class="profile-info">
     {% if is_admin %}<span class="profile-admin-badge">admin</span>{% endif %}
+    {% if is_foxcam_admin %}<span class="profile-admin-badge profile-foxcam-admin-badge">foxcam admin</span>{% endif %}
     <span class="profile-email">{{ current_email or "" }}</span>
   </div>
+  {% if is_foxcam_admin %}
+  <a href="https://foxcam.stream" target="_blank" rel="noopener" class="profile-action">
+    <span class="material-symbols-outlined" aria-hidden="true">image_arrow_up</span>
+    <span>View foxcam.stream</span>
+  </a>
+  {% endif %}
 
   <section class="profile-name-section" id="profile-name-section">
     <label class="profile-name-label" for="profile-name-input">Display name</label>

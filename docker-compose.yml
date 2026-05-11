@@ -1880,6 +1880,13 @@ services:
       # Comma-separated emails allowed to promote highlights to the
       # public landing page. Comparison is case-insensitive.
       ADMIN_EMAILS: "${FOX_CAM_ADMIN_EMAILS:-}"
+      # foxcam.stream public-gallery membership. Contributors can toggle
+      # clips onto the foxcam.stream gallery from the main-site modal;
+      # admins also get the badge + "View foxcam.stream" nav link.
+      # Independent of ADMIN_EMAILS — different surface, different
+      # curation criteria.
+      FOXCAM_CONTRIBUTORS: "${FOXCAM_CONTRIBUTORS:-}"
+      FOXCAM_ADMINS: "${FOXCAM_ADMINS:-}"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
       interval: 30s

@@ -1098,6 +1098,69 @@ def unfeature_event(event_id: str, body: FeaturedBody) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# foxcam.stream — separate public gallery, separate featured-set columns.
+# The fox-cam-public proxy gates these on FOXCAM_CONTRIBUTORS membership;
+# curator just takes the email it's told.
+# ---------------------------------------------------------------------------
+
+@app.post("/highlights/{event_id}/foxcam-feature")
+def foxcam_feature_event(event_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="foxcam-feature requires a 'by' email")
+    h = db.set_foxcam_featured(DB_PATH, event_id, featured=True, by=body.by)
+    if h is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "foxcam_featured", "highlight": h}
+
+
+@app.post("/highlights/{event_id}/foxcam-unfeature")
+def foxcam_unfeature_event(event_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="foxcam-unfeature requires a 'by' email")
+    h = db.set_foxcam_featured(DB_PATH, event_id, featured=False)
+    if h is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "foxcam_unfeatured", "highlight": h}
+
+
+@app.post("/remixes/{remix_id}/foxcam-feature")
+def foxcam_feature_remix(remix_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="foxcam-feature requires a 'by' email")
+    r = db.set_remix_foxcam_featured(DB_PATH, remix_id, featured=True, by=body.by)
+    if r is None:
+        raise HTTPException(status_code=404, detail="not found")
+    _prewarm_remix_async(remix_id)
+    return {"status": "foxcam_featured", "remix": r}
+
+
+@app.post("/remixes/{remix_id}/foxcam-unfeature")
+def foxcam_unfeature_remix(remix_id: str, body: FeaturedBody) -> dict[str, Any]:
+    if not body.by:
+        raise HTTPException(status_code=400, detail="foxcam-unfeature requires a 'by' email")
+    r = db.set_remix_foxcam_featured(DB_PATH, remix_id, featured=False)
+    if r is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "foxcam_unfeatured", "remix": r}
+
+
+@app.get("/foxcam-featured")
+def list_foxcam_featured_endpoint(limit: int = Query(default=200, ge=1, le=500)) -> dict[str, Any]:
+    """Everything currently on foxcam.stream, merged: featured highlights
+    + featured remixes, sorted by foxcam_featured_at DESC. The
+    fox-cam-public proxy reshapes this for the gallery view."""
+    hls = db.list_foxcam_featured(DB_PATH, limit=limit)
+    rmx = db.list_foxcam_featured_remixes(DB_PATH, limit=limit)
+    items: list[dict[str, Any]] = []
+    for h in hls:
+        items.append({"kind": "highlight", "id": h["event_id"], **h})
+    for r in rmx:
+        items.append({"kind": "remix", "id": r["remix_id"], **r})
+    items.sort(key=lambda x: x.get("foxcam_featured_at") or 0, reverse=True)
+    return {"items": items[:limit]}
+
+
+# ---------------------------------------------------------------------------
 # Remixes — user-defined sub-clips with optional zoom region.
 # ---------------------------------------------------------------------------
 

@@ -51,6 +51,25 @@ ADMIN_EMAILS = {
     if e.strip()
 }
 
+# foxcam.stream contributor + admin allowlists. Contributors can toggle
+# clips onto the foxcam.stream public gallery; admins additionally get a
+# "foxcam admin" badge and a "View foxcam.stream" link in the profile
+# menu. Both lists are independent of ADMIN_EMAILS so the foxcam-site
+# membership can be granted (or revoked) without affecting main-site
+# admin powers. Admins are implicitly contributors — a user listed only
+# in FOXCAM_ADMINS still gets the toggle button.
+FOXCAM_CONTRIBUTORS = {
+    e.strip().lower()
+    for e in os.environ.get("FOXCAM_CONTRIBUTORS", "").split(",")
+    if e.strip()
+}
+FOXCAM_ADMINS = {
+    e.strip().lower()
+    for e in os.environ.get("FOXCAM_ADMINS", "").split(",")
+    if e.strip()
+}
+FOXCAM_CONTRIBUTORS |= FOXCAM_ADMINS
+
 # Streams the WebRTC/MSE proxy will pass through. Includes the _sub
 # variants because the live grid currently asks for them (main-stream
 # SPS-level mismatch causes browser decode errors).
@@ -149,6 +168,11 @@ async def require_cf_access(request: Request, call_next):
         return await call_next(request)
     if path.startswith("/api/featured/"):
         return await call_next(request)
+    # foxcam.stream public gallery list — anonymous can read. Toggle
+    # endpoints (/api/foxcam/.../feature, .../unfeature) stay authed
+    # and the handlers enforce contributor membership.
+    if path == "/api/foxcam/featured":
+        return await call_next(request)
     # Per-clip media that the public landing + permalink need: the
     # thumbnail and clip files for any *featured* highlight. These
     # endpoints check featured-ness before serving (see below).
@@ -189,21 +213,40 @@ async def require_cf_access(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> HTMLResponse:
-    """Public landing page.
+    """Public landing page on the primary host; the foxcam.stream gallery
+    when the request comes in on that hostname.
 
-    Always renders the landing page. The live multi-camera grid lives
-    at /live (a gated Access path) — authed visitors are sent there by
-    the landing's login buttons.
+    Both pages live in the same container behind the same CF tunnel; the
+    second tunnel hostname (foxcam.stream) just routes here and we
+    branch on Host. Assets, /api endpoints, and HLS proxy are all
+    shared — only the rendered shell differs.
 
-    We can't render the live grid here based on the email header,
+    We can't render the live grid based on the email header here,
     because / is in a Cloudflare Access Bypass app: CF strips the
     cf-access-authenticated-user-email header on bypassed paths even
     for authed visitors. So / always looks anonymous to the origin —
     making it strictly a public surface, with /live as the dedicated
     authed home.
     """
+    host = (request.headers.get("host") or "").lower().split(":")[0]
+    if host == "foxcam.stream":
+        return templates.TemplateResponse(
+            "foxcam.html",
+            {"request": request, "v": ASSET_VERSION},
+        )
     return templates.TemplateResponse(
         "landing.html",
+        {"request": request, "v": ASSET_VERSION},
+    )
+
+
+@app.get("/foxcam", response_class=HTMLResponse)
+def foxcam_page(request: Request) -> HTMLResponse:
+    """Direct path to the foxcam.stream gallery on the primary host —
+    handy for previewing the layout while signed in to the main app
+    without having to actually visit foxcam.stream."""
+    return templates.TemplateResponse(
+        "foxcam.html",
         {"request": request, "v": ASSET_VERSION},
     )
 
@@ -233,9 +276,12 @@ def _identity_ctx(request: Request) -> dict[str, Any]:
     happens to land on a CF Access Bypass path (header gets stripped).
     """
     email = _actor_email(request)
+    e_lower = email.lower() if email else ""
     return {
         "current_email": email or "",
-        "is_admin": bool(email and email.lower() in ADMIN_EMAILS),
+        "is_admin": bool(e_lower in ADMIN_EMAILS) if e_lower else False,
+        "is_foxcam_contributor": bool(e_lower in FOXCAM_CONTRIBUTORS) if e_lower else False,
+        "is_foxcam_admin": bool(e_lower in FOXCAM_ADMINS) if e_lower else False,
     }
 
 
@@ -580,6 +626,85 @@ async def admin_unfeature_remix(remix_id: str, request: Request) -> Any:
     if r.status_code != 200:
         raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
     return r.json()
+
+
+# ---------------------------------------------------------------------------
+# foxcam.stream — toggle clips/remixes onto the separate public gallery.
+# Gated on FOXCAM_CONTRIBUTORS membership (admins are auto-folded in).
+# ---------------------------------------------------------------------------
+
+@app.post("/api/foxcam/highlights/{event_id}/feature")
+async def foxcam_feature_highlight(event_id: str, request: Request) -> Any:
+    contributor = _require_foxcam_contributor(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/highlights/{event_id}/foxcam-feature",
+                              json={"by": contributor}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.post("/api/foxcam/highlights/{event_id}/unfeature")
+async def foxcam_unfeature_highlight(event_id: str, request: Request) -> Any:
+    contributor = _require_foxcam_contributor(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/highlights/{event_id}/foxcam-unfeature",
+                              json={"by": contributor}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.post("/api/foxcam/remixes/{remix_id}/feature")
+async def foxcam_feature_remix(remix_id: str, request: Request) -> Any:
+    contributor = _require_foxcam_contributor(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/remixes/{remix_id}/foxcam-feature",
+                              json={"by": contributor}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.post("/api/foxcam/remixes/{remix_id}/unfeature")
+async def foxcam_unfeature_remix(remix_id: str, request: Request) -> Any:
+    contributor = _require_foxcam_contributor(request)
+    async with httpx.AsyncClient() as client:
+        r = await client.post(f"{CURATOR_API}/remixes/{remix_id}/foxcam-unfeature",
+                              json={"by": contributor}, timeout=8.0)
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="not found")
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"curator error: {r.text[:200]}")
+    return r.json()
+
+
+@app.get("/api/foxcam/featured")
+async def list_foxcam_featured(request: Request) -> Any:
+    """Public list of clips + remixes featured on foxcam.stream. Unauthed
+    GET — the public gallery on foxcam.stream needs to read this without
+    a session. No PII is leaked since we don't include foxcam_featured_by
+    in the shaped response below.
+    """
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{CURATOR_API}/foxcam-featured",
+                             params={"limit": 200}, timeout=10.0)
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="curator error")
+    data = r.json()
+    # Strip foxcam_featured_by — the public gallery doesn't need to
+    # advertise who toggled each clip.
+    items = []
+    for it in data.get("items", []):
+        clean = {k: v for k, v in it.items() if k != "foxcam_featured_by"}
+        items.append(clean)
+    return {"items": items}
 
 
 @app.post("/api/admin/highlights/{event_id}/unfeature")
@@ -977,6 +1102,26 @@ def _require_admin(request: Request) -> str:
     email = _actor_email(request)
     if not email or email.lower() not in ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="admin only")
+    return email
+
+
+def _is_foxcam_contributor(request: Request) -> bool:
+    email = _actor_email(request)
+    return bool(email and email.lower() in FOXCAM_CONTRIBUTORS)
+
+
+def _is_foxcam_admin(request: Request) -> bool:
+    email = _actor_email(request)
+    return bool(email and email.lower() in FOXCAM_ADMINS)
+
+
+def _require_foxcam_contributor(request: Request) -> str:
+    """Raise 403 unless the request comes from a FOXCAM_CONTRIBUTORS
+    user (FOXCAM_ADMINS are folded into this set at startup). Returns
+    the contributor's email so callers can attribute the toggle."""
+    email = _actor_email(request)
+    if not email or email.lower() not in FOXCAM_CONTRIBUTORS:
+        raise HTTPException(status_code=403, detail="foxcam contributor only")
     return email
 
 

@@ -800,6 +800,31 @@
       actionsBar.appendChild(iconActionBtn(ICON("movie_edit"), "remix", false, "Remix",
         () => renderRemixEditor(h)));
     }
+    // Add to foxcam.stream — gated on FOXCAM_CONTRIBUTORS membership.
+    // Toggles the highlight onto the separate public gallery at
+    // foxcam.stream. Icon: Material Symbols `image_arrow_up`. Active
+    // state means the clip is currently featured there.
+    if (window.IS_FOXCAM_CONTRIBUTOR) {
+      const onClipFoxcam = !!h.foxcam_featured;
+      actionsBar.appendChild(iconActionBtn(
+        IMAGE_ARROW_UP_ICON_HTML,
+        "foxcam-share",
+        onClipFoxcam,
+        onClipFoxcam ? "Remove from foxcam.stream" : "Add to foxcam.stream",
+        async () => {
+          const verb = onClipFoxcam ? "unfeature" : "feature";
+          const r = await fetch(
+            `/api/foxcam/highlights/${encodeURIComponent(h.event_id)}/${verb}`,
+            { method: "POST", credentials: "same-origin" }
+          );
+          if (!r.ok) return;
+          const data = await r.json();
+          Object.assign(h, data.highlight || {});
+          showFoxcamBanner(!onClipFoxcam);
+          renderViewer(h);
+        }
+      ));
+    }
     // Archive toggle (per-user) — small text link tucked into the
     // upper-right of the modal-meta area. Used to be an icon button
     // in the main action row, but it sat next to favorite and was
@@ -1624,6 +1649,47 @@
       <span class="material-icons not-fox-base">pets</span>
       <span class="material-symbols-outlined not-fox-overlay">block</span>
     </span>`;
+
+  // image_arrow_up — Material Symbols Outlined glyph for "send this
+  // image somewhere up/outward." Used for the foxcam.stream share
+  // toggle. Lives in the variable font that's already loaded by
+  // every template; no extra subset request needed.
+  const IMAGE_ARROW_UP_ICON_HTML =
+    `<span class="material-symbols-outlined" aria-hidden="true">image_arrow_up</span>`;
+
+  // Temporary banner shown when the user toggles a clip / remix to
+  // foxcam.stream. Floats over the modal body; auto-dismisses after
+  // 5 s unless the user clicks the embedded link. Reused for both
+  // the "added" and "removed" cases.
+  let _foxcamBannerTimer = null;
+  function showFoxcamBanner(wasAdded) {
+    // Remove any existing instance so a fast double-toggle doesn't
+    // stack banners. Clearing the timer is critical — without it the
+    // first banner's timeout would fire later and yank the second.
+    document.querySelectorAll(".foxcam-share-banner").forEach((n) => n.remove());
+    if (_foxcamBannerTimer) { clearTimeout(_foxcamBannerTimer); _foxcamBannerTimer = null; }
+
+    const el = document.createElement("div");
+    el.className = "foxcam-share-banner";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    if (wasAdded) {
+      el.innerHTML = `<span class="foxcam-share-banner-text">Clip added to <a class="foxcam-share-banner-link" href="https://foxcam.stream" target="_blank" rel="noopener">foxcam.stream</a></span>`;
+    } else {
+      el.innerHTML = `<span class="foxcam-share-banner-text">Removed from foxcam.stream</span>`;
+    }
+    // Mount inside the modal body so the banner travels with the
+    // modal (z-index inheritance, dismissal-on-modal-close, etc.).
+    const body = document.querySelector(".card-modal .card-modal-body")
+              || document.body;
+    body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add("visible"));
+    _foxcamBannerTimer = setTimeout(() => {
+      el.classList.remove("visible");
+      setTimeout(() => el.remove(), 250);
+      _foxcamBannerTimer = null;
+    }, 5000);
+  }
 
   // Build a "copy link" button — fast, deterministic. No sheet,
   // no fallback prompt. Shows a toast on success. Material Icon

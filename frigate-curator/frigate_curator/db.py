@@ -199,6 +199,20 @@ _MIGRATIONS = [
         created_at    REAL NOT NULL DEFAULT (strftime('%s','now')),
         updated_at    REAL NOT NULL DEFAULT (strftime('%s','now'))
     )""",
+    # foxcam.stream featured set — separate from the landing-page
+    # `featured` columns because the two surfaces have different
+    # audiences and curation criteria. A clip can be on foxcam.stream
+    # without being on the main-site landing, and vice versa. The
+    # column on `remixes` lets contributors push remixes to foxcam.stream
+    # too — same shape as `highlights.foxcam_featured`.
+    "ALTER TABLE highlights ADD COLUMN foxcam_featured INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE highlights ADD COLUMN foxcam_featured_at REAL",
+    "ALTER TABLE highlights ADD COLUMN foxcam_featured_by TEXT",
+    "CREATE INDEX IF NOT EXISTS highlights_foxcam_featured ON highlights (foxcam_featured, foxcam_featured_at DESC)",
+    "ALTER TABLE remixes ADD COLUMN foxcam_featured INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE remixes ADD COLUMN foxcam_featured_at REAL",
+    "ALTER TABLE remixes ADD COLUMN foxcam_featured_by TEXT",
+    "CREATE INDEX IF NOT EXISTS remixes_foxcam_featured ON remixes (foxcam_featured, foxcam_featured_at DESC)",
 ]
 
 
@@ -862,6 +876,110 @@ def list_featured(db_path: Path, *, limit: int = 6) -> list[dict[str, Any]]:
             [limit],
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def set_foxcam_featured(
+    db_path: Path,
+    event_id: str,
+    *,
+    featured: bool,
+    by: str | None = None,
+) -> dict[str, Any] | None:
+    """Toggle a highlight on/off the foxcam.stream public gallery.
+    Separate from set_featured (landing-page surface) — different audience,
+    different curation. Returns the updated row, or None if not found."""
+    now = time.time()
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT 1 FROM highlights WHERE event_id = ?", [event_id]).fetchone()
+        if not row:
+            return None
+        if featured:
+            conn.execute(
+                "UPDATE highlights SET foxcam_featured = 1, foxcam_featured_at = ?, "
+                "foxcam_featured_by = ? WHERE event_id = ?",
+                [now, by, event_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE highlights SET foxcam_featured = 0, foxcam_featured_at = NULL, "
+                "foxcam_featured_by = NULL WHERE event_id = ?",
+                [event_id],
+            )
+        out = conn.execute("SELECT * FROM highlights WHERE event_id = ?", [event_id]).fetchone()
+    return dict(out) if out else None
+
+
+def set_remix_foxcam_featured(
+    db_path: Path,
+    remix_id: str,
+    *,
+    featured: bool,
+    by: str | None = None,
+) -> dict[str, Any] | None:
+    """Toggle a remix on/off the foxcam.stream public gallery. Mirrors
+    set_foxcam_featured but on remixes. Returns the updated row or None."""
+    now = time.time()
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM remixes WHERE remix_id = ?", [remix_id]
+        ).fetchone()
+        if not row:
+            return None
+        if featured:
+            conn.execute(
+                "UPDATE remixes SET foxcam_featured = 1, foxcam_featured_at = ?, "
+                "foxcam_featured_by = ? WHERE remix_id = ?",
+                [now, by, remix_id],
+            )
+        else:
+            conn.execute(
+                "UPDATE remixes SET foxcam_featured = 0, foxcam_featured_at = NULL, "
+                "foxcam_featured_by = NULL WHERE remix_id = ?",
+                [remix_id],
+            )
+        out = conn.execute(
+            "SELECT * FROM remixes WHERE remix_id = ?", [remix_id]
+        ).fetchone()
+    return dict(out) if out else None
+
+
+def list_foxcam_featured(db_path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Highlights currently on foxcam.stream, newest-on first.
+    Cap of 200 is generous — the public site is meant to be browsable
+    but not infinite. Pagination can be bolted on later if it grows."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM highlights WHERE foxcam_featured = 1 "
+            "ORDER BY foxcam_featured_at DESC LIMIT ?",
+            [limit],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_foxcam_featured_remixes(db_path: Path, *, limit: int = 200) -> list[dict[str, Any]]:
+    """Remixes currently on foxcam.stream, newest-on first. Enriches
+    with parent-highlight camera/start_time/thumbnail so the public
+    gallery can render a card without a second DB round-trip."""
+    with connect(db_path) as conn:
+        remix_rows = conn.execute(
+            "SELECT * FROM remixes WHERE foxcam_featured = 1 "
+            "ORDER BY foxcam_featured_at DESC LIMIT ?",
+            [limit],
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in remix_rows:
+            d = dict(r)
+            parent = conn.execute(
+                "SELECT camera, start_time, thumb_path, species "
+                "FROM highlights WHERE event_id = ?", [d["event_id"]],
+            ).fetchone()
+            if parent:
+                d["parent_camera"] = parent["camera"]
+                d["parent_start_time"] = parent["start_time"]
+                d["parent_thumb_path"] = parent["thumb_path"]
+                d["parent_species"] = parent["species"]
+            out.append(d)
+    return out
 
 
 def set_remix_featured(
