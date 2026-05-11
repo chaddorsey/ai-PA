@@ -143,7 +143,9 @@
       ul.className = "remix-children";
       for (const r of g.remixes) {
         const li = document.createElement("li");
-        li.className = "remix-child" + (r.featured ? " is-featured" : "");
+        li.className = "remix-child"
+          + (r.featured ? " is-featured" : "")
+          + (r.foxcam_featured ? " is-foxcam-featured" : "");
         li.dataset.remixId = r.remix_id;
         const dur = (r.end_offset_s - r.start_offset_s).toFixed(1);
         const username = r.created_by

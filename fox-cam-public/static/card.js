@@ -242,6 +242,7 @@
     if (h.my_demoted) el.classList.add("is-demoted");
     if ((h.favorite_count || 0) >= 2) el.classList.add("is-shared");
     if (h.featured) el.classList.add("is-featured");
+    if (h.foxcam_featured) el.classList.add("is-foxcam-featured");
     if (h.my_archived) el.classList.add("is-archived");
     el.appendChild(archiveToggle(h));
     const isNew = h.start_time && h.start_time > window.LAST_SEEN_AT_PAGELOAD;

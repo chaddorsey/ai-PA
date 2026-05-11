@@ -16,7 +16,7 @@
 // to work offline; on 401 from any /api fetch the page reloads to
 // re-trigger the CF Access challenge.
 
-const CACHE = "our-foxes-v165-foxcam-remix-toggle";
+const CACHE = "our-foxes-v166-foxcam-pin-orange-active";
 
 const STATIC_ASSETS = [
   "/static/style.css",

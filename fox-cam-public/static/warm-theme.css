@@ -1725,6 +1725,36 @@ body.filters-hidden .filters { display: none !important; }
   background: rgba(240, 160, 32, 0.06);
 }
 
+/* foxcam.stream pin on a remix row. Mirrors the highlight-card image
+   pin: small ink-soft circle with the Material "image" glyph, sitting
+   inline at the start of the row. position:relative on .remix-child
+   isn't already set in style.css but .remix-child is a positioned
+   list-item shell — the ::after here is layout-flow rather than
+   absolute so it pushes the row text to the right of the pin without
+   coordinate math, which fits the narrower indented list better than
+   the corner-pin pattern. */
+.remix-child.is-foxcam-featured::after {
+  content: "image";
+  font-family: "Material Icons";
+  font-feature-settings: "liga";
+  -webkit-font-feature-settings: "liga";
+  font-weight: normal;
+  font-style: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-ink-soft, #6b4a3a);
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
 /* Tabs row: tabs (natural width, left) + view-toggle pushed to the
    right via margin-left: auto. The cream pill that wraps the tabs
    is sized to its content; the toggle floats off to the right. */
@@ -2211,16 +2241,27 @@ html.ios .card-modal-replay .material-icons {
   color: var(--color-glow);
 }
 
-/* foxcam.stream share toggle button — active state matches the existing
-   .action-btn.active treatment so it visually mirrors the favorite/
-   archive on/off behavior. The icon comes from Material Symbols
-   Outlined (image_arrow_up). */
+/* foxcam.stream share toggle button — mirrors the landing-page
+   Feature button's bright-orange active state so contributors get a
+   strong visual confirmation that the clip / remix is currently on
+   foxcam.stream. Off state uses the same warm-cream surface as the
+   feature button; on state flips to glow-orange with white icon. */
 .action-btn.action-foxcam-share .material-symbols-outlined {
   font-size: 22px;
   line-height: 1;
 }
-.action-btn.action-foxcam-share.active {
+.action-btn.action-foxcam-share {
+  background: #fff4e6;
   color: var(--color-glow);
+  border-color: var(--color-glow);
+}
+.action-btn.action-foxcam-share:hover { background: #ffe7c9; }
+.action-btn.action-foxcam-share.active {
+  background: var(--color-glow);
+  color: white;
+}
+.action-btn.action-foxcam-share.active:hover {
+  background: #ff7044;
 }
 
 /* Temporary banner shown after a foxcam.stream toggle. Slides down
