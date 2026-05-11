@@ -173,22 +173,30 @@
   function openPlayer(card) {
     const hls = card.dataset.hls;
     const mp4 = card.dataset.mp4;
-    if (window.attachHlsSource && hls) {
-      window.attachHlsSource(playerVideo, hls, mp4);
-    } else {
-      playerVideo.src = mp4;
-    }
+    // Show the dialog FIRST. Setting a video source while the
+    // element is still inside a display:none dialog causes iOS
+    // Safari (and sometimes Chrome) to silently defer the load —
+    // the dialog opens to a blank black box and play() never starts.
+    // Once the dialog is open the <video> is in the layout tree
+    // and the source attach behaves normally.
     if (typeof player.showModal === "function") {
       player.showModal();
     } else {
       player.setAttribute("open", "");
     }
-    // Reset to beginning + autoplay on open. iOS may block autoplay
-    // for unmuted overlays; that's acceptable — the user clicked to
-    // open, they'll click play.
-    playerVideo.currentTime = 0;
-    const p = playerVideo.play();
-    if (p && p.catch) p.catch(() => {});
+    // Reset to beginning so re-opens always start at 0:00.
+    try { playerVideo.currentTime = 0; } catch (_) {}
+    // attachHlsSource calls play() internally; no need to also call
+    // it here (a second play() before the first completes throws
+    // AbortError on some browsers and can race with the source swap).
+    if (window.attachHlsSource && hls) {
+      window.attachHlsSource(playerVideo, hls, mp4);
+    } else {
+      playerVideo.src = mp4;
+      try { playerVideo.load(); } catch (_) {}
+      const p = playerVideo.play();
+      if (p && p.catch) p.catch(() => {});
+    }
   }
 
   function closePlayer() {
