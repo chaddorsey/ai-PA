@@ -64,11 +64,15 @@ html, body.foxcam-body {
   max-width: 1400px;
   margin: 0 auto;
 }
+/* Mobile: single full-width column, matching the main foxes site's
+ * gallery behavior. The cards stretch to the viewport width and scroll
+ * vertically — discoverable on small screens without users squinting at
+ * two cramped half-width cards. */
 @media (max-width: 600px) {
   .foxcam-gallery {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 10px 10px 24px;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 10px 12px 32px;
   }
 }
 
@@ -159,11 +163,11 @@ html, body.foxcam-body {
   font-size: 12px;
   color: var(--color-ink-soft);
 }
-@media (max-width: 600px) {
-  .foxcam-card-caption { padding: 8px 10px 10px; }
-  .foxcam-card-cam { font-size: 13px; }
-  .foxcam-card-time { font-size: 11px; }
-}
+/* Cards on mobile inherit the desktop padding (10/12/12) so the
+   single-column full-width layout reads cleanly without feeling
+   cramped. The cam name + timestamp sizes also stay legible at
+   thumb-width since the viewport gives them more breathing room
+   in one-column mode. */
 
 /* Screen-overlay clip player. Native <dialog> for top-layer z-index
  * + auto-modal behavior. Native video controls + the browser's own
