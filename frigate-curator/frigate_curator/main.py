@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from . import (
@@ -442,9 +442,22 @@ def get_highlight_thumb(event_id: str) -> FileResponse:
 # leaves a small revalidation window for anything that does shift.
 _HLS_MANIFEST_CACHE = {"Cache-Control": "private, max-age=60, must-revalidate"}
 
+# In-process manifest cache. WD-enclosure cold reads on the highlights
+# tree have been observed at 14-85 s for a single 600-byte manifest
+# (Spotlight + USB-SATA bridge contention; replacement enclosure
+# inbound). Manifests are immutable once written, so a simple
+# read-through dict cache is safe: first read pays the disk stall,
+# every subsequent read returns from RAM in microseconds, and the
+# OS file cache evicting under memory pressure doesn't matter
+# anymore. Bounded at 4096 entries (~4 MB worst case) so it can't
+# grow without bound even as new clips accumulate.
+_MANIFEST_RAM_CACHE: "dict[str, bytes]" = {}
+_MANIFEST_RAM_CACHE_LOCK = threading.Lock()
+_MANIFEST_RAM_CACHE_MAX = 4096
+
 
 @app.get("/highlights/{event_id}/hls/index.m3u8")
-def get_highlight_hls_manifest(event_id: str) -> FileResponse:
+def get_highlight_hls_manifest(event_id: str):
     """HLS manifest. Non-blocking: if the bundle hasn't been rendered
     yet, kicks off prewarm in a background thread and returns 404
     immediately so the client's <video> falls through to its next
@@ -455,25 +468,50 @@ def get_highlight_hls_manifest(event_id: str) -> FileResponse:
     (after the background render finishes) gets HLS.
 
     404 also covers the genuine ffmpeg-can't-segment-this-source
-    case; the MP4 fallback works there too. Self-healing."""
+    case; the MP4 fallback works there too. Self-healing.
+
+    Successful manifest payloads are cached in process memory so
+    repeat fetches don't pay the disk-stall tax on the WD enclosure.
+    """
+    # Fast path: cache hit. Skip the DB lookup AND the disk read.
+    cached = _MANIFEST_RAM_CACHE.get(event_id)
+    if cached is not None:
+        return Response(content=cached,
+                        media_type="application/vnd.apple.mpegurl",
+                        headers=_HLS_MANIFEST_CACHE)
+
     h = db.get_highlight(DB_PATH, event_id)
     if not h:
         raise HTTPException(status_code=404, detail="not found")
     clip_relpath = h["clip_path"]
     if not hls.is_rendered(HIGHLIGHTS_ROOT, clip_relpath):
-        # Fire prewarm in background; client will see 404 and fall
-        # through to MP4 source. By the next visit the bundle exists.
         hls.prewarm_hls_async(HIGHLIGHTS_ROOT, clip_relpath)
         raise HTTPException(status_code=404, detail="hls not yet rendered")
     out_dir = hls.hls_dir_for(HIGHLIGHTS_ROOT, clip_relpath)
     manifest_path = out_dir / "index.m3u8"
     if not manifest_path.exists():
         raise HTTPException(status_code=404, detail="hls manifest missing")
-    return FileResponse(
-        manifest_path,
-        media_type="application/vnd.apple.mpegurl",
-        headers=_HLS_MANIFEST_CACHE,
-    )
+
+    # Read once into RAM, cache for future hits. ~600 bytes per
+    # manifest; bounded by _MANIFEST_RAM_CACHE_MAX.
+    try:
+        data = manifest_path.read_bytes()
+    except OSError as e:
+        logger.warning("hls manifest read failed for %s: %s", event_id, e)
+        raise HTTPException(status_code=502, detail="manifest read failed")
+
+    with _MANIFEST_RAM_CACHE_LOCK:
+        if len(_MANIFEST_RAM_CACHE) >= _MANIFEST_RAM_CACHE_MAX:
+            # Crude FIFO eviction — popitem(last=False) would need
+            # OrderedDict; for a 4 K cap that fills only on truly
+            # ancient deployments, drop a random key. Cheap and
+            # bounded; not worth a real LRU here.
+            _MANIFEST_RAM_CACHE.pop(next(iter(_MANIFEST_RAM_CACHE)), None)
+        _MANIFEST_RAM_CACHE[event_id] = data
+
+    return Response(content=data,
+                    media_type="application/vnd.apple.mpegurl",
+                    headers=_HLS_MANIFEST_CACHE)
 
 
 @app.get("/highlights/{event_id}/hls/{filename}")
