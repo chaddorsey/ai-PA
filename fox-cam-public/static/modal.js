@@ -1348,6 +1348,14 @@
       if (window.IS_ADMIN) {
         shareSlot.appendChild(buildFeatureRemixButton({ remix }));
       }
+      // foxcam.stream toggle — visible to foxcam contributors and
+      // admins. Pushes the remix onto the foxcam.stream public
+      // gallery as an independent clip (separate column set from
+      // the landing-page featured toggle above). Same icon and
+      // banner UX as the highlight modal's foxcam button.
+      if (window.IS_FOXCAM_CONTRIBUTOR) {
+        shareSlot.appendChild(buildFoxcamFeatureRemixButton({ remix }));
+      }
       // Edit button: visible to the remix's creator OR an admin. Opens
       // the editor in "edit existing remix" mode (renderRemixEditor
       // with opts.editing) — pre-fills bounds, zoom, and title; saves
@@ -1837,6 +1845,50 @@
         Object.assign(remix, data.remix || {});
         paint();
         flashToast(remix.featured ? "Featured on landing" : "Removed from landing");
+      } finally {
+        b.disabled = false;
+      }
+    });
+    return b;
+  }
+
+  // foxcam.stream toggle for a remix. Same icon + banner UX as the
+  // highlight modal's action-row button, but mounted in the remix
+  // playback share-slot next to the existing landing-page Feature
+  // toggle. The remix object is mutated in place so re-paints pick
+  // up the new state without a re-fetch.
+  function buildFoxcamFeatureRemixButton(opts) {
+    const { remix } = opts;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "action-btn action-foxcam-share action-icon-only";
+    function paint() {
+      const featured = !!remix.foxcam_featured;
+      b.setAttribute("aria-label",
+        featured ? "Remove from foxcam.stream" : "Add to foxcam.stream");
+      b.title = featured ? "Remove from foxcam.stream" : "Add to foxcam.stream";
+      b.innerHTML = IMAGE_ARROW_UP_ICON_HTML;
+      b.classList.toggle("active", featured);
+    }
+    paint();
+    b.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (b.disabled) return;
+      b.disabled = true;
+      try {
+        const wasFeatured = !!remix.foxcam_featured;
+        const verb = wasFeatured ? "unfeature" : "feature";
+        const r = await fetch(
+          `/api/foxcam/remixes/${encodeURIComponent(remix.remix_id)}/${verb}`,
+          { method: "POST", credentials: "same-origin" }
+        );
+        if (r.status === 403) { flashToast("foxcam contributor only"); return; }
+        if (!r.ok) { flashToast("Couldn't update foxcam.stream"); return; }
+        const data = await r.json();
+        Object.assign(remix, data.remix || {});
+        paint();
+        showFoxcamBanner(!wasFeatured);
       } finally {
         b.disabled = false;
       }
