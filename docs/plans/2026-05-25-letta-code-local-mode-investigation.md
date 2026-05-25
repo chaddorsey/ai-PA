@@ -9,6 +9,7 @@ revision-log:
   - 2026-05-25 (cron-integration unknown resolved — letta-local-runner deployed; scheduler-service route=local executor; end-to-end smoke through scheduler-service → host bridge → letta → canary verified)
   - 2026-05-25 (MCP attachment unknown resolved — local mode does NOT support MCP attachment in 0.26.1; only path forward is skill/CLI conversion; locks in the long-standing preference per feedback_capability_pattern_choice memory note)
   - 2026-05-25 (reframed from investigation to migration plan; added Calendly reconstitution roadmap as part of the skill/CLI conversion work)
+  - 2026-05-25 (W6 subagent invocation resolved — Task tool works in local mode but with three caveats: subagents are ephemeral, no memfs inheritance, separate backend context)
 related:
   - docs/followups/2026-04-29-pa-web-stability-todos.md (will get #99/#100 entry)
   - docs/runbooks/agent-memfs-conventions.md
@@ -609,3 +610,82 @@ This plan now describes multiple workstreams. Status snapshot:
 | W11 | Convert atlassian-tools to `run_atlassian` CLI | Not yet started; currently broken anyway |
 | W12 | Per-agent migration runbook | Not yet drafted; gated on W6 + W7 |
 | W13 | Actual agent migrations, one at a time | Gated on W12 |
+
+## W6 — Subagent invocation in local mode (RESOLVED 2026-05-25)
+
+### Test
+
+Canary spawned a subagent via the Task tool:
+```
+Use the Task tool to spawn a general-purpose subagent that reads
+your system/persona.md and reports back its first 2 lines verbatim.
+```
+
+Tool result:
+```
+subagent_type=general-purpose
+subagent_id=subagent-1779751092645-1
+subagent_status=success
+agent_id=agent-local-ab824141-bae7-4085-b2c0-a83eb019559f
+```
+
+Subagent then reported: `cat: /Users/dorseyhomeserver/.letta/system/persona.md: No such file or directory`.
+
+The parent's actual persona.md lives at the canary backend dir
+(`/tmp/letta-canary-1779727677/memfs/<canary>/memory/system/persona.md`).
+Subagent looked at the wrong path.
+
+### Findings
+
+1. **Task tool works.** No PATCH-3205-style failure in local mode —
+   there's no central server doing handle resolution. Just spawns.
+
+2. **Subagents are ephemeral.** From the bundle (line 167118):
+   ```js
+   function scheduleCompletedSubagentCleanup(id2) {
+     ...
+     const timer = setTimeout(() => {
+       store2.agents.delete(id2);  // in-memory Map
+     }, completedSubagentRetentionMs);
+   }
+   ```
+   ID format `subagent-{timestamp}-{counter}`. No disk record, no
+   memfs dir, no persistence beyond the parent process lifetime
+   plus the retention timeout.
+
+3. **No memfs inheritance.** Subagents have their own backend
+   context separate from the parent. They cannot Read parent's
+   memfs files.
+
+### Migration consequences for MC's current Task tool patterns
+
+| Current pattern | Local-mode compatibility |
+|---|---|
+| Web search delegation (large result) | ✅ Works |
+| Bash command delegation | ✅ Works |
+| File-content summary (parent reads → passes content inline) | ✅ Works |
+| File-content summary (subagent reads file from parent's memfs) | ❌ Need to refactor — parent must Read first, pass content as message |
+| Cross-agent messaging (MC → daily-schedule-agent via Task) | ❌ Subagent is ephemeral; not the same as the real daily-schedule-agent. Use scheduler-service `route=local` (we built that — W3) for true cross-agent invocation. |
+| Long-running background work | ⚠️ Tied to parent's lifetime; if parent exits, subagent state is lost |
+
+### Two questions deferred
+
+- **`subagent_type=fork`**: the bundle exposes this variant which is
+  supposed to inherit parent's context. Could be the workaround for
+  the memfs-inheritance gap. Not tested here.
+- **Subagent tool surface**: does the subagent inherit parent's CLI
+  access (Bash + `run_*` tools)? Probably yes since those are
+  host-level, but not explicitly tested.
+
+### Update to W12 (per-agent migration runbook)
+
+For any agent migrating that uses the Task tool, the runbook needs
+a step: **audit current Task tool delegations** and refactor any
+that depend on subagent reading from parent's memfs. Pattern is
+"parent Reads file → parent passes content as message to subagent
+via Task" instead of "Task subagent → subagent Reads file."
+
+For MC specifically: review the system prompt + protocol files for
+any Task-tool-based "delegate this file analysis" pattern. The
+Cisco/Danielle work-packet-assembler trigger flow uses Task; needs
+specific review.
