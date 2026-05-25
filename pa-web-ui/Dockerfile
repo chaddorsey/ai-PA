@@ -26,7 +26,7 @@ RUN apt-get update \
 # verified to apply against 0.24.10's bundle anchors before this bump.
 # Bumping again requires re-verifying anchors AND re-running pa-web-ui
 # Phase 1 smoke tests (tests/test_subprocess_pool.py + live smoke).
-ARG LETTA_CODE_VERSION=0.24.10
+ARG LETTA_CODE_VERSION=0.26.1
 
 RUN npm install -g "@letta-ai/letta-code@${LETTA_CODE_VERSION}" \
     && npm cache clean --force
