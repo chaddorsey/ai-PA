@@ -8,30 +8,24 @@
   <key>WorkingDirectory</key>
   <string>/Volumes/main-drive/ai-PA/letta-local-runner</string>
 
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/dorseyhomeserver/.local/bin/poetry</string>
-    <string>run</string>
-    <string>uvicorn</string>
-    <string>letta_local_runner.main:app</string>
-    <string>--host</string>
-    <string>0.0.0.0</string>
-    <string>--port</string>
-    <string>8920</string>
-    <string>--workers</string>
-    <string>1</string>
-  </array>
+  <key>Program</key>
+  <string>/Volumes/main-drive/ai-PA/letta-local-runner/run.sh</string>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>LETTA_BIN</key>
     <string>/opt/homebrew/bin/letta</string>
+    <!-- Default. Override per-environment (e.g. for canary work) by
+         editing your local copy at ~/Library/LaunchAgents/ — do NOT
+         commit the override back to the in-repo plist. -->
     <key>LETTA_LOCAL_BACKEND_DIR</key>
     <string>/Users/dorseyhomeserver/.letta/lc-local-backend</string>
     <key>LETTA_LOCAL_RUNNER_LOG_DIR</key>
     <string>/Users/dorseyhomeserver/Library/Logs/letta-local-runner</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/dorseyhomeserver</string>
   </dict>
 
   <key>RunAtLoad</key>
