@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ai-pa.letta-local-runner</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Volumes/main-drive/ai-PA/letta-local-runner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/dorseyhomeserver/.local/bin/poetry</string>
+    <string>run</string>
+    <string>uvicorn</string>
+    <string>letta_local_runner.main:app</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+    <string>--port</string>
+    <string>8920</string>
+    <string>--workers</string>
+    <string>1</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LETTA_BIN</key>
+    <string>/opt/homebrew/bin/letta</string>
+    <key>LETTA_LOCAL_BACKEND_DIR</key>
+    <string>/Users/dorseyhomeserver/.letta/lc-local-backend</string>
+    <key>LETTA_LOCAL_RUNNER_LOG_DIR</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/letta-local-runner</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/letta-local-runner/stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/dorseyhomeserver/Library/Logs/letta-local-runner/stderr.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

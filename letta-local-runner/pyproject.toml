@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "letta-local-runner"
+version = "0.1.0"
+description = "Host-side bridge: Docker services → letta --backend local"
+authors = ["Chad Dorsey <cdorsey@concord.org>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115"
+uvicorn = {extras = ["standard"], version = "^0.32"}
+pydantic = "^2.9"
+structlog = "^24.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3"
+pytest-asyncio = "^0.24"
+httpx = "^0.27"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
