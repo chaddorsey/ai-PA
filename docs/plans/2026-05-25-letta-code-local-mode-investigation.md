@@ -1,13 +1,14 @@
 ---
-title: Letta Code local-mode investigation + migration assessment
+title: Letta Code local-mode migration plan
 date: 2026-05-25
-status: track 1 complete; canary (track 2 step 1) complete; remaining unknowns under active investigation
+status: track 1 complete; cron + MCP unknowns resolved; subagent + sandbox still under investigation; migration not yet started
 last-updated: 2026-05-25
 revision-log:
   - 2026-05-25 (initial plan written before any work)
   - 2026-05-25 (canary update — 5-step support-agent checklist complete; track 1 complete and committed)
   - 2026-05-25 (cron-integration unknown resolved — letta-local-runner deployed; scheduler-service route=local executor; end-to-end smoke through scheduler-service → host bridge → letta → canary verified)
   - 2026-05-25 (MCP attachment unknown resolved — local mode does NOT support MCP attachment in 0.26.1; only path forward is skill/CLI conversion; locks in the long-standing preference per feedback_capability_pattern_choice memory note)
+  - 2026-05-25 (reframed from investigation to migration plan; added Calendly reconstitution roadmap as part of the skill/CLI conversion work)
 related:
   - docs/followups/2026-04-29-pa-web-stability-todos.md (will get #99/#100 entry)
   - docs/runbooks/agent-memfs-conventions.md
@@ -18,7 +19,14 @@ queue-ref: pa-web-stability-todos #99 (to be added)
 effort-estimate: 1-2 days for canary; production migration is multi-week
 ---
 
-# Letta Code Local Mode — Investigation + Migration Assessment
+# Letta Code Local Mode — Migration Plan
+
+> **Document scope evolution.** Started 2026-05-25 as an investigation
+> doc with 8 unknowns. By end of day 2026-05-25, 2 unknowns were resolved
+> (cron, MCP) and the infrastructure for both was committed. The doc has
+> been rolling forward into a true migration plan. Subagent invocation
+> and sandbox/custom-tool execution remain the two open unknowns gating
+> the per-agent migration runbook.
 
 ## Motivation
 
@@ -479,3 +487,125 @@ opportunistic windows; doesn't need to block other queue items.
 - PR #2043 (embedded-backend historical anchor): letta-ai/letta-code#2043
 - Upstream source to inspect when needed: `src/backend/local/`,
   provider registry, memory filesystem code
+
+## Migration Workstream — Calendly Reconstitution (`run_calendly` CLI)
+
+### State today
+
+Calendly capability is built but dormant:
+
+- Code lives in `calendly-mcp-server/src/` (production candidate) and
+  `calendly-scraper/` (initial exploration with multiple scraper
+  variants).
+- `letta_mcp_config.json` still references `calendly-mcp-server:8086`
+  but the Docker container is NOT running (verified `docker ps -a`
+  shows nothing matching `calendly`).
+- Zero of 44 Letta agents have any Calendly tools attached.
+- Three tools were implemented:
+  1. `calendly_slots` — scrape a Calendly page for available time
+     slots. Requires JavaScript-rendered DOM, so Playwright (not
+     plain BeautifulSoup) is the reliable approach. Calendly's public
+     pages hydrate slots via JS after initial HTML load.
+  2. `calendly_create_booking_link` — build a pre-filled booking URL
+     the user clicks. URL-construction only, no scraping. Reliable.
+  3. `calendly_book_slot` — fully automated booking. CAPTCHA-blocked.
+     **Abandoned** per `calendly-mcp-server/BOOKING_SOLUTION.md`.
+
+The team's documented decision is:
+> LLM uses `calendly_slots` to find times → LLM calls
+> `calendly_create_booking_link` to generate pre-filled URL → User
+> clicks link → booking complete with one confirmation tap.
+
+### Why this matters for migration
+
+Memory blocks in `calendar-agent_copy/system/calendar_preferences.md`
+direct the agent to "offer Calendly links for external scheduling,
+new contacts." Today that's prose-only — the agent shares pre-known
+URLs from memory. Under the local-mode target architecture, this
+should become a live, agent-callable capability via Bash.
+
+### Target shape: `run_calendly` CLI
+
+Match the pattern already used by `run_slack`, `run_gws`,
+`run_omnifocus`, `run_twitter`, `run_notebooklm` on MC. One CLI
+binary, multiple subcommands, JSON output by default.
+
+Proposed subcommands:
+
+```
+run_calendly slots <event-url> [--date-range 60]
+    → returns JSON: list of {datetime, duration_minutes, slot_url}
+
+run_calendly link <slot-url> --name "Chad Dorsey" --email "..." \
+    [--question-0 "Meeting title"] [--question-1 "..."]
+    → returns a pre-filled booking URL the user clicks
+
+run_calendly profile <calendly-user-url>
+    → returns JSON: list of {event-type-url, title, duration}
+       (so the agent can discover what events exist for a person)
+```
+
+### Reconstitution plan
+
+| Step | Task | Effort |
+|---|---|---|
+| 1 | **Pull the working scraper logic** from `calendly-mcp-server/src/calendly_slots.py` and `calendly_booking_link.py`. These are the production candidates; ignore `calendly-scraper/initial_testing/`. | 0.5h |
+| 2 | **Pull the profile-discovery logic** from `calendly-scraper/calendly_profile_autodiscover_to_hours.py`. The MCP version didn't ship a profile-listing tool; this fills the gap. | 0.5h |
+| 3 | **Repackage as a CLI**. Click or Typer-based. Match the conventions of existing `run_*` CLIs (subcommand structure, JSON output, `--format` flag). | 2h |
+| 4 | **Keep Playwright as the slot-scraper engine**. Calendly's page hydrates JS-side; BeautifulSoup-only attempts in `calendly_url_to_times_bsoup.py` are unreliable. The CLI's `slots` subcommand should bundle a headless Chromium via Playwright. Auto-install browser on first run, OR document `playwright install chromium` as a prereq. | 1h (mostly Playwright setup + first-run UX) |
+| 5 | **Drop `calendly_book_slot`**. CAPTCHA-blocked, documented as abandoned. Don't carry forward. | 0h |
+| 6 | **Install on host PATH**. Match `run_slack` etc. — should be invokable as `run_calendly` from any local-mode agent's Bash. | 0.5h |
+| 7 | **Write a system protocol skill** (`system/calendly_use_protocol.md` for agents that should know about it): "When user asks for external scheduling, use `run_calendly profile` to discover event types, `run_calendly slots <event-url>` to find times, present 2-3 options, then `run_calendly link` with their selection." | 0.5h |
+| 8 | **Attach to relevant agents**: calendar-agent (after its migration), MC. Just appears in their Bash environment; no Letta-side attachment needed. | 0.25h |
+| 9 | **Update `calendar-agent`'s `system/calendar_preferences.md`** to reference the new CLI instead of relying on prose memory. | 0.25h |
+| 10 | **Drop calendly-mcp-server from docker-compose.yml** + remove `calendly-tools` from `letta_mcp_config.json`. The MCP server was never load-bearing; once the CLI ships there's no reason to keep the configuration. Container archive only. | 0.25h |
+| 11 | **Add smoke test** — invoke each subcommand against a known stable Calendly URL (Zarek's test set was used historically, `calendly-scraper/zarek_slots.json` confirms). | 0.5h |
+
+**Total estimated effort: ~6 hours.** Self-contained workstream; no
+dependencies on the rest of the migration. Can ship anytime after
+the migration framework is up.
+
+### Sequencing relative to other migrations
+
+This is **not on the migration critical path**. Calendar-agent uses
+prose-only Calendly references today; that prose works the same way
+under local mode (memory blocks load identically). The `run_calendly`
+CLI can ship before, during, or after calendar-agent's migration to
+local mode — they don't gate each other.
+
+Recommended timing: **after MC migrates** (because MC is the agent
+most likely to use Calendly conversationally), and at the same time
+as the broader `run_*` CLI ecosystem audit per #98 in the WIP queue.
+
+### Open questions for the reconstitution
+
+- **Headless Chromium footprint.** Playwright + Chromium is ~250 MB.
+  Acceptable for a CLI on the host, but worth flagging — `run_slack`
+  and friends are <10 MB each. Document the size as a cost.
+- **Rate limits.** Calendly may rate-limit scraping. The dormant code
+  doesn't appear to handle this; reconstitution should add a polite
+  default (1 req/sec) and a `--no-rate-limit` escape hatch for
+  interactive use.
+- **Auth.** Public Calendly pages don't need auth, but private/team
+  links may. The current code is anonymous-only; flag this if any
+  use case needs auth and plan a Calendly OAuth flow as a follow-up.
+
+## Migration Workstreams Summary
+
+This plan now describes multiple workstreams. Status snapshot:
+
+| # | Workstream | Status |
+|---|---|---|
+| W1 | Track 1: letta-code-patched 0.24.10 → 0.26.1 | **COMPLETE** |
+| W2 | Track 2 step 1: Local-mode canary (5-step support-agent check) | **COMPLETE** |
+| W3 | Cron path: letta-local-runner + scheduler-service `route=local` | **COMPLETE** |
+| W4 | MCP audit + skill/CLI conversion direction lock-in | **COMPLETE** (direction set; per-MCP work below) |
+| W5 | Calendly reconstitution (`run_calendly` CLI) | **PLANNED** (this section) |
+| W6 | Subagent invocation in local mode (unknown #3) | **IN PROGRESS** (next) |
+| W7 | Sandbox / custom Letta tool execution (unknown #4) | Not yet started |
+| W8 | Drop graphiti-tools + rag-tools + calendly-tools from `letta_mcp_config.json` (zero users) | **PLANNED** — 5 min cleanup, no dependencies |
+| W9 | Convert scheduler-tools to Bash+curl skill (highest-impact MCP conversion) | Not yet started; recipe already exists from W3 |
+| W10 | Convert granola-tools to `run_granola` CLI/skill | Not yet started |
+| W11 | Convert atlassian-tools to `run_atlassian` CLI | Not yet started; currently broken anyway |
+| W12 | Per-agent migration runbook | Not yet drafted; gated on W6 + W7 |
+| W13 | Actual agent migrations, one at a time | Gated on W12 |
