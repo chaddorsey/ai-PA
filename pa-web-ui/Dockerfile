@@ -75,10 +75,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install curl (for healthchecks + gws install) + the Node runtime required
-# by letta-code.
+# Install curl (for healthchecks + gws install), git (so letta-code's memfs
+# Edit/Write tools can commit+push to LETTA_MEMFS_GIT_URL via runGit3), +
+# the Node runtime required by letta-code. Without git, the bundle's
+# auto-commit silently no-ops and edits never reach Gitea.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gws CLI (Google Workspace) so MC + letta-code subagents can issue
