@@ -1,7 +1,11 @@
 ---
 title: Letta Code local-mode investigation + migration assessment
 date: 2026-05-25
-status: planning — investigation not started
+status: track 1 complete; canary (track 2 step 1) complete; remaining unknowns under active investigation
+last-updated: 2026-05-25
+revision-log:
+  - 2026-05-25 (initial plan written before any work)
+  - 2026-05-25 (canary update — 5-step support-agent checklist complete; track 1 complete and committed)
 related:
   - docs/followups/2026-04-29-pa-web-stability-todos.md (will get #99/#100 entry)
   - docs/runbooks/agent-memfs-conventions.md
@@ -145,6 +149,111 @@ These are the questions blocking a go/no-go decision:
    alongside Docker and local. Is that a hosted SaaS? Self-hostable
    via a non-Docker binary? Worth at least understanding before
    committing to local.
+
+## Update 2026-05-25 — Track 1 complete; Track 2 step-1 canary complete
+
+### Track 1 — letta-code-patched 0.24.10 → 0.26.1 — COMPLETE
+
+Committed across `b67f8ee2`, `c553470d`, `57b43b74`, `b2595e53`. Key
+adjustments needed on top of the original plan:
+
+- **PATCH-MEMFS-GIT change 3 anchor refactor**: 0.26.x replaced
+  `isMemfsRemoteUrlForAgent` with `isRepairableMemfsRemoteUrl` in the
+  `maybeUpdateMemoryRemoteOrigin` guard. One-line port of the patch
+  script's `OLD_3` anchor.
+- **PATCH-3205 client scoping**: `const client = await getClient()`
+  moved AFTER the patch's insertion point in 0.26.x, putting `client`
+  in temporal dead zone when the patch runs. Fixed by calling
+  `getClient()` directly inside the patch (stored as `_patch3205_client`
+  to avoid shadowing). Marker count went 8 → 10 (extra comment lines).
+- **Container missing `git`**: pa-web-ui Dockerfile never installed
+  the system git binary. The bundle's memfs commit/push path uses
+  `runGit3()` which shells out to system git. Every pa-web-ui memfs
+  write had silently no-op'd since cycle-1; surfaced by the upgrade
+  smoke test. Fixed by adding `git` to the apt install list.
+
+All 5 smoke tests pass end-to-end against the patched 0.26.1 bundle:
+identity load, memfs Read, memfs Edit+commit, Bash with approval,
+subagent spawn.
+
+### Track 2 step 1 — local-mode canary — COMPLETE
+
+5-step plan from Letta support agent executed against
+`/tmp/letta-canary-1779727677` with global letta-code 0.25.8 (note:
+NOT the patched 0.26.1 bundle; canary uses unpatched global). Agent
+`agent-local-d06e9bf7-1a75-4558-a1fe-1454bb5b2ec7` created with
+OpenAI gpt-4o-mini and seeded from a Gitea snapshot of
+`calendar-agent_copy/system/`. Persistence verified: agent edited
+`scheduling_context.md`, fresh CLI invocation read back the change.
+
+**Surfaced gotchas for the migration runbook:**
+
+1. **Frontmatter is mandatory in local mode.** Every `*.md` under
+   memory/ needs `---\n...\n---\n` with at least a `description:` field.
+   Gitea memfs was more permissive. Calendar-agent_copy had 4 stub
+   files without frontmatter (historical/migrated markers); they failed
+   validation and were removed before commit. Migration runbook needs
+   a pre-import audit for missing frontmatter.
+
+2. **`read_only: true` is a protected frontmatter field.** The agent
+   itself can't set it. `agent_info.md` from calendar-agent_copy had it;
+   stripped before commit. Runbook needs to strip protected fields.
+
+3. **First-run transcript migration**: if any prior conversation
+   activity exists in the backend dir (even a failed run), local mode
+   requires `letta local-backend migrate-transcripts --storage-dir <dir>`
+   once before subsequent runs. Runbook needs this as a "if you see
+   `unversioned legacy transcripts` error" step.
+
+4. **Edit tool does NOT auto-commit.** Same behavior as Docker mode —
+   agent must explicitly run `git commit` via Bash. Working-tree edits
+   persist across restarts even without commit (so persistence works,
+   but git history lags reality). Runbook should set expectation that
+   agents need an explicit commit step in routines that care about
+   audit history.
+
+5. **Bundle ships a hard-coded "Letta Code" system prompt** that is
+   sent on every turn in addition to pinned `system/*.md` files. The
+   imported `persona.md` supplements but doesn't fully replace the
+   baseline letta-code framing. In practice the agent self-identifies
+   correctly using imported persona, but the prompt is bigger than the
+   memfs files alone suggest. Open question: can the baseline be
+   overridden via flag or config?
+
+6. **Agent ID prefix differs** — local-mode agents use
+   `agent-local-<uuid>` (vs `agent-<uuid>` in Docker). May or may not
+   matter for downstream tooling that assumes a prefix.
+
+### Status of the 8 original unknowns after canary
+
+| # | Unknown | Status |
+|---|---|---|
+| 1 | Cron / scheduler integration | **Under active investigation (next)** |
+| 2 | MCP server attachment | Still unknown |
+| 3 | Multi-agent / subagent invocation | Still unknown |
+| 4 | Sandbox / custom Letta tool execution | Still unknown |
+| 5 | Provider routing — litellm vs native | Partial: native `letta connect openai` skips litellm entirely; can still point at litellm-as-OpenAI-compat if needed |
+| 6 | Migration path for ~20 existing agents | Partial: snapshot+import works for system/; per-agent cleanup needed; archival/tools/MCPs still TBD |
+| 7 | PATCH-3205 upstream status | Resolved during Track 1: not landed, patch still required and now ported to 0.26.x |
+| 8 | Letta API (third path) option | Still unknown — not blocking; defer |
+
+### Agent fleet inventory snapshot (from canary investigation)
+
+44 total agent records in Letta server, but operational set is small:
+
+- **Load-bearing (8):** Mission Control, pulse-monitor-agent_copy,
+  daily-schedule-agent-sleeptime, tasks-agent, calendar-agent_copy,
+  work-packet-assembler, email-agent, docs-and-transcripts-agent.
+- **Domain (3-4):** sports_and_media_maven, auto_madden_agent,
+  main-assistant-agent-kinara, steward.
+- **Sleeptime variants (6):** Several `*-sleeptime` agents whose
+  post-memfs purpose is unclear. May not be needed under local mode.
+- **Retired / clutter (26):** 10× "Letta Code" leftover subagents,
+  3× MC-rogue strays, 4× XXX-Ignore, 7× XXX-ARCHIVE, plus old
+  calendar-agent, retired pulse-monitor predecessors.
+
+Realistic final-state fleet under local mode: **8-12 agents**, plus
+ephemeral subagents that don't persist records.
 
 ## Two-track plan
 
