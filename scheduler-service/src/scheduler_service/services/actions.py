@@ -177,6 +177,8 @@ async def execute_agent_message_action(action_config: Dict[str, Any]) -> Dict[st
 
     if route == "lettabot":
         return await _send_via_lettabot(action_config, message, role, timeout_seconds, started_at)
+    elif route == "local":
+        return await _send_via_local_runner(action_config, message, role, timeout_seconds, started_at)
     else:
         return await _send_via_letta(action_config, message, role, timeout_seconds, started_at)
 
@@ -247,6 +249,106 @@ async def _send_via_lettabot(
         )
         raise ActionExecutionError(
             f"Failed to send message via LettaBot: {exc}"
+        ) from exc
+
+
+async def _send_via_local_runner(
+    config: Dict[str, Any], message: str, role: str,
+    timeout_seconds: float, started_at: datetime,
+) -> Dict[str, Any]:
+    """Route through letta-local-runner (host-side bridge to `letta --backend local`).
+
+    Used for agents that have migrated off the Docker Letta server. The runner
+    serializes concurrent same-agent invocations to work around the local-mode
+    race condition. Source: letta-local-runner/.
+
+    Config fields:
+      agent_id:   Local-mode agent UUID (with `agent-local-` prefix). Required.
+      message:    Already extracted by caller.
+      role:       Ignored by the runner; local-mode treats every -p input as user.
+      timeout:    Forwarded to the runner; the runner forwards to letta.
+      runner_url: Override settings.local_runner_url (rare; tests).
+    """
+    agent_id = config.get("agent_id")
+    if not agent_id:
+        raise ActionExecutionError(
+            "agent_message with route=local requires 'agent_id'"
+        )
+
+    runner_url = config.get("runner_url") or str(settings.local_runner_url)
+    invoke_url = f"{runner_url.rstrip('/')}/invoke"
+
+    # Runner's timeout floor is 10s (Pydantic ge=10). Clamp to the runner's
+    # accepted range. The HTTP client gets +30s slack so the runner can
+    # return its own timeout response before our request times out.
+    runner_timeout = max(10, min(3600, int(timeout_seconds)))
+    http_timeout = runner_timeout + 30
+
+    payload = {
+        "agent_id": agent_id,
+        "message": message,
+        "timeout": runner_timeout,
+    }
+    # conversation_id is currently accepted-but-ignored by the runner; pass
+    # through if set so future runner versions can use it.
+    if config.get("conversation_id"):
+        payload["conversation_id"] = config["conversation_id"]
+
+    try:
+        async with httpx.AsyncClient(timeout=http_timeout) as client:
+            response = await client.post(invoke_url, json=payload)
+            response.raise_for_status()
+            runner_result = response.json()
+
+            logger.info(
+                "Agent message delivered via local-runner",
+                agent_id=agent_id,
+                runner_status=runner_result.get("status"),
+                duration_seconds=runner_result.get("duration_seconds"),
+                retried=runner_result.get("retried"),
+            )
+
+            return {
+                "status": "success",
+                "output": {
+                    "route": "local",
+                    "agent_id": agent_id,
+                    "message": message,
+                    "agent_response": (runner_result.get("agent_response") or "")[:500],
+                    "runner_status": runner_result.get("status"),
+                    "retried": runner_result.get("retried"),
+                    "duration_seconds": runner_result.get("duration_seconds"),
+                    "started_at": started_at.isoformat(),
+                    "completed_at": datetime.utcnow().isoformat(),
+                },
+            }
+
+    except httpx.HTTPStatusError as exc:
+        # Runner returned 408 (timeout), 500 (error), 422 (validation), etc.
+        # Surface the detail body so callers can debug.
+        detail: Any
+        try:
+            detail = exc.response.json()
+        except json.JSONDecodeError:
+            detail = exc.response.text
+        logger.error(
+            "letta-local-runner returned non-2xx",
+            agent_id=agent_id,
+            status_code=exc.response.status_code,
+            detail=detail,
+        )
+        raise ActionExecutionError(
+            f"local-runner {exc.response.status_code}: {detail}"
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "Failed to reach letta-local-runner",
+            agent_id=agent_id,
+            invoke_url=invoke_url,
+            error=str(exc),
+        )
+        raise ActionExecutionError(
+            f"Failed to send via local-runner: {exc}"
         ) from exc
 
 

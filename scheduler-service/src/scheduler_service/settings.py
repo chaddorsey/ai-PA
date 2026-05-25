@@ -63,6 +63,17 @@ class Settings(BaseSettings):
         default_factory=dict, alias="LETTABOT_AGENTS"
     )
 
+    # letta-local-runner: host-side bridge that forks `letta --backend local`
+    # for agents that have migrated from the Docker Letta server to local mode.
+    # Jobs opt in by setting "route": "local" in their action_config (no
+    # auto-detection — explicit per-job to keep the migration auditable).
+    # The runner enforces per-agent serialization to work around the
+    # local-mode concurrent-invocation race (see letta-local-runner/README.md).
+    local_runner_url: AnyHttpUrl = Field(
+        default="http://host.docker.internal:8920",
+        alias="LOCAL_RUNNER_URL",
+    )
+
     script_env_defaults: Dict[str, str] = Field(default_factory=dict)
 
     scheduler_db_password: SecretStr = Field(
