@@ -62,7 +62,12 @@ NEW_BLOCK = """  // [PATCH-3205] Self-hosted handle-fix: when on self-hosted Let
         );
       }
       try {
-        const _patch3205_parent = await client.agents.retrieve(_patch3205_parentId);
+        // [PATCH-3205] In 0.26.x the surrounding `const client = await getClient()`
+        // is created LATER in the function body, after our insertion point — so
+        // we can't reuse it here. Call getClient() directly; it's a module-scope
+        // singleton in both 0.24.x and 0.26.x.
+        const _patch3205_client = await getClient();
+        const _patch3205_parent = await _patch3205_client.agents.retrieve(_patch3205_parentId);
         _patch3205_parentLlmConfig = _patch3205_parent.llm_config || null;
         _patch3205_parentEmbeddingConfig = _patch3205_parent.embedding_config || null;
         // LET-7991/LET-8322 sanity guard: if context_window was stomped to 30000,
