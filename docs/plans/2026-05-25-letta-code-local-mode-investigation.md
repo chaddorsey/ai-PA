@@ -6,6 +6,7 @@ last-updated: 2026-05-25
 revision-log:
   - 2026-05-25 (initial plan written before any work)
   - 2026-05-25 (canary update — 5-step support-agent checklist complete; track 1 complete and committed)
+  - 2026-05-25 (cron-integration unknown resolved — letta-local-runner deployed; scheduler-service route=local executor; end-to-end smoke through scheduler-service → host bridge → letta → canary verified)
 related:
   - docs/followups/2026-04-29-pa-web-stability-todos.md (will get #99/#100 entry)
   - docs/runbooks/agent-memfs-conventions.md
@@ -228,14 +229,57 @@ OpenAI gpt-4o-mini and seeded from a Gitea snapshot of
 
 | # | Unknown | Status |
 |---|---|---|
-| 1 | Cron / scheduler integration | **Under active investigation (next)** |
-| 2 | MCP server attachment | Still unknown |
+| 1 | Cron / scheduler integration | **RESOLVED** — letta-local-runner + scheduler-service `route=local` deployed; end-to-end verified |
+| 2 | MCP server attachment | **Under active investigation (next)** |
 | 3 | Multi-agent / subagent invocation | Still unknown |
 | 4 | Sandbox / custom Letta tool execution | Still unknown |
 | 5 | Provider routing — litellm vs native | Partial: native `letta connect openai` skips litellm entirely; can still point at litellm-as-OpenAI-compat if needed |
 | 6 | Migration path for ~20 existing agents | Partial: snapshot+import works for system/; per-agent cleanup needed; archival/tools/MCPs still TBD |
 | 7 | PATCH-3205 upstream status | Resolved during Track 1: not landed, patch still required and now ported to 0.26.x |
 | 8 | Letta API (third path) option | Still unknown — not blocking; defer |
+
+### Cron integration — design + deployment summary (2026-05-25)
+
+The Letta Docker server's `http://letta:8283/v1/agents/...` endpoint
+goes away under local mode. Replacement architecture committed as
+`letta-local-runner/` + `scheduler-service/route=local`:
+
+```
+scheduler-service (Docker, unchanged orchestrator)
+  → action_type=agent_message, route=local
+  → _send_via_local_runner POSTs to host.docker.internal:8920/invoke
+  → letta-local-runner (host, launchd, FastAPI/uvicorn)
+  → per-agent asyncio.Lock acquired (prevents the empirically-verified
+     local-mode concurrent-invocation race)
+  → subprocess: `letta --backend local --new --agent <id> -p <msg>`
+  → race-loss heuristic retry on exit==0 + empty stdout
+  → response captured, returned to scheduler-service
+```
+
+**Runner shelf-life:** 6-18 months. Retire when Letta either fixes
+concurrent same-backend invocation safety in the binary, or ships
+a `letta server --backend local` HTTP mode.
+
+**Verified end-to-end 2026-05-25:**
+- scheduler-service creates a one-off job with `route=local`
+- Job fires at the scheduled time
+- Runner forks letta against the canary backend dir
+- Canary agent replies `E2E-OK`
+- scheduler-service marks the execution `succeeded` (4.61s round-trip)
+- JSONL log on the host records the invocation
+
+**Commits:** 8c456987 (runner), 7c544069 (scheduler executor),
+82f11dc6 (launchd wrapper).
+
+**Operational follow-ups during agent migration (per agent, one at a time):**
+- Update job records: `route=letta` → `route=local`, swap agent_id from
+  Docker UUID to local-mode `agent-local-*` UUID.
+- Update plist `LETTA_LOCAL_BACKEND_DIR` to point at the production
+  backend dir (currently set to canary for testing — installed copy
+  at `~/Library/LaunchAgents/com.ai-pa.letta-local-runner.plist`).
+- Update any agent system protocols that reference scheduler-mcp tools
+  to use Bash+curl against scheduler-service REST API (matches
+  feedback_capability_pattern_choice memory note).
 
 ### Agent fleet inventory snapshot (from canary investigation)
 
