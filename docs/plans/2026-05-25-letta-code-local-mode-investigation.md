@@ -7,6 +7,7 @@ revision-log:
   - 2026-05-25 (initial plan written before any work)
   - 2026-05-25 (canary update — 5-step support-agent checklist complete; track 1 complete and committed)
   - 2026-05-25 (cron-integration unknown resolved — letta-local-runner deployed; scheduler-service route=local executor; end-to-end smoke through scheduler-service → host bridge → letta → canary verified)
+  - 2026-05-25 (MCP attachment unknown resolved — local mode does NOT support MCP attachment in 0.26.1; only path forward is skill/CLI conversion; locks in the long-standing preference per feedback_capability_pattern_choice memory note)
 related:
   - docs/followups/2026-04-29-pa-web-stability-todos.md (will get #99/#100 entry)
   - docs/runbooks/agent-memfs-conventions.md
@@ -230,8 +231,8 @@ OpenAI gpt-4o-mini and seeded from a Gitea snapshot of
 | # | Unknown | Status |
 |---|---|---|
 | 1 | Cron / scheduler integration | **RESOLVED** — letta-local-runner + scheduler-service `route=local` deployed; end-to-end verified |
-| 2 | MCP server attachment | **Under active investigation (next)** |
-| 3 | Multi-agent / subagent invocation | Still unknown |
+| 2 | MCP server attachment | **RESOLVED — local mode does NOT support MCP attachment in 0.26.1; skill/CLI is the only path** |
+| 3 | Multi-agent / subagent invocation | **Under active investigation (next)** |
 | 4 | Sandbox / custom Letta tool execution | Still unknown |
 | 5 | Provider routing — litellm vs native | Partial: native `letta connect openai` skips litellm entirely; can still point at litellm-as-OpenAI-compat if needed |
 | 6 | Migration path for ~20 existing agents | Partial: snapshot+import works for system/; per-agent cleanup needed; archival/tools/MCPs still TBD |
@@ -280,6 +281,39 @@ a `letta server --backend local` HTTP mode.
 - Update any agent system protocols that reference scheduler-mcp tools
   to use Bash+curl against scheduler-service REST API (matches
   feedback_capability_pattern_choice memory note).
+
+### MCP attachment — design + audit summary (2026-05-25)
+
+**Local mode does not support MCP attachment in letta-code 0.26.1.**
+Bundle inspection: every `connectMcpServer` callsite POSTs to a remote
+`/v1/tools/mcp/servers/connect` and requires `LETTA_API_KEY`. There
+is no config-file path, no CLI subcommand, and no local backend
+equivalent for declaring MCPs. The skill/CLI direction matches the
+long-standing user preference in `feedback_capability_pattern_choice`
+("Default to Skill + CLI-via-Bash over registering a new Letta tool"),
+so this is the intended migration path.
+
+**Audit of all 44 agents for actual MCP-domain tool usage:**
+
+| MCP configured | Agents using related tools | Status |
+|---|---|---|
+| slack-tools | 6 agents (Mission Control, kinara, pulse-monitor +copy, tasks-agent, tasks-sleeptime) — but mostly via `run_slack` CLI tool, not MCP-prefixed ones | **Mixed** — 4 agents already on CLI; 2 (pulse-monitor original, tasks-sleeptime) still on MCP tools |
+| graphiti-tools | **0 agents** | **DEPRECATE** — drop from `letta_mcp_config.json` immediately |
+| rag-tools | **0 agents** | **DEPRECATE** — drop from `letta_mcp_config.json` immediately |
+| calendly-tools | **0 agents** | **DEPRECATE** — 3 documentation references in calendar-agent_copy memory blocks ("offer Calendly links when external scheduling needed"), but no agent has a Calendly tool. The actual links are stored as facts; querying availability is not an active capability today. |
+| scheduler-tools | 2 agents (daily-schedule, kinara) — 14 tool invocations | **CONVERT** to Bash+curl skill against scheduler-service REST API (already what `route=local` uses) |
+| granola-tools | 2 agents (MC, docs-and-transcripts) — 4 tools | **CONVERT** to `run_granola` CLI or skill — modest scope |
+| atlassian-tools (supergateway) | 2 agents (pulse-monitor +copy) — 4 tools | **CONVERT** to `run_atlassian` CLI — auth complexity warrants binary; service currently broken anyway (per 2026-05-24 diagnostic) |
+
+**Implications:**
+
+- Three MCPs (graphiti, rag, calendly) can be removed today regardless
+  of migration timing — they have zero users. Pure cleanup.
+- Scheduler MCP conversion is the highest-impact migration step
+  (daily-schedule is one of the most active agents and the new
+  `route=local` REST recipe already exists).
+- Granola and Atlassian conversions are net-new CLI work; both
+  could be deferred until those agents themselves migrate.
 
 ### Agent fleet inventory snapshot (from canary investigation)
 
