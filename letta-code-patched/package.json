@@ -4,10 +4,10 @@
   "private": true,
   "description": "Pinned + patched copy of @letta-ai/letta-code for self-hosted Letta. See README.md.",
   "dependencies": {
-    "@letta-ai/letta-code": "0.24.2"
+    "@letta-ai/letta-code": "0.26.1"
   },
   "scripts": {
     "build": "./build.sh",
-    "verify": "node node_modules/@letta-ai/letta-code/letta.js --version && grep -c PATCH-3205 node_modules/@letta-ai/letta-code/letta.js"
+    "verify": "node --check node_modules/@letta-ai/letta-code/letta.js && grep -c PATCH-3205 node_modules/@letta-ai/letta-code/letta.js && grep -c PATCH-MEMFS-GIT node_modules/@letta-ai/letta-code/letta.js && grep -c PATCH-EMPTY-APPROVALS node_modules/@letta-ai/letta-code/letta.js"
   }
 }

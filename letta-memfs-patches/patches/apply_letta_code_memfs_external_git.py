@@ -64,10 +64,16 @@ NEW_2 = """async function configureLocalCredentialHelper(dir, token) {
 
 # Change 3 — maybeUpdateMemoryRemoteOrigin: when env var set, force-update
 # the origin to the external URL even if it doesn't match /v1/git/ pattern.
+#
+# Bundle-shape note: in letta-code 0.24.x the guard called
+# isMemfsRemoteUrlForAgent directly. Starting in 0.26.x upstream refactored
+# the guard to use a new wrapper, isRepairableMemfsRemoteUrl, which matches
+# both `.../v1/git/{id}/state.git` and `.../v1/git/{id}`. The behavioral
+# bypass is the same — short-circuit when LETTA_MEMFS_GIT_URL is set.
 OLD_3 = """  if (!currentOrigin) {
     return;
   }
-  if (!isMemfsRemoteUrlForAgent(currentOrigin, agentId)) {
+  if (!isRepairableMemfsRemoteUrl(currentOrigin, agentId)) {
     return;
   }
   const expectedOrigin = normalizeRemoteUrl(getGitRemoteUrl(agentId));"""
@@ -76,10 +82,10 @@ NEW_3 = """  if (!currentOrigin) {
     return;
   }
   // [PATCH-MEMFS-GIT] When LETTA_MEMFS_GIT_URL is set, bypass the
-  // isMemfsRemoteUrlForAgent guard so the origin gets updated to the
+  // isRepairableMemfsRemoteUrl guard so the origin gets updated to the
   // external git URL (which will not match the /v1/git/ pattern).
   const _envUrl3 = process.env.LETTA_MEMFS_GIT_URL;
-  if (!_envUrl3 && !isMemfsRemoteUrlForAgent(currentOrigin, agentId)) {
+  if (!_envUrl3 && !isRepairableMemfsRemoteUrl(currentOrigin, agentId)) {
     return;
   }
   const expectedOrigin = normalizeRemoteUrl(getGitRemoteUrl(agentId));"""
