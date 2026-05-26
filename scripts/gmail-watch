@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# gmail-watch — manage Gmail thread-watch subscriptions via the
+# gmail-watch-service. Replaces 4 legacy Letta tools
+# (watch_gmail_thread, unwatch_gmail_thread, list_watched_gmail_threads,
+# get_gmail_watch_status) + the admin process-task-queue endpoint.
+#
+# The gmail-watch-service has no host port mapping by default; this
+# CLI bridges via `docker exec` against the container's localhost.
+# If a host port mapping is added later (publish 8000 → some host
+# port), set GMAIL_WATCH_BASE_URL to that and skip docker exec.
+#
+# Usage:
+#   gmail-watch status                       # service health + sync state
+#   gmail-watch list                         # list watched threads
+#   gmail-watch watch <thread-id> [opts]     # start watching a thread
+#   gmail-watch unwatch <thread-id>          # stop watching
+#   gmail-watch thread-status <thread-id>    # status for one specific thread
+#   gmail-watch process-queue                # force process pending task queue
+#   gmail-watch renew                        # renew Gmail push subscription
+#
+# Env:
+#   GMAIL_WATCH_BASE_URL  e.g. http://localhost:8094  (if host port mapped)
+#                         default: unset → uses docker exec
+#   GMAIL_WATCH_CONTAINER container name for docker exec fallback
+#                         default: gmail-watch-service
+
+set -euo pipefail
+
+CONTAINER="${GMAIL_WATCH_CONTAINER:-gmail-watch-service}"
+HOST_URL="${GMAIL_WATCH_BASE_URL:-}"
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+# ─── transport ──────────────────────────────────────────────────────────────
+
+# Issue a request to gmail-watch-service. First arg is the curl
+# argument string (everything after `curl`); echoes the body on stdout.
+gw_curl() {
+  local args="$1"
+  if [[ -n "$HOST_URL" ]]; then
+    # Direct via host port mapping
+    # shellcheck disable=SC2086
+    curl -sS --max-time 15 $args
+  else
+    # Bridge via docker exec
+    # shellcheck disable=SC2086
+    docker exec "$CONTAINER" sh -c "curl -sS --max-time 15 $args"
+  fi
+}
+
+# MCP-tool helper. Builds the simplified MCP payload our gmail-watch
+# service accepts ({"name": ..., "arguments": ...}), POSTs to /mcp,
+# extracts the inner content[0].text and prints it (which is itself JSON).
+mcp_call() {
+  local tool="$1" args_json="$2"
+  local payload
+  payload="$(jq -n --arg name "$tool" --argjson args "$args_json" \
+              '{name: $name, arguments: $args}')"
+  local raw
+  raw="$(gw_curl "-X POST -H 'Content-Type: application/json' \
+                  -d '$(echo "$payload" | sed "s/'/'\\\\''/g")' \
+                  http://localhost:8000/mcp")"
+  # /mcp returns {"content": [{"text": "<inner-json>"}]}
+  echo "$raw" | jq -r '.content[0].text // empty'
+}
+
+usage() {
+  cat <<'EOF'
+gmail-watch — manage Gmail thread-watch subscriptions
+
+Subcommands:
+
+  status                   Service-wide status (watch_expiration, last_pull_at,
+                           notification counts, error counters)
+  list                     List all currently watched threads
+  thread-status <thread>   Status for one thread (is it being watched?)
+  watch <thread> [opts]    Start watching a thread for replies
+    --subject <text>       thread subject (display)
+    --recipients <csv>     original recipients
+    --followup <interval>  e.g. 3d, 12h, 1w (default 3d)
+    --context <text>       reason for watching
+    --external-only        only trigger on non-concord.org replies
+    --senders <csv>        only trigger on these senders/domains
+  unwatch <thread>         Stop watching a thread
+  process-queue            Admin: trigger task queue processing now
+  renew                    Admin: renew the Gmail push subscription
+  --help
+
+Examples:
+
+  gmail-watch status | jq '{watch_expiration, last_pull_at, error_count}'
+  gmail-watch list | jq -r '.threads[] | "\(.thread_id)  \(.subject)"'
+  gmail-watch watch 19a2bb3f --subject "RFP draft review" --followup 3d \
+                              --context "waiting for Kate's input"
+  gmail-watch unwatch 19a2bb3f
+EOF
+}
+
+# ─── subcommands ────────────────────────────────────────────────────────────
+
+cmd_status() {
+  gw_curl "http://localhost:8000/v1/status" | jq .
+}
+
+cmd_list() {
+  mcp_call "list_watched_threads" "{}" | jq .
+}
+
+cmd_thread_status() {
+  [[ $# -ge 1 ]] || die "thread-status requires a thread-id"
+  mcp_call "get_watch_status" "{\"thread_id\":\"$1\"}" | jq .
+}
+
+cmd_watch() {
+  [[ $# -ge 1 ]] || die "watch requires a thread-id"
+  local thread="$1"; shift
+  local subject="" recipients="" followup="" context="" external=0 senders=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --subject)        subject="$2";    shift 2 ;;
+      --recipients)     recipients="$2"; shift 2 ;;
+      --followup)       followup="$2";   shift 2 ;;
+      --context)        context="$2";    shift 2 ;;
+      --external-only)  external=1;      shift   ;;
+      --senders)        senders="$2";    shift 2 ;;
+      *)                die "unknown flag: $1" ;;
+    esac
+  done
+
+  local args
+  args="$(jq -n \
+    --arg t "$thread" --arg s "$subject" --arg r "$recipients" \
+    --arg f "$followup" --arg c "$context" --arg sn "$senders" \
+    --argjson e "$([[ $external -eq 1 ]] && echo true || echo false)" \
+    '{thread_id: $t}
+     + (if $s  != "" then {subject:            $s}  else {} end)
+     + (if $r  != "" then {recipients:         $r}  else {} end)
+     + (if $f  != "" then {followup_interval:  $f}  else {} end)
+     + (if $c  != "" then {context:            $c}  else {} end)
+     + (if $sn != "" then {watch_for_senders:  $sn} else {} end)
+     + (if $e        then {external_only:      true} else {} end)')"
+
+  mcp_call "watch_thread" "$args" | jq .
+}
+
+cmd_unwatch() {
+  [[ $# -ge 1 ]] || die "unwatch requires a thread-id"
+  mcp_call "unwatch_thread" "{\"thread_id\":\"$1\"}" | jq .
+}
+
+cmd_process_queue() {
+  gw_curl "-X POST http://localhost:8000/v1/admin/process-task-queue" | jq .
+}
+
+cmd_renew() {
+  gw_curl "-X POST http://localhost:8000/v1/admin/renew-watch" | jq .
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  status)         shift; cmd_status "$@" ;;
+  list)           shift; cmd_list "$@" ;;
+  thread-status)  shift; cmd_thread_status "$@" ;;
+  watch)          shift; cmd_watch "$@" ;;
+  unwatch)        shift; cmd_unwatch "$@" ;;
+  process-queue)  shift; cmd_process_queue "$@" ;;
+  renew)          shift; cmd_renew "$@" ;;
+  -h|--help|"")   usage ;;
+  *)              die "unknown subcommand: $1 (try --help)" ;;
+esac
