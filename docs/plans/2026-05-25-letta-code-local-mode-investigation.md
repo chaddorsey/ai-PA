@@ -781,3 +781,92 @@ Add steps:
 2. After agent creation, **manually PATCH the agent record's `llm_config.context_window`** to match the model's actual capacity (until a better fix exists). For Kimi: 262144. For Claude Sonnet: 200000. Etc.
 3. Run a smoke test that exercises tool-calling against the model the agent will use (model-family-sensitive harness behavior).
 4. If agent uses archival memory, configure a separate embedding provider (TBD; defer until first such agent migrates).
+
+## W7 — Sandbox / custom Letta tool execution (RESOLVED 2026-05-25)
+
+### Original question
+
+Docker server runs custom Letta tools (registered via `letta/register_*.py`)
+in a sandbox venv at `/app/tools/letta/env`. The function body is
+extracted by the server and executed there. **Where does local mode
+put this? Same path? Different mechanism?**
+
+### Resolution: there is no local-mode Python-tool sandbox
+
+Verification:
+- `letta agents create --help` exposes no `--tool`, `--register-function`,
+  or equivalent flag. Only `--name`, `--model`, `--personality`,
+  `--description`, `--tags`, `--pinned`.
+- No `letta tools` subcommand. No documented programmatic tool
+  attachment.
+- The bundle contains `addToolC`/`createToolA`/`createToolE` strings
+  but inspection shows these are TUI-side React event handlers, not
+  local-mode primitives.
+
+**Local mode agents have access only to:**
+1. Built-in letta-code tools (`Bash`, `Read`, `Edit`, `Write`, `Glob`,
+   `Grep`, `Task`, `web_search`, `fetch_webpage`, `archival_memory_*`,
+   `conversation_search`)
+2. Whatever the agent invokes through Bash (CLIs on the host PATH)
+
+The Docker server's Python tool sandbox is a server-side feature with
+no local-mode equivalent. This is consistent with W4 (MCPs not
+supported in local mode) — local mode's tool surface is intentionally
+narrower; the skill/CLI direction is enforced by the architecture.
+
+### Mapping each of MC's custom Python tools to its local-mode replacement
+
+| Tool today | What it does | Local-mode replacement |
+|---|---|---|
+| `manage_widget_queue` | POSTs to omnifocus-mcp-letta host bridge | Bash + curl |
+| `execute_on_laptop` | SSH or HTTP to host laptop | Bash + curl (or already on-host) |
+| `emit_canonical_signal` | File write to `agents-canonical/signals/` + git commit | Bash file write + git commit (or a small `emit_signal` CLI) |
+| `read_recent_signals` | File read from canonical | Bash + cat (or `read_signals` CLI for ergonomics) |
+| `stage_resource` | POSTs to pa-web-ui task pipeline | Bash + curl `localhost:5200/api/...` |
+| `refresh_plate` | POSTs to pa-web-ui | Bash + curl |
+| `write_packet_info` | POSTs to pa-web-ui | Bash + curl |
+| `backtrace_task` | POSTs to pa-web-ui | Bash + curl |
+| `trigger_task_extraction` | POSTs to pa-web-ui | Bash + curl |
+| `search_github_stars` | HTTP to curator-radar | Bash + curl `localhost:5145/...` |
+| `fetch_source_content` | Letta-server internal fetcher | Built-in `fetch_webpage` |
+
+**Every custom Python tool is a thin HTTP wrapper.** None require a
+Python sandbox. All become Bash+curl invocations during migration.
+
+For consistency / ergonomics, some patterns could be packaged as
+small CLIs (matching `run_slack` / `run_gws`):
+
+- `signal` CLI: `signal emit <kind>` / `signal read --since 1h`
+  (consolidates `emit_canonical_signal` + `read_recent_signals`)
+- `pipeline` CLI: `pipeline stage <resource> / write-packet <id> /
+  backtrace <task-id> / trigger-extract` (consolidates the 5 pa-web-ui
+  pipeline tools)
+
+These are quality-of-life improvements; the underlying capability is
+just curl.
+
+### Update to W12 (per-agent migration runbook)
+
+Add a step:
+
+> **For each agent being migrated, audit its custom Python tools.**
+> Each non-built-in tool needs a documented Bash+curl equivalent in
+> the agent's protocol files OR a CLI on the host PATH. Don't migrate
+> the agent until every tool it actually uses has a local-mode
+> replacement. Inventory the agent's tool list (`GET /v1/agents/{id}`
+> → `tools[].name`), classify each as built-in / CLI-wrapper /
+> custom-Python, and ensure custom-Python tools have replacements
+> staged.
+
+### All 8 original unknowns now resolved
+
+| # | Unknown | Status |
+|---|---|---|
+| 1 | Cron / scheduler integration | RESOLVED — letta-local-runner + scheduler-service `route=local` |
+| 2 | MCP server attachment | RESOLVED — not supported; skill/CLI direction |
+| 3 | Multi-agent / subagent invocation | RESOLVED — Task tool works with 3 caveats |
+| 4 | Sandbox / custom Letta tool execution | **RESOLVED** — no sandbox in local mode; all custom Python tools become Bash+CLI |
+| 5 | Provider routing — litellm | RESOLVED (W14) — `lmstudio` provider type bypasses validation |
+| 6 | Migration path for ~20 existing agents | Substantially scoped via W12; runbook to be drafted as agents migrate one-by-one |
+| 7 | PATCH-3205 upstream status | RESOLVED during Track 1 — patch still needed, now ported to 0.26.x |
+| 8 | Letta API (third path) option | Deferred — not blocking |
