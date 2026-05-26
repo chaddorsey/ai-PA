@@ -872,3 +872,84 @@ Add a step:
 | 6 | Migration path for ~20 existing agents | Substantially scoped via W12; runbook to be drafted as agents migrate one-by-one |
 | 7 | PATCH-3205 upstream status | RESOLVED during Track 1 — patch still needed, now ported to 0.26.x |
 | 8 | Letta API (third path) option | Deferred — not blocking |
+
+## W15 — pa-web-ui re-architecture (planned, optional)
+
+Discussion 2026-05-25: pa-web-ui today bundles four distinct concerns
+in one Flask app. Under local mode, only the chat surface has a
+hard problem (Docker-host invocation for letta-code subprocesses).
+The other three concerns work fine regardless.
+
+### Pa-web-ui's four hats today
+
+| Concern | What it is | Local-mode story |
+|---|---|---|
+| Chat surface | Spawns letta-code subprocess per conversation; SSE stream to browser | The hard part — needs bind-mount, host-move, or runner-streaming-extension |
+| Conversation switcher | Sidebar UI for agent + conversation selection | Tied to chat surface; same fate |
+| Task pipeline UI | `pa_web.tasks` queue + confirm/edit/dispatch widgets | Works as-is — no letta-code coupling |
+| MC + service dashboards | `/api/mc-usage`, `/api/mc-model`, `/api/heartbeats`, widget queue | Works as-is — no letta-code coupling |
+
+### Direction agreed (informal, 2026-05-25)
+
+**Use the Letta Code TUI as the daily chat surface** (and eventually
+the Letta Code app when available for the user's platform). Keep
+pa-web-ui's task sidebar + service dashboards running unchanged.
+
+Why this works:
+- Task sidebar reads from Postgres and POSTs to agent-trigger HTTP
+  endpoints. Zero letta-code-subprocess coupling. Continues working
+  whether you use pa-web-ui's chat panel or not.
+- Service dashboards (mc-usage, heartbeats, etc.) are just
+  service-aggregator UIs. Independent.
+- The Docker→host problem for chat-streaming disappears: TUI runs
+  on host directly.
+- Letta Code team owns chat reliability; we own service glue.
+
+### Sequencing
+
+This is **not on the per-agent migration critical path**. It can
+happen before, during, or after the per-agent migrations.
+Recommended path:
+
+1. **Now (no code change):** Validate TUI ergonomics against the
+   existing Docker MC. If satisfactory for daily use, proceed.
+2. **During migration:** Continue using pa-web-ui's chat panel for
+   any agents that haven't migrated yet (the panel keeps working
+   against Docker agents). Use TUI for agents that have migrated.
+3. **After migration (or any time):** Optionally split pa-web-ui —
+   delete the chat panel code, keep only the task sidebar + service
+   dashboards. ~50% code reduction in pa-web-ui. Not blocking.
+4. **Eventually:** Letta Code app (mobile/desktop GUI) replaces TUI
+   for users who want a non-terminal chat experience.
+
+### Pre-migration step: validate TUI ergonomics today
+
+The TUI can talk to the existing Docker Letta server right now
+(no migration needed). Concrete validation:
+
+```bash
+# Target the existing Docker MC agent via the TUI
+LETTA_BASE_URL=http://localhost:8283 letta \
+  --agent agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef
+```
+
+Try the daily flows:
+- `/agents` to switch between agents (with all 8 load-bearing
+  Docker agents available)
+- `/pin` to pin frequently-used agents
+- `/new` for a fresh conversation
+- Send a routine message that exercises a tool (e.g., a Bash call,
+  a memfs Read+Edit, a subagent spawn via Task)
+- Compare ergonomics: streaming, approval prompts, conversation
+  navigation, tool result presentation
+
+If satisfactory: W15 is the future plan, no rush.
+If not satisfactory: Option B (host-side pa-web-ui) becomes the
+likely path; revisit.
+
+### Updated workstream summary
+
+| # | Workstream | Status |
+|---|---|---|
+| W1-W14 | (see above) | Various |
+| **W15** | **pa-web-ui re-architecture — TUI as primary chat; pa-web-ui keeps dashboards** | **Planned (optional, post-migration)** |
