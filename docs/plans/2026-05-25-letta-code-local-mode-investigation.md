@@ -1056,3 +1056,31 @@ Two operational wins available BEFORE any agent migration:
   CLI + `docs/skills/canonical-signals.md` skill protocol; verified
   end-to-end against live Gitea.
 - All other tiers: TODO.
+
+## W16 Tier 1 — scheduler-curl SHIPPED (2026-05-25)
+
+Second Tier 1 skill: `scripts/scheduler` CLI + `docs/skills/scheduler.md`.
+
+Replaces 7 scheduler-mcp tools (scheduler_list_jobs,
+scheduler_search_jobs, scheduler_get_job, scheduler_update_job,
+scheduler_delete_job, scheduler_archive_job, scheduler_list_executions)
+with a single shell CLI over scheduler-service's REST API.
+
+Deliberate omission: `scheduler create`. Preserves the legacy safety
+boundary — agents can manage existing jobs but not spawn new ones.
+Add explicitly if/when that decision changes.
+
+Subcommands: list, search, get, update, delete, archive, executions,
+trigger. Each maps 1:1 to a scheduler-service REST endpoint.
+
+Smoke-tested against live scheduler-service: list (39 active jobs in
+table format), search ("drive rag" → "Drive RAG Changes API Sync"),
+get (full record), executions (last N runs in table form). Update/
+delete/archive paths constructed but not exercised against production
+jobs.
+
+One bug fixed during smoke: query parameter name is `query_text`, not
+`query` (the search endpoint takes a Pydantic field with that name).
+
+Symlinked to /opt/homebrew/bin/scheduler (runner reach) and
+~/.local/bin/scheduler (interactive shell).

@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+# scheduler — scheduler-service job-management CLI for local-mode agents.
+#
+# Replaces the 7 scheduler-mcp tools (scheduler_list_jobs,
+# scheduler_search_jobs, scheduler_get_job, scheduler_update_job,
+# scheduler_delete_job, scheduler_archive_job, scheduler_list_executions)
+# plus the trigger-now operation. Underlying scheduler-service REST API
+# is unchanged — this is a thin shell over it.
+#
+# Deliberate omission: `scheduler create`. The legacy scheduler-mcp tools
+# did not expose job creation to agents, preserving an implicit safety
+# boundary (agents can manage existing jobs but not spawn new ones).
+# Re-establishing the same boundary here. If we want agents to create
+# jobs in the future, add `scheduler create` explicitly.
+#
+# Usage:
+#   scheduler list [--status <st>] [--category <cat>] [--created-by <u>]
+#                  [--include-archived] [--limit <n>]
+#   scheduler search <query>
+#   scheduler get <job-id>
+#   scheduler update <job-id> [--title <t>] [--description <d>]
+#   scheduler delete <job-id>
+#   scheduler archive <job-id> [<job-id>...]
+#   scheduler executions <job-id> [--limit <n>]
+#   scheduler trigger <job-id>
+#   scheduler --help
+#
+# Env:
+#   SCHEDULER_BASE_URL   defaults to http://localhost:8087
+#                        (use http://scheduler-service:8087 from Docker network)
+#   SCHEDULER_API_KEY    optional; sent as Authorization: Bearer <key>
+#                        if scheduler-service is configured to require it
+
+set -euo pipefail
+
+SCHED="${SCHEDULER_BASE_URL:-http://localhost:8087}"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+auth_header() {
+  if [[ -n "${SCHEDULER_API_KEY:-}" ]]; then
+    echo "Authorization: Bearer ${SCHEDULER_API_KEY}"
+  fi
+}
+
+# Make an authenticated curl call with proper error handling
+sched_curl() {
+  local method="$1" path="$2"; shift 2
+  local body="${1:-}"
+  local resp http_code
+  resp="$(mktemp)"
+  local auth
+  auth="$(auth_header)"
+
+  local curl_args=(-sS --max-time 30 -o "$resp" -w '%{http_code}'
+                   -X "$method"
+                   -H "Content-Type: application/json")
+  [[ -n "$auth" ]] && curl_args+=(-H "$auth")
+  [[ -n "$body" ]] && curl_args+=(-d "$body")
+
+  http_code="$(curl "${curl_args[@]}" "${SCHED}${path}")"
+
+  if [[ "$http_code" =~ ^2 ]]; then
+    cat "$resp"
+    rm -f "$resp"
+    return 0
+  else
+    echo "ERROR ($http_code): $(cat "$resp")" >&2
+    rm -f "$resp"
+    return 3
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+scheduler — manage scheduler-service jobs from a shell
+
+Subcommands:
+
+  list [opts]                 List scheduled jobs
+    --status <st>             scheduled | paused | cancelled | completed | active
+    --category <cat>          filter by category
+    --created-by <user>       filter by creator
+    --include-archived        include archived jobs (only with --status active)
+    --limit <n>               cap (default 50)
+    --format <fmt>            json (default) | table
+
+  search <query>              Semantic search by title/description
+
+  get <job-id>                Show full job record (JSON)
+
+  update <job-id> [opts]      Modify an existing job
+    --title <text>
+    --description <text>
+    --status <st>             scheduled | paused | cancelled
+
+  delete <job-id>             Cancel a job (status → cancelled)
+
+  archive <job-id> [<job-id>...]
+                              Archive one or more jobs
+
+  executions <job-id> [opts]  List execution history for a job
+    --limit <n>               cap (default 20)
+
+  trigger <job-id>            Run a job immediately (creates an execution)
+
+  --help
+
+Examples:
+
+  # List scheduled jobs for the calendar agent
+  scheduler list --status scheduled --created-by calendar-agent --format table
+
+  # Find a job by title
+  scheduler search "morning briefing"
+
+  # Pause a job
+  scheduler update <job-id> --status paused
+
+  # Run a job right now (for testing)
+  scheduler trigger <job-id>
+EOF
+}
+
+# ─── list ───────────────────────────────────────────────────────────────────
+
+cmd_list() {
+  local status="" category="" created_by="" include_archived=0 limit=50 fmt=json
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --status)             status="$2";       shift 2 ;;
+      --category)           category="$2";     shift 2 ;;
+      --created-by)         created_by="$2";   shift 2 ;;
+      --include-archived)   include_archived=1; shift   ;;
+      --limit)              limit="$2";        shift 2 ;;
+      --format)             fmt="$2";          shift 2 ;;
+      -h|--help)            usage; exit 0 ;;
+      *)                    die "unknown flag: $1" ;;
+    esac
+  done
+
+  local qs=""
+  [[ -n "$status" ]]     && qs+="&status_filter=${status}"
+  [[ -n "$category" ]]   && qs+="&category_filter=${category}"
+  [[ -n "$created_by" ]] && qs+="&created_by_filter=${created_by}"
+  (( include_archived )) && qs+="&include_archived=true"
+  qs+="&limit=${limit}"
+  qs="?${qs#&}"
+
+  local out
+  out="$(sched_curl GET "/v1/jobs${qs}")"
+
+  if [[ "$fmt" == "table" ]]; then
+    echo "$out" | jq -r '
+      (. // .jobs // [])[] |
+      "\(.job_id)\t\(.status)\t\(.next_run_at // "—")\t\(.title)"
+    ' | column -t -s $'\t'
+    echo "($(echo "$out" | jq '(. // .jobs // []) | length') jobs)"
+  else
+    echo "$out" | jq .
+  fi
+}
+
+# ─── search ─────────────────────────────────────────────────────────────────
+
+cmd_search() {
+  [[ $# -ge 1 ]] || die "search requires a query"
+  local query="$1"; shift
+  local limit=20 fmt=json
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit)   limit="$2"; shift 2 ;;
+      --format)  fmt="$2";   shift 2 ;;
+      *)         die "unknown flag: $1" ;;
+    esac
+  done
+
+  local query_enc
+  query_enc="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$query")"
+  local out
+  out="$(sched_curl GET "/v1/jobs/search?query_text=${query_enc}&limit=${limit}")"
+
+  if [[ "$fmt" == "table" ]]; then
+    echo "$out" | jq -r '
+      (. // .results // [])[] |
+      "\(.job_id)\t\(.score // "—")\t\(.title)"
+    ' | column -t -s $'\t'
+  else
+    echo "$out" | jq .
+  fi
+}
+
+# ─── get ────────────────────────────────────────────────────────────────────
+
+cmd_get() {
+  [[ $# -ge 1 ]] || die "get requires a job-id"
+  sched_curl GET "/v1/jobs/$1" | jq .
+}
+
+# ─── update ─────────────────────────────────────────────────────────────────
+
+cmd_update() {
+  [[ $# -ge 1 ]] || die "update requires a job-id"
+  local job_id="$1"; shift
+  local title="" desc="" status=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --title)        title="$2";  shift 2 ;;
+      --description)  desc="$2";   shift 2 ;;
+      --status)       status="$2"; shift 2 ;;
+      *)              die "unknown flag: $1" ;;
+    esac
+  done
+
+  local body
+  body="$(jq -n \
+    --arg title "$title" \
+    --arg desc "$desc" \
+    --arg status "$status" \
+    '{}
+      + (if $title  != "" then {title:       $title}  else {} end)
+      + (if $desc   != "" then {description: $desc}   else {} end)
+      + (if $status != "" then {status:      $status} else {} end)')"
+  [[ "$body" == "{}" ]] && die "update requires at least one of --title/--description/--status"
+
+  sched_curl PATCH "/v1/jobs/$job_id" "$body" | jq .
+}
+
+# ─── delete ─────────────────────────────────────────────────────────────────
+
+cmd_delete() {
+  [[ $# -ge 1 ]] || die "delete requires a job-id"
+  sched_curl DELETE "/v1/jobs/$1" | jq .
+}
+
+# ─── archive ────────────────────────────────────────────────────────────────
+
+cmd_archive() {
+  [[ $# -ge 1 ]] || die "archive requires at least one job-id"
+  local ids_json
+  ids_json="$(printf '%s\n' "$@" | jq -R . | jq -s '{job_ids: .}')"
+  sched_curl POST "/v1/jobs/batch/archive" "$ids_json" | jq .
+}
+
+# ─── executions ─────────────────────────────────────────────────────────────
+
+cmd_executions() {
+  [[ $# -ge 1 ]] || die "executions requires a job-id"
+  local job_id="$1"; shift
+  local limit=20 fmt=json
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit)   limit="$2"; shift 2 ;;
+      --format)  fmt="$2";   shift 2 ;;
+      *)         die "unknown flag: $1" ;;
+    esac
+  done
+
+  local out
+  out="$(sched_curl GET "/v1/jobs/$job_id/executions?limit=${limit}")"
+
+  if [[ "$fmt" == "table" ]]; then
+    echo "$out" | jq -r '
+      .[] |
+      "\(.scheduled_at)\t\(.status)\t\(.completed_at // "running")\t\((.log_summary // "")[:80])"
+    ' | column -t -s $'\t' | head -n "$((limit+1))"
+  else
+    echo "$out" | jq .
+  fi
+}
+
+# ─── trigger ────────────────────────────────────────────────────────────────
+
+cmd_trigger() {
+  [[ $# -ge 1 ]] || die "trigger requires a job-id"
+  sched_curl POST "/v1/jobs/$1/executions" | jq .
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  list)         shift; cmd_list "$@" ;;
+  search)       shift; cmd_search "$@" ;;
+  get)          shift; cmd_get "$@" ;;
+  update)       shift; cmd_update "$@" ;;
+  delete)       shift; cmd_delete "$@" ;;
+  archive)      shift; cmd_archive "$@" ;;
+  executions)   shift; cmd_executions "$@" ;;
+  trigger)      shift; cmd_trigger "$@" ;;
+  -h|--help|"") usage ;;
+  *)            die "unknown subcommand: $1 (try --help)" ;;
+esac
