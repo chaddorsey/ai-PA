@@ -231,56 +231,166 @@ If audit is accepted:
 - `auto_madden_agent`
 - 6× sleeptime variants
 
-That's **9 agents** dropped from the migration set — without any feature loss
-(work-packet logic moves to pa-web-ui, steward becomes a script, sleeptime
-agents go away with the deprecation).
+### Revised after 2026-05-25 conversation review
+
+After iterating on the original audit with the user, additional
+retirements identified:
+
+- **email-agent** retires. Its 15 tools are wrappable (run_gws covers
+  the main Gmail surface; gmail-watch tools become a skill); its
+  3 substantive memory blocks (email_patterns, task_extraction_process_email,
+  email_tool_use_guidelines) move to tasks-agent. tasks-agent absorbs the
+  email-extraction function.
+- **work-packet-assembler** retires INTO tasks-agent (not into pa-web-ui
+  as originally proposed). One agent owns the whole task lifecycle:
+  extract → confirm → assemble → dispatch.
+- **daily-schedule-agent** retires. The agent is an overglorified cron
+  job — its sole function is calling `generate_daily_briefing` (a Python
+  tool) on a timer. The 26 memory blocks are read BY THE TOOL, not by the
+  LLM. Reducing to a cron-driven script is strictly better: one fewer
+  LLM call per briefing, faster, cheaper, same output. Memory blocks
+  migrate to MC's memfs (priorities, schedule_preferences, monitoring
+  recipes — MC reads them for chat anyway).
+- **tasks-agent-sleeptime** action tools (`post_slack_channel_reply`,
+  `send_slack_dm`, `draft_reply_to_email`, `sync_omnifocus_completions`)
+  become explicit skills, not absorbed into tasks-agent. Preserves the
+  safety boundary (action-side is dangerous-on-impulse).
 
 ### Definitely migrate (5 agents)
-- Mission Control
-- tasks-agent
-- pulse-monitor-agent_copy
-- daily-schedule-agent (renamed from -sleeptime)
-- docs-and-transcripts-agent
-- email-agent
+- **Mission Control** — primary chat surface
+- **tasks-agent** — extraction + work-packet assembly + email function
+- **pulse-monitor-agent_copy** — daily Slack analytics consolidation
+- **docs-and-transcripts-agent** — Granola + Drive pipeline
+- **calendar-agent_copy** — Slackbot scheduler dependency (confirmed); multi-tenant future
 
-### Conditional (3 agents — keep if domain still desired)
-- main-assistant-agent-kinara (if Slack chat remains)
-- sports_and_media_maven (if TV-control workflows remain)
-- calendar-agent_copy (borderline — Letta support input desired)
+### Conditional (1-2 agents — keep but reconsider)
+- **main-assistant-agent-kinara** — Slack-facing executive assistant.
+  KEEP for now; flag as a follow-up workstream (see "Slack strategy"
+  section below). Long-term: probably absorb into MC with Slackbot
+  routing directly.
+- **sports_and_media_maven** — keep IF TV-control workflows still desired
+
+### Docker purgatory (defer)
+- **auto_madden_agent** — defer (NFL-season; non-agent services do the work)
+- **sports_and_media_maven** — defer (alternative to migrating)
+
+### Retire (10 agents)
+- email-agent (functions → tasks-agent + gmail-watch skill)
+- work-packet-assembler (functions → tasks-agent skill)
+- daily-schedule-agent (functions → cron-driven script + memfs files on MC)
+- steward (functions → cron-driven script + alerting)
+- auto_madden_agent (no actual work being done)
+- 6× sleeptime variants (deprecated; action tools → skills where needed)
 
 ### Final fleet shape
-- **6 definite agents** post-migration
-- Plus 1-3 conditional based on use cases
+
+- **5 definite agents** post-migration
+- Plus 1 conditional (Kinara, pending Slack strategy)
+- Plus 1-2 in purgatory (auto_madden, maven)
 - **Down from 18** active-or-load-bearing today
 - Down from 44 total agent records currently
 
-## Specific questions for the Letta support agent
+## Slack strategy planning (Workstream candidate, post-migration)
 
-1. **Calendar-agent_copy:** is a specialist sub-agent (calendar-only) still
-   the right pattern under local mode, or does Letta's direction favor
-   absorbing domain expertise into a primary agent + skill files? We have
-   substantial role-specific memory blocks (12 blocks, 18KB total). If we
-   absorb into MC, MC's context inflates; if we keep the specialist, that's
-   one more agent + one more provider config + one more set of cron jobs.
+The Slackbot today routes ALL Slack DMs to `main-assistant-agent-kinara`
+(agent-b1574f99) as the primary handler, and routes scheduling-intent
+requests to calendar-agent_copy. Kinara has ~32 tools and ~22 memory
+blocks that substantially OVERLAP with MC's tools and blocks — the two
+agents are effectively split-brain "executive assistants" with separate
+memories for the two interfaces (Slack vs. pa-web-ui chat).
 
-2. **Sleeptime deprecation:** what's the recommended replacement path
-   for the "background consolidation" use case that sleeptime agents
-   currently serve (e.g., `daily-schedule-agent-sleeptime` consolidates
-   schedule state nightly)? Are reflection subagents the answer, or should
-   that work move to cron + a regular `letta_v1_agent`?
+### Three options for the Slack strategy
 
-3. **Work-packet-assembler retirement:** any reason to keep this as an
-   agent vs moving the logic into pa-web-ui's task-confirm endpoint?
-   The agent's tools are all mechanical HTTP calls; there's no
-   reasoning we can identify.
+| Option | What | Tradeoff |
+|---|---|---|
+| **A. Keep Kinara separate** | Status quo — Slackbot to Kinara, pa-web-ui to MC | Two agents to maintain; split brain on memory blocks; "did you tell MC or Kinara that thing?" confusion |
+| **B. Slackbot routes to MC directly** | One agent (MC) handles all chat surfaces; Kinara retired | Unified memory; MC gets all Slack noise; simpler architecture; requires Kinara's distinct blocks merged into MC's memfs |
+| **C. Thin Slack-routing dispatcher** | Slackbot picks agent per intent (scheduling → calendar-agent, otherwise → MC) | Smarter routing; dispatcher logic lives somewhere (slackbot itself? a tiny new service?); preserves specialist agents |
 
-4. **Domain agents (sports_and_media_maven):** 26 custom Python tools
-   that are highly specialized (IR commands, Roku control). Under local
-   mode where MCPs aren't supported, do these custom tools become
-   first-class CLIs (`run_fios`, `run_roku`), or do we package them
-   differently?
+### Public-facing direction (per user)
 
-5. **Steward:** the agent has only Letta-built-in tools and a `system/duties`
-   block describing its config-audit role. Sounds like a cron job. Is
-   there any local-mode pattern that would make Steward valuable as an
-   agent rather than a script?
+If calendar-agent eventually serves OTHER Concord employees via Slack
+(not just Chad), the architecture has different constraints:
+
+- Identity-aware behavior per Slack user
+- Per-user preferences (calendar-agent already has `preferences_U02V91KU8`
+  and `preferences_U0AB18G54ET` blocks — Slack user IDs)
+- Privacy boundary across users
+- Calendly URL per user (run_calendly needs per-user identity)
+- Persona shifts from "Chad's assistant" to "scheduling assistant for
+  the requesting Concord user"
+
+The multi-tenant constraint argues for **keeping specialists** (Option C)
+rather than absorbing everything into MC (which has Chad-specific
+persona). Calendar-agent's per-user preferences pattern already
+half-supports this; build on that rather than refactoring.
+
+### Recommended sequencing
+
+This is a follow-up workstream, NOT on the local-mode migration
+critical path. Suggested order:
+
+1. **During migration**: keep Kinara as-is. Migrate it like any other
+   agent (it has substantial memory blocks).
+2. **Post-migration**: revisit. By then we'll have local-mode operational
+   experience and the multi-tenant calendar question will be sharper.
+3. **Decision points**:
+   - If TUI replaces Slack as the daily interface: retire Kinara (Option B)
+   - If Slack stays critical but multi-tenant matters: invest in Option C
+     (a dispatcher) + keep calendar-agent as specialist
+   - If Slack stays single-tenant (just Chad): Option B is cleanest
+
+## What we actually want from Letta support
+
+After two rounds of iteration, most of our original five questions have
+been answered by our own investigation. The one that hasn't is the
+underlying architectural question:
+
+### **When should an agent stay narrow vs. broaden its scope?**
+
+Concrete instances of this question in our migration:
+
+| Decision point | Narrow option | Broad option | Our current lean |
+|---|---|---|---|
+| tasks-agent absorbing email-agent + work-packet-assembler | Three specialist agents | One task-lifecycle agent | Broad (absorb) |
+| calendar-agent_copy as specialist | Keep narrow scheduling agent | Absorb into MC + skill files | Narrow (Slackbot dep + multi-tenant) |
+| Kinara as Slack twin of MC | Two interface-specific agents | One MC + Slack router | Narrow now, broad later |
+| daily-schedule-agent | Specialist briefing agent | Cron + script reading from MC's memfs | Broad (retire agent; script-ify) |
+| Sleeptime action twins | Twin agents with action tools | Action skills any agent can invoke | Broad (skills) |
+
+### The pattern we're using (heuristic)
+
+- **Broaden when:** natural workflow continuity (task lifecycle), heavy
+  memory-block overlap (Kinara/MC), the "agent" is just calling one
+  tool (daily-schedule), or the safety boundary can move to explicit
+  skill invocation (sleeptime action twins)
+- **Stay narrow when:** different audiences (multi-tenant calendar),
+  meaningfully different persona (calendar specialist vs. generalist),
+  memfs context would explode in a generalist (Granola voluminous
+  knowledge stays with docs-and-transcripts), or external routing
+  depends on the specialist's identity (Slackbot routes to calendar-agent)
+
+### The actual question for Letta support
+
+> **Does Letta's design philosophy under local mode favor fewer broader
+> agents or many narrower specialists? And what anti-patterns should we
+> avoid?**
+
+Concretely:
+- Is our heuristic above sound? Are there cases where we're broadening
+  too aggressively or keeping too narrow?
+- Is the "specialist agent for a domain that the primary agent could
+  also do" pattern (calendar-agent_copy) something Letta still
+  recommends, or is the direction moving toward "one rich agent with
+  skill files for domain knowledge"?
+- For agents whose only function is calling one tool on a cron
+  (daily-schedule-agent), is the "retire and replace with script"
+  pattern always the right call, or are there cases where keeping the
+  agent abstraction adds value we're missing?
+- Any other anti-patterns to flag?
+
+The other questions we had earlier (calendar specialist vs. MC absorb,
+sleeptime replacement, work-packet-assembler retirement, domain agents
+under local mode, steward as script) all collapse into this central
+question. Their answers fall out from whatever Letta's general
+philosophy on agent scope under local mode is.
