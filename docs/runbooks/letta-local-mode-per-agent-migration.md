@@ -15,6 +15,64 @@ during the soak window.
   in place (W5/W9/W10/W11 partial-completion per agent)
 - For one agent at a time. Do not parallelize.
 
+## Reversibility envelope
+
+**This is a fully reversible migration per-agent during the entire
+migration arc.** The Docker server keeps running until all agents have
+migrated AND soaked successfully. At any point before final decommission,
+any individual agent can be rolled back to its Docker original.
+
+### What's preserved by design
+
+- The Docker `ai-pa-letta-1` server, its agent records, and the Gitea
+  memfs repos all stay intact throughout. Nothing is deleted until the
+  per-agent soak passes — and even then, the Docker server itself
+  stays up until ALL agents have migrated.
+- Each agent migration creates a NEW local-mode agent with a NEW id
+  (`agent-local-*`); the Docker original is renamed `XXX-PRE-LOCAL-<name>`
+  and detached, not deleted.
+- scheduler-service cron records carry both old and new agent IDs
+  (the route flip is a single column update). Bidirectional flip is
+  trivial.
+- pa-web-ui's conversation routing is per-conversation: existing
+  conversations stay pinned to their original agent_id; new
+  conversations against the new agent_id are opt-in.
+
+### Per-agent rollback cost over time
+
+| Time after migration | Rollback effort | State to merge back |
+|---|---|---|
+| **t=0** (immediately after Phase H) | <10 min — flip cron, rename Docker agent back | Nothing |
+| **t=1 day** | ~30 min — also re-attach a few archival passages and a few memfs commits to the Docker agent | Small archive deltas + a few commits |
+| **t=7 days** (typical soak window end) | 2-4 hours — meaningful state divergence; need to export local-mode state, transform, ingest into Docker agent | Archival passages + memfs commits + new conversation history |
+| **t=30 days** | Plan-and-execute — risk of orphaned references in downstream signals/tasks | All of the above plus the agent may have written shared canonical files that other agents now reference |
+
+### What's NOT cheap to roll back
+
+Only one thing crosses an irreversibility threshold:
+
+**Final decommission of the Docker server itself** (tearing down
+`ai-pa-letta-1` + `memfs-sync-relay`, deleting Gitea agent repos,
+removing legacy code paths from pa-web-ui and scheduler-service).
+This is multi-week work to reverse. Do not decommission until ALL
+agents have soaked successfully for at least 30 days each.
+
+### The whole-arc abort case
+
+If local mode reveals a fundamental problem at any point in the
+migration:
+
+1. Per-agent rollback any agents already migrated (Phase I per agent)
+2. Stop migrating new agents
+3. The Layer 1 infrastructure (letta-local-runner, scheduler-service
+   `route=local` executor, the dropped MCPs) is all ADDITIVE — leave
+   it sitting idle; nothing in Docker mode operation depends on it
+4. Document the failure mode in
+   `docs/followups/<date>-local-mode-migration-arc-aborted.md`
+
+No code revert needed for Layer 1 — those changes are designed to be
+inert when unused.
+
 ## Recommended order (lowest risk → highest)
 
 1. **calendar-agent_copy** (4 tools, 1 cron, well-tested) — pilot
@@ -384,13 +442,67 @@ Watch for 5-7 days:
 
 ### Rollback (if needed)
 
-1. Revert cron jobs to `route=letta` with `agent_id=$OLD_AGENT_ID`
-   (the Docker record still exists since H1 didn't delete it)
-2. Detach any tools we added during migration; restore the Docker
-   agent's pre-migration tool inventory from `agent.json` (B1)
-3. Re-rename it (drop the `XXX-PRE-LOCAL-` prefix)
-4. Document the failure mode in the per-agent migration log and
-   update this runbook
+See the **Reversibility envelope** section at the top of this runbook
+for the cost matrix over time. The mechanical steps:
+
+1. **Repoint cron jobs back.** For each row in `/tmp/crons-$OLD_AGENT_NAME.tsv`,
+   PATCH back to `route=letta` and `agent_id=$OLD_AGENT_ID`. SQL
+   equivalent if iterating is preferable:
+
+   ```sql
+   UPDATE jobs
+   SET actions = jsonb_set(
+     jsonb_set(actions, '{0,config,route}', '"letta"'),
+     '{0,config,agent_id}', '"<OLD_AGENT_ID>"'
+   )
+   WHERE actions->0->'config'->>'agent_id' = '<NEW_AGENT_ID>';
+   ```
+
+2. **Restore the Docker agent.** Rename it back (drop the
+   `XXX-PRE-LOCAL-` prefix from H1); re-attach the tool set from
+   `agent.json` (Phase B1 backup).
+
+3. **Merge back any new state from the local-mode agent.** Skip if
+   t<1 day; otherwise:
+   - Export new archival passages from local-mode agent (post-Phase B
+     timestamp), ingest into Docker agent's archival store via API
+   - Diff the local-mode memfs commit log against the Phase B baseline
+     snapshot; cherry-pick any agent-authored commits back to the
+     Docker Gitea repo
+   - Conversations stay where they are (browser-level state); users
+     just see them as historical when they switch back
+
+4. **Document.** Append to `docs/migrations/local-mode/$OLD_AGENT_NAME.md`
+   (created at final teardown — create now if doing rollback before
+   teardown). Include: failure mode, what was rolled back, what state
+   was merged back, lessons for future migrations.
+
+5. **Leave the local-mode agent record alone** (don't delete) until
+   you've confirmed the rollback works end-to-end. Final cleanup:
+   `rm $LOCAL_BACKEND_DIR/agents/<base64-id>.json` and
+   `rm -rf $LOCAL_BACKEND_DIR/memfs/<agent-id>/`.
+
+### When NOT to roll back
+
+Some failure modes look bad but don't actually warrant rollback:
+
+- **A single cron job execution fails** with a runner timeout or 500 —
+  scheduler-service's retry policy + the runner's race-loss heuristic
+  handle the common transient cases. Investigate the JSONL log first.
+- **The agent responds more slowly than the Docker version** — this is
+  expected for some model+context combos; the LiteLLM/cold-start
+  variance is normal. Measure before rolling back.
+- **One Task tool delegation fails** that was reading parent memfs —
+  this is the expected behavior per W6. Refactor the delegation
+  pattern; don't roll back.
+
+Rollback when:
+- Repeated cron failures across multiple jobs over hours
+- Memfs corruption (git state diverges from expected; commits fail
+  preconditions repeatedly)
+- The agent loses its persona / acts as bare Letta Code
+- A downstream signal or task pipeline breaks because the agent's
+  outputs changed shape
 
 ### Final teardown (after successful soak)
 
