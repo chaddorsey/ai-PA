@@ -689,3 +689,95 @@ For MC specifically: review the system prompt + protocol files for
 any Task-tool-based "delegate this file analysis" pattern. The
 Cisco/Danielle work-packet-assembler trigger flow uses Task; needs
 specific review.
+
+## W14 — Provider routing investigation (2026-05-25)
+
+### Context
+
+Following Letta forum agent advice on litellm/Fireworks/Kimi
+integration with local mode. Two paths tested empirically against
+our actual production model (`kimi-k2p6` on Fireworks via litellm).
+
+### Critical finding: openai provider has a hard-coded model catalog
+
+Local mode's `openai` provider type rejects arbitrary model handles:
+
+```
+Error: Unknown model "kimi-k2p6" for provider "openai".
+Check the model handle or update the model catalog.
+```
+
+Bundle inspection: `getModel(provider, modelId)` looks up
+`modelRegistry.get(provider)` — a pre-populated registry. Models
+like `gpt-4.1-mini`, `gpt-4o-mini`, `claude-haiku-4-5` are in it.
+Fireworks-routed handles (`kimi-k2p6`, `deepseek-v3p2`) and our
+per-agent aliases (`gpt-4.1-mini/calendar`) are not.
+
+### Workaround: `lmstudio` provider type bypasses validation
+
+The `lmstudio` provider type is designed for arbitrary local
+inference and does NOT validate model handles. Pointing it at any
+OpenAI-compatible endpoint with an API key works.
+
+### Both Option A and Option C validated
+
+| Test | Provider config | Model handle | Result |
+|---|---|---|---|
+| **Option A — keep LiteLLM gateway** | `lmstudio` → `http://localhost:4000/v1` (litellm) with master key | `lmstudio/kimi-k2p6` | ✅ 2s response |
+| **Option C — direct to Fireworks** | `lmstudio` → `https://api.fireworks.ai/inference/v1` with Fireworks key | `lmstudio/accounts/fireworks/models/kimi-k2p6` | ✅ 2s response |
+
+### Recommendation: Option A (keep LiteLLM as single gateway)
+
+Preserves the investments:
+- Per-agent cost tracking via `gpt-4.1-mini/calendar` and similar aliases
+- Centralized routing policy (one config file)
+- Fireworks open-weights access through the existing registry
+- Mixed OpenAI + Anthropic + Fireworks under one endpoint
+
+Per-agent migration recipe:
+
+```bash
+# Once per backend dir (during migration setup):
+letta --backend local connect lmstudio \
+  --base-url http://localhost:4000/v1 \
+  --api-key "$LITELLM_MASTER_KEY"
+
+# Per agent (during migration):
+letta --backend local agents create \
+  --name "<agent-name>" \
+  --model "lmstudio/gpt-4.1-mini/<agent-name>"  # litellm alias for cost tracking
+```
+
+### Operational dependency
+
+Option A makes the entire local-mode stack dependent on LiteLLM
+being healthy. Today's canary surfaced a Prisma DB connection
+failure that bricked all chat completions through litellm; required
+`docker rm -f litellm` + `docker-compose up -d litellm` to recover
+(the soft `docker restart` failed due to a zombie PID issue —
+likely a Letta upstream bug unrelated to our setup).
+
+Migration follow-up: **add LiteLLM health monitoring** with auto-recovery,
+since cron-driven and chat-driven agent invocations will all fail if
+litellm hangs. Easiest: a scheduler-service cron that probes
+`http://litellm:4000/v1/models` and restarts the container on
+sustained failure.
+
+### Forum agent caveats — status
+
+| Caveat | Status |
+|---|---|
+| Model handle catalog mismatch | **Resolved via lmstudio provider workaround** |
+| Context window metadata defaults to 128K regardless of actual model | **Confirmed issue** — need per-agent override of `llm_config.context_window` (kimi-k2p6 is 262K, agent record shows 128K) |
+| Tool-calling quality per model family | Not yet tested; validate during per-agent migration smoke |
+| Embeddings/archival separate config | Not yet tested; canary hasn't used archival memory |
+| Env parity for channels/schedules | Both Docker scheduler-service and host launchd runner invoke letta-code; provider config must be consistent between contexts — verified `LETTA_LOCAL_BACKEND_DIR` is sufficient (provider config lives in that dir) |
+| Per-agent aliases (`gpt-4.1-mini/calendar`) work through lmstudio | Not explicitly tested but principle is established; quick validation during first OpenAI-model migration |
+
+### Update to W12 (per-agent migration runbook)
+
+Add steps:
+1. Confirm provider config in `$LETTA_LOCAL_BACKEND_DIR/providers/auth.json` includes the `lmstudio` entry pointing at litellm.
+2. After agent creation, **manually PATCH the agent record's `llm_config.context_window`** to match the model's actual capacity (until a better fix exists). For Kimi: 262144. For Claude Sonnet: 200000. Etc.
+3. Run a smoke test that exercises tool-calling against the model the agent will use (model-family-sensitive harness behavior).
+4. If agent uses archival memory, configure a separate embedding provider (TBD; defer until first such agent migrates).
