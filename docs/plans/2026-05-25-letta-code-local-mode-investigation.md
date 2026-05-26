@@ -1,7 +1,7 @@
 ---
 title: Letta Code local-mode migration plan
 date: 2026-05-25
-status: track 1 complete; cron + MCP unknowns resolved; subagent + sandbox still under investigation; migration not yet started
+status: all 8 unknowns resolved; infrastructure shipped; per-agent migrations not yet started
 last-updated: 2026-05-25
 revision-log:
   - 2026-05-25 (initial plan written before any work)
@@ -10,6 +10,8 @@ revision-log:
   - 2026-05-25 (MCP attachment unknown resolved — local mode does NOT support MCP attachment in 0.26.1; only path forward is skill/CLI conversion; locks in the long-standing preference per feedback_capability_pattern_choice memory note)
   - 2026-05-25 (reframed from investigation to migration plan; added Calendly reconstitution roadmap as part of the skill/CLI conversion work)
   - 2026-05-25 (W6 subagent invocation resolved — Task tool works in local mode but with three caveats: subagents are ephemeral, no memfs inheritance, separate backend context)
+  - 2026-05-25 (W14 provider routing resolved — Option A keep-LiteLLM via `lmstudio` provider type validated against kimi-k2p6; Option C direct-Fireworks also works; recommendation: keep LiteLLM as single gateway)
+  - 2026-05-25 (W7 sandbox/custom-tool execution resolved — local mode has no programmatic Python-tool attachment surface; every custom Letta tool becomes a Bash+CLI/curl invocation, same skill/CLI direction as MCPs; all 8 original unknowns now closed)
 related:
   - docs/followups/2026-04-29-pa-web-stability-todos.md (will get #99/#100 entry)
   - docs/runbooks/agent-memfs-conventions.md
