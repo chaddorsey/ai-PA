@@ -1,8 +1,14 @@
 ---
 title: Agent retire-vs-migrate audit
 date: 2026-05-25
-status: draft — seeking second opinion from Letta support agent
+status: FINAL — Letta forum agent consulted twice; design converged
 context: docs/plans/2026-05-25-letta-code-local-mode-investigation.md (W12 / W15)
+last-updated: 2026-05-26
+revision-log:
+  - 2026-05-25 (initial draft — 18 agents → 5 keep)
+  - 2026-05-25 (revised after conversation — re-included email-agent; storage Option C)
+  - 2026-05-26 (revised after first forum consultation — minimal source adapters; protocols as files, not pinned)
+  - 2026-05-26 (revised after second forum consultation — "domain expert" pattern locked: agents emit candidates/signals + answer domain queries; mechanical work is scripts; 6-agent final fleet)
 ---
 
 # Agent Retire-vs-Migrate Audit
@@ -394,3 +400,147 @@ sleeptime replacement, work-packet-assembler retirement, domain agents
 under local mode, steward as script) all collapse into this central
 question. Their answers fall out from whatever Letta's general
 philosophy on agent scope under local mode is.
+
+## FINAL DESIGN — locked 2026-05-26 after two Letta forum agent consultations
+
+### The "domain expert" pattern (forum agent's framing)
+
+Roles in the final fleet are classified by the test:
+
+> If you would ask the agent "what is going on in <domain> this week?"
+> and expect a domain-aware answer → keep it as a domain expert.
+> If you would only ask it "extract tasks from this <domain> payload"
+> → make it a script (or a skill under one monitoring agent).
+
+Domain experts:
+- Maintain persistent context for their domain (channel norms,
+  sender importance, conversational patterns, meeting series state)
+- Emit normalized **candidates** (task candidates) and **signals**
+  (notable patterns) to shared storage — NOT final commitments
+- Answer **domain queries** when consulted by the user-facing assistant
+- Accept **dispatched investigations** ("look harder at the funding thread")
+
+Curator:
+- Reads candidates from all domain experts
+- Resolves dedupe, conflicts, priority
+- Owns promotion into the canonical task graph
+- Confirms with user via the user-facing assistant
+
+User-facing assistant:
+- Conversation surface (chat, TUI, eventually Slack via W15)
+- Plans, dispatches domain experts, explains
+- Holds the personal/identity context
+
+Scripts:
+- Mechanical work — source polling, parsing, deterministic transforms,
+  templated synthesis from structured data
+- Cron-driven; no LLM-mediated dispatch
+- Read input context (priority files, config) but no persistent agent state
+
+### Final fleet (6 agents)
+
+| # | Agent | Category | Notes |
+|---|---|---|---|
+| 1 | **Mission Control** | User-facing assistant | Personal context, conversation surface, dispatcher |
+| 2 | **tasks-agent** | Curator | Cross-domain task graph; dedupe; promotion; confirmation routing |
+| 3 | **calendar-agent_copy** | Domain expert (scheduling) | Multi-tenant; Slackbot dep; per-user preferences |
+| 4 | **slack-agent** (rename of pulse-monitor-agent_copy) | Domain expert (Slack) | Channel norms, conversation patterns, vibe judgment; emits task candidates + signals |
+| 5 | **email-agent** | Domain expert (email) | Email patterns, correspondent importance, follow-up watching; emits task candidates + signals |
+| 6 | **docs-and-transcripts-agent** | Domain expert (meetings + Drive Docs) | Meeting series state, doc ownership, agenda/decision extraction |
+
+Plus transitional:
+- **Kinara** — Slack-facing assistant, folds into MC behind Slackbot router (W15, post-migration)
+
+### Retires (11 agents)
+
+| Agent | Replacement |
+|---|---|
+| daily-schedule-agent-sleeptime | `daily-briefing.py` (shipped); MC's memfs holds priority/schedule context |
+| work-packet-assembler | tasks-agent absorbs the post-confirm assembly function |
+| steward | `steward-check.sh` cron script |
+| auto_madden_agent | Defer to Docker purgatory (NFL-season; non-agent services handle Auto-Madden) |
+| sports_and_media_maven | Defer to Docker purgatory (decide based on TV-control use) |
+| companion-sleeptime_copy, email-agent-sleeptime, tasks-agent-sleeptime, sports_and_media_maven_sleeptime, auto_madden_sleeptime, pulse-monitor-agent-sleeptime | All sleeptime variants — pattern deprecated by Letta (Ezra 2026-04-26); action tools become explicit skills where needed |
+
+### Strict interfaces (forum agent's constraint)
+
+- **Domain experts emit candidates/signals, NOT final commitments.**
+  A Slack post → emits a task candidate (not "task created"). A
+  meeting → emits a follow-up candidate (not "calendar event added").
+  Promotion is tasks-agent's job; commitment is MC's job (via user
+  confirmation).
+- **tasks-agent owns promotion** into the task graph (Postgres
+  `pa_web.tasks` row promoted to `status=active`).
+- **MC owns user interaction.** Domain experts do not talk directly
+  to the user; they route through MC or write to shared storage that
+  MC reads.
+
+### Storage architecture — confirmed Option C
+
+Two-layer shared storage:
+
+- **Postgres `pa_web.tasks`** for structured fields (ref_id, status,
+  source, owner, due_date, etc.) — multi-writer; queryable
+- **`agents-canonical/tasks/<ref-id>.md`** for narrative text — same
+  TASK template as today's archival passages; multi-writer; readable
+  via grep / git / Read
+
+Per-agent archival memory is NOT used for task storage. Local-mode
+agents have their own local archival but it's per-agent and doesn't
+share — using shared storage avoids this fragmentation entirely.
+
+### Per-agent migration adjustments
+
+Every agent migration (per `docs/runbooks/letta-local-mode-per-agent-migration.md`)
+now includes a **block-to-memfs conversion** step:
+
+1. Inventory current memory blocks
+2. Triage: keep (move to memfs), prune (delete as stale), or merge
+3. Decide pinning: `system/*.md` for stuff read every turn; non-system
+   for lazy-load (especially heavy per-source protocols)
+4. Generate memfs files for kept blocks
+5. Detach blocks from agent record after memfs is populated
+
+For domain expert agents specifically:
+- Heavy per-source protocols (3-9 KB each) → lazy-loaded
+  (`reference/<topic>.md` or `skills/<name>/SKILL.md`)
+- Channel/sender/people context → memfs files, possibly pinned for
+  high-volume domains (Slack)
+- Decorative persona blocks → delete (the agent's role is its
+  function, not a persona)
+
+For pulse-monitor (renamed slack-agent) specifically:
+- 32 current blocks → expected outcome ~5-10 kept files + 20+ deletions
+
+### Forum agent's flagged unknown
+
+> "Whether local-mode scheduling/channel routing is stable enough
+> for all four [domain experts] to run as independent always-on
+> agents without extra orchestration glue."
+
+This is an operational concern, not architectural. The `letta-local-runner`
+we built handles per-agent serialization, scheduler-service `route=local`
+handles cron dispatch, and Slackbot routing handles intent dispatch. The
+orchestration glue exists. Operational soak (per W12 runbook Phase I)
+will surface any stability issues.
+
+### What remains TODO before per-agent migrations begin
+
+Per W16 (parallel skill/CLI build):
+
+- ✅ canonical-signals CLI + skill (shipped)
+- ✅ scheduler-curl CLI + skill (shipped)
+- ✅ gmail-watch CLI + skill (shipped)
+- ✅ daily-briefing.py script (shipped)
+- TODO: task-write / task-read / task-search skills (3 small CLIs against pa_web.tasks + agents-canonical/tasks/)
+- TODO: drive-rag-curl CLI + skill (small)
+- TODO: run_calendly CLI (W5; ~6h)
+- TODO: run_granola CLI (~6h)
+- TODO: run_atlassian CLI (~8h; also fixes today's outage)
+- TODO: steward-check.sh script (small)
+- TODO: slack-extract / slack-vibe scripts as the slack-agent's mechanical companions
+
+When the library is sufficient for the pilot agent (likely
+**calendar-agent_copy** — smallest tool surface; well-tested in cycle-1
+canary; Slackbot dependency makes it a meaningful early migration),
+the per-agent runbook begins.
