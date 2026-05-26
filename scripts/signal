@@ -1,0 +1,346 @@
+#!/usr/bin/env bash
+# signal — Layer-5 canonical signal emit + read for local-mode agents.
+#
+# Replaces the legacy Letta tools `emit_canonical_signal` and
+# `read_recent_signals`. Same payload shape, same Gitea path convention
+# (signals/YYYY-MM-DD/<source>-<slug>.md), same auth (GITEA_MEMFS_TOKEN).
+# Reachable from the host (signal lives in /Volumes/main-drive/ai-PA/scripts/
+# which should be in $PATH for local-mode agents).
+#
+# Usage:
+#   signal emit --slug <slug> --source <source> [opts] [--body-file <path> | --body <text>]
+#   signal read [opts]
+#   signal --help
+#
+# Requires: curl, jq, base64 (mac default), python3 (date math, frontmatter).
+# Env vars:
+#   GITEA_MEMFS_TOKEN  required for both emit and read
+#   GITEA_BASE_URL     defaults to http://localhost:3030 (host) or
+#                      http://gitea:3000 (in-Docker — use this if running
+#                      from inside a Docker container with pa-internal access)
+
+set -euo pipefail
+
+GITEA_BASE="${GITEA_BASE_URL:-http://localhost:3030}"
+REPO_PATH="api/v1/repos/agents/agents-canonical/contents"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+require_env() {
+  if [[ -z "${GITEA_MEMFS_TOKEN:-}" ]]; then
+    die "GITEA_MEMFS_TOKEN not set. Export it before running 'signal'."
+  fi
+}
+
+today_eastern() {
+  python3 -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('America/New_York')).strftime('%Y-%m-%d'))"
+}
+
+now_iso_utc() {
+  python3 -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z')"
+}
+
+usage() {
+  cat <<'EOF'
+signal — Layer-5 canonical signal CLI
+
+Subcommands:
+
+  emit  --slug <slug> --source <src> [opts]
+        Write or update a signal at signals/<date>/<source>-<slug>.md
+
+        Required:
+          --slug <slug>          short identifier (no date)
+          --source <src>         emitting agent (mc, calendar, tasks, etc.)
+
+        Body (one required):
+          --body <text>          inline markdown body
+          --body-file <path>     read body from file ('-' for stdin)
+
+        Optional:
+          --description <text>   one-line description (frontmatter)
+          --attention <lvl>      routine | elevated | urgent (default routine)
+          --entities <csv>       comma-separated mentioned entities
+          --date <YYYY-MM-DD>    signal date (default: today in ET)
+          --extra-frontmatter <yaml>  extra frontmatter lines
+
+  read  [opts]
+        List recent signals.
+
+        Optional:
+          --min-attention <lvl>  routine | elevated | urgent (default routine)
+          --days-back <n>        days to include (default 3, max 30)
+          --source <substr>      filter by source substring
+          --max <n>              cap returned (default 12, max 50)
+          --excerpt-chars <n>    body excerpt cap (default 500, max 2000)
+          --json                 raw JSON output (default: human-readable)
+
+Examples:
+
+  signal emit --slug morning --source mc \
+              --description "Morning briefing for $(date +%F)" \
+              --body-file /tmp/briefing.md
+
+  echo "Today's plate is light." | signal emit --slug plate --source mc --body-file -
+
+  signal read --min-attention elevated --days-back 7
+  signal read --source pulse-monitor --max 5 --json | jq .
+EOF
+}
+
+# ─── emit ───────────────────────────────────────────────────────────────────
+
+cmd_emit() {
+  require_env
+  local slug="" source="" body="" body_file=""
+  local description="" attention="routine" entities="" date_str=""
+  local extra_frontmatter=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --slug)               slug="$2";               shift 2 ;;
+      --source)             source="$2";             shift 2 ;;
+      --body)               body="$2";               shift 2 ;;
+      --body-file)          body_file="$2";          shift 2 ;;
+      --description)        description="$2";        shift 2 ;;
+      --attention)          attention="$2";          shift 2 ;;
+      --entities)           entities="$2";           shift 2 ;;
+      --date)               date_str="$2";           shift 2 ;;
+      --extra-frontmatter)  extra_frontmatter="$2";  shift 2 ;;
+      -h|--help)            usage; exit 0 ;;
+      *)                    die "unknown flag: $1" ;;
+    esac
+  done
+
+  [[ -n "$slug" ]]   || die "--slug is required"
+  [[ -n "$source" ]] || die "--source is required"
+
+  if [[ -n "$body_file" ]]; then
+    if [[ "$body_file" == "-" ]]; then
+      body="$(cat)"
+    else
+      [[ -f "$body_file" ]] || die "body file not found: $body_file"
+      body="$(cat "$body_file")"
+    fi
+  fi
+  [[ -n "$body" ]] || die "body is required (use --body or --body-file)"
+
+  case "$attention" in
+    routine|elevated|urgent) ;;
+    *) attention="routine" ;;
+  esac
+
+  [[ -n "$date_str" ]] || date_str="$(today_eastern)"
+
+  local slug_clean source_clean
+  slug_clean="$(echo "$slug" | tr '[:upper:]' '[:lower:]' | tr ' /' '--')"
+  source_clean="$(echo "$source" | tr '[:upper:]' '[:lower:]' | tr ' /' '--')"
+
+  [[ -n "$description" ]] || description="${source_clean} signal: ${slug_clean} for ${date_str}"
+
+  # Build entities as JSON array literal inside YAML
+  local entities_yaml="[]"
+  if [[ -n "$entities" ]]; then
+    entities_yaml="$(python3 -c "
+import json, sys
+print(json.dumps([e.strip() for e in sys.argv[1].split(',') if e.strip()]))
+" "$entities")"
+  fi
+
+  local composed_at
+  composed_at="$(now_iso_utc)"
+
+  local signal_path="signals/${date_str}/${source_clean}-${slug_clean}.md"
+
+  # Build frontmatter + body
+  local content
+  content="$(cat <<FM
+---
+description: ${description}
+source: ${source_clean}
+attention_level: ${attention}
+mentioned_entities: ${entities_yaml}
+composed_at: ${composed_at}
+date: ${date_str}
+${extra_frontmatter:+$extra_frontmatter
+}---
+
+${body}
+FM
+)"
+  # Ensure trailing newline
+  [[ "${content: -1}" == $'\n' ]] || content+=$'\n'
+
+  # Check existing SHA
+  local check_url="${GITEA_BASE}/${REPO_PATH}/${signal_path}?ref=main"
+  local existing_sha=""
+  local check_resp
+  check_resp="$(curl -sS -o /tmp/signal_check.$$ -w '%{http_code}' \
+    -H "Authorization: token ${GITEA_MEMFS_TOKEN}" \
+    "$check_url" || echo "000")"
+  if [[ "$check_resp" == "200" ]]; then
+    existing_sha="$(jq -r .sha < /tmp/signal_check.$$)"
+  fi
+  rm -f /tmp/signal_check.$$
+
+  # PUT (update) or POST (create)
+  local method
+  method="$([[ -n "$existing_sha" ]] && echo PUT || echo POST)"
+
+  local content_b64
+  content_b64="$(printf %s "$content" | base64 | tr -d '\n')"
+
+  local payload
+  payload="$(jq -n \
+    --arg branch "main" \
+    --arg content "$content_b64" \
+    --arg message "signals: ${source_clean} ${slug_clean} for ${date_str}" \
+    --arg sha "$existing_sha" \
+    '{branch: $branch, content: $content, message: $message} + (if $sha != "" then {sha: $sha} else {} end)')"
+
+  local write_url="${GITEA_BASE}/${REPO_PATH}/${signal_path}"
+  local write_resp http_code
+  write_resp="$(mktemp)"
+  http_code="$(curl -sS -o "$write_resp" -w '%{http_code}' \
+    -X "$method" \
+    -H "Authorization: token ${GITEA_MEMFS_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$payload" \
+    "$write_url")"
+
+  if [[ "$http_code" =~ ^2 ]]; then
+    local html_url
+    html_url="$(jq -r '.content.html_url // ""' < "$write_resp")"
+    rm -f "$write_resp"
+    cat <<JSON
+{"status":"ok","path":"${signal_path}","html_url":"${html_url}","was_update":$([[ -n "$existing_sha" ]] && echo true || echo false)}
+JSON
+  else
+    echo "ERROR ($http_code): $(cat "$write_resp")" >&2
+    rm -f "$write_resp"
+    exit 3
+  fi
+}
+
+# ─── read ───────────────────────────────────────────────────────────────────
+
+cmd_read() {
+  require_env
+  local min_attn="routine" days_back=3 source_filter="" max_signals=12
+  local excerpt_chars=500 json_output=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --min-attention)  min_attn="$2";       shift 2 ;;
+      --days-back)      days_back="$2";      shift 2 ;;
+      --source)         source_filter="$2";  shift 2 ;;
+      --max)            max_signals="$2";    shift 2 ;;
+      --excerpt-chars)  excerpt_chars="$2";  shift 2 ;;
+      --json)           json_output=1;       shift   ;;
+      -h|--help)        usage; exit 0 ;;
+      *)                die "unknown flag: $1" ;;
+    esac
+  done
+
+  # Build the list of dates to scan (today back N-1 days)
+  local dates
+  dates="$(python3 -c "
+from datetime import date, timedelta
+from zoneinfo import ZoneInfo
+import datetime as dt
+today = dt.datetime.now(ZoneInfo('America/New_York')).date()
+for i in range(int($days_back)):
+    print((today - timedelta(days=i)).strftime('%Y-%m-%d'))
+")"
+
+  local results
+  results="$(python3 <<PYEOF
+import json, os, sys
+import urllib.request, urllib.error
+import base64
+
+GITEA = os.environ.get("GITEA_BASE_URL", "http://localhost:3030").rstrip("/")
+TOKEN = os.environ["GITEA_MEMFS_TOKEN"]
+ATTN_RANK = {"routine":0, "elevated":1, "urgent":2}
+min_rank = ATTN_RANK.get("${min_attn}".lower(), 0)
+source_filter = "${source_filter}".lower()
+max_n = int("${max_signals}")
+excerpt_n = int("${excerpt_chars}")
+dates = """${dates}""".strip().split()
+auth = {"Authorization": f"token {TOKEN}"}
+
+signals = []
+days_scanned = 0
+for d in dates:
+    days_scanned += 1
+    url = f"{GITEA}/api/v1/repos/agents/agents-canonical/contents/signals/{d}?ref=main"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=auth), timeout=10) as r:
+            entries = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 404: continue
+        sys.stderr.write(f"warn: {d}: {e}\n"); continue
+    for ent in entries:
+        if ent.get("type") != "file": continue
+        if not ent.get("name","").endswith(".md"): continue
+        get_url = f"{GITEA}/api/v1/repos/agents/agents-canonical/contents/{ent['path']}?ref=main"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(get_url, headers=auth), timeout=10) as r:
+                file_obj = json.loads(r.read().decode())
+        except Exception: continue
+        raw = base64.b64decode(file_obj.get("content","")).decode("utf-8","replace")
+        # Parse frontmatter
+        if not raw.startswith("---\n"): continue
+        end = raw.find("\n---\n", 4)
+        if end < 0: continue
+        fm = raw[4:end]
+        body = raw[end+5:].strip()
+        meta = {}
+        for line in fm.splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip()] = v.strip()
+        attn = meta.get("attention_level","routine").lower()
+        if ATTN_RANK.get(attn,0) < min_rank: continue
+        src = meta.get("source","")
+        if source_filter and source_filter not in src.lower(): continue
+        signals.append({
+            "path": ent["path"],
+            "source": src,
+            "attention_level": attn,
+            "description": meta.get("description",""),
+            "mentioned_entities": meta.get("mentioned_entities","[]"),
+            "date": meta.get("date", d),
+            "body_excerpt": body[:excerpt_n],
+            "html_url": file_obj.get("html_url",""),
+            "last_modified": ent.get("last_commit_sha",""),
+        })
+
+signals.sort(key=lambda s: (s["date"], s["path"]), reverse=True)
+signals = signals[:max_n]
+print(json.dumps({"status":"ok","signals":signals,"signals_count":len(signals),"days_scanned":days_scanned}))
+PYEOF
+)"
+
+  if [[ "$json_output" -eq 1 ]]; then
+    echo "$results" | jq .
+  else
+    echo "$results" | jq -r '
+      .signals[] |
+      "─── \(.date)  \(.attention_level | ascii_upcase)  [\(.source)]\n  \(.description)\n  \(.path)\n  \(.body_excerpt[:200])\n"
+    '
+    echo
+    echo "$results" | jq -r '"(\(.signals_count) signals across \(.days_scanned) day(s))"'
+  fi
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  emit)         shift; cmd_emit "$@" ;;
+  read)         shift; cmd_read "$@" ;;
+  -h|--help|"") usage ;;
+  *)            die "unknown subcommand: $1 (try --help)" ;;
+esac

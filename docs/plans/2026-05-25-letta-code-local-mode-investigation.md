@@ -953,3 +953,106 @@ likely path; revisit.
 |---|---|---|
 | W1-W14 | (see above) | Various |
 | **W15** | **pa-web-ui re-architecture — TUI as primary chat; pa-web-ui keeps dashboards** | **Planned (optional, post-migration)** |
+
+## W16 — Parallel skill/CLI build (in flight 2026-05-25)
+
+### Rationale
+
+After deliberation: per-agent migration goes faster + safer if the
+skill/CLI library is built FIRST, then migration becomes mechanical.
+Three options considered:
+
+- **A.** Build skills/CLIs first, then migrate (parallel)
+- **B.** Transition Docker agents to skills/CLIs first, then migrate
+- **C.** Hybrid — parallel build, no Docker changes (CHOSEN)
+
+Option B was tempting but problematic: Docker agents' Bash tool runs
+in the Letta server's sandbox venv at `/app/tools/letta/env`. Installing
+CLIs there + on host = dual-maintenance + intermediate half-built
+state. Not worth it.
+
+Option C: build everything on host now. Docker agents keep their
+current MCP / custom-Python attachments. When each agent migrates to
+local mode, its tool surface picks up the already-built skills/CLIs
+from the host.
+
+### Three tiers
+
+**Tier 1 — Skills (Bash+curl recipes, host-side; ~10h):**
+
+| Skill | Replaces | Effort | Status |
+|---|---|---|---|
+| **canonical-signals** (`scripts/signal` + `docs/skills/canonical-signals.md`) | emit_canonical_signal, read_recent_signals | 2h | **DONE 2026-05-25** — verified end-to-end emit+read against live Gitea |
+| **scheduler-curl** | scheduler-mcp tools (7 of them on daily-schedule, kinara) | 2h | TODO |
+| **pa-web-pipeline** | stage_resource, write_packet_info, backtrace_task, refresh_plate, trigger_task_extraction | 2h | TODO |
+| **drive-rag-curl** | rag-mcp (already dropped) — but useful for any agent that wants semantic Drive search | 1h | TODO |
+| **gmail-watch-curl** | watch_gmail_thread, unwatch_gmail_thread, list_watched_gmail_threads, get_gmail_watch_status, process_email_task_queue | 1h | TODO |
+
+**Tier 2 — Host CLIs (~20h):**
+
+| CLI | Replaces | Effort | Notes |
+|---|---|---|---|
+| `run_calendly` (W5 reconstitution) | calendly-mcp-server | 6h | Playwright for slot scraping; CAPTCHA-free booking links |
+| `run_granola` | granola-tools MCP | 6h | OAuth refresh complexity |
+| `run_atlassian` | atlassian supergateway (currently broken) | 8h | OAuth 2.1 PKCE; also fixes today's outage |
+
+**Tier 3 — Scripts that replace agents (~7h):**
+
+| Script | Replaces agent | Effort |
+|---|---|---|
+| `daily-briefing.py` | daily-schedule-agent (overglorified cron) | 3h |
+| `steward-check.sh` | steward (config drift detector) | 2h |
+| Work-packet assembly logic (becomes tasks-agent skill rather than separate script) | work-packet-assembler | 2h |
+
+### Total parallel work: ~37 hours
+
+Then per-agent migration drops from ~10-15h to ~3-5h each because
+all needed tools already exist on host.
+
+### Sequencing (suggested)
+
+| Days | Work | Validation |
+|---|---|---|
+| 1-2 | Tier 1 skills (5 skills) | Manual curl + cross-check vs existing emitter output |
+| 3-4 | Tier 3 scripts | Run standalone, diff output vs today's agent output |
+| 5 | Switch daily-briefing cron to `script` action_type (kill the LLM call) | Single-cron change; soak |
+| 6-8 | `run_calendly` CLI (W5) | Manual invocation against test URLs |
+| 9-11 | `run_granola` CLI | Manual invocation; OAuth refresh test |
+| 12-14 | `run_atlassian` CLI (fixes outage as side effect) | Manual invocation |
+| 15 | Pre-migration cleanup (drop dead MCPs from compose) | Verify nothing breaks |
+| 16+ | Per-agent migration begins | Library is ready |
+
+### Validation strategy
+
+For each Tier 1 skill: emit/invoke from host using the CLI manually,
+verify output matches what the legacy Letta tool would have produced.
+Optionally have current Docker MC use the skill via its existing Bash
+tool (one-off invocation, not a permanent tool change) to confirm an
+agent can correctly invoke the recipe.
+
+For Tier 2 CLIs: build with `--help` + small interactive smoke tests.
+The `run_atlassian` CLI gets a real bonus — replaces today's broken
+supergateway integration with a clean OAuth-handling binary.
+
+For Tier 3 scripts: run as standalone CLI invocations, capture output,
+compare against today's agent-produced output for the same date.
+
+### What this gets us OUT OF migration timeline pressure
+
+Two operational wins available BEFORE any agent migration:
+
+1. **daily-briefing cron switches to `script` action_type** — kills
+   one LLM call per briefing day, reduces cost, eliminates the
+   "agent receives prompt that says 'call this tool', then calls it"
+   theater.
+
+2. **Atlassian integration fixed** — `run_atlassian` CLI replaces
+   the broken supergateway + mcp-remote chain that's been failing
+   since today's diagnostic.
+
+### Status
+
+- **Tier 1 / canonical-signals: SHIPPED 2026-05-25** — `scripts/signal`
+  CLI + `docs/skills/canonical-signals.md` skill protocol; verified
+  end-to-end against live Gitea.
+- All other tiers: TODO.
