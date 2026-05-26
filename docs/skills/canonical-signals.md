@@ -169,6 +169,37 @@ When migrating an agent from Docker mode to local mode:
    reference `emit_canonical_signal(...)`, replace with a `signal
    emit ...` recipe. (The argument names map 1:1.)
 
+## Validation history
+
+- **2026-05-25** — End-to-end validated via direct CLI invocation
+  (emit signals/2026-05-25/track-2-canary-skill-test.md + read back).
+- **2026-05-25** — Agent-context validated via Docker Mission Control
+  through pa-web-ui chat. MC built the equivalent curl recipe from
+  the skill description (its Bash sandbox couldn't read the doc
+  directly — see "Discoverability" below), POSTed signal
+  `signals/2026-05-25/mc-skill-validation.md` (HTTP 201), GET-readback
+  (HTTP 200) confirmed frontmatter shape matches CLI output.
+
+## Discoverability
+
+Where this skill doc lives vs. who can read it:
+
+- **Local-mode agents** (post-migration): Bash runs on host; `cat
+  /Volumes/main-drive/ai-PA/docs/skills/canonical-signals.md` works
+  directly. They can "learn" the skill on the fly.
+- **Docker agents** (pre-migration): Bash sandbox doesn't see the
+  host's `/Volumes/main-drive/ai-PA` repo. They can't read this doc
+  directly. **For Docker-agent use cases, embed the skill recipe
+  into the agent's system prompt or memfs system/ files instead of
+  relying on doc-discovery.**
+
+During agent migration (per
+`docs/runbooks/letta-local-mode-per-agent-migration.md`), the
+relevant skill protocols are copied into the new agent's memfs
+`system/` directory as part of the import step — so post-migration
+agents have both paths (read the doc directly AND have the protocol
+pinned in system prompt).
+
 ## Failure modes
 
 - **`GITEA_MEMFS_TOKEN not set`** → export it in the agent's
