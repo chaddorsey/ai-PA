@@ -928,6 +928,11 @@ services:
       # Direct Google Calendar API via gws CLI
       USE_DIRECT_CALENDAR: "true"
       GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE: "/root/.gws/credentials.json"
+      # Canonical (Gitea) source-of-truth for people/working-hours/timezones.
+      # Replaces Letta /v1/identities/ — see canonical_lookup.py +
+      # canonical_working_hours.py.
+      GITEA_BASE_URL: "http://gitea:3000"
+      GITEA_MEMFS_TOKEN: ${GITEA_MEMFS_TOKEN}
     volumes:
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro
     ports:

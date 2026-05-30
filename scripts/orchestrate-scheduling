@@ -204,16 +204,29 @@ cmd_schedule() {
   resp="$(api_post "$BASE/schedule" "$payload")"
 
   if (( pretty )); then
+    # Primary output: verbatim_user_output (rich, with event titles) followed
+    # by the technical proposal-by-proposal breakdown for receipts.
     echo "$resp" | jq -r --argjson n "$limit" '
-      "status: \(.status)\nexplanation: \(.explanation // "-")\n\nTop \($n) proposals:" ,
+      "status: \(.status)",
+      "explanation: \(.explanation // "-")",
+      "",
+      (
+        ((.proposals // []) | map(.category // "?") | group_by(.) | map({c: .[0], n: length}))
+        | "categories: " + (map("\(.c)=\(.n)") | join(", "))
+      ),
+      "",
+      "=== USER-FACING SUMMARY (with event titles) ===",
+      (if (.verbatim_user_output // "") | length > 0 then .verbatim_user_output else "(no verbatim_user_output in response)" end),
+      "",
+      "=== TECHNICAL PROPOSAL DETAILS (top \($n)) ===",
       ((.proposals // []) | sort_by(.rank) | .[:$n] |
         to_entries[] |
-        "\n\(.key+1). rank=\(.value.rank)  \(.value.start_utc) → \(.value.end_utc)\n   pref_score: \(.value.preference_score // "-")  focus_bonus: \(.value.objective_scores.focus_block_bonus // 0)\n   participants: \(.value.participants | join(", "))")
+        "\n\(.key+1). rank=\(.value.rank)  CATEGORY=\(.value.category // "?")  \((.value.objective_scores.protected_events_moved // 0) as $pem | if $pem > 0 then "⚠ OVERRIDES \($pem) PROTECTED EVENT(S)" else "" end)\n   \(.value.start_utc) → \(.value.end_utc) (UTC; convert to local for display)\n   pref_score: \(.value.preference_score // "-")  focus_bonus: \(.value.objective_scores.focus_block_bonus // 0)  protected_moved: \(.value.objective_scores.protected_events_moved // 0)  total_moved_min: \(.value.objective_scores.moved_minutes // 0)\n   participants: \(.value.participants | join(", "))\n   overridden_event_ids: \((.value.overridden_event_ids // []) | join(", "))\n   notes: \(.value.notes_for_invite // "-")")
     '
   elif (( want_debug )); then
-    echo "$resp" | jq '{status, explanation, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank)), debug}'
+    echo "$resp" | jq '{status, explanation, verbatim_user_output, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank)), debug}'
   else
-    echo "$resp" | jq '{status, explanation, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank))}'
+    echo "$resp" | jq '{status, explanation, verbatim_user_output, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank))}'
   fi
 }
 
@@ -265,10 +278,13 @@ cmd_reschedule() {
 
   if (( pretty )); then
     echo "$resp" | jq -r --argjson n "$limit" '
-      "status: \(.status)\nexplanation: \(.explanation // "-")\n\nTop \($n) reschedule proposals:" ,
+      "status: \(.status)",
+      "explanation: \(.explanation // "-")",
+      "",
+      "Top \($n) reschedule proposals:",
       ((.proposals // []) | sort_by(.rank) | .[:$n] |
         to_entries[] |
-        "\n\(.key+1). rank=\(.value.rank)  \(.value.start_utc) → \(.value.end_utc)")
+        "\n\(.key+1). rank=\(.value.rank)  CATEGORY=\(.value.category // "?")\n   \(.value.start_utc) → \(.value.end_utc) (UTC; convert to local for display)\n   notes: \(.value.notes_for_invite // "-")")
     '
   elif (( want_debug )); then
     echo "$resp" | jq .

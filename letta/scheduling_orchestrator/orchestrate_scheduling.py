@@ -4943,7 +4943,7 @@ def orchestrate_scheduling(
             # Get external_participants_for_display if it exists, otherwise use empty list
             external_participants_for_formatting = external_participants_for_display if 'external_participants_for_display' in locals() and external_participants_for_display else None
 
-            # Look up participant display names from identity service
+            # Look up participant display names from canonical (agents-canonical Gitea repo)
             # Collect all unique participant emails from various sources
             all_participant_emails = set()
             if participant_ids:
@@ -4960,20 +4960,20 @@ def orchestrate_scheduling(
             participant_names_for_formatting = {}
             if all_participant_emails:
                 try:
-                    from .identity_lookup import lookup_participant_names
+                    from .canonical_lookup import lookup_participant_names
                 except ImportError:
                     try:
-                        from scheduling_orchestrator.identity_lookup import lookup_participant_names
+                        from scheduling_orchestrator.canonical_lookup import lookup_participant_names
                     except ImportError:
                         try:
-                            from identity_lookup import lookup_participant_names
+                            from canonical_lookup import lookup_participant_names
                         except ImportError:
                             lookup_participant_names = None
 
                 if lookup_participant_names:
                     try:
                         participant_names_for_formatting = lookup_participant_names(list(all_participant_emails))
-                        print(f"[orchestrate_scheduling] Resolved {len(participant_names_for_formatting)} participant names from identity service", file=sys.stderr, flush=True)
+                        print(f"[orchestrate_scheduling] Resolved {len(participant_names_for_formatting)} participant names from canonical", file=sys.stderr, flush=True)
                     except Exception as e:
                         print(f"[orchestrate_scheduling] Failed to lookup participant names: {e}", file=sys.stderr, flush=True)
 

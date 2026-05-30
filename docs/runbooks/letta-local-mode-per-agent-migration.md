@@ -322,6 +322,65 @@ If the commit fails on frontmatter/protected-field validation, fix the
 offender and retry. Refer to W6 in the plan for the full validation
 ruleset.
 
+### D3b. Patch agent's `canonical_reference_protocol.md` for local mode (added 2026-05-30)
+
+If the imported memfs has `system/canonical_reference_protocol.md`, it
+likely contains pa-web-ui-specific language for the "Stop-and-surface
+when prerequisites are missing" section. Patch it to the local-mode
+wrapper-based language before the recompile in D4. Reference patches:
+`agent-local-3898b33a…` (Docs) and `agent-local-cd5ed5cd…` (Calendar)
+commits from 2026-05-30. Two specific updates:
+
+1. **Add a "Checking env vars correctly" section** that warns against
+   `echo "$X" >/dev/null` patterns (output discarded → false negatives)
+   and shows the proper `${VAR:-UNSET}` check.
+
+2. **Replace the pa-web-ui surfacing language** with:
+   > "Canonical access requires GITEA_MEMFS_TOKEN + GITEA_BASE_URL in
+   > my environment, but they're empty here. In local mode, these come
+   > from the launcher wrapper at ~/bin/letta-<agent>. Check that the
+   > wrapper exports them. Pausing here."
+
+3. **Add a "People lookup recipe" section** with the canonical
+   first-initial-lastname slug pattern and the work/external/board/
+   family/personal fallback order.
+
+### D4. Force system-prompt recompile (CRITICAL — added 2026-05-30)
+
+**The agent's conversation `system-prompt.json` is compiled ONCE at agent
+creation against the empty bootstrap memfs.** Subsequent memfs commits do
+NOT trigger recompile until the conversation is reloaded. Smoke tests
+will pass because tools can Read files on demand, but the agent runs
+with stale defaults in its system prompt context — it won't "know"
+anything from the imported memfs without explicit Reads.
+
+The local backend doesn't support `agents.recompile` or `/recompile`
+slash command (both throw "not supported by this backend yet"). Force
+recompile by deleting the stale conversation system-prompt.json file:
+
+```bash
+# Locate the default conversation dir (base64-encoded "default:<agent-id>")
+CONV_B64=$(echo -n "default:$NEW_AGENT_ID" | base64 | tr -d '=')
+CONV_DIR="$LOCAL_BACKEND_DIR/conversations/$CONV_B64"
+
+# Back up the stale prompt (preserve for forensics), then delete
+cp "$CONV_DIR/system-prompt.json" "$CONV_DIR/system-prompt.json.stale-bak"
+rm "$CONV_DIR/system-prompt.json"
+
+# Trigger recompile via a no-op headless call
+cd /Volumes/main-drive/letta-launchpad
+LETTA_LOCAL_BACKEND_DIR=$LOCAL_BACKEND_DIR letta --backend local \
+  --agent $NEW_AGENT_ID --conversation default \
+  -p "What is the one-line description of your system/persona.md?"
+
+# Verify the new prompt picked up the import
+jq -r '"size=\(.content | length), memfsRev=\(.memfsRevision)"' "$CONV_DIR/system-prompt.json"
+# memfsRev should match: git -C $LOCAL_BACKEND_DIR/memfs/$NEW_AGENT_ID/memory rev-parse HEAD
+```
+
+A correctly-recompiled prompt will be ~35-40KB (vs ~10KB for the
+empty-memfs default) and `memfsRevision` will match the current HEAD.
+
 ## Phase E — Smoke test the migrated agent
 
 ### E1. Identity check

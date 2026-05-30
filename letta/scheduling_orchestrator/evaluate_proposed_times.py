@@ -17,8 +17,8 @@ try:
         ProposedWindow, EvaluatedSlot, EvaluationResult, ConflictInfo
     )
     from .normalizer import normalize_events
-    from .identity_working_hours import get_all_participants_working_hours
-    from .identity_lookup import lookup_participant_names, resolve_participant_identifier
+    from .canonical_working_hours import get_all_participants_working_hours
+    from .canonical_lookup import lookup_participant_names, resolve_participant_identifier
 except ImportError:
     from window_parser import parse_proposed_windows
     from slot_evaluator import find_available_slots
@@ -27,8 +27,8 @@ except ImportError:
         ProposedWindow, EvaluatedSlot, EvaluationResult, ConflictInfo
     )
     from normalizer import normalize_events
-    from identity_working_hours import get_all_participants_working_hours
-    from identity_lookup import lookup_participant_names, resolve_participant_identifier
+    from canonical_working_hours import get_all_participants_working_hours
+    from canonical_lookup import lookup_participant_names, resolve_participant_identifier
 
 
 logger = logging.getLogger(__name__)

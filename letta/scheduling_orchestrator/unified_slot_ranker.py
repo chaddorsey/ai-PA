@@ -24,13 +24,13 @@ try:
     from .slot_indexer import SlotIndexer
     from .preference_merger import merge_standing_preferences
     from .preference_scorer import compute_aggregate_preference_score
-    from .identity_lookup import get_user_preferences_from_identity
+    from .canonical_lookup import get_user_preferences_from_identity
 except ImportError:
     from schemas import SchedulingProblem
     from slot_indexer import SlotIndexer
     from preference_merger import merge_standing_preferences
     from preference_scorer import compute_aggregate_preference_score
-    from identity_lookup import get_user_preferences_from_identity
+    from canonical_lookup import get_user_preferences_from_identity
 
 # Category scores (higher = better)
 CATEGORY_SCORES = {
