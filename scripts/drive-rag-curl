@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# drive-rag-curl — agent-first CLI for drive-rag-service.
+#
+# Replaces ad-hoc curl recipes scattered across MC's drive_content_protocol.md
+# with a single robust CLI. Same agent-first principles as gws CLI and signal:
+#
+#   - JSON output by default (machine-readable, non-TTY friendly)
+#   - --pretty for human-readable expansion of search snippets
+#   - Subcommand verbs; one screen of --help
+#   - Pre-flight env checks; clean error messages
+#   - Single source for endpoint URL (DRIVE_RAG_BASE_URL); host/container
+#     resolution via dual default
+#   - --limit, --fields where natural for context-window discipline
+#
+# Service docs: drive-rag-service exposes /v1/search, /v1/documents/{id},
+#               /v1/status/{id}, /v1/ingest/{id}, /v1/diff/{id},
+#               /v1/edits/{id}, /v1/stats, /v1/entities/search.
+#
+# Usage:
+#   drive-rag-curl search <query> [--limit N] [--fields csv] [--pretty]
+#   drive-rag-curl get <file_id>            # fetch indexed doc by ID
+#   drive-rag-curl status <file_id>         # sync/staleness status
+#   drive-rag-curl ingest <file_id>         # force fresh snapshot
+#   drive-rag-curl diff <file_id>           # textual diff between snapshots
+#   drive-rag-curl edits <file_id>          # edit history (who/when)
+#   drive-rag-curl entities <query> [--limit N]  # entity-based search
+#   drive-rag-curl stats                    # corpus stats
+#   drive-rag-curl health                   # service liveness
+#   drive-rag-curl --help
+#
+# Env:
+#   DRIVE_RAG_BASE_URL   defaults to http://localhost:8095 (host) or
+#                        http://drive-rag-service:8000 (Docker network).
+#                        Auto-detected via /health probe; override to skip
+#                        the probe.
+#
+# Field convention (search results):
+#   The service uses `similarity` as the relevance score (NOT `score`).
+#   Values are cosine, 0.0-1.0; 0.7+ strong, 0.6-0.7 plausible, <0.6 weak.
+
+set -euo pipefail
+
+DEFAULT_HOST_URL="http://localhost:8095"
+DEFAULT_DOCKER_URL="http://drive-rag-service:8000"
+BASE="${DRIVE_RAG_BASE_URL:-}"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+require_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is required but not installed."
+}
+
+# Resolve DRIVE_RAG_BASE_URL: explicit env wins; otherwise try host then
+# Docker-network. Cache the choice in $BASE for the rest of the run.
+resolve_base() {
+  if [[ -n "$BASE" ]]; then return; fi
+  if curl -sS --max-time 2 "$DEFAULT_HOST_URL/health" >/dev/null 2>&1; then
+    BASE="$DEFAULT_HOST_URL"; return
+  fi
+  if curl -sS --max-time 2 "$DEFAULT_DOCKER_URL/health" >/dev/null 2>&1; then
+    BASE="$DEFAULT_DOCKER_URL"; return
+  fi
+  die "cannot reach drive-rag-service at $DEFAULT_HOST_URL or $DEFAULT_DOCKER_URL; set DRIVE_RAG_BASE_URL"
+}
+
+# Emit a request; on non-2xx, emit the body to stderr and exit non-zero.
+# Args: METHOD URL [extra-curl-args...]
+api() {
+  local method="$1" url="$2"; shift 2
+  local out status
+  out=$(curl -sS --max-time 30 -o /tmp/.drive-rag-curl-body.$$ \
+              -w "%{http_code}" -X "$method" "$url" "$@") || {
+    rm -f /tmp/.drive-rag-curl-body.$$
+    die "request failed: $method $url"
+  }
+  status="$out"
+  if [[ "$status" =~ ^2 ]]; then
+    cat /tmp/.drive-rag-curl-body.$$
+    rm -f /tmp/.drive-rag-curl-body.$$
+  else
+    {
+      echo "ERROR: HTTP $status from $method $url" >&2
+      cat /tmp/.drive-rag-curl-body.$$ >&2
+      echo "" >&2
+    }
+    rm -f /tmp/.drive-rag-curl-body.$$
+    exit 4
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+drive-rag-curl — agent-first CLI for drive-rag-service
+
+Subcommands:
+
+  search <query>             Semantic search across the indexed corpus
+    --limit N                max results (default 10)
+    --fields f1,f2,...       only show selected fields per result
+    --pretty                 human-readable summary (default: JSON)
+
+  get <file_id>              Fetch indexed document by Drive file_id
+  status <file_id>           Sync / staleness status of one doc
+  ingest <file_id>           Force fresh snapshot (re-ingest from Drive)
+  diff <file_id>             Textual diff between recent snapshots
+  edits <file_id>            Edit history (modifier, modified_time)
+
+  entities <query>           Entity-based search
+    --limit N                max results (default 10)
+
+  stats                      Total docs / chunks indexed
+  health                     Service liveness probe
+
+  --help                     This message
+
+Output is JSON by default. Pipe to `jq` for filtering or `--pretty`
+on search/entities for a tabular summary. Search results' relevance
+field is `similarity` (cosine 0.0–1.0).
+
+Env:
+  DRIVE_RAG_BASE_URL   override the auto-detected service URL
+                       (default: http://localhost:8095 from host;
+                        http://drive-rag-service:8000 from pa-internal
+                        Docker network).
+
+Examples:
+
+  drive-rag-curl search "FY26 NSF DRK-12 proposal" --limit 5 --pretty
+  drive-rag-curl get 1eX-ArIpYGDMMJ9nLnE7dLdYeplpY6aMMvF9gjYZUsog
+  drive-rag-curl ingest <file_id> && drive-rag-curl diff <file_id>
+  drive-rag-curl stats | jq '.total_documents'
+EOF
+}
+
+# ─── subcommand impls ───────────────────────────────────────────────────────
+
+cmd_search() {
+  local query="" limit=10 fields="" pretty=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit)  limit="$2"; shift 2 ;;
+      --fields) fields="$2"; shift 2 ;;
+      --pretty) pretty=1; shift ;;
+      -h|--help) usage; exit 0 ;;
+      -*) die "unknown flag: $1" ;;
+      *) [[ -z "$query" ]] && query="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [[ -z "$query" ]] && die "search requires a query string"
+  resolve_base
+  local payload
+  payload="$(jq -n --arg q "$query" --argjson n "$limit" \
+              '{query: $q, limit: $n}')"
+  local raw
+  raw="$(api POST "$BASE/v1/search" \
+              -H "Content-Type: application/json" -d "$payload")"
+  if (( pretty )); then
+    echo "$raw" | jq -r '.results | sort_by(-.similarity) |
+      to_entries[] |
+      "\(.key+1). [\(.value.similarity | tostring | .[0:5])]  \(.value.title)\n   file_id: \(.value.drive_file_id)\n   \(.value.chunk_text | .[0:200] | gsub("\n"; " "))\n"'
+  elif [[ -n "$fields" ]]; then
+    local jq_filter
+    jq_filter=".results | map({$(echo "$fields" | sed 's/,/, /g; s/\([a-z_]*\)/\1: .\1/g')})"
+    echo "$raw" | jq "$jq_filter"
+  else
+    echo "$raw" | jq '.results'
+  fi
+}
+
+cmd_get() {
+  [[ $# -lt 1 ]] && die "get requires a file_id"
+  resolve_base
+  api GET "$BASE/v1/documents/$1" | jq .
+}
+
+cmd_status() {
+  [[ $# -lt 1 ]] && die "status requires a file_id"
+  resolve_base
+  api GET "$BASE/v1/status/$1" | jq .
+}
+
+cmd_ingest() {
+  [[ $# -lt 1 ]] && die "ingest requires a file_id"
+  resolve_base
+  api POST "$BASE/v1/ingest/$1" | jq .
+}
+
+cmd_diff() {
+  [[ $# -lt 1 ]] && die "diff requires a file_id"
+  resolve_base
+  api GET "$BASE/v1/diff/$1" | jq .
+}
+
+cmd_edits() {
+  [[ $# -lt 1 ]] && die "edits requires a file_id"
+  resolve_base
+  api GET "$BASE/v1/edits/$1" | jq .
+}
+
+cmd_entities() {
+  local query="" limit=10
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit) limit="$2"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      -*) die "unknown flag: $1" ;;
+      *) [[ -z "$query" ]] && query="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [[ -z "$query" ]] && die "entities requires a query string"
+  resolve_base
+  api GET "$BASE/v1/entities/search?query=$(jq -rn --arg q "$query" '$q|@uri')&limit=$limit" | jq .
+}
+
+cmd_stats() {
+  resolve_base
+  api GET "$BASE/v1/stats" | jq .
+}
+
+cmd_health() {
+  resolve_base
+  api GET "$BASE/health" | jq .
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+require_jq
+
+case "${1:-}" in
+  search)   shift; cmd_search "$@" ;;
+  get)      shift; cmd_get "$@" ;;
+  status)   shift; cmd_status "$@" ;;
+  ingest)   shift; cmd_ingest "$@" ;;
+  diff)     shift; cmd_diff "$@" ;;
+  edits)    shift; cmd_edits "$@" ;;
+  entities) shift; cmd_entities "$@" ;;
+  stats)    shift; cmd_stats "$@" ;;
+  health)   shift; cmd_health "$@" ;;
+  -h|--help|"") usage ;;
+  *) die "unknown subcommand: $1 (try --help)" ;;
+esac
