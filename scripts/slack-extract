@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# slack-extract — agent-first CLI for the Slack-analytics CSV pipeline.
+# Unifies three pre-existing Playwright scripts under one verb-based
+# surface so agents call a single command rather than remembering
+# which underlying script handles which case.
+#
+# Replaces the trigger_slack_analytics_export / download_slack_
+# analytics_file Letta tools, plus ad-hoc invocations of the
+# underlying Python scripts.
+#
+# Same agent-first principles as gws / signal / drive-rag-curl /
+# granola / orchestrate-scheduling / atlassian:
+#
+#   - JSON output by default where possible (status records)
+#   - Subcommand verbs; one --help screen
+#   - Pre-flight env checks (Playwright + Slack auth state)
+#   - Clean error messages with non-zero exits
+#   - Predictable shape; agents don't have to know which underlying
+#     script handles which case
+#
+# The CLI is a thin dispatcher over the established Playwright scripts
+# in scripts/. Those scripts handle the actual browser automation;
+# this surface gives them a uniform shape.
+#
+# Usage:
+#   slack-extract trigger <type>              # fire-and-forget trigger (no download)
+#   slack-extract download <type> [opts]      # full flow (trigger + wait + download)
+#   slack-extract dated <type> --start D --end D       # date-ranged trigger
+#   slack-extract last <type> --days N        # last-N-days trigger
+#   slack-extract types                       # enumerate analytics types
+#   slack-extract auth                        # check auth state
+#   slack-extract --help
+#
+# Env:
+#   SLACK_AUTH_STATE_PATH   defaults to ./slack_auth_state.json
+#                           (Playwright auth context file)
+#   SLACK_ANALYTICS_DIR     defaults to ./analytics-downloads
+#                           (download destination for `download`)
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+AUTH_PATH="${SLACK_AUTH_STATE_PATH:-$REPO_ROOT/slack_auth_state.json}"
+DOWNLOAD_DIR="${SLACK_ANALYTICS_DIR:-$REPO_ROOT/analytics-downloads}"
+
+# Map of types accepted by underlying scripts. Both scripts agree on
+# channels + members; some support overview / messages too.
+VALID_TYPES="channels members messages overview all"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+require_python() {
+  command -v python3 >/dev/null 2>&1 || die "python3 is required but not installed."
+}
+
+require_auth() {
+  if [[ ! -f "$AUTH_PATH" ]]; then
+    die "Slack auth state not found at $AUTH_PATH — login via Playwright first; see slack-extract.md"
+  fi
+}
+
+require_type() {
+  local t="$1"
+  echo " $VALID_TYPES " | grep -q " $t " \
+    || die "invalid type '$t' (must be one of: $VALID_TYPES)"
+}
+
+usage() {
+  cat <<'EOF'
+slack-extract — agent-first CLI for Slack analytics CSV exports
+
+Subcommands:
+
+  trigger <type>                Fire-and-forget: clicks "Export CSV"
+                                in the Slack admin UI. The CSV
+                                appears in your Slack workspace's
+                                Files within minutes. No local
+                                download.
+
+  download <type> [opts]        Full flow: trigger + wait for download
+                                + save locally.
+    --dir PATH                  download destination (default
+                                $SLACK_ANALYTICS_DIR or
+                                ./analytics-downloads)
+    --headless                  run browser headless (default false —
+                                use false for interactive debugging)
+
+  dated <type> --start DATE --end DATE [opts]
+                                Trigger an export for a specific
+                                date range. DATE format YYYY-MM-DD.
+
+  last <type> --days N [opts]   Trigger an export for the last N days.
+
+  types                         Print supported analytics types
+  auth                          Check whether Playwright auth state
+                                is present and probe its age
+  --help                        This message
+
+Valid <type> values: channels, members, messages, overview, all
+(Not every underlying mode supports every type; `dated` and `last`
+support channels + members only.)
+
+Env:
+  SLACK_AUTH_STATE_PATH    Playwright auth state JSON (default:
+                           ./slack_auth_state.json at repo root)
+  SLACK_ANALYTICS_DIR      Download destination (default:
+                           ./analytics-downloads at repo root)
+
+Examples:
+
+  slack-extract trigger channels
+  slack-extract download channels --headless --dir /tmp/csvs
+  slack-extract dated members --start 2026-05-01 --end 2026-05-29
+  slack-extract last channels --days 7
+  slack-extract auth | jq '.age_days'
+
+This CLI dispatches to the existing Playwright scripts:
+  scripts/slack_analytics_export.py        (download)
+  scripts/slack_analytics_trigger_export.py (trigger)
+  scripts/slack_analytics_with_dates.py    (dated + last)
+EOF
+}
+
+# ─── subcommand impls ───────────────────────────────────────────────────────
+
+cmd_trigger() {
+  [[ $# -lt 1 ]] && die "trigger requires <type>"
+  local t="$1"; shift
+  require_type "$t"
+  require_python
+  require_auth
+  local headless=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --headless) headless="--headless"; shift ;;
+      *) die "unknown arg: $1" ;;
+    esac
+  done
+  python3 "$REPO_ROOT/scripts/slack_analytics_trigger_export.py" \
+    --type "$t" $headless
+}
+
+cmd_download() {
+  [[ $# -lt 1 ]] && die "download requires <type>"
+  local t="$1"; shift
+  require_type "$t"
+  require_python
+  require_auth
+  local headless="" dir="$DOWNLOAD_DIR"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --headless) headless="--headless"; shift ;;
+      --dir)      [[ $# -ge 2 ]] || die "--dir requires a value"; dir="$2"; shift 2 ;;
+      *)          die "unknown arg: $1" ;;
+    esac
+  done
+  mkdir -p "$dir"
+  python3 "$REPO_ROOT/scripts/slack_analytics_export.py" \
+    --type "$t" --download-dir "$dir" $headless
+}
+
+cmd_dated() {
+  [[ $# -lt 1 ]] && die "dated requires <type>"
+  local t="$1"; shift
+  require_type "$t"
+  require_python
+  require_auth
+  local start="" end="" headless=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --start)    [[ $# -ge 2 ]] || die "--start requires a value"; start="$2"; shift 2 ;;
+      --end)      [[ $# -ge 2 ]] || die "--end requires a value"; end="$2"; shift 2 ;;
+      --headless) headless="--headless"; shift ;;
+      *)          die "unknown arg: $1" ;;
+    esac
+  done
+  [[ -z "$start" ]] && die "dated requires --start YYYY-MM-DD"
+  [[ -z "$end" ]] && die "dated requires --end YYYY-MM-DD"
+  python3 "$REPO_ROOT/scripts/slack_analytics_with_dates.py" \
+    --type "$t" --start-date "$start" --end-date "$end" $headless
+}
+
+cmd_last() {
+  [[ $# -lt 1 ]] && die "last requires <type>"
+  local t="$1"; shift
+  require_type "$t"
+  require_python
+  require_auth
+  local days="" headless=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --days)     [[ $# -ge 2 ]] || die "--days requires a value"; days="$2"; shift 2 ;;
+      --headless) headless="--headless"; shift ;;
+      *)          die "unknown arg: $1" ;;
+    esac
+  done
+  [[ -z "$days" ]] && die "last requires --days N"
+  python3 "$REPO_ROOT/scripts/slack_analytics_with_dates.py" \
+    --type "$t" --last-days "$days" $headless
+}
+
+cmd_types() {
+  python3 -c "
+import json, sys
+json.dump({
+  'all_types': $(echo $VALID_TYPES | tr ' ' '\n' | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))'),
+  'date_ranged_types': ['channels', 'members'],
+  'notes': 'channels + members supported across all modes; messages/overview only via trigger/download',
+}, sys.stdout, indent=2)
+print()
+"
+}
+
+cmd_auth() {
+  if [[ ! -f "$AUTH_PATH" ]]; then
+    cat <<EOF
+{
+  "status": "missing",
+  "path": "$AUTH_PATH",
+  "remediation": "run scripts/slack_analytics_export.py once non-headless to log in; auth state file will be written"
+}
+EOF
+    exit 4
+  fi
+  python3 -c "
+import os, sys, json, time
+p = '$AUTH_PATH'
+st = os.stat(p)
+age_days = (time.time() - st.st_mtime) / 86400
+print(json.dumps({
+  'status': 'present',
+  'path': p,
+  'size_bytes': st.st_size,
+  'mtime': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(st.st_mtime)),
+  'age_days': round(age_days, 1),
+  'warning': 'auth state may expire; re-login if Playwright runs fail with login redirect' if age_days > 30 else None,
+}, indent=2))
+"
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  trigger)   shift; cmd_trigger "$@" ;;
+  download)  shift; cmd_download "$@" ;;
+  dated)     shift; cmd_dated "$@" ;;
+  last)      shift; cmd_last "$@" ;;
+  types)     shift; cmd_types ;;
+  auth)      shift; cmd_auth ;;
+  -h|--help|"") usage ;;
+  *) die "unknown subcommand: $1 (try --help)" ;;
+esac
