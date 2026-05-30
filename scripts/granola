@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# granola — agent-first CLI for the Granola NotebookLM-style meeting
+# notes service. Wraps the 6 MCP tools surfaced by the supergateway
+# bridge at localhost:8089 (mcp-remote → https://mcp.granola.ai/mcp).
+#
+# Replaces the run_granola / get_meeting_transcript / list_meetings /
+# query_granola_meetings Letta tools with one Bash-callable surface.
+# Same agent-first principles as gws / signal / drive-rag-curl:
+#
+#   - JSON output by default (machine-readable, non-TTY friendly)
+#   - --pretty for human-readable expansion
+#   - Subcommand verbs; one screen of --help
+#   - Pre-flight env checks; clean error messages with non-zero exits
+#   - Auto-detect supergateway URL (granola has no host port surface
+#     other than the local mcp-remote proxy)
+#   - Context-window discipline (--limit on lists)
+#
+# Supergateway flow: POST /mcp with JSON-RPC 2.0; response is SSE with
+# `event: message` + `data: {...}` containing `result.content[0].text`
+# (which is itself a JSON-encoded string of the tool result).
+#
+# Usage:
+#   granola query <text> [--document-ids csv]
+#   granola list [--range last_30_days|this_week|last_week|custom]
+#                [--start YYYY-MM-DD] [--end YYYY-MM-DD] [--folder <id>]
+#   granola folders
+#   granola get <meeting_id> [<meeting_id>...]
+#   granola transcript <meeting_id>
+#   granola account
+#   granola health
+#   granola --help
+#
+# Env:
+#   GRANOLA_BASE_URL   defaults to http://localhost:8089 (the supergateway
+#                      bridge). Override only if you've moved the bridge.
+
+set -euo pipefail
+
+BASE="${GRANOLA_BASE_URL:-http://localhost:8089}"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+require_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is required but not installed."
+}
+
+# Issue one JSON-RPC tools/call. Args: TOOL_NAME ARGS_JSON [TIMEOUT_SECONDS].
+# Parses SSE response, extracts result.content[0].text. If the inner
+# text is valid JSON, emit it pretty-printed; otherwise emit raw
+# (Granola's list/query tools return XML or Markdown for token
+# efficiency). On JSON-RPC error or curl failure, dump to stderr +
+# exit non-zero.
+mcp_call() {
+  local tool="$1" args="$2" timeout="${3:-180}"
+  local req
+  req="$(jq -n --arg t "$tool" --argjson a "$args" \
+            '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:$t, arguments:$a}}')"
+  local body
+  body="$(curl -sS --max-time "$timeout" -X POST "$BASE/mcp" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json,text/event-stream" \
+              -d "$req" 2>/dev/null)" || die "supergateway unreachable at $BASE (timeout ${timeout}s — query tools may be slow; bump GRANOLA_TIMEOUT to override)"
+
+  # Response is SSE: lines beginning with `data: ` carry the JSON-RPC reply.
+  local json
+  json="$(echo "$body" | grep '^data: ' | head -1 | sed 's/^data: //')"
+  if [[ -z "$json" ]]; then
+    {
+      echo "ERROR: empty supergateway response (no SSE data frame)" >&2
+      echo "raw:" >&2
+      echo "$body" >&2
+    }
+    exit 4
+  fi
+
+  # JSON-RPC error?
+  local err
+  err="$(echo "$json" | jq -r '.error // empty')"
+  if [[ -n "$err" ]]; then
+    echo "ERROR: MCP error: $err" >&2
+    exit 5
+  fi
+
+  # Some tools return content[0].text as a JSON-encoded string; emit the
+  # decoded inner JSON for ergonomic piping into jq. If parsing fails
+  # (tool returned plain text), emit it raw.
+  local inner
+  inner="$(echo "$json" | jq -r '.result.content[0].text // empty')"
+  if [[ -z "$inner" ]]; then
+    echo "$json" | jq '.result'
+    return
+  fi
+  if echo "$inner" | jq . >/dev/null 2>&1; then
+    echo "$inner" | jq .
+  else
+    echo "$inner"
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+granola — agent-first CLI for Granola meeting notes
+
+Subcommands:
+
+  query <text> [opts]        Natural-language query across meeting notes.
+                             Returns a Markdown answer with inline citations.
+    --document-ids csv       limit context to these meeting UUIDs
+
+  list [opts]                List meetings in a time range. Returns an
+                             XML-shaped result (Granola server's chosen
+                             format for token efficiency).
+    --range <r>              this_week | last_week | last_30_days | custom
+                             (default: last_30_days)
+    --start YYYY-MM-DD       custom range start (required if --range custom)
+    --end YYYY-MM-DD         custom range end
+    --folder <folder_id>     restrict to a folder
+
+  folders                    List meeting folders (returns folder IDs)
+  get <id> [<id>...]         Fetch one or more meetings by UUID (JSON)
+  transcript <meeting_id>    Fetch full transcript for one meeting
+  account                    Account info (email, active workspace)
+  health                     Supergateway liveness probe
+
+  --help                     This message
+
+Output shapes vary by tool: account/folders/get/transcript return JSON,
+list returns XML, query returns Markdown. Inline citation links
+`[[N]](url)` in query responses MUST be preserved when relaying to
+the user.
+
+Env:
+  GRANOLA_BASE_URL   supergateway URL (default: http://localhost:8089).
+  GRANOLA_TIMEOUT    seconds to wait for tool replies (default: 180).
+                     `query` is a real LLM call and can take 30-120s.
+
+Examples:
+
+  granola account
+  granola list --range this_week
+  granola list --range custom --start 2026-04-01 --end 2026-04-30
+  granola folders | jq '.folders[] | {id, title}'
+  granola query "what did Kate say about the FY26 budget?"
+  granola transcript a1b2c3d4-...
+EOF
+}
+
+# ─── subcommand impls ───────────────────────────────────────────────────────
+
+cmd_query() {
+  local query="" doc_ids=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --document-ids) doc_ids="$2"; shift 2 ;;
+      --pretty) shift ;;  # query already returns Markdown; --pretty is a no-op
+      -h|--help) usage; exit 0 ;;
+      -*) die "unknown flag: $1" ;;
+      *) [[ -z "$query" ]] && query="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [[ -z "$query" ]] && die "query requires a text query"
+  local args
+  if [[ -n "$doc_ids" ]]; then
+    args="$(jq -n --arg q "$query" --arg ids "$doc_ids" \
+              '{query: $q, document_ids: ($ids | split(","))}')"
+  else
+    args="$(jq -n --arg q "$query" '{query: $q}')"
+  fi
+  # Query is a real LLM call; bump timeout. Override via GRANOLA_TIMEOUT.
+  mcp_call "query_granola_meetings" "$args" "${GRANOLA_TIMEOUT:-180}"
+}
+
+cmd_list() {
+  local range="last_30_days" start="" end="" folder=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --range)  range="$2"; shift 2 ;;
+      --start)  start="$2"; shift 2 ;;
+      --end)    end="$2"; shift 2 ;;
+      --folder) folder="$2"; shift 2 ;;
+      --pretty) shift ;;  # list returns XML; --pretty is a no-op
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown arg: $1" ;;
+    esac
+  done
+  local args
+  args="$(jq -n --arg r "$range" --arg s "$start" --arg e "$end" --arg f "$folder" '
+    {time_range: $r}
+    + (if $s != "" then {custom_start: $s} else {} end)
+    + (if $e != "" then {custom_end: $e} else {} end)
+    + (if $f != "" then {folder_id: $f} else {} end)
+  ')"
+  mcp_call "list_meetings" "$args"
+}
+
+cmd_folders() {
+  mcp_call "list_meeting_folders" "{}"
+}
+
+cmd_get() {
+  [[ $# -lt 1 ]] && die "get requires one or more meeting_ids"
+  local args
+  args="$(jq -n --argjson ids "$(printf '%s\n' "$@" | jq -R . | jq -s .)" '{meeting_ids: $ids}')"
+  mcp_call "get_meetings" "$args"
+}
+
+cmd_transcript() {
+  [[ $# -lt 1 ]] && die "transcript requires a meeting_id"
+  local args
+  args="$(jq -n --arg id "$1" '{meeting_id: $id}')"
+  mcp_call "get_meeting_transcript" "$args"
+}
+
+cmd_account() {
+  mcp_call "get_account_info" "{}"
+}
+
+cmd_health() {
+  if curl -sS --max-time 3 -X POST "$BASE/mcp" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json,text/event-stream" \
+        -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+        2>/dev/null | grep -q '"tools"'; then
+    echo '{"status":"healthy","base_url":"'"$BASE"'","tools_responsive":true}' | jq .
+  else
+    echo '{"status":"unhealthy","base_url":"'"$BASE"'","reason":"supergateway not responding"}' | jq .
+    exit 4
+  fi
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+require_jq
+
+case "${1:-}" in
+  query)      shift; cmd_query "$@" ;;
+  list)       shift; cmd_list "$@" ;;
+  folders)    shift; cmd_folders "$@" ;;
+  get)        shift; cmd_get "$@" ;;
+  transcript) shift; cmd_transcript "$@" ;;
+  account)    shift; cmd_account "$@" ;;
+  health)     shift; cmd_health "$@" ;;
+  -h|--help|"") usage ;;
+  *) die "unknown subcommand: $1 (try --help)" ;;
+esac
