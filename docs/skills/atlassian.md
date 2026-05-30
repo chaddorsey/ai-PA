@@ -235,6 +235,32 @@ atlassian jql "project = INGEST AND statusCategory != Done" --limit 100 \
   doesn't exist on this server version. Use `atlassian tools` to
   discover the actual names + use `atlassian call` to invoke.
 
+## Related reference material in this repo
+
+When the CLI's `--help` isn't enough or you need to write non-trivial
+JQL/CQL queries, consult these in-repo references first (they cost
+no API calls and are agent-readable):
+
+- **`docs/reference/jql-docs/`** — 12-file JQL syntax reference: operators,
+  fields, functions, keywords, advanced search, SLA recipes. Mirror of
+  Atlassian's official JQL documentation. Particularly useful:
+  - `jql-operators.md` — `=`, `!=`, `~`, `IN`, `WAS`, `CHANGED`, `IS EMPTY`
+  - `jql-fields.md` — issue fields including custom-field syntax
+    (`cf[10000]`)
+  - `jql-functions.md` — `currentUser()`, `now()`, `startOfWeek()`,
+    `unreleasedVersions()`, etc.
+  - `jql-keywords.md` — `AND`, `OR`, `NOT`, `ORDER BY`
+- **`jira-rovo-server/README.md`** — operational architecture docs for
+  the supergateway bridge. Read when debugging health / auth / launchd
+  issues; the [Re-auth procedure](#re-auth-procedure) above is the
+  end-user shorthand of what that README documents in detail.
+- **`jira-rovo-server/supergateway-service.sh`** — the service script
+  itself (start / stop / status / refresh). Useful if `launchctl
+  kickstart` doesn't recover and you need to manually orchestrate
+  the bridge.
+
+---
+
 ## Migration history
 
 - **Pre-2026-05-30**: agents called the `run_atlassian` Letta tool,
