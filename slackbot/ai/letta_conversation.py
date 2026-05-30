@@ -240,6 +240,97 @@ def get_or_create_letta_conversation(
         return None
 
 
+def clear_letta_conversation(
+    user_id: str,
+    agent_id: Optional[str] = None,
+    log: Optional[logging.Logger] = None,
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Implement `/clear` semantics per Letta Code: move the user to a fresh
+    Letta conversation on the SAME agent, keeping memory blocks intact.
+
+    Returns (old_conv_id, new_conv_id). Either may be None if a step
+    failed; the caller decides how to surface that.
+
+    Steps:
+      1. Look up the user's current conversation (cache + Supabase + label).
+      2. Evict the in-memory cache entry so subsequent lookups create
+         (or pick up) a different conversation.
+      3. Best-effort: cancel any in-flight run on the old conversation.
+      4. Create a new Letta conversation with the same agent + label.
+      5. Persist the new mapping (Supabase + cache).
+
+    Does NOT touch agent memory blocks. Does NOT delete the old conv —
+    its history remains accessible, just unreferenced by this user's
+    cache. Future messages route to the new conv.
+    """
+    log = log or logging.getLogger(__name__)
+    agent_id = agent_id or DEFAULT_AGENT_ID
+    cache_key = (user_id, agent_id)
+
+    # 1. Resolve current conv
+    with _cache_lock:
+        cached = _cache.get(cache_key)
+    old_conv_id: Optional[str] = cached[0] if cached else None
+    identity_id: Optional[str] = cached[1] if cached else None
+
+    if not old_conv_id:
+        sb_hit = _supabase_lookup(user_id, agent_id, log)
+        if sb_hit:
+            old_conv_id, identity_id = sb_hit
+            if not identity_id:
+                identity_id = resolve_identity(user_id) or create_external_identity(user_id)
+
+    # 2. Evict from in-memory cache. (Supabase row is overwritten in step 5.)
+    with _cache_lock:
+        _cache.pop(cache_key, None)
+
+    # 3. Best-effort: cancel any active run on the old conversation.
+    if old_conv_id:
+        try:
+            requests.post(
+                f"{LETTA_BASE_URL}/v1/conversations/{old_conv_id}/cancel",
+                timeout=5.0,
+            )
+        except Exception as exc:
+            log.debug("clear_cancel_old_conv_failed: %s", exc)
+
+    # 4. Create a new conversation on the same agent.
+    label = f"{_LABEL_PREFIX}{user_id}"
+    try:
+        create_resp = requests.post(
+            f"{LETTA_BASE_URL}/v1/conversations/",
+            params={"agent_id": agent_id},
+            json={"label": label},
+            headers={"Content-Type": "application/json"},
+            timeout=10.0,
+        )
+        create_resp.raise_for_status()
+        new_conv_id = create_resp.json().get("id")
+    except Exception as exc:
+        log.warning("clear_create_new_conv_failed: %s", exc)
+        return old_conv_id, None
+
+    if not new_conv_id:
+        return old_conv_id, None
+
+    # 5. Persist mapping (Supabase upsert + warm cache).
+    if not identity_id:
+        try:
+            identity_id = resolve_identity(user_id) or create_external_identity(user_id)
+        except Exception:
+            identity_id = None
+    _supabase_store(user_id, agent_id, new_conv_id, identity_id, log)
+    with _cache_lock:
+        _cache[cache_key] = (new_conv_id, identity_id)
+
+    log.info(
+        "clear_letta_conversation user=%s agent=%s old=%s new=%s",
+        user_id, agent_id, old_conv_id, new_conv_id,
+    )
+    return old_conv_id, new_conv_id
+
+
 def get_cached_identity(user_id: str, agent_id: Optional[str] = None) -> Optional[str]:
     """
     Get the cached identity_id for a Slack user (if resolved).

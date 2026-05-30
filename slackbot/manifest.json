@@ -61,6 +61,11 @@
         "description": "Quick schedule — find meeting times fast",
         "usage_hint": "[scheduling request]",
         "should_escape": false
+      },
+      {
+        "command": "/clear",
+        "description": "Start a fresh conversation (keeps agent memory)",
+        "should_escape": false
       }
     ]
   },
