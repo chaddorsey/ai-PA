@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+# atlassian — agent-first CLI for the Atlassian Rovo MCP surface.
+# Wraps the local supergateway bridge (mcp-remote → https://mcp.atlassian.com/v1/mcp).
+#
+# Replaces the run_atlassian / mcp__Atlassian__* Letta tools with one
+# Bash-callable surface. Same supergateway+MCP pattern as the granola
+# CLI: POST JSON-RPC 2.0 with `Accept: application/json, text/event-stream`,
+# parse the SSE `data:` line, extract result.content[0].text.
+#
+# Same agent-first principles as gws / signal / drive-rag-curl / granola
+# / orchestrate-scheduling:
+#   - JSON output by default
+#   - Subcommand verbs; one-screen --help
+#   - Pre-flight env checks; clean error messages with non-zero exits
+#   - Context-window discipline (--limit, --fields where natural)
+#   - Honest output shapes — pass through whatever the tool emits
+#
+# Usage:
+#   atlassian resources                          # accessible workspaces
+#   atlassian jql <jql-query> [--limit N]        # search Jira issues by JQL
+#   atlassian cql <cql-query> [--limit N]        # search Confluence by CQL
+#   atlassian issue <issue-key>                  # fetch one Jira issue
+#   atlassian page <page-id>                     # fetch one Confluence page
+#   atlassian comment-add <issue-key> <text>     # add a Jira comment
+#   atlassian tools                              # list all MCP tools available
+#   atlassian call <tool-name> <args-json>       # raw escape hatch
+#   atlassian health
+#   atlassian --help
+#
+# Env:
+#   ATLASSIAN_BASE_URL   defaults to http://localhost:8091 (supergateway).
+#                        Override only if you've moved the bridge.
+#   ATLASSIAN_TIMEOUT    seconds to wait for tool replies (default: 60).
+#
+# Service prerequisite: the supergateway-atlassian launchd service must
+# be running. If OAuth has fully expired (refresh-token-expired), see
+# the interactive re-auth procedure in
+#   ~/.claude/.../memory/project_atlassian_rovo.md
+# or `jira-rovo-server/supergateway-service.sh` for the script-level docs.
+
+set -euo pipefail
+
+BASE="${ATLASSIAN_BASE_URL:-http://localhost:8091}"
+TIMEOUT="${ATLASSIAN_TIMEOUT:-60}"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+require_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is required but not installed."
+}
+
+# Issue one JSON-RPC tools/call. Args: TOOL_NAME ARGS_JSON.
+# Parses SSE response, extracts result.content[0].text. Emits inner
+# JSON if parseable, raw text otherwise. JSON-RPC errors → stderr +
+# non-zero exit.
+mcp_call() {
+  local tool="$1" args="$2"
+  local req
+  req="$(jq -n --arg t "$tool" --argjson a "$args" \
+            '{jsonrpc:"2.0", id:1, method:"tools/call", params:{name:$t, arguments:$a}}')"
+  local body
+  body="$(curl -sS --max-time "$TIMEOUT" -X POST "$BASE/mcp" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json,text/event-stream" \
+              -d "$req" 2>/dev/null)" \
+    || die "supergateway unreachable at $BASE (run \`atlassian health\` to diagnose; if launchd shows the service crashing, OAuth refresh-token likely expired — see memory/project_atlassian_rovo.md for re-auth)"
+
+  local json
+  json="$(echo "$body" | grep '^data: ' | head -1 | sed 's/^data: //')"
+  if [[ -z "$json" ]]; then
+    {
+      echo "ERROR: empty supergateway response (no SSE data frame)" >&2
+      echo "raw:" >&2; echo "$body" >&2
+    }
+    exit 4
+  fi
+  local err
+  err="$(echo "$json" | jq -r '.error // empty')"
+  if [[ -n "$err" ]]; then
+    echo "ERROR: MCP error: $err" >&2
+    exit 5
+  fi
+  local inner
+  inner="$(echo "$json" | jq -r '.result.content[0].text // empty')"
+  if [[ -z "$inner" ]]; then
+    echo "$json" | jq '.result'
+    return
+  fi
+  if echo "$inner" | jq . >/dev/null 2>&1; then
+    echo "$inner" | jq .
+  else
+    echo "$inner"
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+atlassian — agent-first CLI for Atlassian Rovo (Jira + Confluence) MCP
+
+Subcommands:
+
+  resources                       List accessible Atlassian workspaces
+                                  (use this first to discover cloud_id values)
+
+  jql <jql-query> [opts]          Search Jira issues using JQL
+    --limit N                     max results (default 25)
+    --cloud-id <id>               restrict to a workspace
+    --fields csv                  fields to return (default: standard set)
+
+  cql <cql-query> [opts]          Search Confluence using CQL
+    --limit N                     max results (default 25)
+    --cloud-id <id>               restrict to a workspace
+
+  issue <issue-key>               Fetch one Jira issue (e.g. INGEST-42)
+    --cloud-id <id>               workspace
+    --fields csv                  fields to return
+
+  page <page-id>                  Fetch one Confluence page by ID
+    --cloud-id <id>               workspace
+
+  comment-add <issue-key> <text>  Add a Jira comment
+    --cloud-id <id>               workspace
+
+  tools                           List all MCP tools available on the server
+                                  (useful for discovering newer endpoints)
+
+  call <tool-name> <args-json>    Raw MCP escape hatch. Pass a JSON
+                                  argument blob directly. Use for tools
+                                  not surfaced as named subcommands.
+
+  health                          Probe the supergateway bridge
+
+  --help                          This message
+
+Env:
+  ATLASSIAN_BASE_URL    supergateway URL (default http://localhost:8091)
+  ATLASSIAN_TIMEOUT     seconds (default 60)
+
+Examples:
+
+  atlassian resources | jq '.[] | {id, name, url}'
+
+  atlassian jql "project = INGEST AND status = 'In Progress'" --limit 10
+
+  atlassian cql 'space = "DEV" AND title ~ "FY26"'
+
+  atlassian issue INGEST-42 --fields summary,status,assignee
+
+  atlassian comment-add INGEST-42 "Posting from CLI — confirmed in standup"
+
+  atlassian call searchJiraIssuesUsingJql '{"jql":"...", "maxResults":10}'
+
+OAuth note: if the supergateway is crashing with "Refreshed token is
+still invalid", the OAuth refresh-token has expired and needs
+interactive re-auth. See memory/project_atlassian_rovo.md for the
+full procedure (5-step browser flow).
+EOF
+}
+
+# ─── subcommand impls ───────────────────────────────────────────────────────
+
+cmd_resources() {
+  mcp_call "getAccessibleAtlassianResources" "{}"
+}
+
+cmd_jql() {
+  local jql="" limit=25 cloud_id="" fields=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit)     limit="$2"; shift 2 ;;
+      --cloud-id)  cloud_id="$2"; shift 2 ;;
+      --fields)    fields="$2"; shift 2 ;;
+      -h|--help)   usage; exit 0 ;;
+      -*)          die "unknown flag: $1" ;;
+      *)           [[ -z "$jql" ]] && jql="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [[ -z "$jql" ]] && die "jql requires a query string"
+  local fields_json="null"
+  [[ -n "$fields" ]] && fields_json="$(echo "$fields" | jq -R 'split(",")')"
+  local args
+  args="$(jq -n \
+    --arg q "$jql" --argjson n "$limit" --arg c "$cloud_id" --argjson f "$fields_json" '
+    {jql: $q, maxResults: $n}
+    + (if $c != "" then {cloudId: $c} else {} end)
+    + (if $f != null then {fields: $f} else {} end)
+  ')"
+  mcp_call "searchJiraIssuesUsingJql" "$args"
+}
+
+cmd_cql() {
+  local cql="" limit=25 cloud_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --limit)    limit="$2"; shift 2 ;;
+      --cloud-id) cloud_id="$2"; shift 2 ;;
+      -h|--help)  usage; exit 0 ;;
+      -*)         die "unknown flag: $1" ;;
+      *)          [[ -z "$cql" ]] && cql="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [[ -z "$cql" ]] && die "cql requires a query string"
+  local args
+  args="$(jq -n --arg q "$cql" --argjson n "$limit" --arg c "$cloud_id" '
+    {cql: $q, limit: $n}
+    + (if $c != "" then {cloudId: $c} else {} end)
+  ')"
+  mcp_call "searchConfluenceUsingCql" "$args"
+}
+
+cmd_issue() {
+  [[ $# -lt 1 ]] && die "issue requires an issue key (e.g. INGEST-42)"
+  local key="$1"; shift
+  local cloud_id="" fields=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cloud-id) cloud_id="$2"; shift 2 ;;
+      --fields)   fields="$2"; shift 2 ;;
+      *)          die "unknown arg: $1" ;;
+    esac
+  done
+  local fields_json="null"
+  [[ -n "$fields" ]] && fields_json="$(echo "$fields" | jq -R 'split(",")')"
+  local args
+  args="$(jq -n \
+    --arg k "$key" --arg c "$cloud_id" --argjson f "$fields_json" '
+    {issueIdOrKey: $k}
+    + (if $c != "" then {cloudId: $c} else {} end)
+    + (if $f != null then {fields: $f} else {} end)
+  ')"
+  mcp_call "getJiraIssue" "$args"
+}
+
+cmd_page() {
+  [[ $# -lt 1 ]] && die "page requires a page ID"
+  local pid="$1"; shift
+  local cloud_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cloud-id) cloud_id="$2"; shift 2 ;;
+      *)          die "unknown arg: $1" ;;
+    esac
+  done
+  local args
+  args="$(jq -n --arg p "$pid" --arg c "$cloud_id" '
+    {pageId: $p}
+    + (if $c != "" then {cloudId: $c} else {} end)
+  ')"
+  mcp_call "getConfluencePage" "$args"
+}
+
+cmd_comment_add() {
+  [[ $# -lt 2 ]] && die "comment-add requires <issue-key> <text>"
+  local key="$1"; shift
+  local text="$1"; shift
+  local cloud_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cloud-id) cloud_id="$2"; shift 2 ;;
+      *)          die "unknown arg: $1" ;;
+    esac
+  done
+  local args
+  args="$(jq -n --arg k "$key" --arg t "$text" --arg c "$cloud_id" '
+    {issueIdOrKey: $k, commentBody: $t}
+    + (if $c != "" then {cloudId: $c} else {} end)
+  ')"
+  mcp_call "addCommentToJiraIssue" "$args"
+}
+
+cmd_tools() {
+  # Direct tools/list call (not a tools/call — we want the inventory)
+  local body
+  body="$(curl -sS --max-time 10 -X POST "$BASE/mcp" \
+              -H "Content-Type: application/json" \
+              -H "Accept: application/json,text/event-stream" \
+              -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' 2>/dev/null)" \
+    || die "supergateway unreachable at $BASE"
+  echo "$body" | grep '^data: ' | head -1 | sed 's/^data: //' | \
+    jq '.result.tools | map({name, title, description: (.description | .[0:120])})'
+}
+
+cmd_call() {
+  [[ $# -lt 2 ]] && die "call requires <tool-name> <args-json>"
+  local tool="$1" args="$2"
+  # Validate args is JSON
+  echo "$args" | jq . >/dev/null 2>&1 || die "args-json must be valid JSON"
+  mcp_call "$tool" "$args"
+}
+
+cmd_health() {
+  # Probe with tools/list (cheaper than initialize on most MCP servers)
+  if curl -sS --max-time 5 -X POST "$BASE/mcp" \
+        -H 'Content-Type: application/json' \
+        -H 'Accept: application/json,text/event-stream' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+        2>/dev/null | grep -q '"tools"'; then
+    echo '{"status":"healthy","base_url":"'"$BASE"'","tools_responsive":true}' | jq .
+  else
+    echo '{"status":"unhealthy","base_url":"'"$BASE"'","reason":"supergateway not responding"}' | jq .
+    echo '' >&2
+    echo 'Diagnostic next steps:' >&2
+    echo '  1. launchctl list | grep atlassian   # is it loaded?' >&2
+    echo '  2. tail /tmp/supergateway-atlassian-launchd.log' >&2
+    echo '  3. If OAuth expired, see memory/project_atlassian_rovo.md for re-auth' >&2
+    exit 4
+  fi
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+require_jq
+
+case "${1:-}" in
+  resources)    shift; cmd_resources "$@" ;;
+  jql)          shift; cmd_jql "$@" ;;
+  cql)          shift; cmd_cql "$@" ;;
+  issue)        shift; cmd_issue "$@" ;;
+  page)         shift; cmd_page "$@" ;;
+  comment-add)  shift; cmd_comment_add "$@" ;;
+  tools)        shift; cmd_tools "$@" ;;
+  call)         shift; cmd_call "$@" ;;
+  health)       shift; cmd_health "$@" ;;
+  -h|--help|"") usage ;;
+  *) die "unknown subcommand: $1 (try --help)" ;;
+esac
