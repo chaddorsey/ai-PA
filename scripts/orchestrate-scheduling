@@ -1,0 +1,295 @@
+#!/usr/bin/env bash
+# orchestrate-scheduling — agent-first CLI for the scheduling-orchestrator
+# service. Wraps POST /schedule with a subcommand surface that lets agents
+# assemble realistic scheduling requests without hand-rolling the
+# context_json blob.
+#
+# Replaces the orchestrate_scheduling Letta tool. Same payload shape, same
+# orchestrator engine — just Bash-callable for local-mode agents.
+#
+# Same agent-first principles as gws / signal / drive-rag-curl / granola:
+#   - JSON output by default (machine-readable, non-TTY friendly)
+#   - --pretty for ranked-proposal summary
+#   - Subcommand verbs (schedule, reschedule, health); --help screen
+#   - Build context_json from --from/--to/--tz/--minutes/--policy flags so
+#     agents don't have to JSON-encode by hand. --context-json escape
+#     hatch remains for advanced policy
+#   - Pre-flight env checks; clean error messages with non-zero exits
+#   - Context-window discipline (--limit caps proposals shown in --pretty)
+#
+# Usage:
+#   orchestrate-scheduling schedule <utterance> [opts]
+#   orchestrate-scheduling reschedule <event_id> <utterance> [opts]
+#   orchestrate-scheduling health
+#   orchestrate-scheduling --help
+#
+# Env:
+#   ORCHESTRATOR_BASE_URL   defaults to http://localhost:8096 (host) or
+#                           http://scheduling-orchestrator-api:8095 (Docker)
+#   ORCHESTRATOR_TIMEOUT    seconds to wait (default: 90)
+
+set -euo pipefail
+
+DEFAULT_HOST_URL="http://localhost:8096"
+DEFAULT_DOCKER_URL="http://scheduling-orchestrator-api:8095"
+BASE="${ORCHESTRATOR_BASE_URL:-}"
+TIMEOUT="${ORCHESTRATOR_TIMEOUT:-90}"
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+die() { echo "ERROR: $*" >&2; exit 2; }
+
+require_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is required but not installed."
+}
+
+resolve_base() {
+  if [[ -n "$BASE" ]]; then return; fi
+  if curl -sS --max-time 2 "$DEFAULT_HOST_URL/health" >/dev/null 2>&1; then
+    BASE="$DEFAULT_HOST_URL"; return
+  fi
+  if curl -sS --max-time 2 "$DEFAULT_DOCKER_URL/health" >/dev/null 2>&1; then
+    BASE="$DEFAULT_DOCKER_URL"; return
+  fi
+  die "cannot reach scheduling-orchestrator at $DEFAULT_HOST_URL or $DEFAULT_DOCKER_URL; set ORCHESTRATOR_BASE_URL"
+}
+
+# Issue request and emit body on stdout; non-2xx → body to stderr + exit 4.
+api_post() {
+  local url="$1" payload="$2"
+  local tmp status
+  tmp="$(mktemp -t orchsched.XXXXXX)"
+  status="$(curl -sS --max-time "$TIMEOUT" -o "$tmp" -w "%{http_code}" \
+                  -X POST "$url" \
+                  -H "Content-Type: application/json" \
+                  -d "$payload" 2>/dev/null)" || {
+    rm -f "$tmp"; die "request failed: POST $url"
+  }
+  if [[ "$status" =~ ^2 ]]; then
+    cat "$tmp"; rm -f "$tmp"
+  else
+    {
+      echo "ERROR: HTTP $status from POST $url" >&2
+      cat "$tmp" >&2; echo "" >&2
+    }
+    rm -f "$tmp"; exit 4
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+orchestrate-scheduling — agent-first CLI for scheduling-orchestrator
+
+Subcommands:
+
+  schedule <utterance> [opts]    Propose meeting slots
+    --participants csv           participant emails (comma-separated)
+    --user-id <email>            requester email (defaults to cdorsey@concord.org)
+    --from YYYY-MM-DD            timeframe start (required for new slots)
+    --to YYYY-MM-DD              timeframe end (required for new slots)
+    --tz <zone>                  timezone (default: America/New_York)
+    --minutes N                  slot size in minutes (default: 30)
+    --policy <json>              policy JSON merged into context.policy
+                                 (e.g. '{"hard":{"min_gap_min":15}}')
+    --context-json <json>        raw context_json string — overrides
+                                 all the above (escape hatch)
+    --pretty                     human-readable ranked summary
+    --limit N                    cap proposals shown in --pretty (default 10)
+    --debug                      include debug.* fields in JSON output
+
+  reschedule <event_id> <utterance> [opts]
+    Same flags as schedule, plus event_id is set explicitly.
+    Use when the user names a specific meeting to move.
+
+  health                          Service liveness probe
+
+  --help                          This message
+
+Output is JSON by default (full orchestrator response: proposals,
+status, explanation, debug, ...). Pipe to `jq` for filtering or use
+--pretty for a human-readable summary.
+
+Env:
+  ORCHESTRATOR_BASE_URL    auto-detect override
+  ORCHESTRATOR_TIMEOUT     seconds (default 90)
+
+Examples:
+
+  orchestrate-scheduling schedule "find 30 min with Danielle next week" \
+    --participants cdorsey@concord.org,dkehoe@concord.org \
+    --from 2026-06-02 --to 2026-06-06 --minutes 30 --pretty
+
+  orchestrate-scheduling schedule "look beyond mornings" \
+    --participants cdorsey@concord.org,dkehoe@concord.org \
+    --from 2026-06-02 --to 2026-06-06 --minutes 45 \
+    --policy '{"soft":{"avoid_time_of_day":["morning"]}}'
+
+  orchestrate-scheduling reschedule evt_abc123 "move to Tuesday afternoon" \
+    --from 2026-06-02 --to 2026-06-06
+
+  orchestrate-scheduling schedule "..." --debug | jq '.debug'
+EOF
+}
+
+# ─── context_json assembly ──────────────────────────────────────────────────
+
+# Build context_json string from individual flags. Caller can override the
+# whole thing with --context-json.
+build_context_json() {
+  local from="$1" to="$2" tz="$3" minutes="$4" policy="$5" raw="$6"
+  if [[ -n "$raw" ]]; then
+    # Validate it's parseable
+    echo "$raw" | jq . >/dev/null 2>&1 || die "--context-json is not valid JSON"
+    echo "$raw"; return
+  fi
+  # Build from flags
+  local timeframe="{}"
+  if [[ -n "$from" || -n "$to" ]]; then
+    timeframe="$(jq -n --arg f "$from" --arg t "$to" --arg z "$tz" '
+      {} + (if $f != "" then {from: $f} else {} end)
+         + (if $t != "" then {to:   $t} else {} end)
+         + (if $z != "" then {tz:   $z} else {} end)')"
+  fi
+  jq -n --argjson tf "$timeframe" --argjson n "${minutes:-30}" --argjson p "${policy:-null}" '
+    {timeframe: $tf, slot_size_minutes: $n}
+    + (if $p != null then {policy: $p} else {} end)
+  '
+}
+
+# ─── subcommand impls ───────────────────────────────────────────────────────
+
+cmd_schedule() {
+  local utterance="" participants="" user_id="cdorsey@concord.org"
+  local from="" to="" tz="America/New_York" minutes=30
+  local policy="" raw_ctx="" pretty=0 limit=10 want_debug=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --participants)  participants="$2"; shift 2 ;;
+      --user-id)       user_id="$2"; shift 2 ;;
+      --from)          from="$2"; shift 2 ;;
+      --to)            to="$2"; shift 2 ;;
+      --tz)            tz="$2"; shift 2 ;;
+      --minutes)       minutes="$2"; shift 2 ;;
+      --policy)        policy="$2"; shift 2 ;;
+      --context-json)  raw_ctx="$2"; shift 2 ;;
+      --pretty)        pretty=1; shift ;;
+      --limit)         limit="$2"; shift 2 ;;
+      --debug)         want_debug=1; shift ;;
+      -h|--help)       usage; exit 0 ;;
+      -*)              die "unknown flag: $1" ;;
+      *)               [[ -z "$utterance" ]] && utterance="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [[ -z "$utterance" ]] && die "schedule requires an utterance"
+
+  local ctx
+  ctx="$(build_context_json "$from" "$to" "$tz" "$minutes" "$policy" "$raw_ctx")"
+
+  local participants_json="null"
+  if [[ -n "$participants" ]]; then
+    participants_json="$(echo "$participants" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')"
+  fi
+
+  local payload
+  payload="$(jq -n \
+    --arg u "$utterance" \
+    --arg uid "$user_id" \
+    --argjson pids "$participants_json" \
+    --arg ctxs "$ctx" \
+    '{utterance: $u, user_id: $uid, context_json: $ctxs}
+     + (if $pids != null then {participant_ids: $pids} else {} end)')"
+
+  resolve_base
+  local resp
+  resp="$(api_post "$BASE/schedule" "$payload")"
+
+  if (( pretty )); then
+    echo "$resp" | jq -r --argjson n "$limit" '
+      "status: \(.status)\nexplanation: \(.explanation // "-")\n\nTop \($n) proposals:" ,
+      ((.proposals // []) | sort_by(.rank) | .[:$n] |
+        to_entries[] |
+        "\n\(.key+1). rank=\(.value.rank)  \(.value.start_utc) → \(.value.end_utc)\n   pref_score: \(.value.preference_score // "-")  focus_bonus: \(.value.objective_scores.focus_block_bonus // 0)\n   participants: \(.value.participants | join(", "))")
+    '
+  elif (( want_debug )); then
+    echo "$resp" | jq '{status, explanation, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank)), debug}'
+  else
+    echo "$resp" | jq '{status, explanation, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank))}'
+  fi
+}
+
+cmd_reschedule() {
+  [[ $# -lt 2 ]] && die "reschedule requires <event_id> <utterance>"
+  local event_id="$1"; shift
+  local utterance="$1"; shift
+  local participants="" user_id="cdorsey@concord.org"
+  local from="" to="" tz="America/New_York" minutes=30
+  local policy="" raw_ctx="" pretty=0 limit=10 want_debug=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --participants)  participants="$2"; shift 2 ;;
+      --user-id)       user_id="$2"; shift 2 ;;
+      --from)          from="$2"; shift 2 ;;
+      --to)            to="$2"; shift 2 ;;
+      --tz)            tz="$2"; shift 2 ;;
+      --minutes)       minutes="$2"; shift 2 ;;
+      --policy)        policy="$2"; shift 2 ;;
+      --context-json)  raw_ctx="$2"; shift 2 ;;
+      --pretty)        pretty=1; shift ;;
+      --limit)         limit="$2"; shift 2 ;;
+      --debug)         want_debug=1; shift ;;
+      *)               die "unknown arg: $1" ;;
+    esac
+  done
+
+  local ctx
+  ctx="$(build_context_json "$from" "$to" "$tz" "$minutes" "$policy" "$raw_ctx")"
+
+  local participants_json="null"
+  if [[ -n "$participants" ]]; then
+    participants_json="$(echo "$participants" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$"; ""))')"
+  fi
+
+  local payload
+  payload="$(jq -n \
+    --arg u "$utterance" \
+    --arg uid "$user_id" \
+    --arg eid "$event_id" \
+    --argjson pids "$participants_json" \
+    --arg ctxs "$ctx" \
+    '{utterance: $u, user_id: $uid, event_id: $eid, context_json: $ctxs}
+     + (if $pids != null then {participant_ids: $pids} else {} end)')"
+
+  resolve_base
+  local resp
+  resp="$(api_post "$BASE/schedule" "$payload")"
+
+  if (( pretty )); then
+    echo "$resp" | jq -r --argjson n "$limit" '
+      "status: \(.status)\nexplanation: \(.explanation // "-")\n\nTop \($n) reschedule proposals:" ,
+      ((.proposals // []) | sort_by(.rank) | .[:$n] |
+        to_entries[] |
+        "\n\(.key+1). rank=\(.value.rank)  \(.value.start_utc) → \(.value.end_utc)")
+    '
+  elif (( want_debug )); then
+    echo "$resp" | jq .
+  else
+    echo "$resp" | jq '{status, explanation, proposals_count: (.proposals|length), proposals: (.proposals // [] | sort_by(.rank))}'
+  fi
+}
+
+cmd_health() {
+  resolve_base
+  curl -sS --max-time 5 "$BASE/health" | jq .
+}
+
+# ─── main ───────────────────────────────────────────────────────────────────
+
+require_jq
+
+case "${1:-}" in
+  schedule)   shift; cmd_schedule "$@" ;;
+  reschedule) shift; cmd_reschedule "$@" ;;
+  health)     shift; cmd_health "$@" ;;
+  -h|--help|"") usage ;;
+  *) die "unknown subcommand: $1 (try --help)" ;;
+esac
