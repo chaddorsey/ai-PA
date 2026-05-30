@@ -1,9 +1,9 @@
 ---
 date_started: 2026-05-30
-date_phase_h: deferred (see "Why partial" below)
-status: shell-migrated (partial); Docker continues producing briefings
+date_phase_h: 2026-05-30
+status: migrated, soaking
 agent_old_id: agent-2ed14ef4-6289-453a-ae27-290b6ed196b8
-agent_old_name_now: pulse-monitor-agent_copy (UNCHANGED — Docker is primary)
+agent_old_name_now: XXX-PRE-LOCAL-pulse-monitor-agent_copy
 agent_new_id: agent-local-d48b128a-b3a8-4930-a27f-b4127c96fe3a
 agent_new_name: pulse-monitor-agent-local
 model: lmstudio/gpt-5.4-nano
@@ -12,36 +12,53 @@ launcher: ~/bin/letta-pulse
 launch_cwd: /Volumes/main-drive/letta-launchpad
 ---
 
-# Pulse migration log — shell-only (partial)
+# Pulse migration log
 
-Fourth per-agent local-mode migration. **Intentionally partial** —
-the agent shell exists and is fully usable for ad-hoc queries, but
-the 6 daily-analytics crons still point at Docker pending the
-`pulse-cli` build (see followup
-`docs/followups/2026-05-30-pulse-cli-scoping.md`).
+Fourth per-agent local-mode migration. Completed in two passes within
+the same session:
 
-## Why partial
+1. **Shell migration**: agent record + memfs imported, no cron repoint
+2. **Full migration (this turn)**: extracted 21 bespoke pulse tools
+   from Letta, built `pulse-cli` wrapping them (Option-1 pattern),
+   updated memfs with `pulse_cli_recipes.md`, repointed all 6 crons,
+   renamed Docker pulse
 
-Pulse has 20+ bespoke analytics tools (`compose_daily_briefing`,
-`collect_daily_workspace_activity`, `calculate_running_averages`,
-`analyze_slack_analytics`, etc.) that:
+## pulse-cli (built this turn)
 
-1. Have NO existing CLI counterpart (unlike `task-cli` which wraps
-   already-pg-canonical Python).
-2. Store running state in **memory blocks** (drive_analytics_*),
-   which are deprecated — moving them to local mode requires
-   deciding new storage substrate (pa_web tables vs memfs vs
-   recompute-on-demand).
-3. Drive the 6 daily crons that produce user-visible morning
-   briefings. Repointing crons to a local agent that can't actually
-   execute the workflows would break daily briefings — a noisy,
-   user-visible regression.
+21 bespoke pulse tools extracted from Letta to `letta/pulse-tools/`
+(3,659 lines total). Wrapped in `pulse-cli/src/pulse_cli/cli.py` with
+Click subcommands. Same Option-1 pattern as task-cli:
 
-The goal language was "fully retaining existing Docker functionality
-to ensure ability to roll back". Following that intent: Docker pulse
-stays fully active producing briefings; local shell agent is ready
-for cron repointing once pulse-cli ships and provides the missing
-CLI subcommands.
+- One implementation, two interfaces (Letta tool registration retained
+  on Docker pulse for rollback; local agent calls `pulse <verb>` via Bash)
+- Bug fixes land in one place
+- Post-soak relocation: `letta/pulse-tools/` → `pulse-cli/src/pulse_cli/lib/`
+
+CLI subcommands:
+- `pulse compose-briefing` — morning briefing
+- `pulse snapshot` — daily quantitative snapshot
+- `pulse slack-trigger/download/analyze` — Slack CSV pipeline
+- `pulse drive-workspace/personal/mentions` — Drive analytics collectors
+- `pulse drive-averages/summary/trends/mentions-read` — stored-state readers
+- `pulse drive-files/info/top/my-activity/recent/doc-events/activity-search` — Drive queries
+- `pulse email-analytics` — email summary
+- `pulse init-drive-memory` — first-time setup
+- `pulse health` — connectivity probe
+
+Installed via pipx; `pulse` on PATH.
+
+## Storage substrate (transitional)
+
+The wrapped Python in `letta/pulse-tools/` currently reads/writes
+Letta memory blocks (drive_analytics_*) via the Letta API. **Memory
+blocks are deprecated** but functional during transition. Docker pulse
+maintains the blocks; local pulse reads via the CLI.
+
+**Substrate migration follow-up** queued in
+`docs/followups/2026-05-30-pulse-cli-scoping.md`: move
+drive_analytics_* state from blocks → `analytics.*` pg-schema tables.
+~3-4 hrs of post-soak work. Done discretely so the agent's interface
+doesn't change.
 
 ## What migrated
 
@@ -78,55 +95,75 @@ for rollback.
   fully tooled for ongoing briefing production).
 - Cron jobs: NOT repointed (all 6 still target Docker agent ID).
 
-## Two-headed runtime state (deliberate)
+## Two-headed runtime state (rollback preservation)
 
-**Docker `pulse-monitor-agent_copy`** (unchanged name):
-- 34 tools attached
-- 6 crons firing M-F (02:00, 02:30, 03:00, 04:00, 06:00, */15 8-6)
-- Producing daily analytics briefings
-- Memory blocks (drive_analytics_*) maintained
+**Docker `XXX-PRE-LOCAL-pulse-monitor-agent_copy`** (renamed):
+- 34 tools attached — preserved untouched for rollback
+- 0 crons firing — all 6 repointed to local agent
+- Memory blocks maintained (drive_analytics_*) — local CLI reads them
+  during the transitional substrate window
 - Archival passages intact
 
-**Local `pulse-monitor-agent-local`** (new):
+**Local `pulse-monitor-agent-local`** (new, ACTIVE):
 - 0 attached Letta tools
-- Uses Bash + CLIs on host (slack, atlassian, drive-rag-curl,
-  slack-extract, signal, task, gws)
-- Available for ad-hoc TUI queries (`letta-pulse`)
-- Won't take over crons until pulse-cli ships
+- Uses Bash + CLIs on host: `pulse` (this migration), `slack`,
+  `slack-extract`, `atlassian`, `drive-rag-curl`, `signal`, `task`, `gws`
+- All 6 daily crons now target this agent (route=local)
+- `letta-pulse` wrapper at `~/bin/letta-pulse`
 
 ## Phase E smoke
 
 | Test | Time | Result |
 |---|---|---|
-| Identity | 2.3s | ✅ Self-identifies as pulse-monitor agent, correctly states partial-migration status |
-
-System prompt size: 65,133 chars (vs the bloated full-import which
-would have been ~120K+ with the 9 dated files included).
+| Identity (shell pass) | 2.3s | ✅ Self-identifies as pulse-monitor agent |
+| Identity (post-pulse-cli) | 2.4s | ✅ Names `pulse` CLI and `pulse compose-briefing` correctly |
 
 ## Rollback path
 
-Trivially clean — nothing on the Docker side changed:
-1. Stop using `letta-pulse`
-2. (Optionally) delete the local agent + memfs from
-   `~/.letta/lc-local-backend/`
+Docker pulse retains all 34 tools + memory blocks. To roll back:
 
-The Docker pulse keeps running through the rollback.
+1. **Repoint the 6 crons back** (loop over the backup files):
+   ```bash
+   PULSE_OLD=agent-2ed14ef4-6289-453a-ae27-290b6ed196b8
+   for f in /Volumes/main-filestore/ai-PA-backups/local-mode-migrations/pulse-monitor-agent_copy/cron-*-original.json; do
+     JOB=$(basename "$f" | sed 's/cron-//;s/-original.json//')
+     curl -X PATCH http://localhost:8087/v1/jobs/$JOB -d "@$f"
+   done
+   ```
 
-## Soak validation (light — local agent has limited surface)
+2. **Rename Docker agent back**:
+   ```bash
+   curl -X PATCH http://localhost:8283/v1/agents/$PULSE_OLD \
+     -d '{"name":"pulse-monitor-agent_copy"}'
+   ```
 
-- [ ] `letta-pulse` opens cleanly, agent recognizes itself
-- [ ] Agent correctly REFUSES to attempt briefing composition (per
-      its `pulse_local_mode_status.md` guidance) — should surface
-      "Docker is still producing official briefings"
-- [ ] Ad-hoc queries through CLIs work (slack/atlassian/drive-rag-curl)
+3. Local agent + memfs can be left alone (don't delete; useful for re-engaging if Docker has issues).
 
-## Full migration prerequisites (when pulse-cli ships)
+## Soak validation list
 
-1. Build pulse-cli (~8-12 hrs scope per
-   `docs/followups/2026-05-30-pulse-cli-scoping.md`)
-2. Decide drive_analytics_* storage substrate (pa_web tables likely)
-3. Migrate Docker pulse's memory blocks → new substrate
-4. Test pulse-cli end-to-end against a real day's data
-5. Repoint the 6 crons (route=local, agent_id=local)
-6. Rename Docker pulse → XXX-PRE-LOCAL-pulse-monitor-agent_copy
-7. Standard 7-14 day soak watching briefing quality
+- [ ] Mon 02:00 ET Slack CSV trigger fires — agent invokes `pulse slack-trigger`
+- [ ] Mon 02:30 ET Quantitative snapshot — `pulse snapshot` lands in pa_web
+- [ ] Mon 03:00 ET Slack vibe-check completes
+- [ ] Mon 04:00 ET Snapshot re-collection (T+2) re-runs cleanly
+- [ ] Mon 06:00 ET Compose morning briefing produces canonical signal
+      with the same shape as Docker pulse's prior briefings
+- [ ] */15 8-6 ET intra-day mentions refresh updates state
+- [ ] Side-by-side compare 3-5 daily briefings (local vs prior Docker
+      output retained in canonical) for format/quality regression
+
+## Storage substrate follow-up (post-soak)
+
+The wrapped Python in `letta/pulse-tools/` reads/writes Letta memory
+blocks (drive_analytics_*). Memory blocks are deprecated and slated
+for removal. Substrate migration plan in
+`docs/followups/2026-05-30-pulse-cli-scoping.md`:
+
+- New `analytics.drive_workspace_daily`, `analytics.drive_mentions`,
+  `analytics.drive_personal_daily` pg-schema tables
+- Backfill from existing memory block contents
+- Refactor `letta/pulse-tools/*.py` to use pg in place of blocks
+- Once Docker pulse is decommissioned, the blocks themselves can be
+  deleted
+
+This is internal to the CLI; the agent interface (`pulse <verb>`)
+doesn't change.
