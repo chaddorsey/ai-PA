@@ -50,10 +50,14 @@ python3 ../letta-memfs-patches/patches/apply_letta_code_empty_approvals_fix.py "
 echo "[build] Applying memfs-external-git patch..."
 python3 ../letta-memfs-patches/patches/apply_letta_code_memfs_external_git.py "$LETTA_JS"
 
+echo "[build] Applying security-preamble neutralizer..."
+python3 ../letta-memfs-patches/patches/apply_letta_code_neutralize_security_preamble.py "$LETTA_JS"
+
 echo "[build] Verifying..."
 MARKERS_3205=$(grep -c "PATCH-3205" "$LETTA_JS" || echo 0)
 MARKERS_APPROVAL=$(grep -c "PATCH-EMPTY-APPROVALS" "$LETTA_JS" || echo 0)
 MARKERS_MEMFS=$(grep -c "PATCH-MEMFS-GIT" "$LETTA_JS" || echo 0)
+MARKERS_NEUTRALIZE=$(grep -c "PATCH-NEUTRALIZE-SECURITY" "$LETTA_JS" || echo 0)
 if [ "$MARKERS_3205" -lt 6 ]; then
   echo "[build] ERROR: expected >=6 PATCH-3205 markers, found $MARKERS_3205" >&2
   exit 3
@@ -64,6 +68,10 @@ if [ "$MARKERS_APPROVAL" -lt 2 ]; then
 fi
 if [ "$MARKERS_MEMFS" -lt 3 ]; then
   echo "[build] ERROR: expected >=3 PATCH-MEMFS-GIT markers, found $MARKERS_MEMFS" >&2
+  exit 3
+fi
+if [ "$MARKERS_NEUTRALIZE" -lt 2 ]; then
+  echo "[build] ERROR: expected >=2 PATCH-NEUTRALIZE-SECURITY markers, found $MARKERS_NEUTRALIZE" >&2
   exit 3
 fi
 

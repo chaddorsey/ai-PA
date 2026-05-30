@@ -69,6 +69,18 @@ RUN python3 /tmp/apply-memfs-git.py /usr/local/lib/node_modules/@letta-ai/letta-
     && [ "$(grep -c 'PATCH-MEMFS-GIT' /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js)" -ge 3 ] \
     && rm /tmp/apply-memfs-git.py
 
+# PATCH-NEUTRALIZE-SECURITY: replace letta-code's hard-coded
+# defensive-security preamble with a benign personal-assistant context
+# line. Without this, safety-aggressive providers (gpt-5.x via
+# chatgpt_oauth Codex Responses) interpret the preamble as restricting
+# the agent to security-only tasks and refuse benign requests (doc
+# editing, grant work, etc). Patch fires on TWO sites in the bundle
+# (interactive + headless system prompts).
+COPY letta-memfs-patches/patches/apply_letta_code_neutralize_security_preamble.py /tmp/apply-neutralize.py
+RUN python3 /tmp/apply-neutralize.py /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js \
+    && [ "$(grep -c 'PATCH-NEUTRALIZE-SECURITY' /usr/local/lib/node_modules/@letta-ai/letta-code/letta.js)" -ge 2 ] \
+    && rm /tmp/apply-neutralize.py
+
 
 # ---------- Stage 2: Python app image ----------
 FROM python:3.11-slim
@@ -76,11 +88,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install curl (for healthchecks + gws install), git (so letta-code's memfs
-# Edit/Write tools can commit+push to LETTA_MEMFS_GIT_URL via runGit3), +
-# the Node runtime required by letta-code. Without git, the bundle's
-# auto-commit silently no-ops and edits never reach Gitea.
+# Edit/Write tools can commit+push to LETTA_MEMFS_GIT_URL via runGit3), and
+# jq (so agent Bash commands can parse Gitea API responses for canonical-
+# store reads). Without git, the bundle's auto-commit silently no-ops and
+# edits never reach Gitea.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates git \
+    && apt-get install -y --no-install-recommends curl ca-certificates git jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gws CLI (Google Workspace) so MC + letta-code subagents can issue
@@ -91,6 +104,17 @@ COPY scripts/update-gws.sh /tmp/update-gws.sh
 RUN GWS_INSTALL_DIR=/usr/local/bin bash /tmp/update-gws.sh \
     && rm /tmp/update-gws.sh \
     && gws --version
+
+# Install `nlm` (notebooklm-mcp-cli) so MC + letta-code subagents can issue
+# NotebookLM operations via Bash. Replaces the deprecated `run_notebooklm`
+# Letta tool path that shelled to the old `notebooklm` CLI inside the Letta
+# container. Auth state lives at /root/.nlm/, bind-mounted from the host's
+# ~/.nlm/ by docker-compose (read-only — refresh via `nlm login` on host).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3-minimal python3-pip pipx \
+    && rm -rf /var/lib/apt/lists/* \
+    && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install notebooklm-mcp-cli \
+    && nlm --version
 
 # Copy the Node runtime + global letta-code install from the build stage.
 # /usr/local/lib/node_modules holds the globally-installed letta-code
