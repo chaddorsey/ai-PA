@@ -795,9 +795,12 @@ services:
       - "4000:4000"
     volumes:
       - ./litellm/config.yaml:/app/config.yaml
+      - ./litellm/hooks:/app/hooks
     networks: [pa-internal]
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      # Hook directory on sys.path so `callbacks:` can import compat module.
+      PYTHONPATH: "/app/hooks"
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
@@ -1535,17 +1538,17 @@ services:
         condition: service_healthy
       gws-bridge:
         condition: service_healthy
+      letta-bg-fix-sidecar:
+        condition: service_healthy
     environment:
       - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
       - LETTA_BASE_URL=http://letta:8283
-      # Issue #99: the chatgpt_oauth/gpt-5.4 stream_tokens-true silent-stall
-      # bug only affects that specific provider/model. With MC on
-      # litellm/kimi-k2p6 (or any non-chatgpt_oauth handle) the sidecar
-      # isn't needed — leave LETTA_SUBPROCESS_BASE_URL unset so the
-      # subprocess hits Letta directly. Flip back on by setting
-      # LETTA_SUBPROCESS_BASE_URL=http://letta-bg-fix-sidecar:8284 here
-      # (and re-add the depends_on above) if MC ever switches back to a
-      # chatgpt_oauth model.
+      # Issue #99 REDUX 2026-05-12: bug is NOT chatgpt_oauth-specific. Kimi
+      # also exhibits the silent-stall pattern (run completes end_turn
+      # server-side, no assistant_message persists). Sidecar restored as the
+      # always-on letta-code subprocess route until upstream Letta fixes it
+      # or letta-code stops setting stream_tokens:true.
+      - LETTA_SUBPROCESS_BASE_URL=http://letta-bg-fix-sidecar:8284
       # Path C patched letta-code lives at /usr/local/bin/letta in the image
       # (patched in pa-web-ui/Dockerfile). Setting LETTA_CODE_BIN here makes
       # letta-code's subagent shim mechanism propagate the patched binary to
@@ -1609,6 +1612,13 @@ services:
       # Read-only; lets MC + letta-code subagents issue direct Calendar/Gmail/Drive
       # operations via Bash (gws CLI installed in the image).
       - ./gws-bridge/credentials.json:/root/.gws/credentials.json:ro
+      # nlm (NotebookLM CLI) auth state — bind-mount from host's
+      # ~/.notebooklm-mcp-cli/ (the actual storage dir for nlm 0.6.x;
+      # `~/.nlm/` was the old name from the 0.5.x era). Refresh via
+      # `nlm login` on the host; container sees new tokens immediately
+      # on the next call. Read-write because nlm writes session caches
+      # (chrome-port-map.json, cache/) alongside the auth state.
+      - ~/.notebooklm-mcp-cli:/root/.notebooklm-mcp-cli
       # Shared cross-tool file exchange (same path as letta service uses).
       # Lets MC read/write `/data/shared/` via Bash (the canonical path
       # for tool-exchange transients per the laptop_execution_preference

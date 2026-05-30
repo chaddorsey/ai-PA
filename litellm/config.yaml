@@ -74,6 +74,11 @@ model_list:
       model: "openai/gpt-5.4-nano"
       api_key: "os.environ/OPENAI_KEY_MAIN"
 
+  - model_name: "gpt-5.5"
+    litellm_params:
+      model: "openai/gpt-5.5"
+      api_key: "os.environ/OPENAI_KEY_MAIN"
+
   # --- Anthropic models ---
   - model_name: "claude-sonnet-4-6"
     litellm_params:
@@ -177,16 +182,8 @@ model_list:
   # Verified against the account's serverless catalog on 2026-04-22.
   # =========================================================================
 
-  # --- DeepSeek V3.2 (latest, reasoning-capable) ---
-  - model_name: "deepseek-v3p2"
-    litellm_params:
-      model: "fireworks_ai/accounts/fireworks/models/deepseek-v3p2"
-      api_key: "os.environ/FIREWORKS_AI_API_KEY"
-
-  - model_name: "deepseek-v3p1"
-    litellm_params:
-      model: "fireworks_ai/accounts/fireworks/models/deepseek-v3p1"
-      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+  # --- DeepSeek (v3.x retired from Fireworks serverless 2026-05;
+  #      v4-pro is the current serverless flagship — defined below) ---
 
   # --- Kimi K2.6 (Moonshot; latest, not in /v1/models listing but live) ---
   - model_name: "kimi-k2p6"
@@ -199,12 +196,8 @@ model_list:
       model: "fireworks_ai/accounts/fireworks/models/kimi-k2p5"
       api_key: "os.environ/FIREWORKS_AI_API_KEY"
 
-  # --- GLM-5 / GLM-5.1 (Zhipu; leads SWE-bench Pro, strong agentic coding) ---
-  - model_name: "glm-5"
-    litellm_params:
-      model: "fireworks_ai/accounts/fireworks/models/glm-5"
-      api_key: "os.environ/FIREWORKS_AI_API_KEY"
-
+  # --- GLM-5.1 (Zhipu; leads SWE-bench Pro, strong agentic coding;
+  #     glm-5 base was retired from Fireworks serverless 2026-05) ---
   - model_name: "glm-5p1"
     litellm_params:
       model: "fireworks_ai/accounts/fireworks/models/glm-5p1"
@@ -262,6 +255,11 @@ litellm_settings:
   request_timeout: 120
   success_callback: ["db"]
   failure_callback: ["db"]
+  # Cross-provider compatibility hook — strips reasoning_content_signature
+  # and similar provider-specific fields when targeting strict providers
+  # (Kimi/DeepSeek/GLM/MiniMax/gpt-oss on Fireworks). See
+  # litellm/hooks/cross_provider_compat.py for the full taxonomy.
+  callbacks: hooks.cross_provider_compat.proxy_handler_instance
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
