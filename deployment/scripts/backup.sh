@@ -488,6 +488,139 @@ backup_host_data() {
     log_success "Host data backup complete: $host_backup_count items backed up"
 }
 
+# Backup OAuth tokens / per-service credential caches that live in the
+# user's home dir (not in any Docker volume or Postgres DB). These are
+# what local-mode subprocesses use to reach external services, and
+# re-establishing them is interactive (browser-based OAuth flows). We
+# back them up so a clean-Mac restore doesn't require ~30 min of
+# manual re-auth.
+#
+# Most paths are tiny (<1 MB); the total host_oauth_state bundle is
+# typically <10 MB.
+backup_oauth_caches() {
+    local backup_dir="$1"
+
+    log "Backing up host-side OAuth caches + launchd plists..."
+
+    mkdir -p "$backup_dir"
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would backup OAuth caches"
+        return
+    fi
+
+    local oauth_count=0
+    local oauth_files=()
+
+    # Per-service OAuth caches. The tar runs from $HOME so paths stay
+    # relative (restore is `tar xzf ... -C $HOME`).
+    local candidates=(
+        ".atlassian-rovo-token.txt"
+        ".mcp-auth"
+        ".notebooklm-mcp-cli/profiles"
+        ".granola-tokens.json"
+        ".granola-client.json"
+        ".config/slack-cli/credentials.json"
+        ".config/gws"
+        ".gws"
+    )
+
+    for c in "${candidates[@]}"; do
+        if [[ -e "$HOME/$c" ]]; then
+            oauth_files+=("$c")
+        fi
+    done
+
+    if [[ ${#oauth_files[@]} -gt 0 ]]; then
+        tar czf "$backup_dir/oauth-caches_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
+            -C "$HOME" \
+            "${oauth_files[@]}" \
+            2>/dev/null || log_warning "OAuth caches backup had issues"
+        local size=$(du -h "$backup_dir/oauth-caches_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "OAuth caches backed up ($size; ${#oauth_files[@]} paths)"
+        ((oauth_count++)) || true
+    else
+        log_warning "No OAuth caches found in standard locations"
+    fi
+
+    # Launchd plists for ai-pa services (supergateways, letta-local-
+    # runner, lettabot, etc). Re-installable from the repo but worth
+    # snapshotting so a restore picks up the running-service set
+    # without manual reconstruction.
+    local plist_dir="$HOME/Library/LaunchAgents"
+    if [[ -d "$plist_dir" ]] && ls "$plist_dir"/com.ai-pa.*.plist >/dev/null 2>&1; then
+        tar czf "$backup_dir/launchagents_$TIMESTAMP.tar.gz" \
+            --exclude='._*' --exclude='.DS_Store' \
+            -C "$plist_dir" \
+            $(cd "$plist_dir" && ls com.ai-pa.*.plist 2>/dev/null) \
+            2>/dev/null || log_warning "LaunchAgents backup had issues"
+        local size=$(du -h "$backup_dir/launchagents_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        local count=$(ls "$plist_dir"/com.ai-pa.*.plist 2>/dev/null | wc -l | tr -d ' ')
+        log_success "LaunchAgents backed up ($size; $count plists)"
+        ((oauth_count++)) || true
+    else
+        log_warning "No com.ai-pa.* LaunchAgents found"
+    fi
+
+    log_success "OAuth + LaunchAgents backup complete: $oauth_count bundles"
+}
+
+# Sanity-sweep the per-agent memfs working trees on the host
+# (~/.letta/agents/<id>/memory/). Each is a git clone of the agent's
+# Gitea memfs repo; letta-code commits + pushes after edits. Between
+# edit and push there's a window where uncommitted changes exist
+# only on disk. This function doesn't BACK UP those working trees
+# (the Gitea source-of-truth is what gets restored); it just detects
+# stale uncommitted state and warns into the manifest so a human can
+# investigate.
+check_memfs_uncommitted() {
+    local backup_dir="$1"
+
+    log "Sanity-checking per-agent memfs working trees..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would scan ~/.letta/agents/*/memory"
+        return
+    fi
+
+    mkdir -p "$backup_dir"
+    local report="$backup_dir/memfs-working-tree-report_$TIMESTAMP.txt"
+    : > "$report"
+
+    local agents_dir="$HOME/.letta/agents"
+    if [[ ! -d "$agents_dir" ]]; then
+        echo "No ~/.letta/agents directory present — no host-side memfs working trees." >> "$report"
+        log "  (no host-side memfs trees to scan)"
+        return
+    fi
+
+    local total=0 dirty=0
+    for d in "$agents_dir"/*/memory; do
+        [[ -d "$d/.git" ]] || continue
+        ((total++)) || true
+        local git_status
+        git_status=$(cd "$d" && git status --porcelain 2>/dev/null | head -50)
+        if [[ -n "$git_status" ]]; then
+            ((dirty++)) || true
+            echo "" >> "$report"
+            echo "=== $d ===" >> "$report"
+            echo "$git_status" >> "$report"
+            # Also include the last commit so the operator can locate where
+            # the divergence happened.
+            (cd "$d" && git log -1 --oneline 2>/dev/null) >> "$report"
+        fi
+    done
+
+    if [[ "$dirty" -gt 0 ]]; then
+        log_warning "memfs uncommitted-changes detected: $dirty / $total agent working trees have local uncommitted state"
+        log_warning "See $report — investigate within 24h or those edits may be lost on subprocess recycle"
+    else
+        log_success "memfs working trees clean: 0 / $total have uncommitted changes"
+        echo "All $total memfs working trees clean — no uncommitted changes." > "$report"
+    fi
+}
+
 # Function to backup all databases dynamically
 backup_all_databases() {
     local backup_dir="$1"
@@ -770,7 +903,7 @@ main() {
     fi
     
     # Create backup directory structure
-    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports,host_data}
+    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports,host_data,host_oauth_state,memfs_sanity}
     
     # Backup all databases (dynamic discovery + cluster backup)
     # This is the heaviest phase — pg_dumpall inflates Docker VM memory
@@ -790,6 +923,20 @@ main() {
     # Backup host filesystem data (local databases, credentials, data files)
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
         backup_host_data "$BACKUP_PATH/host_data"
+    fi
+
+    # Backup host-side OAuth caches + launchd plists (local-mode-specific;
+    # what subprocesses use to reach external services). Lightweight
+    # (<10 MB total) but speeds up clean-Mac recovery enormously.
+    if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
+        backup_oauth_caches "$BACKUP_PATH/host_oauth_state"
+    fi
+
+    # Sanity-sweep per-agent memfs working trees for uncommitted local
+    # changes. Doesn't BACK UP the working trees (Gitea is source-of-
+    # truth) — just emits a warning if anything's stale.
+    if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
+        check_memfs_uncommitted "$BACKUP_PATH/memfs_sanity"
     fi
 
     # Backup configuration files
