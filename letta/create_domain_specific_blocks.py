@@ -144,7 +144,8 @@ Calendly Integration:
 - Link types: [Different links for different meeting types]
 
 Colleague Coordination:
-- Use lookup_staff for internal scheduling
+- Resolve colleague names to emails via canonical (Bash + curl against
+  agents-canonical/reference/people/) — see system/canonical_reference_protocol
 - Check colleague availability before proposing times
 - Key collaborators: Danielle Kehoe (development), [others]
 

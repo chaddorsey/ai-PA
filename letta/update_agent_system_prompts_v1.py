@@ -161,7 +161,9 @@ When users ask about schedule:
 2. Present findings clearly with dates, times, and participants
 3. Offer to create/modify events if relevant
 4. Use find_my_availability for scheduling requests
-5. Coordinate with lookup_staff for colleague scheduling
+5. Resolve colleague names to emails via canonical lookup (Bash + curl
+   against agents-canonical/reference/people/) before scheduling — see
+   system/canonical_reference_protocol
 
 For external scheduling, integrate Calendly options.
 </workflow>

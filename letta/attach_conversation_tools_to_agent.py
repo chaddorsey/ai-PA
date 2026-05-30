@@ -39,8 +39,11 @@ SCHEDULER_AGENT_ID = os.getenv(
     os.getenv("LETTA_AGENT_ID", "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d")
 )
 
-# Tools to attach
-CONVERSATION_TOOLS = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
+# Tools to attach. lookup_staff removed 2026-05-30 — see Phase 4 of
+# docs/followups/2026-05-30-strip-letta-identities.md. People lookups are
+# now canonical-backed; agents do them via Bash + curl per the
+# canonical_reference_protocol.
+CONVERSATION_TOOLS = ["find_user_blocks", "create_user_memory_block"]
 
 
 def find_tool_id(client, tool_name):
@@ -144,7 +147,7 @@ def main():
         print("\nThe scheduler agent can now:")
         print("  - Discover user memory blocks via find_user_blocks")
         print("  - Create new preference blocks via create_user_memory_block")
-        print("  - Look up staff by name or email via lookup_staff")
+        print("  - (staff lookups: use Bash + canonical curl per canonical_reference_protocol)")
         print("\nMulti-user conversation isolation is now enabled!\n")
 
         return 0

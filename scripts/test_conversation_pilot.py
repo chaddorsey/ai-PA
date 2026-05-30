@@ -51,7 +51,7 @@ def test_tools_registered(client) -> bool:
         tools = tools_result.items if hasattr(tools_result, 'items') else tools_result
         tool_names = [t.name if hasattr(t, 'name') else t.get('name') for t in tools]
 
-        required = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
+        required = ["find_user_blocks", "create_user_memory_block"]  # lookup_staff removed 2026-05-30
         all_found = True
         for name in required:
             if name in tool_names:
@@ -89,7 +89,7 @@ def test_tools_attached(client) -> bool:
 
         attached_names = [id_to_name.get(tid, tid) for tid in attached_tool_ids]
 
-        required = ["find_user_blocks", "create_user_memory_block", "lookup_staff"]
+        required = ["find_user_blocks", "create_user_memory_block"]  # lookup_staff removed 2026-05-30
         all_found = True
         for name in required:
             if name in attached_names:
@@ -274,24 +274,6 @@ def test_identity_has_properties(client) -> bool:
         return False
 
 
-def test_lookup_staff_tool_registered(client) -> bool:
-    """Verify lookup_staff tool is registered."""
-    print("\n[Test 8] lookup_staff Tool Registered")
-    try:
-        tools_result = client.tools.list()
-        tools = tools_result.items if hasattr(tools_result, 'items') else tools_result
-        tool_names = [t.name if hasattr(t, 'name') else t.get('name') for t in tools]
-
-        if "lookup_staff" in tool_names:
-            print("  [OK] lookup_staff tool registered")
-            return True
-        else:
-            print("  [FAIL] lookup_staff tool not registered")
-            return False
-    except Exception as e:
-        print(f"  [FAIL] {e}")
-        return False
-
 
 def cleanup(client, conversation_id: Optional[str], block_id: Optional[str]):
     """Clean up test resources."""
@@ -397,14 +379,6 @@ def main():
     else:
         failed += 1
 
-    # Test 8: lookup_staff tool registered
-    if test_lookup_staff_tool_registered(client):
-        passed += 1
-    else:
-        failed += 1
-
-    # Cleanup
-    cleanup(client, conversation_id, block_id)
 
     print("\n" + "=" * 60)
     print(f"Results: {passed} passed, {failed} failed")
