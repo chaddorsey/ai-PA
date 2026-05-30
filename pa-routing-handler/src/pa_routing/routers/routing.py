@@ -392,13 +392,14 @@ async def list_agents() -> AgentListResponse:
         )
     ]
 
-    # Add Main Agent with correct ID
+    # Add Mission Control as the default agent (formerly Kinara / "Main Agent";
+    # per 2026-05-25 audit, Kinara folds into MC).
     agents.append(
         AgentInfo(
             id=settings.default_agent_id or DEFAULT_AGENT_ID,
-            name="Main Agent",
-            description="General-purpose assistant",
-            keywords=["help", "general"],
+            name="Mission Control",
+            description="Default agent — user-facing assistant and conversation hub",
+            keywords=["help", "general", "mc", "main"],
         )
     )
 

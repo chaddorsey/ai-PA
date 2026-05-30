@@ -40,21 +40,21 @@ AGENT_MAP = {
     "jira": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",  # Pulse handles Jira
     "pulse": "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8",
     "email": "agent-b4928949-8012-4436-a3c7-a9e510785147",  # WIP
-    "main": "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a",  # Main/default agent
+    "main": "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef",  # Mission Control (formerly Kinara at agent-b1574f99; folded per 2026-05-25 audit)
 }
 
-# Default/main agent ID
-DEFAULT_AGENT_ID = "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a"
+# Default/main agent ID — Mission Control
+DEFAULT_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
 
 AGENT_NAMES = {
     "task": "Task Agent",
     "calendar": "Calendar Agent",
-    "slack": "Pulse Agent",  # Pulse handles Slack
+    "slack": "Pulse Agent",  # Pulse handles Slack (rename to Slack Agent post-fleet-migration)
     "documents": "Documents Agent",  # Docs & Transcripts
     "jira": "Pulse Agent",  # Pulse handles Jira
     "pulse": "Pulse Agent",
     "email": "Email Agent",
-    "main": "Main Agent",
+    "main": "Mission Control",
 }
 
 # Reverse mapping: agent_id -> agent_name (for explicit agent selection)
@@ -64,7 +64,7 @@ AGENT_ID_TO_NAME = {
     "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8": "Pulse Agent",
     "agent-398b4f6c-6afa-493f-8063-897c6b171a0d": "Documents Agent",
     "agent-b4928949-8012-4436-a3c7-a9e510785147": "Email Agent",
-    "agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a": "Main Agent",
+    "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef": "Mission Control",
 }
 
 # Tier 2: Domain keywords - HIGH confidence (0.9)
