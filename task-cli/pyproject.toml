@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "task-cli"
+version = "0.1.0"
+description = "Agent-first CLI for pa_web.tasks operations. Wraps the existing cycle-1 pg-canonical Python tool implementations and exposes them as Bash-callable subcommands so the Tasks agent (and others) can drive task lifecycle from local mode."
+authors = ["ai-PA"]
+packages = [{include = "task_cli", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+click = "^8.1"
+psycopg = {extras = ["binary"], version = "^3.1"}
+
+[tool.poetry.scripts]
+task = "task_cli.cli:cli"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

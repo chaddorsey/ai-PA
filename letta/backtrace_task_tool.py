@@ -51,31 +51,12 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
         if not ref_id:
             return {"status": "error", "error_message": "ref_id is required"}
 
-        # ── Step 1: Fetch the task's archival passage ──
-        search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={ref_id}&limit=3"
-        req = urllib.request.Request(search_url)
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                passages = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code in (301, 302, 307, 308):
-                req2 = urllib.request.Request(e.headers.get("Location", ""))
-                with urllib.request.urlopen(req2, timeout=15) as resp2:
-                    passages = json.loads(resp2.read().decode("utf-8"))
-            else:
-                raise
-        if not isinstance(passages, list):
-            passages = []
-
-        task_passage = None
-        task_text = ""
-        for p in passages:
-            if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
-                task_passage = p
-                task_text = p.get("text", "")
-                break
-
-        # Defaults populated from archival passage OR pa_web.tasks fallback
+        # ── Step 1: Fetch task context from pa_web.tasks (cycle-1 canonical) ──
+        # The earlier extracted_tasks_archive path was retired 2026-05-30.
+        # All current and historical tasks live in pa_web.tasks; everything
+        # the legacy passage carried (task_desc, source_type, from_person,
+        # location, reference_id, source_text, fetch_hint) is derivable
+        # from the row + source_metadata JSONB.
         task_desc = ""
         source_type = ""
         from_person = ""
@@ -85,34 +66,9 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
         source_text_field = ""
         fetch_hint = ""
 
-        if task_passage:
-            fields = {}
-            for pattern, key in [
-                (r"^TASK: (.+)$", "task_desc"),
-                (r"- Type: (.+)$", "source_type"),
-                (r"- From: (.+)$", "from_person"),
-                (r"- Location: (.+)$", "location"),
-                (r"- Location ID: (.+)$", "location_id"),
-                (r"- Reference ID: (.+)$", "reference_id"),
-            ]:
-                m = re.search(pattern, task_text, re.MULTILINE)
-                if m:
-                    fields[key] = m.group(1).strip()
-
-            task_desc = fields.get("task_desc", "")
-            source_type = fields.get("source_type", "")
-            from_person = fields.get("from_person", "")
-            location = fields.get("location", "")
-            location_id = fields.get("location_id", "")
-            reference_id = fields.get("reference_id", "")
-
-            st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\nFETCH HINT:|\nENRICH|\nPACKET INFO|\Z)", task_text, re.DOTALL)
-            source_text_field = st_match.group(1).strip() if st_match else ""
-
-            fetch_hint_match = re.search(r"FETCH HINT: (.+)$", task_text, re.MULTILINE)
-            fetch_hint = fetch_hint_match.group(1).strip() if fetch_hint_match else ""
-        else:
-            # Cycle-1 fallback: live-flow tasks live in pa_web.tasks, not archival.
+        # Inline pa_web.tasks query (Letta tool extraction requires
+        # imports + logic in the function body).
+        if True:
             try:
                 import psycopg as _pg
                 pg_url = os.environ.get("PA_WEB_POSTGRES_URL") or os.environ.get("POSTGRES_URL")
@@ -302,53 +258,20 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
 
         search_terms = search_terms[:20]
 
-        # ── Step 4: Archival search ──
+        # ── Step 4: Hop search (stubbed — archival retired 2026-05-30) ──
+        # The original implementation searched the extracted_tasks_archive
+        # for related passages via anchor terms. With archival retired,
+        # cross-task hop discovery should be reimplemented as a pa_web.tasks
+        # full-text search over (raw_description, suggested_title,
+        # source_metadata, task_body). Tracked separately; for now this
+        # returns no hops and downstream classification produces empty
+        # related_tasks / artifact_candidates / intent_candidates lists.
+        # The agent still gets source_content + anchors + hop_candidates
+        # derived from URLs in source_metadata, which is the load-bearing
+        # output for most workflows.
         archival_hits = []
-        seen_ids = {task_passage.get("id", "")} if task_passage else set()
         searched_terms = set()
         new_anchors = []
-
-        for iteration in range(min(hops, 3)):
-            terms_this_round = search_terms if iteration == 0 else new_anchors
-            new_anchors = []
-
-            for term in terms_this_round:
-                if term.lower() in searched_terms:
-                    continue
-                searched_terms.add(term.lower())
-
-                try:
-                    s_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={urllib.request.quote(term)}&limit=5"
-                    s_req = urllib.request.Request(s_url)
-                    with urllib.request.urlopen(s_req, timeout=15) as s_resp:
-                        results = json.loads(s_resp.read().decode("utf-8"))
-                    for p in (results if isinstance(results, list) else []):
-                        if not isinstance(p, dict):
-                            continue
-                        pid = p.get("id", "")
-                        if pid in seen_ids:
-                            continue
-                        seen_ids.add(pid)
-                        p_text = p.get("text", "")
-                        if f"REF_ID: {ref_id}" in p_text:
-                            continue
-                        tags = p.get("tags", []) or []
-                        archival_hits.append({
-                            "id": pid,
-                            "text_preview": p_text[:300],
-                            "tags": tags,
-                            "matched_anchor": term,
-                        })
-                        # Extract new anchors for next iteration
-                        for new_pn in re.findall(r"[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+", p_text[:300]):
-                            if (new_pn.lower() not in searched_terms
-                                    and new_pn.split()[0].lower() not in STOP):
-                                new_anchors.append(new_pn)
-                except Exception:
-                    continue
-
-            if not new_anchors:
-                break
 
         # ── Step 5: Classify hits into three-node candidates ──
         relevance_terms = [t.lower() for t in search_terms[:10]]
@@ -469,7 +392,7 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
             "status": "ok",
             "ref_id": ref_id,
             "task": task_desc,
-            "passage_id": task_passage.get("id", "") if task_passage else "",
+            "passage_id": "",  # API-compat field; archival passages retired 2026-05-30
 
             # Hard center — source material
             "source_content": full_content[:3000],
