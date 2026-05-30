@@ -1482,35 +1482,29 @@ def _emit(
         stamped.setdefault("_request_id", request_id)
     handle.ring_buffer.append(seq, stamped, is_turn_boundary=is_turn_boundary)
     _publish_to_subscribers(handle, stamped)
-    # Auto-approval responder DISABLED 2026-04-29:
-    # Built originally to work around letta-code 0.23.8's empty-approvals
-    # subprocess crash (#90, #93). After bumping to 0.24.10 + applying the
-    # PATCH-EMPTY-APPROVALS bundle patch + --yolo (which enables
-    # bypassPermissions mode in letta-code), the SUBPROCESS itself
-    # auto-approves all non-interactive tools internally. The responder
-    # was racing the subprocess's own approval and producing FALSE-POSITIVE
-    # "stranded" synthetic errors when the subprocess was actually working
-    # fine — the run state at the moment of race-loss looks like
-    # `completed + stop_reason=requires_approval` even though the
-    # subprocess is about to advance to the next turn with the auto-approved
-    # result. The classifier interprets that as `subprocess_crashed` and
-    # emits a misleading error event.
-    #
-    # Module is kept on disk + tests are kept passing as belt-and-suspenders
-    # (in case a future letta-code regression re-introduces the empty-approvals
-    # bug). Re-enable by uncommenting the call below if needed.
-    #
-    # try:
-    #     from approval_responder import maybe_handle_approval_request
-    #     maybe_handle_approval_request(
-    #         handle,
-    #         stamped,
-    #         allowed_tools=None,
-    #         interactive_tools=INTERACTIVE_APPROVAL_TOOLS,
-    #         emit_callback=lambda h, ev: _emit(h, ev, is_turn_boundary=False),
-    #     )
-    # except Exception as e:
-    #     logger.warning("approval_responder_dispatch_failed", conv_id=handle.conv_id, err=str(e))
+    # Auto-approval responder RE-ENABLED 2026-05-29:
+    # Surfaced during the SPARK Glasses bibliography build — letta-code's
+    # `UpdatePlan` tool (and other planning/Skill operations) reach a
+    # `requires_approval` stop reason that the subprocess does NOT
+    # internally auto-approve. Without this responder running, pa-web has
+    # no approval UI affordance, so those calls hang forever. Server-side
+    # approval via the API works but runs against the wrong tool list
+    # (Letta-server tools, not the subprocess's Bash/Read/Edit). Accept
+    # the occasional race-loss false positive — they're misleading log
+    # noise — in exchange for conversations that don't silently hang.
+    # See docs/followups/2026-05-28-fleet-alignment-status.md item I-bis
+    # (Stop button reliability) and the missing pa-web approval UI gap.
+    try:
+        from approval_responder import maybe_handle_approval_request
+        maybe_handle_approval_request(
+            handle,
+            stamped,
+            allowed_tools=None,
+            interactive_tools=INTERACTIVE_APPROVAL_TOOLS,
+            emit_callback=lambda h, ev: _emit(h, ev, is_turn_boundary=False),
+        )
+    except Exception as e:
+        logger.warning("approval_responder_dispatch_failed", conv_id=handle.conv_id, err=str(e))
 
 
 def _publish_to_subscribers(

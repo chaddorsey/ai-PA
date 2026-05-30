@@ -9,7 +9,8 @@ const SLASH_COMMAND_MAP = {
     'task': 'agent-dd15479e-6543-400e-8463-b2a48b13cd4a',
     'tasks': 'agent-dd15479e-6543-400e-8463-b2a48b13cd4a',
     'omnifocus': 'agent-dd15479e-6543-400e-8463-b2a48b13cd4a',
-    'main': 'agent-b1574f99-be7c-4772-8db2-ea2b35b18d1a',
+    'main': 'agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef',
+    'mc': 'agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef',
     'pulse': 'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8',
     'email': 'agent-b4928949-8012-4436-a3c7-a9e510785147',
 
@@ -34,7 +35,8 @@ const SLASH_COMMAND_NAMES = {
     'task': 'Task Agent',
     'tasks': 'Task Agent',
     'omnifocus': 'Task Agent',
-    'main': 'Main Agent',
+    'main': 'Mission Control',
+    'mc': 'Mission Control',
     'pulse': 'Pulse Agent',
     'email': 'Email Agent',
     'slack': 'Pulse Agent',
@@ -99,6 +101,7 @@ class ChatUI {
         this.messagesContainer = document.getElementById('messages');
         this.messageInput = document.getElementById('message-input');
         this.sendBtn = document.getElementById('send-btn');
+        this.stopBtn = document.getElementById('stop-btn');
         this.agentSelect = document.getElementById('agent-select');
         this.replyIndicator = document.getElementById('reply-indicator');
         this.inputArea = document.querySelector('.input-area');
@@ -124,8 +127,9 @@ class ChatUI {
         // Thread tracking for contextual routing and threaded UI
         this.threads = new Map(); // request_id -> { userMessage, agentId, agentName, response, status, element }
 
-        // Track in-flight requests for concurrent message handling
-        this.inFlightRequests = new Set(); // Set of request_ids currently streaming
+        // Track in-flight requests for concurrent message handling.
+        // Wrapped so add/delete auto-sync the Stop button visibility — see _makeInFlightSet().
+        this.inFlightRequests = this._makeInFlightSet();
 
         // Reply mode - when set, next message routes to this agent AND appends to card
         this.replyToAgent = null; // { agentId, agentName }
@@ -224,8 +228,75 @@ class ChatUI {
         return `${month}/${day} ${dayName} - ${hours}:${minutes}`;
     }
 
+    _makeInFlightSet() {
+        // Auto-sync the Stop button on every add/delete. The underlying Set is
+        // hidden in a closure; the returned object proxies the methods
+        // streamResponse() / processStreamRequest() use (.add, .delete, .has,
+        // .size, .clear, iteration).
+        const inner = new Set();
+        const sync = () => this._syncStopBtn();
+        return {
+            add: (v) => { inner.add(v); sync(); return this; },
+            delete: (v) => { const r = inner.delete(v); sync(); return r; },
+            has: (v) => inner.has(v),
+            clear: () => { inner.clear(); sync(); },
+            get size() { return inner.size; },
+            [Symbol.iterator]: () => inner[Symbol.iterator](),
+            forEach: (cb, thisArg) => inner.forEach(cb, thisArg),
+        };
+    }
+
+    _syncStopBtn() {
+        if (!this.stopBtn || !this.sendBtn) return;
+        const inFlight = this.inFlightRequests && this.inFlightRequests.size > 0;
+        this.stopBtn.classList.toggle('hidden', !inFlight);
+        this.sendBtn.classList.toggle('hidden', inFlight);
+    }
+
+    async cancelInFlight() {
+        const convId = this.conversationId || 'default';
+        if (this.stopBtn) {
+            this.stopBtn.disabled = true;
+            this.stopBtn.textContent = 'Stopping…';
+        }
+        try {
+            // Server-side: cancel any active run + invalidate the subprocess
+            // so the approval loop can't restart on the next requires_approval.
+            const resp = await fetch(`/api/conversations/${encodeURIComponent(convId)}/cancel`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: await this.csrfHeaders({ 'Content-Type': 'application/json' }),
+            });
+            if (!resp.ok) {
+                console.warn('[cancel] server returned', resp.status);
+            } else {
+                try { console.log('[cancel] ok', await resp.json()); } catch (_) {}
+            }
+        } catch (err) {
+            console.error('[cancel] request failed:', err);
+        }
+
+        // Client-side: abort the in-flight /stream fetch. The streamResponse
+        // finally block already cleans up inFlightRequests — which fires
+        // _syncStopBtn and brings Send back.
+        try { this._currentStreamAbort && this._currentStreamAbort.abort(); }
+        catch (e) { console.warn('[cancel] abort failed:', e); }
+
+        // Force-clear if the abort handler didn't (e.g. SSE already closed).
+        this.inFlightRequests.clear();
+
+        if (this.stopBtn) {
+            this.stopBtn.disabled = false;
+            this.stopBtn.textContent = 'Stop';
+        }
+    }
+
     setupEventListeners() {
         this.sendBtn.addEventListener('click', () => this.sendMessage());
+        if (this.stopBtn) {
+            this.stopBtn.addEventListener('click', () => this.cancelInFlight());
+        }
 
         this.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -304,6 +375,30 @@ class ChatUI {
         this.agentSelect.innerHTML = agents.map(agent =>
             `<option value="${agent.id}">${agent.name}</option>`
         ).join('');
+        // Header picker now drives the sidebar's agent workspace. When
+        // the user changes agents, re-scope the conversation rail to
+        // that agent's conversations and switch the chat target.
+        if (!this._agentSelectWired) {
+            this.agentSelect.addEventListener('change', () => {
+                const id = this.agentSelect.value || '';
+                this._currentAgentId = id;
+                if (window.conversationRail
+                    && typeof window.conversationRail.setAgent === 'function') {
+                    window.conversationRail.setAgent(id);
+                }
+                // When picker changes mid-session, abandon the current
+                // conversation pointer so we don't keep showing the
+                // previous agent's conv title. The rail will pick a
+                // default conversation for the new agent's workspace.
+                this.conversationId = 'default';
+            });
+            this._agentSelectWired = true;
+        }
+        // Initialize rail's filter to current picker selection.
+        if (window.conversationRail
+            && typeof window.conversationRail.setAgent === 'function') {
+            window.conversationRail.setAgent(this.agentSelect.value || '');
+        }
     }
 
     async loadConversationHistory(convId = this.conversationId) {
@@ -555,12 +650,17 @@ class ChatUI {
         const message = slashCommand ? slashCommand.cleanMessage : rawMessage;
         const displayMessage = rawMessage; // Show original message with slash command in UI
 
-        // Priority: slash command > LettaBot (default)
+        // Priority: slash command > header agent picker > LettaBot default.
+        // The header picker now drives routing for every message; setting
+        // it to e.g. "Calendar Agent" means subsequent sends target that
+        // agent's subprocess pool slot (no slash prefix required).
         let agentId;
         if (slashCommand) {
             agentId = slashCommand.agentId;
+        } else if (this.agentSelect && this.agentSelect.value) {
+            agentId = this.agentSelect.value;
         } else {
-            agentId = null; // LettaBot handles all non-slash messages
+            agentId = null; // server defaults to MC
         }
 
         // Track thread position and parent for learning signals
@@ -1936,7 +2036,7 @@ class ChatUI {
         // 3. Clear chat UI.
         if (this.messagesContainer) this.messagesContainer.innerHTML = '';
         this.threads = new Map();
-        this.inFlightRequests = new Set();
+        this.inFlightRequests = this._makeInFlightSet();
         // 4. Render fork memory-share banner if this conversation is a fork.
         this._renderForkBanner(newConvId);
         // 5. Rehydrate history from pa_web.conversations filtered by conv.

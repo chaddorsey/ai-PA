@@ -1010,17 +1010,24 @@ def _conversation_meta_rows(conv_ids: list) -> Dict[str, Dict[str, Any]]:
 
 @app.route("/api/conversations", methods=["GET"])
 def list_conversations():
-    """List MC's conversations. Letta server is the canonical source;
-    we LEFT-JOIN pa_web.conversation_meta for local metadata (label,
-    parent link, user_renamed).
+    """List conversations for a specific agent. Defaults to MC.
+
+    Query params:
+      agent_id  — fleet agent ID (default: MC). Used to scope the
+                  conversation list to the agent's workspace, so the
+                  sidebar follows the model picker.
+
+    Letta server is the canonical source; we LEFT-JOIN
+    pa_web.conversation_meta for local metadata.
     """
     gate = _phase2_read_gate()
     if gate is not None:
         return gate
+    requested_agent_id = (request.args.get("agent_id") or "").strip() or MISSION_CONTROL_AGENT_ID
     try:
-        letta_convs = _letta_conversations_list(MISSION_CONTROL_AGENT_ID, limit=100)
+        letta_convs = _letta_conversations_list(requested_agent_id, limit=100)
     except Exception as exc:
-        logger.error("list_conversations_letta_failed", error=str(exc))
+        logger.error("list_conversations_letta_failed", error=str(exc), agent_id=requested_agent_id)
         return jsonify({"error": "letta_unreachable"}), 502
 
     conv_ids = [c["id"] for c in letta_convs]
@@ -1236,6 +1243,96 @@ def delete_conversation(conv_id: str):
         logger.warning("delete_conversation_letta_exception", error=str(exc), conv_id=conv_id)
 
     return jsonify({"id": conv_id, "status": "deleted"})
+
+
+@app.route("/api/conversations/<conv_id>/cancel", methods=["POST"])
+def cancel_conversation(conv_id: str):
+    """Stop in-flight runs on a conversation: belt-and-suspenders cancel.
+
+    1. Hit Letta's `POST /v1/conversations/{id}/cancel` — Redis-backed,
+       terminates any active run at the next checkpoint.
+    2. Invalidate the local subprocess handle — kills letta-code subprocess
+       so it can't continue auto-approving the next Bash request after the
+       cancelled run terminates.
+
+    The Letta cancel alone often returns 409 ("no active runs to cancel")
+    because runs in an approval loop complete in milliseconds with
+    `stop_reason=requires_approval`; the *real* hang is the subprocess's
+    next-step approval, which only the subprocess kill stops.
+
+    Per task #102 — see docs/plans/2026-05-12-pa-web-cancel-button-plan.md.
+    """
+    if not _is_valid_conv_id(conv_id):
+        return jsonify({"error": "invalid_conversation_id"}), 400
+
+    handle = subprocess_registry._handles.get(conv_id)
+
+    # Notify SSE subscribers so the UI can drop the streaming card.
+    if handle is not None:
+        marker = {
+            "type": "conversation_cancelled",
+            "conv_id": conv_id,
+            "_seq_id": 0,
+            "_emitted_at": time.time(),
+        }
+        with handle.subscriber_lock:
+            subs = list(handle.subscribers)
+        for sub in subs:
+            try:
+                sub.put_nowait(marker)
+            except queue.Full:
+                pass
+
+    # Step 1: ask Letta to cancel any active run. Best-effort; a 409 just means
+    # there's no run in flight at this microsecond (common when approval-loop
+    # turns are completing every few ms). The subprocess kill below is what
+    # actually breaks the loop.
+    letta_status = None
+    letta_detail = None
+    try:
+        resp = http_client.post(
+            f"{LETTA_BASE_URL}/v1/conversations/{conv_id}/cancel",
+            timeout=5.0,
+        )
+        letta_status = resp.status_code
+        if resp.status_code >= 500:
+            logger.warning(
+                "cancel_conversation_letta_5xx",
+                conv_id=conv_id, status=resp.status_code,
+            )
+        if resp.status_code >= 400:
+            try:
+                letta_detail = resp.json().get("detail")
+            except Exception:
+                letta_detail = resp.text[:200]
+    except Exception as exc:
+        logger.warning("cancel_conversation_letta_exception", error=str(exc), conv_id=conv_id)
+
+    # Step 2: invalidate the subprocess handle — pops from _handles, bumps
+    # generation, terminates the letta-code process (SIGTERM, then SIGKILL
+    # after grace). Idempotent.
+    subprocess_invalidated = handle is not None
+    if subprocess_invalidated:
+        try:
+            subprocess_registry.invalidate(conv_id)
+        except Exception as exc:
+            logger.warning("cancel_conversation_invalidate_failed", error=str(exc), conv_id=conv_id)
+            subprocess_invalidated = False
+
+    log_lifecycle(
+        "cancel_requested",
+        conv_id=conv_id,
+        letta_status=letta_status,
+        letta_detail=letta_detail,
+        subprocess_invalidated=subprocess_invalidated,
+    )
+
+    return jsonify({
+        "id": conv_id,
+        "status": "cancel_requested",
+        "letta_status": letta_status,
+        "subprocess_invalidated": subprocess_invalidated,
+    })
 
 
 @app.route("/api/conversations/<conv_id>/fork", methods=["POST"])
@@ -1736,6 +1833,59 @@ def get_config():
 
 MC_AGENT_ID = os.getenv("MC_AGENT_ID", "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef")
 
+# Approximate cost per 1M tokens (input / output) in USD. "plan" means
+# included in a fixed subscription (ChatGPT Plus/Pro via OAuth, Anthropic
+# Max). Use ~ prefix when figure is inferred vs. published. Updated 2026-05.
+MC_MODEL_COSTS = {
+    # OpenAI API
+    "gpt-5.5": "~$4/$16",
+    "gpt-5.4": "$2/$8",
+    "gpt-5.4-mini": "$0.40/$1.60",
+    "gpt-5.4-nano": "$0.10/$0.40",
+    "gpt-5.3-chat-latest": "$1.25/$10",
+    "gpt-5.2": "$1.25/$10",
+    "gpt-5-mini": "$0.25/$2",
+    "gpt-4.1": "$2/$8",
+    # Anthropic
+    "claude-sonnet-4-6": "$3/$15",
+    "claude-opus-4-6": "$15/$75",
+    "claude-haiku-4-5": "$1/$5",
+    # Fireworks (open-weights via litellm)
+    "deepseek-v4-pro": "$1.20/$1.20",
+    "kimi-k2p6": "$0.60/$2.50",
+    "kimi-k2p5": "$0.60/$2.50",
+    "glm-5p1": "$0.55/$2.19",
+    "minimax-m2p7": "~$0.30/$1.20",
+    "gpt-oss-120b": "$0.15/$0.60",
+}
+
+# Compatibility class per model. Used by the pulldown to flag risky swaps.
+# - "openai-reasoning": emits reasoning_content_signature; tolerates everything
+# - "openai-chat": vanilla chat; tolerant
+# - "anthropic": uses thinking blocks; tolerates other fields via drop_params
+# - "fireworks-strict": rejects unknown fields (Kimi/DeepSeek/GLM/MiniMax/gpt-oss).
+#   The litellm cross_provider_compat hook scrubs incompatible fields on the
+#   way out, so swaps INTO this class work — but stay aware.
+MC_MODEL_COMPAT = {
+    "gpt-5.5": "openai-reasoning",
+    "gpt-5.4": "openai-reasoning",
+    "gpt-5.4-mini": "openai-reasoning",
+    "gpt-5.4-nano": "openai-reasoning",
+    "gpt-5.3-chat-latest": "openai-reasoning",
+    "gpt-5.2": "openai-reasoning",
+    "gpt-5-mini": "openai-chat",
+    "gpt-4.1": "openai-chat",
+    "claude-sonnet-4-6": "anthropic",
+    "claude-opus-4-6": "anthropic",
+    "claude-haiku-4-5": "anthropic",
+    "deepseek-v4-pro": "fireworks-strict",
+    "kimi-k2p6": "fireworks-strict",
+    "kimi-k2p5": "fireworks-strict",
+    "glm-5p1": "fireworks-strict",
+    "minimax-m2p7": "fireworks-strict",
+    "gpt-oss-120b": "fireworks-strict",
+}
+
 # Model presets for the MC model switcher
 MC_MODEL_PRESETS = {
     "gpt-5.4 (oauth)": {
@@ -1786,6 +1936,26 @@ MC_MODEL_PRESETS = {
         "context_window": 272000,
         "max_tokens": 128000,
         "_reasoning_options": ["low", "medium", "high"],
+    },
+    "gpt-5.5 (API)": {
+        "model": "gpt-5.5",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.5",
+        "context_window": 400000,
+        "max_tokens": 32768,
+        "_reasoning_options": [],
+    },
+    "gpt-5.4 (API)": {
+        "model": "gpt-5.4",
+        "model_endpoint_type": "openai",
+        "model_endpoint": "http://litellm:4000/v1",
+        "provider_name": "litellm",
+        "handle": "litellm/gpt-5.4",
+        "context_window": 400000,
+        "max_tokens": 32768,
+        "_reasoning_options": [],
     },
     "gpt-5.4-mini (API)": {
         "model": "gpt-5.4-mini",
@@ -1858,13 +2028,15 @@ MC_MODEL_PRESETS = {
         "_reasoning_options": [],
     },
     # --- Fireworks AI open-weight models (routed via LiteLLM) ---
-    "deepseek-v3.2 (fireworks)": {
-        "model": "deepseek-v3p2",
+    # DeepSeek v3.x was retired from Fireworks serverless in May 2026;
+    # v4-pro is the current serverless flagship.
+    "deepseek-v4-pro (fireworks)": {
+        "model": "deepseek-v4-pro",
         "model_endpoint_type": "openai",
         "model_endpoint": "http://litellm:4000/v1",
         "provider_name": "litellm",
-        "handle": "litellm/deepseek-v3p2",
-        "context_window": 128000,
+        "handle": "litellm/deepseek-v4-pro",
+        "context_window": 160000,
         "max_tokens": 16384,
         "_reasoning_options": [],
     },
@@ -1899,16 +2071,6 @@ MC_MODEL_PRESETS = {
         "model_endpoint": "http://litellm:4000/v1",
         "provider_name": "litellm",
         "handle": "litellm/glm-5p1",
-        "context_window": 128000,
-        "max_tokens": 16384,
-        "_reasoning_options": [],
-    },
-    "glm-5 (fireworks)": {
-        "model": "glm-5",
-        "model_endpoint_type": "openai",
-        "model_endpoint": "http://litellm:4000/v1",
-        "provider_name": "litellm",
-        "handle": "litellm/glm-5",
         "context_window": 128000,
         "max_tokens": 16384,
         "_reasoning_options": [],
@@ -1956,6 +2118,19 @@ def get_mc_model():
             name: cfg.get("_reasoning_options", [])
             for name, cfg in MC_MODEL_PRESETS.items()
         }
+        # Build cost-hint map for frontend (per 1M tokens, input/output)
+        preset_costs = {}
+        for name, cfg in MC_MODEL_PRESETS.items():
+            if cfg.get("model_endpoint_type") == "chatgpt_oauth":
+                preset_costs[name] = "plan"
+            else:
+                preset_costs[name] = MC_MODEL_COSTS.get(cfg.get("model"), "?")
+        # Build compat-class map; current agent's class is the "from" axis.
+        preset_compat = {
+            name: MC_MODEL_COMPAT.get(cfg.get("model"), "unknown")
+            for name, cfg in MC_MODEL_PRESETS.items()
+        }
+        current_compat = MC_MODEL_COMPAT.get(model, "unknown")
         # Check if oauth is available (from model manager state file)
         oauth_available = False
         try:
@@ -1977,6 +2152,9 @@ def get_mc_model():
             "reasoning_effort": llm.get("reasoning_effort") or "none",
             "presets": list(MC_MODEL_PRESETS.keys()),
             "preset_reasoning": preset_reasoning,
+            "preset_costs": preset_costs,
+            "preset_compat": preset_compat,
+            "current_compat": current_compat,
             "oauth_available": oauth_available,
         })
     except Exception as e:
@@ -2734,12 +2912,30 @@ def _stream_direct_generator(
             logger.error("direct_assistant_save_failed", error=str(exc))
 
 
-def _dispatch_mission_control_direct(
+# Friendly names for fleet agents — kept in sync with pa-routing-handler's
+# AGENT_ID_TO_NAME. Keep this short; the routing handler is source of truth.
+FLEET_AGENT_NAMES: Dict[str, str] = {
+    "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef": "Mission Control",
+    "agent-dd15479e-6543-400e-8463-b2a48b13cd4a": "Task Agent",
+    "agent-892a2d58-b9f6-4baf-84f3-c431fe46487d": "Calendar Agent",
+    "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8": "Pulse Agent",
+    "agent-398b4f6c-6afa-493f-8063-897c6b171a0d": "Documents Agent",
+    "agent-b4928949-8012-4436-a3c7-a9e510785147": "Email Agent",
+}
+
+
+def _agent_name_for(agent_id: str) -> str:
+    return FLEET_AGENT_NAMES.get(agent_id, "Agent")
+
+
+def _dispatch_agent_subprocess(
     message: str,
     session_id: str,
     device_id: str,
     conversation_id: str,
     since: Optional[int],
+    agent_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
 ) -> Response:
     """Preflight the subprocess pool and return an SSE Response.
 
@@ -2749,12 +2945,22 @@ def _dispatch_mission_control_direct(
     - subscribe with since (replay seed OR resync_required)
 
     Only after all that starts the SSE stream.
+
+    agent_id/agent_name default to MC so callers that haven't switched
+    yet keep working. Any letta_v1 + memfs-enabled fleet agent works
+    here — the subprocess pool spawns letta-code with `--agent <id>`.
     """
+    target_agent_id = agent_id or MISSION_CONTROL_AGENT_ID
+    target_agent_name = agent_name or (
+        "Mission Control"
+        if target_agent_id == MISSION_CONTROL_AGENT_ID
+        else _agent_name_for(target_agent_id)
+    )
     request_id = str(uuid.uuid4())
 
     try:
         handle = subprocess_registry.ensure(
-            agent_id=MISSION_CONTROL_AGENT_ID,
+            agent_id=target_agent_id,
             conv_id=conversation_id,
         )
     except SpawnTimeoutError as exc:
@@ -2788,8 +2994,8 @@ def _dispatch_mission_control_direct(
             session_id=session_id,
             role="user",
             message=message,
-            agent_id=MISSION_CONTROL_AGENT_ID,
-            agent_name="Mission Control",
+            agent_id=target_agent_id,
+            agent_name=target_agent_name,
             request_id=request_id,
             conversation_id=conversation_id,
         )
@@ -2800,7 +3006,7 @@ def _dispatch_mission_control_direct(
 
     def generate() -> Generator[str, None, None]:
         # Emit routing event (backwards-compat with existing chat.js handler).
-        yield f"data: {json.dumps({'type': 'routing', 'agent_id': MISSION_CONTROL_AGENT_ID, 'agent_name': 'Mission Control', 'request_id': request_id})}\n\n"
+        yield f"data: {json.dumps({'type': 'routing', 'agent_id': target_agent_id, 'agent_name': target_agent_name, 'request_id': request_id})}\n\n"
         try:
             # Phase 2 Unit 2.5: pass conv_id + first user message so the
             # generator can fire LLM auto-naming on the terminal event.
@@ -2884,38 +3090,48 @@ def stream():
     # Check if this is a slash command (explicit agent routing)
     is_slash_command = bool(slash_command) or bool(agent_id)
 
+    # Phase 1 subprocess-pool dispatch covers MC AND any explicit fleet
+    # agent (all 6 are memfs-enabled + autoclear=false, ready for
+    # letta-code spawn). Legacy server-side path only kicks in for
+    # agents not in FLEET_AGENT_NAMES (none today).
+    is_fleet_target = (not agent_id) or (agent_id in FLEET_AGENT_NAMES)
+
+    if PA_WEB_UI_PHASE_1_ENABLED and is_fleet_target:
+        # Device identity: prefer the CSRF-paired cookie (ingress_guard
+        # set this); fall back to request body for CLI-style clients.
+        device_id = (
+            request.cookies.get("pa_device_id", "").strip()
+            or data.get("device_id")
+            or ""
+        )
+        conversation_id = (data.get("conversation_id") or "default").strip() or "default"
+        since_raw = data.get("since")
+        since: Optional[int] = None
+        if isinstance(since_raw, int):
+            since = since_raw
+        elif isinstance(since_raw, str) and since_raw.isdigit():
+            since = int(since_raw)
+        target_agent_id = agent_id or MISSION_CONTROL_AGENT_ID
+        logger.info(
+            "agent_subprocess_direct_request",
+            session_id=session_id,
+            device_id=device_id,
+            conversation_id=conversation_id,
+            since=since,
+            message_length=len(message),
+            agent_id=target_agent_id,
+            slash_command=slash_command,
+        )
+        return _dispatch_agent_subprocess(
+            message=message,
+            session_id=session_id,
+            device_id=device_id,
+            conversation_id=conversation_id,
+            since=since,
+            agent_id=target_agent_id,
+        )
+
     if not is_slash_command:
-        # Phase 1 subprocess-pool dispatch (Unit 1.5).
-        if PA_WEB_UI_PHASE_1_ENABLED:
-            # Device identity: prefer the CSRF-paired cookie (ingress_guard
-            # set this); fall back to request body for CLI-style clients.
-            device_id = (
-                request.cookies.get("pa_device_id", "").strip()
-                or data.get("device_id")
-                or ""
-            )
-            conversation_id = (data.get("conversation_id") or "default").strip() or "default"
-            since_raw = data.get("since")
-            since: Optional[int] = None
-            if isinstance(since_raw, int):
-                since = since_raw
-            elif isinstance(since_raw, str) and since_raw.isdigit():
-                since = int(since_raw)
-            logger.info(
-                "mission_control_direct_request",
-                session_id=session_id,
-                device_id=device_id,
-                conversation_id=conversation_id,
-                since=since,
-                message_length=len(message),
-            )
-            return _dispatch_mission_control_direct(
-                message=message,
-                session_id=session_id,
-                device_id=device_id,
-                conversation_id=conversation_id,
-                since=since,
-            )
 
         # Pre-Phase-1 default: route to LettaBot
         logger.info(

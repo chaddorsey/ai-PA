@@ -20,6 +20,10 @@
         <aside id="conversation-rail" class="conversation-rail">
             <div class="conv-rail-header">
                 <span class="conv-rail-title">Conversations</span>
+                <span id="conv-rail-agent-badge" class="conv-rail-agent-badge" title="Current agent workspace">
+                    <span class="badge-dot"></span>
+                    <span class="badge-label">Mission Control</span>
+                </span>
                 <button id="conv-new-btn" class="conv-new-btn" title="New conversation">+</button>
                 <button id="conv-rail-close" class="conv-rail-close" title="Close">&times;</button>
             </div>
@@ -66,6 +70,7 @@
             <footer class="input-area">
                 <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
                 <button id="send-btn">Send</button>
+                <button id="stop-btn" class="hidden" title="Stop and kill the subprocess for this conversation">Stop</button>
             </footer>
         </div>
 
@@ -311,10 +316,33 @@
 
                 // Populate model dropdown
                 modelSelect.innerHTML = '';
+                const presetCosts = data.preset_costs || {};
+                const presetCompat = data.preset_compat || {};
+                const currentCompat = data.current_compat || 'unknown';
+
+                // Compat-class swap risk vs. current model. The litellm
+                // pre-call hook auto-strips incompatible fields, so worst
+                // case is a "scrub" — but we surface the boundary visually.
+                const compatBadge = (from, to) => {
+                    if (from === to || from === 'unknown' || to === 'unknown') return '';
+                    // Swapping FROM a reasoning-emitting provider TO fireworks-strict
+                    // is the case the hook handles; flag it so you know fields will
+                    // be stripped on outbound calls.
+                    if (to === 'fireworks-strict' &&
+                        (from === 'openai-reasoning' || from === 'anthropic')) {
+                        return '⚠';   // hook will scrub; transparent
+                    }
+                    // Crossing provider families with no known hazard
+                    return '·';
+                };
+
                 (data.presets || []).forEach(name => {
                     const opt = document.createElement('option');
                     opt.value = name;
-                    opt.textContent = name;
+                    const cost = presetCosts[name];
+                    const badge = compatBadge(currentCompat, presetCompat[name]);
+                    const prefix = badge ? `${badge} ` : '';
+                    opt.textContent = cost ? `${prefix}${name}  ${cost}` : `${prefix}${name}`;
                     if (name === currentLabel) opt.selected = true;
                     modelSelect.appendChild(opt);
                 });

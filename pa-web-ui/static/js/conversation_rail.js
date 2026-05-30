@@ -129,6 +129,16 @@
     }
 
     async init() {
+      // Seed currentAgentId from the picker so the very first fetch
+      // hits the right agent's workspace. Without this, the first
+      // refresh defaults to MC on the server side, but localStorage
+      // might point at a non-MC conv → mismatch and confusion.
+      const picker = document.getElementById('agent-select');
+      const pickerAgent = (picker && picker.value || '').trim();
+      if (pickerAgent && !this.currentAgentId) {
+        this.currentAgentId = pickerAgent;
+        this._updateBadge(pickerAgent);
+      }
       await this.refresh();
       const selected = this._pickInitialSelection();
       if (selected) {
@@ -143,8 +153,15 @@
     }
 
     async refresh() {
+      // The sidebar is scoped to the currently-selected agent in the
+      // header picker. When the picker changes, refresh() is re-called
+      // and the rail re-fetches for that agent's workspace.
+      const agentId = (this.currentAgentId || '').trim();
+      const url = agentId
+        ? `/api/conversations?agent_id=${encodeURIComponent(agentId)}`
+        : '/api/conversations';
       try {
-        const resp = await fetch('/api/conversations', { credentials: 'same-origin' });
+        const resp = await fetch(url, { credentials: 'same-origin' });
         if (!resp.ok) {
           if (resp.status === 503) {
             // Phase 2 flag is off; render empty rail silently.
@@ -161,12 +178,50 @@
       }
     }
 
+    /**
+     * Update the rail's agent filter. Re-fetches conversation list and
+     * re-renders. Called by chat.js when the header agent picker
+     * changes.
+     */
+    async setAgent(agentId) {
+      const next = (agentId || '').trim();
+      if (next === (this.currentAgentId || '')) return;
+      this.currentAgentId = next;
+      this._updateBadge(next);
+      await this.refresh();
+      this.render();
+    }
+
+    /** Update the sidebar's current-agent badge to reflect agent id. */
+    _updateBadge(agentId) {
+      const badge = document.getElementById('conv-rail-agent-badge');
+      if (!badge) return;
+      const labelEl = badge.querySelector('.badge-label');
+      const map = {
+        'agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef': ['Mission Control', 'mc'],
+        'agent-dd15479e-6543-400e-8463-b2a48b13cd4a': ['Task Agent', 'tasks'],
+        'agent-892a2d58-b9f6-4baf-84f3-c431fe46487d': ['Calendar Agent', 'calendar'],
+        'agent-2ed14ef4-6289-453a-ae27-290b6ed196b8': ['Pulse Agent', 'pulse'],
+        'agent-398b4f6c-6afa-493f-8063-897c6b171a0d': ['Documents Agent', 'documents'],
+        'agent-b4928949-8012-4436-a3c7-a9e510785147': ['Email Agent', 'email'],
+      };
+      const [label, slug] = map[agentId] || ['Mission Control', 'mc'];
+      if (labelEl) labelEl.textContent = label;
+      badge.setAttribute('data-agent', slug);
+    }
+
     _pickInitialSelection() {
       const saved = localStorage.getItem(LAST_CONV_KEY);
-      if (saved && this.conversations.some((c) => c.id === saved)) {
-        return saved;
-      }
-      // MRU fallback — list is ordered by last_message_at from the server.
+      // Only honor the saved conv if it actually belongs to the
+      // currently-scoped agent's workspace. Otherwise we'd silently
+      // jump the user into a different agent's conversation on page
+      // load (the source of the "I think I'm on MC but I'm getting
+      // calendar context" bug).
+      const inCurrentScope = saved && this.conversations.some(
+        (c) => c.id === saved,
+      );
+      if (inCurrentScope) return saved;
+      // MRU fallback within the current agent's list.
       return this.conversations.length ? this.conversations[0].id : null;
     }
 
@@ -347,6 +402,24 @@
       if (window.matchMedia('(max-width: 768px)').matches) {
         this.close();
       }
+      // Align the header agent picker to this conversation's owning
+      // agent so subsequent messages route to the right subprocess.
+      // Without this, switching from a Calendar conversation back to
+      // an MC one (or vice-versa) would mid-stream-swap the target.
+      //
+      // Fire the `change` event so chat.js + setAgent + the badge all
+      // react consistently. Programmatic picker.value assignment alone
+      // does NOT trigger the listeners — that produced a class of bugs
+      // where badge/state/list got out of sync after clicking a conv
+      // that belonged to a different agent.
+      const conv = this.conversations.find((c) => c.id === convId);
+      if (conv && conv.agent_id) {
+        const picker = document.getElementById('agent-select');
+        if (picker && picker.value !== conv.agent_id) {
+          picker.value = conv.agent_id;
+          picker.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
       if (window.chatUI && typeof window.chatUI.switchConversation === 'function') {
         await window.chatUI.switchConversation(convId);
       }
@@ -354,11 +427,17 @@
 
     async create(label) {
       try {
+        // Tag the new conversation with the picker's current agent so
+        // it lives in that agent's workspace.
+        const picker = document.getElementById('agent-select');
+        const agentId = (this.currentAgentId || (picker && picker.value) || '').trim();
+        const body = { ...(label ? { label } : {}) };
+        if (agentId) body.agent_id = agentId;
         const resp = await fetch('/api/conversations', {
           method: 'POST',
           credentials: 'same-origin',
           headers: await csrfHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify(label ? { label } : {}),
+          body: JSON.stringify(body),
         });
         if (!resp.ok) {
           if (resp.status === 503) {

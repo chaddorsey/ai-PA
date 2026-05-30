@@ -142,12 +142,20 @@ def classify_race_loss(run_state: Optional[Dict[str, Any]]) -> str:
     # Crash signature: failed run (typically stop_reason=None or "error")
     if status == "failed":
         return "subprocess_crashed"
-    # Stranded signature: run is "completed" but stop_reason is still
-    # 'requires_approval' — the streaming consumer ended its turn while
-    # the agent was logically waiting for approval. Same dead-air symptom
-    # as a real crash from the user's perspective.
+    # NOTE 2026-05-29 — `status == completed and stop_reason ==
+    # requires_approval` used to return "subprocess_crashed", but in
+    # practice this is the dominant FALSE POSITIVE: letta-code
+    # auto-approves internally (--yolo / bypassPermissions), the run
+    # finalizes with stop_reason=requires_approval as a transient,
+    # and the subprocess advances to the next turn cleanly. The
+    # responder's POST loses the race (Letta cleaned up the pending
+    # approval) but the user is NOT in dead-air — they see streaming
+    # responses immediately after. Emitting a synthetic "stranded"
+    # error here scared users mid-good-conversation. Treat as
+    # race-lost-to-letta-code (silent). True dead-air still surfaces
+    # via `status == "failed"` above.
     if status == "completed" and stop_reason == "requires_approval":
-        return "subprocess_crashed"
+        return "letta_code_won"
     return "unknown"
 
 

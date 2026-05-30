@@ -742,6 +742,23 @@ header h1 {
     cursor: not-allowed;
 }
 
+/* Stop button — replaces Send while a turn is in flight */
+#stop-btn {
+    padding: 0.75rem 1.5rem;
+    background-color: #c14040;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+#stop-btn:hover { background-color: #a33232; }
+#stop-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#stop-btn.hidden, #send-btn.hidden { display: none; }
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 8px;
@@ -2783,7 +2800,6 @@ header h1 {
 }
 
 .conv-rail-title {
-    flex: 1;
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.75rem;
     font-weight: 600;
@@ -2791,6 +2807,40 @@ header h1 {
     text-transform: uppercase;
     color: var(--text-secondary);
 }
+
+/* Current agent badge in the sidebar header. Shows which agent's
+   workspace the sidebar is currently scoped to. Color is per-agent
+   (set inline by JS via data-agent attribute). */
+.conv-rail-agent-badge {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: var(--sb-card-bg, rgba(255,255,255,0.04));
+    border: 1px solid var(--sb-card-border);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.conv-rail-agent-badge .badge-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #999;
+    box-shadow: 0 0 4px currentColor;
+}
+.conv-rail-agent-badge[data-agent="mc"]       .badge-dot { background: #4ea1ff; color: #4ea1ff; }
+.conv-rail-agent-badge[data-agent="tasks"]    .badge-dot { background: #ffb84e; color: #ffb84e; }
+.conv-rail-agent-badge[data-agent="calendar"] .badge-dot { background: #4ed1a1; color: #4ed1a1; }
+.conv-rail-agent-badge[data-agent="pulse"]    .badge-dot { background: #b86fff; color: #b86fff; }
+.conv-rail-agent-badge[data-agent="documents"].badge-dot { background: #f08a8a; color: #f08a8a; }
+.conv-rail-agent-badge[data-agent="email"]    .badge-dot { background: #ffe14e; color: #ffe14e; }
 
 .conv-new-btn,
 .conv-rail-close {
