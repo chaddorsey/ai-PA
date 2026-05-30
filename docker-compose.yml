@@ -1423,48 +1423,11 @@ services:
       - "network=pa-internal"
       - "external-access=true"
 
-  # --- PA Web Interface and Routing Handler ---
-
-  pa-routing-handler:
-    build:
-      context: ./pa-routing-handler
-      dockerfile: Dockerfile
-    container_name: pa-routing-handler
-    restart: unless-stopped
-    networks: [pa-internal]
-    depends_on:
-      letta:
-        condition: service_healthy
-      supabase-db:
-        condition: service_healthy
-    environment:
-      - PA_ROUTING_LETTA_BASE_URL=http://letta:8283
-      - PA_ROUTING_DEFAULT_AGENT_ID=${PA_ROUTING_DEFAULT_AGENT_ID:-}
-      - PA_ROUTING_POSTGRES_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
-      - PA_ROUTING_LOG_LEVEL=INFO
-      # Session persistence and conversation lookup
-      - SUPABASE_URL=http://supabase-rest:3000
-      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
-      - PA_ROUTING_DEFAULT_IDENTITY_ID=${PA_ROUTING_DEFAULT_IDENTITY_ID:-}
-    ports:
-      - "5201:5201"
-    volumes:
-      - ./docs/task-types:/app/docs/task-types:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5201/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    labels:
-      - "service=pa-routing-handler"
-      - "component=routing"
-      - "network=pa-internal"
+  # --- PA Web Interface ---
+  # (pa-routing-handler was decommissioned 2026-05-30 — coordination
+  # is now an MC skill rather than a pre-dispatch microservice, and the
+  # /v1/route + /v1/agents endpoints were superseded by pa-web-ui's
+  # subprocess pool + static FLEET_AGENT_NAMES.)
 
   gws-bridge:
     build:
@@ -1535,8 +1498,6 @@ services:
     restart: unless-stopped
     networks: [pa-internal]
     depends_on:
-      pa-routing-handler:
-        condition: service_healthy
       letta:
         condition: service_healthy
       supabase-db:
@@ -1546,7 +1507,6 @@ services:
       letta-bg-fix-sidecar:
         condition: service_healthy
     environment:
-      - PA_ROUTING_HANDLER_URL=http://pa-routing-handler:5201
       - LETTA_BASE_URL=http://letta:8283
       # Issue #99 REDUX 2026-05-12: bug is NOT chatgpt_oauth-specific. Kimi
       # also exhibits the silent-stall pattern (run completes end_turn
