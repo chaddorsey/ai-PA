@@ -300,11 +300,18 @@ class Database:
                 }
             )
 
-        # Upsert in batches of 100
+        # Upsert in batches of 100.
+        # PostgREST `resolution=merge-duplicates` defaults to the table's
+        # primary key as the conflict target. Our uniqueness lives on the
+        # `unique_chunk` constraint (drive_file_id, chunk_id) — NOT the PK
+        # — so we must pass on_conflict explicitly. Without it, re-ingesting
+        # a doc with unchanged chunks 409s on the unique constraint instead
+        # of merging. Bug surfaced 2026-05-28 when MC tried snapshot-on-
+        # command for an actively-edited proposal.
         for i in range(0, len(records), 100):
             batch = records[i : i + 100]
             response = self.client.post(
-                self._url("document_chunks"),
+                self._url("document_chunks") + "?on_conflict=drive_file_id,chunk_id",
                 json=batch,
                 headers={
                     **self.client.headers,
@@ -672,8 +679,12 @@ class Database:
             "snapshot_uri": revision.snapshot_uri,
         }
 
+        # PostgREST requires explicit on_conflict when the conflict target
+        # is a UNIQUE constraint other than the PK. The PK here is `id`;
+        # the actual uniqueness lives on `unique_file_revision`
+        # (drive_file_id, revision_id). Same fix shape as upsert_chunks.
         response = self.client.post(
-            self._url("document_revisions"),
+            self._url("document_revisions") + "?on_conflict=drive_file_id,revision_id",
             json=data,
             headers={
                 **self.client.headers,
@@ -748,8 +759,10 @@ class Database:
             "modified_time": _serialize_datetime(snapshot.modified_time),
         }
 
+        # Same on_conflict fix as upsert_chunks / upsert_document_revision —
+        # the uniqueness target is unique_file_revision_snapshot, not the PK.
         response = self.client.post(
-            self._url("document_snapshots"),
+            self._url("document_snapshots") + "?on_conflict=drive_file_id,revision_id",
             json=data,
             headers={
                 **self.client.headers,
