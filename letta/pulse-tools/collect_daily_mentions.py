@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def collect_daily_mentions(
     date: Optional[str] = None,
     start_date: Optional[str] = None,

@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def initialize_drive_analytics_memory() -> str:
     """
     Initialize Drive analytics memory blocks if they don't exist.

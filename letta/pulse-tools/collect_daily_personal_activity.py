@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def collect_daily_personal_activity(date: Optional[str] = None) -> str:
     """
     Collect your personal Drive activity for a specific date.

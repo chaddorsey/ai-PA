@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_drive_trends(metric: str = "document", comparison_period: str = "10_day") -> str:
     """
     Compare current activity to historical averages.

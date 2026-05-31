@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def collect_daily_workspace_activity(date: Optional[str] = None) -> str:
     """
     Collect workspace-wide Drive activity for a specific date.

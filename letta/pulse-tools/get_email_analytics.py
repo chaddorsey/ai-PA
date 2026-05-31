@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_email_analytics(
     start_datetime: str,
     end_datetime: str,
@@ -370,8 +372,7 @@ def get_email_analytics(
                 csv_lines = ["hash,sent,received,ratio,activity"]
                 for u in sorted_users:
                     csv_lines.append(f"{u['hash']},{u['sent']},{u['received']},{u['ratio']},{u['activity']}")
-                result["data"]["csv"] = "
-".join(csv_lines)
+                result["data"]["csv"] = "\n".join(csv_lines)
             else:
                 # JSON format - remove email, keep only hash
                 result["data"]["users"] = [
@@ -405,6 +406,5 @@ def get_email_analytics(
         return {
             "status": "error",
             "data": {},
-            "error_message": f"Error in email analytics: {str(e)}
-{traceback.format_exc()}"
+            "error_message": f"Error in email analytics: {str(e)}\n{traceback.format_exc()}"
         }

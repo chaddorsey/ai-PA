@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_drive_analytics_summary(period: str = "yesterday", scope: str = "workspace", date: Optional[str] = None) -> str:
     """
     Get summary of Drive activity for a period or specific date from memory blocks.

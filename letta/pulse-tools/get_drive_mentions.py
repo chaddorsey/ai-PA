@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_drive_mentions(days: int = 7, unread_only: bool = False, start_date: Optional[str] = None, end_date: Optional[str] = None) -> str:
     """
     Get comments that mention you from memory for a date range or lookback period.

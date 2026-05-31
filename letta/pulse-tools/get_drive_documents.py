@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_drive_documents(
     owner: Optional[str] = None,
     name: Optional[str] = None,
@@ -195,6 +197,5 @@ def get_drive_documents(
         return {
             "status": "error",
             "data": {},
-            "error_message": f"Error getting Drive documents: {str(e)}
-{traceback.format_exc()}"
+            "error_message": f"Error getting Drive documents: {str(e)}\n{traceback.format_exc()}"
         }

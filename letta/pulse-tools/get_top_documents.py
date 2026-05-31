@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_top_documents(category: str = "edited", count: int = 5, include_links: bool = True, date: Optional[str] = None) -> str:
     """
     Get top documents by category with links for a specific date or most recent.

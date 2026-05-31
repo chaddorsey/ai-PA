@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_drive_file_info(drive_url: str) -> str:
     """
     Get document or folder title and metadata from a Google Drive URL.

@@ -190,8 +190,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
         )
 
         # --- Format the briefing ---
-        lines = [f"**Daily Analytics — {day_name}, {display_date}** (vs. 7d & 28d avg)
-"]
+        lines = [f"**Daily Analytics — {day_name}, {display_date}** (vs. 7d & 28d avg)\n"]
 
         # ===== DRIVE SECTION =====
         if today_snap.get("drive_total_activities"):
@@ -404,8 +403,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
             )
             lines.append(f"**Notable:** {notable}")
 
-        briefing_text = "
-".join(lines)
+        briefing_text = "\n".join(lines)
 
         # --- Write to markdown file ---
         md_written = False
@@ -466,9 +464,7 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
                     "---",
                     "",
                 ]
-                full_signal_content = "
-".join(fm_lines) + briefing_text + "
-"
+                full_signal_content = "\n".join(fm_lines) + briefing_text + "\n"
 
                 contents_url = (
                     f"{gitea_base}/api/v1/repos/agents/agents-canonical"
@@ -592,6 +588,5 @@ def compose_daily_briefing(date: Optional[str] = None, agent_id: Optional[str] =
     except Exception as e:
         return {
             "status": "error",
-            "error_message": f"{str(e)}
-{traceback.format_exc()}",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
         }

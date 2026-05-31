@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_recent_my_activity(activity_type: str = "all", days: int = 3, include_links: bool = True, start_date: Optional[str] = None, end_date: Optional[str] = None) -> str:
     """
     Get documents you've viewed or edited recently with links for a date range or lookback period.

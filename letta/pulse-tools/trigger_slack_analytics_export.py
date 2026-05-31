@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def trigger_slack_analytics_export(analytics_type: str = "all") -> Dict[str, Any]:
     """Trigger Slack analytics CSV export via the slack-analytics-mcp-server.
 
@@ -81,6 +83,5 @@ def trigger_slack_analytics_export(analytics_type: str = "all") -> Dict[str, Any
     except Exception as e:
         return {
             "status": "error",
-            "error_message": f"{str(e)}
-{traceback.format_exc()}",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
         }

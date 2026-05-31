@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_my_drive_activity(days: int = 7, include_links: bool = True, start_date: Optional[str] = None, end_date: Optional[str] = None) -> str:
     """
     Get your personal Drive activity with document links for a date range or lookback period.

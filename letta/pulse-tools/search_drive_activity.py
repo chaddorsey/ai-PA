@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def search_drive_activity(
     user: Optional[str] = None,
     owner: Optional[str] = None,
@@ -329,6 +331,5 @@ def search_drive_activity(
         return {
             "status": "error",
             "data": {},
-            "error_message": f"Error searching Drive activity: {str(e)}
-{traceback.format_exc()}"
+            "error_message": f"Error searching Drive activity: {str(e)}\n{traceback.format_exc()}"
         }

@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def calculate_running_averages() -> str:
     """
     Calculate running averages for Drive analytics.

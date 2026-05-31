@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
     """Collect daily analytics snapshot from Drive, Email, and Slack, then persist to database.
 
@@ -395,6 +397,5 @@ def collect_analytics_snapshot(date: Optional[str] = None) -> Dict[str, Any]:
     except Exception as e:
         return {
             "status": "error",
-            "error_message": f"{str(e)}
-{traceback.format_exc()}",
+            "error_message": f"{str(e)}\n{traceback.format_exc()}",
         }

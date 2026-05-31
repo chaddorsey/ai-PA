@@ -1,3 +1,5 @@
+from typing import Dict, Any, Optional, List
+
 def get_document_events(doc_ids: List[str], days: int = 7) -> Dict[str, Any]:
     """
     Get individual events (timeline) for specific documents.
@@ -125,6 +127,5 @@ def get_document_events(doc_ids: List[str], days: int = 7) -> Dict[str, Any]:
         return {
             "status": "error",
             "data": {},
-            "error_message": f"Error getting document events: {str(e)}
-{traceback.format_exc()}"
+            "error_message": f"Error getting document events: {str(e)}\n{traceback.format_exc()}"
         }
