@@ -1,7 +1,17 @@
-"""Agent notification service for sending messages to Letta."""
+"""Agent notification service for sending messages to Letta.
+
+Dual-target notification (2026-05-30): every notification is also
+written to pa_web.task_queue (source='email-watch') so the local-mode
+email-agent can pick it up via `task queue-claim --source email-watch`.
+The Docker agent push remains for rollback safety; once local mode
+fully soaks, the Letta push call site can be removed.
+"""
 
 from __future__ import annotations
 
+import json
+import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -11,9 +21,11 @@ from gmail_watch.models import WatchedThread
 from gmail_watch.settings import settings
 from gmail_watch.utils.interval_parser import format_interval
 
+logger = logging.getLogger(__name__)
+
 
 class AgentNotifier:
-    """Sends notifications to Letta Email Agent."""
+    """Sends notifications to Letta Email Agent (Docker push + pa_web queue)."""
 
     def __init__(
         self,
@@ -22,6 +34,78 @@ class AgentNotifier:
     ) -> None:
         self.letta_base_url = letta_base_url or settings.letta_base_url
         self.agent_id = agent_id or settings.letta_agent_id
+
+    async def _write_watch_event_to_queue(
+        self,
+        event_type: str,
+        thread_id: str,
+        message: str,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Write a watch event to pa_web.task_queue for the local agent to claim.
+
+        Idempotent on (source, source_ref) — source_ref is
+        '{event_type}:{thread_id}:{iso_timestamp}' so repeated events
+        on the same thread aren't deduped (a second reply IS a new event).
+
+        Best-effort: failure is logged but doesn't break the Docker push
+        path. Source='email-watch' was added to the task_queue source
+        CHECK constraint on 2026-05-30.
+        """
+        try:
+            import asyncpg
+        except Exception as e:
+            logger.warning("task_queue_asyncpg_import_failed", error=str(e))
+            return
+
+        # Derive Postgres URL (mirror task_queue_writer.py logic).
+        db_url = os.environ.get("PA_WEB_POSTGRES_URL")
+        if not db_url:
+            db_url = os.environ.get("DATABASE_URL", "")
+            db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        if not db_url:
+            password = os.environ.get("POSTGRES_PASSWORD", "")
+            db_url = f"postgresql://postgres:{password}@supabase-db:5432/postgres"
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        source_ref = f"{event_type}:{thread_id}:{now_iso}"
+        payload = {
+            "event_type": event_type,
+            "thread_id": thread_id,
+            "message": message,
+            "occurred_at": now_iso,
+        }
+        if extra:
+            payload.update(extra)
+        payload_json = json.dumps(payload)
+
+        try:
+            conn = await asyncpg.connect(db_url, timeout=10.0)
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO pa_web.task_queue (source, source_ref, payload)
+                    VALUES ($1, $2, $3::jsonb)
+                    ON CONFLICT (source, source_ref) DO NOTHING
+                    """,
+                    "email-watch",
+                    source_ref,
+                    payload_json,
+                )
+            finally:
+                await conn.close()
+            logger.info(
+                "watch_event_queued",
+                event_type=event_type,
+                thread_id=thread_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "watch_event_queue_write_failed",
+                event_type=event_type,
+                thread_id=thread_id,
+                error=str(e),
+            )
 
     def _format_reply_message(
         self,
@@ -96,13 +180,27 @@ I'll notify you when a reply is received."""
         from_address: str,
         preview: str,
     ) -> dict[str, Any]:
-        """Send reply notification to Email Agent."""
+        """Send reply notification to Email Agent.
+
+        Dual-target: writes to pa_web.task_queue (for local agent) AND
+        pushes to the Docker agent via Letta API (for rollback safety).
+        """
         message = self._format_reply_message(
             thread=thread,
             from_address=from_address,
             preview=preview,
         )
-
+        await self._write_watch_event_to_queue(
+            event_type="reply_received",
+            thread_id=thread.thread_id,
+            message=message,
+            extra={
+                "new_message_id": new_message_id,
+                "from_address": from_address,
+                "preview": preview[:500],
+                "subject": thread.subject,
+            },
+        )
         return await self._send_to_agent(message)
 
     def _format_followup_message(
@@ -147,16 +245,33 @@ Use read_email(thread_id="{thread.thread_id}") to review, or reply_to_email() to
         self,
         thread: WatchedThread,
     ) -> dict[str, Any]:
-        """Send follow-up needed notification to Email Agent."""
+        """Send follow-up needed notification (dual-target: pa_web + Docker)."""
         message = self._format_followup_message(thread)
+        await self._write_watch_event_to_queue(
+            event_type="followup_needed",
+            thread_id=thread.thread_id,
+            message=message,
+            extra={
+                "subject": thread.subject,
+                "followup_due_at": thread.followup_due_at.isoformat()
+                                   if thread.followup_due_at else None,
+                "message_count": thread.message_count,
+            },
+        )
         return await self._send_to_agent(message)
 
     async def notify_watch_started(
         self,
         thread: WatchedThread,
     ) -> dict[str, Any]:
-        """Send watch started acknowledgment to Email Agent."""
+        """Send watch started acknowledgment (dual-target)."""
         message = self._format_watch_started_message(thread)
+        await self._write_watch_event_to_queue(
+            event_type="watch_started",
+            thread_id=thread.thread_id,
+            message=message,
+            extra={"subject": thread.subject},
+        )
         return await self._send_to_agent(message)
 
     async def notify_watch_started_simple(

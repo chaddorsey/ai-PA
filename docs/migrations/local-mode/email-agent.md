@@ -74,25 +74,25 @@ so local-mode email-agent can reach the MCP endpoint from host. Picked
 - Doesn't receive direct gmail-watch-service notifications — it polls
   watch state on demand via `email-agent watch-list` etc.
 
-## Known limitation: gmail-watch-service notification delivery
+## Watch-notification delivery (RESOLVED 2026-05-30)
 
-When gmail-watch-service detects a reply to a watched thread, it
-POSTs a message to the Letta API targeting `${LETTA_AGENT_ID}` —
-which still resolves to the renamed Docker agent. The local agent
-doesn't get pushed; the user has to ask "any new replies on watched
-threads?" and the local agent runs `email-agent watch-list`.
+When gmail-watch-service detects a reply to a watched thread or hits
+a follow-up deadline, it now writes a row to `pa_web.task_queue` with
+`source='email-watch'` IN ADDITION TO its legacy Letta API push to the
+Docker agent. The local agent claims those rows via
+`task queue-claim --source email-watch` — payload.event_type
+discriminates reply_received / followup_needed / watch_started.
 
-**Post-soak fix options**:
-1. Update `gmail-watch-service` to write reply events to
-   `pa_web.task_queue` with `source='email-watch'`. Local agent
-   polls via `task queue-claim --source email-watch`. Decoupled +
-   substrate-clean.
-2. Add a local-agent-aware notification path to gmail-watch-service
-   (e.g., write a file the local agent watches).
-3. Leave as-is — user-initiated polling is acceptable for a
-   low-frequency event.
+Code change: `gmail-watch-service/src/gmail_watch/services/agent_notifier.py`
+— added `_write_watch_event_to_queue()`; wired into
+`notify_reply_received`, `notify_followup_needed`, `notify_watch_started`.
 
-Tracked in soak validation list.
+Schema: extended `pa_web.task_queue.source` CHECK constraint to
+allow 'email-watch'.
+
+Result: local agent gets the same events the Docker agent gets,
+just by polling instead of being pushed. Docker push retained for
+rollback safety; can be removed once local mode soaks cleanly.
 
 ## Phase E smoke
 
@@ -121,5 +121,9 @@ Tracked in soak validation list.
 - [ ] Tasks agent picks up via `task queue-claim --source email`
       (cross-agent handoff works)
 - [ ] Gmail-watch-service notification handling: when a reply arrives,
-      Docker agent still receives the MCP push (works, but local agent
-      doesn't see it — see Known Limitation above)
+      both paths fire — Docker agent gets the MCP push AND a row
+      lands in `pa_web.task_queue` source='email-watch'. Local agent
+      claims via `task queue-claim --source email-watch`. Verify
+      payload.event_type is one of reply_received / followup_needed /
+      watch_started, and the message field is preformatted for direct
+      use by the agent.
