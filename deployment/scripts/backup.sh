@@ -566,6 +566,112 @@ backup_oauth_caches() {
     log_success "OAuth + LaunchAgents backup complete: $oauth_count bundles"
 }
 
+# Back up local-mode-specific artifacts. These live outside the Docker
+# stack so the existing volume/DB/Letta-API paths don't cover them:
+#   - ~/bin/letta-* wrappers (env-config launchers for each local agent)
+#   - ~/.letta/lc-local-backend/{agents,providers,conversations,memfs}
+#       agents/providers/conversations are critical state; memfs is a
+#       working clone of the Gitea source-of-truth (captured for fast
+#       restore, but agents will re-clone if absent)
+#   - data/raw-archive/ (Bronze CSV archive — not in any Docker volume)
+#   - scripts/ (top-level repo scripts; deployment_ tarball only covers
+#     deployment/scripts/)
+#   - letta/<agent>-tools/ (per-agent extracted Letta tool sources)
+#
+# Added 2026-05-31 to close gap discovered while restoring confidence
+# after the local-mode migrations.
+backup_local_mode_state() {
+    local backup_dir="$1"
+    log "Backing up local-mode state (wrappers, lc-local-backend, raw-archive, repo scripts)..."
+
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log "DRY RUN: Would back up local-mode state to $backup_dir"
+        return 0
+    fi
+
+    mkdir -p "$backup_dir"
+    local count=0
+
+    # (1) ~/bin/letta-* wrappers
+    if ls "$HOME/bin/letta-"* >/dev/null 2>&1; then
+        local wrappers
+        wrappers=$(cd "$HOME/bin" && ls letta-* 2>/dev/null)
+        if [[ -n "$wrappers" ]]; then
+            tar czf "$backup_dir/bin-letta-wrappers_$TIMESTAMP.tar.gz" \
+                -C "$HOME/bin" $wrappers \
+                2>/dev/null || log_warning "letta wrappers tar had issues"
+            local size=$(du -h "$backup_dir/bin-letta-wrappers_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+            log_success "  ~/bin/letta-* wrappers ($size)"
+            ((count++)) || true
+        fi
+    fi
+
+    # (2) lc-local-backend core (agents records, providers/auth, conversations)
+    if [[ -d "$HOME/.letta/lc-local-backend" ]]; then
+        tar czf "$backup_dir/lc-local-backend-core_$TIMESTAMP.tar.gz" \
+            -C "$HOME/.letta" \
+            lc-local-backend/agents \
+            lc-local-backend/providers \
+            lc-local-backend/conversations \
+            2>/dev/null || log_warning "lc-local-backend core tar had issues"
+        if [[ -f "$backup_dir/lc-local-backend-core_$TIMESTAMP.tar.gz" ]]; then
+            local size=$(du -h "$backup_dir/lc-local-backend-core_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+            log_success "  lc-local-backend core agents/providers/conversations ($size)"
+            ((count++)) || true
+        fi
+
+        if [[ -d "$HOME/.letta/lc-local-backend/memfs" ]]; then
+            tar czf "$backup_dir/lc-local-backend-memfs_$TIMESTAMP.tar.gz" \
+                -C "$HOME/.letta" \
+                lc-local-backend/memfs \
+                2>/dev/null || log_warning "lc-local-backend memfs tar had issues"
+            if [[ -f "$backup_dir/lc-local-backend-memfs_$TIMESTAMP.tar.gz" ]]; then
+                local size=$(du -h "$backup_dir/lc-local-backend-memfs_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+                log_success "  lc-local-backend memfs working trees ($size)"
+                ((count++)) || true
+            fi
+        fi
+    fi
+
+    # (3) data/raw-archive (Bronze CSV archive)
+    if [[ -d "$PROJECT_ROOT/data/raw-archive" ]]; then
+        tar czf "$backup_dir/raw-archive_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            data/raw-archive \
+            2>/dev/null || log_warning "raw-archive tar had issues"
+        local size=$(du -h "$backup_dir/raw-archive_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "  data/raw-archive ($size)"
+        ((count++)) || true
+    fi
+
+    # (4) Top-level repo scripts/ (deployment_ only covers deployment/scripts/)
+    if [[ -d "$PROJECT_ROOT/scripts" ]]; then
+        tar czf "$backup_dir/repo-scripts_$TIMESTAMP.tar.gz" \
+            -C "$PROJECT_ROOT" \
+            scripts \
+            2>/dev/null || log_warning "repo scripts tar had issues"
+        local size=$(du -h "$backup_dir/repo-scripts_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+        log_success "  scripts/ ($size)"
+        ((count++)) || true
+    fi
+
+    # (5) Per-agent extracted Letta tool sources
+    for tooldir in pulse-tools email-tools tasks-tools docs-tools calendar-tools; do
+        if [[ -d "$PROJECT_ROOT/letta/$tooldir" ]]; then
+            tar czf "$backup_dir/letta-${tooldir}_$TIMESTAMP.tar.gz" \
+                -C "$PROJECT_ROOT/letta" \
+                "$tooldir" \
+                2>/dev/null && {
+                    local size=$(du -h "$backup_dir/letta-${tooldir}_$TIMESTAMP.tar.gz" 2>/dev/null | cut -f1)
+                    log_success "  letta/$tooldir ($size)"
+                    ((count++)) || true
+                }
+        fi
+    done
+
+    log_success "Local-mode state backup complete: $count bundles"
+}
+
 # Sanity-sweep the per-agent memfs working trees on the host
 # (~/.letta/agents/<id>/memory/). Each is a git clone of the agent's
 # Gitea memfs repo; letta-code commits + pushes after edits. Between
@@ -903,7 +1009,7 @@ main() {
     fi
     
     # Create backup directory structure
-    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports,host_data,host_oauth_state,memfs_sanity}
+    mkdir -p "$BACKUP_PATH"/{databases,volumes,configs,logs,letta_exports,host_data,host_oauth_state,memfs_sanity,local_mode_state}
     
     # Backup all databases (dynamic discovery + cluster backup)
     # This is the heaviest phase — pg_dumpall inflates Docker VM memory
@@ -930,6 +1036,14 @@ main() {
     # (<10 MB total) but speeds up clean-Mac recovery enormously.
     if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
         backup_oauth_caches "$BACKUP_PATH/host_oauth_state"
+    fi
+
+    # Backup local-mode-specific artifacts (lc-local-backend, ~/bin/letta-*,
+    # data/raw-archive, top-level scripts/, letta/<agent>-tools/). These
+    # live outside the Docker stack so volume/DB/Letta-API backups miss them.
+    # Added 2026-05-31.
+    if [[ "$BACKUP_TYPE" == "full" || "$BACKUP_TYPE" == "data" ]]; then
+        backup_local_mode_state "$BACKUP_PATH/local_mode_state"
     fi
 
     # Sanity-sweep per-agent memfs working trees for uncommitted local
