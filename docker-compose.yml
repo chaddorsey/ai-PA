@@ -1077,6 +1077,11 @@ services:
     restart: unless-stopped
     networks:
       - pa-internal
+    # Host port mapping so local-mode email-agent can reach the MCP
+    # endpoint via the email-cli wrapper. Internal-only binding;
+    # 8094 chosen because 8092 is taken by another service.
+    ports:
+      - "127.0.0.1:8094:8000"
     depends_on:
       supabase-db:
         condition: service_healthy
