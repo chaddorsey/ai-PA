@@ -16,11 +16,16 @@ Usage:
 import asyncio
 import argparse
 import json
+import os
 from pathlib import Path
 from playwright.async_api import async_playwright
 from datetime import datetime, timedelta
 
 SLACK_WORKSPACE_URL = "https://concord-consortium.slack.com"
+# 2026-05-31: Slack admin analytics moved to app.slack.com/manage/<team_id>/analytics/...
+# T02V91KU0 is the Concord Consortium team_id.
+SLACK_TEAM_ID = os.getenv("SLACK_TEAM_ID", "T02V91KU0")
+SLACK_ADMIN_URL = f"https://app.slack.com/manage/{SLACK_TEAM_ID}"
 
 async def trigger_export_with_dates(
     analytics_type: str = "channels",
@@ -99,8 +104,14 @@ async def trigger_export_with_dates(
         context = await browser.new_context(**context_options)
         page = await context.new_page()
         
-        # Navigate to analytics page
-        target_url = f"{SLACK_WORKSPACE_URL}/admin/stats#{analytics_type}"
+        # Navigate to analytics page.
+        # 2026-05-31: Slack moved admin analytics from
+        #   <workspace>.slack.com/admin/stats#<tab>  (hash-router, deprecated ~2026-05-17)
+        # to
+        #   app.slack.com/manage/<team_id>/analytics/<tab>  (path-router).
+        # The old URL silently redirects to the analytics overview, which is
+        # why the channel/member tab + date dropdown selectors stopped matching.
+        target_url = f"{SLACK_ADMIN_URL}/analytics/{analytics_type}"
         print(f"→ Navigating to {target_url}")
         
         try:
@@ -142,14 +153,11 @@ async def trigger_export_with_dates(
         print(f"→ Current URL: {current_url}")
         print(f"→ Page title: {page_title}")
         
-        # Click the tab
-        print(f"→ Clicking {analytics_type} tab...")
-        try:
-            await page.click(f'a[data-analytics-tab="{analytics_type}"]', timeout=5000)
-            print(f"✓ Clicked {analytics_type} tab")
-            await page.wait_for_timeout(5000)
-        except Exception as e:
-            print(f"⚠ Could not click tab: {e}")
+        # (Pre-2026-05-17 the script clicked an in-page tab to switch
+        # sections. The new path-router lands directly on the right page
+        # via the URL above, so no tab click is needed. Wait an extra
+        # beat for any in-page loading instead.)
+        await page.wait_for_timeout(2000)
         
         # Dismiss modals
         print("→ Dismissing modals...")
