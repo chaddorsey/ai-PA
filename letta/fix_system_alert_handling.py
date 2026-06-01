@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# DEPRECATED 2026-06-01: One-time setup script.
+# References Docker pulse-monitor predecessors `agent-6eb765bf-...` (idle
+# since Feb 2026) and `agent-66c4a151-...` (idle since Dec 2025). The
+# live pulse-monitor is `agent-2ed14ef4-...` (Docker) and
+# `agent-local-d48b128a-...` (local mode). Re-running this script will
+# silently fail to update the live agents. Kept for historical reference.
 """
 Fix System Alert Handling in Agent System Prompts
 

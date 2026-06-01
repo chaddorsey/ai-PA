@@ -152,6 +152,7 @@ checkpoints/
 \#*#
 # Letta tool execution temporary files
 letta/tmp*.py
+letta/.tmp-archive/
 # Working scratch files
 .tmp-work/
 backfill-dashboard.png

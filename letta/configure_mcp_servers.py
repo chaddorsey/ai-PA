@@ -88,7 +88,13 @@ MCP_SERVERS = {
 class LettaMCPConfigurator:
     """Configure Letta MCP servers using the Letta API."""
     
-    def __init__(self, letta_base_url: str = "http://letta:8283"):
+    def __init__(self, letta_base_url: str = None):
+        # Default to env LETTA_BASE_URL, then localhost (host-accessible).
+        # `http://letta:8283` only resolves from inside Docker; explicit env
+        # override is required when running from the host.
+        if letta_base_url is None:
+            import os as _os
+            letta_base_url = _os.getenv("LETTA_BASE_URL", "http://localhost:8283")
         self.letta_base_url = letta_base_url
         self.session = None
         
@@ -227,7 +233,7 @@ class LettaMCPConfigurator:
 
 async def main():
     """Main function to configure MCP servers."""
-    letta_url = os.getenv("LETTA_BASE_URL", "http://letta:8283")
+    letta_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
     
     logger.info(f"Configuring MCP servers for Letta at {letta_url}")
     
