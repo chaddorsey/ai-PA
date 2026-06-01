@@ -3,7 +3,16 @@
 Handles archival memory lookup, passage updates, and follow-up routing
 for completed OmniFocus tasks. Used by both the push endpoint and the
 reconciliation poller.
+
+2026-06-01: MC notification path rewired from direct HTTP POST
+(/v1/agents/{MC}/messages) to pa_web.task_queue insert with
+source='mc-completion'. Reason: LettaBot decommissioning + MC's
+upcoming local-mode migration both make HTTP-to-MC delivery untenable.
+The queue pattern matches the email-watch substrate established
+2026-05-30; MC claims via `task queue-claim --source mc-completion`
+when summoned.
 """
+import os
 import re
 import json
 import logging
@@ -128,9 +137,22 @@ async def notify_mc(
     completion_date: str,
     timing_summary: Optional[str],
     extraction_info: Optional[dict],
-    client: httpx.AsyncClient,
+    client: httpx.AsyncClient,  # kept for signature compat; no longer used
 ) -> None:
-    """Send a completion notification to Mission Control."""
+    """Queue a task-completion event for MC via pa_web.task_queue.
+
+    Source = 'mc-completion'. Local-mode MC claims via
+    `task queue-claim --source mc-completion` when summoned. The pre-
+    formatted human-readable message is in payload.message, ready for
+    direct use by the agent; structured fields are also present for
+    programmatic use.
+
+    Idempotent on (source, source_ref). source_ref encodes task name +
+    completion date + a UTC timestamp so two completions of the same
+    task on different dates are NOT deduped.
+    """
+    # Build the human-readable message (same shape MC was getting
+    # historically — preserve so prompt-side behavior is unchanged).
     lines = [f"TASK COMPLETED: '{task_name}'"]
     if project_name:
         lines.append(f"Project: {project_name}")
@@ -142,20 +164,58 @@ async def notify_mc(
         src = extraction_info.get("source_type", "")
         ext = extraction_info.get("has_external_origin", False)
         lines.append(f"Extraction: ref_id {ref}, source: {src}, follow-up {'pending' if ext else 'none'}")
+    message = "\n".join(lines)
 
-    content = "\n".join(lines)
+    try:
+        import asyncpg
+    except Exception as e:
+        logger.warning("mc_notify_asyncpg_import_failed", exc_info=e)
+        return
 
-    url = f"{LETTA_BASE_URL}/v1/agents/{MC_AGENT_ID}/messages/"
-    resp = await client.post(
-        url,
-        json={"messages": [{"role": "system", "content": content}]},
-        timeout=300.0,
-    )
-    if resp.status_code not in (200, 201):
-        # Fall back to user role if system role rejected
-        logger.warning(f"MC notification with system role failed ({resp.status_code}), retrying with user role")
-        await client.post(
-            url,
-            json={"messages": [{"role": "user", "content": f"[SYSTEM NOTIFICATION] {content}"}]},
-            timeout=300.0,
+    # Resolve DB URL from env (same pattern as gmail-watch-service).
+    db_url = os.environ.get("PA_WEB_POSTGRES_URL")
+    if not db_url:
+        db_url = os.environ.get("DATABASE_URL", "")
+        db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    if not db_url:
+        password = os.environ.get("POSTGRES_PASSWORD", "")
+        db_url = f"postgresql://postgres:{password}@supabase-db:5432/postgres"
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Source-ref uniqueness: task_name + completion_date + utc-now.
+    # The utc-now prevents collisions if the same task is somehow
+    # re-completed (rare; OmniFocus does allow uncomplete + recomplete).
+    source_ref = f"{task_name}:{completion_date}:{now_iso}"
+    payload = {
+        "event_type": "task_completed",
+        "task_name": task_name,
+        "project_name": project_name,
+        "completion_date": completion_date,
+        "timing_summary": timing_summary,
+        "extraction_info": extraction_info,
+        "message": message,
+        "occurred_at": now_iso,
+    }
+    payload_json = json.dumps(payload)
+
+    try:
+        conn = await asyncpg.connect(db_url, timeout=10.0)
+        try:
+            await conn.execute(
+                """
+                INSERT INTO pa_web.task_queue (source, source_ref, payload)
+                VALUES ($1, $2, $3::jsonb)
+                ON CONFLICT (source, source_ref) DO NOTHING
+                """,
+                "mc-completion",
+                source_ref,
+                payload_json,
+            )
+        finally:
+            await conn.close()
+        logger.info(
+            "mc_completion_queued",
+            extra={"task_name": task_name, "completion_date": completion_date},
         )
+    except Exception as e:
+        logger.warning("mc_notify_queue_write_failed", exc_info=e)
