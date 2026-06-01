@@ -16,6 +16,7 @@ ENV_FILE="${ENV_FILE:-/Volumes/main-drive/ai-PA/.env}"
 LOG_DIR="${LOG_DIR:-/Volumes/main-drive/ai-PA/logs/health}"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/check-slack-analytics-export.log"
+STATE_FILE="$LOG_DIR/check-slack-analytics-export.state"  # last reported state: "ok" or "failed"
 
 ts() { date -u "+%Y-%m-%dT%H:%M:%SZ"; }
 log() { echo "[$(ts)] $*" | tee -a "$LOG_FILE"; }
@@ -33,8 +34,46 @@ failures=$(echo "$logs" | grep -c "Slack analytics export failed" || true)
 
 log "lookback=${LOOKBACK_HOURS}h successes=$successes failures=$failures"
 
+last_state=$(cat "$STATE_FILE" 2>/dev/null || echo "ok")
+
 if [[ "$successes" -gt 0 ]]; then
-  log "OK: at least one export succeeded in lookback window"
+  log "OK: at least one export succeeded in lookback window (last_state=$last_state)"
+
+  # If we previously emitted a failure signal, emit a resolved signal so MC
+  # sees a fresh current-state record and stops surfacing the stale failure.
+  if [[ "$last_state" == "failed" ]]; then
+    if [[ -f "$ENV_FILE" ]]; then
+      GITEA_MEMFS_TOKEN=$(grep ^GITEA_MEMFS_TOKEN= "$ENV_FILE" | cut -d= -f2-)
+      export GITEA_MEMFS_TOKEN
+      export GITEA_BASE_URL="${GITEA_BASE_URL:-http://localhost:3030}"
+    fi
+    if command -v signal >/dev/null 2>&1; then
+      resolved_body_file=$(mktemp)
+      {
+        echo "**slack-analytics-mcp-server: export recovered.**"
+        echo ""
+        echo "- successes: $successes"
+        echo "- failures: $failures (within ${LOOKBACK_HOURS}h lookback)"
+        echo ""
+        echo "The prior \`health-watchdog-slack-analytics-export-failed.md\` signal is"
+        echo "now stale. Any prior-day failure signals for this watchdog can be"
+        echo "considered resolved as of this signal's composed_at timestamp."
+      } > "$resolved_body_file"
+      if signal emit \
+        --slug slack-analytics-export-resolved \
+        --source health-watchdog \
+        --attention routine \
+        --description "slack-analytics export recovered (prior failure resolved)" \
+        --body-file "$resolved_body_file" 2>>"$LOG_FILE"; then
+        log "emitted canonical signal slack-analytics-export-resolved"
+      else
+        log "WARN: resolved-signal emit failed"
+      fi
+      rm -f "$resolved_body_file"
+    fi
+  fi
+
+  echo "ok" > "$STATE_FILE"
   exit 0
 fi
 
@@ -79,6 +118,7 @@ if command -v signal >/dev/null 2>&1; then
     --description "slack-analytics export job: no successes in ${LOOKBACK_HOURS}h" \
     --body-file -; then
     log "emitted canonical signal slack-analytics-export-failed"
+    echo "failed" > "$STATE_FILE"
   else
     log "WARN: signal emit failed"
   fi
