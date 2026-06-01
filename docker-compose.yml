@@ -417,7 +417,9 @@ services:
       SCHEDULER_DB_PASSWORD: ${SCHEDULER_DB_PASSWORD:-scheduler_secret}
       SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
       LETTA_CALLBACK_URL: ${LETTA_CALLBACK_URL:-http://letta:8283/v1/agents/%agent_id%/messages}
-      LETTABOT_AGENTS: '{"agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef":{"url":"http://host.docker.internal:8080","api_key":"${LETTABOT_API_KEY}"}}'
+      # LETTABOT_AGENTS retired 2026-06-01 — LettaBot decommissioned;
+      # MC's Pipeline-health cron replaced by host-side Bash watchdog.
+      # See docs/migrations/local-mode/lettabot-retired-2026-06-01.md
       ALLOWLIST_SCRIPT_DIR: /app/scripts
       LETTA_BASE_URL: http://letta:8283
       SCHEDULER_TIMEZONE: America/New_York
@@ -872,6 +874,10 @@ services:
     networks: [pa-internal]
     environment:
       STATE_DIR: /data
+      # 2026-06-01: MC notifications now write to pa_web.task_queue
+      # (source='mc-completion') instead of POSTing to MC's Letta endpoint.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@supabase-db:5432/postgres
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8092/health"]
       interval: 30s
@@ -1534,8 +1540,10 @@ services:
       - MISSION_CONTROL_AGENT_ID=${MISSION_CONTROL_AGENT_ID:-agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef}
       - MC_WORK_PACKET_CONV_ID=${MC_WORK_PACKET_CONV_ID:-conv-86eb824b-b358-4179-a9b8-0515f40a5275}
       - WORK_PACKET_WORKER_AGENT_ID=${WORK_PACKET_WORKER_AGENT_ID:-agent-06a5b4a8-1e63-4cc6-a8bd-5a026518a763}
-      - LETTABOT_API_URL=http://host.docker.internal:8080
-      - LETTABOT_API_KEY=${LETTABOT_API_KEY:-}
+      # LETTABOT_API_URL/KEY retired 2026-06-01 — LettaBot decommissioned;
+      # pa-web-ui MC traffic flows through subprocess pool (PA_WEB_UI_PHASE_1_ENABLED).
+      # The fallback path in app.py is dead code today (all 6 fleet agents
+      # are in FLEET_AGENT_NAMES); slated for removal in a follow-up cleanup.
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-}
       - OMNIFOCUS_BRIDGE_URL=http://host.docker.internal:8889
       - FOLLOWUP_QUEUE=/data/timer-logs/pending-followups.jsonl

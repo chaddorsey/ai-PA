@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.lettabot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/npm</string>
+        <string>run</string>
+        <string>dev</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/lettabot.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/lettabot.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/dorseyhomeserver</string>
+        <key>LETTA_BASE_URL</key>
+        <string>http://localhost:8283</string>
+        <key>TELEGRAM_BOT_TOKEN</key>
+        <string>8684373817:AAG2ybDgqtl6QNzCfNs1JG7KUP5C-mLAFpI</string>
+        <key>LETTA_AGENT_ID</key>
+        <string>agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Volumes/main-drive/ai-PA/lettabot</string>
+</dict>
+</plist>
