@@ -290,7 +290,8 @@ def update(ref_id, suggested_title, force, status, owner, priority,
 @click.option("--source", required=True,
               type=click.Choice(["email", "slack", "drive", "meeting",
                                  "meeting_marker", "google-docs-comment",
-                                 "email-watch"]))
+                                 "email-watch", "mc-completion",
+                                 "docs-meeting"]))
 @click.option("--limit", default=10, show_default=True, type=int)
 def queue_claim(source, limit):
     """Atomically claim up to N unclaimed rows from pa_web.task_queue."""

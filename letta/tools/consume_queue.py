@@ -53,7 +53,7 @@ def consume_queue(source: str, limit: int = 10) -> Dict[str, Any]:
 
     try:
         # Validate inputs
-        VALID_SOURCES = {"email", "slack", "drive", "meeting", "meeting_marker", "google-docs-comment", "email-watch"}
+        VALID_SOURCES = {"email", "slack", "drive", "meeting", "meeting_marker", "google-docs-comment", "email-watch", "mc-completion", "docs-meeting"}
         if source not in VALID_SOURCES:
             return {
                 "status": "error",
