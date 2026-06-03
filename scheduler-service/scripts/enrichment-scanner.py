@@ -56,15 +56,17 @@ logging.basicConfig(
 )
 log = logging.getLogger("enrichment-scanner")
 
-LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
-TASKS_AGENT_ID = os.environ.get("TASKS_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
+# Local-mode (2026-06-03): dispatch to letta-push-receiver instead of
+# the Docker Letta server. The scanner runs inside scheduler-service,
+# which reaches the host-side daemon via host.docker.internal.
+PUSH_RECEIVER_URL = os.environ.get(
+    "LETTA_PUSH_RECEIVER_URL",
+    "http://host.docker.internal:8099/push",
+)
 PA_WEB_PG = os.environ.get(
     "PA_WEB_POSTGRES_URL",
     "postgresql://postgres:dev_password_123@supabase-db:5432/postgres",
 )
-ENRICHMENT_CONV_ID = os.environ.get(
-    "ENRICHMENT_CONV_ID", ""
-)  # if empty, falls back to direct agent message endpoint
 TIMEOUT_MINUTES = int(os.environ.get("ENRICHMENT_TIMEOUT_MINUTES", "20"))
 
 
@@ -142,28 +144,7 @@ def recover_stuck_rows():
             )
 
 
-# ─── Letta dispatch helpers ────────────────────────────────────────────
-
-def _post_with_redirects(url, body, timeout):
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        if e.code in (301, 302, 307, 308):
-            loc = e.headers.get("Location", "")
-            req2 = urllib.request.Request(
-                loc, data=json.dumps(body).encode(),
-                headers={"Content-Type": "application/json"}, method="POST",
-            )
-            with urllib.request.urlopen(req2, timeout=timeout) as resp2:
-                return json.loads(resp2.read().decode())
-        raise
+# ─── Receiver dispatch helpers ─────────────────────────────────────────
 
 
 def dispatch_enrichment(row):
@@ -222,37 +203,39 @@ def dispatch_enrichment(row):
         f"path was retired in cycle 1)."
     )
 
-    if ENRICHMENT_CONV_ID:
-        # POST /v1/conversations/{id}/messages — SSE-streamed; reading
-        # the full stream waits for the agent's turn to complete.
-        url = f"{LETTA_BASE}/v1/conversations/{ENRICHMENT_CONV_ID}/messages"
-        try:
-            req = urllib.request.Request(
-                url,
-                data=json.dumps({"input": message}).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+    # Push to receiver — routes 'mc-completion' / explicit agent='tasks'
+    # to the tasks agent's warm subprocess. We use agent='tasks' directly
+    # since enrichment is intrinsically a tasks-agent responsibility,
+    # not a per-source dispatch.
+    body = {
+        "agent": "tasks",
+        "source_ref": ref_id,
+        "prompt": message,
+        "priority": "normal",
+    }
+    req = urllib.request.Request(
+        PUSH_RECEIVER_URL,
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode())
+            log.info(
+                f"dispatched ref_id={ref_id} via push receiver "
+                f"(pid={payload.get('pid')}, push_count={payload.get('push_count')})"
             )
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                body = resp.read().decode("utf-8", "replace")
-                tool_calls = body.count('"tool_call_message"')
-                log.info(f"dispatched ref_id={ref_id} via conversation; tool_calls={tool_calls}")
-                return {"status": "dispatched", "tool_calls": tool_calls}
-        except urllib.error.HTTPError as e:
-            log.error(f"dispatch failed (conv) ref_id={ref_id}: HTTP {e.code} {e.read()[:200]}")
-            return {"status": "error"}
-    else:
-        try:
-            _post_with_redirects(
-                f"{LETTA_BASE}/v1/agents/{TASKS_AGENT_ID}/messages/",
-                {"messages": [{"role": "user", "content": message}]},
-                timeout=300,
-            )
-            log.info(f"dispatched ref_id={ref_id} via agent message endpoint")
             return {"status": "dispatched"}
-        except urllib.error.HTTPError as e:
-            log.error(f"dispatch failed (agent) ref_id={ref_id}: HTTP {e.code}")
-            return {"status": "error"}
+    except urllib.error.HTTPError as e:
+        log.error(
+            f"dispatch failed for ref_id={ref_id}: HTTP {e.code} "
+            f"{e.read()[:200].decode('utf-8', 'replace')}"
+        )
+        return {"status": "error"}
+    except Exception as e:
+        log.error(f"dispatch unreachable for ref_id={ref_id}: {e}")
+        return {"status": "error"}
 
 
 # ─── Main ─────────────────────────────────────────────────────────────
