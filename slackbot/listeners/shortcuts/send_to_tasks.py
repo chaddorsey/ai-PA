@@ -19,15 +19,16 @@ import requests
 from slack_bolt import Ack
 from slack_sdk import WebClient
 
-LETTA_BASE_URL = os.getenv("LETTA_BASE_URL", "http://letta:8283").rstrip("/")
-EXTRACTION_AGENT_ID = os.getenv(
-    "LETTA_EXTRACTION_AGENT_ID",
-    "agent-dd15479e-6543-400e-8463-b2a48b13cd4a",
+# Local-mode notification target. The receiver is a host-side daemon
+# that dispatches to per-agent warm letta-code subprocesses via
+# stdin-stream-json. The slackbot runs inside Docker, so it reaches
+# the host via host.docker.internal.
+PUSH_RECEIVER_URL = os.getenv(
+    "LETTA_PUSH_RECEIVER_URL",
+    "http://host.docker.internal:8099/push",
 )
-SPARK_QUEUE_BLOCK_ID = os.getenv(
-    "SPARK_QUEUE_BLOCK_ID",
-    "block-534bb56d-f7f1-4ea4-b2d9-20dc75eca03a",
-)
+# Source slug used in receiver's DEFAULT_SOURCE_ROUTING; "slack" → pulse agent.
+PUSH_SOURCE = "slack"
 
 
 def _extract_message_info(body: dict, logger: Logger) -> dict:
@@ -290,34 +291,41 @@ def _trigger_extraction(entry: dict, logger: Logger,
             logger.error(f"Task queue write failed for {ref_id}: {e}", exc_info=True)
             raise
 
-        # Notify tasks agent (post-cycle-1 cutover: agent reads pa_web.task_queue
-        # via consume_queue, NOT the legacy spark_queue block).
-        notify_msg = (
-            "[Task Queue] New slack spark. Call consume_queue(source='slack', limit=10) "
-            "to claim pending row(s) from pa_web.task_queue. For each row, refine/discover "
-            "context if needed, then call add_extracted_tasks_postgres(...) to land it in "
-            "pa_web.tasks. Phase B (backtrace_task) for user-indicated tasks only. "
-            "Do NOT call the legacy process_spark_queue — that path was retired in cycle 1.\n\n"
-            "DUPLICATE-CHECK POLICY: do NOT skip insertion based solely on conversation "
-            "memory of a prior identical source_ref. Tasks can be deleted out-of-band by "
-            "the user. Authoritative dedup is enforced by the database itself: "
-            "add_extracted_tasks_postgres uses ON CONFLICT (ref_id) DO NOTHING. If you "
-            "suspect a duplicate, attempt the insert anyway — the tool will return "
-            "status='exists' if the row already lives in pa_web.tasks, and status='ok' "
-            "(inserted=true) if it doesn't. Trust the tool's response, not your memory."
+        # Local-mode: notify the push receiver, which routes 'slack' →
+        # pulse agent's warm subprocess. The agent applies its per-source
+        # extraction recipe (task_extraction_process_slack.md) and writes
+        # to pa_web.tasks via the `task` CLI. If the receiver is down,
+        # the 15-min launchd backup poller (`scan_task_queue.sh`) will
+        # eventually pick up the row.
+        notify_prompt = (
+            f"[Task Queue] New user-indicated slack spark, source_ref={ref_id}. "
+            "Apply your per-source extraction recipe: claim from pa_web.task_queue "
+            "(`task queue-claim --source slack --limit 5`), extract task(s), "
+            "`task write` to pa_web.tasks, and `task queue-mark --status processed`. "
+            "Origin should be 'user-indicated' since this came from the Slack shortcut."
         )
-
-        resp = requests.post(
-            f"{LETTA_BASE_URL}/v1/agents/{EXTRACTION_AGENT_ID}/messages/",
-            json={"messages": [{"role": "user", "content": notify_msg}]},
-            timeout=120,
-        )
-        if resp.status_code == 400:
-            # Agent busy — spark is in block, polling fallback will catch it
-            logger.warning(f"Agent busy (400) for {ref_id}, spark in block for polling pickup")
-        else:
-            resp.raise_for_status()
-            logger.info(f"Tasks agent notified for {ref_id}")
+        push_body = {
+            "source": PUSH_SOURCE,
+            "source_ref": ref_id,
+            "prompt": notify_prompt,
+            "priority": "normal",
+        }
+        try:
+            resp = requests.post(PUSH_RECEIVER_URL, json=push_body, timeout=10)
+            if resp.status_code >= 400:
+                logger.warning(
+                    f"Push receiver returned {resp.status_code} for {ref_id} "
+                    f"(row in task_queue; poller will retry): {resp.text[:200]}"
+                )
+            else:
+                logger.info(f"Pulse agent notified via receiver for {ref_id}")
+        except Exception as e:
+            # Non-fatal — the row is in pa_web.task_queue, and the
+            # launchd backup poller will sweep it within 15 min.
+            logger.warning(
+                f"Push receiver unreachable for {ref_id} "
+                f"(falling back to poller): {e}"
+            )
 
     except Exception as e:
         logger.error(f"Failed to trigger extraction: {e}", exc_info=True)
