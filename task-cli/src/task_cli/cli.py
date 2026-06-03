@@ -302,6 +302,63 @@ def queue_claim(source, limit):
     _emit_json(consume_queue(source=source, limit=limit))
 
 
+@cli.command(name="queue-mark")
+@click.option("--id", "row_id", required=True, type=int,
+              help="pa_web.task_queue row id to mark processed.")
+@click.option("--status", default="processed",
+              type=click.Choice(["processed", "reset"]),
+              help="'processed' sets processed_at=NOW(); "
+                   "'reset' clears claimed_at and processed_at "
+                   "(use after a failed extraction to retry).")
+def queue_mark(row_id, status):
+    """Mark a pa_web.task_queue row as processed (or reset for retry).
+
+    Replaces the raw `UPDATE pa_web.task_queue ...` psql invocation in
+    extraction recipes, so producer agents don't need psql in their PATH.
+    """
+    import json
+    import os
+    try:
+        import psycopg
+    except Exception as e:
+        _emit_json({"status": "error", "error_message": f"psycopg import failed: {e}"})
+        return
+
+    db_url = os.environ.get("PA_WEB_POSTGRES_URL")
+    if not db_url:
+        password = os.environ.get("POSTGRES_PASSWORD", "")
+        port = os.environ.get("PA_WEB_POSTGRES_PORT", "5433")
+        db_url = f"postgresql://postgres:{password}@localhost:{port}/postgres"
+
+    if status == "processed":
+        sql = ("UPDATE pa_web.task_queue SET processed_at = NOW() "
+               "WHERE id = %s RETURNING id, source, source_ref, "
+               "claimed_at, processed_at")
+    else:  # reset
+        sql = ("UPDATE pa_web.task_queue SET claimed_at = NULL, "
+               "processed_at = NULL WHERE id = %s "
+               "RETURNING id, source, source_ref")
+
+    try:
+        with psycopg.connect(db_url, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (row_id,))
+                row = cur.fetchone()
+                if not row:
+                    _emit_json({"status": "error",
+                                "error_message": f"no row with id={row_id}"})
+                    return
+                cols = [d[0] for d in cur.description]
+                result = dict(zip(cols, row))
+                # Stringify timestamps for JSON
+                for k, v in list(result.items()):
+                    if hasattr(v, "isoformat"):
+                        result[k] = v.isoformat()
+        _emit_json({"status": "ok", "action": status, "row": result})
+    except Exception as e:
+        _emit_json({"status": "error", "error_message": str(e)})
+
+
 # ─── plate ───────────────────────────────────────────────────────────────────
 
 
