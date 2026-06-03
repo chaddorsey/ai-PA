@@ -193,14 +193,17 @@ def write(ref_id, raw_description, source, source_ref, origin,
     """Insert a new row into pa_web.tasks (idempotent on ref_id)."""
     from letta.tools.add_extracted_tasks_postgres import add_extracted_tasks_postgres
 
+    # NOTE: add_extracted_tasks_postgres expects related_urls_csv +
+    # source_metadata_json (the historical Letta tool param names).
+    # Translate from the user-friendly CLI flag names to those kwargs.
     kwargs = dict(
         ref_id=ref_id, raw_description=raw_description, source=source,
         source_ref=source_ref, origin=origin,
         suggested_title=suggested_title, task_body=task_body,
         original_est_minutes=est_minutes, due_date=due_date,
         priority=priority, owner=owner,
-        related_urls=related_urls,
-        source_metadata=source_metadata,
+        related_urls_csv=related_urls,
+        source_metadata_json=source_metadata,
     )
     # Drop None values so add_extracted_tasks_postgres uses its own defaults
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
