@@ -1,10 +1,15 @@
-"""Agent notification service for sending messages to Letta.
+"""Agent notification service.
 
-Dual-target notification (2026-05-30): every notification is also
-written to pa_web.task_queue (source='email-watch') so the local-mode
-email-agent can pick it up via `task queue-claim --source email-watch`.
-The Docker agent push remains for rollback safety; once local mode
-fully soaks, the Letta push call site can be removed.
+Local-mode (2026-06-03): notifications go to the letta-push-receiver
+at host.docker.internal:8099/push. The receiver routes by source slug
+to per-agent warm letta-code subprocesses. The pa_web.task_queue
+substrate is still the source of truth — receiver pushes are an
+optimization to wake the agent immediately instead of waiting for the
+15-min launchd backup poller.
+
+History: the Docker-Letta push path (HTTPX → /v1/agents/<id>/messages)
+was removed when the Docker Letta server was decommissioned. The dual-
+target write to pa_web.task_queue remains the durable producer step.
 """
 
 from __future__ import annotations
@@ -23,15 +28,24 @@ from gmail_watch.utils.interval_parser import format_interval
 
 logger = logging.getLogger(__name__)
 
+# letta-push-receiver dispatches by source slug. From inside Docker the
+# host-side daemon is reachable via host.docker.internal.
+PUSH_RECEIVER_URL = os.environ.get(
+    "LETTA_PUSH_RECEIVER_URL",
+    "http://host.docker.internal:8099/push",
+)
+
 
 class AgentNotifier:
-    """Sends notifications to Letta Email Agent (Docker push + pa_web queue)."""
+    """Sends notifications to local-mode Letta agents via push receiver."""
 
     def __init__(
         self,
         letta_base_url: Optional[str] = None,
         agent_id: Optional[str] = None,
     ) -> None:
+        # Kept for backward compat with constructor signature; not used
+        # for routing anymore.
         self.letta_base_url = letta_base_url or settings.letta_base_url
         self.agent_id = agent_id or settings.letta_agent_id
 
@@ -348,49 +362,43 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         )
 
         message = "\n".join(lines)
-        return await self._send_to_agent(message)
+        return await self._send_to_agent(message, source="email")
 
     async def notify_spark_queue(
         self,
         entries: list[dict[str, Any]],
-        agent_id: str,
+        agent_id: Optional[str] = None,
+        source: str = "slack",
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Notify tasks agent that new sparks are ready in spark_queue block.
+        """Notify the owner agent that new sparks are ready in pa_web.task_queue.
 
-        Lightweight notification — agent reads the block for full content.
+        `agent_id` is accepted for backward-compat but unused in local mode —
+        routing happens via `source` slug.
         """
         if not entries:
             return {"status": "ok", "message": "no entries"}
 
-        # Cycle-1: sparks live in pa_web.task_queue (source varies by
-        # producer). process_spark_queue is retired.
         message = (
-            f"[Task Queue] {len(entries)} new spark(s) in pa_web.task_queue. "
-            "Call consume_queue(source=<the relevant source>, limit=20) to "
-            "claim pending row(s), then add_extracted_tasks_postgres(...) for "
-            "each. Phase B (backtrace_task) for user-indicated tasks only. "
-            "Do NOT call process_spark_queue — that path was retired in cycle 1."
+            f"[Task Queue] {len(entries)} new spark(s) in pa_web.task_queue "
+            f"(source={source}). Apply your per-source extraction recipe: "
+            "`task queue-claim --source <src> --limit 20`, extract per row, "
+            "`task write` to pa_web.tasks, `task queue-mark`."
         )
-
-        original_agent_id = self.agent_id
-        self.agent_id = agent_id
-        try:
-            return await self._send_to_agent(message)
-        finally:
-            self.agent_id = original_agent_id
+        return await self._send_to_agent(message, source=source)
 
     async def notify_drive_task_queued(
         self,
         entries: list[dict[str, Any]],
-        agent_id: str,
+        agent_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Notify Docs & Transcripts Agent that drive comment tasks are queued.
+        """Notify the docs agent that drive comment tasks are queued.
 
         Args:
             entries: List of dicts with comment_id, doc_title, comment_text,
                      triggered_by, marker_type, task_hint.
-            agent_id: Target agent ID (Docs & Transcripts agent).
+            agent_id: Accepted for backward-compat; unused in local mode
+                     (routing happens via source='google-docs-comment').
         """
         if not entries:
             return {"status": "ok", "message": "no entries"}
@@ -435,72 +443,54 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
         )
 
         message = "\n".join(lines)
-
-        # Temporarily target the Docs & Transcripts agent
-        original_agent_id = self.agent_id
-        self.agent_id = agent_id
-        try:
-            return await self._send_to_agent(message)
-        finally:
-            self.agent_id = original_agent_id
+        return await self._send_to_agent(message, source="google-docs-comment")
 
     async def _send_to_agent(
-        self, message: str, max_retries: int = 3,
+        self,
+        message: str,
+        source: str = "email-watch",
+        source_ref: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Send a message to the Letta agent with retry on 400 (agent busy)."""
-        import asyncio
+        """Push a notification to the receiver, routed by source slug.
 
-        url = f"{self.letta_base_url}/v1/agents/{self.agent_id}/messages"
+        Receiver routes:
+          email, email-watch       → email agent
+          slack                    → pulse agent
+          drive, meeting,
+            google-docs-comment    → docs agent
+          mc-completion            → mc agent
 
-        payload = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": message,
-                }
-            ],
+        Non-fatal on failure: the work is already in pa_web.task_queue
+        (via _write_watch_event_to_queue or the task_queue_writer), and
+        the 15-min launchd backup poller will sweep it within the SLA.
+        """
+        body: dict[str, Any] = {
+            "source": source,
+            "prompt": message,
+            "priority": "normal",
         }
-
-        for attempt in range(max_retries + 1):
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.post(url, json=payload)
-                    if response.status_code == 400 and attempt < max_retries:
-                        wait = 10 * (attempt + 1)
-                        logger.warning(
-                            "agent_busy_retrying",
-                            agent_id=self.agent_id,
-                            attempt=attempt + 1,
-                            wait_seconds=wait,
-                        )
-                        await asyncio.sleep(wait)
-                        continue
-                    response.raise_for_status()
-
-                    return {
-                        "status": "ok",
-                        "agent_id": self.agent_id,
-                        "response": response.json(),
-                    }
-            except httpx.HTTPStatusError as e:
-                if attempt < max_retries and e.response.status_code == 400:
-                    wait = 10 * (attempt + 1)
+        if source_ref:
+            body["source_ref"] = source_ref
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(PUSH_RECEIVER_URL, json=body)
+                if response.status_code >= 400:
                     logger.warning(
-                        "agent_busy_retrying",
-                        agent_id=self.agent_id,
-                        attempt=attempt + 1,
-                        wait_seconds=wait,
+                        "push_receiver_error",
+                        status=response.status_code,
+                        body=response.text[:200],
+                        source=source,
                     )
-                    await asyncio.sleep(wait)
-                    continue
+                    return {
+                        "status": "error",
+                        "error": f"HTTP {response.status_code}: {response.text[:200]}",
+                    }
                 return {
-                    "status": "error",
-                    "error": f"HTTP {e.response.status_code}: {e.response.text}",
+                    "status": "ok",
+                    "source": source,
+                    "response": response.json(),
                 }
-            except Exception as e:
-                return {
-                    "status": "error",
-                    "error": str(e),
-                }
-
-        return {"status": "error", "error": "Max retries exceeded"}
+        except Exception as e:
+            # Receiver down → row is still in task_queue; poller will catch.
+            logger.warning("push_receiver_unreachable", error=str(e), source=source)
+            return {"status": "error", "error": str(e)}
