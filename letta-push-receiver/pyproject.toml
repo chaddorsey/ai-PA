@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "letta-push-receiver"
+version = "0.1.0"
+description = "HTTP push receiver + warm subprocess pool for local-mode Letta agents. Routes producer events to the per-source owner agent via stream-json subprocess pipes."
+authors = ["ai-PA"]
+packages = [{include = "letta_push_receiver", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+flask = "^3.0"
+pyyaml = "^6.0"
+
+[tool.poetry.scripts]
+letta-push-receiver = "letta_push_receiver.__main__:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
