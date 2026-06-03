@@ -29,6 +29,14 @@ LETTA_BASE_URL = "http://letta:8283"
 TASKS_AGENT_ID = "agent-62edcfac-2cc7-41a5-a3c2-d417da393397"
 MC_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
 
+# Local-mode push target — wakes MC's warm subprocess immediately after
+# the queue row is written. Non-fatal on error: the row is durable in
+# pa_web.task_queue and the 15-min launchd backup poller will catch up.
+PUSH_RECEIVER_URL = os.environ.get(
+    "LETTA_PUSH_RECEIVER_URL",
+    "http://host.docker.internal:8099/push",
+)
+
 
 def parse_timing_from_note(note: str) -> Optional[str]:
     """Extract timing summary from Time Tracking block in task note."""
@@ -219,3 +227,42 @@ async def notify_mc(
         )
     except Exception as e:
         logger.warning("mc_notify_queue_write_failed", exc_info=e)
+        return
+
+    # Wake MC's warm subprocess via the push receiver. The row is
+    # already durable in pa_web.task_queue, so failure here is non-fatal.
+    push_prompt = (
+        f"[Task Completed] {task_name}"
+        + (f" (project: {project_name})" if project_name else "")
+        + f" — completed {completion_date}."
+        + (f" Timing: {timing_summary}." if timing_summary else "")
+        + (
+            f" Source extraction: ref_id={extraction_info.get('ref_id','')}, "
+            f"follow_up_pending={extraction_info.get('has_external_origin', False)}."
+            if extraction_info else ""
+        )
+        + " Claim from pa_web.task_queue source='mc-completion' "
+        "(`task queue-claim --source mc-completion`) for full payload, "
+        "then handle follow-up routing per your completion protocol."
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as push_client:
+            r = await push_client.post(
+                PUSH_RECEIVER_URL,
+                json={
+                    "agent": "mc",
+                    "source": "mc-completion",
+                    "source_ref": source_ref,
+                    "prompt": push_prompt,
+                    "priority": "normal",
+                },
+            )
+            if r.status_code >= 400:
+                logger.warning(
+                    "mc_push_receiver_error",
+                    extra={"status": r.status_code, "body": r.text[:200]},
+                )
+            else:
+                logger.info("mc_push_receiver_accepted")
+    except Exception as e:
+        logger.warning("mc_push_receiver_unreachable", exc_info=e)
