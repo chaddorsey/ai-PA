@@ -29,10 +29,17 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 API_BASE = "https://public-api.granola.ai/v1"
 DEFAULT_STATE_PATH = Path("/Volumes/main-drive/ai-PA/logs/health/granola-poll.state")
 COLD_START_LOOKBACK = timedelta(hours=24)
+
+# Shadow Markdown-export directory used during the granola-ingest
+# decomm soak (Step B of the get-off-archival work). Pointed at a
+# parallel dir so we can diff against the legacy granola-ingest output
+# in ~/Dropbox/Granola-exports/ before retiring that service.
+DEFAULT_EXPORT_DIR = Path.home() / "Dropbox" / "Granola-exports-poller"
 
 
 def ts() -> str:
@@ -145,11 +152,16 @@ def insert_queue_row(note: dict) -> tuple[str, bool]:
         "title": note.get("title", ""),
         "owner_email": (note.get("owner") or {}).get("email", ""),
         "owner_name": (note.get("owner") or {}).get("name", ""),
-        "summary": note.get("summary", ""),
+        "summary": (
+            note.get("summary_text")
+            or note.get("summary_markdown")
+            or note.get("summary")
+            or ""
+        ),
         "transcript_snippet": _transcript_preview(note),
         "created_at": note.get("created_at", ""),
         "fetch_hint": f"granola:{note_id}",
-        "permalink": f"https://notes.granola.ai/d/{note_id}",
+        "permalink": note.get("web_url") or f"https://notes.granola.ai/d/{note_id}",
         "source_type": "meeting",
     }
 
@@ -174,6 +186,160 @@ def insert_queue_row(note: dict) -> tuple[str, bool]:
             row = cur.fetchone()
             inserted = row is not None
     return source_ref, inserted
+
+
+# ─── Markdown export ─────────────────────────────────────────────────────────
+
+
+def _sanitize_filename(text: str, max_len: int = 80) -> str:
+    """Strip characters that misbehave on macOS/iCloud/Dropbox path layers."""
+    import re as _re
+    cleaned = _re.sub(r"[\\/:*?\"<>|\n\r\t]", "", text or "")
+    cleaned = cleaned.strip().replace("  ", " ")
+    return cleaned[:max_len] or "untitled"
+
+
+def _format_iso_for_filename(iso_ts: str) -> str:
+    """Render a Granola created_at into a filesystem-safe time component.
+
+    Falls back to a sanitized version of the raw string if parsing fails.
+    """
+    if not iso_ts:
+        return "unknown-time"
+    try:
+        ts = datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
+        return ts.strftime("%Y-%m-%dT%H_%M_%S")
+    except Exception:
+        import re as _re
+        return _re.sub(r"[: ]", "_", iso_ts)[:32] or "unknown-time"
+
+
+def _format_transcript_block(transcript) -> str:
+    """Render the transcript as one speaker per paragraph, blank-line
+    separated.
+
+    Public API shape: list of {speaker, text, timestamp?} entries.
+    String shape: pass through (Granola's pipeline rarely emits this).
+    Empty/None: empty string.
+    """
+    if isinstance(transcript, list):
+        lines = []
+        for entry in transcript:
+            speaker = (entry.get("speaker") or "").strip()
+            text = (entry.get("text") or "").strip()
+            if not text and not speaker:
+                continue
+            lines.append(f"{speaker}: {text}" if speaker else text)
+        # Blank line between every speaker turn for human readability.
+        return "\n\n".join(lines)
+    if isinstance(transcript, str):
+        return transcript.strip()
+    return ""
+
+
+def write_markdown_export(note: dict, export_dir: Path) -> Optional[Path]:
+    """Idempotent Markdown export for one note.
+
+    Filename: granolaNote--<created>--<id>--<title>.md
+    Sections: title, metadata table, Meeting Notes (if any), Summary,
+    Transcript (one speaker per paragraph, blank line between).
+
+    Returns the path written (or already-present), or None on failure.
+    """
+    try:
+        export_dir.mkdir(parents=True, exist_ok=True)
+
+        note_id = note.get("id") or note.get("note_id") or ""
+        title = (note.get("title") or "Untitled Meeting").strip()
+        created_at = note.get("created_at") or ""
+        web_url = note.get("web_url") or (
+            f"https://notes.granola.ai/d/{note_id}" if note_id else ""
+        )
+
+        time_component = _format_iso_for_filename(created_at)
+        title_component = _sanitize_filename(title)
+        filename = f"granolaNote--{time_component}--{note_id}--{title_component}.md"
+        output_path = export_dir / filename
+
+        # Idempotent: don't rewrite. If content evolves and we need a
+        # forced re-export, delete the file or bump a hash suffix.
+        if output_path.exists():
+            return output_path
+
+        # Metadata table
+        meta_rows = [
+            "| Field | Value |",
+            "|-------|-------|",
+            f"| **Date** | {created_at or '(unknown)'} |",
+            f"| **Granola Document ID** | `{note_id}` |",
+        ]
+        if web_url:
+            display = web_url.replace("https://", "")
+            meta_rows.append(f"| **Granola Link** | [{display}]({web_url}) |")
+
+        attendees = note.get("attendees") or []
+        if attendees:
+            names = []
+            for a in attendees:
+                if not isinstance(a, dict):
+                    continue
+                name = (a.get("name") or "").strip()
+                email = (a.get("email") or "").strip()
+                if name and email:
+                    names.append(f"{name} ({email})")
+                elif name:
+                    names.append(name)
+                elif email:
+                    names.append(email)
+            if names:
+                meta_rows.append(f"| **Participants** | {', '.join(names)} |")
+
+        owner = note.get("owner") or {}
+        if isinstance(owner, dict) and (owner.get("name") or owner.get("email")):
+            on = owner.get("name", "")
+            oe = owner.get("email", "")
+            owner_disp = f"{on} ({oe})" if on and oe else (on or oe)
+            meta_rows.append(f"| **Owner** | {owner_disp} |")
+
+        sections = [f"# {title}\n", "\n".join(meta_rows)]
+
+        # Granola Public API field naming: summary_markdown is the
+        # AI-generated summary (rich), summary_text is plain-text
+        # rendering of it. private_notes is the user's own notes.
+        private_notes = (
+            note.get("private_notes")
+            or note.get("notes_plain")
+            or ""
+        ).strip()
+        if private_notes:
+            sections.append("---\n\n## Meeting Notes\n")
+            sections.append(private_notes)
+
+        summary = (
+            note.get("summary_markdown")
+            or note.get("summary_text")
+            or note.get("summary")
+            or ""
+        ).strip()
+        if summary:
+            sections.append("---\n\n## Summary\n")
+            sections.append(summary)
+
+        transcript_block = _format_transcript_block(note.get("transcript"))
+        if transcript_block:
+            sections.append("---\n\n## Transcript\n")
+            sections.append(transcript_block)
+
+        markdown = "\n\n".join(sections) + "\n"
+        # Atomic write — avoids half-written files if killed mid-write.
+        tmp = output_path.with_suffix(".md.tmp")
+        tmp.write_text(markdown, encoding="utf-8")
+        tmp.replace(output_path)
+        return output_path
+
+    except Exception as e:
+        log(f"  WARN: markdown export failed for note: {e}")
+        return None
 
 
 def _transcript_preview(note: dict) -> str:
@@ -236,9 +402,11 @@ def main() -> int:
 
     state_path = Path(os.environ.get("GRANOLA_POLL_STATE", str(DEFAULT_STATE_PATH)))
     receiver_url = os.environ.get("LETTA_PUSH_RECEIVER_URL", "http://localhost:8099")
+    export_dir = Path(os.environ.get("GRANOLA_EXPORT_DIR", str(DEFAULT_EXPORT_DIR)))
 
     last_seen = load_state(state_path)
     log(f"polling Granola for notes created after {last_seen}")
+    log(f"markdown export dir: {export_dir}")
 
     try:
         notes = list_notes_since(last_seen, api_key)
@@ -271,7 +439,14 @@ def main() -> int:
             # Without this filter we'd queue + process empty rows,
             # marking them processed and losing the chance to extract
             # tasks once content arrives.
-            summary = (full.get("summary") or "").strip()
+            # Public API uses summary_text / summary_markdown; older
+            # entries may still have a `summary` field — accept either.
+            summary = (
+                full.get("summary_text")
+                or full.get("summary_markdown")
+                or full.get("summary")
+                or ""
+            ).strip()
             transcript = full.get("transcript")
             has_transcript = bool(transcript) and (
                 (isinstance(transcript, str) and transcript.strip())
@@ -286,7 +461,27 @@ def main() -> int:
                 # note next poll. Stay at the last successful note's created_at.
                 continue
 
-            source_ref, inserted = insert_queue_row(full)
+            # Markdown export — idempotent, independent of queue insert.
+            # Shadow-mode during the granola-ingest decomm soak; once
+            # confidence is built up, point GRANOLA_EXPORT_DIR at the
+            # canonical ~/Dropbox/Granola-exports/ and retire ingest.
+            # Run BEFORE the queue insert so an export still happens
+            # even if Postgres is down.
+            md_path = write_markdown_export(full, export_dir)
+            if md_path:
+                log(f"  exported: {md_path.name}")
+
+            try:
+                source_ref, inserted = insert_queue_row(full)
+            except Exception as qe:
+                log(f"  WARN queue insert failed for {note_id} (export ok): {qe}")
+                # Still advance the cursor — we don't want to keep
+                # re-fetching the same note just because the queue is
+                # temporarily unreachable.
+                if created_at and created_at > new_max_created:
+                    new_max_created = created_at
+                continue
+
             if inserted:
                 inserted_count += 1
                 log(f"  queued: {note_id} | {title}")
@@ -294,6 +489,7 @@ def main() -> int:
                     pushed_count += 1
             else:
                 log(f"  already queued: {note_id} | {title}")
+
             if created_at and created_at > new_max_created:
                 new_max_created = created_at
         except Exception as e:
