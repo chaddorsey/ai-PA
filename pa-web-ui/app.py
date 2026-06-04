@@ -2973,9 +2973,6 @@ def stream():
 
 # ── Task Review Sidebar API ──
 
-TASKS_AGENT_ID = "agent-dd15479e-6543-400e-8463-b2a48b13cd4a"
-EXTRACTED_TASKS_BLOCK_ID = "block-90300b77-6b72-42cb-8e67-c74fbb497cf6"
-TASKS_ARCHIVE_ID = "archive-f9bcaa87-7630-41c9-9694-41d46fc47d26"
 OMNIFOCUS_BRIDGE_URL = os.getenv(
     "OMNIFOCUS_BRIDGE_URL", "http://host.docker.internal:8889"
 )
@@ -3011,7 +3008,15 @@ def parse_task_block(block_value):
 
 
 def parse_archival_passage(text):
-    """Parse structured archival passage text into sections."""
+    """Parse passage-shaped text into sections.
+
+    NB: name is historical. This is a TEXT PARSER, not an archival
+    reader. The function operates on pa_web.tasks.task_body content
+    which, for rows extracted prior to cycle-1, happens to be stored
+    in the same shape that archival passages used. No archival API
+    calls happen here. Rename pending — kept as-is to avoid churning
+    call sites in this commit.
+    """
     result = {}
 
     # Include raw text for note formatting
@@ -3224,19 +3229,6 @@ def call_omnifocus_bridge(method, params=None):
     return result
 
 
-def _find_archival_passage(client, ref_id):
-    """Search archival memory for a passage matching ref_id. Returns (passage, error_response)."""
-    resp = client.get(
-        f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}/archival-memory",
-        params={"search": ref_id},
-    )
-    resp.raise_for_status()
-    for p in resp.json():
-        if f"REF_ID: {ref_id}" in p.get('text', '') and p.get('archive_id') == TASKS_ARCHIVE_ID:
-            return p, None
-    return None, (jsonify({"error": f"No passage found for {ref_id}"}), 404)
-
-
 def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
     """Build rich-text segments for an OmniFocus work packet note.
 
@@ -3402,41 +3394,6 @@ def _write_work_packet_note(ref_id, omnifocus_task_id, passage_text, enrichment=
             return True
         except Exception:
             return False
-
-
-def _replace_passage(client, passage_id, new_text, tags):
-    """Delete old passage and insert replacement in shared archive."""
-    client.delete(
-        f"{LETTA_BASE_URL}/v1/archives/{TASKS_ARCHIVE_ID}/passages/{passage_id}"
-    )
-    ins_resp = client.post(
-        f"{LETTA_BASE_URL}/v1/archives/{TASKS_ARCHIVE_ID}/passages",
-        json={"text": new_text, "tags": tags},
-    )
-    ins_resp.raise_for_status()
-    return ins_resp.json()
-
-
-def _remove_ref_from_block(client, ref_id):
-    """Remove a task line from the extracted_tasks block (best-effort)."""
-    try:
-        block_resp = client.get(
-            f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}"
-        )
-        block_resp.raise_for_status()
-        val = block_resp.json().get('value', '')
-        new_val = re.sub(
-            rf'[^\n]*ref_id: {re.escape(ref_id)}[^\n]*\n*', '', val
-        )
-        while '\n\n\n' in new_val:
-            new_val = new_val.replace('\n\n\n', '\n\n')
-        if new_val != val:
-            client.patch(
-                f"{LETTA_BASE_URL}/v1/blocks/{EXTRACTED_TASKS_BLOCK_ID}",
-                json={"value": new_val},
-            )
-    except Exception:
-        pass
 
 
 # --- Cycle-1 Pattern 5 cutover (2026-04-26) ---
