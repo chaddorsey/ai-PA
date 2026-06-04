@@ -1,16 +1,20 @@
 """Shared completion processing logic.
 
-Handles archival memory lookup, passage updates, and follow-up routing
-for completed OmniFocus tasks. Used by both the push endpoint and the
+Handles task-lookup, status updates, and follow-up routing for
+completed OmniFocus tasks. Used by both the push endpoint and the
 reconciliation poller.
 
-2026-06-01: MC notification path rewired from direct HTTP POST
-(/v1/agents/{MC}/messages) to pa_web.task_queue insert with
-source='mc-completion'. Reason: LettaBot decommissioning + MC's
-upcoming local-mode migration both make HTTP-to-MC delivery untenable.
-The queue pattern matches the email-watch substrate established
-2026-05-30; MC claims via `task queue-claim --source mc-completion`
-when summoned.
+History:
+- 2026-06-01: MC notification path rewired from direct HTTP POST
+  (/v1/agents/{MC}/messages) to pa_web.task_queue insert with
+  source='mc-completion'. The queue pattern matches the email-watch
+  substrate established 2026-05-30; MC claims via `task queue-claim
+  --source mc-completion` when summoned.
+- 2026-06-04: Archival-memory passage lookup + rewrite removed.
+  Replaced with direct UPDATE against pa_web.tasks (omnifocus_id is
+  a first-class column). The Docker Letta server is being
+  decommissioned; archival becomes a read-only museum, and
+  pa_web.tasks is the canonical task substrate.
 """
 import os
 import re
@@ -23,10 +27,6 @@ import httpx
 
 logger = logging.getLogger("completion-processor")
 
-LETTA_BASE_URL = "http://letta:8283"
-# Note: archive API not used — we use agent archival memory API which includes shared archives
-# This is tasks-agent-sleeptime — the agent whose archival memory stores extracted task passages
-TASKS_AGENT_ID = "agent-62edcfac-2cc7-41a5-a3c2-d417da393397"
 MC_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
 
 # Local-mode push target — wakes MC's warm subprocess immediately after
@@ -36,6 +36,18 @@ PUSH_RECEIVER_URL = os.environ.get(
     "LETTA_PUSH_RECEIVER_URL",
     "http://host.docker.internal:8099/push",
 )
+
+
+def _resolve_pg_url() -> str:
+    db_url = os.environ.get("PA_WEB_POSTGRES_URL")
+    if db_url:
+        return db_url
+    db_url = os.environ.get("DATABASE_URL", "")
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+    if db_url:
+        return db_url
+    password = os.environ.get("POSTGRES_PASSWORD", "")
+    return f"postgresql://postgres:{password}@supabase-db:5432/postgres"
 
 
 def parse_timing_from_note(note: str) -> Optional[str]:
@@ -57,83 +69,104 @@ def parse_timing_from_note(note: str) -> Optional[str]:
 
 
 async def find_extracted_task(task_id: str, client: httpx.AsyncClient) -> Optional[dict]:
-    """Search archival memory for an extracted task passage matching this OmniFocus task ID."""
-    url = f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}/archival-memory"
-    resp = await client.get(url, params={"search": task_id, "limit": 20})
-    if resp.status_code != 200:
-        logger.error(f"Archival search failed: {resp.status_code}")
-        return None
+    """Look up a pa_web.tasks row by its OmniFocus task ID.
 
-    for passage in resp.json():
-        text = passage.get("text", "")
-        if f"- Task ID: {task_id}" in text and "status:confirmed" in str(passage.get("tags", [])):
-            return passage
-    return None
+    `client` is accepted for backward-compat with the old archival
+    signature; not used (we go directly to Postgres via asyncpg).
+
+    Returns the row as a dict, or None if no matching row exists.
+    Skip sentinel values ('pending', 'TEMP', '') — those indicate a
+    task that's queued for OF sync but doesn't have a real OF id yet.
+    """
+    if not task_id or task_id in ("pending", "TEMP"):
+        return None
+    try:
+        import asyncpg
+    except Exception as e:
+        logger.warning("find_extracted_task asyncpg import failed: %s", e)
+        return None
+    try:
+        conn = await asyncpg.connect(_resolve_pg_url(), timeout=10.0)
+        try:
+            row = await conn.fetchrow(
+                """SELECT ref_id, source, status, omnifocus_id,
+                          source_metadata, raw_description, closed_at
+                     FROM pa_web.tasks
+                    WHERE omnifocus_id = $1
+                    LIMIT 1""",
+                task_id,
+            )
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning("find_extracted_task pg lookup failed for %s: %s",
+                       task_id, e)
+        return None
+    return dict(row) if row else None
 
 
 async def update_passage_completed(
-    passage: dict,
+    row: dict,
     completion_date: str,
     was_dropped: bool,
     client: httpx.AsyncClient,
 ) -> dict:
-    """Update an extracted task passage to completed/dropped status.
+    """Mark a pa_web.tasks row as completed/rejected on OF sync-back.
 
-    Returns routing metadata for follow-up actions.
+    `client` is accepted for backward-compat (unused). Returns the
+    routing metadata that notify_mc uses to compose the completion
+    summary.
     """
-    text = passage["text"]
-    passage_id = passage["id"]
-    status_word = "DROPPED" if was_dropped else "COMPLETED"
+    new_status = "rejected" if was_dropped else "completed"
 
-    # Prefix TASK line
-    text = re.sub(r"^(TASK:\s*)", rf"TASK: [{status_word}] ", text, count=1)
+    # Parse completion_date into a tz-aware datetime for closed_at. Accept
+    # ISO 8601 in any form; fall back to NOW() if parsing fails so we
+    # never lose the close.
+    try:
+        ts = datetime.fromisoformat(completion_date.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except Exception:
+        ts = datetime.now(timezone.utc)
 
-    # Update status in OMNIFOCUS section
-    text = re.sub(r"- Status:\s*\w+", f"- Status: {status_word.lower()}", text)
+    try:
+        import asyncpg
+    except Exception as e:
+        logger.warning("update pa_web.tasks asyncpg import failed: %s", e)
+    else:
+        try:
+            conn = await asyncpg.connect(_resolve_pg_url(), timeout=10.0)
+            try:
+                await conn.execute(
+                    """UPDATE pa_web.tasks
+                          SET status = $1,
+                              closed_at = $2,
+                              updated_at = NOW()
+                        WHERE ref_id = $3""",
+                    new_status, ts, row.get("ref_id"),
+                )
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.warning(
+                "pa_web.tasks completion update failed for ref_id=%s: %s",
+                row.get("ref_id"), e,
+            )
 
-    # Add completion timestamp
-    timestamp_line = f"- {'Dropped' if was_dropped else 'Completed'}: {completion_date}"
-    text = re.sub(
-        r"(TIMESTAMPS\n(?:- .+\n)*)",
-        rf"\g<1>{timestamp_line}\n",
-        text,
-    )
-
-    # Extract routing metadata
-    source_type = ""
-    from_person = ""
-    m = re.search(r"- Type:\s*(.+)", text)
-    if m:
-        source_type = m.group(1).strip()
-    m = re.search(r"- From:\s*(.+)", text)
-    if m:
-        from_person = m.group(1).strip()
+    # Routing metadata for MC notification. source_metadata holds the
+    # from_person and similar producer-captured fields.
+    smeta = row.get("source_metadata") or {}
+    if isinstance(smeta, str):
+        try:
+            smeta = json.loads(smeta)
+        except Exception:
+            smeta = {}
+    from_person = smeta.get("from_person", "") or ""
     has_external_origin = bool(from_person) and "Chad Dorsey" not in from_person
 
-    ref_id = ""
-    m = re.search(r"REF_ID:\s*(\S+)", text)
-    if m:
-        ref_id = m.group(1)
-
-    # Update tags
-    old_tags = passage.get("tags", [])
-    new_tags = [t for t in old_tags if not t.startswith("status:")]
-    new_tags.append(f"status:{status_word.lower()}")
-
-    # Insert new passage first, then delete old (safer ordering)
-    insert_url = f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}/archival-memory"
-    insert_resp = await client.post(
-        insert_url,
-        json={"text": text, "tags": new_tags},
-    )
-
-    if insert_resp.status_code in (200, 201):
-        delete_url = f"{LETTA_BASE_URL}/v1/agents/{TASKS_AGENT_ID}/archival-memory/{passage_id}"
-        await client.delete(delete_url)
-
     return {
-        "ref_id": ref_id,
-        "source_type": source_type,
+        "ref_id": row.get("ref_id", ""),
+        "source_type": row.get("source", "") or "",
         "from_person": from_person,
         "has_external_origin": has_external_origin,
     }
