@@ -476,10 +476,8 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
                 response = await client.post(PUSH_RECEIVER_URL, json=body)
                 if response.status_code >= 400:
                     logger.warning(
-                        "push_receiver_error",
-                        status=response.status_code,
-                        body=response.text[:200],
-                        source=source,
+                        "push_receiver_error status=%s source=%s body=%s",
+                        response.status_code, source, response.text[:200],
                     )
                     return {
                         "status": "error",
@@ -492,5 +490,7 @@ I'll notify you when a reply is received, or remind you if no reply arrives by t
                 }
         except Exception as e:
             # Receiver down → row is still in task_queue; poller will catch.
-            logger.warning("push_receiver_unreachable", error=str(e), source=source)
+            logger.warning(
+                "push_receiver_unreachable source=%s error=%s", source, e,
+            )
             return {"status": "error", "error": str(e)}
