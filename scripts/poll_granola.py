@@ -97,9 +97,14 @@ def api_request(path: str, api_key: str, timeout: float = 15.0) -> dict:
 
 
 def fetch_note_full(note_id: str, api_key: str) -> dict:
-    """Get a single note with transcript included."""
+    """Get a single note with transcript included.
+
+    Per docs.granola.ai/introduction, the documented include param is
+    `?include=transcript` (singular value). Our earlier attempts with
+    `?include_transcript=true` silently returned transcript=null.
+    """
     return api_request(
-        f"/notes/{urllib.parse.quote(note_id)}?include_transcript=true",
+        f"/notes/{urllib.parse.quote(note_id)}?include=transcript",
         api_key,
     )
 
@@ -214,23 +219,60 @@ def _format_iso_for_filename(iso_ts: str) -> str:
         return _re.sub(r"[: ]", "_", iso_ts)[:32] or "unknown-time"
 
 
-def _format_transcript_block(transcript) -> str:
-    """Render the transcript as one speaker per paragraph, blank-line
-    separated.
+_SPEAKER_LABEL = {
+    "microphone": "Me",   # local user (your mic)
+    "speaker": "Them",    # remote audio (other side)
+}
 
-    Public API shape: list of {speaker, text, timestamp?} entries.
-    String shape: pass through (Granola's pipeline rarely emits this).
-    Empty/None: empty string.
+
+def _speaker_label(entry: dict) -> str:
+    """Map the speaker shape to a human-readable label.
+
+    Public API speaker shape: {"source": "microphone" | "speaker"}.
+    Older/alternate shapes (plain string, missing) fall through to a
+    generic label so the transcript still renders.
+    """
+    raw = entry.get("speaker")
+    if isinstance(raw, dict):
+        src = raw.get("source") or ""
+        return _SPEAKER_LABEL.get(src, src or "Speaker")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return ""
+
+
+def _format_transcript_block(transcript) -> str:
+    """Render the transcript as one speaker turn per paragraph.
+
+    - Public API list-of-entries shape: each entry has speaker (dict)
+      and text. We consolidate consecutive same-speaker entries into a
+      single turn so the output reads naturally (Granola sometimes
+      emits 5-10 token-level entries per actual utterance).
+    - String shape: pass through.
+    - Empty/None: empty string.
+
+    Format (per user spec):
+        Me: line text
+
+        Them: line text
+
+        Me: another line
     """
     if isinstance(transcript, list):
-        lines = []
+        turns: list[tuple[str, list[str]]] = []  # (label, chunks)
         for entry in transcript:
-            speaker = (entry.get("speaker") or "").strip()
             text = (entry.get("text") or "").strip()
-            if not text and not speaker:
+            if not text:
                 continue
-            lines.append(f"{speaker}: {text}" if speaker else text)
-        # Blank line between every speaker turn for human readability.
+            label = _speaker_label(entry)
+            if turns and turns[-1][0] == label:
+                turns[-1][1].append(text)
+            else:
+                turns.append((label, [text]))
+        lines = []
+        for label, chunks in turns:
+            body = " ".join(chunks)
+            lines.append(f"{label}: {body}" if label else body)
         return "\n\n".join(lines)
     if isinstance(transcript, str):
         return transcript.strip()

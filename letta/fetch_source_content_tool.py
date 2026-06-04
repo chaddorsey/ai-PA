@@ -361,9 +361,12 @@ def fetch_source_content(
             api_key = os.environ.get("GRANOLA_API_KEY", "")
             if meeting_id and api_key:
                 try:
+                    # Per docs.granola.ai: documented param is
+                    # `?include=transcript` (singular). `?include_transcript=true`
+                    # silently returns transcript=null.
                     api_url = (
                         f"https://public-api.granola.ai/v1/notes/"
-                        f"{meeting_id}?include_transcript=true"
+                        f"{meeting_id}?include=transcript"
                     )
                     g_req = urllib.request.Request(
                         api_url,
