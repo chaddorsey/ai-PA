@@ -48,121 +48,152 @@ def fetch_source_content(
     import urllib.error
 
     try:
-        LETTA_BASE = os.environ.get("LETTA_BASE_URL", "http://localhost:8283")
-        AGENT_ID = os.environ.get("TASKS_AGENT_ID", "agent-dd15479e-6543-400e-8463-b2a48b13cd4a")
-
-        # If ref_id provided, look up archival passage to extract source_type and fetch_hint
+        # ref_id path: query pa_web.tasks DIRECTLY. The legacy archival-memory
+        # lookup at /v1/agents/<TASKS_AGENT_ID>/archival-memory is gone with
+        # the Letta-Docker decommissioning, and the row holds everything we
+        # need to derive source_type + a source-specific fetch_hint.
         if ref_id:
-            search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={ref_id}&limit=3"
-            req = urllib.request.Request(search_url)
             try:
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    passages = json.loads(resp.read().decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                if e.code in (301, 302, 307, 308):
-                    req2 = urllib.request.Request(e.headers.get("Location", ""))
-                    with urllib.request.urlopen(req2, timeout=15) as resp2:
-                        passages = json.loads(resp2.read().decode("utf-8"))
+                import psycopg as _pg
+                pg_url = (
+                    os.environ.get("PA_WEB_POSTGRES_URL")
+                    or os.environ.get("POSTGRES_URL")
+                )
+                if not pg_url:
+                    pw = os.environ.get("POSTGRES_PASSWORD", "")
+                    host = os.environ.get("PA_WEB_POSTGRES_HOST", "localhost")
+                    port = os.environ.get("PA_WEB_POSTGRES_PORT", "5432")
+                    pg_url = f"postgresql://postgres:{pw}@{host}:{port}/postgres"
+                with _pg.connect(pg_url, autocommit=True, connect_timeout=10) as _conn:
+                    with _conn.cursor() as _cur:
+                        _cur.execute(
+                            """SELECT source, source_ref, source_metadata, task_body
+                                 FROM pa_web.tasks WHERE ref_id = %s""",
+                            (ref_id,),
+                        )
+                        _row = _cur.fetchone()
+            except Exception as _e:
+                return {"status": "error",
+                        "error_message": f"pa_web.tasks lookup failed for {ref_id}: {_e}"}
+            if _row is None:
+                return {"status": "error",
+                        "error_message": f"No row in pa_web.tasks for ref_id {ref_id}"}
+
+            _src, _sref, _smeta, _body = _row
+            if not source_type:
+                source_type = _src or "unknown"
+            if not source_ref:
+                source_ref = _sref
+
+            # Source-specific fetch_hint derivation from source_metadata + source_ref.
+            if not fetch_hint:
+                smeta = _smeta or {}
+                if source_type == "email":
+                    mid = smeta.get("message_id") or smeta.get("location_id")
+                    if mid:
+                        fetch_hint = f"gmail:{mid}"
+                    elif _sref and _sref.startswith("email-"):
+                        fetch_hint = f"gmail:{_sref[6:]}"
+                elif source_type in ("meeting", "meeting_marker"):
+                    mid = smeta.get("meeting_id") or smeta.get("location_id")
+                    if mid:
+                        fetch_hint = f"granola:{mid}"
                 else:
-                    raise
-            if not isinstance(passages, list):
-                passages = []
+                    # slack, google-docs-comment, drive, generic → source_ref is the fetch key
+                    fetch_hint = _sref
 
-            task_passage = None
-            for p in passages:
-                if isinstance(p, dict) and f"REF_ID: {ref_id}" in p.get("text", ""):
-                    task_passage = p
-                    break
+            # Fast path: if the row has task_body cached AND there's no
+            # remote fetch_hint to chase, return task_body as the content.
+            # This is the common case for synthetic / direct-write rows.
+            if not fetch_hint and _body:
+                return {
+                    "status": "ok",
+                    "source_type": source_type,
+                    "content": _body,
+                    "metadata": {"source": "pa_web.tasks.task_body", "ref_id": ref_id},
+                    "content_length": len(_body),
+                }
 
-            if not task_passage:
-                # Cycle-1 fallback: live-flow tasks live in pa_web.tasks,
-                # not archival. Look up the row and extract source_type +
-                # fetch_hint from source / source_metadata / source_ref.
-                try:
-                    import psycopg as _pg
-                    pg_url = os.environ.get("PA_WEB_POSTGRES_URL") or os.environ.get("POSTGRES_URL")
-                    if not pg_url:
-                        pw = os.environ.get("POSTGRES_PASSWORD", "")
-                        pg_url = f"postgresql://postgres:{pw}@supabase-db:5432/postgres"
-                    with _pg.connect(pg_url, autocommit=True, connect_timeout=10) as _conn:
-                        with _conn.cursor() as _cur:
-                            _cur.execute(
-                                """SELECT source, source_ref, source_metadata, task_body
-                                     FROM pa_web.tasks WHERE ref_id = %s""",
-                                (ref_id,),
-                            )
-                            _row = _cur.fetchone()
-                    if _row is None:
-                        return {"status": "error", "error_message": f"No row in pa_web.tasks (or archival) for ref_id {ref_id}"}
-                    _src, _sref, _smeta, _body = _row
-                    if not source_type:
-                        source_type = _src or "unknown"
-                    # Source-specific fetch_hint derivation:
-                    #   slack:               fetch_hint = source_ref (slack-CXXX-ts)
-                    #   email:               fetch_hint = "gmail:<msgid>" (smeta or strip prefix)
-                    #   meeting:             fetch_hint = "granola:<meeting_id>" or pull from smeta
-                    #   google-docs-comment: fetch_hint = source_ref (gdocs-comment-<doc>-<cmt>)
-                    if not fetch_hint:
-                        smeta = _smeta or {}
-                        if source_type == "email":
-                            mid = smeta.get("message_id") or (smeta.get("location_id") if smeta.get("location_id") else None)
-                            if mid:
-                                fetch_hint = f"gmail:{mid}"
-                            elif _sref and _sref.startswith("email-"):
-                                fetch_hint = f"gmail:{_sref[6:]}"
-                        elif source_type in ("meeting", "meeting_marker"):
-                            mid = smeta.get("meeting_id") or smeta.get("location_id")
-                            if mid:
-                                fetch_hint = f"granola:{mid}"
-                        else:
-                            # slack, google-docs-comment, drive, generic
-                            fetch_hint = _sref
-                    if not source_ref:
-                        source_ref = _sref
-                    # If still no fetch_hint AND task_body contains the source text,
-                    # return that directly — same shortcut as the archival path.
-                    if not fetch_hint and not source_ref and _body:
-                        return {
-                            "status": "ok",
-                            "source_type": source_type,
-                            "content": _body,
-                            "metadata": {"source": "pa_web.tasks.task_body", "ref_id": ref_id},
-                            "content_length": len(_body),
-                        }
-                except Exception as _e:
-                    return {"status": "error", "error_message": f"pa_web.tasks fallback failed for {ref_id}: {_e}"}
-                # Skip the rest of the archival-passage extraction since
-                # we now have what we need (source_type + fetch_hint/source_ref)
-                p_text = ""
-            else:
-                p_text = task_passage.get("text", "")
+            # Stash row-derived metadata so meeting/slack/email branches can
+            # use it as a content fallback when remote fetches fail.
+            _row_smeta = _smeta or {}
+            _row_body = _body or ""
 
-            # Extract source_type from passage
-            type_match = re.search(r"- Type: (.+)$", p_text, re.MULTILINE)
-            if type_match and not source_type:
-                source_type = type_match.group(1).strip()
+        # Helper: build a degraded anchor block from row-only data. Used as
+        # a fallback when the source-specific remote fetcher (gws, slack,
+        # granola, docs comments) errors out. Keeps the agent unblocked —
+        # it gets less context but enough to write a phase-a-complete
+        # packet (direct_action + context_brief from row data).
+        def _build_row_anchor_from_pg(source_type_, _smeta_, _body_,
+                                       ref_id_, source_ref_,
+                                       reason_):
+            smeta_ = _smeta_ or {}
+            body_ = _body_ or ""
+            label = {
+                "email": "EMAIL (degraded — remote fetch unavailable)",
+                "slack": "SLACK MESSAGE (degraded — remote fetch unavailable)",
+                "meeting": "MEETING (degraded — remote fetch unavailable)",
+                "meeting_marker": "MEETING (degraded — remote fetch unavailable)",
+                "google-docs-comment": "DOCS COMMENT (degraded — remote fetch unavailable)",
+                "drive": "DRIVE FILE (degraded — remote fetch unavailable)",
+            }.get(source_type_, f"{source_type_.upper()} (degraded)")
 
-            # Extract fetch_hint from passage
-            hint_match = re.search(r"FETCH HINT: (.+)$", p_text, re.MULTILINE)
-            if hint_match and not fetch_hint:
-                fetch_hint = hint_match.group(1).strip()
+            # Source-specific header lines from common smeta keys
+            header_lines = []
+            permalink_ = smeta_.get("permalink") or smeta_.get("source_url")
+            if source_type_ == "email":
+                if smeta_.get("location"):
+                    header_lines.append(f"Subject: {smeta_['location']}")
+                if smeta_.get("from_person"):
+                    header_lines.append(f"From: {smeta_['from_person']}")
+            elif source_type_ == "slack":
+                if smeta_.get("location"):
+                    header_lines.append(f"Channel: {smeta_['location']}")
+                if smeta_.get("from_person"):
+                    header_lines.append(f"User: {smeta_['from_person']}")
+            elif source_type_ in ("meeting", "meeting_marker"):
+                if smeta_.get("title"):
+                    header_lines.append(f"Title: {smeta_['title']}")
+                if smeta_.get("occurred_at"):
+                    header_lines.append(f"Occurred: {smeta_['occurred_at']}")
+            elif source_type_ == "google-docs-comment":
+                if smeta_.get("doc_title"):
+                    header_lines.append(f"Doc: {smeta_['doc_title']}")
+                if smeta_.get("comment_author"):
+                    header_lines.append(f"Author: {smeta_['comment_author']}")
+            if smeta_.get("captured_at"):
+                header_lines.append(f"Captured: {smeta_['captured_at']}")
+            if permalink_:
+                header_lines.append(f"[Permalink: {permalink_}]")
 
-            # Extract reference_id as source_ref fallback
-            ref_match = re.search(r"- Reference ID: (.+)$", p_text, re.MULTILINE)
-            if ref_match and not source_ref:
-                source_ref = ref_match.group(1).strip()
+            # Body: prefer task_body (the producer cached this at
+            # extraction time — often the actual email/slack/meeting text),
+            # else any source-specific excerpt fields in smeta.
+            body_block = body_
+            if not body_block:
+                for fk in ("summary", "transcript_excerpt",
+                            "source_text", "comment_text", "preview"):
+                    if smeta_.get(fk):
+                        body_block = smeta_[fk]
+                        break
 
-            # If no fetch_hint found, fall back to source text from passage
-            if not fetch_hint and not source_ref:
-                st_match = re.search(r"SOURCE TEXT\n(.+?)(?=\nFETCH HINT:|\nENRICH|\nPACKET INFO|\Z)", p_text, re.DOTALL)
-                if st_match:
-                    return {
-                        "status": "ok",
-                        "source_type": source_type or "unknown",
-                        "content": st_match.group(1).strip(),
-                        "metadata": {"source": "passage_text", "ref_id": ref_id},
-                        "content_length": len(st_match.group(1).strip()),
-                    }
+            parts = [f"[*** ANCHOR — {label} ***]"]
+            parts.append(
+                "Remote fetcher could not retrieve full source content; "
+                "this anchor was assembled from the pa_web.tasks row. "
+                "It still gives you enough to write a phase-a-complete "
+                "packet (direct_action, context_brief, intent_genesis "
+                "from row context). For thread/ambient enrichment "
+                "(resources beyond the permalink, knowns/unknowns from "
+                f"sibling messages), the remote fetch would be needed — "
+                f"reason it failed: {reason_}."
+            )
+            if header_lines:
+                parts.append("\n".join(header_lines))
+            if body_block:
+                parts.append(body_block)
+            parts.append("[*** END ANCHOR ***]")
+            return "\n\n".join(parts)
 
         if not source_type:
             return {"status": "error", "error_message": "source_type required (provide directly or via ref_id)"}
@@ -280,48 +311,120 @@ def fetch_source_content(
                         except Exception:
                             pass  # Thread fetch is best-effort
                 else:
-                    content = f"(gws error: {result.stderr[:200]})"
+                    content = _build_row_anchor_from_pg(
+                        "email", locals().get("_row_smeta"),
+                        locals().get("_row_body"),
+                        ref_id, source_ref,
+                        f"gws CLI error: {result.stderr[:160].strip()}",
+                    )
             except FileNotFoundError:
-                # gws not available in this container — try via archival
-                content = "(gws CLI not available — use archival search instead)"
+                content = _build_row_anchor_from_pg(
+                    "email", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    "gws CLI not installed in this environment",
+                )
             except Exception as e:
-                content = f"(fetch error: {str(e)[:200]})"
+                content = _build_row_anchor_from_pg(
+                    "email", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    f"gws fetch raised: {str(e)[:160]}",
+                )
 
-        elif source_type == "meeting" and fetch_hint and fetch_hint.startswith("granola:"):
-            # Fetch meeting from archival
-            meeting_id = fetch_hint.split(":", 1)[1]
-            try:
-                search_url = f"{LETTA_BASE}/v1/agents/{AGENT_ID}/archival-memory/?search={meeting_id}&limit=3"
-                req = urllib.request.Request(search_url)
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    passages = json.loads(resp.read().decode("utf-8"))
+        elif source_type in ("meeting", "meeting_marker") and (
+            (fetch_hint and fetch_hint.startswith("granola:"))
+            or 'meeting_id' in (locals().get('_row_smeta') or {})
+        ):
+            # Pull the meeting transcript via the `granola` CLI. Falls back
+            # to source_metadata fields (summary, transcript_excerpt) if the
+            # CLI fails or the meeting_id isn't UUID-shaped (Public-API
+            # `not_*` IDs aren't accepted by the older Granola MCP).
+            if fetch_hint and fetch_hint.startswith("granola:"):
+                meeting_id = fetch_hint.split(":", 1)[1]
+            else:
+                meeting_id = (locals().get('_row_smeta') or {}).get('meeting_id', '')
 
-                if isinstance(passages, list):
-                    # Find the meeting passage (longest one with meeting content)
-                    best = max(passages, key=lambda p: len(p.get("text", "")) if isinstance(p, dict) else 0)
-                    if isinstance(best, dict):
-                        raw = best.get("text", "")
-                        # Wrap as anchor — same framing as slack/email/docs.
-                        # The meeting transcript IS the anchor; for marker-
-                        # tagged tasks, the marker line within the transcript
-                        # is the focal item, but the whole transcript provides
-                        # context. The agent should anchor on whatever line
-                        # produced the marker (raw_description tells it).
-                        content = (
-                            "[*** ANCHOR — MEETING TRANSCRIPT/NOTES ***]\n"
-                            "This is the meeting the system flagged for task "
-                            "creation (granola_id=" + meeting_id + "). The "
-                            "task statement (suggested_title, direct_action) "
-                            "MUST anchor on the marker line that produced "
-                            "this task (see raw_description). Surrounding "
-                            "transcript content is supporting context for "
-                            "enrichment fields ONLY.\n\n"
-                            + raw
-                            + "\n[*** END ANCHOR ***]"
-                        )
-                        metadata = {"meeting_id": meeting_id}
-            except Exception as e:
-                content = f"(archival search error: {str(e)[:200]})"
+            raw_transcript = ""
+            # Only try the granola CLI when the id looks like a UUID — the
+            # Public-API `not_*` IDs and our synthetic IDs aren't accepted
+            # by the granola MCP and produce validation errors on stdout
+            # with returncode 0 (so a returncode check alone isn't enough).
+            _uuid_re = re.compile(
+                r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                re.I,
+            )
+            if meeting_id and _uuid_re.match(meeting_id):
+                try:
+                    tresult = subprocess.run(
+                        ["granola", "transcript", meeting_id],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    out = (tresult.stdout or "").strip()
+                    # Granola CLI returns MCP error strings on stdout with
+                    # returncode 0 — don't treat those as a real transcript.
+                    if (tresult.returncode == 0 and out
+                            and not out.startswith("MCP error")
+                            and "Input validation error" not in out):
+                        raw_transcript = out
+                except FileNotFoundError:
+                    pass
+                except Exception:
+                    pass
+
+            # Fallback: synthesize from pa_web.tasks.source_metadata. The
+            # Granola poller stashes summary + transcript_excerpt + title
+            # there at queue time, which is enough for enrichment.
+            if not raw_transcript:
+                _smeta_local = locals().get('_row_smeta') or {}
+                pieces = []
+                if _smeta_local.get('title'):
+                    pieces.append(f"Title: {_smeta_local['title']}")
+                if _smeta_local.get('occurred_at'):
+                    pieces.append(f"Occurred: {_smeta_local['occurred_at']}")
+                if _smeta_local.get('summary'):
+                    pieces.append("\n--- Summary ---\n" + _smeta_local['summary'])
+                if _smeta_local.get('transcript_excerpt'):
+                    pieces.append("\n--- Transcript excerpt ---\n"
+                                  + _smeta_local['transcript_excerpt'])
+                # task_body is the agent's prior synthesis — useful as a
+                # last resort
+                if not pieces and locals().get('_row_body'):
+                    pieces.append(locals()['_row_body'])
+                raw_transcript = "\n".join(pieces) if pieces else ""
+
+            if raw_transcript:
+                content = (
+                    "[*** ANCHOR — MEETING TRANSCRIPT/NOTES ***]\n"
+                    f"This is the meeting the system flagged for task creation "
+                    f"(meeting_id={meeting_id}). The task statement "
+                    "(suggested_title, direct_action) MUST anchor on the marker "
+                    "line that produced this task (see raw_description). "
+                    "Surrounding transcript content is supporting context for "
+                    "enrichment fields ONLY.\n\n"
+                    + raw_transcript
+                    + "\n[*** END ANCHOR ***]"
+                )
+                metadata = {
+                    "meeting_id": meeting_id,
+                    "fetched_via": (
+                        "granola_cli"
+                        if (meeting_id and _uuid_re.match(meeting_id) and raw_transcript)
+                        else "pa_web.tasks.source_metadata"
+                    ),
+                }
+            else:
+                # Last resort: degraded anchor from row data only
+                content = _build_row_anchor_from_pg(
+                    "meeting", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    f"granola CLI rejected meeting_id={meeting_id} "
+                    "(likely non-UUID Public-API id) and source_metadata "
+                    "had no summary/excerpt either",
+                )
+                metadata = {"meeting_id": meeting_id,
+                            "fetched_via": "row_anchor_degraded"}
 
         elif source_type == "slack":
             # Parse channel + thread_ts from reference_id or fetch_hint
@@ -502,12 +605,31 @@ def fetch_source_content(
                                 f"[Permalink: {permalink}]\n\n" + content
                             )
                     except Exception as e:
-                        content = f"(Slack fetch error: {str(e)[:200]})"
+                        content = _build_row_anchor_from_pg(
+                            "slack", locals().get("_row_smeta"),
+                            locals().get("_row_body"),
+                            ref_id, source_ref,
+                            f"slack API error: {str(e)[:160]}",
+                        )
+                        metadata = {"hint": "slack API error; row anchor used"}
                 else:
-                    content = "(No SLACK_BOT_TOKEN available)"
+                    content = _build_row_anchor_from_pg(
+                        "slack", locals().get("_row_smeta"),
+                        locals().get("_row_body"),
+                        ref_id, source_ref,
+                        "no SLACK_MCP_XOXP_TOKEN / SLACK_BOT_TOKEN available",
+                    )
+                    metadata = {"hint": "no slack token; row anchor used"}
             else:
-                content = f"(Could not parse Slack reference: {ref[:60]})"
-            metadata = metadata if content and not content.startswith("(") else {"hint": "Parse failed"}
+                # Couldn't parse the slack-CHANNEL-TS reference — use row data
+                content = _build_row_anchor_from_pg(
+                    "slack", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    f"could not parse slack reference '{ref[:80]}' "
+                    "into channel+ts",
+                )
+                metadata = {"hint": "slack ref parse failed; row anchor used"}
 
         elif source_type == "google-docs-comment":
             # Parse source_ref (gdocs-comment-<DOC_ID>-<COMMENT_ID>) to get
@@ -774,13 +896,28 @@ def fetch_source_content(
                         "for enrichment, never to redefine the task) ---\n"
                         + "\n".join(replies_lines[:10])
                     )
-                content = "\n\n".join(parts) if parts else "(no docs comment content)"
+                content = "\n\n".join(parts) if parts else _build_row_anchor_from_pg(
+                    "google-docs-comment", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    "gws returned empty data for the comment + parent doc",
+                )
             except FileNotFoundError:
-                content = "(gws CLI not available for docs-comment fetch)"
-                metadata = {"hint": "gws not present"}
+                content = _build_row_anchor_from_pg(
+                    "google-docs-comment", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    "gws CLI not installed in this environment",
+                )
+                metadata = {"hint": "gws not present; row anchor used"}
             except Exception as e:
-                content = f"(docs-comment fetch error: {str(e)[:200]})"
-                metadata = {"hint": "fetch failed"}
+                content = _build_row_anchor_from_pg(
+                    "google-docs-comment", locals().get("_row_smeta"),
+                    locals().get("_row_body"),
+                    ref_id, source_ref,
+                    f"docs-comment fetch raised: {str(e)[:160]}",
+                )
+                metadata = {"hint": "docs fetch failed; row anchor used"}
 
         else:
             return {"status": "error", "error_message": f"Unsupported source_type: {source_type}"}

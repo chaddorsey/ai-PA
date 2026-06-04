@@ -421,13 +421,76 @@ def fetch_source(ref_id, source_type, fetch_hint):
 
 
 @cli.command(name="packet-write")
-@click.argument("ref_id")
-@click.option("--packet-info", required=True,
-              help="The packet info text to write to the task's enrichment field.")
-def packet_write(ref_id, packet_info):
-    """Write PACKET INFO to a task's enrichment after backtrace synthesis."""
+@click.option("--ref-id", required=True,
+              help="The 8-char hex ref_id of the task being enriched.")
+@click.option("--direct-action", required=True,
+              help="REQUIRED. Direct-action node: who asked / where / "
+                   "what's being asked, paraphrased from the anchor.")
+@click.option("--artifact-provenance", default=None,
+              help="Primary artifact location + provenance chain.")
+@click.option("--intent-genesis", default=None,
+              help="Why this task exists: prior decisions, meetings, "
+                   "strategic context.")
+@click.option("--context-brief", default=None,
+              help="3-5 bullets synthesizing context. One bullet per line.")
+@click.option("--resources", default=None,
+              help='One per line: "[priority] label — url (role)". '
+                   "url is the canonical link the renderer hyperlinks.")
+@click.option("--related-tasks", default=None,
+              help="One per line: 'ref_id — short description'.")
+@click.option("--knowns", default=None,
+              help="What's established + verified. One per line.")
+@click.option("--unknowns", default=None,
+              help="What's missing / unresolved. One per line.")
+@click.option("--mismatch-warnings", default=None,
+              help="Overlap / conflict warnings to flag prominently.")
+@click.option("--additional-notes", default=None,
+              help="Any other free-form synthesis.")
+@click.option("--packet-info-json", default=None,
+              help="ALTERNATIVE: full packet dict as JSON. If given, "
+                   "all individual --* flags are ignored and the JSON's "
+                   "fields are passed directly to write_packet_info(). "
+                   "Useful when the agent already has structured output.")
+def packet_write(ref_id, direct_action, artifact_provenance, intent_genesis,
+                 context_brief, resources, related_tasks, knowns, unknowns,
+                 mismatch_warnings, additional_notes, packet_info_json):
+    """Write PACKET INFO to a task's enrichment after backtrace synthesis.
+
+    Flips enrichment_state to 'done' (or 'phase-b-complete' /
+    'phase-a-complete' depending on how much was filled in) and persists
+    the packet to pa_web.tasks.enrichment.
+    """
     from letta.write_packet_info_tool import write_packet_info
-    _emit_json(write_packet_info(ref_id=ref_id, packet_info=packet_info))
+
+    if packet_info_json:
+        try:
+            data = json.loads(packet_info_json)
+        except Exception as e:
+            _emit_json({"status": "error",
+                        "error_message": f"--packet-info-json parse failed: {e}"})
+            return
+        if not isinstance(data, dict):
+            _emit_json({"status": "error",
+                        "error_message": "--packet-info-json must be a JSON object"})
+            return
+        kwargs = {"ref_id": ref_id, **data}
+    else:
+        kwargs = dict(
+            ref_id=ref_id,
+            direct_action=direct_action,
+            artifact_provenance=artifact_provenance,
+            intent_genesis=intent_genesis,
+            context_brief=context_brief,
+            resources=resources,
+            related_tasks=related_tasks,
+            knowns=knowns,
+            unknowns=unknowns,
+            mismatch_warnings=mismatch_warnings,
+            additional_notes=additional_notes,
+        )
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+
+    _emit_json(write_packet_info(**kwargs))
 
 
 # ─── health ──────────────────────────────────────────────────────────────────
