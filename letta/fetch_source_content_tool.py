@@ -335,39 +335,88 @@ def fetch_source_content(
         elif source_type in ("meeting", "meeting_marker") and (
             (fetch_hint and fetch_hint.startswith("granola:"))
             or 'meeting_id' in (locals().get('_row_smeta') or {})
+            or 'granola_note_id' in (locals().get('_row_smeta') or {})
         ):
-            # Pull the meeting transcript via the `granola` CLI. Falls back
-            # to source_metadata fields (summary, transcript_excerpt) if the
-            # CLI fails or the meeting_id isn't UUID-shaped (Public-API
-            # `not_*` IDs aren't accepted by the older Granola MCP).
+            # Pull the meeting via the Granola Public API. Replaces the
+            # older `granola` CLI subprocess (which used a UUID-only MCP
+            # that rejected Public-API `not_*` ids). Falls back to row
+            # source_metadata fields if the API call fails or the key is
+            # missing.
             if fetch_hint and fetch_hint.startswith("granola:"):
                 meeting_id = fetch_hint.split(":", 1)[1]
             else:
-                meeting_id = (locals().get('_row_smeta') or {}).get('meeting_id', '')
+                _row_smeta_local = locals().get('_row_smeta') or {}
+                meeting_id = (
+                    _row_smeta_local.get('meeting_id')
+                    or _row_smeta_local.get('granola_note_id', '')
+                )
 
             raw_transcript = ""
-            # Only try the granola CLI when the id looks like a UUID — the
-            # Public-API `not_*` IDs and our synthetic IDs aren't accepted
-            # by the granola MCP and produce validation errors on stdout
-            # with returncode 0 (so a returncode check alone isn't enough).
-            _uuid_re = re.compile(
-                r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-                re.I,
-            )
-            if meeting_id and _uuid_re.match(meeting_id):
+            fetched_via_api = False
+            api_key = os.environ.get("GRANOLA_API_KEY", "")
+            if meeting_id and api_key:
                 try:
-                    tresult = subprocess.run(
-                        ["granola", "transcript", meeting_id],
-                        capture_output=True, text=True, timeout=30,
+                    api_url = (
+                        f"https://public-api.granola.ai/v1/notes/"
+                        f"{meeting_id}?include_transcript=true"
                     )
-                    out = (tresult.stdout or "").strip()
-                    # Granola CLI returns MCP error strings on stdout with
-                    # returncode 0 — don't treat those as a real transcript.
-                    if (tresult.returncode == 0 and out
-                            and not out.startswith("MCP error")
-                            and "Input validation error" not in out):
-                        raw_transcript = out
-                except FileNotFoundError:
+                    g_req = urllib.request.Request(
+                        api_url,
+                        headers={
+                            "Authorization": f"Bearer {api_key}",
+                            "Accept": "application/json",
+                        },
+                    )
+                    with urllib.request.urlopen(g_req, timeout=15) as g_resp:
+                        note = json.loads(g_resp.read().decode("utf-8"))
+                    # Compose transcript text + summary + headers.
+                    bits = []
+                    if note.get("title"):
+                        bits.append(f"Title: {note['title']}")
+                    if note.get("created_at"):
+                        bits.append(f"Created: {note['created_at']}")
+                    owner = note.get("owner") or {}
+                    if owner.get("name") or owner.get("email"):
+                        bits.append(
+                            f"Owner: {owner.get('name','')} "
+                            f"<{owner.get('email','')}>"
+                        )
+                    if note.get("web_url"):
+                        bits.append(f"[Permalink: {note['web_url']}]")
+                    # Granola Public API uses summary_text + summary_markdown.
+                    # Prefer summary_text (plain) for token efficiency.
+                    summary_block = (
+                        note.get("summary_text")
+                        or note.get("summary_markdown")
+                        or note.get("summary")
+                        or ""
+                    )
+                    if summary_block:
+                        bits.append("\n--- Summary ---\n" + summary_block)
+                    t = note.get("transcript")
+                    if isinstance(t, list) and t:
+                        lines = []
+                        # Cap at first 200 turns to stay under the 8000-char
+                        # truncation. Typical meetings emit 50-150 turns.
+                        for entry in t[:200]:
+                            sp = entry.get("speaker", "")
+                            txt = entry.get("text", "")
+                            if sp or txt:
+                                lines.append(f"{sp}: {txt}" if sp else txt)
+                        if lines:
+                            bits.append("\n--- Transcript ---\n"
+                                        + "\n".join(lines))
+                    elif isinstance(t, str) and t:
+                        bits.append("\n--- Transcript ---\n" + t)
+                    # raw_transcript is "got SOMETHING from the API" — even
+                    # title + summary alone (transcript=None during Granola
+                    # processing) is more than the row anchor has.
+                    raw_transcript = "\n".join(bits) if bits else ""
+                    if raw_transcript:
+                        fetched_via_api = True
+                except urllib.error.HTTPError as ghe:
+                    # Permission denied / not found — fall through to
+                    # source_metadata / row-anchor degradation.
                     pass
                 except Exception:
                     pass
@@ -408,8 +457,8 @@ def fetch_source_content(
                 metadata = {
                     "meeting_id": meeting_id,
                     "fetched_via": (
-                        "granola_cli"
-                        if (meeting_id and _uuid_re.match(meeting_id) and raw_transcript)
+                        "granola_public_api"
+                        if fetched_via_api
                         else "pa_web.tasks.source_metadata"
                     ),
                 }
