@@ -24,17 +24,22 @@ def fetch_source_content(
     or comment thread for scanning beyond what Phase 0 captured.
 
     Can be called two ways:
-    1. With explicit source_type + fetch_hint (original interface)
-    2. With ref_id only — looks up the archival passage to extract source_type
-       and fetch_hint automatically. Simpler for enrichment pipeline callers.
+    1. With explicit source_type + fetch_hint (low-level interface)
+    2. With ref_id only — queries pa_web.tasks directly to derive
+       source_type, source_ref, and fetch_hint from the row's source,
+       source_metadata, and source_ref columns. Preferred for enrichment
+       pipeline callers.
 
     Args:
-        source_type: One of "email", "meeting", "meeting_marker", "slack", "google-docs-comment". Optional if ref_id provided.
-        fetch_hint: Retrieval instruction from the spark record. Optional if ref_id provided.
-            Format: "gmail:MESSAGE_ID" for email, "granola:MEETING_ID" for meetings.
-            For slack/docs-comment, pass the reference_id instead.
+        source_type: One of "email", "meeting", "meeting_marker", "slack",
+            "google-docs-comment". Optional if ref_id provided.
+        fetch_hint: Retrieval instruction. Optional if ref_id provided.
+            Format: "gmail:MESSAGE_ID" for email, "granola:MEETING_ID" for
+            meetings. For slack/docs-comment, pass the reference_id instead.
         source_ref: Optional reference_id for additional context lookup.
-        ref_id: The 8-char hex reference ID of the task. If provided, looks up the archival passage to extract source_type and fetch_hint automatically.
+        ref_id: The 8-char hex reference ID of the task. If provided, the
+            row is read from pa_web.tasks and the remaining fields are
+            derived automatically.
 
     Returns:
         Dictionary with status, content text, and metadata.

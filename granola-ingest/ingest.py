@@ -663,42 +663,36 @@ def ingest_meetings(
                 logger.warning(f"  No transcript for {mid}, skipping")
                 continue
 
-            tags = generate_tags(meeting)
-            content = format_content(meeting, summary, transcript_text,
-                                     private_notes=private_notes)
-            tag_line = f"**Tags:** {', '.join(tags)}\n\n"
-            full_content = tag_line + content
+            # ARCHIVAL CLEANUP 2026-06-04: archival write + agent notify
+            # are disabled. The Public-API poller
+            # (scripts/poll_granola.py + com.ai-pa.granola-meetings-poller
+            # launchd) now handles the active-meeting → task pipeline via
+            # pa_web.task_queue. This service is retained only for the
+            # Markdown export to ~/Dropbox/Granola-exports.
+            #
+            # The format_content / generate_tags / chunk_content /
+            # insert_to_archival / notify_agent_new_meeting paths are
+            # left intact in this file for reference; just no longer
+            # invoked from the loop.
+            #
+            # Step B (in a follow-up) will move the Markdown export into
+            # the Public-API poller and retire this service entirely.
 
             meeting_title = meeting.get("title", "Untitled Meeting")
-            chunks = chunk_content(full_content, mid, tags, meeting_title)
 
-            all_ok = True
-            for cidx, (chunk_text, chunk_tags) in enumerate(chunks, 1):
-                if not insert_to_archival(chunk_text, chunk_tags, dry_run=dry_run):
-                    all_ok = False
-                    logger.error(f"  Failed chunk {cidx}/{len(chunks)}")
-                    break
-
-            if all_ok:
-                success += 1
-                if not dry_run:
+            if not dry_run:
+                md_path = export_meeting_markdown(
+                    meeting, summary, private_notes, transcript_text,
+                )
+                if md_path:
+                    success += 1
                     imported_ids.add(mid)
-                size = len(full_content)
-                nchunks = len(chunks)
-                if nchunks > 1:
-                    logger.info(f"  Inserted ({size} chars, {nchunks} chunks)")
+                    logger.info(f"  Exported {md_path.name}")
                 else:
-                    logger.info(f"  Inserted ({size} chars)")
-
-                if not dry_run:
-                    notify_agent_new_meeting(mid, title)
-                    md_path = export_meeting_markdown(
-                        meeting, summary, private_notes, transcript_text,
-                    )
-                    if md_path:
-                        logger.info(f"  Exported {md_path.name}")
+                    errors += 1
+                    logger.error(f"  Markdown export failed for {mid}")
             else:
-                errors += 1
+                success += 1  # dry-run: count as success without writing
 
         except Exception as e:
             logger.error(f"  Error processing meeting {mid}: {e}")
