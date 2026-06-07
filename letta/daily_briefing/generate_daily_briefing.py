@@ -21,8 +21,8 @@ def generate_daily_briefing(
     according to gold-standard rules, calculates available time from 8:00 AM to 
     5:00 PM Eastern, and generates a Markdown-formatted briefing report.
     
-    The tool automatically updates the 'current_daily_schedule_and_available_time' 
-    memory block with the briefing content. No agent action is needed to update memory.
+    The tool writes the briefing to the dated canonical signal (signals/YYYY-MM-DD/schedule.md).
+    No memory block is updated.
     
     Args:
         calendar_id: Calendar identifier (email address). Defaults to "cdorsey@concord.org".
@@ -777,242 +777,29 @@ def generate_daily_briefing(
         except Exception as sig_err:
             signal_html_url = f"(setup_failed: {str(sig_err)[:140]})"
 
-        # ========== MC MEMFS: schedule/today.md (Ezra pattern) ==========
-        # Per Ezra (2026-04-27): dynamic data lives outside system/ in the
-        # consumer agent's memfs; system/ holds only a stable pointer.
-        # generate_daily_briefing produces the schedule for MC, so we
-        # write it to MC's memfs at schedule/today.md. memfs-sync-relay
-        # propagates the Gitea push → bare repo → Postgres so MC sees
-        # the new content on its next turn without a system-prompt
-        # recompile (which would happen if we wrote into system/).
+        # ========== (removed) MC memfs schedule/today.md write ==========
+        # today.md had zero readers; the materialized cell signals/current/schedule.md
+        # (written by refresh_current.py) replaces it. Removed 2026-06-07.
+        # See docs/plans/2026-06-07-current-briefing-materialized-view-plan.md.
         mc_memfs_written = False
-        mc_memfs_html_url = ""
-        try:
-            import base64 as _b64m
-            import urllib.request as _ureqm
-            import urllib.error as _uerrm
-            gitea_token_m = os.environ.get("GITEA_MEMFS_TOKEN", "")
-            gitea_base_m = os.environ.get(
-                "GITEA_BASE_URL", "http://gitea:3000"
-            ).rstrip("/")
-            mc_agent_id = os.environ.get(
-                "MC_AGENT_ID",
-                "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef",
-            )
-            if gitea_token_m:
-                # ── current-ET-date guard ──
-                # Only write to schedule/today.md when target_date matches
-                # the current Eastern-time date. Otherwise write to a
-                # dated file (schedule/<date>.md) and leave today.md
-                # untouched. This prevents debug/test runs against past
-                # or future dates from clobbering the live "today" file
-                # that the daily-schedule skill depends on.
-                # today.md is the live file the daily-schedule skill reads.
-                # Cron runs at 06:00 ET (today's schedule) and 18:00 ET
-                # (tomorrow's schedule, pre-staged for the next morning).
-                # So today.md may legitimately hold today OR tomorrow.
-                # Debug runs against past/distant-future dates write to
-                # a dated file instead.
-                try:
-                    from zoneinfo import ZoneInfo as _ZI
-                    _et_now = datetime.now(tz=_ZI("America/New_York"))
-                except Exception:
-                    _et_now = datetime.now()
-                _et_today_str = _et_now.strftime("%Y-%m-%d")
-                _et_tomorrow_str = (_et_now + timedelta(days=1)).strftime("%Y-%m-%d")
-                _is_live = target_date_str in (_et_today_str, _et_tomorrow_str)
-                if _is_live:
-                    mc_memfs_path = "schedule/today.md"
-                else:
-                    mc_memfs_path = f"schedule/{target_date_str}.md"
-                # The schedule file content is the briefing body itself —
-                # no YAML frontmatter (memfs files don't need it; the
-                # pointer in system/ tells the agent to Read this file).
-                mc_memfs_url = (
-                    f"{gitea_base_m}/api/v1/repos/agents/{mc_agent_id}"
-                    f"/contents/{mc_memfs_path}"
-                )
-                auth_h_m = {
-                    "Authorization": f"token {gitea_token_m}",
-                    "Content-Type": "application/json",
-                }
+        mc_memfs_path = None
+        mc_memfs_html_url = None
 
-                # Idempotent upsert (same pattern as canonical signals).
-                existing_sha_m = None
-                try:
-                    chk_m = _ureqm.Request(
-                        mc_memfs_url + "?ref=main", headers=auth_h_m
-                    )
-                    with _ureqm.urlopen(chk_m, timeout=10) as rr:
-                        ex = json_lib.loads(rr.read().decode("utf-8"))
-                        existing_sha_m = ex.get("sha")
-                except _uerrm.HTTPError as hem:
-                    if hem.code != 404:
-                        raise
-
-                method_m = "PUT" if existing_sha_m else "POST"
-                body_m = {
-                    "branch": "main",
-                    "content": _b64m.b64encode(
-                        clean_briefing.encode("utf-8")
-                    ).decode("ascii"),
-                    "message": (
-                        f"schedule: refresh {target_date_str} "
-                        f"@ {now.strftime('%H:%M %Z')}"
-                    ),
-                }
-                if existing_sha_m:
-                    body_m["sha"] = existing_sha_m
-
-                attempts_m = [body_m]
-                if not existing_sha_m:
-                    body_no_branch_m = dict(body_m)
-                    body_no_branch_m.pop("branch", None)
-                    attempts_m.append(body_no_branch_m)
-
-                last_err_m = None
-                for attempt_body_m in attempts_m:
-                    try:
-                        wreq = _ureqm.Request(
-                            mc_memfs_url,
-                            data=json_lib.dumps(attempt_body_m).encode(),
-                            headers=auth_h_m,
-                            method=method_m,
-                        )
-                        with _ureqm.urlopen(wreq, timeout=20) as wresp:
-                            wres = json_lib.loads(wresp.read().decode("utf-8"))
-                            cobj = wres.get("content") or {}
-                            mc_memfs_html_url = cobj.get("html_url", "")
-                            mc_memfs_written = True
-                        break
-                    except Exception as wem:
-                        last_err_m = wem
-                        continue
-
-                if not mc_memfs_written and last_err_m is not None:
-                    mc_memfs_html_url = (
-                        f"(write_failed: {str(last_err_m)[:140]})"
-                    )
-
-                # ── ALSO write the JSON metadata so time-remaining.py can
-                #     recompute against current time without parsing the
-                #     markdown. Same current-ET-date guard as today.md:
-                #     only clobber today.json when target_date is today.
-                if _is_live:
-                    json_path = "schedule/today.json"
-                else:
-                    json_path = f"schedule/{target_date_str}.json"
-                json_url = (
-                    f"{gitea_base_m}/api/v1/repos/agents/{mc_agent_id}"
-                    f"/contents/{json_path}"
-                )
-                # Wrap minimal metadata so consumers know what date it's for
-                schedule_json_full = {
-                    "date": target_date_str,
-                    "last_refreshed_at": now.isoformat(),
-                    "work_end": schedule_json_obj.get("work_end", "17:00"),
-                    "busy_blocks": schedule_json_obj.get("busy_blocks", []),
-                }
-                json_text = json_lib.dumps(schedule_json_full, indent=2)
-                existing_sha_j = None
-                try:
-                    chk_j = _ureqm.Request(
-                        json_url + "?ref=main", headers=auth_h_m
-                    )
-                    with _ureqm.urlopen(chk_j, timeout=10) as rrj:
-                        exj = json_lib.loads(rrj.read().decode("utf-8"))
-                        existing_sha_j = exj.get("sha")
-                except _uerrm.HTTPError as hej:
-                    if hej.code != 404:
-                        raise
-                method_j = "PUT" if existing_sha_j else "POST"
-                body_j = {
-                    "branch": "main",
-                    "content": _b64m.b64encode(
-                        json_text.encode("utf-8")
-                    ).decode("ascii"),
-                    "message": (
-                        f"schedule: refresh metadata json {target_date_str}"
-                    ),
-                }
-                if existing_sha_j:
-                    body_j["sha"] = existing_sha_j
-                attempts_j = [body_j]
-                if not existing_sha_j:
-                    body_no_branch_j = dict(body_j)
-                    body_no_branch_j.pop("branch", None)
-                    attempts_j.append(body_no_branch_j)
-                for attempt_body_j in attempts_j:
-                    try:
-                        wreq_j = _ureqm.Request(
-                            json_url,
-                            data=json_lib.dumps(attempt_body_j).encode(),
-                            headers=auth_h_m,
-                            method=method_j,
-                        )
-                        with _ureqm.urlopen(wreq_j, timeout=20) as _wrj:
-                            _wrj.read()
-                        break
-                    except Exception:
-                        continue
-        except Exception as mfse:
-            mc_memfs_html_url = f"(setup_failed: {str(mfse)[:140]})"
-
-        # ========== DIRECTLY UPDATE MEMORY BLOCK ==========
-        # Update the memory block programmatically instead of relying on the agent
-        memory_block_id = "block-28c6e49e-e2bf-4682-8b0c-68623fcee0c7"
+        # ========== (removed) deprecated memory-block write ==========
+        # Previously PATCHed block-28c6e49e (current_daily_schedule_and_available_time)
+        # on the Docker Letta server. That block is deprecated — memfs +
+        # canonical schedule signals are the source of truth — and had zero
+        # readers anywhere in the codebase. Removed 2026-06-07 to sever the
+        # tool's last Docker Letta dependency; the schedule briefing now runs
+        # fully local via generate_daily_briefing_ext. See
+        # docs/plans/2026-06-07-schedule-briefing-local-migration.md.
+        memory_block_id = None
         memory_updated = False
         memory_error = None
-        
-        try:
-            # Use localhost:8283 directly - tools run inside the Letta container
-            # Use urllib.request to match the pattern used in other Letta scripts
-            # Use /v1/blocks/{block_id} endpoint (works reliably)
-            letta_url = os.getenv("LETTA_BASE_URL", "http://localhost:8283")
-            
-            import urllib.request
-            import urllib.error
-            
-            url = f"{letta_url}/v1/blocks/{memory_block_id}"
-            data = json_lib.dumps({"value": briefing}).encode('utf-8')
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={'Content-Type': 'application/json'},
-                method='PATCH'
-            )
-            # Use 30 second timeout to match other Letta scripts
-            with urllib.request.urlopen(req, timeout=30) as response:
-                if response.status == 200:
-                    memory_updated = True
-        except urllib.error.HTTPError as http_err:
-            # Handle HTTP errors (4xx, 5xx) with status code and error body
-            try:
-                error_body = http_err.read().decode('utf-8')
-                memory_error = f"HTTP {http_err.code}: {error_body[:200]}"
-            except:
-                memory_error = f"HTTP {http_err.code}: {str(http_err)}"
-        except urllib.error.URLError as url_err:
-            # Handle URL/connection errors (connection refused, timeout, etc.)
-            error_reason = str(url_err.reason) if hasattr(url_err, 'reason') else str(url_err)
-            memory_error = f"Connection error: {error_reason}"
-        except Exception as mem_err:
-            # Handle any other unexpected errors
-            memory_error = f"{type(mem_err).__name__}: {str(mem_err)}"
-        
-        # Build agent instruction based on memory update status
-        if memory_updated:
-            agent_note = (
-                "MEMORY ALREADY UPDATED: The current_daily_schedule_and_available_time block "
-                "has been automatically updated by this tool. DO NOT call memory_rethink, "
-                "memory_replace, memory_insert, or memory_finish_edits. Simply display the "
-                "briefing to the user."
-            )
-        else:
-            agent_note = (
-                f"MEMORY UPDATE FAILED: {memory_error}. You may need to manually update "
-                "the current_daily_schedule_and_available_time block."
-            )
+        agent_note = (
+            "Briefing generated and written to the canonical schedule signal. "
+            "Simply display the briefing to the user."
+        )
         
         return {
             "status": "ok",
@@ -1025,7 +812,7 @@ def generate_daily_briefing(
             "signal_path": signal_path,
             "signal_html_url": signal_html_url,
             "mc_memfs_written": mc_memfs_written,
-            "mc_memfs_path": locals().get("mc_memfs_path", "schedule/today.md"),
+            "mc_memfs_path": mc_memfs_path,
             "mc_memfs_html_url": mc_memfs_html_url,
             "timestamp": now.isoformat(),
             "target_date": target_dt.strftime("%Y-%m-%d"),
