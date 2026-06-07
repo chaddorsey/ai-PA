@@ -1,8 +1,8 @@
 // pa-tools — Letta Code extension exposing PA analytics tools that run in a
 // PINNED Python venv (deterministic interpreter + env), sidestepping LET-9147.
 //
-// Pilot: collect_analytics_snapshot_ext. Pattern templates the broader
-// server-tool migration. See
+// Tools: collect_analytics_snapshot_ext, compose_daily_briefing_ext.
+// Pattern templates the broader server-tool migration. See
 // docs/superpowers/specs/2026-06-07-pulse-analytics-extension-pilot-design.md
 //
 // Recovery if this breaks startup: `letta --no-extensions`.
@@ -51,17 +51,17 @@ async function runPinned(
   return stdout.trim();
 }
 
-export default function activate(letta: any) {
-  if (!letta.capabilities?.tools) return;
-
+// Factory: a pinned-venv tool whose only argument is an optional `date`.
+function dateTool(
+  letta: any,
+  name: string,
+  module: string,
+  func: string,
+  description: string,
+) {
   return letta.tools.register({
-    name: "collect_analytics_snapshot_ext",
-    description:
-      "Collect the daily analytics snapshot (Drive/Email/Slack metrics) for a " +
-      "date and persist it to the analytics database. Deterministic extension " +
-      "version that runs in a pinned Python venv. Pass `date` as YYYY-MM-DD; " +
-      "omit for the default (last workday). Use this instead of " +
-      "collect_analytics_snapshot.",
+    name,
+    description,
     parameters: {
       type: "object",
       properties: {
@@ -78,22 +78,47 @@ export default function activate(letta: any) {
       const date =
         ctx?.args && typeof ctx.args.date === "string" ? ctx.args.date.trim() : "";
       try {
-        const out = await runPinned(
-          "collect_analytics_snapshot",
-          "collect_analytics_snapshot",
-          date ? { date } : {},
-          ctx?.signal,
-        );
+        const out = await runPinned(module, func, date ? { date } : {}, ctx?.signal);
         return out || "(empty result)";
       } catch (err: any) {
         const stderr = err?.stderr ? String(err.stderr).slice(0, 1500) : "";
         return {
           status: "error",
-          content:
-            `collect_analytics_snapshot_ext failed: ${err?.message ?? err}` +
-            (stderr ? `\n${stderr}` : ""),
+          content: `${name} failed: ${err?.message ?? err}` + (stderr ? `\n${stderr}` : ""),
         };
       }
     },
   });
+}
+
+export default function activate(letta: any) {
+  if (!letta.capabilities?.tools) return;
+
+  const disposers = [
+    dateTool(
+      letta,
+      "collect_analytics_snapshot_ext",
+      "collect_analytics_snapshot",
+      "collect_analytics_snapshot",
+      "Collect the daily analytics snapshot (Drive/Email/Slack metrics) for a " +
+        "date and persist it to the analytics database. Deterministic extension " +
+        "version (pinned Python venv). Pass `date` as YYYY-MM-DD; omit for the " +
+        "last workday. Use this instead of collect_analytics_snapshot.",
+    ),
+    dateTool(
+      letta,
+      "compose_daily_briefing_ext",
+      "compose_daily_briefing",
+      "compose_daily_briefing",
+      "Compose the daily analytics briefing from the stored snapshot + archival " +
+        "trend data and write it to the briefing block + markdown archive. " +
+        "Deterministic extension version (pinned Python venv). Pass `date` as " +
+        "YYYY-MM-DD; omit for the last workday. Use this instead of " +
+        "compose_daily_briefing.",
+    ),
+  ];
+
+  return () => {
+    for (const dispose of disposers.reverse()) dispose();
+  };
 }
