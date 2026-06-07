@@ -112,6 +112,48 @@ second extension-exploration data point.
 - New files only (venv, entry script, extension, env file); nothing existing
   modified. Server tool untouched.
 
+## Pilot results & findings (2026-06-07) — PASSED
+
+**Phase 1 (deterministic, no agent):** `_ext_run.py` via the pa-tools venv →
+Drive 3711, Email 2368, DB write success. Clean (only the expected upstream
+"Slack: no silver data for 2026-06-05").
+
+**Phase 2 (agent-level):** **5/5 green** agent invocations on the user's new
+`lmstudio/kimi-k2p6` model. Extension loaded with **0 diagnostics errors**.
+
+### Findings → migration template
+- **Extension tools surface to a server-tool-based local agent.** The agent
+  called `collect_analytics_snapshot_ext` (an extension tool) even though its
+  toolset is otherwise server-defined. No registration on the Letta server.
+- **Reliability:** green every run. The interpreter is pinned by construction
+  (extension always execFiles `~/.letta/pa-tools-venv/bin/python`), so the
+  LET-9147 non-determinism cannot occur. This is the core win.
+- **`.ts` extensions load natively** — no build step; `~/.letta/extensions/*.ts`
+  works directly.
+- **Headless/runner path loads extensions on each fresh `letta --backend local`
+  invocation** — no `/reload` needed for the cron/runner path (only the
+  long-lived TUI needs `/reload`).
+- **`requiresApproval:false` ran the mutating tool unattended** through the
+  runner — good for cron; for interactive/risky tools, set approval per tool.
+- **Secret/env via a 600 env file + execFile `env`** works cleanly and keeps
+  secrets out of extension code.
+- **Coexistence:** the extension tool and the same-purpose server tool coexist
+  fine under distinct names; the agent calls whichever the prompt/description
+  points to. (Real migration: remove/rename the server tool so the agent
+  defaults to the extension one.)
+- **Generic `_ext_run.py` + pinned venv is a clean, reusable template** for any
+  Python server tool: declare deps in the venv, set PYTHONPATH, execFile.
+
+### Idiosyncrasies / boundaries to carry into the migration
+- Extension hardcodes absolute paths (`VENV_PY`, `ENTRY`, `PYPATH`); for the
+  fleet template these should be derived/configurable.
+- Tool selection between coexisting server+extension tools is prompt-driven;
+  cleanest migration removes the server tool to avoid ambiguity.
+- Mutating-tool approval policy is a per-tool decision (cron vs interactive).
+- Source-of-truth: the extension lives in `~/.letta/extensions/` (runtime).
+  Tracked copy committed to `letta/extensions/pa-tools.ts`; keep them in sync
+  (or symlink) so the repo stays canonical.
+
 ## Out of scope
 
 - The other ~200 server tools (templated later from this pilot's findings).

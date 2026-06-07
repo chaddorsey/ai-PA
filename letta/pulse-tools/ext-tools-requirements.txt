@@ -1,0 +1,7 @@
+# Dependencies for the pa-tools venv that Letta Code extension tools execFile.
+# Canonical interpreter for migrated (ex-server) Python tools — see
+# docs/superpowers/specs/2026-06-07-pulse-analytics-extension-pilot-design.md
+# Create:  python3.13 -m venv ~/.letta/pa-tools-venv
+#          ~/.letta/pa-tools-venv/bin/pip install -r ext-tools-requirements.txt
+psycopg[binary]
+pytz
