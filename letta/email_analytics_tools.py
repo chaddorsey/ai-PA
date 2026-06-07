@@ -173,10 +173,8 @@ def get_email_analytics(
             if next_page_token:
                 _params["pageToken"] = next_page_token
 
-            _cmd = ["gws"] + "admin-reports activities list".split()
-            _cmd.extend(["--params", json.dumps(_params)])
-            _cmd.extend(["--format", "json"])
-            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            import admin_reports_helper
+            _r = admin_reports_helper.gws_admin_reports_run(_params)
             if _r.returncode != 0:
                 return {
                     "status": "error",

@@ -82,10 +82,8 @@ def collect_daily_workspace_activity(date: Optional[str] = None) -> str:
             if next_page_token:
                 _params["pageToken"] = next_page_token
 
-            _cmd = ["gws"] + "admin-reports activities list".split()
-            _cmd.extend(["--params", json.dumps(_params)])
-            _cmd.extend(["--format", "json"])
-            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            import admin_reports_helper
+            _r = admin_reports_helper.gws_admin_reports_run(_params)
             if _r.returncode != 0:
                 return json.dumps({
                     "error": f"Admin Reports API error: {_r.stderr[:500] if _r.stderr else f'gws exit {_r.returncode}'}",
@@ -398,10 +396,8 @@ def collect_daily_personal_activity(date: Optional[str] = None) -> str:
             if next_page_token:
                 _params["pageToken"] = next_page_token
 
-            _cmd = ["gws"] + "admin-reports activities list".split()
-            _cmd.extend(["--params", json.dumps(_params)])
-            _cmd.extend(["--format", "json"])
-            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            import admin_reports_helper
+            _r = admin_reports_helper.gws_admin_reports_run(_params)
             if _r.returncode != 0:
                 return json.dumps({
                     "error": f"Admin Reports API error: {_r.stderr[:500] if _r.stderr else f'gws exit {_r.returncode}'}",
@@ -1014,10 +1010,8 @@ def get_document_events(doc_ids: List[str], days: int = 7) -> Dict[str, Any]:
             if next_page_token:
                 _params["pageToken"] = next_page_token
 
-            _cmd = ["gws"] + "admin-reports activities list".split()
-            _cmd.extend(["--params", json.dumps(_params)])
-            _cmd.extend(["--format", "json"])
-            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            import admin_reports_helper
+            _r = admin_reports_helper.gws_admin_reports_run(_params)
             if _r.returncode != 0:
                 return {
                     "status": "error",
@@ -1541,10 +1535,8 @@ def search_drive_activity(
             if next_page_token:
                 _params["pageToken"] = next_page_token
 
-            _cmd = ["gws"] + "admin-reports activities list".split()
-            _cmd.extend(["--params", json.dumps(_params)])
-            _cmd.extend(["--format", "json"])
-            _r = subprocess.run(_cmd, capture_output=True, text=True, timeout=GWS_TIMEOUT)
+            import admin_reports_helper
+            _r = admin_reports_helper.gws_admin_reports_run(_params)
             if _r.returncode != 0:
                 return {
                     "status": "error",
