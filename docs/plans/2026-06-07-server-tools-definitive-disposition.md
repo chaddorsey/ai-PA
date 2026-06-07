@@ -29,7 +29,7 @@ the server tools were left **registered but dormant** for rollback. They get
 
 | Disposition | Count | Action | Why |
 |---|---|---|---|
-| **DONE** — extension; server dormant | 2 | delete at decommission | `collect_analytics_snapshot`, `compose_daily_briefing` already on the deterministic `_ext` path |
+| **DONE** — extension; server dormant | 3 | delete at decommission | `collect_analytics_snapshot`, `compose_daily_briefing`, **`generate_daily_briefing`** (migrated 2026-06-07) all on the deterministic `_ext` path |
 | **CLI-replaced** — `run_*`, mc, signal, scheduler, granola, pulse-slack | 41 | drop | host CLIs already exist (`slack`/`gws`/`omnifocus`/`twitter`/`mc`/`signal`/`scheduler`/`granola`/`pulse`); agents invoke via Bash |
 | **Other subsystem** — sports/media (43), Atlassian (26), calendly (3) | 72 | out of scope here | own systems (sports-and-media-tools, Atlassian MCP, Calendly MCP); not the local-agent fleet |
 | **Dead** — multi-agent messaging (deprecated) + dead-Docker/other | 37 | drop | deprecated (Ezra/Cameron Apr 2026) or attached only to decommissioned Docker agents |
@@ -37,18 +37,17 @@ the server tools were left **registered but dormant** for rollback. They get
 | **Tasks pipeline** | 12 | drop (CLI-covered) | `task` CLI + `task queue-claim`; tasks-agent is CLI-based; 0 transcript calls |
 | **Drive-RAG** | 11 | drop (service-covered) | `drive-rag-service` API (`drive-rag-curl`); 0 transcript calls |
 | **Email** | 9 | drop (CLI-covered) | `gws gmail` CLI + gws-bridge; email-agent is CLI-based; 0 transcript calls |
-| **Migrate-later** | 1 | migrate with schedule-agent | `generate_daily_briefing` runs on the **Docker** daily-schedule-agent; migrates only when that agent goes local |
+| ~~**Migrate-later**~~ | 0 | — | `generate_daily_briefing` **migrated 2026-06-07** to `generate_daily_briefing_ext` on calendar-local; see docs/plans/2026-06-07-schedule-briefing-local-migration.md. The Docker daily-schedule-agent is now unused. |
 
 (Exact membership is reproducible from the classification script; buckets +
 rules above define every tool's disposition.)
 
 ## What this means for "confidently done"
 
-- **Migrate now: nothing.** The only no-CLI/no-service bespoke tools (analytics
-  snapshot + briefing) are migrated.
-- **Migrate later: 1** — `generate_daily_briefing`, bundled into the future
-  daily-schedule-agent local migration (separate; also fixes the stale
-  `today.md`).
+- **Migrate now: nothing.** All no-CLI/no-service bespoke tools (analytics
+  snapshot + analytics briefing + schedule briefing) are migrated.
+- **Migrate later: 0** — `generate_daily_briefing` was the last one; migrated
+  2026-06-07 (also fixed the stale `today.md` / canonical schedule signal).
 - **Drop at decommission: ~199** — CLI-replaced, other-subsystem, dead, or
   CLI/service-covered. They are not used by any live agent.
 

@@ -18,6 +18,11 @@ const ENTRY = "/Volumes/main-drive/ai-PA/letta/pulse-tools/_ext_run.py";
 const PYPATH =
   "/Volumes/main-drive/ai-PA/letta/pulse-tools:/Volumes/main-drive/ai-PA/letta";
 const ENV_FILE = "/Users/dorseyhomeserver/.letta/pa-tools.env";
+// Host CLI dirs (gws/slack/omnifocus/etc.) — prepended to PATH because the
+// launchd-spawned local-runner subprocess does NOT inherit the user's shell
+// PATH, so tools that shell out (e.g. generate_daily_briefing -> `gws`) fail
+// with "No such file or directory" without this.
+const EXTRA_PATH = "/Users/dorseyhomeserver/bin:/opt/homebrew/bin:/usr/local/bin";
 const TOOL_TIMEOUT_MS = 300_000;
 
 function loadEnvFile(path: string): Record<string, string> {
@@ -42,7 +47,12 @@ async function runPinned(
   kwargs: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<string> {
-  const env = { ...process.env, ...loadEnvFile(ENV_FILE), PYTHONPATH: PYPATH };
+  const merged = { ...process.env, ...loadEnvFile(ENV_FILE) };
+  const env = {
+    ...merged,
+    PYTHONPATH: PYPATH,
+    PATH: EXTRA_PATH + (merged.PATH ? `:${merged.PATH}` : ""),
+  };
   const { stdout } = await execFileAsync(
     VENV_PY,
     [ENTRY, module, func, JSON.stringify(kwargs)],
@@ -51,13 +61,16 @@ async function runPinned(
   return stdout.trim();
 }
 
-// Factory: a pinned-venv tool whose only argument is an optional `date`.
+// Factory: a pinned-venv tool whose only argument is an optional date.
+// `dateParam` is the Python keyword the date maps to (tools differ:
+// the analytics tools take `date`, generate_daily_briefing takes `target_date`).
 function dateTool(
   letta: any,
   name: string,
   module: string,
   func: string,
   description: string,
+  dateParam: string = "date",
 ) {
   return letta.tools.register({
     name,
@@ -78,7 +91,7 @@ function dateTool(
       const date =
         ctx?.args && typeof ctx.args.date === "string" ? ctx.args.date.trim() : "";
       try {
-        const out = await runPinned(module, func, date ? { date } : {}, ctx?.signal);
+        const out = await runPinned(module, func, date ? { [dateParam]: date } : {}, ctx?.signal);
         return out || "(empty result)";
       } catch (err: any) {
         const stderr = err?.stderr ? String(err.stderr).slice(0, 1500) : "";
@@ -115,6 +128,18 @@ export default function activate(letta: any) {
         "Deterministic extension version (pinned Python venv). Pass `date` as " +
         "YYYY-MM-DD; omit for the last workday. Use this instead of " +
         "compose_daily_briefing.",
+    ),
+    dateTool(
+      letta,
+      "generate_daily_briefing_ext",
+      "daily_briefing.generate_daily_briefing",
+      "generate_daily_briefing",
+      "Generate the daily SCHEDULE briefing (calendar events + available-time " +
+        "8AM-5PM Eastern) and write it to MC memfs schedule/today.md (the file " +
+        "the daily-schedule skill reads) plus the canonical schedule signal. " +
+        "Deterministic extension version (pinned Python venv). Pass `date` as " +
+        "YYYY-MM-DD; omit for today. Use this instead of generate_daily_briefing.",
+      "target_date",
     ),
   ];
 
