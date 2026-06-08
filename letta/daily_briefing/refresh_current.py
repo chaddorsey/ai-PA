@@ -100,6 +100,10 @@ def refresh_current_briefing(now_et: datetime = None) -> dict:
             f"{result.get('error_message', 'unknown error')}"
         )
     body = result.get("briefing") or ""
+    # generate_daily_briefing returns the agent-wrapped form under "briefing"
+    # ([VERBATIM_USER_OUTPUT]...[/VERBATIM_USER_OUTPUT]); strip the wrapper so the
+    # materialized cell holds clean markdown for the reader/dashboard.
+    body = body.replace("[VERBATIM_USER_OUTPUT]\n", "").replace("\n[/VERBATIM_USER_OUTPUT]", "")
     if "Schedule JSON" not in body:
         raise RuntimeError("rendered briefing missing Schedule JSON line; aborting cell write")
 

@@ -10,7 +10,7 @@ def test_refresh_calls_tool_with_rollover_date_and_writes_cell(monkeypatch):
     def fake_tool(target_date=None, **kw):
         calls["target_date"] = target_date
         return {"status": "ok",
-                "briefing": "**Wednesday's Schedule**\n\n**Schedule JSON** (x): {\"work_end\":\"17:00\",\"busy_blocks\":[]}",
+                "briefing": "[VERBATIM_USER_OUTPUT]\n**Wednesday's Schedule**\n\n**Schedule JSON** (x): {\"work_end\":\"17:00\",\"busy_blocks\":[]}\n[/VERBATIM_USER_OUTPUT]",
                 "signal_written": True}
     def fake_put_cell(date_str, body):
         calls["cell_date"] = date_str
@@ -26,6 +26,9 @@ def test_refresh_calls_tool_with_rollover_date_and_writes_cell(monkeypatch):
     assert "Schedule JSON" in calls["cell_body"]
     assert out["status"] == "ok"
     assert out["target_date"] == "2026-06-10"
+    assert "[VERBATIM_USER_OUTPUT]" not in calls["cell_body"]
+    assert "[/VERBATIM_USER_OUTPUT]" not in calls["cell_body"]
+    assert calls["cell_body"].startswith("**Wednesday's Schedule**")
 
 def test_refresh_raises_on_tool_error(monkeypatch):
     monkeypatch.setattr(rc, "generate_daily_briefing",

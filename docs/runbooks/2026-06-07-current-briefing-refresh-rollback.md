@@ -20,7 +20,7 @@ jobs with a host-native pipeline:
    date-less cell `signals/current/schedule.md` in the agents-canonical Gitea repo.
 2. **Reader** (`letta-code/.scripts/schedule`) — reads `signals/current/schedule.md`
    via the Gitea API (no Letta agent involved).
-3. **Bash watchdog** (`com.ai-pa.current-briefing-monitor`, every 5 min, 06:00–23:00
+3. **Bash watchdog** (`com.ai-pa.current-briefing-monitor`, every 30 min, 06:00–23:00
    ET) — runs `scripts/check-current-briefing-fresh.sh`; writes a canonical signal
    `signals/<date>/schedule-refresh-health.md` with `attention_level: elevated` if
    the cell is stale (age > 40 min during daytime).
@@ -123,7 +123,7 @@ export PYTHONPATH="/Volumes/main-drive/ai-PA/letta/pulse-tools:/Volumes/main-dri
   with `attention_level: elevated` and message describing the stale age.
 
 The watchdog exits 0 on fresh, 1 on stale (and writes the signal). The launchd
-job (`com.ai-pa.current-briefing-monitor`) runs every 5 min and is suppressed
+job (`com.ai-pa.current-briefing-monitor`) runs every 30 min and is suppressed
 outside 06:00–23:00 ET by the script's own daytime guard.
 
 ---
