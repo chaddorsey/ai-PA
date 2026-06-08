@@ -5,9 +5,10 @@ steward-daily-rollup.py — Steward MVP duty #1 (deterministic).
 Aggregates pipeline-health signals from agents-canonical/signals/{today}/
 and signals/{yesterday}/, writes signals/{today}/steward-daily-rollup.md.
 
-Designed to run as a scheduler-service `script` action (no Letta involved).
-After writing the rollup, posts a one-line summary to the steward agent's
-conversation so it has the context for any later questions.
+Fully deterministic, fully local: reads/writes the agents-canonical Gitea repo
+only — no Letta server involved. (The previous best-effort notify to a Docker
+"steward" agent was removed 2026-06-08 as part of the Letta-Docker wind-down;
+nothing queried that agent.)
 
 Idempotent: re-running on the same day overwrites the rollup file.
 
@@ -28,8 +29,6 @@ from zoneinfo import ZoneInfo
 
 
 GITEA = os.environ.get("GITEA_BASE_URL", "http://gitea:3000")
-LETTA = os.environ.get("LETTA_BASE_URL", "http://letta:8283")
-STEWARD_AGENT = "agent-6349140d-a7df-4df2-9937-87ade49e8783"
 REPO = "agents/agents-canonical"
 ET = ZoneInfo("America/New_York")
 ENV_PATH = "/workspace/.env"
@@ -145,24 +144,6 @@ def list_signals_for_date(date_str):
     return out
 
 
-def post_to_steward(summary):
-    """Best-effort: drop a memory message into steward agent. Don't fail the rollup if this fails."""
-    try:
-        body = {"messages": [{"role": "user", "content": f"Daily rollup posted: {summary}"}]}
-        req = urllib.request.Request(
-            f"{LETTA}/v1/agents/{STEWARD_AGENT}/messages/async",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            r.read()
-        return True
-    except Exception as e:
-        sys.stderr.write(f"warn: steward notify failed: {e}\n")
-        return False
-
-
 def main():
     now_utc = datetime.now(timezone.utc)
     now_et = now_utc.astimezone(ET)
@@ -257,7 +238,6 @@ def main():
         f"signals/{today_str}/steward-daily-rollup.md"
     )
     print(summary)
-    post_to_steward(summary)
     return 0
 
 
