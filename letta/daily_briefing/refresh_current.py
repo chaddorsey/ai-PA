@@ -18,7 +18,6 @@ from daily_briefing.generate_daily_briefing import generate_daily_briefing
 
 CURRENT_CELL_PATH = "signals/current/schedule.md"
 CANONICAL_REPO = "agents/agents-canonical"
-ACTIVE_HOURS = range(6, 23)  # 06:00..22:59 ET; outside this the launchd wrapper no-ops
 
 
 def current_briefing_date(now_et: datetime) -> date:
