@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.current-briefing-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Volumes/main-drive/ai-PA/scripts/check-current-briefing-fresh.sh</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>1800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/current-briefing-refresh/monitor.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/current-briefing-refresh/monitor.stderr.log</string>
+    <key>WorkingDirectory</key>
+    <string>/Volumes/main-drive/ai-PA</string>
+</dict>
+</plist>
