@@ -1,3 +1,12 @@
+> **SUPERSEDED (2026-06-07):** The agent_message cron flip described in this
+> document has been superseded by the **materialized-view model**. The refresh is
+> now host-native launchd (`com.ai-pa.current-briefing-refresh`) → pure Python
+> tool (`letta/daily_briefing/refresh_current.py`) → `signals/current/schedule.md`
+> cell in agents-canonical. The three Docker scheduler agent_message crons are
+> **paused**. See:
+> - `docs/plans/2026-06-07-current-briefing-materialized-view-plan.md`
+> - `docs/runbooks/2026-06-07-current-briefing-refresh-rollback.md`
+
 ---
 date: 2026-06-07
 status: DONE — verified in production
