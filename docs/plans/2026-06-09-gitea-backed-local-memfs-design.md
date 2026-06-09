@@ -40,7 +40,7 @@ Per agent, in this exact order (order is safety-critical):
 5. **Verify:** instance pulls from Gitea, reads memfs correctly (system/ instructions intact, history present), a write pushes back, Gitea reflects it. Confirm no memory loss vs the backup.
 6. **Canary instrumentation (the pivot):** explicitly test **contended-push behavior** — make two instances diverge on the same agent and observe letta-code's reaction: graceful (merge/rebase/retry) vs lossy (force-push/last-write-wins) vs fail. This single fact decides whether a coordination layer is needed and how soon.
 
-**Canary agent:** a **low-stakes one first** — `docs` (`agent-local-3898b33a`) or `pulse` (`agent-local-d48b128a`) — not MC/calendar/tasks. Full verify incl. the contended-push test, then roll the rest.
+**Canary agent:** **`docs` (`agent-local-3898b33a`)** — chosen (low-stakes; not MC/calendar/tasks). Full verify incl. the contended-push test, then roll the rest (calendar, email, tasks, pulse, MC).
 
 ## Concurrency model + mitigation ladder (coordination deferred)
 Conflicts only occur when two instances write the **same agent's same file** in the **same window**. That surface is narrow (different agents/files auto-merge; an agent is usually active in one place at a time; high-churn rolling state — the digest — is already isolated from stable `system/`). Adopt only as needed:
