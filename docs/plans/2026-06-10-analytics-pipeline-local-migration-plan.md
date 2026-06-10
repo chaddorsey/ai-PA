@@ -10,6 +10,12 @@
 
 **Permission note:** User granted formal permission (2026-06-10) to trigger Slack CSV exports + posts. The backfill posts ~10 days × {channels,members} CSVs to the admin DM (USLACKBOT).
 
+## EXECUTION UPDATE (2026-06-10) — scope reduced after restart
+Verification (Task 2) revealed the scheduler-service had stopped firing **all** cron jobs (475 historical execs, 0 since ~05-31) — it lost its calendar-job registrations after a restart. **`docker restart scheduler-service` revived them** (32 jobs re-registered; a cron job fired immediately). Consequences:
+- **Bronze/Silver `script` legs self-heal in Docker** (revived scheduler runs them at 7am) — NOT migrated. Verified manually: bronze poll captured the fresh CSVs (06-07, ids 50/51), silver parsed (channels 268 rows / members 202), `pulse snapshot --date 2026-06-07` → `slack_collected:true, slack_messages:231`, compose produced a briefing **with a Slack section**.
+- **Export trigger bug fixed:** `trigger_slack_analytics_export` defaulted to Docker host `slack-analytics-mcp-server:8087` (unresolvable from host). Added `SLACK_ANALYTICS_EXPORT_URL=http://127.0.0.1:8097/trigger-export` to `~/.letta/pa-tools.env` (gitignored host env).
+- **Remaining migration scope = the `agent_message` legs only** (export/snapshot/vibe/recollect/compose/mentions → local launchd, Tasks 3–4). Tasks 1–2 done. Snapshot reads the **silver table** (not files.list).
+
 ---
 
 ## Invariants (read first)
