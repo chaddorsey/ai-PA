@@ -130,6 +130,11 @@ class WarmPool:
             "PA_AI_REPO_ROOT": "/Volumes/main-drive/ai-PA",
             "PA_WEB_POSTGRES_PORT": "5433",
             "GMAIL_WATCH_SERVICE_URL": "http://localhost:8094/mcp",
+            # gws (Google Workspace CLI) needs file-based creds — the macOS
+            # Keychain is unreachable in this spawned context, so without this
+            # gws fails and email/Drive/meeting enrichment fetches degrade
+            # ("remote Gmail fetch failed (gws CLI error)"). 2026-06-10.
+            "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/Volumes/main-drive/ai-PA/gws-bridge/credentials.json",
         }
         for k in self._ENV_KEYS_FROM_DOTENV:
             v = self._dotenv.get(k)
