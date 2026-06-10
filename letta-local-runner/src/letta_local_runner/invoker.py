@@ -256,20 +256,27 @@ class Invoker:
         rc, out, _ = await self._run_git(["remote"], mem)
         return rc == 0 and self.settings.memfs_remote in out.split()
 
+    async def _pull_rebase(self, agent_id: str, mem: Path) -> bool:
+        """pull --rebase --autostash. On failure (e.g. a true same-file
+        conflict), abort the rebase so the working copy is left CLEAN for the
+        next run rather than stuck mid-rebase. Returns True only on clean pull."""
+        remote, branch = self.settings.memfs_remote, self.settings.memfs_branch
+        rc, _o, err = await self._run_git(
+            ["pull", "--rebase", "--autostash", remote, branch], mem)
+        if rc == 0:
+            return True
+        # Restore a clean state. rebase --abort is a no-op (nonzero) if no
+        # rebase is in progress; that's fine — we just want the tree clean.
+        await self._run_git(["rebase", "--abort"], mem)
+        log.warning("memfs_rebase_failed_aborted", agent_id=agent_id,
+                    err=err.strip()[:300])
+        return False
+
     async def _memfs_sync_pull(self, agent_id: str) -> None:
         try:
             if not await self._has_memfs_remote(agent_id):
                 return
-            mem = self._memfs_dir(agent_id)
-            rc, _out, err = await self._run_git(
-                ["pull", "--rebase", "--autostash",
-                 self.settings.memfs_remote, self.settings.memfs_branch],
-                mem,
-            )
-            if rc != 0:
-                log.warning("memfs_pull_failed", agent_id=agent_id, rc=rc,
-                            err=err.strip()[:300])
-            else:
+            if await self._pull_rebase(agent_id, self._memfs_dir(agent_id)):
                 log.info("memfs_pull_ok", agent_id=agent_id)
         except Exception as e:  # never let sync break an invocation
             log.warning("memfs_pull_exception", agent_id=agent_id, error=str(e))
@@ -288,11 +295,11 @@ class Invoker:
             # instance). Rebase onto the remote and retry once.
             log.warning("memfs_push_rejected_retrying", agent_id=agent_id,
                         err=err.strip()[:300])
-            rc2, _o2, err2 = await self._run_git(
-                ["pull", "--rebase", "--autostash", remote, branch], mem)
-            if rc2 != 0:
-                log.error("memfs_push_retry_pull_failed", agent_id=agent_id,
-                          err=err2.strip()[:300])
+            if not await self._pull_rebase(agent_id, mem):
+                # true conflict: local commit stays unpushed (clean tree), the
+                # hub keeps the other instance's edit. No data loss; surfaced
+                # for reconciliation. Retried automatically on the next run.
+                log.error("memfs_push_retry_pull_failed", agent_id=agent_id)
                 return
             rc3, _o3, err3 = await self._run_git(["push", remote, branch], mem)
             if rc3 == 0:

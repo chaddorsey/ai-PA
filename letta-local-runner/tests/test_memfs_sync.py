@@ -133,6 +133,34 @@ async def test_sync_noop_when_not_a_git_repo(invoker):
 
 
 @pytest.mark.asyncio
+async def test_true_conflict_aborts_rebase_and_leaves_clean_tree(invoker, hub_and_memfs, tmp_path):
+    """When BOTH sides edit the SAME file (a true conflict), the rebase can't
+    auto-merge. The wrapper must abort the rebase so the working copy is left
+    CLEAN (not stuck mid-rebase), the local commit is preserved unpushed, and
+    the hub keeps the other instance's edit. No data loss, no broken tree."""
+    hub, mem = hub_and_memfs
+    # other instance writes conflict.md and pushes
+    clone = tmp_path / "other"
+    subprocess.run(["git", "clone", str(hub), str(clone)], check=True, capture_output=True)
+    _commit(clone, "conflict.md", "OTHER version\n", "other edit")
+    _git(clone, "push", "origin", "main")
+    hub_head_before = _hub_head(hub)
+    # this instance writes the SAME file with different content
+    _commit(mem, "conflict.md", "MINE version\n", "my edit")
+    mine_head = _git(mem, "rev-parse", "HEAD")
+
+    await invoker._memfs_sync_push(AGENT)  # must not raise
+
+    # working tree is clean (no rebase in progress, no conflict markers)
+    assert _git(mem, "status", "--porcelain") == "", "tree must be clean after aborted rebase"
+    assert not (mem / ".git" / "rebase-merge").exists(), "no rebase should be in progress"
+    # local commit preserved (not lost), hub unchanged (still the other edit)
+    assert _git(mem, "rev-parse", "HEAD") == mine_head, "local commit must be preserved"
+    assert _hub_head(hub) == hub_head_before, "hub keeps the other instance's edit"
+    assert (mem / "conflict.md").read_text() == "MINE version\n", "local content intact"
+
+
+@pytest.mark.asyncio
 async def test_push_failure_does_not_raise(invoker, hub_and_memfs):
     """If the remote is unreachable, push fails but the call never raises
     (best-effort: the agent run already succeeded)."""
