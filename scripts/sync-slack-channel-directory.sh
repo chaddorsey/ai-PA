@@ -20,7 +20,10 @@ log() { echo "[$(ts)] $*" | tee -a "$LOG"; }
 
 SLACK_MCP_XOXP_TOKEN=$(grep ^SLACK_MCP_XOXP_TOKEN= "$ENV_FILE" | cut -d= -f2-)
 GITEA_MEMFS_TOKEN=$(grep ^GITEA_MEMFS_TOKEN= "$ENV_FILE" | cut -d= -f2-)
-GITEA_BASE_URL="${GITEA_BASE_URL:-http://localhost:3030}"
+# Use 127.0.0.1, NOT localhost: localhost resolves ::1 (IPv6) first and Gitea
+# binds IPv4-only, so localhost silently fails (this is why the 5am launchd job,
+# which doesn't set GITEA_BASE_URL, stopped refreshing after 2026-05-31).
+GITEA_BASE_URL="${GITEA_BASE_URL:-http://127.0.0.1:3030}"
 export SLACK_MCP_XOXP_TOKEN
 
 log "Starting channel directory sync"
