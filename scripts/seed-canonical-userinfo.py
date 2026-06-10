@@ -53,7 +53,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 ENV_PATH = "/Volumes/main-drive/ai-PA/.env"
-GITEA_HOST = "http://localhost:3030"
+GITEA_HOST = "http://127.0.0.1:3030"
 CANONICAL_REPO = "agents/agents-canonical"
 MC_AGENT_ID = "agent-90b2e860-6345-49a7-98f1-8d5ae4d9c4ef"
 

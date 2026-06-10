@@ -317,7 +317,7 @@ def health():
     # Gitea (canonical)
     try:
         with urllib.request.urlopen(
-            f"{os.environ.get('GITEA_BASE_URL', 'http://localhost:3030')}/api/v1/version",
+            f"{os.environ.get('GITEA_BASE_URL', 'http://127.0.0.1:3030')}/api/v1/version",
             timeout=5,
         ) as r:
             status["checks"]["gitea"] = "ok" if r.status == 200 else f"status {r.status}"

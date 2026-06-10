@@ -28,7 +28,7 @@ import urllib.error
 from datetime import date, datetime, timedelta
 
 LETTA_URL = "http://localhost:8283"
-GITEA_URL = "http://localhost:3030"
+GITEA_URL = "http://127.0.0.1:3030"
 PULSE_AGENT_ID = "agent-2ed14ef4-6289-453a-ae27-290b6ed196b8"
 SLACK_VIBE_PATH_TMPL = (
     f"{GITEA_URL}/api/v1/repos/agents/agents-canonical/contents/"

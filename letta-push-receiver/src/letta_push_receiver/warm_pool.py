@@ -126,7 +126,7 @@ class WarmPool:
             "LETTA_LOCAL_BACKEND_DIR": os.path.expanduser(
                 "~/.letta/lc-local-backend"
             ),
-            "GITEA_BASE_URL": "http://localhost:3030",
+            "GITEA_BASE_URL": "http://127.0.0.1:3030",
             "PA_AI_REPO_ROOT": "/Volumes/main-drive/ai-PA",
             "PA_WEB_POSTGRES_PORT": "5433",
             "GMAIL_WATCH_SERVICE_URL": "http://localhost:8094/mcp",

@@ -37,7 +37,7 @@ def current_briefing_date(now_et: datetime) -> date:
 
 
 def _gitea_base() -> str:
-    return os.environ.get("GITEA_BASE_URL", "http://localhost:3030").rstrip("/")
+    return os.environ.get("GITEA_BASE_URL", "http://127.0.0.1:3030").rstrip("/")
 
 
 def _put_current_cell(date_str: str, body: str) -> str:

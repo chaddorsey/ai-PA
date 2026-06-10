@@ -62,7 +62,7 @@ PRIORITY_KEYWORDS = [
 ]
 
 ENV_PATH = "/Volumes/main-drive/ai-PA/.env"
-GITEA_HOST = "http://localhost:3030"
+GITEA_HOST = "http://127.0.0.1:3030"
 CANONICAL_REPO = "agents/agents-canonical"
 
 

@@ -45,7 +45,7 @@ if [[ "$successes" -gt 0 ]]; then
     if [[ -f "$ENV_FILE" ]]; then
       GITEA_MEMFS_TOKEN=$(grep ^GITEA_MEMFS_TOKEN= "$ENV_FILE" | cut -d= -f2-)
       export GITEA_MEMFS_TOKEN
-      export GITEA_BASE_URL="${GITEA_BASE_URL:-http://localhost:3030}"
+      export GITEA_BASE_URL="${GITEA_BASE_URL:-http://127.0.0.1:3030}"
     fi
     if command -v signal >/dev/null 2>&1; then
       resolved_body_file=$(mktemp)
@@ -107,7 +107,7 @@ EOF
 if [[ -f "$ENV_FILE" ]]; then
   GITEA_MEMFS_TOKEN=$(grep ^GITEA_MEMFS_TOKEN= "$ENV_FILE" | cut -d= -f2-)
   export GITEA_MEMFS_TOKEN
-  export GITEA_BASE_URL="${GITEA_BASE_URL:-http://localhost:3030}"
+  export GITEA_BASE_URL="${GITEA_BASE_URL:-http://127.0.0.1:3030}"
 fi
 
 if command -v signal >/dev/null 2>&1; then

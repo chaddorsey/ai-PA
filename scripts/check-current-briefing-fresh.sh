@@ -32,7 +32,7 @@ log "--- freshness watchdog start ---"
 
 # ---- (1) Load creds ----
 GITEA_MEMFS_TOKEN=$(grep ^GITEA_MEMFS_TOKEN= "$ENV_FILE" | cut -d= -f2-)
-GITEA_BASE_URL="${GITEA_BASE_URL:-http://localhost:3030}"
+GITEA_BASE_URL="${GITEA_BASE_URL:-http://127.0.0.1:3030}"
 export GITEA_MEMFS_TOKEN GITEA_BASE_URL
 
 # ---- (2) Fetch last commit timestamp for signals/current/schedule.md ----

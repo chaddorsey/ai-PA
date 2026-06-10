@@ -24,7 +24,7 @@ Usage:
 
 Env:
   GITEA_MEMFS_TOKEN     required (for signal + memfs writes)
-  GITEA_BASE_URL        host: http://localhost:3030 (default)
+  GITEA_BASE_URL        host: http://127.0.0.1:3030 (default)
                         docker: http://gitea:3000
   GWS_BIN               defaults to gws (on PATH); override if needed
   MC_AGENT_ID           defaults to agent-90b2e860-...; override per env
@@ -45,7 +45,7 @@ sys.path.insert(0, str(REPO_ROOT))
 # Default to host-side Gitea endpoint when running standalone.
 # The function reads GITEA_BASE_URL at runtime, so this respects any
 # override (e.g., from scheduler-service which uses gitea:3000).
-os.environ.setdefault("GITEA_BASE_URL", "http://localhost:3030")
+os.environ.setdefault("GITEA_BASE_URL", "http://127.0.0.1:3030")
 
 # The function shells out to `gws`; ensure it's on PATH.
 # Homebrew bin contains gws on this host.
