@@ -86,3 +86,67 @@ Per agent: point the instance back to local-only (remove `LETTA_MEMFS_GIT_URL` /
   - (c) **A separate shared conversation/archival *index*** for cross-surface search, while live session state stays surface-local — best of both: unified search/recall without forcing unified live threads.
 - **Recommended seed-stance:** treat **memfs (this spec) as the shared brain**; treat **conversation-history + search as a distinct future plane built as a shared *index* (option c)**, not by git-merging live transcripts. Decide unified-vs-per-surface threading when we design it.
 - **Trip tie-in:** the laptop needs to **search past memory/conversations offline**, which resurfaces this exact question — so the shared-index design should be offline-aware when we get to it.
+
+---
+
+## CANARY FINDINGS (2026-06-10) — docs agent `agent-local-3898b33a`
+
+### Reconciliation: the canary was already partially migrated
+Phase 0/1 (seed) had already run in an earlier session: the working copy had a
+`gitea` remote and the Gitea repo `agents/agent-local-3898b33a` existed (seeded
+at `50bf25c`). Independent re-verification: backup restorable, hub HEAD == local,
+10/10 file manifest match, zero loss. Pushed the one newer commit (the Plane-2
+recall policy) so hub == local before configuring.
+
+### The plan's Phase-2 mechanism was WRONG on the host (key correction)
+`LETTA_MEMFS_GIT_URL` is **NOT** a feature of stock letta-code. The host runner
+uses stock npm `@letta-ai/letta-code` **0.27.8**, whose bundle has zero
+`GIT_URL` references — it only knows `LETTA_MEMFS_BACKEND/_BASE_URL/_GIT_PROXY_BASE_URL/_LOCAL`.
+pa-web works only because its Docker image bakes in
+`letta-memfs-patches/patches/apply_letta_code_memfs_external_git.py` (+ passes
+`--memfs`). Proof: with `LETTA_MEMFS_GIT_URL` set on the runner, a memfs write
+committed **locally** (`LETTA_MEMFS_LOCAL=1` works) but **never pushed**.
+
+Options considered: (A) point runner at the prepared patched build — rejected,
+it's **0.26.1** (downgrades the whole host fleet from 0.27.8); (B) patch the
+global 0.27.8 binary — rejected, clobbered on every npm upgrade + patch
+calibrated against an older bundle; **(C) runner-side sync wrapper — CHOSEN by
+Chad.**
+
+### Implemented (Option C) — `letta-local-runner` owns hub sync
+`invoker.py`: per run, under the existing per-agent lock —
+`git pull --rebase --autostash` **before** `_spawn_once`, `git push` (with one
+rebase-retry on non-ff) **after**. letta-code commits memfs writes locally
+(`LETTA_MEMFS_LOCAL=1`, set on the runner plist; `LETTA_MEMFS_GIT_URL` removed).
+Best-effort (a sync failure never fails the agent run); agents without a `gitea`
+remote are skipped (safe pre-seed). Gated by `memfs_sync_enabled` (default on).
+True-conflict safety: a failed rebase is **aborted** so the tree is left clean.
+Commits: `0c857ae2` (wrapper + tests), `e18e9108` (conflict-abort hardening).
+7 sync unit tests + 29 total green.
+
+### Phase-2 verification (live, via the real runner :8920)
+- Agent runs clean under the new env (5.3s). `memfs_pull_ok` + `memfs_push_ok` logged.
+- Push-on-write: hub head advanced; probe content fetched **directly from Gitea**;
+  commit authored by the agent, pushed by the runner. No seed files lost.
+
+### Phase-3 contended-push VERDICT: **GRACEFUL** → defer coordination
+- **Non-conflicting divergence (live):** hub advanced from a 2nd clone; the next
+  agent run rebased the other instance's edit in (pull-before) and pushed its own
+  (push-after) — **both edits survived**, hub == local, tree clean, no loss.
+- **True same-file conflict (unit-tested):** rebase aborts → local commit
+  preserved unpushed, hub keeps the other edit, clean tree, no data loss; retried
+  next run. (Safe "blocked", not lossy.)
+- **Decision:** graceful/safe in both modes → **no coordination/lock layer needed
+  now.** Proceed to Phase 4 (fleet rollout) — GATED on Chad's go-ahead.
+
+### Residual caveat for multi-instance (pa-web co-run)
+The wrapper serializes same-agent runs **within the runner**. Cross-instance
+simultaneity (pa-web + runner writing the SAME agent's SAME file in the same
+window) relies on push-retry/rebase; a true simultaneous same-file conflict
+leaves one side's commit unpushed (safe, surfaced — not lost). Keep the canary
+**runner-only** until pa-web co-run is explicitly enabled (Phase 4 Task 10 Step 2).
+
+### Canary left clean
+hub == local (`652d10f`), exactly the 10 seed files, all probes removed. Runner
+healthy on the wrapper. Plane-2 recall policy (`system/historical_recall.md`) is
+part of the seeded memory.
