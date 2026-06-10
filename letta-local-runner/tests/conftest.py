@@ -30,6 +30,8 @@ def settings(tmp_path: Path) -> Settings:
         race_recovery_delay_seconds=0.01,  # speed tests up
         listen_host="127.0.0.1",
         listen_port=0,
+        memfs_sync_enabled=False,  # invoke()-path tests mock subprocess globally;
+                                   # sync is exercised separately in test_memfs_sync.py
     )
 
 

@@ -81,6 +81,11 @@ class Invoker:
         async with lock:
             self._inflight[req.agent_id] = time.time()
             try:
+                # pull-on-start: bring the agent's memfs up to date with the hub
+                # before it acts on (possibly stale) local memory. Best-effort.
+                if self.settings.memfs_sync_enabled:
+                    await self._memfs_sync_pull(req.agent_id)
+
                 result = await self._spawn_once(req, timeout)
                 if self._looks_like_race_loss(result):
                     log.warning("race_loss_detected", agent_id=req.agent_id)
@@ -91,6 +96,12 @@ class Invoker:
                         result.status = "race_recovered"
             finally:
                 self._inflight.pop(req.agent_id, None)
+
+            # push-on-write: letta-code committed any memfs changes locally; push
+            # them to the hub (with rebase-retry on contention). Best-effort —
+            # never fails the agent run, which already completed.
+            if self.settings.memfs_sync_enabled:
+                await self._memfs_sync_push(req.agent_id)
 
             self._record(req, result)
             return result
@@ -196,6 +207,101 @@ class Invoker:
             and result.letta_exit == 0
             and not result.agent_response.strip()
         )
+
+    # ---- memfs Gitea sync (Option C wrapper) --------------------------------
+
+    def _memfs_dir(self, agent_id: str) -> Path:
+        return self.settings.backend_dir / "memfs" / agent_id / "memory"
+
+    def _git_env(self) -> dict:
+        """Env for git ops. Ensure an identity exists so rebase (during a
+        push-retry) can replay commits even without global git config."""
+        env = os.environ.copy()
+        env.setdefault("GIT_AUTHOR_NAME", "letta-local-runner")
+        env.setdefault("GIT_AUTHOR_EMAIL", "runner@localhost")
+        env.setdefault("GIT_COMMITTER_NAME", "letta-local-runner")
+        env.setdefault("GIT_COMMITTER_EMAIL", "runner@localhost")
+        return env
+
+    async def _run_git(self, args: list[str], cwd: Path) -> tuple[int, str, str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "-C", str(cwd), *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=self._git_env(),
+            )
+        except FileNotFoundError as e:
+            return (-1, "", f"git not found: {e}")
+        try:
+            out_b, err_b = await asyncio.wait_for(
+                proc.communicate(), timeout=self.settings.git_timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return (-9, "", f"git timed out after {self.settings.git_timeout_seconds}s")
+        return (
+            proc.returncode or 0,
+            out_b.decode("utf-8", errors="replace"),
+            err_b.decode("utf-8", errors="replace"),
+        )
+
+    async def _has_memfs_remote(self, agent_id: str) -> bool:
+        """True only if the agent's memfs is a git repo with the configured
+        remote. Agents not yet seeded to Gitea are skipped (no error)."""
+        mem = self._memfs_dir(agent_id)
+        if not (mem / ".git").exists():
+            return False
+        rc, out, _ = await self._run_git(["remote"], mem)
+        return rc == 0 and self.settings.memfs_remote in out.split()
+
+    async def _memfs_sync_pull(self, agent_id: str) -> None:
+        try:
+            if not await self._has_memfs_remote(agent_id):
+                return
+            mem = self._memfs_dir(agent_id)
+            rc, _out, err = await self._run_git(
+                ["pull", "--rebase", "--autostash",
+                 self.settings.memfs_remote, self.settings.memfs_branch],
+                mem,
+            )
+            if rc != 0:
+                log.warning("memfs_pull_failed", agent_id=agent_id, rc=rc,
+                            err=err.strip()[:300])
+            else:
+                log.info("memfs_pull_ok", agent_id=agent_id)
+        except Exception as e:  # never let sync break an invocation
+            log.warning("memfs_pull_exception", agent_id=agent_id, error=str(e))
+
+    async def _memfs_sync_push(self, agent_id: str) -> None:
+        try:
+            if not await self._has_memfs_remote(agent_id):
+                return
+            mem = self._memfs_dir(agent_id)
+            remote, branch = self.settings.memfs_remote, self.settings.memfs_branch
+            rc, _o, err = await self._run_git(["push", remote, branch], mem)
+            if rc == 0:
+                log.info("memfs_push_ok", agent_id=agent_id)
+                return
+            # Most likely a non-fast-forward (the hub advanced from another
+            # instance). Rebase onto the remote and retry once.
+            log.warning("memfs_push_rejected_retrying", agent_id=agent_id,
+                        err=err.strip()[:300])
+            rc2, _o2, err2 = await self._run_git(
+                ["pull", "--rebase", "--autostash", remote, branch], mem)
+            if rc2 != 0:
+                log.error("memfs_push_retry_pull_failed", agent_id=agent_id,
+                          err=err2.strip()[:300])
+                return
+            rc3, _o3, err3 = await self._run_git(["push", remote, branch], mem)
+            if rc3 == 0:
+                log.info("memfs_push_ok_after_rebase", agent_id=agent_id)
+            else:
+                log.error("memfs_push_failed_after_rebase", agent_id=agent_id,
+                          err=err3.strip()[:300])
+        except Exception as e:
+            log.warning("memfs_push_exception", agent_id=agent_id, error=str(e))
 
     # ---- logging -------------------------------------------------------------
 
