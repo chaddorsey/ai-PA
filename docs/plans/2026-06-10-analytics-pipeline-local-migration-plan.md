@@ -313,3 +313,7 @@ git commit -m "docs(analytics): pipeline local-migration plan + completion notes
 - 6 launchd jobs loaded, HOME logs, exit 0 on kickstart (no EX_CONFIG).
 - 6 Docker agent_message jobs archived; zero analytics `agent_message` jobs scheduled.
 - Backfill ingested for the recoverable date range; gap snapshots re-collected.
+
+---
+## STATUS: COMPLETE (2026-06-10)
+All tasks done. Local launchd drives export/snapshot/vibe/recollect/compose/mentions; Docker scheduler (restarted) runs bronze/silver; 6 Docker agent_message jobs archived; backfill 05-31→06-10 ingested (slack=True all dates; 06-09 single-day self-fills via cron). End-to-end gate passed (briefing has Slack section).
