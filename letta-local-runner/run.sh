@@ -15,7 +15,12 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
-export PYTHONPATH="${PYTHONPATH:-src}"
+# `src` holds the runner's own `letta_local_runner` package (required for
+# uvicorn to import the app). `tool-deps` makes host-side analytics helper
+# modules (drive_analytics_tools, etc.) importable by tools the runner
+# spawns via `letta --backend local` — host files only, no Docker Letta
+# dependency. Both must always be present.
+export PYTHONPATH="src:${LETTA_LOCAL_BACKEND_DIR:-$HOME/.letta/lc-local-backend}/tool-deps"
 
 # Locate the poetry-managed venv by shell glob. Poetry's own
 # `env info -p` is unreliable in non-interactive shells (returns empty
