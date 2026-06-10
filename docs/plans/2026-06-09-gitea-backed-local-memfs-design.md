@@ -150,3 +150,16 @@ leaves one side's commit unpushed (safe, surfaced — not lost). Keep the canary
 hub == local (`652d10f`), exactly the 10 seed files, all probes removed. Runner
 healthy on the wrapper. Plane-2 recall policy (`system/historical_recall.md`) is
 part of the seeded memory.
+
+## PHASE 4 — FLEET ROLLOUT COMPLETE (2026-06-10)
+All 6 local agents migrated to wrapper-backed Gitea memfs (order calendar →
+email → tasks → pulse → MC, MC last; each: backup+restorable → create repo →
+add `gitea` remote → push seed → verify HEAD+manifest → run-verify → no loss).
+Final fleet check: every agent repo `200`, local HEAD == hub HEAD, `gitea`
+remote set, runtime run `success`, zero files lost. File counts seeded:
+docs 10, calendar 14, email 10, tasks 15, pulse 38, mc 17. Backups at
+`~/.letta/memfs-backups/<aid>-pre-gitea-<head>.tgz`. Per-agent push works
+(the seed push succeeded for each repo). Agents remain **runner-only** (pa-web
+co-run not enabled — the residual cross-instance caveat above stands).
+Verification-harness note: a `branches/main` HEAD read can transiently parse
+empty right after push; the recursive-tree manifest match is the reliable gate.
