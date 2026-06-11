@@ -1,4 +1,26 @@
+# Wednesday, June 10, 2026
+
+## @FtrainFreddy - Intern Sends Firmwide Email with "GO KNICKS!" Subject, Crashes Outlook
+> Intern managed to send a firmwide email (50k ppl) with the subject line GO KNICKS!!!!!!!!!!! and nothing in the body 
+>
+> People keep on replying all and Outlook keeps crashing. Send help
+
+- **Tweet:** https://x.com/FtrainFreddy/status/2064802996098154718
+- **What:** Humorous account of an intern accidentally sending a all-company email to 50,000 people with only "GO KNICKS!!!!!!!!!!" as the subject line, causing a cascading reply-all storm that crashed Outlook.
+
+---
+
 # Tuesday, June 9, 2026
+
+## @aaronp613 - Another iOS App Accidentally Shipped a CLAUDE.md File
+> Another iOS app accidentally shipped a CLAUDE.md file: 
+>
+> Netflix
+
+- **Tweet:** https://x.com/aaronp613/status/2064541701012607181
+- **What:** Notable instance of an iOS app accidentally shipping a CLAUDE.md configuration file, highlighting how Claude Code usage in production apps sometimes leaks internal tooling.
+
+---
 
 ## @DrBeaVillarroel - VASCO Transients: Optical Aberrations Prove Real Objects
 > This is HUGE news. PhD astronomer and former NASA engineer Ivo Busko has single-handedly driven a final nail into the coffin of the contamination-based hypotheses (e.g. plate defects and cosmic rays) proposed to explain the VASCO transients. He did so using one of the most creative approaches in astronomy I have ever seen: by analysing pre-Sputnik photographic plates from a German telescope known to suffer from severe optical distortions (aberrations), he demonstrated that the transients appear on these plates and exhibit the same optical distortions as the stars themselves.
