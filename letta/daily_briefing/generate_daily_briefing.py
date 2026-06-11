@@ -81,14 +81,19 @@ def generate_daily_briefing(
         work_start = target_dt.replace(hour=8, minute=0, second=0, microsecond=0)
         work_end = target_dt.replace(hour=17, minute=0, second=0, microsecond=0)
         
+        workday_over = False
         if is_today:
             # During work hours: use current time
             # Before work hours: use 8 AM
-            # After work hours: use 8 AM (shows full day's available time)
+            # After work hours: workday is over -> 0 remaining. (The refresher
+            #   rolls the 'current' cell to tomorrow at 6 PM; this covers the
+            #   5-6 PM buffer so we don't re-render the elapsed day as if it
+            #   were still available.)
             if now < work_start:
                 time_reference = work_start
             elif now > work_end:
-                time_reference = work_start  # Show from 8 AM for next day's planning
+                time_reference = work_end
+                workday_over = True
             else:
                 time_reference = now
         else:
@@ -608,9 +613,14 @@ def generate_daily_briefing(
         try:
             available_time_lines = []
             # Header is bold with em dash
-            available_time_lines.append(f"**Available Time Remaining** — {available_time_formatted} remaining")
-            
-            if available_blocks:
+            if workday_over:
+                # Today, past 5 PM: workday over. Don't list the elapsed day's
+                # blocks as available (matches the time-remaining.py live recompute).
+                available_time_lines.append("**Available Time Remaining** — workday over (0 min remaining)")
+            else:
+                available_time_lines.append(f"**Available Time Remaining** — {available_time_formatted} remaining")
+
+            if available_blocks and not workday_over:
                 for block in available_blocks:
                     try:
                         block_start = block.get("start")
@@ -637,7 +647,7 @@ def generate_daily_briefing(
                         available_time_lines.append(f"• **{block_start_str}–{block_end_str}** - ({dur_str})")
                     except:
                         continue
-            else:
+            elif not workday_over:
                 available_time_lines.append("*No available time blocks*")
             
             available_time_section = "\n".join(available_time_lines)
