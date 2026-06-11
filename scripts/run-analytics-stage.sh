@@ -43,9 +43,14 @@ case "$STAGE" in
     ;;
   compose)
     pulse compose-briefing 2>&1 | tee -a "$LOG" || rc=$?
+    # Materialize a stable date-less cell so MC reads signals/current/analytics-morning.md
+    # (like signals/current/schedule.md) instead of guessing the data-lagged date.
+    python3 /Volumes/main-drive/ai-PA/scripts/materialize-current-signal.py analytics 2>&1 | tee -a "$LOG" || true
     ;;
   vibe)
     invoke_agent "Generate the daily Slack vibe check for yesterday (ET) across the top channels. After summarizing each channel, write the per-channel and combined summary to your memfs at system/daily_vibe_check_<YYYY-MM-DD>.md using yesterday's ET date. Then reply DONE." 600 2>&1 | tee -a "$LOG" || rc=$?
+    # Materialize signals/current/slack-vibe.md from the latest vibe so MC can surface it.
+    python3 /Volumes/main-drive/ai-PA/scripts/materialize-current-signal.py vibe 2>&1 | tee -a "$LOG" || true
     ;;
   mentions)
     invoke_agent "Intra-day mentions refresh (rolling 48h, today+yesterday ET): find @-mentions directed AT Chad in DMs and channels, update your stored mentions view. Reply DONE." 400 2>&1 | tee -a "$LOG" || rc=$?
