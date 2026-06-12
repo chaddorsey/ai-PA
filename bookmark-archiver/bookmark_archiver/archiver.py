@@ -28,9 +28,10 @@ def _twitter_json(args: list[str]) -> dict | list:
     return json.loads(out.stdout)
 
 
-def run() -> dict:
-    raw = _twitter_json(["read", "bookmarks", "--count", str(FETCH_COUNT), "--json"])
-    items = raw if isinstance(raw, list) else raw.get("tweets", [])
+def archive_items(items: list[dict]) -> dict:
+    """Dedup a batch of bookmarks, summarize + selectively reply-mine each new
+    one, write to canonical, and mark seen. Reused by both the daily run and
+    the historical backfill. Returns per-batch counts."""
     fresh = state.new_bookmarks(items, STATE_PATH)
     archive_entries, knowledge_entries, processed = [], [], []
     for bm in fresh:
@@ -50,14 +51,21 @@ def run() -> dict:
         archive_entries.append(render.bookmark_entry(bm, core, knowledge_anchor=ka))
         processed.append(bm["id"])
 
-    result = {"fetched": len(items), "new": len(fresh),
-              "archived": len(archive_entries), "knowledge": len(knowledge_entries)}
     if archive_entries:
         canonical.write_entries(ARCHIVE_PATH, archive_entries, title="Twitter Bookmarks")
     if knowledge_entries:
         canonical.write_entries(KNOWLEDGE_PATH, knowledge_entries, title="Twitter Reply-Chain Knowledge")
     if processed:
         state.mark_seen(processed, STATE_PATH)
+    return {"new": len(fresh), "archived": len(archive_entries),
+            "knowledge": len(knowledge_entries)}
+
+
+def run() -> dict:
+    raw = _twitter_json(["read", "bookmarks", "--count", str(FETCH_COUNT), "--json"])
+    items = raw if isinstance(raw, list) else raw.get("tweets", [])
+    result = archive_items(items)
+    result["fetched"] = len(items)
     return result
 
 
