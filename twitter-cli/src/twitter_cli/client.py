@@ -12,6 +12,7 @@ from curl_cffi.requests import Session
 
 from .auth import load_cookies
 from .constants import BEARER_TOKEN, GRAPHQL_BASE, QUERY_IDS, TIMELINE_FEATURES, USER_FEATURES
+from .enrich import enrich_tweet
 
 logger = logging.getLogger(__name__)
 
@@ -542,7 +543,7 @@ class TwitterClient:
                 user_legacy = user.get("legacy", {})
                 user_core = user.get("core", {})
 
-                tweets.append({
+                tweet_dict = {
                     "id": legacy.get("id_str", tweet_result.get("rest_id", "")),
                     "text": legacy.get("full_text", ""),
                     "author_handle": user_legacy.get("screen_name") or user_core.get("screen_name", ""),
@@ -552,7 +553,9 @@ class TwitterClient:
                     "favorite_count": legacy.get("favorite_count", 0),
                     "reply_count": legacy.get("reply_count", 0),
                     "url": f"https://x.com/{user_legacy.get('screen_name') or user_core.get('screen_name', '_')}/status/{legacy.get('id_str', '')}",
-                })
+                }
+                tweet_dict.update(enrich_tweet(tweet_result))
+                tweets.append(tweet_dict)
         return tweets
 
     @staticmethod
