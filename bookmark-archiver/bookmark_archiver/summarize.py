@@ -10,7 +10,10 @@ import urllib.error
 import urllib.request
 
 BASE = os.environ.get("LITELLM_BASE_URL", "http://127.0.0.1:4000/v1").rstrip("/")
-MODEL = os.environ.get("BOOKMARK_SUMMARY_MODEL", "kimi-k2p6")
+# Default to a clean instruction-follower: Fireworks reasoning models (kimi/
+# deepseek) leak chain-of-thought into content and echo the prompt template,
+# which breaks TITLE/SUMMARY extraction. gpt-4.1-mini is cheap + reliable here.
+MODEL = os.environ.get("BOOKMARK_SUMMARY_MODEL", "gpt-4.1-mini")
 _KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 
 
