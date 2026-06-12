@@ -23,7 +23,9 @@ PAGE_SIZE = int(os.environ.get("BACKFILL_PAGE_SIZE", "60"))
 PAGE_SLEEP = float(os.environ.get("BACKFILL_PAGE_SLEEP", "12"))
 MAX_PAGES = int(os.environ.get("BACKFILL_MAX_PAGES", "60"))  # /run safety cap (~3600 bookmarks)
 LOCK_PATH = os.environ.get("BACKFILL_LOCK", "/Volumes/main-drive/ai-PA/smaug-data/.state/bookmark-backfill.lock")
-LOCK_STALE_SEC = 4 * 3600
+LOCK_STALE_SEC = 12 * 3600  # a full run can take hours; only treat the lock as
+                            # abandoned well beyond any real run to avoid the
+                            # hourly guard starting a 2nd concurrent backfill.
 
 
 def _fetch_page(cursor):
@@ -59,6 +61,7 @@ def backfill(sleeper=time.sleep) -> dict:
     try:
         cursor = state.get_meta("backfill_cursor", sp)
         while totals["pages"] < MAX_PAGES:
+            Path(LOCK_PATH).touch()  # keep the lock fresh for the whole run
             tweets, next_cursor = _fetch_page(cursor)
             if not tweets:
                 state.set_meta("backfill_done", True, sp)
