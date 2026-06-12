@@ -128,15 +128,17 @@ def user(ctx, handle, count, fmt):
 
 @read.command()
 @click.option("--count", default=20, help="Number of bookmarks to fetch.")
+@click.option("--cursor", default=None, help="Pagination cursor for the next page.")
+@click.option("--paged", is_flag=True, help="Return {tweets, next_cursor} for pagination.")
 @click.option("--json", "fmt", flag_value="json", default=True)
 @click.option("--text", "fmt", flag_value="text")
 @click.pass_context
-def bookmarks(ctx, count, fmt):
+def bookmarks(ctx, count, cursor, paged, fmt):
     """Fetch your bookmarked tweets."""
     client = _get_client(ctx.obj["config_path"])
     try:
-        tweets = client.get_bookmarks(count=count)
-        _output(tweets, fmt)
+        result = client.get_bookmarks(count=count, cursor=cursor, paged=paged or bool(cursor))
+        _output(result, fmt)
     finally:
         client.close()
 

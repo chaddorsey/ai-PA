@@ -262,9 +262,13 @@ class TwitterClient:
         return self._extract_timeline_tweets(data)
 
     def get_bookmarks(self, count: int = 20,
-                      cursor: str | None = None) -> list[dict] | dict:
+                      cursor: str | None = None,
+                      paged: bool = False) -> list[dict] | dict:
         """Fetch bookmarked tweets via API.
-        Without cursor: returns list[dict]. With cursor: returns paged dict."""
+
+        Default: returns list[dict]. With cursor OR paged=True: returns
+        {"tweets": [...], "next_cursor": str|None} so callers can paginate
+        the full history (paged=True yields next_cursor even on page 1)."""
         variables = {
             "count": count,
             "includePromotedContent": False,
@@ -272,7 +276,7 @@ class TwitterClient:
         if cursor:
             variables["cursor"] = cursor
         data = self._graphql_get("Bookmarks", variables)
-        if cursor is not None:
+        if paged or cursor is not None:
             return self._extract_timeline_tweets_paged(data)
         return self._extract_timeline_tweets(data)
 
