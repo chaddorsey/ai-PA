@@ -25,6 +25,34 @@ TOOLS_DIR = REPO_ROOT / "letta" / "mc-tools"
 sys.path.insert(0, str(TOOLS_DIR))
 
 
+def _ensure_env_from_dotenv(*keys: str) -> None:
+    """Backfill missing env vars from REPO_ROOT/.env.
+
+    The launchd local-runner starts agents with a minimal environment that does
+    NOT source .env or pa-tools.env, so secrets like GITHUB_TOKEN are absent —
+    the same runner-env trap that bit twitter-cli. Reading them straight from the
+    repo .env makes `mc` behave identically whether launched from an interactive
+    shell or the runner, with the secret living in exactly one place.
+    """
+    missing = [k for k in keys if not os.environ.get(k)]
+    if not missing:
+        return
+    env_path = REPO_ROOT / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key in missing and key not in os.environ:
+                os.environ[key] = value.strip().strip('"').strip("'")
+    except OSError:
+        pass
+
+
 @click.group()
 def cli() -> None:
     """Mission Control local-mode CLI."""
@@ -103,6 +131,7 @@ def stage(url: str, label: str, priority: str, ref_id: str) -> None:
 @click.option("--cursor", help="Pagination cursor (browse mode only)")
 def github(query: str, repo: str, readme: bool, limit: int, cursor: str) -> None:
     """Search starred GitHub repositories."""
+    _ensure_env_from_dotenv("GITHUB_TOKEN")
     from search_github_stars import search_github_stars  # type: ignore
     result = search_github_stars(
         query=query,
@@ -135,7 +164,11 @@ def health() -> None:
         if os.environ.get(v):
             status["checks"][f"env:{v}"] = "set"
         else:
-            status["checks"][f"env:{v}"] = "MISSING (only needed for `mc github`)"
+            _ensure_env_from_dotenv(v)  # mirror what `mc github` does at call time
+            if os.environ.get(v):
+                status["checks"][f"env:{v}"] = "set (via .env fallback)"
+            else:
+                status["checks"][f"env:{v}"] = "MISSING (only needed for `mc github`)"
 
     click.echo(json.dumps(status, indent=2))
     sys.exit(0 if status["status"] == "ok" else 1)
