@@ -46,7 +46,9 @@ COMMAND_SCHEMA = {
         "user": {"description": "A user's recent tweets", "params": {"handle": "required", "count": "int (default 20)"}},
         "bookmarks": {"description": "Your bookmarked tweets", "params": {"count": "int (default 20)"}},
         "search": {"description": "Search tweets", "params": {"query": "required", "count": "int (default 20)"}},
-        "list": {"description": "Members of a Twitter list", "params": {"list_id": "required"}},
+        "lists": {"description": "Your owned + followed lists (id, name, member_count, owner)", "params": {}},
+        "list": {"description": "Members (accounts) of a Twitter list — NOT its tweets; use 'list-tweets' for the timeline", "params": {"list_id": "required"}},
+        "list-tweets": {"description": "Recent tweets from a list's timeline", "params": {"list_id": "required", "count": "int (default 20)", "cursor": "optional (pagination)", "paged": "flag -> {tweets, next_cursor}"}},
         "tweet": {"description": "A tweet and its replies (flat)", "params": {"tweet_id": "required"}},
     },
     "write": {
@@ -91,7 +93,7 @@ def schema(command):
 
 @cli.group()
 def read():
-    """Read operations: feed, user, bookmarks, search, list, tweet."""
+    """Read operations: feed, user, bookmarks, search, lists, list, list-tweets, tweet."""
     pass
 
 
@@ -165,11 +167,50 @@ def search(ctx, query, count, fmt):
 @click.option("--text", "fmt", flag_value="text")
 @click.pass_context
 def read_list(ctx, list_id, fmt):
-    """Fetch members of a Twitter list."""
+    """Fetch members (accounts) of a Twitter list. For the tweet timeline, use 'list-tweets'."""
     client = _get_client(ctx.obj["config_path"])
     try:
         members = client.get_list_members(list_id)
         _output(members, fmt)
+    finally:
+        client.close()
+
+
+@read.command("lists")
+@click.option("--json", "fmt", flag_value="json", default=True)
+@click.option("--text", "fmt", flag_value="text")
+@click.pass_context
+def read_lists(ctx, fmt):
+    """List your owned and followed Twitter lists (id, name, member_count, owner)."""
+    client = _get_client(ctx.obj["config_path"])
+    try:
+        lists = client.get_my_lists()
+        _output(lists, fmt)
+    finally:
+        client.close()
+
+
+@read.command("list-tweets")
+@click.argument("list_id")
+@click.option("--count", default=20, help="Number of tweets to fetch.")
+@click.option("--cursor", default=None, help="Pagination cursor for the next page.")
+@click.option("--paged", is_flag=True, help="Return {tweets, next_cursor} for pagination.")
+@click.option("--json", "fmt", flag_value="json", default=True)
+@click.option("--text", "fmt", flag_value="text")
+@click.pass_context
+def read_list_tweets(ctx, list_id, count, cursor, paged, fmt):
+    """Fetch recent tweets from a Twitter list's timeline."""
+    client = _get_client(ctx.obj["config_path"])
+    try:
+        result = client.get_list_tweets(list_id, count=count, cursor=cursor)
+        # get_list_tweets always returns {tweets, next_cursor}. The list timeline
+        # ignores small page-size hints (returns a full page), so for the
+        # agent-friendly default we unwrap to a bare list AND honor `count` to
+        # keep output token-cheap. Paging mode keeps the full {tweets,next_cursor}
+        # envelope intact so cursors stay valid (mirrors the bookmarks contract).
+        if not (paged or cursor):
+            result = result.get("tweets", [])[:count]
+        _output(result, fmt)
     finally:
         client.close()
 
