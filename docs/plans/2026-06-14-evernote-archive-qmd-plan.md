@@ -10,7 +10,7 @@
 
 **Decisions already made (do not relitigate):**
 - Storage = **qmd collection `evernote`**, NOT the canonical Gitea repo (media would bloat it).
-- Corpus root = `~/.letta/reference-archive/raw/evernote/` (parallel to `~/.letta/history-archive/raw/`).
+- Corpus root = `~/.letta/reference-archive/raw/evernote/` — but **`~/.letta/reference-archive` is a SYMLINK to `/Volumes/main-filestore/reference-archive`** (the system disk has only ~40 GB free; filestore has 4+ TB). All code/config addresses the `~/.letta/...` symlink path so storage location is swappable. Data on `/Volumes` is fine for running processes; only launchd *log* paths must stay off `/Volumes` (ours are in `~/Library/Logs`). Point `qmd collection add` at the real `/Volumes/main-filestore/...` path to avoid symlink dependence.
 - Refresh = **ongoing**, weekly launchd (a personal note library doesn't need daily).
 - The SQLite DB + ENEX are kept as lossless cold backups; Markdown is the derived layer.
 
