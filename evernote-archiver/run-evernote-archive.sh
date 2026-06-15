@@ -18,5 +18,9 @@ cd "$PKG"
 "$PY" -m evernote_archiver.run --corpus "$CORPUS" --db "$BK/en_backup.db" --state "$STATE"
 # run.py exits non-zero on reconcile failure -> launchd logs it; corpus already written for inspection
 
-qmd collection reindex evernote 2>/dev/null || qmd collection add evernote "$CORPUS"
+# Refresh the qmd index + local embeddings (content-hash dedup => unchanged notes
+# are skipped; embeddings are local/free). Collection must already exist (created
+# once via: qmd collection add /Volumes/main-filestore/reference-archive/raw/evernote --name evernote).
+qmd update 2>&1 | tail -3 || true
+qmd embed -c evernote 2>&1 | tail -3 || true
 echo "evernote-archive done: $(date)"
