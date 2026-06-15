@@ -22,5 +22,12 @@ cd "$PKG"
 # are skipped; embeddings are local/free). Collection must already exist (created
 # once via: qmd collection add /Volumes/main-filestore/reference-archive/raw/evernote --name evernote).
 qmd update 2>&1 | tail -3 || true
-qmd embed -c evernote 2>&1 | tail -3 || true
+# Embed in a loop: the local embedding server can expire mid-run on large batches,
+# leaving chunks pending. Re-run (resumable) until pending hits 0 or no progress.
+for i in $(seq 1 10); do
+  qmd embed -c evernote 2>&1 | tail -2 || true
+  pending=$(qmd status 2>/dev/null | grep -i Pending | grep -oE '[0-9]+' | head -1)
+  echo "embed pass $i: pending=${pending:-?}"
+  [ "${pending:-1}" = "0" ] && break
+done
 echo "evernote-archive done: $(date)"
