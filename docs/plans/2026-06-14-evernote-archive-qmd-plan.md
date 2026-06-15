@@ -112,16 +112,16 @@ git commit -m "feat(evernote-archiver): scaffold package"
 
 ### Task 1: Authenticate + first full sync
 
-> **Auth note:** `evernote-backup` uses OAuth via browser + 2FA — **no developer token**. If the account is Google/SSO-only, set/confirm an Evernote password identity first, then retry. This is the most fragile step; do it early.
+> **Auth note:** `evernote-backup` 1.13.1 uses OAuth via browser + 2FA **by default** for the international Evernote backend — **no `--oauth` flag** (that errors) and **no developer token**. `--user`/`--password` are China/Yinxiang-backend only. This is the most fragile step; do it early.
 
-- [ ] **Step 1: Init DB via OAuth**
+- [ ] **Step 1: Init DB (OAuth is the default)**
 
 Run:
 ```bash
 cd ~/.letta/reference-archive/.backup
-evernote-backup init-db --oauth
+evernote-backup init-db          # OAuth browser flow opens automatically
 ```
-Expected: browser opens → log in → enter 2FA code → "Successfully authenticated" and `en_backup.db` created.
+Expected: browser opens → log in → enter 2FA code → "Successfully authenticated" and `en_backup.db` created. (Advanced: `--oauth-host`/`--oauth-port` tune the local callback server if needed.)
 
 - [ ] **Step 2: Full sync (all notes + attachments → SQLite)**
 
