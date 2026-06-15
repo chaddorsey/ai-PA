@@ -1,0 +1,70 @@
+Work-packet note fidelity eval  (PA_WEB=http://localhost:5200, BRIDGE=http://127.0.0.1:8889)
+
+========================================================================
+ref_id: 19e93fe4
+  task   : Review Kiley's audit of Concord materials in OpenSciEd
+  status : confirmed   of_id: av8YmxQCw39
+  --- note fidelity ---
+  encoding   : FAIL  (U+FFFD=26, mojibake-pairs=19)
+  literal \n : ok  (count=0)
+  dbl bullets: ok  (count=0)
+  note length: 832 chars
+  --- richness (packet_info field -> in note?) ---
+    direct_action       : *** MISSING FROM NOTE ***   probe='Review the OpenSciEd audit link and share it with '
+    artifact_provenance : (empty)
+    intent_genesis      : (empty)
+    context_brief       : IN NOTE
+    knowns              : IN NOTE
+    unknowns            : IN NOTE
+    resources           : (empty)
+    related_tasks       : (empty)
+    suggested_subtasks  : (empty)
+    agent_notes         : IN NOTE
+    mismatch_warning    : (empty)
+  richness summary: 4 in-note, 1 missing, 6 empty
+
+========================================================================
+ref_id: 3d69358e-a
+  task   : Schedule next check-in with Hee-Sun
+  status : confirmed   of_id: dDt8b8-ZHO7
+  --- note fidelity ---
+  encoding   : FAIL  (U+FFFD=27, mojibake-pairs=21)
+  literal \n : ok  (count=0)
+  dbl bullets: ok  (count=0)
+  note length: 1055 chars
+  --- richness (packet_info field -> in note?) ---
+    direct_action       : *** MISSING FROM NOTE ***   probe='Schedule next check-in to go deeper on APLUS and I'
+    artifact_provenance : (empty)
+    intent_genesis      : (empty)
+    context_brief       : IN NOTE
+    knowns              : IN NOTE
+    unknowns            : IN NOTE
+    resources           : (empty)
+    related_tasks       : (empty)
+    suggested_subtasks  : (empty)
+    agent_notes         : (empty)
+    mismatch_warning    : (empty)
+  richness summary: 3 in-note, 1 missing, 7 empty
+
+========================================================================
+ref_id: meeting-not_jlLav4yZFqNMBh-chad-3
+  task   : Prepare board update for July
+  status : confirmed   of_id: p6y1y1KiE2H
+  --- note fidelity ---
+  encoding   : FAIL  (U+FFFD=3, mojibake-pairs=2)
+  literal \n : FAIL  (count=5)
+  dbl bullets: ok  (count=0)
+  note length: 916 chars
+  --- richness (packet_info field -> in note?) ---
+    direct_action       : *** MISSING FROM NOTE ***   probe='Prepare the July board update'
+    artifact_provenance : (empty)
+    intent_genesis      : (empty)
+    context_brief       : IN NOTE
+    knowns              : IN NOTE
+    unknowns            : IN NOTE
+    resources           : *** MISSING FROM NOTE ***   probe='[primary] Granola notes — https://notes.granola.ai'
+    related_tasks       : (empty)
+    suggested_subtasks  : (empty)
+    agent_notes         : (empty)
+    mismatch_warning    : (empty)
+  richness summary: 3 in-note, 2 missing, 6 empty
