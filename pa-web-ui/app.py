@@ -4025,19 +4025,29 @@ def api_merge_tasks():
 
 
 def _normalize_of_tree(subfolders):
-    """Convert OmniFocus MCP tree format to sidebar-friendly {id, name, type, children}."""
+    """Convert OmniFocus MCP tree format to sidebar-friendly {id, name, type, children}.
+
+    The bridge's getFolderHierarchy returns completed/done projects alongside live
+    ones, so filter them out (the per-project `completed` flag) and prune folders
+    left with nothing live underneath. This gives the sidebar the active set to file
+    into instead of the full archive.
+    """
     nodes = []
     for item in subfolders:
         folder = item.get("folder", {})
         children = _normalize_of_tree(item.get("subfolders", []))
-        # Add projects from this folder
+        # Add live projects from this folder (skip completed/done)
         for p in item.get("projects", []):
+            if p.get("completed"):
+                continue
             children.append({
                 "id": p.get("id"),
                 "name": p.get("name"),
                 "type": "project",
                 "children": [],
             })
+        if not children:
+            continue  # prune folders with no live projects and no live subfolders
         nodes.append({
             "id": folder.get("id"),
             "name": folder.get("name"),
