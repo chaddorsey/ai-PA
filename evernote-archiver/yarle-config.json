@@ -1,0 +1,15 @@
+{
+  "enexSources": ["/Users/dorseyhomeserver/.letta/reference-archive/.backup/enex_out"],
+  "outputDir": "/Users/dorseyhomeserver/.letta/reference-archive/raw/evernote",
+  "outputFormat": "ObsidianMD",
+  "isMetadataNeeded": true,
+  "isNotebookNameNeeded": true,
+  "isZettelkastenNeeded": false,
+  "useZettelIdAsFilename": false,
+  "plainTextNotesOnly": false,
+  "skipWebClips": false,
+  "useHashTags": true,
+  "nestedTags": { "separatorInEN": "_", "replaceSeparatorWith": "/", "replaceSpaceWith": "-" },
+  "resources": "_resources",
+  "turndownOptions": { "headingStyle": "atx", "codeBlockStyle": "fenced" }
+}
