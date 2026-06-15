@@ -47,7 +47,11 @@ const B64_DECODE_JS =
   "c=C.indexOf(s[i++]),d=C.indexOf(s[i++]);" +
   "r+=String.fromCharCode((a<<2)|(b>>4));" +
   "if(c>=0)r+=String.fromCharCode(((b&15)<<4)|(c>>2));" +
-  "if(d>=0)r+=String.fromCharCode(((c&3)<<6)|d)}";
+  "if(d>=0)r+=String.fromCharCode(((c&3)<<6)|d)}" +
+  // The loop above yields a per-byte Latin-1 string; reassemble it as UTF-8 so
+  // multibyte chars (•, smart quotes, em-dashes, ✓) survive instead of becoming
+  // mojibake in OmniFocus notes. (Fixes the â�¢ corruption — 2026-06-15.)
+  "r=decodeURIComponent(escape(r));";
 
 /**
  * Return true when plugin/library are absent or match the defaults.
