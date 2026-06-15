@@ -13,6 +13,7 @@ from .extract import extract_article
 from .frontmatter import build_document
 from .state import State
 from .block import is_blocked
+from .browser import launch_kwargs, harden
 
 MIN_DELAY, MAX_DELAY = 10, 30   # safety rule #3: human-like sequential pacing
 
@@ -42,7 +43,8 @@ def main() -> int:
     done = 0
 
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(a.profile, headless=False)
+        ctx = p.chromium.launch_persistent_context(a.profile, **launch_kwargs())
+        harden(ctx)
         page = ctx.new_page()
         for i, url in enumerate(todo, 1):
             resp = page.goto(url, wait_until="domcontentloaded", timeout=45000)

@@ -6,11 +6,14 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
+from nyt_saved_archiver.browser import launch_kwargs, harden
+
 
 def main() -> int:
     profile = sys.argv[1]
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(profile, headless=False)
+        ctx = p.chromium.launch_persistent_context(profile, **launch_kwargs())
+        harden(ctx)
         page = ctx.new_page()
         page.goto("https://www.nytimes.com/saved")
         input("Log in fully in the opened window, confirm you can see your Saved page, then press Enter here...")
