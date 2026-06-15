@@ -27,7 +27,7 @@ qmd update 2>&1 | tail -3 || true
 for i in $(seq 1 10); do
   qmd embed -c evernote 2>&1 | tail -2 || true
   pending=$(qmd status 2>/dev/null | grep -i Pending | grep -oE '[0-9]+' | head -1)
-  echo "embed pass $i: pending=${pending:-?}"
-  [ "${pending:-1}" = "0" ] && break
+  echo "embed pass $i: pending=${pending:-0}"   # qmd omits the line at 0
+  if [ -z "$pending" ] || [ "$pending" = "0" ]; then break; fi
 done
 echo "evernote-archive done: $(date)"
