@@ -210,10 +210,15 @@ def dispatch_enrichment(row):
         f'markdown: pipe the text in — `task fetch-source --ref-id "{ref_id}" | jq -r .content '
         f'| task stage --text - --label "Meeting notes" --ref-id "{ref_id}"`\n'
         f"   (--priority is optional; it defaults to secondary.) "
-        f"   Each call returns an `openfile_url`. Add it to the SAME resource line as the "
-        f"live link so the user can pick: "
-        f"`[primary] <label> — <live-url> | offline: <openfile-url> (read)`. If there is no "
-        f"live URL, the openfile:// link alone is fine.\n\n"
+        f"   Each call returns an `openfile_url`. CRITICAL: if the staged content came "
+        f"from a source that HAS a permalink (a meeting's web_url, a Gmail permalink, a "
+        f"docs-comment URL — i.e. metadata.permalink was present), the resource line MUST "
+        f"carry BOTH that permalink (the universal link — works on every device, incl. "
+        f"phone) AND the openfile:// offline copy. NEVER emit an offline-only line when a "
+        f"permalink exists: openfile:// does not resolve on iPhone/iPad, so an offline-only "
+        f"resource is unreachable there. Format: "
+        f"`[primary] <label> — <live-permalink> | offline: <openfile-url> (read)`. Only when "
+        f"the source genuinely has no permalink is the openfile:// link alone acceptable.\n\n"
         f"5. If the task is already clear from the anchor, call "
         f'write_packet_info(ref_id="{ref_id}", direct_action="...") with '
         f"minimal fields and stop.\n"
