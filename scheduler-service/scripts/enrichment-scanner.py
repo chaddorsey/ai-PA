@@ -196,6 +196,20 @@ def dispatch_enrichment(row):
         f"(c) intent_genesis — WHY this matters: the originating decision, "
         f"prior meeting, strategy, or success criteria behind the ask. "
         f"Leave a node empty only when it is genuinely not discoverable.\n"
+        f"4b. STAGING (optional but preferred for files & note text): for resources that "
+        f"are real files or note text — NOT live Google-native docs (leave those as live "
+        f"links so the user edits the current version) and NOT generic web pages — run "
+        f"`task stage` to save a local copy and get an openfile:// link. Two forms:\n"
+        f"   - Download a file/email/Drive attachment: "
+        f'`task stage --url "<https-or-gmail:ID-or-drive-url>" --label "<label>" '
+        f'--ref-id "{ref_id}" --priority primary`\n'
+        f"   - Stage note text you already fetched (meeting transcript, email body) as "
+        f'markdown: pipe the text in — `task fetch-source --ref-id {ref_id} | jq -r .content '
+        f'| task stage --text - --label "Meeting notes" --ref-id "{ref_id}"`\n'
+        f"   Each call returns an `openfile_url`. Add it to the SAME resource line as the "
+        f"live link so the user can pick: "
+        f"`[primary] <label> — <live-url> | offline: <openfile-url> (read)`. If there is no "
+        f"live URL, the openfile:// link alone is fine.\n\n"
         f"5. If the task is already clear from the anchor, call "
         f'write_packet_info(ref_id="{ref_id}", direct_action="...") with '
         f"minimal fields and stop.\n"
@@ -204,13 +218,23 @@ def dispatch_enrichment(row):
         f"schedule), based on its complexity and the context you gathered, rounded "
         f"to the nearest 5 minutes. This is the agent baseline the eval loop "
         f"measures against, so estimate honestly even when the task seems quick.\n\n"
-        f"RESOURCE FORMATTING: when the source is slack, fetch_source_content "
-        f"returns a `permalink` URL in metadata (and as a [Permalink: ...] "
-        f"line at the top of content). In your `resources` field, use that "
-        f"exact URL (NOT the slack-CXXX-ts reference). Format the line as "
-        f'`[primary] <short label> — <permalink-url> (reference)` so the '
-        f"sidebar/OmniFocus renderer can hyperlink it under the word "
-        f'"Permalink" or the short label.\n\n'
+        f"RESOURCE FORMATTING (ALL sources — not just slack): fetch_source_content "
+        f"returns artifact URLs in `metadata`. ALWAYS populate the `resources` field "
+        f"so the user can click straight to what they need:\n"
+        f"  - The source permalink (metadata.permalink): the slack message, the email "
+        f"(mail.google.com permalink), the Granola meeting note (web_url), or the docs "
+        f"comment (disco-anchored doc URL). Use the EXACT permalink URL.\n"
+        f"  - The PRIMARY ARTIFACT the task acts on, if different from the source: e.g. "
+        f"a task to 'revise the SOW doc' → the Google Doc URL; 'review the attached PDF' "
+        f"→ that file. Harvest these from the fetched content / backtrace anchors.\n"
+        f"Format each on its own line: `[priority] <short label> — <url> (role)` where "
+        f"priority is primary|secondary|background and role is a hint like edit, review, "
+        f"reference, or read. Example:\n"
+        f"  [primary] Audubon SOW draft — https://docs.google.com/document/d/XXX/edit (edit)\n"
+        f"  [secondary] Kickoff meeting notes — https://notes.granola.ai/d/YYY (reference)\n"
+        f"If a resource is a downloadable FILE (PDF, Word/Excel/PPT, a Gmail message you "
+        f"want available offline, or note text the user should read in place), ALSO stage "
+        f"a local copy — see step 4b.\n\n"
         f"All writes go to pa_web.tasks (NOT archival passages — that "
         f"path was retired in cycle 1)."
     )
