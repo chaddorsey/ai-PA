@@ -1,5 +1,5 @@
 const express = require('express');
-const { execFileSync } = require('child_process');
+const { execFileSync, execFile } = require('child_process');
 
 const app = express();
 app.use(express.json());
@@ -14,6 +14,38 @@ function runGws(args, timeoutMs = 15000) {
     env: { ...process.env },
   });
   return JSON.parse(result);
+}
+
+// Async variant — lets callers fan out many gws invocations concurrently
+// instead of blocking one-at-a-time (each gws spawn is ~1s of Go startup + API).
+function runGwsAsync(args, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    execFile(GWS, args, {
+      encoding: 'utf-8',
+      timeout: timeoutMs,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env },
+    }, (err, stdout) => {
+      if (err) return reject(err);
+      try { resolve(JSON.parse(stdout)); } catch (e) { reject(e); }
+    });
+  });
+}
+
+// Run fn over items with bounded concurrency, preserving order.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker)
+  );
+  return results;
 }
 
 // Health check
@@ -47,7 +79,7 @@ function getLabelMap() {
 }
 
 // List drafts, optionally filtered by Gmail query
-app.get('/gmail/drafts', (req, res) => {
+app.get('/gmail/drafts', async (req, res) => {
   try {
     const q = req.query.q || '';
     const maxResults = parseInt(req.query.maxResults) || 20;
@@ -65,16 +97,17 @@ app.get('/gmail/drafts', (req, res) => {
     try { labelMap = getLabelMap(); } catch { /* proceed without names */ }
 
     // gws returns raw Gmail API response: { drafts: [...], resultSizeEstimate: N }
-    // Each draft has { id, message: { id, threadId } }
-    // We need to fetch metadata for each draft to get subject/to/labels
+    // Each draft has { id, message: { id, threadId } }. Per-draft metadata must
+    // be fetched individually — but CONCURRENTLY (bounded), not one-at-a-time:
+    // sequential spawns hit the 60s gateway timeout once the drafts pile up.
     const drafts = data.drafts || [];
-    const enriched = drafts.map(draft => {
+    const enriched = await mapWithConcurrency(drafts, 6, async (draft) => {
       try {
-        const full = runGws([
+        const full = await runGwsAsync([
           'gmail', 'users', 'drafts', 'get',
           '--params', JSON.stringify({ userId: 'me', id: draft.id, format: 'metadata' }),
           '--format', 'json',
-        ], 10000);
+        ], 12000);
 
         const headers = full.message?.payload?.headers || [];
         const headerMap = {};
