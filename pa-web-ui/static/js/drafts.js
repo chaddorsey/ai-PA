@@ -46,7 +46,8 @@ class DraftsSidebar {
 
   startPolling() {
     this.stopPolling();
-    this.pollInterval = setInterval(() => this.loadDrafts(), 30000);
+    // Background polls: silent + non-destructive (see loadDrafts).
+    this.pollInterval = setInterval(() => this.loadDrafts({ background: true }), 30000);
   }
 
   stopPolling() {
@@ -58,20 +59,50 @@ class DraftsSidebar {
 
   // ── Loading ──
 
-  async loadDrafts() {
+  async loadDrafts(opts = {}) {
+    const background = !!opts.background;
     try {
-      this.draftList.classList.add('loading');
+      // The list fetch enriches up to 50 drafts (~6s). Only the foreground load
+      // shows the dimmed, non-interactive `.loading` state; background polls
+      // stay silent so the list never freezes on a timer.
+      if (!background) this.draftList.classList.add('loading');
       const resp = await fetch('/api/drafts');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      this.drafts = data.drafts || [];
-      this.updateBadge(this.drafts.length);
+      const drafts = data.drafts || [];
+      this.updateBadge(drafts.length);
+
+      // Skip the rebuild on a background poll when nothing visible changed
+      // (avoids scroll reset + churn), or while the user is editing inline or in
+      // the edit modal. Keep this.drafts in lock-step with the DOM (update only
+      // when we render) so action handlers never act on phantom rows.
+      const sig = this._draftSignature(drafts);
+      if (background && (sig === this._lastDraftSig || this._draftBusy())) {
+        return;
+      }
+      this.drafts = drafts;
       this.renderDraftList();
+      this._lastDraftSig = sig;
     } catch (e) {
-      this.draftList.innerHTML = `<div class="sidebar-error">Unable to load drafts<br><small>${this.escapeHtml(e.message)}</small></div>`;
+      if (!background) {
+        this.draftList.innerHTML = `<div class="sidebar-error">Unable to load drafts<br><small>${this.escapeHtml(e.message)}</small></div>`;
+      }
     } finally {
-      this.draftList.classList.remove('loading');
+      if (!background) this.draftList.classList.remove('loading');
     }
+  }
+
+  _draftSignature(drafts) {
+    return JSON.stringify(drafts.map(d => [
+      d.id, d.subject, d.to, d.status, d.followup_section,
+    ]));
+  }
+
+  _draftBusy() {
+    // Mid inline-edit, or the edit modal is open — don't re-render underneath.
+    if (this.draftList.querySelector('.fu-inline-edit-area')) return true;
+    const ov = document.getElementById('draft-edit-overlay');
+    return !!(ov && ov.classList.contains('visible'));
   }
 
   updateBadge(count) {
@@ -94,6 +125,8 @@ class DraftsSidebar {
   renderDraftList() {
     // Skip re-render if user is actively editing — don't clobber their work
     if (this.draftList.querySelector('.fu-inline-edit-area')) return;
+
+    const prevScroll = this.draftList.scrollTop;
 
     // Split into three buckets
     const scheduled = this.drafts.filter(d => d.status === 'scheduled');
@@ -123,6 +156,8 @@ class DraftsSidebar {
     this.draftList.appendChild(
       this._buildCollapsibleSection('scheduled', 'Scheduled', scheduled, this._scheduledCollapsed !== false, (v) => { this._scheduledCollapsed = v; }, true)
     );
+
+    this.draftList.scrollTop = prevScroll;   // preserve scroll across re-render
   }
 
   _buildCollapsibleSection(key, title, items, isCollapsed, onToggle, isScheduled = false) {
