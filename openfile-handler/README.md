@@ -34,6 +34,8 @@ Work-packet "Resources" links come in two flavors:
 1. `OpenFileHandler.app` installed (run `openfile-handler/install.sh` on that Mac), AND
 2. the Dropbox-synced `letta-shared-files` folder present.
 
+Staged links are now emitted as `~`-relative paths (e.g. `openfile://~/Dropbox/letta-shared-files/…`) so the same link resolves correctly on any machine — the handler expands `~` to the local user's home at click time. **Each Mac must run `bash openfile-handler/install.sh` once** to install or upgrade to a handler with tilde-expansion support.
+
 - The **home server** has the handler installed (`~/Applications/OpenFileHandler.app`).
 - To use offline copies on the **laptop**, run `openfile-handler/install.sh` there.
 - On **iPhone/iPad**, `openfile://` will NOT resolve — this is expected. Every staged

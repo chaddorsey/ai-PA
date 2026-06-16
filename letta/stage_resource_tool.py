@@ -74,6 +74,13 @@ def stage_resource(
         DEFAULT_BASE = "/Users/dorseyhomeserver/Dropbox/letta-shared-files/staged"
         STAGE_BASE = os.environ.get("STAGE_BASE_DIR", DEFAULT_BASE)
         OPENFILE_BASE = os.environ.get("STAGE_OPENFILE_BASE", STAGE_BASE)
+        # For machine-agnostic openfile:// links: when the resolved URL path is under
+        # the current user's home, emit it as a ~-relative path. The handler expands ~
+        # to the LOCAL user's home, so the same link resolves on the laptop and server
+        # (Dropbox syncs the file to each machine's own ~/Dropbox). The WRITE path stays
+        # absolute (below) so the file is actually created. An explicit STAGE_OPENFILE_BASE
+        # that points outside $HOME (e.g. a container mapping) is left untouched.
+        _HOME = os.path.expanduser("~")
 
         try:
             os.makedirs(STAGE_BASE, exist_ok=True)
@@ -106,6 +113,8 @@ def stage_resource(
             with open(target_path, "w", encoding="utf-8") as f:
                 f.write(body)
             host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
+            if host_path.startswith(_HOME + os.sep):
+                host_path = "~" + host_path[len(_HOME):]
             return {
                 "status": "ok",
                 "local_path": target_path,
@@ -193,6 +202,8 @@ def stage_resource(
                 reused = True
                 size = os.path.getsize(target_path)
                 host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
+                if host_path.startswith(_HOME + os.sep):
+                    host_path = "~" + host_path[len(_HOME):]
                 return {
                     "status": "ok",
                     "local_path": target_path,
@@ -334,6 +345,8 @@ def stage_resource(
                 if os.path.exists(target_path):
                     size = os.path.getsize(target_path)
                     host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
+                    if host_path.startswith(_HOME + os.sep):
+                        host_path = "~" + host_path[len(_HOME):]
                     return {
                         "status": "ok",
                         "local_path": target_path,
@@ -379,6 +392,8 @@ def stage_resource(
 
         size = len(content)
         host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
+        if host_path.startswith(_HOME + os.sep):
+            host_path = "~" + host_path[len(_HOME):]
 
         return {
             "status": "ok",

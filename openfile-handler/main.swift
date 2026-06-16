@@ -19,7 +19,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let rawPath = String(urlString.dropFirst(prefix.count))
         guard let path = rawPath.removingPercentEncoding, !path.isEmpty else { return }
 
-        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        // Expand a leading ~ (or ~user) so machine-agnostic openfile://~/… links
+        // resolve to the LOCAL user's home — the handler runs on the machine where the
+        // click happens (laptop on laptop, server on server). Absolute paths (leading /)
+        // pass through expandingTildeInPath unchanged, so old links keep working.
+        let expanded = (path as NSString).expandingTildeInPath
+        NSWorkspace.shared.open(URL(fileURLWithPath: expanded))
     }
 }
 

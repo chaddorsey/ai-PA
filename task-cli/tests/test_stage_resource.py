@@ -66,3 +66,17 @@ def test_openfile_base_defaults_to_stage_base(tmp_path, monkeypatch):
     monkeypatch.delenv("STAGE_OPENFILE_BASE", raising=False)
     r = stage_resource(text="x", label="L", ref_id="r")
     assert r["openfile_url"] == f"openfile://{tmp_path}/notes/r/L.md"
+
+
+def test_openfile_url_tildeifies_under_home(monkeypatch):
+    import os, shutil
+    home = os.path.expanduser("~")
+    base = os.path.join(home, ".pa-stage-tilde-test")
+    monkeypatch.setenv("STAGE_BASE_DIR", base)
+    monkeypatch.delenv("STAGE_OPENFILE_BASE", raising=False)
+    try:
+        r = stage_resource(text="x", label="L", ref_id="r")
+        assert r["openfile_url"] == "openfile://~/.pa-stage-tilde-test/notes/r/L.md"
+        assert os.path.exists(r["local_path"])  # real file still written at absolute path
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
