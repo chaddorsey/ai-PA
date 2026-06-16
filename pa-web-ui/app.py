@@ -3361,14 +3361,16 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
         for item in pi["resources"]:
             urls = re.findall(r"(openfile://\S+|https?://\S+)", item)
             if urls:
-                urls = [u.rstrip(") ").rstrip("|").strip() for u in urls]
+                # Strip only a trailing pipe/space the grammar may leave; do NOT
+                # strip ")" — URLs can legitimately end in ")" (e.g. Google links).
+                urls = [u.rstrip("| ").strip() for u in urls]
                 # Label = text before the first url, minus the leading [priority]
                 # marker and the trailing em-dash separator.
                 first = re.search(r"(openfile://\S+|https?://\S+)", item)
                 label = item[:first.start()].strip()
                 label = re.sub(r"^\[(primary|secondary|background)\]\s*", "", label)
                 label = label.rstrip("—|").strip()
-                role_match = re.search(r"\((\w+)\)\s*$", item)
+                role_match = re.search(r"\s+\((\w+)\)\s*$", item)
                 role = f" ({role_match.group(1)})" if role_match else ""
                 segments.append({"text": f"  {label}{role}: ", "size": 11})
                 for idx, url in enumerate(urls):

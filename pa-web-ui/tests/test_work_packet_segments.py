@@ -112,7 +112,7 @@ def test_offline_link_gets_offline_display_text():
     ]}}
     segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
     offline = [s for s in segs if isinstance(s, dict) and s.get("url", "").startswith("openfile://")]
-    assert offline and offline[0]["text"].strip() in ("Open", "Offline copy")
+    assert offline and offline[0]["text"].strip() == "Offline copy"
 
 
 def test_single_https_resource_still_renders_once():
@@ -122,3 +122,23 @@ def test_single_https_resource_still_renders_once():
     segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
     urls = [s["url"] for s in segs if isinstance(s, dict) and s.get("url")]
     assert urls == ["https://example.com/a"]
+
+
+def test_resource_label_strips_priority_marker():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "[primary] SOW draft — https://docs.google.com/document/d/X/edit | offline: openfile:///u/SOW.md (read)"
+    ]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    label_segs = [s["text"] for s in segs if isinstance(s, dict)
+                  and s.get("text", "").strip().startswith("SOW draft")]
+    assert label_segs, "label 'SOW draft' should render (priority marker stripped)"
+    assert "[primary]" not in "".join(s.get("text", "") for s in segs if isinstance(s, dict))
+
+
+def test_url_with_trailing_paren_not_overstripped():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "[secondary] Doc — https://example.com/path(v2)"
+    ]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    urls = [s["url"] for s in segs if isinstance(s, dict) and s.get("url")]
+    assert urls == ["https://example.com/path(v2)"]
