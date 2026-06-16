@@ -5,12 +5,13 @@ Downloads files (PDFs, HTML, Gmail messages, Drive docs) to a host-accessible
 staging directory. Returns a local path usable as openfile:// URL in OmniFocus
 notes.
 
-Volume mapping:
-  Container write path: /data/shared/staged/{category}/{ref_id}/
-  Host read path:       /Users/dorseyhomeserver/Dropbox/letta-shared-files/staged/{category}/{ref_id}/
+In LOCAL mode the tasks-agent runs on the host via the launchd runner, so it
+writes directly to a host-native, env-configurable path. No container-to-host
+translation is needed unless an explicit STAGE_OPENFILE_BASE override is set
+(for future containerised callers).
 
-The returned openfile_url uses the HOST path since openfile-handler runs on
-the host and expects real POSIX paths.
+  Write path: $STAGE_BASE_DIR   (default: /Users/dorseyhomeserver/Dropbox/letta-shared-files/staged)
+  URL  base:  $STAGE_OPENFILE_BASE  (default: same as STAGE_BASE_DIR)
 
 Tool: stage_resource
 """
@@ -19,10 +20,11 @@ from typing import Dict, Any, Optional
 
 
 def stage_resource(
-    url: str,
-    label: str,
+    url: Optional[str] = None,
+    label: str = "",
     priority: Optional[str] = None,
     ref_id: Optional[str] = None,
+    text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Download a resource to the staging directory and return its local path.
@@ -35,15 +37,18 @@ def stage_resource(
     hours old), reuses the existing file without re-downloading.
 
     Args:
-        url: Source URL or fetch hint. Supports: HTTPS URLs (direct download),
-             Google Drive/Docs URLs (fetched via gws CLI), Gmail message IDs
-             in format "gmail:MSG_ID" (fetched via gws CLI).
+        url: Source URL or fetch hint (now optional). Supports: HTTPS URLs
+             (direct download), Google Drive/Docs URLs (fetched via gws CLI),
+             Gmail message IDs in format "gmail:MSG_ID" (fetched via gws CLI).
+             Mutually exclusive with text.
         label: Short descriptive label for the resource (used in filename).
         priority: Optional priority marker: "primary", "secondary", or "background". Default "secondary".
         ref_id: Optional 8-char hex ref_id of the task this resource supports. If provided, files are organized under the ref_id directory.
+        text: Inline note text to stage as a markdown file instead of
+              downloading a url; mutually exclusive with url.
 
     Returns:
-        Dictionary with status, local_path (container), openfile_url (host),
+        Dictionary with status, local_path, openfile_url,
         filename, size_bytes, category, and reused flag.
     """
     import hashlib
@@ -58,29 +63,55 @@ def stage_resource(
     from datetime import datetime, timedelta
 
     try:
-        if not url or not label:
-            return {"status": "error", "error_message": "url and label are required"}
-
         priority = priority or "secondary"
 
-        # Volume mapping (verified in docker-compose.yml:658)
-        CONTAINER_BASE = "/data/shared/staged"
-        HOST_BASE = "/Users/dorseyhomeserver/Dropbox/letta-shared-files/staged"
+        # Host-native staging (local mode): the tasks-agent runs on the host via
+        # the launchd runner, so it writes directly to the Dropbox-synced staging
+        # tree and the openfile:// URL is that same real path — no container
+        # translation. STAGE_BASE_DIR overrides for tests / future relocation.
+        # STAGE_OPENFILE_BASE lets a containerised caller map the write path to a
+        # host path for the URL (defaults to STAGE_BASE_DIR -> identity mapping).
+        DEFAULT_BASE = "/Users/dorseyhomeserver/Dropbox/letta-shared-files/staged"
+        STAGE_BASE = os.environ.get("STAGE_BASE_DIR", DEFAULT_BASE)
+        OPENFILE_BASE = os.environ.get("STAGE_OPENFILE_BASE", STAGE_BASE)
 
-        # Verify container base is writable
-        if not os.path.exists(CONTAINER_BASE):
-            try:
-                os.makedirs(CONTAINER_BASE, exist_ok=True)
-            except Exception as e:
-                return {
-                    "status": "error",
-                    "error_message": f"Cannot access staging directory {CONTAINER_BASE}: {e}",
-                }
+        try:
+            os.makedirs(STAGE_BASE, exist_ok=True)
+        except Exception as e:
+            return {"status": "error",
+                    "error_message": f"Cannot access staging directory {STAGE_BASE}: {e}"}
+        if not os.access(STAGE_BASE, os.W_OK):
+            return {"status": "error",
+                    "error_message": f"Staging directory {STAGE_BASE} is not writable"}
 
-        if not os.access(CONTAINER_BASE, os.W_OK):
+        if not label:
+            return {"status": "error", "error_message": "label is required"}
+        if not url and text is None:
+            return {"status": "error", "error_message": "either url or text is required"}
+
+        if text is not None:
+            # Inline-text staging -> markdown file the user can read in place.
+            category = "notes"
+            extension = "md"
+            ref_id_part = ref_id or "orphan"
+            target_dir = os.path.join(STAGE_BASE, category, ref_id_part)
+            os.makedirs(target_dir, exist_ok=True)
+            safe_label = re.sub(r"[^a-zA-Z0-9\-_]", "-", label)[:60].strip("-") or "note"
+            filename = f"{safe_label}.{extension}"
+            target_path = os.path.join(target_dir, filename)
+            body = text if text.lstrip().startswith("#") else f"# {label}\n\n{text}"
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(body)
+            host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
             return {
-                "status": "error",
-                "error_message": f"Staging directory {CONTAINER_BASE} is not writable",
+                "status": "ok",
+                "local_path": target_path,
+                "openfile_url": f"openfile://{host_path}",
+                "filename": filename,
+                "size_bytes": len(body.encode("utf-8")),
+                "category": category,
+                "priority": priority,
+                "reused": False,
             }
 
         # Determine category and fetch strategy from URL.
@@ -142,7 +173,7 @@ def stage_resource(
 
         # Build target directory and filename
         ref_id_part = ref_id or "orphan"
-        target_dir = os.path.join(CONTAINER_BASE, category, ref_id_part)
+        target_dir = os.path.join(STAGE_BASE, category, ref_id_part)
         os.makedirs(target_dir, exist_ok=True)
 
         # Sanitize label for filename
@@ -158,7 +189,7 @@ def stage_resource(
             if age < timedelta(hours=24):
                 reused = True
                 size = os.path.getsize(target_path)
-                host_path = target_path.replace(CONTAINER_BASE, HOST_BASE, 1)
+                host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
                 return {
                     "status": "ok",
                     "local_path": target_path,
@@ -299,7 +330,7 @@ def stage_resource(
                     }
                 if os.path.exists(target_path):
                     size = os.path.getsize(target_path)
-                    host_path = target_path.replace(CONTAINER_BASE, HOST_BASE, 1)
+                    host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
                     return {
                         "status": "ok",
                         "local_path": target_path,
@@ -344,7 +375,7 @@ def stage_resource(
             f.write(content)
 
         size = len(content)
-        host_path = target_path.replace(CONTAINER_BASE, HOST_BASE, 1)
+        host_path = target_path.replace(STAGE_BASE, OPENFILE_BASE, 1)
 
         return {
             "status": "ok",
