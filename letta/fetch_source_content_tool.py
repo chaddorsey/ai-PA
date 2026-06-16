@@ -358,6 +358,7 @@ def fetch_source_content(
 
             raw_transcript = ""
             fetched_via_api = False
+            meeting_web_url = ""
             api_key = os.environ.get("GRANOLA_API_KEY", "")
             if meeting_id and api_key:
                 try:
@@ -390,6 +391,7 @@ def fetch_source_content(
                             f"<{owner.get('email','')}>"
                         )
                     if note.get("web_url"):
+                        meeting_web_url = note["web_url"]
                         bits.append(f"[Permalink: {note['web_url']}]")
                     # Granola Public API uses summary_text + summary_markdown.
                     # Prefer summary_text (plain) for token efficiency.
@@ -450,6 +452,10 @@ def fetch_source_content(
                     pieces.append(locals()['_row_body'])
                 raw_transcript = "\n".join(pieces) if pieces else ""
 
+            if not meeting_web_url:
+                _sm = locals().get("_row_smeta") or {}
+                meeting_web_url = _sm.get("web_url") or _sm.get("permalink") or ""
+
             if raw_transcript:
                 content = (
                     "[*** ANCHOR — MEETING TRANSCRIPT/NOTES ***]\n"
@@ -464,6 +470,7 @@ def fetch_source_content(
                 )
                 metadata = {
                     "meeting_id": meeting_id,
+                    "permalink": meeting_web_url,
                     "fetched_via": (
                         "granola_public_api"
                         if fetched_via_api
