@@ -292,6 +292,18 @@ class TaskSidebar {
       : '';
     const timeLabel = task.extracted_time ? this.formatTime(task.extracted_time) : '';
 
+    // Soft-dedup surfacing: ★ for user-marked ([c]/[;]) tasks (also sorted first
+    // by the API), and a ⚠ banner when a candidate likely restates a marked item
+    // so it can be weeded right here at confirmation.
+    if (task.user_marked) card.classList.add('task-marked');
+    const markedBadge = task.user_marked
+      ? `<span class="task-marked-badge" title="From your [c]/[;] meeting note — user-marked">★ marked</span>`
+      : '';
+    const dup = task.potential_duplicate;
+    const dupWarn = dup
+      ? `<div class="task-dup-warn" title="Likely restates a marked item from the same meeting — review, or reject if redundant">⚠ possible duplicate of marked: &ldquo;${this.escapeHtml((dup.marker_text || '').slice(0, 80))}&rdquo;</div>`
+      : '';
+
     card.innerHTML = `
       <div class="task-card-main">
         <div class="task-card-drag" title="Drag to reorder">&#10495;</div>
@@ -301,8 +313,10 @@ class TaskSidebar {
         </label>
         <div class="task-card-body">
           <div class="task-card-description">${this.escapeHtml(task.description)}</div>
+          ${dupWarn}
           <div class="task-card-meta">
             <span class="task-ref-id">${task.ref_id}</span>
+            ${markedBadge}
             ${originLabel}
             <span class="task-est-badge${task.estimate_minutes ? '' : ' est-empty'}" data-minutes="${task.estimate_minutes || ''}" title="Estimated duration">⏱ ${task.estimate_minutes ? this.formatEstimate(task.estimate_minutes) : '—'}</span>
             <span class="task-time">${this.escapeHtml(timeLabel)}</span>

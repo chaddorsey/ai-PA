@@ -3514,13 +3514,14 @@ def api_get_tasks():
                     SELECT ref_id, extracted_at, origin,
                            original_est_minutes, revised_est_minutes,
                            raw_description, suggested_title, confirmed_title,
-                           status, source, source_ref
+                           status, source, source_ref, enrichment
                       FROM pa_web.tasks
                      WHERE closed_at IS NULL
                        AND status IN %s
                        AND raw_description IS NOT NULL
                        AND length(trim(raw_description)) > 0
-                     ORDER BY extracted_at DESC NULLS LAST, ref_id
+                     ORDER BY COALESCE(enrichment->>'user_marked' = 'true', false) DESC,
+                              extracted_at DESC NULLS LAST, ref_id
                     """,
                     (_TASK_TRIAGE_STATUSES,),
                 )
@@ -3531,6 +3532,14 @@ def api_get_tasks():
         tasks = []
         for r in rows:
             ts = r["extracted_at"].isoformat() if r["extracted_at"] else ""
+            _enr = r["enrichment"]
+            if isinstance(_enr, str):
+                try:
+                    _enr = json.loads(_enr)
+                except Exception:
+                    _enr = {}
+            if not isinstance(_enr, dict):
+                _enr = {}
             tasks.append({
                 "ref_id": r["ref_id"],
                 "extracted_time": ts,
@@ -3549,6 +3558,12 @@ def api_get_tasks():
                 "confirmed_title": r["confirmed_title"],
                 "source": r["source"],
                 "source_ref": r["source_ref"],
+                # Soft-dedup signals (set by flag-meeting-task-overlaps.py):
+                # user_marked = this came from an explicit [c]/[;] note (prioritized);
+                # potential_duplicate = {marker_text, similarity} when this candidate
+                # likely restates a marked item — surfaced so it can be weeded here.
+                "user_marked": bool(_enr.get("user_marked")),
+                "potential_duplicate": _enr.get("potential_duplicate_of"),
             })
         return jsonify({"tasks": tasks})
     except Exception as e:

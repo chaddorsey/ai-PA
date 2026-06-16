@@ -43,4 +43,16 @@ PYTHON="${PYTHON:-/Users/dorseyhomeserver/.local/pipx/venvs/task-cli/bin/python}
 
 "$PYTHON" "$REPO_ROOT/scripts/scan_meeting_markers.py" \
   --window-days "${MARKER_WINDOW_DAYS:-14}" 2>&1 | tee -a "$LOG"
-exit "${PIPESTATUS[0]}"
+scan_rc="${PIPESTATUS[0]}"
+
+# After markers land, flag semantic (docs-meeting) tasks that overlap a marked
+# item from the same meeting — soft dedup, non-destructive, resolved at the
+# confirmation step. Runs regardless of the scan's exit code so late-arriving
+# semantic tasks still get flagged against earlier markers on a later cycle.
+"$PYTHON" "$REPO_ROOT/scripts/flag-meeting-task-overlaps.py" \
+  --window-hours "${OVERLAP_WINDOW_HOURS:-24}" 2>&1 | tee -a "$LOG"
+flag_rc="${PIPESTATUS[0]}"
+
+# Prefer surfacing the scan's degraded code (2) if it fired; else the flagger's.
+if [[ "$scan_rc" -ne 0 ]]; then exit "$scan_rc"; fi
+exit "$flag_rc"
