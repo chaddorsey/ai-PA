@@ -101,6 +101,12 @@ def fetch_source_content(
                         fetch_hint = f"gmail:{_sref[6:]}"
                 elif source_type in ("meeting", "meeting_marker"):
                     mid = smeta.get("meeting_id") or smeta.get("location_id")
+                    # Granola id often lives only in source_ref ("meeting-<uuid>"),
+                    # not in source_metadata. Derive it so the meeting branch runs
+                    # (and surfaces metadata.permalink) instead of falling through to
+                    # the task_body fast path. Mirrors the email "email-" fallback.
+                    if not mid and _sref and _sref.startswith("meeting-"):
+                        mid = _sref[len("meeting-"):]
                     if mid:
                         fetch_hint = f"granola:{mid}"
                 else:
@@ -455,6 +461,13 @@ def fetch_source_content(
             if not meeting_web_url:
                 _sm = locals().get("_row_smeta") or {}
                 meeting_web_url = _sm.get("web_url") or _sm.get("permalink") or ""
+
+            if not meeting_web_url and meeting_id:
+                # Granola note URLs are https://notes.granola.ai/d/<id> (confirmed
+                # against the row's related_urls). Construct it so metadata.permalink
+                # is always present for meetings even when the Granola API returned no
+                # web_url (or the API call failed and we fell back to source_metadata).
+                meeting_web_url = f"https://notes.granola.ai/d/{meeting_id}"
 
             if raw_transcript:
                 content = (
