@@ -38,6 +38,11 @@ export LITELLM_URL="${LITELLM_URL:-http://localhost:4000}"
 export GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-$REPO_ROOT/gws-bridge/credentials.json}"
 export PA_AI_REPO_ROOT="$REPO_ROOT"
 
+# prepare_meeting_followup shells out to `gws` (~/bin/gws). launchd's minimal
+# PATH doesn't include it, so prepend the CLI dirs — without this, every draft
+# fails with "No such file or directory: 'gws'".
+export PATH="$HOME/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+
 # Use a Python with pytz + psycopg available (the pipx task-cli venv — pytz was
 # injected for prepare_meeting_followup).
 PYTHON="${PYTHON:-/Users/dorseyhomeserver/.local/pipx/venvs/task-cli/bin/python}"
