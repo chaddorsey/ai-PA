@@ -167,7 +167,8 @@ class TaskSidebar {
 
   startPolling() {
     this.stopPolling();
-    this.pollInterval = setInterval(() => this.loadTasks(), 30000);
+    // Background polls: silent + non-destructive (see loadTasks).
+    this.pollInterval = setInterval(() => this.loadTasks({ background: true }), 30000);
   }
 
   stopPolling() {
@@ -208,26 +209,63 @@ class TaskSidebar {
     }
   }
 
-  async loadTasks() {
+  async loadTasks(opts = {}) {
+    const background = !!opts.background;
     try {
-      this.taskList.classList.add('loading');
+      // Only the foreground (open / manual) load shows the dimmed, non-
+      // interactive `.loading` state. Background polls stay silent so the list
+      // never freezes on a timer.
+      if (!background) this.taskList.classList.add('loading');
       const resp = await fetch('/api/tasks');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
-      this.tasks = data.tasks || [];
-      this.updateBadge(this.tasks.length);
+      const tasks = data.tasks || [];
+      this.updateBadge(tasks.length);
+
+      // Smooth sync: a background poll must not rebuild the list when nothing
+      // visible changed (avoids the periodic freeze + scroll reset), and must
+      // not blow away an in-progress edit or drag. In either case, skip the
+      // DOM work — the next poll, or the user's own action, reconciles. Keep
+      // this.tasks in lock-step with the DOM (update it only when we render)
+      // so action handlers never act on phantom rows.
+      const sig = this._taskSignature(tasks);
+      if (background && (sig === this._lastSig || this._interactionBusy())) {
+        return;
+      }
+      this.tasks = tasks;
       this.renderTaskList();
+      this._lastSig = sig;
     } catch (e) {
-      this.taskList.innerHTML = `<div class="sidebar-error">Failed to load tasks<br><small>${e.message}</small></div>`;
+      if (!background) {
+        this.taskList.innerHTML = `<div class="sidebar-error">Failed to load tasks<br><small>${e.message}</small></div>`;
+      }
     } finally {
-      this.taskList.classList.remove('loading');
+      if (!background) this.taskList.classList.remove('loading');
     }
+  }
+
+  _taskSignature(tasks) {
+    // The fields that determine what a card renders. Equal signature → the
+    // visible list is identical → no re-render needed.
+    return JSON.stringify(tasks.map(t => [
+      t.ref_id, t.description, t.status, t.estimate_minutes,
+      t.user_marked, !!t.potential_duplicate,
+    ]));
+  }
+
+  _interactionBusy() {
+    // True while the user is mid inline-edit (description contenteditable or the
+    // estimate input) or mid-drag — never re-render the list out from under them.
+    return !!this.taskList.querySelector(
+      '[contenteditable="true"], .est-inline-input, .sortable-chosen, .sortable-drag, .task-card-ghost'
+    );
   }
 
   // ── Rendering ──
 
   renderTaskList() {
     const prevSelected = new Set(this.selectedRefIds);
+    const prevScroll = this.taskList.scrollTop;
 
     if (this.tasks.length === 0) {
       this.taskList.innerHTML = '<div class="sidebar-empty"><span class="empty-icon">&#10003;</span>No pending tasks</div>';
@@ -280,6 +318,7 @@ class TaskSidebar {
     }
 
     this.updateBulkBar();
+    this.taskList.scrollTop = prevScroll;   // preserve scroll across re-render
   }
 
   buildTaskCard(task) {
@@ -425,6 +464,12 @@ class TaskSidebar {
           });
           if (!resp.ok) {
             descEl.textContent = original;
+          } else {
+            // Sync local model + signature so the next background poll sees no
+            // change and won't rebuild the card we just edited.
+            const t = this.tasks.find(x => x.ref_id === refId);
+            if (t) t.description = newText;
+            this._lastSig = this._taskSignature(this.tasks);
           }
         } catch {
           descEl.textContent = original;
