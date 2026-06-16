@@ -148,6 +148,29 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
                                 full_content = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8", "replace")
                                 break
                             parts_to_check.extend(part.get("parts", []))
+                elif fetch_hint.startswith("granola:"):
+                    mid = fetch_hint.split(":", 1)[1]
+                    api_key = os.environ.get("GRANOLA_API_KEY", "")
+                    if mid and api_key:
+                        g_req = urllib.request.Request(
+                            f"https://public-api.granola.ai/v1/notes/{mid}?include=transcript",
+                            headers={"Authorization": f"Bearer {api_key}",
+                                     "Accept": "application/json"},
+                        )
+                        with urllib.request.urlopen(g_req, timeout=15) as g_resp:
+                            note = json.loads(g_resp.read().decode("utf-8"))
+                        bits = []
+                        if note.get("web_url"):
+                            bits.append(note["web_url"])  # harvestable URL
+                        if note.get("summary_text") or note.get("summary_markdown"):
+                            bits.append(note.get("summary_text") or note.get("summary_markdown"))
+                        t = note.get("transcript")
+                        if isinstance(t, list):
+                            bits.extend(f"{e.get('speaker','')}: {e.get('text','')}"
+                                        for e in t[:200] if e.get("text"))
+                        elif isinstance(t, str):
+                            bits.append(t)
+                        full_content = "\n".join(bits)
             except (FileNotFoundError, Exception):
                 pass
 
@@ -177,6 +200,14 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
         anchors_proper_nouns = []
         anchors_distinctive = []
         anchors_acronyms = []
+
+        # Seed artifact URLs from source_metadata (permalink / web_url / source_url)
+        # so a clean task body without inline links still surfaces the source as a
+        # hop candidate.
+        for _k in ("permalink", "web_url", "source_url"):
+            _v = (smeta or {}).get(_k)
+            if _v and _v not in anchors_urls:
+                anchors_urls.append(_v)
 
         # URLs + domains + doc IDs
         urls_found = re.findall(r"https?://[^\s<>\"]+", all_text)
