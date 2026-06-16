@@ -198,7 +198,12 @@ def dispatch_enrichment(row):
         f"Leave a node empty only when it is genuinely not discoverable.\n"
         f"5. If the task is already clear from the anchor, call "
         f'write_packet_info(ref_id="{ref_id}", direct_action="...") with '
-        f"minimal fields and stop.\n\n"
+        f"minimal fields and stop.\n"
+        f"6. ALWAYS pass estimated_minutes on your write_packet_info call — your "
+        f"realistic best estimate of how long the task will take to DO (not to "
+        f"schedule), based on its complexity and the context you gathered, rounded "
+        f"to the nearest 5 minutes. This is the agent baseline the eval loop "
+        f"measures against, so estimate honestly even when the task seems quick.\n\n"
         f"RESOURCE FORMATTING: when the source is slack, fetch_source_content "
         f"returns a `permalink` URL in metadata (and as a [Permalink: ...] "
         f"line at the top of content). In your `resources` field, use that "

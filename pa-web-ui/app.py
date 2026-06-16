@@ -3250,6 +3250,15 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
         """Normalize a packet_info scalar: literal '\\n' -> real newline, trim."""
         return str(s).replace("\\n", "\n").strip()
 
+    def _fmt_est(mins):
+        """Minutes -> a duration string the OmniFocus timer's parseDurationToMs
+        can read (it matches Nh/Nm, NOT bare ints). E.g. 90 -> '1h 30m', 45 -> '45m'."""
+        mins = int(mins)
+        if mins >= 60:
+            h, m = divmod(mins, 60)
+            return f"{h}h {m}m" if m else f"{h}h"
+        return f"{mins}m"
+
     def _lines(item):
         """Yield display lines for a list item: split on (literal or real)
         newlines and strip a leading bullet/dash the renderer will re-add, so
@@ -3301,12 +3310,22 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
     # Effective = revised (user's correction) if set, else original (agent's).
     # The eval loop reads the original/revised columns separately; this line is
     # the timer hook, so it carries the effective value and flags revisions.
-    effective_est = revised_est if revised_est is not None else original_est
-    if effective_est is None:
-        effective_est = parsed.get("agent_estimate_minutes") or parsed.get("estimate_minutes")
-    if effective_est:
-        revised_marker = " (revised)" if (revised_est is not None and revised_est != original_est) else ""
-        segments.append({"text": f"Agent Estimate: {effective_est}{revised_marker}\n\n", "size": 11})
+    # "Agent Estimate" = the IMMUTABLE agent (original) estimate — the OmniFocus
+    # timer reads this line as agentEstimateMin (the eval baseline), so it MUST be
+    # the original, NOT the effective/revised value, and MUST be a duration string
+    # (the timer's parser ignores bare ints). The user's revision is shown under a
+    # separate, timer-safe label and flows to the OF native duration + sidebar.
+    agent_est = original_est if original_est is not None else parsed.get("agent_estimate_minutes")
+    emitted_est = False
+    if agent_est:
+        segments.append({"text": f"Agent Estimate: {_fmt_est(agent_est)}\n", "size": 11})
+        emitted_est = True
+    if revised_est is not None and revised_est != agent_est:
+        # "Estimate (current)" matches neither the timer's Agent/Original regexes
+        segments.append({"text": f"Estimate (current): {_fmt_est(revised_est)}\n", "size": 11})
+        emitted_est = True
+    if emitted_est:
+        segments.append("\n")
 
     # Mismatch warning (prominent)
     if pi.get("mismatch_warning"):

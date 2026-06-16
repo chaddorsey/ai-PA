@@ -63,25 +63,32 @@ def test_literal_backslash_n_becomes_real_newline():
     assert "newline inside" in t
 
 
-def test_estimate_section_preserves_timer_widget_hook():
-    # the OmniFocus timer widget greps the note for "Agent Estimate: N"
-    assert "Agent Estimate: 45" in _text(segs())
+def test_agent_estimate_is_duration_string_not_bare_int():
+    # The OF timer's parseDurationToMs matches Nh/Nm, NOT bare ints — so the
+    # "Agent Estimate" line MUST be a duration string or the timer logs 0/None.
+    t = _text(segs())                       # PASSAGE has "- Agent Estimate: 45"
+    assert "Agent Estimate: 45m" in t
+    assert "Agent Estimate: 45\n" not in t  # never a bare int
 
 
-def test_estimate_columns_revised_overrides_with_marker():
-    s = app._build_work_packet_segments("r", PASSAGE, ENRICH, original_est=30, revised_est=90)
-    t = _text(s)
-    assert "Agent Estimate: 90 (revised)" in t   # effective=revised, flagged
+def test_agent_estimate_uses_original_not_revised():
+    # Eval-critical: the Agent Estimate line is the IMMUTABLE original, never the
+    # revised value (revised would corrupt agentEstimateMin in the timer log).
+    t = _text(app._build_work_packet_segments("r", PASSAGE, ENRICH, original_est=30, revised_est=90))
+    assert "Agent Estimate: 30m" in t
+    assert "90" not in t.split("Estimate (current)")[0]  # 90 not in the agent line
+    assert "Estimate (current): 1h 30m" in t             # revised shown, timer-safe label
 
 
-def test_estimate_columns_original_only_no_marker():
-    s = app._build_work_packet_segments("r", PASSAGE, ENRICH, original_est=30, revised_est=None)
-    t = _text(s)
-    assert "Agent Estimate: 30" in t
-    assert "(revised)" not in t
+def test_estimate_original_only_no_current_line():
+    t = _text(app._build_work_packet_segments("r", PASSAGE, ENRICH, original_est=30, revised_est=None))
+    assert "Agent Estimate: 30m" in t
+    assert "Estimate (current)" not in t
 
 
-def test_estimate_revised_only_meeting_case():
-    # meeting task reality: no agent original, user set revised=90
-    s = app._build_work_packet_segments("r", "no estimate here", {}, original_est=None, revised_est=90)
-    assert "Agent Estimate: 90 (revised)" in _text(s)
+def test_meeting_case_revised_only_no_agent_line():
+    # original None (agent never estimated), user revised to 90: NO Agent Estimate
+    # line (nothing for the timer baseline), revised shown under the safe label.
+    t = _text(app._build_work_packet_segments("r", "no estimate here", {}, original_est=None, revised_est=90))
+    assert "Agent Estimate:" not in t
+    assert "Estimate (current): 1h 30m" in t

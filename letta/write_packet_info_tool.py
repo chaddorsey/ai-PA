@@ -46,6 +46,7 @@ def write_packet_info(
     unknowns: Optional[str] = None,
     mismatch_warnings: Optional[str] = None,
     additional_notes: Optional[str] = None,
+    estimated_minutes: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Persist synthesized work-packet context to pa_web.tasks.enrichment.
@@ -62,6 +63,11 @@ def write_packet_info(
         unknowns: What is missing or unresolved. One per line. Optional.
         mismatch_warnings: Overlap/conflict warnings to flag prominently. Optional.
         additional_notes: Any other free-form synthesis. Optional.
+        estimated_minutes: Your best estimate of how long this task will take to
+            DO, in minutes (think realistically about the actual work; round to
+            the nearest 5). Sets the immutable agent baseline original_est_minutes
+            — only applied when it is not already set, so re-enrichment never
+            overwrites it and never touches the user's revision or actual time. Optional.
 
     Returns:
         Dictionary with:
@@ -95,14 +101,10 @@ def write_packet_info(
             return {"status": "error", "ref_id": ref_id,
                     "error_message": "direct_action is required"}
 
-        # Inline-parse multi-line free-form fields into list-of-strings.
-        # The agent passes each item on its own line; we strip empty
-        # lines and surrounding whitespace.
-        def _to_list(s):
-            if not s:
-                return []
-            return [ln.strip() for ln in s.split("\n") if ln.strip()]
-
+        # Parse multi-line free-form fields into list-of-strings (one item per
+        # line, trimmed, empties dropped). Inlined — NO nested def: Letta's
+        # schema generation recurses into nested functions and requires full
+        # annotations + docstrings, which broke tool re-registration.
         packet_info = {
             "direct_action": direct_action.strip(),
         }
@@ -110,26 +112,39 @@ def write_packet_info(
             packet_info["artifact_provenance"] = artifact_provenance.strip()
         if intent_genesis:
             packet_info["intent_genesis"] = intent_genesis.strip()
-        cb = _to_list(context_brief)
+        cb = [ln.strip() for ln in (context_brief or "").split("\n") if ln.strip()]
         if cb:
             packet_info["context_brief"] = cb
-        rs = _to_list(resources)
+        rs = [ln.strip() for ln in (resources or "").split("\n") if ln.strip()]
         if rs:
             packet_info["resources"] = rs
-        rt = _to_list(related_tasks)
+        rt = [ln.strip() for ln in (related_tasks or "").split("\n") if ln.strip()]
         if rt:
             packet_info["related_tasks"] = rt
-        kn = _to_list(knowns)
+        kn = [ln.strip() for ln in (knowns or "").split("\n") if ln.strip()]
         if kn:
             packet_info["knowns"] = kn
-        un = _to_list(unknowns)
+        un = [ln.strip() for ln in (unknowns or "").split("\n") if ln.strip()]
         if un:
             packet_info["unknowns"] = un
-        mw = _to_list(mismatch_warnings)
+        mw = [ln.strip() for ln in (mismatch_warnings or "").split("\n") if ln.strip()]
         if mw:
             packet_info["mismatch_warnings"] = mw
         if additional_notes:
             packet_info["additional_notes"] = additional_notes.strip()
+
+        # Agent time estimate -> immutable original_est_minutes baseline.
+        # Coerce to a positive int; None if absent/invalid. Persisted via
+        # COALESCE so it is set ONLY when currently NULL (never overwrites the
+        # agent's first estimate, the user's revision, or the recorded actual).
+        est = None
+        if estimated_minutes is not None:
+            try:
+                raw = float(estimated_minutes)
+                if raw > 0:
+                    est = max(5, int(round(raw / 5.0) * 5))  # nearest 5, floor 5
+            except (TypeError, ValueError):
+                est = None
 
         # Phase tag — useful for the enrichment-scanner timeout-recovery
         # and for downstream consumers (pa-web-ui work packet renderer).
@@ -154,17 +169,19 @@ def write_packet_info(
         merge_sql = """
             UPDATE pa_web.tasks
                SET enrichment = COALESCE(enrichment, '{}'::jsonb) || %(new)s::jsonb,
+                   original_est_minutes = COALESCE(original_est_minutes, %(est)s),
                    enrichment_state = 'done',
                    updated_at = NOW(),
                    migration_source = 'live'
              WHERE ref_id = %(ref_id)s
-             RETURNING ref_id, enrichment, enrichment_state
+             RETURNING ref_id, enrichment, enrichment_state, original_est_minutes
         """
         with psycopg.connect(pg_url, autocommit=True, connect_timeout=10) as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(merge_sql, {
                     "ref_id": ref_id,
                     "new": json.dumps(new_enrichment),
+                    "est": est,
                 })
                 row = cur.fetchone()
         if row is None:
@@ -179,6 +196,7 @@ def write_packet_info(
             "ref_id": ref_id,
             "enrichment": row.get("enrichment"),
             "enrichment_state": row.get("enrichment_state"),
+            "original_est_minutes": row.get("original_est_minutes"),
         }
 
     except Exception as e:
