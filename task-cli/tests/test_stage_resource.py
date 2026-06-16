@@ -52,3 +52,17 @@ def test_openfile_base_translation(tmp_path, monkeypatch):
     monkeypatch.setenv("STAGE_OPENFILE_BASE", "/HOST/staged")
     r = stage_resource(text="x", label="L", ref_id="r")
     assert r["openfile_url"] == "openfile:///HOST/staged/notes/r/L.md"
+
+
+def test_url_and_text_mutually_exclusive(tmp_path, monkeypatch):
+    monkeypatch.setenv("STAGE_BASE_DIR", str(tmp_path))
+    r = stage_resource(url="https://example.com/x.pdf", text="hi", label="L")
+    assert r["status"] == "error"
+    assert "mutually exclusive" in r["error_message"]
+
+
+def test_openfile_base_defaults_to_stage_base(tmp_path, monkeypatch):
+    monkeypatch.setenv("STAGE_BASE_DIR", str(tmp_path))
+    monkeypatch.delenv("STAGE_OPENFILE_BASE", raising=False)
+    r = stage_resource(text="x", label="L", ref_id="r")
+    assert r["openfile_url"] == f"openfile://{tmp_path}/notes/r/L.md"

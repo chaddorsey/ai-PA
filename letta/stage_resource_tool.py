@@ -86,6 +86,9 @@ def stage_resource(
 
         if not label:
             return {"status": "error", "error_message": "label is required"}
+        if url and text is not None:
+            return {"status": "error",
+                    "error_message": "url and text are mutually exclusive"}
         if not url and text is None:
             return {"status": "error", "error_message": "either url or text is required"}
 
