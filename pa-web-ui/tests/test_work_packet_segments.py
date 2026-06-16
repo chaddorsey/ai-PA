@@ -66,3 +66,22 @@ def test_literal_backslash_n_becomes_real_newline():
 def test_estimate_section_preserves_timer_widget_hook():
     # the OmniFocus timer widget greps the note for "Agent Estimate: N"
     assert "Agent Estimate: 45" in _text(segs())
+
+
+def test_estimate_columns_revised_overrides_with_marker():
+    s = app._build_work_packet_segments("r", PASSAGE, ENRICH, original_est=30, revised_est=90)
+    t = _text(s)
+    assert "Agent Estimate: 90 (revised)" in t   # effective=revised, flagged
+
+
+def test_estimate_columns_original_only_no_marker():
+    s = app._build_work_packet_segments("r", PASSAGE, ENRICH, original_est=30, revised_est=None)
+    t = _text(s)
+    assert "Agent Estimate: 30" in t
+    assert "(revised)" not in t
+
+
+def test_estimate_revised_only_meeting_case():
+    # meeting task reality: no agent original, user set revised=90
+    s = app._build_work_packet_segments("r", "no estimate here", {}, original_est=None, revised_est=90)
+    assert "Agent Estimate: 90 (revised)" in _text(s)

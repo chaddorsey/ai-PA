@@ -3229,7 +3229,8 @@ def call_omnifocus_bridge(method, params=None):
     return result
 
 
-def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
+def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
+                                original_est=None, revised_est=None):
     """Build rich-text segments for an OmniFocus work packet note.
 
     Shared by both first-pass assembly (in confirm handler) and
@@ -3296,9 +3297,16 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
 
     # Time estimate — keep the exact "Agent Estimate: N" line the OmniFocus timer
     # widget greps for (it was lost when the rich note replaced the plain one).
-    est = parsed.get("agent_estimate_minutes") or parsed.get("estimate_minutes")
-    if est:
-        segments.append({"text": f"Agent Estimate: {est}\n\n", "size": 11})
+    # Prefer the pa_web.tasks columns (canonical); fall back to the passage.
+    # Effective = revised (user's correction) if set, else original (agent's).
+    # The eval loop reads the original/revised columns separately; this line is
+    # the timer hook, so it carries the effective value and flags revisions.
+    effective_est = revised_est if revised_est is not None else original_est
+    if effective_est is None:
+        effective_est = parsed.get("agent_estimate_minutes") or parsed.get("estimate_minutes")
+    if effective_est:
+        revised_marker = " (revised)" if (revised_est is not None and revised_est != original_est) else ""
+        segments.append({"text": f"Agent Estimate: {effective_est}{revised_marker}\n\n", "size": 11})
 
     # Mismatch warning (prominent)
     if pi.get("mismatch_warning"):
@@ -3405,12 +3413,14 @@ def _get_work_packet_lock(ref_id):
         return _work_packet_locks[ref_id]
 
 
-def _write_work_packet_note(ref_id, omnifocus_task_id, passage_text, enrichment=None):
+def _write_work_packet_note(ref_id, omnifocus_task_id, passage_text, enrichment=None,
+                            original_est=None, revised_est=None):
     """Write the work packet note to OmniFocus via setRichText (atomic replace).
 
     Uses per-ref_id lock to prevent races between first-pass and re-assembly.
     """
-    segments = _build_work_packet_segments(ref_id, passage_text, enrichment=enrichment)
+    segments = _build_work_packet_segments(ref_id, passage_text, enrichment=enrichment,
+                                           original_est=original_est, revised_est=revised_est)
     if not segments:
         return False
 
@@ -3765,6 +3775,8 @@ def api_transition_task(ref_id):
                         _write_work_packet_note(
                             ref_id, omnifocus_task_id, passage_text,
                             enrichment=enrichment,
+                            original_est=old_row.get("original_est_minutes"),
+                            revised_est=old_row.get("revised_est_minutes"),
                         )
                 except Exception:
                     pass  # Work packet assembly is best-effort
@@ -3946,6 +3958,8 @@ def api_reassemble_work_packet(ref_id):
         # Re-assemble using shared helper (uses setRichText atomically)
         success = _write_work_packet_note(
             ref_id, omnifocus_task_id, passage_text, enrichment=enrichment,
+            original_est=row.get("original_est_minutes"),
+            revised_est=row.get("revised_est_minutes"),
         )
 
         if not success:
