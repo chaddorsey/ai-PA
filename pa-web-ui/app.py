@@ -3351,25 +3351,39 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
             for line in _lines(item):
                 segments.append(f"  • {line}\n")
 
-    # Resources (with clickable links)
+    # Resources — hyperlink EVERY url on the line so a single resource can carry
+    # both a universal cloud link (works on every device) and a device-local
+    # staged openfile:// copy (desktop offline). Label renders once; each url
+    # becomes its own clickable chip with smart display text.
     if pi.get("resources"):
         segments.append("\n")
         segments.append({"text": "Resources\n", "bold": True, "size": 13})
         for item in pi["resources"]:
-            url_match = re.search(r"(openfile://\S+|https?://\S+)", item)
-            if url_match:
-                url = url_match.group(1).rstrip(")")
-                label = item[:item.find(url_match.group(0))].strip().rstrip("—").strip()
+            urls = re.findall(r"(openfile://\S+|https?://\S+)", item)
+            if urls:
+                urls = [u.rstrip(") ").rstrip("|").strip() for u in urls]
+                # Label = text before the first url, minus the leading [priority]
+                # marker and the trailing em-dash separator.
+                first = re.search(r"(openfile://\S+|https?://\S+)", item)
+                label = item[:first.start()].strip()
+                label = re.sub(r"^\[(primary|secondary|background)\]\s*", "", label)
+                label = label.rstrip("—|").strip()
                 role_match = re.search(r"\((\w+)\)\s*$", item)
                 role = f" ({role_match.group(1)})" if role_match else ""
                 segments.append({"text": f"  {label}{role}: ", "size": 11})
-                # For slack permalinks (workspace-scoped, ugly), use the
-                # word "Permalink" as the visible hyperlink text.
-                if "slack.com/archives/" in url:
-                    display_text = "Permalink"
-                else:
-                    display_text = url[:60] + ("..." if len(url) > 60 else "")
-                segments.append({"text": f"{display_text}\n", "url": url, "underline": True, "size": 11})
+                for idx, url in enumerate(urls):
+                    if url.startswith("openfile://"):
+                        display = "Offline copy"
+                    elif "slack.com/archives/" in url:
+                        display = "Permalink"
+                    else:
+                        display = url[:60] + ("..." if len(url) > 60 else "")
+                    sep = "" if idx == 0 else "   ·   "
+                    if sep:
+                        segments.append({"text": sep, "size": 11})
+                    segments.append({"text": f"{display}", "url": url,
+                                     "underline": True, "size": 11})
+                segments.append("\n")
             else:
                 for line in _lines(item):
                     segments.append(f"  • {line}\n")

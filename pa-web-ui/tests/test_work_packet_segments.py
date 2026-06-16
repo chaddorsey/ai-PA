@@ -8,6 +8,8 @@ Run: cd pa-web-ui && python -m pytest tests/test_work_packet_segments.py -v
 """
 import app
 
+_build_work_packet_segments = app._build_work_packet_segments
+
 
 def _text(segments):
     return "".join(s if isinstance(s, str) else s.get("text", "") for s in segments)
@@ -92,3 +94,31 @@ def test_meeting_case_revised_only_no_agent_line():
     t = _text(app._build_work_packet_segments("r", "no estimate here", {}, original_est=None, revised_est=90))
     assert "Agent Estimate:" not in t
     assert "Estimate (current): 1h 30m" in t
+
+
+def test_resource_line_with_live_and_offline_links_renders_both():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "[primary] SOW draft — https://docs.google.com/document/d/X/edit | offline: openfile:///Users/u/Dropbox/letta-shared-files/staged/notes/r/SOW.md (read)"
+    ]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    urls = [s["url"] for s in segs if isinstance(s, dict) and s.get("url")]
+    assert "https://docs.google.com/document/d/X/edit" in urls
+    assert "openfile:///Users/u/Dropbox/letta-shared-files/staged/notes/r/SOW.md" in urls
+
+
+def test_offline_link_gets_offline_display_text():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "[primary] Notes — openfile:///Users/u/x.md (read)"
+    ]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    offline = [s for s in segs if isinstance(s, dict) and s.get("url", "").startswith("openfile://")]
+    assert offline and offline[0]["text"].strip() in ("Open", "Offline copy")
+
+
+def test_single_https_resource_still_renders_once():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "[secondary] Doc — https://example.com/a (reference)"
+    ]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    urls = [s["url"] for s in segs if isinstance(s, dict) and s.get("url")]
+    assert urls == ["https://example.com/a"]
