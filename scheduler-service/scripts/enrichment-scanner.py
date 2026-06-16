@@ -184,7 +184,8 @@ def dispatch_enrichment(row):
         f"anchor message — not introduce a new topic from ambient context.\n"
         f"4. If the task warrants deeper context (links, related items, "
         f"resources to stage): call backtrace_task to get hop candidates, "
-        f"pursue useful hops, then call "
+        f"pursue useful hops, then — AFTER staging any file/note-text "
+        f"materials per step 4b so their openfile:// links are ready — call "
         f'write_packet_info(ref_id="{ref_id}", ...) with your synthesis '
         f"(direct_action, artifact_provenance, intent_genesis, context_brief, "
         f"resources, knowns, unknowns). Populate ALL THREE context nodes "
@@ -196,16 +197,19 @@ def dispatch_enrichment(row):
         f"(c) intent_genesis — WHY this matters: the originating decision, "
         f"prior meeting, strategy, or success criteria behind the ask. "
         f"Leave a node empty only when it is genuinely not discoverable.\n"
-        f"4b. STAGING (optional but preferred for files & note text): for resources that "
-        f"are real files or note text — NOT live Google-native docs (leave those as live "
-        f"links so the user edits the current version) and NOT generic web pages — run "
+        f"4b. STAGING — do this BEFORE your write_packet_info call (step 4) so the "
+        f"openfile:// links can be included in resources. Preferred for files & note "
+        f"text. For resources that are real files or note text — NOT live Google "
+        f"Workspace editing docs (Docs/Sheets/Slides — leave those as live links so the "
+        f"user edits the current version) and NOT generic web pages — run "
         f"`task stage` to save a local copy and get an openfile:// link. Two forms:\n"
         f"   - Download a file/email/Drive attachment: "
         f'`task stage --url "<https-or-gmail:ID-or-drive-url>" --label "<label>" '
         f'--ref-id "{ref_id}" --priority primary`\n'
         f"   - Stage note text you already fetched (meeting transcript, email body) as "
-        f'markdown: pipe the text in — `task fetch-source --ref-id {ref_id} | jq -r .content '
+        f'markdown: pipe the text in — `task fetch-source --ref-id "{ref_id}" | jq -r .content '
         f'| task stage --text - --label "Meeting notes" --ref-id "{ref_id}"`\n'
+        f"   (--priority is optional; it defaults to secondary.) "
         f"   Each call returns an `openfile_url`. Add it to the SAME resource line as the "
         f"live link so the user can pick: "
         f"`[primary] <label> — <live-url> | offline: <openfile-url> (read)`. If there is no "
@@ -232,6 +236,7 @@ def dispatch_enrichment(row):
         f"reference, or read. Example:\n"
         f"  [primary] Audubon SOW draft — https://docs.google.com/document/d/XXX/edit (edit)\n"
         f"  [secondary] Kickoff meeting notes — https://notes.granola.ai/d/YYY (reference)\n"
+        f"  [primary] Signed PDF — https://example.com/contract.pdf | offline: openfile:///path/contract.pdf (read)\n"
         f"If a resource is a downloadable FILE (PDF, Word/Excel/PPT, a Gmail message you "
         f"want available offline, or note text the user should read in place), ALSO stage "
         f"a local copy — see step 4b.\n\n"
