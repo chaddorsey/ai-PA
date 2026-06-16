@@ -446,14 +446,21 @@ def fetch_source(ref_id, source_type, fetch_hint):
               help="Overlap / conflict warnings to flag prominently.")
 @click.option("--additional-notes", default=None,
               help="Any other free-form synthesis.")
+@click.option("--estimated-minutes", type=int, default=None,
+              help="Your realistic estimate of how long the task takes to DO, "
+                   "in minutes (round to nearest 5). Sets the immutable agent "
+                   "baseline original_est_minutes (only if not already set; never "
+                   "overwrites the user's revision or the recorded actual).")
 @click.option("--packet-info-json", default=None,
               help="ALTERNATIVE: full packet dict as JSON. If given, "
                    "all individual --* flags are ignored and the JSON's "
-                   "fields are passed directly to write_packet_info(). "
+                   "fields are passed directly to write_packet_info() "
+                   "(include estimated_minutes there too). "
                    "Useful when the agent already has structured output.")
 def packet_write(ref_id, direct_action, artifact_provenance, intent_genesis,
                  context_brief, resources, related_tasks, knowns, unknowns,
-                 mismatch_warnings, additional_notes, packet_info_json):
+                 mismatch_warnings, additional_notes, estimated_minutes,
+                 packet_info_json):
     """Write PACKET INFO to a task's enrichment after backtrace synthesis.
 
     Flips enrichment_state to 'done' (or 'phase-b-complete' /
@@ -487,6 +494,7 @@ def packet_write(ref_id, direct_action, artifact_provenance, intent_genesis,
             unknowns=unknowns,
             mismatch_warnings=mismatch_warnings,
             additional_notes=additional_notes,
+            estimated_minutes=estimated_minutes,
         )
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
