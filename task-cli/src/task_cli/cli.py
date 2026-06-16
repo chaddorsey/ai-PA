@@ -501,6 +501,37 @@ def packet_write(ref_id, direct_action, artifact_provenance, intent_genesis,
     _emit_json(write_packet_info(**kwargs))
 
 
+# ─── stage ─────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.option("--url", default=None,
+              help="Source to download: https URL, 'gmail:MSG_ID', or a Drive/Docs URL. "
+                   "Mutually exclusive with --text.")
+@click.option("--text", default=None,
+              help="Inline note text to stage as markdown. Use '-' to read from stdin.")
+@click.option("--label", required=True, help="Short label (used in the filename).")
+@click.option("--priority", default="secondary",
+              type=click.Choice(["primary", "secondary", "background"]),
+              help="Resource priority marker.")
+@click.option("--ref-id", default=None, help="Task ref_id (organizes files by task).")
+def stage(url, text, label, priority, ref_id):
+    """Stage a material (download a file or write note text) -> openfile:// link.
+
+    Skips live Google-native docs and generic web pages (returns status=skipped);
+    keep those as live links in resources instead.
+    """
+    from letta.stage_resource_tool import stage_resource
+    if text == "-":
+        text = sys.stdin.read()
+    if not url and text is None:
+        _emit_json({"status": "error",
+                    "error_message": "either --url or --text required"})
+        return
+    _emit_json(stage_resource(url=url, text=text, label=label,
+                              priority=priority, ref_id=ref_id))
+
+
 # ─── health ──────────────────────────────────────────────────────────────────
 
 
