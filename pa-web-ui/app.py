@@ -3245,6 +3245,19 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
     parsed = parse_archival_passage(passage_text)
     pi = parsed.get("packet_info", {}) or {}
 
+    def _clean(s):
+        """Normalize a packet_info scalar: literal '\\n' -> real newline, trim."""
+        return str(s).replace("\\n", "\n").strip()
+
+    def _lines(item):
+        """Yield display lines for a list item: split on (literal or real)
+        newlines and strip a leading bullet/dash the renderer will re-add, so
+        content that already carries '• '/'- ' doesn't get a doubled marker."""
+        for ln in _clean(item).split("\n"):
+            ln = re.sub(r"^\s*[•\-\*]\s+", "", ln.strip())
+            if ln:
+                yield ln
+
     # Cycle-1 canonical: enrichment.packet_info from write_packet_info_tool.
     # Shape: direct_action, artifact_provenance, intent_genesis,
     # context_brief[], resources[], related_tasks[], knowns[], unknowns[],
@@ -3281,15 +3294,35 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
     # Ref ID for traceability
     segments.append({"text": f"ref_id: {ref_id}\n\n", "size": 10, "color": [0.5, 0.5, 0.5, 1]})
 
+    # Time estimate — keep the exact "Agent Estimate: N" line the OmniFocus timer
+    # widget greps for (it was lost when the rich note replaced the plain one).
+    est = parsed.get("agent_estimate_minutes") or parsed.get("estimate_minutes")
+    if est:
+        segments.append({"text": f"Agent Estimate: {est}\n\n", "size": 11})
+
     # Mismatch warning (prominent)
     if pi.get("mismatch_warning"):
-        segments.append({"text": f"⚠ {pi['mismatch_warning']}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
+        segments.append({"text": f"⚠ {_clean(pi['mismatch_warning'])}\n\n", "bold": True, "color": [0.9, 0.2, 0, 1]})
+
+    # Direct action — the actual ask (was dropped entirely)
+    if pi.get("direct_action"):
+        segments.append({"text": "Action\n", "bold": True, "size": 13})
+        segments.append(f"  {_clean(pi['direct_action'])}\n\n")
+
+    # Three-node context model: artifact provenance + intent genesis (were dropped)
+    if pi.get("artifact_provenance"):
+        segments.append({"text": "Artifact provenance\n", "bold": True, "size": 13})
+        segments.append(f"  {_clean(pi['artifact_provenance'])}\n")
+    if pi.get("intent_genesis"):
+        segments.append({"text": "Intent\n", "bold": True, "size": 13})
+        segments.append(f"  {_clean(pi['intent_genesis'])}\n")
 
     # Context brief
     if pi.get("context_brief"):
         segments.append({"text": "Context\n", "bold": True, "size": 13})
         for item in pi["context_brief"]:
-            segments.append(f"  • {item}\n")
+            for line in _lines(item):
+                segments.append(f"  • {line}\n")
 
     # Resources (with clickable links)
     if pi.get("resources"):
@@ -3311,23 +3344,27 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None):
                     display_text = url[:60] + ("..." if len(url) > 60 else "")
                 segments.append({"text": f"{display_text}\n", "url": url, "underline": True, "size": 11})
             else:
-                segments.append(f"  • {item}\n")
+                for line in _lines(item):
+                    segments.append(f"  • {line}\n")
 
     # Related tasks
     if pi.get("related_tasks"):
         segments.append("\n")
         segments.append({"text": "Related Tasks\n", "bold": True, "size": 13})
         for item in pi["related_tasks"]:
-            segments.append(f"  • {item}\n")
+            for line in _lines(item):
+                segments.append(f"  • {line}\n")
 
     # Knowns / Unknowns
     if pi.get("knowns") or pi.get("unknowns"):
         segments.append("\n")
         segments.append({"text": "Knowns / Unknowns\n", "bold": True, "size": 13})
         for k in (pi.get("knowns") or []):
-            segments.append(f"  ✓ {k}\n")
+            for line in _lines(k):
+                segments.append(f"  ✓ {line}\n")
         for u in (pi.get("unknowns") or []):
-            segments.append({"text": f"  ? {u}\n", "italic": True})
+            for line in _lines(u):
+                segments.append({"text": f"  ? {line}\n", "italic": True})
 
     # Agent notes
     if pi.get("agent_notes"):
