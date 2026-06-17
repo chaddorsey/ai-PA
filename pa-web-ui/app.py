@@ -3229,6 +3229,23 @@ def call_omnifocus_bridge(method, params=None):
     return result
 
 
+def _backtrace_push_body(ref_id):
+    """Push payload that asks the tasks-agent to run the cross-channel backtrace."""
+    return {
+        "agent": "tasks",
+        "source_ref": ref_id,
+        "priority": "normal",
+        "prompt": (
+            f"[Backtrace] confirmed task ref_id={ref_id} — run "
+            f"cross_channel_backtrace.md: ground in memory (canonical+history), "
+            f"fan out via `task xsearch` across drive/slack/gmail/tasks/meetings/"
+            f"canonical/history/reference from the task's anchors, judge + tier the "
+            f"hits (Primary/Supporting/Related), stage the Primary items, and write "
+            f"the tiered resources via `task packet-write`. Build the full packet."
+        ),
+    }
+
+
 def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
                                 original_est=None, revised_est=None):
     """Build rich-text segments for an OmniFocus work packet note.
@@ -3838,6 +3855,22 @@ def api_transition_task(ref_id):
 
             # Fire work packet assembly in background (first-pass, uses current PACKET INFO)
             threading.Thread(target=_assemble_work_packet, daemon=True).start()
+
+            # Cross-channel backtrace (async, every confirm): enrich the packet
+            # with prioritized resources mined across channels + memory.
+            def _dispatch_cross_channel_backtrace():
+                try:
+                    import urllib.request
+                    url = os.environ.get("LETTA_PUSH_RECEIVER_URL",
+                                         "http://host.docker.internal:8099/push")
+                    req = urllib.request.Request(
+                        url, data=json.dumps(_backtrace_push_body(ref_id)).encode(),
+                        headers={"Content-Type": "application/json"}, method="POST")
+                    urllib.request.urlopen(req, timeout=10)
+                    logger.info("cross_channel_backtrace_dispatched", ref_id=ref_id)
+                except Exception as e:
+                    logger.error("cross_channel_backtrace_dispatch_failed", ref_id=ref_id, error=str(e))
+            threading.Thread(target=_dispatch_cross_channel_backtrace, daemon=True).start()
 
             # Deterministic gate: only dispatch MC if enrichment is missing/incomplete
             # OR if Rush was clicked. Cycle-1 enrichment lives in
