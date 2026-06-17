@@ -3229,12 +3229,12 @@ def call_omnifocus_bridge(method, params=None):
     return result
 
 
-def _backtrace_push_body(ref_id):
+def _backtrace_push_body(ref_id, priority="normal"):
     """Push payload that asks the tasks-agent to run the cross-channel backtrace."""
     return {
         "agent": "tasks",
         "source_ref": ref_id,
-        "priority": "normal",
+        "priority": priority,
         "prompt": (
             f"[Backtrace] confirmed task ref_id={ref_id} — run "
             f"cross_channel_backtrace.md: ground in memory (canonical+history), "
@@ -3857,138 +3857,27 @@ def api_transition_task(ref_id):
             threading.Thread(target=_assemble_work_packet, daemon=True).start()
 
             # Cross-channel backtrace (async, every confirm): enrich the packet
-            # with prioritized resources mined across channels + memory.
+            # with prioritized resources mined across channels + memory. This is
+            # the sole work-packet enrichment path — the legacy Docker
+            # work-packet-assembler dispatch (agent-06a5b4a8, the dead-hop-search
+            # 4-step protocol) was retired 2026-06-16; the local recipe is a
+            # functional superset (memory grounding + real cross-channel xsearch
+            # + tiering). Rush bumps the push priority.
             def _dispatch_cross_channel_backtrace():
                 try:
                     import urllib.request
                     url = os.environ.get("LETTA_PUSH_RECEIVER_URL",
                                          "http://host.docker.internal:8099/push")
+                    body = _backtrace_push_body(
+                        ref_id, priority="urgent" if rush else "normal")
                     req = urllib.request.Request(
-                        url, data=json.dumps(_backtrace_push_body(ref_id)).encode(),
+                        url, data=json.dumps(body).encode(),
                         headers={"Content-Type": "application/json"}, method="POST")
                     urllib.request.urlopen(req, timeout=10)
-                    logger.info("cross_channel_backtrace_dispatched", ref_id=ref_id)
+                    logger.info("cross_channel_backtrace_dispatched", ref_id=ref_id, rush=rush)
                 except Exception as e:
                     logger.error("cross_channel_backtrace_dispatch_failed", ref_id=ref_id, error=str(e))
             threading.Thread(target=_dispatch_cross_channel_backtrace, daemon=True).start()
-
-            # Deterministic gate: only dispatch MC if enrichment is missing/incomplete
-            # OR if Rush was clicked. Cycle-1 enrichment lives in
-            # pa_web.tasks.enrichment.packet_info; back-compat with legacy
-            # archival-passage PACKET INFO sections.
-            cy1_pi = ((old_row.get("enrichment") or {}).get("packet_info") or {})
-            has_cycle1_enrichment = bool(
-                cy1_pi.get("direct_action")
-                and (cy1_pi.get("context_brief") or cy1_pi.get("resources"))
-            )
-            has_packet_info = "PACKET INFO" in old_text or has_cycle1_enrichment
-            has_complete_enrichment = (
-                has_cycle1_enrichment
-                or (
-                    "PACKET INFO" in old_text
-                    and "Context brief:" in old_text
-                    and "Resources:" in old_text
-                )
-            )
-            should_dispatch_mc = rush or not has_complete_enrichment
-
-            logger.info(
-                "mc_work_packet_gate",
-                ref_id=ref_id,
-                has_packet_info=has_packet_info,
-                has_complete_enrichment=has_complete_enrichment,
-                rush=rush,
-                should_dispatch=should_dispatch_mc,
-            )
-
-            if should_dispatch_mc:
-                def _dispatch_mc_work_packet():
-                    """Dispatch work packet assembly to the work-packet-assembler worker.
-
-                    Worker executes the 4-step protocol: fetch_source_content,
-                    backtrace_task, stage_resource (for real files), write_packet_info.
-                    write_packet_info auto-triggers the reassemble endpoint.
-                    """
-                    WORKER_AGENT_ID = os.environ.get(
-                        "WORK_PACKET_WORKER_AGENT_ID",
-                        "agent-06a5b4a8-1e63-4cc6-a8bd-5a026518a763",
-                    )
-
-                    try:
-                        # Build focused message for the worker agent
-                        priority_line = "PRIORITY: rush\n" if rush else ""
-                        message = (
-                            f"{priority_line}"
-                            f"Work packet assembly for ref_id {ref_id}. "
-                            f"Execute the 4-step protocol from your persona: "
-                            f"fetch_source_content, backtrace_task, stage_resource (real files only), "
-                            f"write_packet_info. write_packet_info auto-triggers reassemble."
-                        )
-
-                        # Send via conversations endpoint (SSE, read full stream)
-                        # Retry on 409 (MC busy with prior task) with exponential backoff
-                        import time as _time
-                        max_retries = 8
-                        backoff_seconds = 15  # first retry in 15s, then 30s, 60s, 120s...
-                        last_status = None
-
-                        for attempt in range(max_retries + 1):
-                            try:
-                                with httpx.Client(timeout=600.0, follow_redirects=True) as c:
-                                    resp = c.post(
-                                        f"{LETTA_BASE_URL}/v1/agents/{WORKER_AGENT_ID}/messages/",
-                                        json={"messages": [{"role": "user", "content": message}]},
-                                    )
-                                    last_status = resp.status_code
-                                    if resp.status_code == 200:
-                                        logger.info(
-                                            "mc_work_packet_dispatched",
-                                            ref_id=ref_id,
-                                            rush=rush,
-                                            attempts=attempt + 1,
-                                        )
-                                        return
-                                    elif resp.status_code == 409 and attempt < max_retries:
-                                        # MC busy with prior task — wait and retry
-                                        wait = min(backoff_seconds * (2 ** attempt), 300)
-                                        logger.info(
-                                            "mc_work_packet_retry",
-                                            ref_id=ref_id,
-                                            attempt=attempt + 1,
-                                            wait_seconds=wait,
-                                        )
-                                        _time.sleep(wait)
-                                        continue
-                                    else:
-                                        logger.warning(
-                                            "mc_work_packet_dispatch_failed",
-                                            ref_id=ref_id,
-                                            status=resp.status_code,
-                                            rush=rush,
-                                            attempts=attempt + 1,
-                                        )
-                                        return
-                            except Exception as e:
-                                if attempt < max_retries:
-                                    _time.sleep(backoff_seconds * (2 ** attempt))
-                                    continue
-                                raise
-
-                        # Exhausted retries
-                        logger.warning(
-                            "mc_work_packet_retry_exhausted",
-                            ref_id=ref_id,
-                            last_status=last_status,
-                            rush=rush,
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            "mc_work_packet_dispatch_error",
-                            ref_id=ref_id,
-                            error=str(e)[:200],
-                        )
-
-                threading.Thread(target=_dispatch_mc_work_packet, daemon=True).start()
 
         return jsonify({"status": "ok", "ref_id": ref_id, "action": action})
     except Exception as e:

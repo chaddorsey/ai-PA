@@ -14,3 +14,8 @@ def test_backtrace_push_body():
     assert "cross_channel_backtrace" in body["prompt"]
     assert "abc123ef" in body["prompt"]
     assert body["source_ref"] == "abc123ef"
+
+
+def test_backtrace_push_body_priority():
+    assert app._backtrace_push_body("abc123ef")["priority"] == "normal"
+    assert app._backtrace_push_body("abc123ef", priority="urgent")["priority"] == "urgent"
