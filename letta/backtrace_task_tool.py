@@ -174,6 +174,20 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
             except (FileNotFoundError, Exception):
                 pass
 
+        # slack + docs-comment: reuse fetch_source_content's proximity window
+        # (thread replies, ±N surrounding messages, comment quoted-passage) so the
+        # anchor extraction below runs over the FULL local context, not just the
+        # thin row excerpt. This is what turns surrounding-thread links/people/
+        # proper-nouns into search_terms for the cross-channel fan-out.
+        if not full_content and source_type in ("slack", "google-docs-comment"):
+            try:
+                from letta.fetch_source_content_tool import fetch_source_content
+                _fsc = fetch_source_content(ref_id=ref_id)
+                if isinstance(_fsc, dict) and _fsc.get("status") == "ok":
+                    full_content = _fsc.get("content", "") or ""
+            except Exception:
+                pass
+
         if not full_content:
             full_content = source_text_field
 
