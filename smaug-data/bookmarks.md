@@ -1,3 +1,34 @@
+# Tuesday, June 16, 2026
+
+## @Akam1129 - Rep. Anna Paulina Luna: The American People Deserve Full Transparency on the US Government's Files About UFOs
+> https://t.co/Zkc2r2EmD2
+
+💥
+7 mn podcast 
+
+Rep. Anna Paulina Luna: The American People Deserve Full Transparency on the US Government's Files About UFOs
+
+- **Tweet:** https://x.com/Akam1129/status/2066873342418641062
+- **What:** 7-minute podcast discussing Congressional calls for transparency on UFO-related government files, featuring Rep. Anna Paulina Luna.
+
+---
+
+## @cristiannmillo - Análisis defensivo de Marruecos en partido de fútbol
+> Esto es espectacular como se movió Marruecos defensivamente. Esto se entrena. No es aleatorio. Tremendo bloque corto defensivo. Imposible de entrar sin alguna magia o pase filtrado con extrema exactitud. Por eso Brasil se la pasó lateralizando.  https://t.co/6ojRsMskx9
+
+- **Tweet:** https://x.com/cristiannmillo/status/2066897998802465261
+- **What:** Technical soccer analysis highlighting Morocco's defensive strategy with a tight defensive block and how Brazil had to resort to lateral play to create opportunities.
+
+---
+
+## @kylesheldon - FIFA World Cup Stadium Branding Removal Detail
+> The capacity at "Boston Stadium" for the World Cup is 64,146. That means someone had to put 64,146 very small pieces of blue tape over every single Gillette logo on every. single. seat. FIFA doesn't mess around. 😳 https://t.co/FJ2y6K69uv
+
+- **Tweet:** https://x.com/kylesheldon/status/2067029538152866074
+- **What:** Behind-the-scenes observation about FIFA's strict branding regulations requiring manual removal of stadium sponsor logos across 64,146 seats at Boston's World Cup venue.
+
+---
+
 # Monday, June 15, 2026
 
 ## @EpicClipVault - Bro is every ref's worst nightmare
