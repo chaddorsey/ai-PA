@@ -1,4 +1,192 @@
+# Monday, June 15, 2026
+
+## @EpicClipVault - Bro is every ref's worst nightmare
+> Bro is every ref's worst nightmare
+
+- **Tweet:** https://twitter.com/EpicClipVault/status/2066430681941483654
+- **Tags:** [[sports]] [[refs]]
+- **What:** Sports clip showing a controversial play or player interaction
+
+---
+
+## @nexta_tv - The most Japanese celebration ever
+> The most Japanese celebration ever. After Japan's 2–2 draw against the Netherlands, fans rushed onto Tokyo's famous Shibuya Crossing to celebrate. For exactly 40 seconds. Why? Because the pedestrian light was green. As soon as it turned red, everyone stopped celebrating and obediently moved back to the sidewalks.
+
+- **Tweet:** https://twitter.com/nexta_tv/status/2066437408334213410
+- **Tags:** [[japan]] [[culture]] [[soccer]] [[funny]]
+- **What:** Humorous account of Japanese fans celebrating soccer match result with perfect adherence to traffic signals
+
+---
+
+## @TerribleMaps - Has your Nation ever lost 7-1 to Germany at the World Cup?
+> Has your Nation ever lost 7-1 to Germany at the World Cup?
+
+- **Tweet:** https://twitter.com/TerribleMaps/status/2066479865227018410
+- **Tags:** [[maps]] [[sports]] [[soccer]]
+- **What:** Map or chart showing nations that have suffered major World Cup defeats to Germany
+
+---
+
+## @HowToPrompt__ - AI-Newton: Teaching Physics From Scratch
+> Researchers open-sourced an AI that taught itself 300 years of physics with zero physics knowledge. In 1907, Einstein had what he called his 'happiest thought'... Now, researchers at Peking University built an AI that figure out the same thing on its own with zero physics knowledge...
+
+- **Tweet:** https://twitter.com/HowToPrompt__/status/2066506823642001507
+- **Tags:** [[ai]] [[physics]] [[research]]
+- **What:** AI system developed by Peking University that independently discovered fundamental physics concepts (general relativity principles) without prior physics knowledge, paralleling Einstein's insights
+
+---
+
+## @WigglyAir - Photo
+> 
+
+- **Tweet:** https://twitter.com/WigglyAir/status/2066568301489041833
+- **Tags:** [[photo]]
+- **What:** Image post
+
+---
+
+## @ThatEricAlper - Photo
+> [Photo shared]
+
+- **Tweet:** https://twitter.com/ThatEricAlper/status/2066392762170200263
+- **Tags:**
+- **What:** Photo post with minimal accompanying text.
+
+---
+
+## @DesireeAmerica4 - Belgian Malinois Dog Training
+> If you want a dog like this, first off, you're going to need a Belgian Malinois. They are essentially the Ferraris of the dog world. But good luck having the patience to slowly train them...
+
+- **Tweet:** https://twitter.com/DesireeAmerica4/status/2066397466644115648
+- **Tags:** [[dogs]] [[training]] [[belgianmalinois]]
+- **What:** Explanation of the challenges and rewards of owning and training a Belgian Malinois dog, comparing their capability and difficulty level to high-performance vehicles.
+
+---
+
+# Sunday, June 14, 2026
+
+## @Djoko_UTD - When Roger Federer played with a journalist and he dropped a tweener on Roger. Roger couldn't stop laughing
+> When Roger Federer played with a journalist and he dropped a tweener on Roger. Roger couldn't stop laughing
+
+- **Tweet:** https://twitter.com/Djoko_UTD/status/2066206591310045605
+- **Tags:** [[tennis]] [[grass-court]]
+- **What:** Video of a tennis moment where a journalist playing with Roger Federer hit a tweener (a shot hit between the legs) that made Federer laugh. Shared in response to a request for grass court moments.
+
+---
+
+## @RyanceyReturns - Otter café adventure in Japan
+> I never had 'getting climbed like a jungle gym by a pack of otters' on my travel bucket list, but apparently that's a thing now...
+
+- **Tweet:** https://twitter.com/RyanceyReturns/status/2066224137903935870
+- **Tags:** [[travel]] [[japan]] [[otters]]
+- **What:** A story about visiting otter cafés in Japan and the experience of getting climbed by otters as if they were a jungle gym.
+
+---
+
+## @TansuYegen - This boy opens the steel door as if it were a toy...
+> This boy opens the steel door as if it were a toy...
+
+- **Tweet:** https://twitter.com/TansuYegen/status/2066255246372790364
+- **Tags:** [[video]]
+- **What:** Video of a boy opening a steel door with surprising ease, as if it were made of toy material.
+
+---
+
+## @awfulannouncing - Jameis Winston joins Japan fans in cleaning up trash postgame
+> Jameis Winston joins Japan fans in cleaning up trash postgame at Dallas Stadium. #WorldCup
+
+- **Tweet:** https://twitter.com/awfulannouncing/status/2066297593177706828
+- **Tags:** [[sports]] [[worldcup]] [[environment]]
+- **What:** Video of Jameis Winston joining fans in cleaning up trash after a World Cup game at Dallas Stadium, demonstrating sportsmanship and community spirit.
+
+---
+
+## @bernsteind - Laser weeding in broccoli using real-time AI
+> laser weeding in broccoli. real-time AI decision making at the edge. whistles and purrs. no chemicals. from our friends @carbon_robotics.
+
+- **Tweet:** https://twitter.com/bernsteind/status/2066316922292257011
+- **Tags:** [[ai]] [[agriculture]] [[robotics]]
+- **What:** Video demonstration of agricultural robotics using laser technology for weed control in broccoli crops. Real-time AI decision making at the edge, chemical-free approach by Carbon Robotics.
+
+---
+
+## @laurenloprete - Developing Taste Through Niche Museums
+> People always ask me 'how do you develop taste?' And I say 'go to the niche telephone museum and study the origin of buttons and don't be a little bitch'
+
+- **Tweet:** https://twitter.com/laurenloprete/status/2066319536769696179
+- **Tags:** [[taste]] [[design]] [[museums]]
+- **What:** Commentary on developing aesthetic and cultural taste through engagement with niche subjects and material culture, using a telephone museum as an example.
+
+---
+
+## @SportsCenter - Technology for Remote Viewing
+> The technology Hurricanes fans are using to watch their team play in Vegas 👀
+
+- **Tweet:** https://twitter.com/SportsCenter/status/2066329631620321486
+- **Tags:** [[sports]] [[technology]] [[viewing]]
+- **What:** Feature on innovative technology or viewing methods that Hurricanes fans are using to watch their team's games from remote locations.
+
+---
+
+## @nvolpewild - Ivory Coast's Historic World Cup Victory
+> Ivory Coast becomes the FIRST team in this World Cup to win whilst having LESS Bird species than their opposition!
+
+- **Tweet:** https://twitter.com/nvolpewild/status/2066355050297938345
+- **Tags:** [[world cup]] [[sports]] [[biodiversity]]
+- **What:** Analysis of Ivory Coast's World Cup performance in relation to the biodiversity (bird species) of their opponent nation, highlighting an unusual statistical milestone.
+
+---
+
+# Saturday, June 13, 2026
+
+## @antoine_os - 60fps E-Ink Display Breakthrough
+> white pill for my nerds: 60fps e-ink display. a random guy outperformed entire eng teams by developing a pixel by pixel driver for e-ink displays that makes it 60fps. he did that after work for months, launched it yesterday. the future is bright
+
+- **Tweet:** https://x.com/antoine_os/status/2065845034616864938
+- **Tags:** [[e-ink]] [[hardware]] [[innovation]] [[displays]]
+- **What:** Individual developer creates 60fps e-ink display driver through independent effort, outperforming larger engineering teams
+
+---
+
+## @LangmanVince - Mexican Announcers Sports Moment
+> OMG, listen to the Mexican announcers on team USA's 3rd goal going completely off-script. I haven't laughed this hard in a long time! "Oh my f*cking goodness"
+
+- **Tweet:** https://x.com/LangmanVince/status/2065921578114625617
+- **Tags:** [[sports]] [[humor]] [[announcers]]
+- **What:** Video of Mexican sports announcers reacting to USA's 3rd goal with unscripted, humorous commentary
+
+---
+
+# Friday, June 12, 2026
+
+## @latent_node - MLX Support for Running LLMs on Apple Silicon
+> @julien_c @jundotkim https://t.co/ewndTDNoMj has supported it since day 1
+
+- **Tweet:** https://t.co/ewndTDNoMj
+- **Tags:** [[MLX]] [[LLMs]] [[Apple Silicon]] [[local models]]
+- **What:** Discussion about MLX language models and native support for running large language models locally on Apple Silicon hardware
+
+---
+
+## @jcjohnss - The World Labs: 3D Content Generation Research
+> 3D is an exciting area where we are still figuring out the right tasks, problem formulations, architectures, and the best ways to scale. We're sharing some of our ideas here in our first-ever papers from @theworldlabs, led by an awesome set of interns.
+
+- **Tweet:** https://x.com/jcjohnss/status/2065509836406600141
+- **Tags:** [[3D]] [[research]] [[content generation]] [[The World Labs]]
+- **What:** The World Labs announcing three new research papers on 3D content generation, exploring task formulation, architectures, and scaling approaches
+
+---
+
 # Wednesday, June 10, 2026
+
+## @itsreallyvivek - how to be good at research
+> A Twitter article about research methods and how to develop good research skills
+
+- **Tweet:** https://t.co/ZhOgyq7Vgn
+- **Tags:** [[research]] [[skills]] [[methodology]]
+- **What:** Comprehensive guide on problem selection, inputs, documentation, experimentation loops, analysis, and collaboration
+
+---
 
 ## @FtrainFreddy - Intern Sends Firmwide Email with "GO KNICKS!" Subject, Crashes Outlook
 > Intern managed to send a firmwide email (50k ppl) with the subject line GO KNICKS!!!!!!!!!!! and nothing in the body 
