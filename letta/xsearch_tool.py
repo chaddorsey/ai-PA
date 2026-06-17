@@ -11,6 +11,8 @@ reference/meetings (Task 4).
 Normalized candidate: {channel,title,url,permalink,snippet,date,id}
 """
 from typing import Dict, Any, List
+import subprocess
+import json
 
 
 def _dedup(rows: List[dict]) -> List[dict]:
@@ -66,10 +68,73 @@ def _search_tasks(terms: List[str], limit: int) -> List[dict]:
     return out
 
 
+def _gws_json(args: List[str], timeout: int = 20) -> dict:
+    r = subprocess.run(["gws"] + args, capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        raise RuntimeError(f"gws failed: {r.stderr[:160]}")
+    raw = "\n".join(l for l in r.stdout.split("\n") if not l.startswith("Using keyring"))
+    return json.loads(raw) if raw.strip() else {}
+
+
+def _search_drive(terms: List[str], limit: int) -> List[dict]:
+    q = " or ".join([f"fullText contains '{t}'" for t in terms[:5]])
+    data = _gws_json(["drive", "files", "list", "--params", json.dumps({
+        "q": q, "pageSize": limit, "orderBy": "modifiedTime desc",
+        "fields": "files(id,name,webViewLink,modifiedTime,mimeType)"}), "--format", "json"])
+    out = []
+    for f in data.get("files", []):
+        out.append({"channel": "drive", "title": f.get("name", "")[:120],
+                    "url": f.get("webViewLink", ""), "permalink": f.get("webViewLink", ""),
+                    "snippet": f.get("mimeType", ""), "date": (f.get("modifiedTime") or "")[:10],
+                    "id": f.get("id", "")})
+    return out
+
+
+def _search_gmail(terms: List[str], limit: int) -> List[dict]:
+    q = " OR ".join([f'"{t}"' for t in terms[:5]])
+    data = _gws_json(["gmail", "users", "messages", "list", "--params", json.dumps({
+        "userId": "me", "q": q, "maxResults": limit}), "--format", "json"])
+    out = []
+    for m in data.get("messages", [])[:limit]:
+        mid = m.get("id", "")
+        meta = _gws_json(["gmail", "users", "messages", "get", "--params", json.dumps({
+            "userId": "me", "id": mid, "format": "metadata",
+            "metadataHeaders": ["Subject", "From", "Date"]}), "--format", "json"])
+        hdr = {h["name"]: h["value"] for h in meta.get("payload", {}).get("headers", [])}
+        out.append({"channel": "gmail", "title": hdr.get("Subject", "(no subject)")[:120],
+                    "url": f"https://mail.google.com/mail/u/0/#all/{mid}",
+                    "permalink": f"https://mail.google.com/mail/u/0/#all/{mid}",
+                    "snippet": (hdr.get("From", "") + " — " + meta.get("snippet", ""))[:160],
+                    "date": hdr.get("Date", "")[:16], "id": mid})
+    return out
+
+
+def _search_slack(terms: List[str], limit: int) -> List[dict]:
+    query = " ".join(terms[:4])
+    r = subprocess.run(
+        ["slack", "--format", "json", "search", "messages", "--query", query, "--count", str(limit)],
+        capture_output=True, text=True, timeout=20)
+    if r.returncode != 0:
+        raise RuntimeError(f"slack failed: {r.stderr[:160]}")
+    data = json.loads(r.stdout) if r.stdout.strip() else {}
+    msgs = data.get("messages")
+    matches = msgs.get("matches", []) if isinstance(msgs, dict) else []
+    out = []
+    for m in matches[:limit]:
+        ch = m.get("channel") or {}
+        out.append({"channel": "slack", "title": (m.get("text", "") or "")[:120],
+                    "url": m.get("permalink", ""), "permalink": m.get("permalink", ""),
+                    "snippet": (ch.get("name", "") if isinstance(ch, dict) else str(ch)),
+                    "date": str(m.get("ts", ""))[:10], "id": m.get("ts", "")})
+    return out
+
+
 # channel name → search fn. Tasks 3+4 extend this map.
 _CHANNELS = {
     "tasks": _search_tasks,
 }
+
+_CHANNELS.update({"drive": _search_drive, "gmail": _search_gmail, "slack": _search_slack})
 
 
 def xsearch(terms: List[str], channels: List[str] = None,
