@@ -68,8 +68,24 @@ def _search_tasks(terms: List[str], limit: int) -> List[dict]:
     return out
 
 
+def _gws_env() -> dict:
+    """gws needs GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE. The launchd warm-pool
+    runner doesn't reliably carry pa-tools.env, so self-default the creds path
+    (repo-relative) when the env var is absent — same lesson as other host CLIs
+    that shell out under the runner."""
+    import os
+    env = dict(os.environ)
+    if not env.get("GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"):
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        creds = os.path.join(repo, "gws-bridge", "credentials.json")
+        if os.path.exists(creds):
+            env["GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE"] = creds
+    return env
+
+
 def _gws_json(args: List[str], timeout: int = 20) -> dict:
-    r = subprocess.run(["gws"] + args, capture_output=True, text=True, timeout=timeout)
+    r = subprocess.run(["gws"] + args, capture_output=True, text=True,
+                       timeout=timeout, env=_gws_env())
     if r.returncode != 0:
         raise RuntimeError(f"gws failed: {r.stderr[:160]}")
     raw = "\n".join(l for l in r.stdout.split("\n") if not l.startswith("Using keyring"))
@@ -132,10 +148,19 @@ def _search_slack(terms: List[str], limit: int) -> List[dict]:
 def _search_qmd(channel_name: str, collection: str):
     """Factory for qmd-backed memory channel search. Uses BM25 search (sub-second)."""
     def _fn(terms: List[str], limit: int) -> List[dict]:
+        import time
         q = " ".join(terms[:6])
-        r = subprocess.run(
-            ["qmd", "search", q, "-c", collection, "-n", str(limit), "--format", "json"],
-            capture_output=True, text=True, timeout=25)
+        # qmd's better-sqlite3 can transiently fail under concurrent access
+        # (xsearch runs the memory channels in parallel). Retry once.
+        r = None
+        for attempt in range(2):
+            r = subprocess.run(
+                ["qmd", "search", q, "-c", collection, "-n", str(limit), "--format", "json"],
+                capture_output=True, text=True, timeout=25)
+            if r.returncode == 0:
+                break
+            if attempt == 0:
+                time.sleep(0.4)
         if r.returncode != 0:
             raise RuntimeError(f"qmd {collection} failed: {r.stderr[:160]}")
         data = json.loads(r.stdout) if r.stdout.strip() else []
