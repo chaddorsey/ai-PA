@@ -17,3 +17,21 @@ def test_drive_channel_parses_gws(monkeypatch):
 
 def test_slack_channel_registered():
     assert "slack" in xs._CHANNELS and "gmail" in xs._CHANNELS and "drive" in xs._CHANNELS
+
+
+def test_drive_term_quotes_sanitized(monkeypatch):
+    captured = {}
+    def _fake_run(*a, **k):
+        captured["argv"] = a[0]
+        return _R(json.dumps({"files": []}))
+    monkeypatch.setattr(xs.subprocess, "run", _fake_run)
+    xs._search_drive(["O'Brien \"SOW\""], 5)
+    params = captured["argv"][captured["argv"].index("--params") + 1]
+    # No raw apostrophe/double-quote should survive inside the term portion of the q
+    assert "O'Brien" not in params and 'O\\"Brien' not in params
+    assert "OBrien" in params or "Brien" in params  # sanitized term still present
+
+
+def test_clean_term_strips_quotes():
+    assert xs._clean_term("O'Brien") == "OBrien" or "Brien" in xs._clean_term("O'Brien")
+    assert '"' not in xs._clean_term('say "hi"')

@@ -92,8 +92,16 @@ def _gws_json(args: List[str], timeout: int = 20) -> dict:
     return json.loads(raw) if raw.strip() else {}
 
 
+def _clean_term(t: str) -> str:
+    """Strip quotes the Google query grammar would choke on. An apostrophe in a
+    task-derived term (common in titles) otherwise malforms `fullText contains
+    '...'` / `"..."` → 400 → the channel needlessly degrades."""
+    return t.replace("'", " ").replace('"', " ").strip()
+
+
 def _search_drive(terms: List[str], limit: int) -> List[dict]:
-    q = " or ".join([f"fullText contains '{t}'" for t in terms[:5]])
+    clean = [c for c in (_clean_term(t) for t in terms[:5]) if c]
+    q = " or ".join([f"fullText contains '{t}'" for t in clean])
     data = _gws_json(["drive", "files", "list", "--params", json.dumps({
         "q": q, "pageSize": limit, "orderBy": "modifiedTime desc",
         "fields": "files(id,name,webViewLink,modifiedTime,mimeType)"}), "--format", "json"])
@@ -107,7 +115,8 @@ def _search_drive(terms: List[str], limit: int) -> List[dict]:
 
 
 def _search_gmail(terms: List[str], limit: int) -> List[dict]:
-    q = " OR ".join([f'"{t}"' for t in terms[:5]])
+    clean = [c for c in (_clean_term(t) for t in terms[:5]) if c]
+    q = " OR ".join([f'"{t}"' for t in clean])
     data = _gws_json(["gmail", "users", "messages", "list", "--params", json.dumps({
         "userId": "me", "q": q, "maxResults": limit}), "--format", "json"])
     out = []
