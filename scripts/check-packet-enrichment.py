@@ -18,14 +18,18 @@ def _host(url: str) -> str:
         return ""
 
 
-def is_thin(resources) -> bool:
+def _distinct_hosts(resources) -> set:
     hosts = set()
     for line in resources or []:
         for u in re.findall(r"https?://\S+", line):
             h = _host(u.rstrip("|) "))
             if h:
                 hosts.add(h)
-    return len(hosts) <= 1
+    return hosts
+
+
+def is_thin(resources) -> bool:
+    return len(_distinct_hosts(resources)) <= 1
 
 
 def _db_url() -> str:
@@ -60,7 +64,8 @@ def main() -> int:
             if not isinstance(enr, dict):
                 enr = {}
             resources = (enr.get("packet_info") or {}).get("resources") or []
-            t = is_thin(resources)
+            channels = len(_distinct_hosts(resources))
+            t = channels <= 1
             if t:
                 thin += 1
                 print(f"[{datetime.now(timezone.utc):%FT%TZ}] [packet-backstop] WARN thin packet "
@@ -72,7 +77,8 @@ def main() -> int:
                         "SET enrichment = COALESCE(enrichment, '{}'::jsonb) "
                         "    || jsonb_build_object('backstop', %s::jsonb) "
                         "WHERE ref_id = %s",
-                        (json.dumps({"thin": t, "checked_at": datetime.now(timezone.utc).isoformat()}), r["ref_id"]))
+                        (json.dumps({"thin": t, "channels": channels,
+                                     "checked_at": datetime.now(timezone.utc).isoformat()}), r["ref_id"]))
     print(f"[{datetime.now(timezone.utc):%FT%TZ}] [packet-backstop] done: checked={len(rows)} thin={thin}", flush=True)
     return 0
 
