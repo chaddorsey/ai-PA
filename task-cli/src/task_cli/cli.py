@@ -532,6 +532,23 @@ def stage(url, text, label, priority, ref_id):
                               priority=priority, ref_id=ref_id))
 
 
+# ─── xsearch ─────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.option("--terms", required=True, help="Comma-separated search terms.")
+@click.option("--channels", default=None,
+              help="Comma-separated channels (default: all). "
+                   "drive,gmail,slack,tasks,meetings,canonical,history,reference")
+@click.option("--limit", "limit_per_channel", default=8, type=int, show_default=True)
+def xsearch(terms, channels, limit_per_channel):
+    """Concurrent multi-channel candidate search from anchor terms (JSON out)."""
+    from letta.xsearch_tool import xsearch as _xsearch
+    term_list = [t.strip() for t in terms.split(",") if t.strip()]
+    chan_list = [c.strip() for c in channels.split(",")] if channels else None
+    _emit_json(_xsearch(term_list, channels=chan_list, limit_per_channel=limit_per_channel))
+
+
 # ─── health ──────────────────────────────────────────────────────────────────
 
 
