@@ -457,15 +457,20 @@ def fetch_source(ref_id, source_type, fetch_hint):
                    "fields are passed directly to write_packet_info() "
                    "(include estimated_minutes there too). "
                    "Useful when the agent already has structured output.")
+@click.option("--render/--no-render", "render", default=True,
+              help="After writing, re-render the OmniFocus note from the new "
+                   "packet (default: on). write_packet_info only updates the DB; "
+                   "this pushes the enriched, tiered packet to the actual OF note.")
 def packet_write(ref_id, direct_action, artifact_provenance, intent_genesis,
                  context_brief, resources, related_tasks, knowns, unknowns,
                  mismatch_warnings, additional_notes, estimated_minutes,
-                 packet_info_json):
+                 packet_info_json, render):
     """Write PACKET INFO to a task's enrichment after backtrace synthesis.
 
     Flips enrichment_state to 'done' (or 'phase-b-complete' /
     'phase-a-complete' depending on how much was filled in) and persists
-    the packet to pa_web.tasks.enrichment.
+    the packet to pa_web.tasks.enrichment. By default also re-renders the
+    OmniFocus note so the enriched packet reaches the actual task on-device.
     """
     from letta.write_packet_info_tool import write_packet_info
 
@@ -498,7 +503,43 @@ def packet_write(ref_id, direct_action, artifact_provenance, intent_genesis,
         )
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-    _emit_json(write_packet_info(**kwargs))
+    result = write_packet_info(**kwargs)
+
+    # write_packet_info only updates pa_web.tasks.enrichment; the OmniFocus note
+    # is rendered separately. Trigger the re-render so the enriched, tiered
+    # packet reaches the actual on-device note (best-effort — a render failure
+    # never fails the write). Skipped when the task isn't confirmed yet (the
+    # endpoint 400s) or when --no-render is passed.
+    if render and isinstance(result, dict) and result.get("status") == "ok":
+        try:
+            result["note_render"] = _render_work_packet_note(ref_id)
+        except Exception as e:
+            result["note_render"] = {"status": "error", "error_message": str(e)[:200]}
+
+    _emit_json(result)
+
+
+def _render_work_packet_note(ref_id):
+    """Re-render the OmniFocus note from current enrichment via pa-web's
+    reassemble endpoint. Does the device/CSRF double-submit handshake the
+    ingress guard requires (localhost:5200 is an allowed origin)."""
+    import os
+    import json as _json
+    import urllib.request
+    import http.cookiejar
+    base = os.environ.get("PA_WEB_BASE_URL", "http://localhost:5200").rstrip("/")
+    cj = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    tok_req = urllib.request.Request(f"{base}/api/csrf-token", headers={"Origin": base})
+    with opener.open(tok_req, timeout=10) as r:
+        token = _json.loads(r.read().decode())["csrf_token"]
+    post = urllib.request.Request(
+        f"{base}/api/tasks/{ref_id}/reassemble-work-packet",
+        data=b"{}", method="POST",
+        headers={"Origin": base, "X-CSRF-Token": token,
+                 "Content-Type": "application/json"})
+    with opener.open(post, timeout=30) as r:
+        return _json.loads(r.read().decode())
 
 
 # ─── stage ─────────────────────────────────────────────────────────────────
