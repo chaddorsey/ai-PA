@@ -22,8 +22,8 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
     Fetch and search materials for cross-source backtracing of a task.
 
     Returns structured raw materials: full source content, extracted anchors,
-    archival hits classified by type, and hop candidates for the agent to
-    evaluate. Does NOT write to archival — use write_packet_info for that.
+    search_terms, and hop candidates for the agent to evaluate. Does NOT write
+    to archival — use write_packet_info for that.
 
     The return value is the "hard center" that's immediately usable regardless
     of whether the agent does further hops.
@@ -33,8 +33,8 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
         max_hops: Maximum iterative search rounds (default 3).
 
     Returns:
-        Dictionary with source_content, anchors, archival_hits,
-        three_node_candidates, hop_candidates, and node_coverage.
+        Dictionary with source_content, anchors, search_terms, hop_candidates,
+        and node_coverage.
     """
     import json
     import os
@@ -289,148 +289,31 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
 
         search_terms = search_terms[:20]
 
-        # ── Step 4: Hop search (stubbed — archival retired 2026-05-30) ──
-        # The original implementation searched the extracted_tasks_archive
-        # for related passages via anchor terms. With archival retired,
-        # cross-task hop discovery should be reimplemented as a pa_web.tasks
-        # full-text search over (raw_description, suggested_title,
-        # source_metadata, task_body). Tracked separately; for now this
-        # returns no hops and downstream classification produces empty
-        # related_tasks / artifact_candidates / intent_candidates lists.
-        # The agent still gets source_content + anchors + hop_candidates
-        # derived from URLs in source_metadata, which is the load-bearing
-        # output for most workflows.
-        archival_hits = []
-        searched_terms = set()
-        new_anchors = []
-
-        # ── Step 5: Classify hits into three-node candidates ──
-        relevance_terms = [t.lower() for t in search_terms[:10]]
-
-        artifact_candidates = []
-        intent_candidates = []
-        related_tasks = []
-        other_hits = []
-
-        for hit in archival_hits:
-            text = hit.get("text_preview", "")
-            tags = hit.get("tags", []) or []
-            text_lower = text.lower()
-            is_relevant = any(rt in text_lower for rt in relevance_terms)
-
-            # Related tasks (other extracted tasks sharing search terms)
-            if "TASK:" in text and "REF_ID:" in text and is_relevant:
-                task_match = re.search(r"TASK: (.+)", text)
-                ref_match = re.search(r"REF_ID: (\S+)", text)
-                status_match = re.search(r"\[(COMPLETED|REJECTED)\]", text)
-                if task_match and ref_match:
-                    related_tasks.append({
-                        "ref_id": ref_match.group(1),
-                        "task": task_match.group(1).strip()[:100],
-                        "status": status_match.group(1).lower() if status_match else "active",
-                        "matched_anchor": hit.get("matched_anchor", ""),
-                    })
-                continue
-
-            # Artifact candidates: Drive/Docs sources, relevant to task
-            if is_relevant and (
-                any(t.startswith("source:google") for t in tags)
-                or "drive.google.com" in text
-                or "docs.google.com" in text
-            ):
-                artifact_candidates.append({
-                    "preview": text[:200],
-                    "tags": tags,
-                    "matched_anchor": hit.get("matched_anchor", ""),
-                })
-                continue
-
-            # Intent candidates: meetings, decisions, strategy
-            if (any(t.startswith("source:meeting") for t in tags)
-                    or "Decision" in text
-                    or "agreed" in text_lower
-                    or "strategy" in text_lower):
-                intent_candidates.append({
-                    "preview": text[:200],
-                    "tags": tags,
-                    "matched_anchor": hit.get("matched_anchor", ""),
-                })
-                continue
-
-            # Everything else
-            if is_relevant:
-                other_hits.append({
-                    "preview": text[:200],
-                    "tags": tags,
-                    "matched_anchor": hit.get("matched_anchor", ""),
-                })
-
-        # ── Step 6: Build hop candidates ──
+        # Hop candidates = URLs already present in the source content / metadata.
+        # Cross-channel discovery now happens in `task xsearch` (agent-driven),
+        # not here — this tool's job is anchors + search_terms + inline URLs.
         hop_candidates = []
-
-        # URLs from source content → potential artifact hops
-        for u in anchors_urls[:5]:
+        for u in anchors_urls[:8]:
             if "drive.google.com" in u or "docs.google.com" in u:
-                hop_candidates.append({
-                    "ref": u,
-                    "type": "drive_doc",
-                    "node_likelihood": "artifact_provenance",
-                    "reason": "Drive/Docs link found in source content",
-                })
+                hop_candidates.append({"ref": u, "type": "drive_doc",
+                                       "node_likelihood": "artifact_provenance",
+                                       "reason": "Drive/Docs link in source content"})
             elif "slack.com/archives" in u:
-                hop_candidates.append({
-                    "ref": u,
-                    "type": "slack_thread",
-                    "node_likelihood": "direct_action",
-                    "reason": "Slack permalink found in source content",
-                })
+                hop_candidates.append({"ref": u, "type": "slack_thread",
+                                       "node_likelihood": "direct_action",
+                                       "reason": "Slack permalink in source content"})
 
-        # Intent genesis candidates from meeting hits
-        for ic in intent_candidates[:3]:
-            meeting_match = re.search(r"- Context: (.+?)$", ic["preview"], re.MULTILINE)
-            hop_candidates.append({
-                "ref": meeting_match.group(1) if meeting_match else ic["preview"][:60],
-                "type": "meeting",
-                "node_likelihood": "intent_genesis",
-                "reason": f"Meeting passage matched anchor '{ic['matched_anchor']}'",
-            })
-
-        # ── Step 7: Assess node coverage ──
-        node_coverage = {
-            "direct_action": True,  # Always filled from passage metadata
-            "artifact_provenance": len(artifact_candidates) > 0,
-            "intent_genesis": len(intent_candidates) > 0,
-        }
-
-        # ── Build mismatch warnings ──
-        mismatch_warnings = []
-        completed_related = [rt for rt in related_tasks if rt["status"] == "completed"]
-        rejected_related = [rt for rt in related_tasks if rt["status"] == "rejected"]
-        if completed_related:
-            mismatch_warnings.append({
-                "type": "overlap",
-                "message": f"{len(completed_related)} related task(s) already completed",
-                "examples": [f"[{rt['ref_id']}] {rt['task'][:60]}" for rt in completed_related[:3]],
-            })
-        if rejected_related:
-            mismatch_warnings.append({
-                "type": "prior_rejection",
-                "message": f"{len(rejected_related)} similar task(s) previously rejected",
-                "examples": [f"[{rt['ref_id']}] {rt['task'][:60]}" for rt in rejected_related[:3]],
-            })
+        node_coverage = {"direct_action": True,
+                         "artifact_provenance": bool(anchors_doc_ids or hop_candidates),
+                         "intent_genesis": False}
 
         return {
             "status": "ok",
             "ref_id": ref_id,
             "task": task_desc,
-            "passage_id": "",  # API-compat field; archival passages retired 2026-05-30
-
-            # Hard center — source material
             "source_content": full_content[:3000],
             "source_type": source_type,
             "fetch_hint": fetch_hint,
-
-            # Structured anchors
             "anchors": {
                 "urls": anchors_urls[:10],
                 "doc_ids": anchors_doc_ids,
@@ -439,33 +322,9 @@ def backtrace_task(ref_id: str, max_hops: Optional[int] = None) -> Dict[str, Any
                 "acronyms": anchors_acronyms[:10],
                 "participants": participants,
             },
-
-            # Direct-action node (always filled from passage metadata)
-            "direct_action": {
-                "source": f"{source_type} from {from_person}",
-                "location": location,
-                "location_id": location_id,
-                "reference_id": reference_id,
-            },
-
-            # Three-node candidates (for agent to evaluate, not pre-selected)
-            "artifact_candidates": artifact_candidates[:5],
-            "intent_candidates": intent_candidates[:5],
-
-            # Related items
-            "related_tasks": related_tasks[:10],
-            "other_hits": other_hits[:10],
-
-            # Hop candidates (for agent to chase or skip)
+            "search_terms": search_terms,
             "hop_candidates": hop_candidates[:10],
-
-            # Coverage + warnings
             "node_coverage": node_coverage,
-            "mismatch_warnings": mismatch_warnings,
-
-            # Search metadata
-            "search_terms_used": list(searched_terms),
-            "total_archival_hits": len(archival_hits),
         }
 
     except Exception as e:
