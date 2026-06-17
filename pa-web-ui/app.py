@@ -3355,40 +3355,45 @@ def _build_work_packet_segments(ref_id, passage_text, enrichment=None,
     # both a universal cloud link (works on every device) and a device-local
     # staged openfile:// copy (desktop offline). Label renders once; each url
     # becomes its own clickable chip with smart display text.
+    # Resources, grouped into tiers by the leading [primary|secondary|background]
+    # marker → Primary / Supporting / Related. Each line still hyperlinks every
+    # URL (live + offline copy) exactly as before.
     if pi.get("resources"):
+        tiers = {"primary": [], "secondary": [], "background": []}
+        for item in pi["resources"]:
+            m = re.match(r"^\s*\[(primary|secondary|background)\]", item)
+            tiers[m.group(1) if m else "background"].append(item)
         segments.append("\n")
         segments.append({"text": "Resources\n", "bold": True, "size": 13})
-        for item in pi["resources"]:
-            urls = re.findall(r"(openfile://\S+|https?://\S+)", item)
-            if urls:
-                # Strip only a trailing pipe/space the grammar may leave; do NOT
-                # strip ")" — URLs can legitimately end in ")" (e.g. Google links).
-                urls = [u.rstrip("| ").strip() for u in urls]
-                # Label = text before the first url, minus the leading [priority]
-                # marker and the trailing em-dash separator.
-                first = re.search(r"(openfile://\S+|https?://\S+)", item)
-                label = item[:first.start()].strip()
-                label = re.sub(r"^\[(primary|secondary|background)\]\s*", "", label)
-                label = label.rstrip("—|").strip()
-                role_match = re.search(r"\s+\((\w+)\)\s*$", item)
-                role = f" ({role_match.group(1)})" if role_match else ""
-                segments.append({"text": f"  {label}{role}: ", "size": 11})
-                for idx, url in enumerate(urls):
-                    if url.startswith("openfile://"):
-                        display = "Offline copy"
-                    elif "slack.com/archives/" in url:
-                        display = "Permalink"
-                    else:
-                        display = url[:60] + ("..." if len(url) > 60 else "")
-                    sep = "" if idx == 0 else "   ·   "
-                    if sep:
-                        segments.append({"text": sep, "size": 11})
-                    segments.append({"text": f"{display}", "url": url,
-                                     "underline": True, "size": 11})
-                segments.append("\n")
-            else:
-                for line in _lines(item):
-                    segments.append(f"  • {line}\n")
+        for tier_key, header in (("primary", "Primary"), ("secondary", "Supporting"),
+                                 ("background", "Related")):
+            if not tiers[tier_key]:
+                continue
+            segments.append({"text": f"  {header}\n", "bold": True, "size": 11,
+                             "color": [0.5, 0.5, 0.5, 1]})
+            for item in tiers[tier_key]:
+                urls = re.findall(r"(openfile://\S+|https?://\S+)", item)
+                if urls:
+                    urls = [u.rstrip("| ").strip() for u in urls]
+                    first = re.search(r"(openfile://\S+|https?://\S+)", item)
+                    label = re.sub(r"^\s*\[(primary|secondary|background)\]\s*", "", item[:first.start()].strip()).rstrip("—|").strip()
+                    role_match = re.search(r"\s+\((\w+)\)\s*$", item)
+                    role = f" ({role_match.group(1)})" if role_match else ""
+                    segments.append({"text": f"    {label}{role}: ", "size": 11})
+                    for idx, url in enumerate(urls):
+                        if url.startswith("openfile://"):
+                            display = "Offline copy"
+                        elif "slack.com/archives/" in url:
+                            display = "Permalink"
+                        else:
+                            display = url[:60] + ("..." if len(url) > 60 else "")
+                        if idx:
+                            segments.append({"text": "   ·   ", "size": 11})
+                        segments.append({"text": f"{display}", "url": url, "underline": True, "size": 11})
+                    segments.append("\n")
+                else:
+                    for line in _lines(item):
+                        segments.append(f"    • {line}\n")
 
     # Related tasks
     if pi.get("related_tasks"):

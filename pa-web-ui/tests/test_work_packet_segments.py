@@ -142,3 +142,24 @@ def test_url_with_trailing_paren_not_overstripped():
     segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
     urls = [s["url"] for s in segs if isinstance(s, dict) and s.get("url")]
     assert urls == ["https://example.com/path(v2)"]
+
+
+def test_resources_grouped_into_tiers():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "[primary] SOW draft — https://docs.google.com/document/d/X/edit (edit)",
+        "[secondary] Status thread — https://acme.slack.com/archives/C1/p1 (reference)",
+        "[background] Old note — https://example.com/n (read)",
+    ]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    texts = [s["text"] if isinstance(s, dict) else s for s in segs]
+    joined = "".join(texts)
+    assert "Primary" in joined and "Supporting" in joined and "Related" in joined
+    # order: Primary header precedes Supporting precedes Related
+    assert joined.index("Primary") < joined.index("Supporting") < joined.index("Related")
+
+def test_untiered_resource_falls_under_related():
+    enrichment = {"packet_info": {"direct_action": "x", "resources": [
+        "Doc — https://example.com/a (reference)"]}}
+    segs = _build_work_packet_segments("ref00001", "", enrichment=enrichment)
+    joined = "".join(s["text"] if isinstance(s, dict) else s for s in segs)
+    assert "Related" in joined
