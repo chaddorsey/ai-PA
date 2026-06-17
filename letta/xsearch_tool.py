@@ -129,12 +129,41 @@ def _search_slack(terms: List[str], limit: int) -> List[dict]:
     return out
 
 
+def _search_qmd(channel_name: str, collection: str):
+    """Factory for qmd-backed memory channel search. Uses BM25 search (sub-second)."""
+    def _fn(terms: List[str], limit: int) -> List[dict]:
+        q = " ".join(terms[:6])
+        r = subprocess.run(
+            ["qmd", "search", q, "-c", collection, "-n", str(limit), "--format", "json"],
+            capture_output=True, text=True, timeout=25)
+        if r.returncode != 0:
+            raise RuntimeError(f"qmd {collection} failed: {r.stderr[:160]}")
+        data = json.loads(r.stdout) if r.stdout.strip() else []
+        rows = data if isinstance(data, list) else (data.get("results") or [])
+        out = []
+        for h in rows[:limit]:
+            f = h.get("file") or h.get("path") or ""
+            out.append({"channel": channel_name, "title": (h.get("title") or f)[:120],
+                        "url": f, "permalink": f,
+                        "snippet": (h.get("snippet") or "")[:160], "date": "",
+                        "id": h.get("docid") or f})
+        return out
+    return _fn
+
+
 # channel name → search fn. Tasks 3+4 extend this map.
 _CHANNELS = {
     "tasks": _search_tasks,
 }
 
 _CHANNELS.update({"drive": _search_drive, "gmail": _search_gmail, "slack": _search_slack})
+
+_CHANNELS.update({
+    "canonical": _search_qmd("canonical", "canonical"),
+    "history":   _search_qmd("history", "tasks-history"),
+    "reference": _search_qmd("reference", "evernote"),
+    "meetings":  _search_qmd("meetings", "meetings"),
+})
 
 
 def xsearch(terms: List[str], channels: List[str] = None,
