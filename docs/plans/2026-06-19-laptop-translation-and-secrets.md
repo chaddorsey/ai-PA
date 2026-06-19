@@ -27,6 +27,23 @@ note: |
   server-local host + embedded token).
 - Server tailnet: `dorseys-mac-mini.tailf9b999.ts.net` / `100.99.171.119`.
 
+## TRANSPORT DECISION (2026-06-19, supersedes "rewrite host to tailnet:3030")
+Gitea (`:3030`) and push-receiver (`:8099`) bind **loopback** on the server —
+unreachable from the laptop over the tailnet. So we do NOT rebind them (that
+would expose Gitea to the whole allow-all tailnet). Instead: **an SSH tunnel**.
+- Laptop runs `autossh -M 0 -N -L 3030:127.0.0.1:3030 dorseyhomeserver@dorseys-mac-mini.tailf9b999.ts.net`
+  (managed by the connectivity-aware sync-runner). The laptop then sees Gitea at
+  `localhost:3030` **exactly as the server does → memfs/bus remotes keep
+  `127.0.0.1:3030`, NO host rewrite, token reused unchanged.**
+- push-receiver is **never** reached from the laptop (the drainer runs on the
+  server and calls it over loopback) — so only `:3030` is forwarded.
+- OUR connectivity-aware **sync-runner owns the git pull/push** of memfs +
+  conversation + bus through the tunnel (matches the server's runner-side
+  `invoker.py` pattern; not letta-code's internals).
+- Gitea bus repos (created 2026-06-19, additive): `agents/mc-offline-outbox`,
+  `agents/mc-offline-inbox`, `agents/mc-offline-conversation`
+  (`agents/<MC>.git` memfs already existed). All ride the one tunnel→Gitea.
+
 ## 0. Code delivery — clone from the SERVER over the tailnet (not GitHub)
 Avoids needing to push `main` (+535) first; the server repo has the full truth.
 - [ ] On the laptop: `git clone "dorseyhomeserver@dorseys-mac-mini.tailf9b999.ts.net:/Volumes/main-drive/ai-PA" ~/ai-PA` (over SSH/tailnet).
@@ -51,10 +68,10 @@ Avoids needing to push `main` (+535) first; the server repo has the full truth.
       (its tokens/paths are server-side).
 - [ ] **Verify:** `bash -n ~/bin/letta-mc-local` clean; it references only laptop paths.
 
-## 4. MC memory (memfs) — clone + rewrite the remote host
-- [ ] Clone MC's memfs into `~/.letta/lc-local-backend/memfs/<MC>/memory` from Gitea.
-- [ ] **Rewrite the remote host** `127.0.0.1:3030` → `dorseys-mac-mini.tailf9b999.ts.net:3030` (server-local IP is unreachable from the laptop). Keep the token out of the URL where possible — prefer a git credential helper over an in-URL token.
-- [ ] **Verify:** `git -C <memfs> fetch` succeeds over the tailnet; `git -C <memfs> log --oneline -3` matches the server.
+## 4. MC memory (memfs) — clone via the SSH tunnel (NO host rewrite)
+- [ ] Bring up the tunnel (§7) so `localhost:3030` → server Gitea.
+- [ ] Clone MC's memfs into `~/.letta/lc-local-backend/memfs/<MC>/memory` from `http://<token>@127.0.0.1:3030/agents/<MC>.git` — **the URL is identical to the server's**; it resolves through the tunnel. Prefer a git credential helper over an in-URL token where practical.
+- [ ] **Verify:** with the tunnel up, `git -C <memfs> fetch` succeeds and `git -C <memfs> log --oneline -3` matches the server.
 
 ## 5. Secrets — minimal, hand-carried, never via git
 - [ ] **Bring ONLY:** the Gitea/memfs token (for memfs sync). That's the sole credential the offline laptop MC needs.
@@ -63,20 +80,31 @@ Avoids needing to push `main` (+535) first; the server repo has the full truth.
 - [ ] **Verify:** laptop `.env` contains only the memfs token (+ any local-model env); `git -C ~/ai-PA check-ignore .env` prints `.env`.
 - [ ] **Posture:** FileVault on (`fdesetup status` = On); the git history clone carries no secrets (scan confirmed).
 
-## 6. MC conversation — copy the canonical thread (not synced yet)
-Conversations are per-device today (design §2). For the first run, copy the thread you want to continue.
-- [ ] `scp -r` the canonical MC conversation dir(s) from server `~/.letta/lc-local-backend/conversations/<b64-id>/` → same path on the laptop.
-- [ ] **Verify:** `letta-mc-local` resumes that conversation (`--conversation <id>`); the last messages match the server.
-- [ ] (Superseded later by the offline-plan's conversation-sync — this manual copy is bootstrap-only.)
+## 6. MC conversation — git-synced via `agents/mc-offline-conversation`
+Conversations were per-device files (design §2); now they ride git like memfs.
+- [ ] **Server, during the quiesce window (§9):** with the `mc` conversational session paused (single writer), `git init` the canonical conversation dir `~/.letta/lc-local-backend/conversations/<b64-id>/`, add the `agents/mc-offline-conversation` remote (via the tunnel/loopback), commit + push. (Do this while quiesced so no concurrent writes during init.)
+- [ ] **Laptop:** clone `agents/mc-offline-conversation` into the conversations path through the tunnel.
+- [ ] **Verify:** `letta-mc-local` resumes that conversation (`--conversation <id>`); last messages match the server.
 
-## 7. Connectivity + bus dirs
-- [ ] Tailscale up on the laptop (`tailscale status` shows the server reachable).
-- [ ] Create `~/.letta/offline-bus/{outbox,inbox}` (the plan's sync-runner/drainer use these).
-- [ ] **Verify:** `tailscale ping dorseys-mac-mini` pongs; the laptop can reach Gitea `:3030` and `github.com`.
+## 7. Connectivity + SSH tunnel + bus dirs
+- [ ] Tailscale up (`tailscale status` shows the server reachable; `tailscale ping dorseys-mac-mini` pongs).
+- [ ] **Bring up the tunnel:** `autossh -M 0 -f -N -L 3030:127.0.0.1:3030 dorseyhomeserver@dorseys-mac-mini.tailf9b999.ts.net` (the sync-runner will manage this; manual for first bring-up). `brew install autossh` if needed.
+- [ ] **Verify tunnel:** `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3030/api/v1/version` returns `200` from the laptop (Gitea via tunnel).
+- [ ] Clone the bus repos into `~/.letta/offline-bus/` through the tunnel: `agents/mc-offline-outbox` → `outbox/`, `agents/mc-offline-inbox` → `inbox/`.
+- [ ] **Verify:** `git -C ~/.letta/offline-bus/outbox remote -v` resolves via `127.0.0.1:3030`.
 
 ## 8. litellm route (for the cloud↔local swap)
 - [ ] Add an `mc-local` model alias on the laptop routing to `localhost:<model-port>` (OpenAI-compatible).
 - [ ] **Verify:** `curl localhost:4000/v1/chat/completions` with `model=mc-local` returns a completion.
+
+## 9. Acceptance-test coordination (server quiesce = the real travel-mode handoff)
+The acceptance checks fold offline edits into the LIVE MC. To keep a single
+writer safely, the test window enters travel-mode for real:
+- [ ] **Quiesce only the `mc` conversational session** on the server (pause that one tmux session / its `letta-mc` process) so the laptop is the sole live writer of the conversation + general memory. The other 7 fleet agents + guardian stay untouched.
+- [ ] **Leave home automation running** — it writes only the `automation/` namespace → this simultaneously validates Check 4 (automation co-existence).
+- [ ] Run the offline→reconnect cycle from the laptop; fold-in (memfs `git merge`, conversation tail append) lands in the live MC.
+- [ ] **Un-quiesce** the `mc` session afterward; confirm all 8 sessions healthy.
+- [ ] (Later, separately: validate the fully-live namespace-discipline path without quiescing.)
 
 ## Exit (laptop is "translated")
 - [ ] With Wi-Fi OFF, `letta-mc-local` answers a memory-grounded prompt (offline MC works).

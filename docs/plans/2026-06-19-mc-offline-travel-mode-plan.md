@@ -82,6 +82,8 @@
 
 ## Phase 2 — Sync substrate (memory + conversation), connectivity-driven
 
+> **Transport (decided 2026-06-19):** Gitea/push-receiver bind loopback, so the laptop reaches Gitea via an **SSH tunnel** (`autossh -L 3030:127.0.0.1:3030`) — memfs/bus remotes keep `127.0.0.1:3030` (no host rewrite), token reused, Gitea stays private, push-receiver never reached from the laptop. Bus repos exist: `agents/mc-offline-{outbox,inbox,conversation}`. The sync-runner manages the tunnel + owns the git pull/push. See the laptop sub-plan's TRANSPORT DECISION section.
+
 ### Task 2.1: `conn-probe.sh` — single link/capability state
 **Files:** Create `scripts/offline/conn-probe.sh`.
 - [ ] Probe the server over the tailnet (e.g. `tailscale ping -c1 --timeout 2s dorseys-mac-mini` AND a TCP check to the push-receiver) and write `~/.letta/offline-bus/link.json` = `{online:bool, server_reachable:bool, services:{gmail:false,...}, checked_at}`.

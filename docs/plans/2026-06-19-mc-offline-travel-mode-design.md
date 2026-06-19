@@ -108,6 +108,8 @@ Idempotent by envelope `id`. **No new tables; no new fleet driver** (the fleet a
 
 Why git over Dropbox/rsync/Syncthing: an outbox needs exactly-once-ish + atomic + resumable + conflict-aware, which git gives for free; generic file-sync's "keep both copies" conflict model is wrong for a queue, and it adds a heavy dependency we don't need.
 
+**Reachability (decided 2026-06-19):** Gitea (`:3030`) and push-receiver (`:8099`) bind loopback on the server. Rather than rebind them to the tailnet (which would expose agent memory to the whole allow-all tailnet), the laptop reaches Gitea through an **SSH tunnel** (`autossh -L 3030:127.0.0.1:3030`, managed by the sync-runner). Consequences: the laptop sees Gitea at `localhost:3030` exactly as the server does, so **memfs/bus git remotes keep `127.0.0.1:3030` with no host rewrite**, the token is reused unchanged and only ever crosses the encrypted SSH+WireGuard path, Gitea stays private, and **push-receiver is never reached from the laptop** (the drainer is server-side, loopback). All git rides one tunnel→Gitea; bus repos: `agents/mc-offline-{outbox,inbox,conversation}` (memfs `agents/<MC>.git` already existed). The connectivity-aware sync-runner — not letta-code — owns the git pull/push (matching the server's runner-side `invoker.py` pattern).
+
 ---
 
 ## 6. Authority & namespace rules (the un-mergeable parts)
