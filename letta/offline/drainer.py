@@ -25,6 +25,35 @@ from outbox import Outbox
 TASK_PREFIX = "task."
 PUSH_RECEIVER_URL = os.environ.get("PA_PUSH_RECEIVER_URL", "http://localhost:8099/push")
 PUSH_SOURCE = "mc-offline"
+INBOX_DIR = os.environ.get("PA_OFFLINE_INBOX_DIR", os.path.expanduser("~/.letta/offline-bus/inbox"))
+PUSH_TIMEOUT_SECS = int(os.environ.get("PA_PUSH_TIMEOUT_SECS", "180"))  # warm dispatch runs an agent
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _write_inbox_result(env: Envelope, result: Dict) -> None:
+    """Close the loop (design §4c): write the handler's result into the inbox
+    repo keyed by reply_to, so it git-syncs back to MC. Atomic + idempotent
+    (same reply_to overwrites with the same content)."""
+    if not env.reply_to:
+        return
+    os.makedirs(INBOX_DIR, exist_ok=True)
+    payload = {
+        "id": env.id,
+        "reply_to": env.reply_to,
+        "verb": env.verb,
+        "target": env.target,
+        "result": result,
+        "completed_at": _now_iso(),
+    }
+    p = os.path.join(INBOX_DIR, env.reply_to + ".json")
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+    os.replace(tmp, p)
 
 
 def drain(
@@ -62,8 +91,13 @@ def default_dispatch_push(env: Envelope) -> None:
     }
     if env.target:
         body["agent"] = env.target
-    resp = requests.post(PUSH_RECEIVER_URL, json=body, timeout=10)
+    resp = requests.post(PUSH_RECEIVER_URL, json=body, timeout=PUSH_TIMEOUT_SECS)
     resp.raise_for_status()
+    try:
+        data = resp.json()
+    except Exception:
+        data = {"raw": resp.text}
+    _write_inbox_result(env, data)
 
 
 def default_enqueue_task(env: Envelope) -> None:
