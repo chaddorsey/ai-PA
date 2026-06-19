@@ -42,8 +42,8 @@ landed lineage isn't reproducible until they're committed. Phases 1/2/4 below
 then **harden** these (launchd, debounce, robustness) — they are NOT created
 from scratch.
 - [x] **SERVER (done 2026-06-19, `15f21fd2`):** `~/bin/mc-quiesce.sh`/`mc-resume.sh` → `scripts/offline/` (canonical); `~/bin` symlinks to them.
-- [ ] **LAPTOP:** commit the existing `scripts/offline/{conn-probe.sh,sync-runner.sh,travel-mode.sh}` (the versions that drove the acceptance). First scan for secrets (`grep -nE "token|secret|password|[0-9a-f]{32,}|xox|sk-" scripts/offline/*.sh` → expect clean; the token lives in `.env`/remote URLs, not the scripts). Then `git add scripts/offline/*.sh && git commit && git push`.
-- [ ] **Exit:** `scripts/offline/` in the repo contains all five scripts; a fresh clone can reproduce the MVP loop. Update the runbook's script references to the repo paths.
+- [x] **LAPTOP (done 2026-06-19, `540f97fa`):** committed `conn-probe.sh`/`sync-runner.sh`/`travel-mode.sh` (secrets-scanned clean; reviewed server-side — no destructive ops; `conn-probe` has a `force-offline` flag for drop-simulation). ff-merged into the branch + pushed.
+- [x] **Exit MET:** `scripts/offline/` holds all five scripts; clean clone reproduces the MVP loop. Runbook check: only a prose mention ("runs sync-runner", ~line 95), no stale path refs — optionally make it an explicit `scripts/offline/sync-runner.sh` path.
 
 ## Phase 0 — Real local model (LAPTOP; discovery + decision)
 
