@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Repo copy of the live LaunchAgent. Install to ~/Library/LaunchAgents/ and
+     bootstrap. Samples host+Docker memory every 120s for trend analysis.
+     NOTE: replace REPLACE_HOME with the actual home path on install (launchd
+     does not expand ~ or $HOME in plist paths). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.memory-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>REPLACE_HOME/.../ai-PA/scripts/pa-memory-monitor.sh</string>
+        <string>sample</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>120</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>REPLACE_HOME/Library/Logs/pa-memory-monitor/launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>REPLACE_HOME/Library/Logs/pa-memory-monitor/launchd.err</string>
+</dict>
+</plist>
