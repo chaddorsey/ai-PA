@@ -1,3 +1,123 @@
+# Sunday, June 21, 2026
+
+## @darrenrovell - Del Monte Spelling Correction (38 Years Later)
+> In the spring of 1988, a 9-year-old me noticed a misspelling on my favorite snack, Yogurt Covered Raisins. I wrote to Del Monte to say that they spelled "Delicious" wrong. They sent me a letter, 38 years ago today, changed millions of packages & gave me 36 pounds of raisins!
+
+- **Tweet:** https://x.com/darrenrovell/status/2068790734342238641
+- **What:** Nostalgic account of childhood letter-writing that led to a major company correcting a packaging error and rewarding the observant child, spanning nearly four decades.
+
+---
+
+## @momo_sow0 - Ronaldo's Incredible Jump
+> On a trop banalisé que Ronaldo a sauté si haut que ses genoux ont atteint le niveau de la tête de son adversaire.🤯
+
+- **Tweet:** https://x.com/momo_sow0/status/2068690090822439273
+- **What:** Commentary on Ronaldo's exceptional jumping ability, noting how his knees reached the height of an opposing player's head during a jump.
+
+---
+
+## @ethanabuck - BYLT Real Construction Kit
+> Lego is boring. Enter BYLT - real construction using real practices. From architect drawn blueprints to finished product... on a tiny scale. Get your kit or order a la carte from the supply yard 👇
+
+- **Tweet:** https://x.com/ethanabuck/status/2068578138158960668
+- **What:** Introduction to BYLT, a construction toy system using real architectural blueprints and authentic building practices at miniature scale, positioned as an alternative to traditional plastic building blocks.
+
+---
+
+# Friday, June 19, 2026
+
+## @moultano - Where to Find the Colors Your Screen Can't Show You
+> I spent the last month obsessed with finding colors that can't be displayed on a conventional screen. This is what I found.
+
+- **Tweet:** https://x.com/moultano/status/2068050527552766349
+- **Link:** [Article](https://moultano.wordpress.com/2026/06/19/where-to-find-the-colors-your-screen-cant-show-you/)
+- **What:** Research article exploring the physics of color perception and human vision limitations, investigating colors that exist outside the gamut of conventional digital displays.
+
+---
+
+# Thursday, June 18, 2026
+
+## @Theoladeledada - Professional vs Amateur Football Difference
+> There's a difference between being an amateur footballer and a professional footballer. Now i understand more
+
+- **Tweet:** https://x.com/Theoladeledada/status/2067998197591519431
+- **What:** Reflection on the significant differences between amateur and professional football, inspired by watching Zlatan Ibrahimovic's insights.
+
+---
+
+# Thursday, June 18, 2026
+
+## @0xSero - Hardware-Optimized LLM Models Guide
+> Best models for your hardware
+>
+> - 4gb to 12gb vram - VibeThinker-3B
+> - 12gb to 24gb vram - Gemma-12B-coder
+> - 24gb to 64gb vram - Gemma-4-26b-diffusion
+> - Cohere North-Mini-Code 30B
+
+- **Tweet:** https://x.com/0xSero/status/2067475374007587307
+- **Links:** [VibeThinker-3B](https://huggingface.co/WeiboAI/VibeThinker-3B), [Gemma-12B](https://huggingface.co/yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF), [Diffusiongemma](https://huggingface.co/google/diffusiongemma-26B-A4B-it), [North-Mini-Code](https://huggingface.co/CohereLabs/North-Mini-Code-1.0)
+- **What:** Comprehensive guide to selecting optimal LLM models based on available VRAM, covering a range from 4GB to 64GB+ GPUs with specific model recommendations for each tier.
+
+---
+
+## @picklesbaseball - Portland Pickles: Two Birds Hit By Pitches
+> If I had a nickel for every time a bird was hit by a pitch, I'd have two nickels, which isn't a lot, but it's weird that it happened twice.
+
+- **Tweet:** https://x.com/picklesbaseball/status/2067796986095636613
+- **What:** Humorous observation from Portland Pickles baseball account noting the unusual occurrence of two separate bird incidents during their games.
+
+---
+
+## @RadianceFields - 3D Printing Gaussian Splats Technology
+> For the people asking about 3D printing gaussian splats, this is honestly amazing. https://t.co/6x3ZBK9dZm
+
+- **Tweet:** https://x.com/RadianceFields/status/2067642977183576297
+- **Filed:** [3d-printing-gaussian-splats.md](./knowledge/tools/3d-printing-gaussian-splats.md)
+- **What:** Discovery of a technique for 3D printing gaussian splats, representing an intersection of 3D rendering and physical fabrication technology.
+
+---
+
+# Wednesday, June 17, 2026
+
+## @_ar9av - Google Ships Gemini Nano 4B in Chrome with OpenAI-Compatible API
+> So apparently Google ships a Gemini Nano 4B LLM (context limit : 9216 tokens) baked into chrome
+>
+> I tried to expose it out as an OpenAI-compatible API for my local, so basically no API key, no external network calls, no need of ollama
+
+- **Tweet:** https://x.com/_ar9av/status/2067233860287627359
+- **Filed:** [gemini-nano-chrome-api.md](./knowledge/tools/gemini-nano-chrome-api.md)
+- **What:** Discovery that Chrome includes a built-in Gemini Nano 4B model that can be exposed as an OpenAI-compatible API for local use without external dependencies.
+
+---
+
+## @davepl1968 - Microsoft LEGO Post-Compilation Optimization Technique
+> "Microsoft LEGO" was one of the strangest and most secret optimizations we ever used at Microsoft, because it happened after the compiler was done, after the linker was done, after the .exe or .dll already existed...
+
+- **Tweet:** https://x.com/davepl1968/status/2067329306918097044
+- **Filed:** [microsoft-lego-optimization.md](./knowledge/tools/microsoft-lego-optimization.md)
+- **What:** Dave Plummer describes a secret Microsoft optimization technique called "Microsoft LEGO" that performed optimizations after compilation and linking were complete, at the binary level.
+
+---
+
+## @tmuxvim - Windows Lock Screen Password Keystroke Bug
+> I just got fired from Microsoft. I was the guy responsible for making sure that when you start typing your password in on the Windows lock screen, it ignores your first keystroke for no fucking reason
+
+- **Tweet:** https://x.com/tmuxvim/status/2067375857841136113
+- **What:** Humorous tweet about a longtime Windows quirk where the first keystroke is ignored on the lock screen password entry.
+
+---
+
+## @VisionaryVoid - CIA Borrowed Soviet Spacecraft
+> The CIA Borrowed a Soviet Spacecraft Overnight. The Soviets Never Found Out.
+>
+> In the early 1960s, the Soviet Union ran a touring propaganda exhibition...
+
+- **Tweet:** https://x.com/VisionaryVoid/status/2067110237627105753
+- **What:** Cold War espionage anecdote about the CIA acquiring a Soviet spacecraft during the early 1960s without Soviet knowledge, likely during a propaganda exhibition tour.
+
+---
+
 # Tuesday, June 16, 2026
 
 ## @Akam1129 - Rep. Anna Paulina Luna: The American People Deserve Full Transparency on the US Government's Files About UFOs
@@ -26,6 +146,54 @@ Rep. Anna Paulina Luna: The American People Deserve Full Transparency on the US 
 
 - **Tweet:** https://x.com/kylesheldon/status/2067029538152866074
 - **What:** Behind-the-scenes observation about FIFA's strict branding regulations requiring manual removal of stadium sponsor logos across 64,146 seats at Boston's World Cup venue.
+
+---
+
+## @Dunetsk - Modal Motors Efficiency Gains
+> Also double digit efficiency gains over regular brushless neodymium motors meaning significantly more flight time
+>
+> And they are on track to scale like crazy...
+
+- **Tweet:** https://x.com/Dunetsk/status/2067071600382357785
+- **Quote:** Original from @Rich_Pluta - "Just ran into Modal Motors. Non-rare earth electric motors for drones and robotics. Similar costs to Chinese motors, all U.S.-sourced. Incredible."
+- **What:** Highlights Modal Motors' non-rare earth electric motors for drones and robotics, achieving double-digit efficiency improvements and potential for massive scaling while maintaining cost competitiveness.
+
+---
+
+## @nathanrs - Gzip as Language Model
+> I found out the other day that any compression tool can be contorted to do language modeling. Turns out gzip can generate text that somewhat *resembles* Shakespeare. Short write up linked below https://t.co/KfRi5P3gRo
+
+- **Tweet:** https://x.com/nathanrs/status/2066924065521357093
+- **What:** Demonstrates that compression algorithms can be repurposed for language generation, showing an unconventional connection between data compression and NLP.
+
+---
+
+## @deredleritt3r - Two Years of Reasoning Model Evolution
+> Two years ago, reasoning models did not exist. GPT-4o and Sonnet 3.5 were SOTA.
+>
+> One year ago, the best publicly available model was o3, and 99% of those who used it (i.e., 99% of 7% of OpenAI customers) were using it as a chatbot...
+
+- **Tweet:** https://x.com/deredleritt3r/status/2066880490674499708
+- **What:** Reflects on the rapid evolution of AI reasoning models over the past 24 months, from non-existence to widespread availability, and the shift in how users interact with advanced models.
+
+---
+
+## @MrPitbull07 - 19 Massive Cannons Discovered in Savannah River
+> Workers dredging the Savannah River expected to find mud, but instead uncovered 19 massive cannons...
+
+- **Tweet:** https://x.com/MrPitbull07/status/2066759476951314544
+- **Filed:** [savannah-river-cannons-discovery.md](./knowledge/articles/savannah-river-cannons-discovery.md)
+- **What:** Historical discovery during dredging operations in the Savannah River where workers unexpectedly found 19 large cannons, likely from a Civil War-era wreck or fortification.
+
+---
+
+## @RichUniverse_ - DARPA December Funding Solicitation PS-26-10-2
+> I wasn't going to post this but I can't stop thinking about it.\n\nDARPA just quietly published a funding solicitation in December that I think almost nobody outside of defense and biotech circles has read...
+
+- **Tweet:** https://x.com/RichUniverse_/status/2066705488826294667
+- **Source:** https://everglade.com/wp-content/uploads/DARPA-PS-26-10-2.pdf
+- **Filed:** [darpa-ps-26-10-2-solicitation.md](./knowledge/articles/darpa-ps-26-10-2-solicitation.md)
+- **What:** Discussion of a DARPA funding solicitation (PS-26-10-2) published in December 2025 that received limited attention outside defense and biotech communities.
 
 ---
 
@@ -73,6 +241,23 @@ Rep. Anna Paulina Luna: The American People Deserve Full Transparency on the US 
 - **Tweet:** https://twitter.com/WigglyAir/status/2066568301489041833
 - **Tags:** [[photo]]
 - **What:** Image post
+
+---
+
+## @ViralityClips - Underappreciated Viral Moment
+> I feel like this didn't get the applause it deserved https://t.co/Fmj0VMmEep
+
+- **Tweet:** https://x.com/ViralityClips/status/2066704841569620332
+- **What:** Commentary on a viral video/moment that the author felt deserved more recognition and engagement than it received.
+
+---
+
+## @Da7_Tech - Opus 4.8 vs Codex 5.5 Prompting Strategy
+> The real trick with Opus 4.8 is not to ask it to "do the task." That is exactly why some people mistakenly think Codex 5.5 is smarter. For simple execution — "do this," "build that," "fix this" — Codex is often faster, cleaner, and more direct. But Opus has another gear entirely. Don't just give it a task. Give it a quality system...
+
+- **Tweet:** https://x.com/Da7_Tech/status/2066483309417234546
+- **Filed:** [llm-prompting-strategy.md](./knowledge/articles/llm-prompting-strategy.md)
+- **What:** LLM comparison showing that Opus 4.8 requires different prompting strategy than direct task execution; Codex 5.5 excels at simple commands, while Opus performs better with system prompts for complex reasoning.
 
 ---
 
@@ -444,6 +629,16 @@ Free-to-read link at the end of 🧵1/
 
 ---
 
+# Sunday, September 28, 2025
+
+## @melissa - European Corporate Boardrooms Photography Book
+> i just got this odd little book, it's roughly the size of a passport. this photographer went around calling the biggest european companies, asking to show up at their office and shoot their boardroom. this is unilever in 1993
+
+- **Tweet:** https://x.com/melissa/status/1972275449561805012
+- **What:** Discovery of a unique photography project documenting the boardrooms of major European corporations, compiled into a pocket-sized book featuring images from companies like Unilever dating back to 1993.
+
+---
+
 # Tuesday, March 3, 2026
 
 ## @MinuteofZombie - Tensor Products by Hand (Einstein's Handwritten Notes)
@@ -465,3 +660,15 @@ Free-to-read link at the end of 🧵1/
 - **Tweet:** https://x.com/MinuteofZombie/status/2028874198454538691
 - **Quoted:** https://x.com/sachinyadav699/status/2028542925165183378
 - **What:** Educational resource providing visual walkthrough of LLM mechanics and how language models process and generate text.
+
+---
+
+# Friday, June 12, 2026
+
+## @latent_node - oMLX Supports HuggingFace Model Cache
+> *Replying to @julien_c:* @julien_c @jundotkim https://mlx-optiq.com/ has supported it since day 1 …
+
+- **Tweet:** https://x.com/latent_node/status/2065429962090561952
+- **Parent:** https://x.com/julien_c/status/2065393391219749058
+- **Filed:** [omlx.md](./knowledge/tools/omlx.md)
+- **What:** oMLX has supported HuggingFace model cache directory from the beginning, providing MLX server capability for local AI with standard caching compatibility.
