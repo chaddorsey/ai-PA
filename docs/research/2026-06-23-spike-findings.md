@@ -111,4 +111,3 @@ Statusline rendering is **TUI-only** (not visible in headless `-p`). To finish v
 
 ### For Task 7 (action routing)
 `capable=True` for the action set reachable via `:8283` with `LETTA_API_KEY` while online; everything else (or offline) → `queue`. Auth = the existing `LETTA_API_KEY`; no new creds needed for the API path.
-## C: fleet from spoke  ⏳ not started
