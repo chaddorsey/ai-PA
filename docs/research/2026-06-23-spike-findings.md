@@ -130,3 +130,22 @@ Statusline rendering is **TUI-only** (not visible headless). When Task 6 is buil
 
 ### For Task 7 (action routing)
 `capable=True` for the action set reachable via `:8283` with `LETTA_API_KEY` while online; everything else (or offline) → `queue`. Auth = the existing `LETTA_API_KEY`; no new creds needed for the API path.
+
+---
+
+## Task 7 wiring rule (the binding rule for the persona/recipe) — built
+`letta/offline/routing.py::route_action(link, capable)` returns `"direct"` | `"queue"` (3 unit tests green). The persona/mod, **before any irreversible/external action**, applies:
+
+1. Read `link` from `~/.letta/offline-bus/mode.json` (written by the connectivity mod; `"online"|"offline"`).
+2. `capable` = is this action in the Spike-C spoke-callable set (reachable via Letta API `:8283` with `LETTA_API_KEY`)?
+3. `route = route_action(link, capable)`:
+   - **`"queue"`** → append an `Envelope` (`letta/offline/envelope.py`, idempotency key = content hash) to the **outbox** (`letta/offline/outbox.py`); the hub drainer executes it **exactly-once** on reconnect.
+   - **`"direct"`** → perform the action now via the Spike-C path (Letta API `:8283`).
+
+Mutually exclusive (Invariant 1): an action is **either** queued **or** executed directly, never both — the idempotency key is the backstop across an offline→online transition.
+
+## T4/T7 build status (this push)
+- **T4 presence-lease:** `letta/offline/lease.py` + `tests/test_lease.py` (4 ✅) + `scripts/offline/lease-heartbeat.sh` (verified writes `lease.json`; TTL default 180s, cadence « TTL). *Matched repo convention: flat imports via `tests/conftest.py`; heartbeat imports `letta.offline.lease` (namespace pkg) from repo root.*
+- **T7 action-routing:** `letta/offline/routing.py` + `tests/test_routing.py` (3 ✅) + the wiring rule above.
+- Full offline suite: **19 passed** (`uv run --with pytest --python 3.12 pytest letta/offline/tests/`).
+- **Pending (server-gated):** T5 (mini-me), T6 (observability mod + `model-swap-watcher.mjs` per the resolved Step 0), T8 (reconnect) — await the launch-model answer + HUB-confirm.
