@@ -65,22 +65,35 @@ letta --backend local --agent "$NEW" ...
 
 ---
 
-## B: mod API — connectivity-failover  ⚠️ API SURFACE VERIFIED; authoring blocked on tooling (decision needed)
+## B: mod API — connectivity-failover  ✅ API VERIFIED + proof mod authored & loads clean (model-swap trigger is the one open item)
 
 ### Verified (from the bundle — `letta.js`, no `src/`)
 - **Mods load dir:** `getGlobalModsDirectory() → ~/.letta/mods` (currently empty). Loaded at session start; disable with `letta --no-mods` or `LETTA_DISABLE_MODS=1`.
 - **Hooks present in the runtime:** `onTick` (periodic/timer event — ideal for polling `link.json`), `onTurn`, `setModel`/`updateModel` (model swap; also `update_model`), `statusline` registration (`statuslineRenderer`, `statuslineContext`), `registerModTool` / `registerModPermission` (+ `…ForOwner` variants), `ModContext`.
 - Mods run in-process (Node) so an external-file read of `~/.letta/offline-bus/link.json` is straightforward.
 
-### Blocker (why the proof mod isn't built yet)
-- letta-code ships **bundled/minified** — there is **no `src/mods/types.ts` / `mod-engine.ts`** to read, and **no shipped mod template, example, README section, or `letta mods` scaffolder**.
-- The plan's intended authoring path — the **`creating-mods` skill** — is an **in-harness skill of the letta-code agent**, NOT available in the Claude Code harness doing this spike. Reconstructing the exact mod **export contract** (how `onTick`/`setModel`/`statusline` are registered/exported by a mod module) from the minified bundle is feasible but error-prone — the kind of thrash the brief says to avoid.
+### The bundle IS readable source (key correction)
+letta-code ships as an **esbuild bundle that preserves the original `// src/…` sections** — so `src/mods/{mod-engine,context,event-emitter,mod-adapter,tool-registry,permission-registry}.ts` are all legible in `letta.js`. No in-harness skill was required to read the contract.
 
-### Decision needed (see report) — two paths to finish Spike B
-1. **(Recommended) Run `creating-mods` from a letta-code session.** A letta-code agent (the hub MC, or a scratch agent) runs the in-harness `creating-mods` skill to scaffold + author the `connectivity-failover` proof mod per Spike B steps; it has the correct API reference. This spike is genuinely a *letta-code-harness* task, not a Claude Code one.
-2. **Reverse-engineer from the bundle.** Claude Code reconstructs the mod export contract from `letta.js` and hand-authors the proof mod, validating by install + launch. Slower, higher risk of an invalid contract.
+### Verified mod contract (from `letta.js`)
+- **Mod files** live directly in `~/.letta/mods/` (the engine's `listModFiles` reads *files*, not subdirs; `MOD_FILE_EXTENSIONS = {.js, .mjs, .ts, .tsx}`; `.ts/.tsx` are transpiled via `ts.transpileModule`; loaded as ESM via `import(pathToFileURL)`). Disable with `letta --no-mods` / `LETTA_DISABLE_MODS=1`.
+- **Export contract:** `getModFactory(module) → module.default (function) ?? module.activate`. So a mod is `export default function activate(letta) { … }`.
+- **The `letta` API object** passed to `activate` (from `loadLocalMods`):
+  - `events: { on(name, handler), off }` — subscribe to events; **`tick`** is the periodic hook (also `session_start`, `session_end`, `tool_start`).
+  - `ui: { setStatus(key, text), setStatuslineRenderer(renderer), setStatus removal via null, openPanel(...) }` — statusline; `setStatus` takes a string value (gated by `capabilities.ui.statusValues`).
+  - `commands: { register({ id, description, run }), unregister }` (gated by `capabilities.commands`).
+  - `tools: { register(tool), unregister }`, `providers: { register(name, config) }`, `permissions: { register(p) }`, `client` / `getClient` (a Letta client), `capabilities`, `signal`.
+- **Diagnostics:** written to `~/.letta/mods/diagnostics/latest.json` (`{report:{diagnostics,errorCount,warningCount}}`).
 
-## B (cont.) — not yet built
+### Proof mod (built + committed): `scripts/offline/mods/connectivity-failover/connectivity-failover.mjs`
+- On `tick`, reads `~/.letta/offline-bus/link.json` and sets statusline `connectivity` to `🟢 online · cloud` / `🔴 offline · local` / `⚪ link?`. Registers a `/connectivity` command reporting link + intended failover model.
+- **Validated (self-contained):** installed to `~/.letta/mods/connectivity-failover.mjs`, launched letta-code headless → **`diagnostics/latest.json`: errorCount 0, warningCount 0** (the mod's `export default activate`, `events.on('tick')`, `ui.setStatus`, `commands.register` all loaded + ran without error).
+
+### The ONE open item — the mod-facing model-swap trigger
+A direct `letta.setModel(...)` does **NOT** exist on the mod API. Model changes go through an **`update_model` WsProtocol command** (`dist/types/types/protocol_v2.d.ts` → `UpdateModelCommand` / `UpdateModelPayload`), applied at the app/runtime layer via `applyModelUpdateForRuntime` (the engine's `setModelHandler` is internal). The proof mod therefore **stubs** the swap. Resolving it needs one of: the in-harness **`creating-mods` example** of a model-swapping mod, or an in-session test of whether `letta.client` / a command-`run` return can issue `update_model`. *Small, well-scoped — does not block the observability spine.*
+
+### Needs an in-session test (you) — visual + swap
+Statusline rendering is **TUI-only** (not visible in headless `-p`). To finish validating: run `letta` interactively with the mod installed → confirm the `connectivity` status shows, then `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh` → confirm it flips to `🔴 offline · local` within a tick; `rm` the flag to flip back. (And test `/connectivity`.)
 ## C: fleet from spoke  ✅ RESOLVED (spoke-callable path verified; direct DB is not, outbox covers it)
 
 ### What `task_queue` is
