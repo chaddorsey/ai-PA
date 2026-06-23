@@ -65,7 +65,7 @@ letta --backend local --agent "$NEW" ...
 
 ---
 
-## B: mod API — connectivity-failover  ✅ API VERIFIED + proof mod authored & loads clean (model-swap trigger is the one open item)
+## B: mod API — connectivity-failover  ✅ FULLY RESOLVED (API verified, proof mod loads clean, model-swap mechanism closed)
 
 ### Verified (from the bundle — `letta.js`, no `src/`)
 - **Mods load dir:** `getGlobalModsDirectory() → ~/.letta/mods` (currently empty). Loaded at session start; disable with `letta --no-mods` or `LETTA_DISABLE_MODS=1`.
@@ -89,8 +89,14 @@ letta-code ships as an **esbuild bundle that preserves the original `// src/…`
 - On `tick`, reads `~/.letta/offline-bus/link.json` and sets statusline `connectivity` to `🟢 online · cloud` / `🔴 offline · local` / `⚪ link?`. Registers a `/connectivity` command reporting link + intended failover model.
 - **Validated (self-contained):** installed to `~/.letta/mods/connectivity-failover.mjs`, launched letta-code headless → **`diagnostics/latest.json`: errorCount 0, warningCount 0** (the mod's `export default activate`, `events.on('tick')`, `ui.setStatus`, `commands.register` all loaded + ran without error).
 
-### The ONE open item — the mod-facing model-swap trigger
-A direct `letta.setModel(...)` does **NOT** exist on the mod API. Model changes go through an **`update_model` WsProtocol command** (`dist/types/types/protocol_v2.d.ts` → `UpdateModelCommand` / `UpdateModelPayload`), applied at the app/runtime layer via `applyModelUpdateForRuntime` (the engine's `setModelHandler` is internal). The proof mod therefore **stubs** the swap. Resolving it needs one of: the in-harness **`creating-mods` example** of a model-swapping mod, or an in-session test of whether `letta.client` / a command-`run` return can issue `update_model`. *Small, well-scoped — does not block the observability spine.*
+### Model-swap mechanism — RESOLVED
+- A direct `letta.setModel(...)` does **NOT** exist on the mod API, and **mod command results are restricted to `{type: 'prompt' | 'output' | 'handled'}`** (`normalizeModCommandResult` throws otherwise) — so a command result cannot carry a model change. There is **no mod-facing dispatch** for WsProtocol commands.
+- **The mechanism a mod uses:** `const client = await letta.getClient(); await client.agents.update(agentId, { model: <handle> })`. `UpdateAgentRequest` accepts `model: nullable(string).optional()`, so this is supported. `agentId` comes from `ctx.agent.id` (command `run(ctx)` / event ctx).
+- **Liveness caveat (important for the spine):** this is a **config-level / next-turn** swap. The *live*, conversation-scoped, **context-window-preserving** swap is `applyModelUpdateForRuntime`, reachable **only** via the `update_model` WsProtocol command (the app's `/model` path) — NOT from a mod. For connectivity failover this is the right behavior: detect offline on `tick` → `client.agents.update({model: local})` → the **next** message runs on the local brain. No mid-streaming-turn swap is needed.
+- **Implemented (guarded) in the proof mod:** `swapModel()` calls `client.agents.update(agentId, {model})`; runs only when `CONNECTIVITY_FAILOVER_ARM=1` (default dry-run, so load-tests never mutate a live agent). Re-validated: still **0 errors / 0 warnings** on load.
+
+### Residual (small, in-session) — confirm next-turn effect + visual
+Statusline rendering is **TUI-only**. To finish: run `letta` interactively with the mod installed → confirm the `connectivity` status shows and flips on `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh`; run `/connectivity` (dry-run), then with `CONNECTIVITY_FAILOVER_ARM=1` confirm `client.agents.update` actually changes the model the next turn uses. (Mechanism is verified from source; this just confirms next-turn timing empirically.)
 
 ### Needs an in-session test (you) — visual + swap
 Statusline rendering is **TUI-only** (not visible in headless `-p`). To finish validating: run `letta` interactively with the mod installed → confirm the `connectivity` status shows, then `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh` → confirm it flips to `🔴 offline · local` within a tick; `rm` the flag to flip back. (And test `/connectivity`.)
