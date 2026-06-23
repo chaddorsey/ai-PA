@@ -203,6 +203,12 @@ model_list:
       model: "fireworks_ai/accounts/fireworks/models/glm-5p1"
       api_key: "os.environ/FIREWORKS_AI_API_KEY"
 
+  # --- GLM-5.2 (Zhipu; newer than 5.1, via Fireworks serverless) ---
+  - model_name: "glm-5p2"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/glm-5p2"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
   # --- MiniMax M2.7 (strong reasoning, long context) ---
   - model_name: "minimax-m2p7"
     litellm_params:
