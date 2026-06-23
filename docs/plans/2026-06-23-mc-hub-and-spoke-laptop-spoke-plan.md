@@ -34,7 +34,9 @@
 
 ## Phase 0 — Gating cleanup (must complete before anything builds against shared memory)
 
-### Task 0: Reconcile the memfs divergence  **[COORD]**
+### Task 0: Reconcile the memfs divergence  **[COORD]**  ✅ COMPLETE 2026-06-23
+
+> **Status:** done. Hub canonical `560f81d` pushed to Gitea `main`; laptop `travel/laptop` rebased onto it (`9b1954c`), laptop `origin/main` == hub `main` == `560f81d`. Record: `docs/runbooks/2026-06-23-phase0-memfs-align.md`.
 
 **Files:**
 - Create: `docs/runbooks/2026-06-23-phase0-memfs-align.md`
