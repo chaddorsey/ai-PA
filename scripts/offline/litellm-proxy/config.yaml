@@ -1,0 +1,44 @@
+# Laptop LiteLLM failover proxy (Option C).
+# The mini-me always points at this proxy (model "mc-brain"). The proxy transparently
+# fails over: primary = server LiteLLM over the tailnet (cloud brain) -> fallback = local
+# GLM via oMLX (offline brain). No model swap, no watcher — the agent's handle never changes.
+#
+# Values come from the environment (set by start-proxy.sh):
+#   SERVER_MODEL_HANDLE  e.g. "openai/<server-litellm-model>"  (NEEDS server input)
+#   SERVER_LITELLM_BASE  default http://dorseys-mac-mini:4000/v1
+#   SERVER_LITELLM_KEY   the server LITELLM_MASTER_KEY        (NEEDS secrets provisioning)
+#   LOCAL_GLM_BASE       default http://127.0.0.1:8000/v1     (oMLX)
+#   LOCAL_GLM_KEY        anything (oMLX ignores auth)
+#   PROXY_MASTER_KEY     the local proxy's own key (the letta provider authenticates with this)
+
+model_list:
+  # Primary deployment: server LiteLLM (cloud brain), reached over the tailnet.
+  - model_name: mc-brain
+    litellm_params:
+      model: os.environ/SERVER_MODEL_HANDLE
+      api_base: os.environ/SERVER_LITELLM_BASE
+      api_key: os.environ/SERVER_LITELLM_KEY
+
+  # Fallback deployment: local GLM via oMLX (offline brain).
+  - model_name: mc-brain-local
+    litellm_params:
+      model: openai/GLM-4.5-Air-4bit
+      api_base: os.environ/LOCAL_GLM_BASE
+      api_key: os.environ/LOCAL_GLM_KEY
+
+  # Passthrough: direct local GLM by its real name, so existing setups (e.g. the
+  # letta-mc daily driver) keep working when the letta "ollama" provider points here.
+  - model_name: GLM-4.5-Air-4bit
+    litellm_params:
+      model: openai/GLM-4.5-Air-4bit
+      api_base: os.environ/LOCAL_GLM_BASE
+      api_key: os.environ/LOCAL_GLM_KEY
+
+litellm_settings:
+  # When the primary (server) is unreachable/errors -> serve from local GLM.
+  fallbacks: [{"mc-brain": ["mc-brain-local"]}]
+  request_timeout: 25
+  num_retries: 0
+
+general_settings:
+  master_key: os.environ/PROXY_MASTER_KEY

@@ -1,42 +1,34 @@
 /**
- * connectivity-failover — Spike B proof mod (laptop spoke #1)
+ * connectivity-failover — laptop spoke #1 (Option C: LiteLLM proxy failover)
  *
- * Reads the conn-probe link state (~/.letta/offline-bus/link.json) and surfaces it
- * in the Letta Code statusline, refreshing on every `tick` event. The `/connectivity`
- * command reports link state + the intended failover model and (when ARMED) performs
- * the model swap.
+ * OBSERVABILITY-ONLY. The mini-me always points at the local LiteLLM proxy
+ * (model "mc-brain"); the proxy transparently fails over primary=server-LiteLLM
+ * (cloud, over the tailnet) -> fallback=local GLM (oMLX). There is NO model swap to
+ * perform here — so this mod only *surfaces* link state and records it for other
+ * components (routing reads `mode.json`).
  *
- * Verified mod API (from the bundled letta-code source — see spike-findings §B):
- *   - export:    `export default function activate(letta)`  (or `export function activate`)
- *   - events:    letta.events.on('tick', fn)                 // periodic hook
- *   - statusline: letta.ui.setStatus(key, text)              // string value
- *   - commands:  letta.commands.register({ id, description, run(ctx) })
- *                run(ctx) → must return { type: 'prompt' | 'output' | 'handled', ... }
- *                ctx.agent.id is the active agent id
- *   - client:    letta.getClient() → client.agents.update(agentId, { model })  // REST
+ * Resolved Step 0 (see spike-findings §B): a mod can't issue the live `update_model`
+ * WS command, and a config swap doesn't re-model a running conversation — but with the
+ * proxy the agent's handle never changes, so no swap is needed. The watcher/app-server
+ * path was dropped per the Option C decision.
  *
- * MODEL-SWAP MECHANISM (verified): a mod swaps the model via
- *   `client.agents.update(agentId, { model: <handle> })`.
- * This is a CONFIG-level (next-turn) swap. The live, conversation-scoped,
- * context-window-preserving swap is `applyModelUpdateForRuntime` behind the
- * `update_model` WsProtocol command — NOT reachable from a mod. Next-turn swap is
- * the correct/sufficient behavior for connectivity failover.
+ * Behavior:
+ *   - on `tick`: read conn-probe `~/.letta/offline-bus/link.json`, set the statusline,
+ *     and write `~/.letta/offline-bus/mode.json` ({link, brain, at}) for action-routing.
+ *   - `/connectivity`: report link state + which brain the proxy will serve.
  *
- * SAFETY: the swap only runs when env `CONNECTIVITY_FAILOVER_ARM=1`. Unarmed (default),
- * `/connectivity` reports a dry-run so loading/testing never mutates a live agent.
- * The Task-6 production mod will arm it and drive the swap automatically on `tick`.
+ * Verified mod API: `export default function activate(letta)`;
+ *   letta.events.on('tick', fn); letta.ui.setStatus(key, text);
+ *   letta.commands.register({ id, description, run(ctx) -> {type:'output'|'prompt'|'handled'} }).
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const LINK_JSON = join(homedir(), ".letta", "offline-bus", "link.json");
+const BUS = join(homedir(), ".letta", "offline-bus");
+const LINK_JSON = join(BUS, "link.json");
+const MODE_JSON = join(BUS, "mode.json");
 const STATUS_KEY = "connectivity";
-const ARMED = process.env.CONNECTIVITY_FAILOVER_ARM === "1";
-
-// Model handles the spine swaps between (placeholders until Task 5 sets the mini-me's real cloud handle).
-const LOCAL_MODEL = process.env.FAILOVER_LOCAL_MODEL || "ollama/GLM-4.5-Air-4bit";
-const CLOUD_MODEL = process.env.FAILOVER_CLOUD_MODEL || "cloud";
 
 function readLink() {
   try {
@@ -47,59 +39,57 @@ function readLink() {
   }
 }
 
-const statusText = (link) =>
-  link.online === false ? "🔴 offline · local" : link.online === true ? "🟢 online · cloud" : "⚪ link?";
+const linkOf = (l) => (l.online === false ? "offline" : l.online === true ? "online" : "unknown");
+const brainOf = (l) =>
+  l.online === false ? "local GLM (proxy fallback)" : l.online === true ? "cloud (proxy primary)" : "unknown";
+const statusText = (l) =>
+  l.online === false ? "🔴 offline · local" : l.online === true ? "🟢 online · cloud" : "⚪ link?";
 
-const targetModel = (link) => (link.online === false ? LOCAL_MODEL : CLOUD_MODEL);
-
-async function swapModel(letta, agentId, handle) {
-  // Verified mechanism: REST agent update with a `model` field (next-turn effect).
-  const client = await letta.getClient();
-  await client.agents.update(agentId, { model: handle });
+function publish(link) {
+  // mode.json is the contract the action-routing (routing.py) reads.
+  try {
+    const mode = { link: linkOf(link), brain: brainOf(link), online: link.online };
+    writeFileSync(MODE_JSON, JSON.stringify(mode, null, 2));
+  } catch {
+    /* bus dir may be unavailable; ignore */
+  }
 }
 
 export default function activate(letta) {
   const refresh = () => {
+    const link = readLink();
     try {
-      letta?.ui?.setStatus?.(STATUS_KEY, statusText(readLink()));
+      letta?.ui?.setStatus?.(STATUS_KEY, statusText(link));
     } catch {
-      /* statusline capability may be unavailable */
+      /* statusline capability unavailable */
     }
+    publish(link);
   };
+
   refresh();
   try {
     letta?.events?.on?.("tick", refresh);
   } catch {
-    /* events capability may be unavailable */
+    /* events capability unavailable */
   }
 
   try {
     letta?.commands?.register?.({
       id: "connectivity",
-      description: "Show conn-probe link state and (when armed) swap the failover model",
-      async run(ctx) {
+      description: "Show conn-probe link state and which brain the proxy will serve",
+      async run() {
         const link = readLink();
-        const want = targetModel(link);
-        const agentId = ctx?.agent?.id ?? null;
-        let action = `DRY-RUN (set CONNECTIVITY_FAILOVER_ARM=1 to swap)`;
-        if (ARMED && agentId && want && want !== "cloud") {
-          try {
-            await swapModel(letta, agentId, want);
-            action = `swapped agent ${agentId} → model ${want}`;
-          } catch (e) {
-            action = `swap FAILED: ${e && e.message ? e.message : e}`;
-          }
-        }
         return {
           type: "output",
           output:
-            `link.online=${link.online}` +
+            `link=${linkOf(link)}` +
             (link.reason ? ` (${link.reason})` : "") +
-            ` → target model: ${want}\n${action}`,
+            ` → brain: ${brainOf(link)}\n` +
+            `(Option C: the mini-me points at the LiteLLM proxy; failover is the proxy's job — no model swap.)`,
         };
       },
     });
   } catch {
-    /* commands capability may be unavailable */
+    /* commands capability unavailable */
   }
 }

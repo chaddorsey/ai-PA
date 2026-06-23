@@ -111,8 +111,9 @@ Empirical app-server test (`letta --backend local app-server --listen ws://127.0
 - `update_model`: `{type, request_id, runtime, payload:{model_handle | model_id}}` → `update_model_response{success, applied_to:"agent"|"conversation", model_handle}`.
 - `input` (turn): `{type:"input", runtime, payload:{kind:"create_message", messages:[{role,content}]}}`.
 
-### Residual (in-session, you) — visual only
-Statusline rendering is **TUI-only** (not visible headless). When Task 6 is built: run `letta` interactively → confirm the `connectivity` status shows and flips on `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh`; confirm the watcher swaps the live model on the transition. (Swap mechanism already proven above; this confirms the wired end-to-end UX.)
+### ⚠️ SUPERSEDED by Option C (LiteLLM proxy) — see the Option C section below
+The Step-0 finding above (config-swap doesn't live-swap; only the WS `update_model` does; mods can't send it) stands as *fact*, but the **chosen design is Option C: a local LiteLLM failover proxy**, which removes the need to swap the model at all. The watcher / app-server path is **dropped**. The mod is now **observability-only**. Kept above for the record + the verified WS frame shapes.
+
 ## C: fleet from spoke  ✅ RESOLVED (spoke-callable path verified; direct DB is not, outbox covers it)
 
 ### What `task_queue` is
@@ -149,4 +150,17 @@ Mutually exclusive (Invariant 1): an action is **either** queued **or** executed
 - **T7 action-routing:** `letta/offline/routing.py` + `tests/test_routing.py` (3 ✅) + the wiring rule above.
 - Full offline suite: **19 passed** (`uv run --with pytest --python 3.12 pytest letta/offline/tests/`).
 - **T5 mini-me agent:** `scripts/offline/setup-laptop-minime.sh` (decision-1: Gitea-URL clone of canonical, `spoke/laptop` off `main`, `.letta/` gitignore safeguard, `message_buffer_autoclear:false`, records `~/.letta/offline-bus/minime.json`). Ran it → mini-me `agent-local-12d6fd5f-79bc-4132-8348-6afa71795753` on `spoke/laptop`. **Verified:** reads canonical `system/human.md`+`reference/`; a write commits cleanly on `spoke/laptop` (then reverted). **Fold `spoke/laptop→main` is HUB-coordinated** (not done solo; canonical `main` untouched). Persona is shared via canonical memfs (distinct facet-persona deferred — see §A note).
-- **Pending (server-gated):** T6 (observability mod + `model-swap-watcher.mjs` per the resolved Step 0; needs the launch-model A/B answer), T8 (reconnect; HUB-confirm fold + exactly-once drain).
+- **T6 connectivity mod (Option C):** rewritten **observability-only** — `scripts/offline/mods/connectivity-failover/connectivity-failover.mjs` reads `link.json` on `tick` → statusline (`🟢 online · cloud` / `🔴 offline · local`) + writes `~/.letta/offline-bus/mode.json` (the contract `routing.py` reads). No model swap. Loads clean (0/0); writes `mode.json` on activate. Visual statusline flip is a TUI-only in-session check (you).
+- **Pending (server-gated):** the proxy **primary** (server LiteLLM) — needs `LITELLM_MASTER_KEY` + the server model alias (secrets/info); T8 (reconnect; HUB-confirm fold + exactly-once drain).
+
+---
+
+## Option C — LiteLLM failover proxy (the chosen model architecture)
+**Decision:** the mini-me always points at a **local LiteLLM proxy**; the proxy does the failover transparently, so the agent's model handle never changes (no swap, no watcher, no app-server).
+
+- **Proxy:** `scripts/offline/litellm-proxy/{config.yaml,start-proxy.sh}` (litellm `[proxy]` in `~/.letta/litellm-venv`), listens `127.0.0.1:4000`. Models:
+  - `mc-brain` — **primary** = server LiteLLM `http://dorseys-mac-mini:4000/v1` (reachable over the **tailnet**, no tunnel); **fallback** = local GLM (oMLX `:8000`). `litellm_settings.fallbacks: [{mc-brain:[mc-brain-local]}]`.
+  - `mc-brain-local` — local GLM (oMLX). `GLM-4.5-Air-4bit` — passthrough (keeps the existing `letta-mc` daily driver working).
+- **Wiring:** letta `ollama` provider `base_url → http://127.0.0.1:4000/v1`, key `sk-mc-local`; mini-me model `ollama/mc-brain`. `letta-mc` gate now also ensures the proxy.
+- **Verified:** primary unreachable → request to `mc-brain` **falls back to local GLM** (proxy log: `mc-brain-local`); with the real primary but no key, the 401 also **falls back to GLM**; the mini-me **reads canonical through the proxy** end-to-end. So offline already works; the cloud primary activates the moment the server key + model alias land.
+- **Server-gated (the only remaining piece for online):** `LITELLM_MASTER_KEY` + the server LiteLLM model alias for `SERVER_MODEL_HANDLE` (provision to the laptop / set in `start-proxy.sh` env). Until then the proxy serves the local GLM fallback for everything.
