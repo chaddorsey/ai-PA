@@ -89,17 +89,30 @@ letta-code ships as an **esbuild bundle that preserves the original `// src/…`
 - On `tick`, reads `~/.letta/offline-bus/link.json` and sets statusline `connectivity` to `🟢 online · cloud` / `🔴 offline · local` / `⚪ link?`. Registers a `/connectivity` command reporting link + intended failover model.
 - **Validated (self-contained):** installed to `~/.letta/mods/connectivity-failover.mjs`, launched letta-code headless → **`diagnostics/latest.json`: errorCount 0, warningCount 0** (the mod's `export default activate`, `events.on('tick')`, `ui.setStatus`, `commands.register` all loaded + ran without error).
 
-### Model-swap mechanism — RESOLVED
-- A direct `letta.setModel(...)` does **NOT** exist on the mod API, and **mod command results are restricted to `{type: 'prompt' | 'output' | 'handled'}`** (`normalizeModCommandResult` throws otherwise) — so a command result cannot carry a model change. There is **no mod-facing dispatch** for WsProtocol commands.
-- **The mechanism a mod uses:** `const client = await letta.getClient(); await client.agents.update(agentId, { model: <handle> })`. `UpdateAgentRequest` accepts `model: nullable(string).optional()`, so this is supported. `agentId` comes from `ctx.agent.id` (command `run(ctx)` / event ctx).
-- **Liveness caveat (important for the spine):** this is a **config-level / next-turn** swap. The *live*, conversation-scoped, **context-window-preserving** swap is `applyModelUpdateForRuntime`, reachable **only** via the `update_model` WsProtocol command (the app's `/model` path) — NOT from a mod. For connectivity failover this is the right behavior: detect offline on `tick` → `client.agents.update({model: local})` → the **next** message runs on the local brain. No mid-streaming-turn swap is needed.
-- **Implemented (guarded) in the proof mod:** `swapModel()` calls `client.agents.update(agentId, {model})`; runs only when `CONNECTIVITY_FAILOVER_ARM=1` (default dry-run, so load-tests never mutate a live agent). Re-validated: still **0 errors / 0 warnings** on load.
+### Model-swap mechanism (Task 6, Step 0) — RESOLVED BY TEST → **external watcher**
+Empirical app-server test (`letta --backend local app-server --listen ws://127.0.0.1:4500`, WS v2 frames, scratch agent swapping `qwen2.5:0.5b` ↔ `qwen2.5:7b-instruct`, model read from the conversation transcript per turn):
 
-### Residual (small, in-session) — confirm next-turn effect + visual
-Statusline rendering is **TUI-only**. To finish: run `letta` interactively with the mod installed → confirm the `connectivity` status shows and flips on `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh`; run `/connectivity` (dry-run), then with `CONNECTIVITY_FAILOVER_ARM=1` confirm `client.agents.update` actually changes the model the next turn uses. (Mechanism is verified from source; this just confirms next-turn timing empirically.)
+| Turn | After | Model the turn actually used |
+|---|---|---|
+| 1 | baseline | `qwen2.5:0.5b` |
+| 2 | **config update** (agent JSON `model`→7b, == what `client.agents.update({model})` does) | `qwen2.5:0.5b` — **NO live-swap** |
+| 3 | **WS `update_model`** (→7b; resp `success:true, applied_to:"conversation"`) | `qwen2.5:7b-instruct` — **swapped** ✅ |
 
-### Needs an in-session test (you) — visual + swap
-Statusline rendering is **TUI-only** (not visible in headless `-p`). To finish validating: run `letta` interactively with the mod installed → confirm the `connectivity` status shows, then `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh` → confirm it flips to `🔴 offline · local` within a tick; `rm` the flag to flip back. (And test `/connectivity`.)
+**Conclusions (definitive):**
+- A **config update does NOT re-model a running conversation** — the runtime keeps its loaded model. So the mod-internal `client.agents.update({model})` path is **insufficient** for a live spoke session (it would only take effect on a brand-new session, not the next turn of an open one).
+- The **WS `update_model` command DOES live-swap** (conversation-scoped, via `applyModelUpdateForRuntime`). But it is an **app↔runtime WsProtocol frame** — there is **no mod-facing way to send it** (no mod dispatch; command results limited to `prompt|output|handled`).
+- **DECISION → the brief's fallback: an external watcher.** The connectivity mod stays **observability-only** (detect link on `tick` → statusline + write `~/.letta/offline-bus/mode.json`). A separate **`scripts/offline/model-swap-watcher.mjs`** reads `mode.json` and, on a transition, sends an `update_model` WS frame to the running app-server runtime (the exact frame shape is verified: `{type:"update_model", request_id, runtime:{agent_id,conversation_id}, payload:{model_handle}}` on the `control` channel; verified to live-swap).
+
+**Proof-mod consequence:** the `swapModel()` (client.agents.update) path in the current proof mod is **wrong for live swap** and will be removed when Task 6 is built — the mod becomes detect→statusline→`mode.json`; the watcher does the swap. (Proof mod still validates the observability half + loads clean.)
+
+### Verified WS frame shapes (for the watcher — Task 6)
+- App-server: `letta --backend local app-server --listen ws://127.0.0.1:<port>`; channels `…/ws?channel=control` (commands+responses) and `…/ws?channel=stream` (deltas).
+- `runtime_start`: `{type, request_id, agent_id, conversation_id | create_conversation}` → `runtime_start_response{success, runtime:{agent_id,conversation_id}, agent}`.
+- `update_model`: `{type, request_id, runtime, payload:{model_handle | model_id}}` → `update_model_response{success, applied_to:"agent"|"conversation", model_handle}`.
+- `input` (turn): `{type:"input", runtime, payload:{kind:"create_message", messages:[{role,content}]}}`.
+
+### Residual (in-session, you) — visual only
+Statusline rendering is **TUI-only** (not visible headless). When Task 6 is built: run `letta` interactively → confirm the `connectivity` status shows and flips on `touch ~/.letta/offline-bus/force-offline && bash scripts/offline/conn-probe.sh`; confirm the watcher swaps the live model on the transition. (Swap mechanism already proven above; this confirms the wired end-to-end UX.)
 ## C: fleet from spoke  ✅ RESOLVED (spoke-callable path verified; direct DB is not, outbox covers it)
 
 ### What `task_queue` is
