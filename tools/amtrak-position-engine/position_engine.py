@@ -5,7 +5,7 @@ Amtrak Position Query Engine — July 2026 Trainstravaganza.
 Answers: "Where will I be on July XX at HH:MM Eastern time?"
 Uses atomic historical-vector sampling with time-since-departure normalization.
 
-Dependencies: beautifulsoup4, pytz, requests
+Runtime deps: none (stdlib only; zoneinfo). Building the bundle needs beautifulsoup4.
 
 Data files expected in ../letta-shared-files/amtrak-data/:
   AM3-full.html  AM2-full.html  AM58-full.html  AM7-full.html
@@ -21,7 +21,25 @@ from pathlib import Path
 from typing import Optional
 from datetime import datetime
 from calendar import timegm
-import pytz
+
+# Timezone handling: prefer stdlib zoneinfo (Python 3.9+, zero third-party deps);
+# fall back to pytz if zoneinfo is unavailable.
+try:
+    from zoneinfo import ZoneInfo
+
+    def _tz(name):
+        return ZoneInfo(name)
+
+    def _localize(naive_dt, name):
+        return naive_dt.replace(tzinfo=ZoneInfo(name))
+except ImportError:  # pragma: no cover
+    import pytz
+
+    def _tz(name):
+        return pytz.utc if name == 'UTC' else pytz.timezone(name)
+
+    def _localize(naive_dt, name):
+        return pytz.timezone(name).localize(naive_dt)
 
 # ── 1. PARSE ASMAD FULL-HISTORY HTML ──────────────────────────────
 
@@ -398,7 +416,7 @@ def parse_time_str(time_str: str, tz_str: str, dep_date_str: str) -> int:
     elif ts.endswith('a'):
         ts = ts[:-1] + ' AM'
     dt = datetime.strptime(f'{dep_date_str} {ts}', '%Y-%m-%d %I:%M %p')
-    dt = pytz.timezone(tz_str).localize(dt)
+    dt = _localize(dt, tz_str)
     return int(dt.timestamp())
 
 
@@ -744,7 +762,7 @@ def query_position(
     point (offset 0, mile 0) restores pre-first-report coverage; only stations on
     our route contribute."""
     qdt = datetime.strptime(f'{query_date_str} {query_time_str}', '%Y-%m-%d %I:%M %p')
-    q_utc = int(pytz.timezone('US/Eastern').localize(qdt).timestamp())
+    q_utc = int(_localize(qdt, 'US/Eastern').timestamp())
 
     for name, tt_key, _asm_train, dep_date_str, _dep_time_str in ITINERARY:
         sched = all_schedules.get(tt_key, [])
@@ -898,7 +916,7 @@ def load_engine() -> dict:
 
 def query_at(ctx, when_dt):
     """when_dt: tz-aware datetime → predictor result dict (or None). Normalizes to ET."""
-    et = when_dt.astimezone(pytz.timezone('US/Eastern'))
+    et = when_dt.astimezone(_tz('US/Eastern'))
     return query_position(et.strftime('%Y-%m-%d'), et.strftime('%I:%M %p'),
                           ctx['all_runs'], ctx['all_schedules'],
                           ctx['route_sched'], ctx['station_lookup'], ctx.get('leg_shapes'))
@@ -954,14 +972,13 @@ def run_tests(ctx):
         r = query_position(d, tm, ctx['all_runs'], ctx['all_schedules'],
                            ctx['route_sched'], ctx['station_lookup'], ctx.get('leg_shapes'))
         print(f"\n{desc}  ({d} {tm} ET)")
-        print(_fmt_predicted(r, datetime.now(pytz.UTC)) if r else '  → NOT ON TRAIN')
+        print(_fmt_predicted(r, datetime.now(_tz('UTC'))) if r else '  → NOT ON TRAIN')
 
 
 def _parse_when(s, tzname):
-    tz = pytz.timezone(tzname)
     for fmt in ('%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I%p', '%m/%d/%Y %I:%M %p'):
         try:
-            return tz.localize(datetime.strptime(s.strip(), fmt))
+            return _localize(datetime.strptime(s.strip(), fmt), tzname)
         except ValueError:
             continue
     return None
@@ -1000,7 +1017,7 @@ def main():
         return
 
     if args.when == 'now':
-        now_dt = datetime.now(pytz.timezone('US/Eastern'))
+        now_dt = datetime.now(_tz('US/Eastern'))
         name, tt_key = _active_leg(ctx, int(now_dt.timestamp()))
         if not args.no_live and tt_key:
             live = _load_live()

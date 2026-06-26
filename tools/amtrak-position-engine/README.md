@@ -2,7 +2,7 @@
 
 ## Quick start
 
-Self-contained and offline-ready — the engine loads a pre-parsed data bundle in `data/`, so it needs only **Python 3.9+ and `pytz`** at runtime (no network, no `beautifulsoup4`).
+Self-contained and offline-ready — the engine loads a pre-parsed data bundle in `data/`, so it needs only **Python 3.9+ (standard library only — no third-party packages, no network)**. (It uses stdlib `zoneinfo`, falling back to `pytz` if ever needed.)
 
 ```bash
 python3 position_engine.py "2026-07-13 1:30 PM"   # predicted position + P10–P90 window

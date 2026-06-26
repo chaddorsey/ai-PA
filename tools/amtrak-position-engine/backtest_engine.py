@@ -17,7 +17,7 @@ Metrics per method:
   - MAE/SDpos ratio  (< 1.0 == agree within 1 SD)  ← the goal's criterion
   - coverage = fraction of true positions inside [p10,p90]  (~0.80 if calibrated)
 
-Run with the venv python (3.11 + bs4 + pytz).
+Run with stock python3 (3.9+, standard library only).
 """
 import json, statistics, sys
 from pathlib import Path
