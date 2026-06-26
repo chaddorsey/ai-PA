@@ -744,6 +744,139 @@ def build_leg_frame(tt_key: str, sched: list, route_sched: dict) -> dict:
 
 # ── 6. QUERY ENGINE ────────────────────────────────────────────────
 
+def _interp_y(points, x):
+    """points = sorted [(x, y)]; linear-interpolate y at x, clamped to the endpoints."""
+    if not points:
+        return None
+    if x <= points[0][0]:
+        return points[0][1]
+    if x >= points[-1][0]:
+        return points[-1][1]
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        if x1 <= x <= x2:
+            f = (x - x1) / (x2 - x1) if x2 != x1 else 0.0
+            return y1 + f * (y2 - y1)
+    return points[-1][1]
+
+
+def _pos_at(pts, off):
+    """pts = sorted [(off, miles, lat, lon)]; return (miles, lat, lon) at off, or None
+    if off isn't bracketed by the run's reported span."""
+    for i in range(len(pts) - 1):
+        o1, m1, la1, lo1 = pts[i]
+        o2, m2, la2, lo2 = pts[i + 1]
+        if o1 <= off <= o2:
+            f = (off - o1) / (o2 - o1) if o2 != o1 else 0.5
+            f = max(0.0, min(1.0, f))
+            return (m1 + f * (m2 - m1), la1 + f * (la2 - la1), lo1 + f * (lo2 - lo1))
+    return None
+
+
+def _off_at_mile(pts, mile):
+    """pts = sorted [(off, miles, ...)]; return the offset at which the run reaches `mile`."""
+    for i in range(len(pts) - 1):
+        m1, m2 = pts[i][1], pts[i + 1][1]
+        if (m1 <= mile <= m2) or (m2 <= mile <= m1):
+            o1, o2 = pts[i][0], pts[i + 1][0]
+            if m2 == m1:
+                return o1
+            return o1 + (mile - m1) / (m2 - m1) * (o2 - o1)
+    return None
+
+
+def _weighted_pick(items, p, key='miles'):
+    """Return the item at weighted percentile p, ranking by item[key], weighting by item['w']."""
+    s = sorted(items, key=lambda x: x[key])
+    tot = sum(x['w'] for x in s)
+    if tot <= 0:
+        return s[min(len(s) - 1, max(0, int(len(s) * p)))]
+    cum, target = 0.0, p * tot
+    for x in s:
+        cum += x['w']
+        if cum >= target:
+            return x
+    return s[-1]
+
+
+def _apply_weights(items, D0, sigma_init=25.0, ess_min=30, sigma_cap=240.0):
+    """Set item['w'] from a Gaussian kernel on (item['dhist'] − D0); adaptively widen
+    sigma until the effective sample size ≥ ess_min. D0 None → uniform weights.
+    Returns (sigma_used, n_eff)."""
+    if D0 is None:
+        for x in items:
+            x['w'] = 1.0
+        return None, len(items)
+    sigma = sigma_init
+    while True:
+        for x in items:
+            dh = x.get('dhist')
+            x['w'] = math.exp(-((dh - D0) ** 2) / (2 * sigma * sigma)) if dh is not None else 0.0
+        sw = sum(x['w'] for x in items)
+        sw2 = sum(x['w'] * x['w'] for x in items)
+        ess = (sw * sw / sw2) if sw2 > 0 else 0.0
+        if ess >= ess_min or sigma >= sigma_cap:
+            return round(sigma, 1), round(ess, 1)
+        sigma = min(sigma * 1.5, sigma_cap)
+
+
+def _build_trajectories(tt_key, sched, all_runs, route_sched):
+    """Return (anchor, anchor_utc, anchor_mi, frame, trajs) for a leg, or None.
+    trajs: list of {'pts': sorted[(off,miles,lat,lon)], 'dprof': sorted[(miles,delay_min)]}."""
+    frame = build_leg_frame(tt_key, sched, route_sched)
+    if not frame:
+        return None
+    anchor = None
+    for s in sched:
+        if s['code'] in frame:
+            anchor, anchor_utc, anchor_mi = s['code'], frame[s['code']]['utc'], frame[s['code']]['miles']
+            break
+    if anchor is None:
+        return None
+    src_trains = [seg[0] for seg in LEG_SOURCES.get(tt_key, [])]
+    trajs = []
+    for ti, train in enumerate(src_trains):
+        for _origin_date, run in all_runs.get(train, []):
+            pts, dprof = [], []
+            for code, d in run.items():
+                fr = frame.get(code)
+                if not fr:
+                    continue
+                mi = fr['miles'] - anchor_mi
+                pts.append(((fr['utc'] - anchor_utc) / 3600.0 + d['delay'] / 60.0, mi, fr['lat'], fr['lon']))
+                dprof.append((mi, d['delay']))
+            if pts and ti == 0:  # origin (mile-0, on-time) anchor — first-segment train only
+                a = frame[anchor]
+                pts.append((0.0, 0.0, a['lat'], a['lon']))
+                dprof.append((0.0, 0.0))
+            if len(pts) >= 2:
+                pts.sort()
+                dprof.sort()
+                trajs.append({'pts': pts, 'dprof': dprof})
+    return anchor, anchor_utc, anchor_mi, frame, trajs
+
+
+def _resolve_M0(observed, frame, anchor_mi, leg_shapes, tt_key):
+    """Anchor-relative milepost of the observation, from a station code, a mile, or lat/lon."""
+    if observed is None:
+        return None
+    if 'mile' in observed:
+        return observed['mile']
+    if 'station' in observed:
+        fr = frame.get(observed['station'])
+        return (fr['miles'] - anchor_mi) if fr else None
+    if 'latlon' in observed and leg_shapes and tt_key in leg_shapes:
+        la, lo = observed['latlon']
+        best = (None, 9e9)
+        for m, plat, plon in leg_shapes[tt_key]:
+            d = (plat - la) ** 2 + (plon - lo) ** 2
+            if d < best[1]:
+                best = (m, d)
+        return best[0]
+    return None
+
+
 def query_position(
     query_date_str: str,
     query_time_str: str,
@@ -752,15 +885,19 @@ def query_position(
     route_sched: dict,
     station_lookup: dict,
     leg_shapes: Optional[dict] = None,
+    observed: Optional[dict] = None,
+    sigma: float = 25.0,
 ) -> Optional[dict]:
-    """Return probable position (p10/p50/p90) at a given date/time (ET).
+    """Probable position (p10/p50/p90) at a date/time (ET).
 
-    Offsets = scheduled-elapsed-from-anchor (our timetable) + measured delay, on
-    one tz-correct clock.  Each leg pools historical runs from ALL its source
-    trains (see LEG_SOURCES), mapped through a single chained-milepost frame, so
-    multi-train legs (Empire Builder, Texas Eagle) are continuous.  An origin
-    point (offset 0, mile 0) restores pre-first-report coverage; only stations on
-    our route contribute."""
+    Offsets = scheduled-elapsed-from-anchor (our timetable) + measured delay, on one
+    tz-correct clock; legs pool all their source trains through a chained-milepost frame.
+
+    If `observed` is given ({'delay': min, and one of 'station'/'mile'/'latlon'}), each
+    historical run is weighted by a Gaussian kernel on how close its delay at the observed
+    milepost was to ours (CONDITIONED forecasting) — tightening the window and capturing
+    recovery dynamics. With observed=None, weights are uniform → identical to the
+    unconditioned engine."""
     qdt = datetime.strptime(f'{query_date_str} {query_time_str}', '%Y-%m-%d %I:%M %p')
     q_utc = int(_localize(qdt, 'US/Eastern').timestamp())
 
@@ -768,68 +905,31 @@ def query_position(
         sched = all_schedules.get(tt_key, [])
         if len(sched) < 2:
             continue
-        our_dep_utc = sched[0]['utc']
-        our_last_utc = sched[-1]['utc']
-        if q_utc < our_dep_utc - 7200:
+        our_dep_utc, our_last_utc = sched[0]['utc'], sched[-1]['utc']
+        if q_utc < our_dep_utc - 7200 or q_utc > our_last_utc + 21600:
             continue
-        if q_utc > our_last_utc + 21600:
+        built = _build_trajectories(tt_key, sched, all_runs, route_sched)
+        if not built:
             continue
-
-        frame = build_leg_frame(tt_key, sched, route_sched)
-        if not frame:
-            continue
-        anchor = None
-        for s in sched:
-            if s['code'] in frame:
-                anchor = s['code']
-                anchor_utc = frame[anchor]['utc']
-                anchor_mi = frame[anchor]['miles']
-                break
-        if anchor is None:
-            continue
-
+        anchor, anchor_utc, anchor_mi, frame, trajs = built
         our_offset_h = (q_utc - anchor_utc) / 3600.0
-        src_trains = [seg[0] for seg in LEG_SOURCES.get(tt_key, [])]
-        positions = []
 
-        for ti, train in enumerate(src_trains):
-            for _origin_date, run in all_runs.get(train, []):
-                pts = []
-                for code, d in run.items():
-                    fr = frame.get(code)
-                    if not fr:
-                        continue
-                    off = (fr['utc'] - anchor_utc) / 3600.0 + d['delay'] / 60.0
-                    pts.append((off, fr['miles'] - anchor_mi, fr['lat'], fr['lon']))
-                # Origin (mile-0) anchor only for the leg's FIRST-segment train — a
-                # later segment (e.g. train 27 covering only SPK→PDX) didn't depart
-                # the leg origin, so anchoring it there draws a bogus straight chord.
-                if pts and ti == 0:
-                    a = frame[anchor]
-                    pts.append((0.0, 0.0, a['lat'], a['lon']))
-                pts.sort()
-                for i in range(len(pts) - 1):
-                    o1, m1, la1, lo1 = pts[i]
-                    o2, m2, la2, lo2 = pts[i + 1]
-                    if o1 <= our_offset_h <= o2:
-                        frac = (our_offset_h - o1) / (o2 - o1) if o2 != o1 else 0.5
-                        frac = max(0.0, min(1.0, frac))
-                        positions.append({
-                            'lat': la1 + frac * (la2 - la1),
-                            'lon': lo1 + frac * (lo2 - lo1),
-                            'miles': m1 + frac * (m2 - m1),
-                        })
-                        break
+        obs_M0 = _resolve_M0(observed, frame, anchor_mi, leg_shapes, tt_key)
+        obs_D0 = observed.get('delay') if (observed and obs_M0 is not None) else None
+
+        positions = []
+        for t in trajs:
+            pr = _pos_at(t['pts'], our_offset_h)
+            if pr is not None:
+                dh = _interp_y(t['dprof'], obs_M0) if obs_M0 is not None else None
+                positions.append({'miles': pr[0], 'lat': pr[1], 'lon': pr[2], 'dhist': dh})
 
         if len(positions) >= 5:
-            ps = sorted(positions, key=lambda x: x['miles'])
-            n = len(ps)
-            p10 = ps[max(0, int(n * 0.1))]
-            p50 = ps[int(n * 0.5)]
-            p90 = ps[min(n - 1, int(n * 0.9))]
+            sigma_used, n_eff = _apply_weights(positions, obs_D0, sigma)
+            p10 = _weighted_pick(positions, 0.1)
+            p50 = _weighted_pick(positions, 0.5)
+            p90 = _weighted_pick(positions, 0.9)
 
-            # On-track lat/lon: map each percentile milepost onto the GTFS leg polyline
-            # (follows the rails) instead of the straight line between stations.
             if leg_shapes and tt_key in leg_shapes:
                 poly = leg_shapes[tt_key]
                 for p in (p10, p50, p90):
@@ -839,8 +939,7 @@ def query_position(
 
             route_stations = sorted(
                 ((info['miles'] - anchor_mi, code) for code, info in frame.items()),
-                key=lambda x: x[0],
-            )
+                key=lambda x: x[0])
             before = after = None
             for rel_mi, code in route_stations:
                 if rel_mi <= p50['miles']:
@@ -858,7 +957,11 @@ def query_position(
                 'train': name,
                 'hours_into_trip': round((q_utc - our_dep_utc) / 3600.0, 1),
                 'anchor': anchor,
-                'n_runs': n,
+                'n_runs': len(positions),
+                'conditioned': obs_D0 is not None,
+                'obs_delay_min': obs_D0,
+                'sigma_used': sigma_used,
+                'n_eff': n_eff,
                 'p10_lat': round(p10['lat'], 3), 'p10_lon': round(p10['lon'], 3),
                 'p10_mi': round(p10['miles'], 1),
                 'p50_lat': round(p50['lat'], 3), 'p50_lon': round(p50['lon'], 3),
@@ -868,6 +971,48 @@ def query_position(
                 'before': _nm(before),
                 'after': _nm(after),
             }
+    return None
+
+
+def eta_to(ctx, station_code, leg_key=None, ref_utc=None, observed=None, sigma=25.0):
+    """Weighted p10/p50/p90 clock-time ETA to station_code. Leg = `leg_key` if given
+    (planning), else the leg active at ref_utc (default now). Conditioned on `observed`."""
+    if ref_utc is None:
+        ref_utc = int(datetime.now(_tz('US/Eastern')).timestamp())
+    for name, tt_key, _a, _dd, _t in ITINERARY:
+        sched = ctx['all_schedules'].get(tt_key, [])
+        if len(sched) < 2:
+            continue
+        if leg_key is not None:
+            if tt_key != leg_key:
+                continue
+        elif not (sched[0]['utc'] - 7200 <= ref_utc <= sched[-1]['utc'] + 21600):
+            continue
+        built = _build_trajectories(tt_key, sched, ctx['all_runs'], ctx['route_sched'])
+        if not built:
+            continue
+        anchor, anchor_utc, anchor_mi, frame, trajs = built
+        if station_code not in frame:
+            return {'error': f"{station_code} is not on the current leg ({name})"}
+        target_mi = frame[station_code]['miles'] - anchor_mi
+        obs_M0 = _resolve_M0(observed, frame, anchor_mi, ctx.get('leg_shapes'), tt_key)
+        obs_D0 = observed.get('delay') if (observed and obs_M0 is not None) else None
+        rows = []
+        for t in trajs:
+            off = _off_at_mile(t['pts'], target_mi)
+            if off is not None and off >= 0:
+                dh = _interp_y(t['dprof'], obs_M0) if obs_M0 is not None else None
+                rows.append({'off': off, 'dhist': dh})
+        if len(rows) >= 5:
+            sigma_used, n_eff = _apply_weights(rows, obs_D0, sigma)
+
+            def clock(p):
+                off = _weighted_pick(rows, p, key='off')['off']
+                return datetime.fromtimestamp(anchor_utc + off * 3600, _tz('US/Eastern'))
+
+            return {'train': name, 'station': station_code,
+                    'conditioned': obs_D0 is not None, 'obs_delay_min': obs_D0, 'n_eff': n_eff,
+                    'p10': clock(0.1), 'p50': clock(0.5), 'p90': clock(0.9)}
     return None
 
 
@@ -914,12 +1059,13 @@ def load_engine() -> dict:
     }
 
 
-def query_at(ctx, when_dt):
+def query_at(ctx, when_dt, observed=None, sigma=25.0):
     """when_dt: tz-aware datetime → predictor result dict (or None). Normalizes to ET."""
     et = when_dt.astimezone(_tz('US/Eastern'))
     return query_position(et.strftime('%Y-%m-%d'), et.strftime('%I:%M %p'),
                           ctx['all_runs'], ctx['all_schedules'],
-                          ctx['route_sched'], ctx['station_lookup'], ctx.get('leg_shapes'))
+                          ctx['route_sched'], ctx['station_lookup'], ctx.get('leg_shapes'),
+                          observed=observed, sigma=sigma)
 
 
 def _active_leg(ctx, when_utc):
@@ -930,11 +1076,19 @@ def _active_leg(ctx, when_utc):
     return None, None
 
 
+def _delay_phrase(d):
+    return 'on time' if abs(d) < 5 else (f'{int(round(d))} min late' if d > 0 else f'{int(round(-d))} min early')
+
+
 def _fmt_predicted(r, when_dt, label='PREDICTED'):
     if not r:
         return f"  [{label}] Not on a train at {when_dt:%Y-%m-%d %I:%M %p %Z}."
+    tag = label
+    if r.get('conditioned'):
+        tag = (f"{label} · conditioned on {_delay_phrase(r['obs_delay_min'])} "
+               f"(n_eff={r['n_eff']}, σ={r['sigma_used']}m)")
     return "\n".join([
-        f"  [{label}]  {r['train']}  ·  +{r['hours_into_trip']}h into the leg  ·  n={r['n_runs']} runs",
+        f"  [{tag}]  {r['train']}  ·  +{r['hours_into_trip']}h into the leg  ·  n={r['n_runs']} runs",
         f"  Most likely (P50): {r['p50_lat']}, {r['p50_lon']}  (~mile {r['p50_mi']})",
         f"  Between {r['before']}  and  {r['after']}",
         f"  Uncertainty P10–P90: mile {r['p10_mi']} → {r['p90_mi']} "
@@ -964,6 +1118,50 @@ def _fmt_live(fix):
         except Exception:
             pass
     return "\n".join(lines)
+
+
+def _fmt_eta(e):
+    if not e:
+        return "  No active leg / no data for that ETA."
+    if e.get('error'):
+        return f"  {e['error']}"
+    cond = (f"conditioned on {_delay_phrase(e['obs_delay_min'])}, n_eff={e['n_eff']}"
+            if e.get('conditioned') else "unconditioned")
+    return "\n".join([
+        f"  ETA to {e['station']}  ({e['train']}, {cond})",
+        f"  Likely (P50): {e['p50']:%a %I:%M %p %Z}",
+        f"  Window P10–P90: {e['p10']:%I:%M %p} – {e['p90']:%I:%M %p}",
+    ])
+
+
+def _leg_of_station(ctx, code):
+    """Timetable key of the leg whose route includes station `code`, or None."""
+    for _n, tt_key, _a, _dd, _t in ITINERARY:
+        sched = ctx['all_schedules'].get(tt_key, [])
+        if len(sched) >= 2 and code in build_leg_frame(tt_key, sched, ctx['route_sched']):
+            return tt_key
+    return None
+
+
+def _observation(ctx, args, tt_key):
+    """Build the conditioning observation: manual --at/--delay overrides; else the live
+    current position+delay for the leg's train; else None (→ unconditioned)."""
+    if args.at or args.delay is not None:
+        obs = {'delay': float(args.delay) if args.delay is not None else 0.0}
+        if args.at:
+            obs['station'] = args.at.upper()
+        return obs
+    if args.no_live or not tt_key:
+        return None
+    live = _load_live()
+    if not live:
+        return None
+    data = live.fetch_all()
+    for num in LIVE_TRAINS.get(tt_key, []):
+        fix = live.live_position(num, data=data)
+        if fix and fix.get('lat') is not None and fix.get('delay_min') is not None:
+            return {'latlon': (fix['lat'], fix['lon']), 'delay': fix['delay_min']}
+    return None
 
 
 def run_tests(ctx):
@@ -998,10 +1196,14 @@ def main():
     import argparse
     ap = argparse.ArgumentParser(description='Amtrak position estimator (July 2026 trip)')
     ap.add_argument('when', nargs='?', default='now',
-                    help='"now", a time like "2026-07-13 1:30 PM", or "test"')
+                    help='"now", a time like "2026-07-13 1:30 PM", "eta", or "test"')
+    ap.add_argument('station', nargs='?', help='station code (for the "eta" command)')
     ap.add_argument('--tz', default='US/Eastern', help='timezone of the given time (default ET)')
     ap.add_argument('--no-live', action='store_true', help='skip the live feed (predict only)')
     ap.add_argument('--train', help='force a live lookup of this train number (debug)')
+    ap.add_argument('--at', help='conditioning: station code you have just passed')
+    ap.add_argument('--delay', type=float, help='conditioning: minutes late there (default 0)')
+    ap.add_argument('--sigma', type=float, default=25.0, help='conditioning kernel bandwidth, min (default 25, auto-widens)')
     args = ap.parse_args()
 
     if args.train:  # pure live probe — works whenever a train of that number is running
@@ -1014,6 +1216,18 @@ def main():
     ctx = load_engine()
     if args.when == 'test':
         run_tests(ctx)
+        return
+
+    if args.when == 'eta':
+        if not args.station:
+            print('  usage: position_engine.py eta <STATION_CODE> [--at CODE --delay MIN]')
+            return
+        leg_key = _leg_of_station(ctx, args.at.upper()) if args.at else None
+        if leg_key is None:
+            _, leg_key = _active_leg(ctx, int(datetime.now(_tz('US/Eastern')).timestamp()))
+        observed = _observation(ctx, args, leg_key)
+        print(_fmt_eta(eta_to(ctx, args.station.upper(), leg_key=leg_key,
+                              observed=observed, sigma=args.sigma)))
         return
 
     if args.when == 'now':
@@ -1036,7 +1250,9 @@ def main():
     if when_dt is None:
         print('  Could not parse time. Try e.g. "2026-07-13 1:30 PM" or "2026-07-13 13:30".')
         return
-    print(_fmt_predicted(query_at(ctx, when_dt), when_dt))
+    _, tt_key = _active_leg(ctx, int(when_dt.timestamp()))
+    observed = _observation(ctx, args, tt_key)
+    print(_fmt_predicted(query_at(ctx, when_dt, observed=observed, sigma=args.sigma), when_dt))
 
 
 if __name__ == '__main__':

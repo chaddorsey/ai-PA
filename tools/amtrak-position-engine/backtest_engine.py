@@ -136,6 +136,98 @@ def backtest(all_runs, routes, method):
             'ratio': mae / sdpos if sdpos else float('inf'), 'coverage': cov}
 
 
+import math
+
+
+def _run_traj(run, route):
+    """(pts sorted [(off, miles)], dprof sorted [(miles, delay)]) via the NEW offset method."""
+    stations, origin_dep = route['stations'], route['origin_dep']
+    pts, dprof = [], []
+    for code, d in run.items():
+        st = stations.get(code)
+        if not st or st['miles'] is None or st['arr'] is None or origin_dep is None:
+            continue
+        pts.append(((st['arr'] - origin_dep) / 3600.0 + d['delay'] / 60.0, st['miles']))
+        dprof.append((st['miles'], d['delay']))
+    pts.sort()
+    dprof.sort()
+    return pts, dprof
+
+
+def _interp(points, x):  # clamped (for delay-at-M0)
+    if not points:
+        return None
+    if x <= points[0][0]:
+        return points[0][1]
+    if x >= points[-1][0]:
+        return points[-1][1]
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        if x1 <= x <= x2:
+            return y1 + (x - x1) / (x2 - x1) * (y2 - y1) if x2 != x1 else y1
+    return points[-1][1]
+
+
+def _interp_b(points, x):  # bracketed (None outside) — for predicting miles at a future offset
+    for i in range(len(points) - 1):
+        x1, y1 = points[i]
+        x2, y2 = points[i + 1]
+        if x1 <= x <= x2:
+            return y1 + (x - x1) / (x2 - x1) * (y2 - y1) if x2 != x1 else 0.5 * (y1 + y2)
+    return None
+
+
+def _wpick(vals_w, p):
+    s = sorted(vals_w)
+    tot = sum(w for _, w in s)
+    if tot <= 0:
+        return s[min(len(s) - 1, max(0, int(len(s) * p)))][0]
+    cum, tgt = 0.0, p * tot
+    for v, w in s:
+        cum += w
+        if cum >= tgt:
+            return v
+    return s[-1][0]
+
+
+def backtest_conditioned(all_runs, routes, sigma):
+    """Two-stage: for each held-out run, observe its real delay at its ~40%-mark milepost,
+    forecast its LATER points from the other runs both unconditioned and conditioned (kernel
+    on delay-at-M0), and compare. Returns MAE and p10–p90 coverage for each."""
+    eu, ec, cu, cc, tot = [], [], 0, 0, 0
+    for train, runs in all_runs.items():
+        route = routes.get(train)
+        if not route:
+            continue
+        trajs = [(od, *_run_traj(run, route)) for od, run in runs]
+        trajs = [(od, p, dp) for od, p, dp in trajs if len(p) >= 4]
+        for held_od, hpts, hdp in trajs:
+            obs_idx = max(1, int(len(hpts) * 0.4))
+            M0 = hpts[obs_idx][1]
+            D0 = _interp(hdp, M0)
+            for off_t, true_m in hpts[obs_idx + 1:]:
+                pu, pc = [], []
+                for od2, opts, odp in trajs:
+                    if od2 == held_od:
+                        continue
+                    pm = _interp_b(opts, off_t)
+                    if pm is None:
+                        continue
+                    dh = _interp(odp, M0)
+                    w = math.exp(-((dh - D0) ** 2) / (2 * sigma * sigma)) if dh is not None else 0.0
+                    pu.append((pm, 1.0))
+                    pc.append((pm, w))
+                if len(pu) >= 10:
+                    eu.append(abs(_wpick(pu, 0.5) - true_m))
+                    ec.append(abs(_wpick(pc, 0.5) - true_m))
+                    cu += 1 if _wpick(pu, 0.1) <= true_m <= _wpick(pu, 0.9) else 0
+                    cc += 1 if _wpick(pc, 0.1) <= true_m <= _wpick(pc, 0.9) else 0
+                    tot += 1
+    return {'n': tot, 'mae_u': statistics.mean(eu), 'mae_c': statistics.mean(ec),
+            'cov_u': cu / tot, 'cov_c': cc / tot}
+
+
 def main():
     print('Loading ASMAD runs ...', file=sys.stderr)
     all_runs = load_asmad_runs()
@@ -149,6 +241,15 @@ def main():
                   f'{r["sdpos"]:7.1f} | {r["ratio"]:7.2f} | {r["coverage"]:6.2f}')
         else:
             print(f'{method:>5} | (no results)')
+
+    print('\n=== CONDITIONED FORECASTING (observe delay at ~40% mark, forecast the rest) ===')
+    print(f'{"sigma":>6} | {"n":>6} | {"MAE_uncond":>10} | {"MAE_cond":>9} | {"improve":>8} | {"cov_u":>5} | {"cov_c":>5}')
+    print('-' * 66)
+    for sigma in (15, 25, 40, 60):
+        r = backtest_conditioned(all_runs, routes, sigma)
+        imp = 100 * (r['mae_u'] - r['mae_c']) / r['mae_u'] if r['mae_u'] else 0
+        print(f'{sigma:6d} | {r["n"]:6d} | {r["mae_u"]:10.1f} | {r["mae_c"]:9.1f} | '
+              f'{imp:7.1f}% | {r["cov_u"]:5.2f} | {r["cov_c"]:5.2f}')
 
 
 if __name__ == '__main__':

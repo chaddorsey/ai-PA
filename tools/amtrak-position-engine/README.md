@@ -8,13 +8,16 @@ Self-contained and offline-ready — the engine loads a pre-parsed data bundle i
 python3 position_engine.py "2026-07-13 1:30 PM"   # predicted position + P10–P90 window
 python3 position_engine.py "2026-07-13 12:30 PM" --tz US/Central   # any timezone
 python3 position_engine.py now      # live position if online (Amtraker), else cached, else predicted
+python3 position_engine.py "2026-07-13 8:00 PM" --at MOT --delay 90   # CONDITIONED on your real delay
+python3 position_engine.py eta SPK --at MOT --delay 90   # ETA to a station (conditioned)
 python3 position_engine.py --train 3   # probe ANY running train right now (live-feed test)
 python3 position_engine.py test     # full July-2026 itinerary suite
-python3 backtest_engine.py          # leave-one-run-out validation (expect NEW ≈ 0.66 SD)
+python3 backtest_engine.py          # validation: unconditioned (NEW ≈ 0.66 SD) + conditioned sweep
 ```
 
 - **`now`** resolves **live → cached-fix → predictor**, labelling which it used; on the train this gives a real-time position (lat/lon, speed, delay, next-stop ETA) and degrades gracefully when signal drops.
 - Predicted queries report the most-likely position plus the **P10–P90 uncertainty window**, with lat/lon snapped to the actual track geometry.
+- **Conditioned forecasting** (`--at <station> --delay <min>`, or auto from the live feed): reweights the historical ensemble toward runs that were as late as you are at the point you've reached. In backtest this cuts forecast error **~35%** (MAE 38→25 mi) while holding coverage. A Gaussian kernel (`--sigma`, default 25 min) auto-widens to keep enough analogs. `eta <STATION>` reports the weighted P10/P50/P90 arrival time. Design: `docs/plans/2026-06-26-amtrak-conditioned-forecasting-design.md`.
 
 Use `query_position(date, time_ET, all_runs, all_schedules, route_sched, station_lookup, leg_shapes)` programmatically — see `main()` for the wiring.
 
