@@ -21,12 +21,17 @@ python3 position_engine.py alerts                          # high-salience featu
 python3 position_engine.py guide 27                        # the whole route guide for a leg (planning)
 python3 build_route_guide.py        # recompile guides/*.yml → data/route_guide.json (build-time, needs PyYAML)
 python3 test_route_guide.py         # route-guide unit tests (schema, projection, landmark spot-checks)
+
+# Google Earth fly-ahead:
+python3 kml_tour.py all             # write kml/<corridor>.kml for each leg — open in Google Earth, press play
+python3 kml_tour.py 11              # just the Coast Starlight
 ```
 
 - **`now`** resolves **live → cached-fix → predictor**, labelling which it used; on the train this gives a real-time position (lat/lon, speed, delay, next-stop ETA) and degrades gracefully when signal drops.
 - Predicted queries report the most-likely position plus the **P10–P90 uncertainty window**, with lat/lon snapped to the actual track geometry.
 - **Conditioned forecasting** (`--at <station> --delay <min>`, or auto from the live feed): reweights the historical ensemble toward runs that were as late as you are at the point you've reached. In backtest this cuts forecast error **~35%** (MAE 38→25 mi) while holding coverage. A Gaussian kernel (`--sigma`, default 25 min) auto-widens to keep enough analogs. `eta <STATION>` reports the weighted P10/P50/P90 arrival time. Design: `docs/plans/2026-06-26-amtrak-conditioned-forecasting-design.md`.
 - **Route guide** (`around` / `lookahead` / `alerts` / `guide`): a milepost-indexed feature layer — towns, water, terrain, parks, scenic sights — keyed to the same axis as the predictor, so it composes with position and ETAs. Each feature carries which **window to look out** and (for `lookahead`) a conditioned ETA via `eta_to_mile`. Curated per corridor in `guides/*.yml`, compiled to `data/route_guide.json` (offline, stdlib runtime). This is the backbone the KML/3D/app renderers will build on. Design: `docs/plans/2026-06-26-amtrak-route-guide-build.md`; build doc covers the schema, sources, and phasing. Phase A (this) is curated marquee sights + stations; sparse stretches are explicitly annotated (`coverage_gaps`) for Phase B/C automation.
+- **Google Earth fly-ahead** (`kml_tour.py`): a pure transform of the route-guide contract — the polyline becomes a flight path, features become placemarks, and marquee sights become timed camera stops in a `gx:Tour`. `python3 kml_tour.py all` writes one `.kml` per leg into `kml/` (gitignored, regenerable); open in Google Earth and press play to fly the route.
 
 Use `query_position(date, time_ET, all_runs, all_schedules, route_sched, station_lookup, leg_shapes)` programmatically — see `main()` for the wiring.
 
