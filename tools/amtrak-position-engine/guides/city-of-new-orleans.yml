@@ -1,0 +1,65 @@
+corridor: City of New Orleans
+leg: "58"
+features:
+  - id: lake-pontchartrain
+    name: Lake Pontchartrain crossing
+    kind: lake
+    class: natural
+    lat: 30.18
+    lon: -90.05
+    side: both
+    salience: 4
+    blurb: Leaving New Orleans north across the Lake Pontchartrain trestle — open water on both sides.
+    tags: [lake, crossing, scenic]
+  - id: mississippi-delta
+    name: Mississippi Delta
+    kind: plain
+    class: natural
+    lat: 33.40
+    lon: -90.20
+    from_latlon: [32.30, -90.18]
+    to_latlon: [34.30, -90.30]
+    salience: 3
+    blurb: The flat, fertile Mississippi Delta — cotton country and the birthplace of the blues.
+    tags: [delta, scenic, blues]
+  - id: mississippi-memphis
+    name: Mississippi River at Memphis
+    kind: river
+    class: natural
+    lat: 35.13
+    lon: -90.075
+    salience: 4
+    blurb: Running the bluff above the Mississippi at Memphis — the big river wide to the west.
+    tags: [river, scenic]
+  - id: ohio-river-cairo
+    name: Ohio River (near Cairo)
+    kind: river
+    class: natural
+    lat: 37.10
+    lon: -89.18
+    side: both
+    salience: 4
+    blurb: Crossing the Ohio River near its confluence with the Mississippi at the tip of Illinois.
+    tags: [river, crossing]
+  - id: illinois-prairie
+    name: Central Illinois prairie
+    kind: plain
+    class: natural
+    lat: 39.80
+    lon: -88.95
+    from_latlon: [38.05, -89.20]
+    to_latlon: [41.30, -87.95]
+    salience: 2
+    blurb: The corn-and-soybean prairie of central Illinois, rolling north toward Chicago.
+    tags: [prairie, farmland]
+  - id: mississippi-piney-woods
+    name: Mississippi Piney Woods
+    kind: forest
+    class: natural
+    lat: 31.30
+    lon: -90.40
+    from_latlon: [30.50, -90.40]
+    to_latlon: [32.30, -90.10]
+    salience: 3
+    blurb: The pine forests and small towns of southern Mississippi between the Gulf coast and the Delta.
+    tags: [forest, scenic]

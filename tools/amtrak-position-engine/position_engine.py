@@ -181,6 +181,11 @@ def build_bundle(src_dir) -> None:
         print(f"  + built data/leg_shapes.json ({n} legs with on-track geometry)")
     except Exception as e:
         print(f"  ! leg_shapes build skipped ({e}); engine will straight-line between stations")
+    try:
+        import build_route_guide
+        build_route_guide.main()
+    except Exception as e:
+        print(f"  ! route_guide build skipped ({e}); run build_route_guide.py separately")
 
 
 # ── 1b. GTFS TRACK GEOMETRY (on-track lat/lon between stations) ────
@@ -320,6 +325,41 @@ def _milepost_latlon(poly, mile):
             f = (mile - m1) / (m2 - m1) if m2 != m1 else 0.0
             return la1 + f * (la2 - la1), lo1 + f * (lo2 - lo1)
     return poly[-1][1], poly[-1][2]
+
+
+def _project_point_seg(qlat, qlon, lat1, lon1, lat2, lon2):
+    """Project (qlat,qlon) onto segment 1→2 (equirectangular). Return (t∈[0,1], footlat, footlon)."""
+    from math import radians, cos
+    kx = cos(radians((lat1 + lat2) / 2.0))
+    ax, ay = (lon2 - lon1) * kx, (lat2 - lat1)
+    bx, by = (qlon - lon1) * kx, (qlat - lat1)
+    denom = ax * ax + ay * ay
+    t = 0.0 if denom == 0 else max(0.0, min(1.0, (ax * bx + ay * by) / denom))
+    return t, lat1 + t * (lat2 - lat1), lon1 + t * (lon2 - lon1)
+
+
+def project_to_leg(poly, lat, lon):
+    """Nearest point on a leg polyline [[mile,lat,lon],...] to (lat,lon).
+    Returns (mile, offtrack_mi, side) where side ∈ {left,right,ahead} relative to the
+    direction of travel (increasing milepost). Used to key any feature to the leg axis."""
+    from math import radians, cos
+    best = None  # (dist_mi, mile, side)
+    for i in range(len(poly) - 1):
+        m1, la1, lo1 = poly[i]
+        m2, la2, lo2 = poly[i + 1]
+        t, fla, flo = _project_point_seg(lat, lon, la1, lo1, la2, lo2)
+        d = _haversine_mi((lat, lon), (fla, flo))
+        if best is None or d < best[0]:
+            mile = m1 + t * (m2 - m1)
+            kx = cos(radians((la1 + la2) / 2.0))
+            vx, vy = (lo2 - lo1) * kx, (la2 - la1)          # travel direction
+            wx, wy = (lon - flo) * kx, (lat - fla)          # toward the feature
+            cross = vx * wy - vy * wx                        # >0 ⇒ feature is to the LEFT
+            side = 'ahead' if d < 0.3 else ('left' if cross > 0 else 'right')
+            best = (d, mile, side)
+    if best is None:
+        return None
+    return round(best[1], 2), round(best[0], 2), best[2]
 
 
 # ── 2. LOAD STATION GEOGRAPHY ─────────────────────────────────────
@@ -1016,6 +1056,39 @@ def eta_to(ctx, station_code, leg_key=None, ref_utc=None, observed=None, sigma=2
     return None
 
 
+def eta_to_mile(ctx, leg_key, target_mi, ref_utc=None, observed=None, sigma=25.0):
+    """Weighted P10/P50/P90 clock-time ETA to an anchor-relative milepost on leg_key.
+    Same machinery as eta_to but targets a milepost (so route-guide features ETA precisely)."""
+    for _name, tt_key, _a, _dd, _t in ITINERARY:
+        if tt_key != leg_key:
+            continue
+        sched = ctx['all_schedules'].get(tt_key, [])
+        if len(sched) < 2:
+            return None
+        built = _build_trajectories(tt_key, sched, ctx['all_runs'], ctx['route_sched'])
+        if not built:
+            return None
+        anchor, anchor_utc, anchor_mi, frame, trajs = built
+        obs_M0 = _resolve_M0(observed, frame, anchor_mi, ctx.get('leg_shapes'), tt_key)
+        obs_D0 = observed.get('delay') if (observed and obs_M0 is not None) else None
+        rows = []
+        for t in trajs:
+            off = _off_at_mile(t['pts'], target_mi)
+            if off is not None and off >= 0:
+                dh = _interp_y(t['dprof'], obs_M0) if obs_M0 is not None else None
+                rows.append({'off': off, 'dhist': dh})
+        if len(rows) < 5:
+            return None
+        sigma_used, n_eff = _apply_weights(rows, obs_D0, sigma)
+
+        def clock(p):
+            return datetime.fromtimestamp(anchor_utc + _weighted_pick(rows, p, key='off')['off'] * 3600,
+                                          _tz('US/Eastern'))
+        return {'p10': clock(0.1), 'p50': clock(0.5), 'p90': clock(0.9),
+                'conditioned': obs_D0 is not None, 'n_eff': n_eff}
+    return None
+
+
 # ── 7. MAIN ────────────────────────────────────────────────────────
 
 # ── 7. CLI ──────────────────────────────────────────────────────────
@@ -1164,6 +1237,79 @@ def _observation(ctx, args, tt_key):
     return None
 
 
+def _locate(ctx, args):
+    """Resolve (leg, mile, ref_dt, observed) for the route-guide commands. A time given
+    as the 2nd arg → predicted mile at that time; else live position now; else None."""
+    timearg = args.station  # 2nd positional doubles as the time for around/lookahead/alerts
+    if timearg:
+        ref_dt = _parse_when(timearg, args.tz)
+        if ref_dt is None:
+            return None, None, None, None
+        leg = _active_leg(ctx, int(ref_dt.timestamp()))[1]
+        observed = _observation(ctx, args, leg)
+        r = query_at(ctx, ref_dt, observed=observed)
+        return leg, (r['p50_mi'] if r else None), ref_dt, observed
+    now_dt = datetime.now(_tz('US/Eastern'))
+    leg = _active_leg(ctx, int(now_dt.timestamp()))[1]
+    if leg and not args.no_live:
+        live = _load_live()
+        data = live.fetch_all() if live else None
+        for num in LIVE_TRAINS.get(leg, []):
+            fix = live.live_position(num, data=data) if live else None
+            if fix and fix.get('source') == 'live' and fix.get('lat') is not None:
+                proj = project_to_leg(ctx['leg_shapes'][leg], fix['lat'], fix['lon'])
+                return leg, proj[0], now_dt, {'latlon': (fix['lat'], fix['lon']), 'delay': fix['delay_min']}
+    if leg:
+        r = query_at(ctx, now_dt)
+        return leg, (r['p50_mi'] if r else None), now_dt, None
+    return None, None, now_dt, None
+
+
+def _side_word(s):
+    return {'left': '← left window', 'right': 'right window →',
+            'both': 'both sides', 'ahead': 'straight ahead'}.get(s, s)
+
+
+def _fmt_around(feats, context, mile):
+    lines = [f"  Around you (~mile {mile:.0f}):"]
+    if context:
+        lines.append("  In: " + ", ".join(f"{f['name']} ({_side_word(f['side'])})" for f in context))
+    nearby = [f for f in feats if not f['inside']][:8]
+    for f in nearby:
+        rel = f['rel_mi']
+        where = f"{abs(rel):.0f} mi ahead" if rel > 0 else f"{abs(rel):.0f} mi back"
+        kind = 'stop' if f['kind'] == 'station' else f['kind']
+        b = f" — {f['blurb']}" if f.get('blurb') else ""
+        lines.append(f"    {f['name']} [{kind}] ({where}, {_side_word(f['side'])}){b}")
+    if not context and not nearby:
+        lines.append("    (open country)")
+    return "\n".join(lines)
+
+
+def _fmt_lookahead(feats, mode):
+    if not feats:
+        return "  Nothing notable in that window."
+    lines = [f"  {'Heads-up — coming soon:' if mode == 'alerts' else 'Coming up:'}"]
+    for f in feats:
+        b = f" — {f['blurb']}" if f.get('blurb') else ""
+        lines.append(f"    +{f['mins_ahead']:>3} min (~{f['eta']['p50']:%I:%M %p}, {_side_word(f['side'])})  {f['name']}{b}")
+    return "\n".join(lines)
+
+
+def _fmt_guide(legdata, leg):
+    lines = [f"  Route guide — {legdata.get('corridor', 'leg ' + leg)} ({legdata['leg_miles']:.0f} mi):"]
+    for f in legdata['features']:
+        if f['kind'] == 'station' or f['salience'] < 3:
+            continue
+        span = f"{f['from_mi']:.0f}-{f['to_mi']:.0f}" if f['from_mi'] < f['to_mi'] else f"mi {f['peak_mi']:.0f}"
+        lines.append(f"    {span:>12} · {_side_word(f['side']):<15} {f['name']} — {f['blurb']}")
+    gaps = legdata.get('coverage_gaps') or []
+    if gaps:
+        lines.append(f"  ({len(gaps)} sparse stretch(es) pending Phase B/C enrichment: "
+                     + ", ".join(f'{int(a)}-{int(b)}mi' for a, b in gaps) + ")")
+    return "\n".join(lines)
+
+
 def run_tests(ctx):
     print('=== POSITION QUERIES (July 2026 itinerary) ===')
     for d, tm, desc in TESTS:
@@ -1196,8 +1342,9 @@ def main():
     import argparse
     ap = argparse.ArgumentParser(description='Amtrak position estimator (July 2026 trip)')
     ap.add_argument('when', nargs='?', default='now',
-                    help='"now", a time like "2026-07-13 1:30 PM", "eta", or "test"')
-    ap.add_argument('station', nargs='?', help='station code (for the "eta" command)')
+                    help='"now", a time, "eta", "around", "lookahead", "alerts", "guide", or "test"')
+    ap.add_argument('station', nargs='?', help='station/leg code, or a time for around/lookahead/alerts')
+    ap.add_argument('--horizon', type=int, help='lookahead horizon in minutes (default 120; alerts 30)')
     ap.add_argument('--tz', default='US/Eastern', help='timezone of the given time (default ET)')
     ap.add_argument('--no-live', action='store_true', help='skip the live feed (predict only)')
     ap.add_argument('--train', help='force a live lookup of this train number (debug)')
@@ -1228,6 +1375,37 @@ def main():
         observed = _observation(ctx, args, leg_key)
         print(_fmt_eta(eta_to(ctx, args.station.upper(), leg_key=leg_key,
                               observed=observed, sigma=args.sigma)))
+        return
+
+    if args.when == 'guide':
+        import route_guide as RG
+        guide = RG.load_guide()
+        leg = args.station
+        if not leg or leg not in guide:
+            print(f"  usage: guide <leg>   (legs: {', '.join(guide) or 'none built'})")
+            return
+        print(_fmt_guide(guide[leg], leg))
+        return
+
+    if args.when in ('around', 'lookahead', 'alerts'):
+        import route_guide as RG
+        guide = RG.load_guide()
+        if not guide:
+            print("  No route guide built yet (run build_route_guide.py).")
+            return
+        leg, mile, ref_dt, observed = _locate(ctx, args)
+        if not leg or mile is None:
+            print('  Not on a trip leg now — give a time, e.g.  around "2026-07-13 1:30 PM"')
+            return
+        if args.when == 'around':
+            print(_fmt_around(RG.around(guide, leg, mile, min_salience=1),
+                              RG.current_context(guide, leg, mile), mile))
+        else:
+            horizon = args.horizon or (30 if args.when == 'alerts' else 120)
+            min_sal = 4 if args.when == 'alerts' else 2
+            feats = RG.lookahead(ctx, guide, leg, mile, ref_dt, observed=observed,
+                                 horizon_min=horizon, min_salience=min_sal)
+            print(_fmt_lookahead(feats, args.when))
         return
 
     if args.when == 'now':

@@ -1,0 +1,97 @@
+corridor: Sunset Limited
+leg: "2"
+features:
+  - id: san-gorgonio-pass
+    name: San Gorgonio Pass (Palm Springs windmills)
+    kind: pass
+    class: natural
+    lat: 33.92
+    lon: -116.68
+    side: both
+    salience: 4
+    blurb: Out of the LA basin past the wind farms of San Gorgonio Pass, between San Jacinto and San Bernardino peaks.
+    tags: [scenic, windmills, pass]
+  - id: colorado-river-yuma
+    name: Colorado River (Yuma)
+    kind: river
+    class: natural
+    lat: 32.731
+    lon: -114.622
+    side: both
+    salience: 4
+    blurb: Crossing the Colorado River at Yuma — the Arizona–California line.
+    tags: [river, crossing]
+  - id: sonoran-desert
+    name: Sonoran Desert
+    kind: desert
+    class: natural
+    lat: 32.90
+    lon: -112.40
+    from_latlon: [32.73, -114.50]
+    to_latlon: [32.12, -110.94]
+    salience: 3
+    blurb: Saguaro country — the Sonoran Desert between Yuma and Tucson.
+    tags: [desert, scenic, cactus]
+  - id: rio-grande-el-paso
+    name: Rio Grande / El Paso border
+    kind: river
+    class: natural
+    lat: 31.760
+    lon: -106.487
+    salience: 4
+    blurb: Running the Rio Grande along the US–Mexico border at El Paso, with Ciudad Juárez across the river.
+    tags: [river, border, scenic]
+  - id: west-texas-bigbend
+    name: West Texas / Big Bend country
+    kind: desert
+    class: natural
+    lat: 30.30
+    lon: -103.60
+    from_latlon: [31.20, -105.30]
+    to_latlon: [29.83, -102.40]
+    salience: 3
+    blurb: The vast Chihuahuan Desert and mountains around Alpine and Marathon — gateway to Big Bend.
+    tags: [desert, mountain, scenic]
+  - id: pecos-river-high-bridge
+    name: Pecos River High Bridge
+    kind: bridge
+    class: engineering
+    lat: 29.785
+    lon: -101.357
+    side: both
+    salience: 5
+    blurb: One of the highest railroad bridges in Texas — soaring over the Pecos River canyon west of Del Rio.
+    tags: [bridge, canyon, scenic]
+  - id: atchafalaya-basin
+    name: Atchafalaya Basin
+    kind: region
+    class: natural
+    lat: 29.95
+    lon: -91.40
+    from_latlon: [30.22, -91.99]
+    to_latlon: [29.71, -90.82]
+    salience: 4
+    blurb: The great Atchafalaya swamp — miles of cypress, bayou and water on the causeway into Cajun country.
+    tags: [swamp, bayou, scenic]
+  - id: colorado-desert-salton
+    name: Colorado Desert / Salton Basin
+    kind: desert
+    class: natural
+    lat: 33.30
+    lon: -115.80
+    from_latlon: [33.90, -116.55]
+    to_latlon: [32.80, -114.70]
+    salience: 3
+    blurb: The below-sea-level Colorado Desert and Salton Sea basin east of the LA basin.
+    tags: [desert, scenic]
+  - id: gulf-coastal-plain
+    name: Louisiana Gulf Coastal Plain
+    kind: plain
+    class: natural
+    lat: 30.05
+    lon: -93.20
+    from_latlon: [30.10, -94.80]
+    to_latlon: [29.95, -91.99]
+    salience: 3
+    blurb: Rice prairies, bayous and the coastal plain of southwest Louisiana.
+    tags: [coastal, bayou]

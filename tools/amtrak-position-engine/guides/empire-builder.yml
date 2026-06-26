@@ -1,0 +1,90 @@
+corridor: Empire Builder
+leg: "27"
+# CHI→PDX (Portland section). Includes the Columbia Gorge on the PDX leg.
+features:
+  - id: upper-mississippi-lacrosse
+    name: Upper Mississippi River
+    kind: river
+    class: natural
+    lat: 43.95
+    lon: -91.30
+    from_latlon: [43.80, -91.25]
+    to_latlon: [44.55, -91.90]
+    salience: 4
+    blurb: Hugging the Upper Mississippi from La Crosse up through Winona — bluffs and backwaters out the west windows.
+    tags: [river, scenic, bluffs]
+  - id: wisconsin-dells
+    name: Wisconsin Dells
+    kind: gorge
+    class: natural
+    lat: 43.63
+    lon: -89.77
+    salience: 3
+    blurb: Sandstone gorges and rock formations along the Wisconsin River.
+    tags: [scenic, gorge]
+  - id: north-dakota-plains
+    name: Northern Great Plains
+    kind: plain
+    class: natural
+    lat: 47.90
+    lon: -101.30
+    from_latlon: [46.88, -96.79]
+    to_latlon: [48.20, -103.62]
+    salience: 2
+    blurb: The wide open wheat country of North Dakota — big sky to every horizon.
+    tags: [prairie, scenic]
+  - id: glacier-national-park
+    name: Glacier National Park
+    kind: national_park
+    class: protected
+    lat: 48.55
+    lon: -113.60
+    from_latlon: [48.44, -113.22]
+    to_latlon: [48.50, -114.00]
+    salience: 5
+    blurb: Skirting the wild southern edge of Glacier — peaks of the park rising to the north between East and West Glacier.
+    tags: [scenic, mountain, park, marquee]
+  - id: marias-pass
+    name: Marias Pass (Continental Divide)
+    kind: pass
+    class: natural
+    lat: 48.323
+    lon: -113.351
+    side: both
+    elev_ft: 5213
+    salience: 5
+    blurb: Crossing the Continental Divide at Marias Pass on the southern boundary of Glacier — the lowest crossing of the northern Rockies.
+    tags: [scenic, mountain, divide, pass]
+  - id: columbia-river-gorge
+    name: Columbia River Gorge
+    kind: gorge
+    class: natural
+    lat: 45.60
+    lon: -121.40
+    from_latlon: [45.93, -119.30]
+    to_latlon: [45.60, -122.30]
+    salience: 5
+    blurb: Down the Columbia River Gorge to Portland — basalt cliffs and waterfalls, the river wide to the south.
+    tags: [scenic, gorge, river, marquee]
+  - id: minnesota-north-woods
+    name: Minnesota Lakes & North Woods
+    kind: forest
+    class: natural
+    lat: 46.40
+    lon: -95.20
+    from_latlon: [45.10, -93.10]
+    to_latlon: [46.88, -96.79]
+    salience: 3
+    blurb: The lakes, birch and pine of central Minnesota north of the Twin Cities.
+    tags: [forest, lakes, scenic]
+  - id: montana-hi-line
+    name: Montana Hi-Line
+    kind: plain
+    class: natural
+    lat: 48.50
+    lon: -108.20
+    from_latlon: [48.20, -104.20]
+    to_latlon: [48.55, -111.50]
+    salience: 3
+    blurb: The vast high plains of Montana's Hi-Line, running just south of the Canadian border toward the Rockies.
+    tags: [plains, scenic, bigsky]

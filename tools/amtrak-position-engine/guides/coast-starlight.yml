@@ -1,0 +1,79 @@
+corridor: Coast Starlight
+leg: "11"
+# PDX→LAX (southbound). Ocean is to the west = right window.
+features:
+  - id: cascade-summit
+    name: Cascade Range crossing
+    kind: pass
+    class: natural
+    lat: 43.60
+    lon: -122.03
+    side: both
+    salience: 4
+    blurb: Climbing the Oregon Cascades above Eugene through tall fir forest and snowsheds toward Cascade Summit.
+    tags: [mountain, forest, scenic, pass]
+  - id: mount-shasta
+    name: Mount Shasta
+    kind: summit
+    class: natural
+    lat: 41.409
+    lon: -122.195
+    elev_ft: 14179
+    salience: 5
+    blurb: The 14,179-ft volcanic cone of Mount Shasta looming to the east near Dunsmuir.
+    tags: [mountain, volcano, scenic, marquee]
+  - id: sacramento-valley
+    name: Sacramento Valley
+    kind: plain
+    class: natural
+    lat: 39.40
+    lon: -122.00
+    from_latlon: [40.18, -122.24]
+    to_latlon: [38.58, -121.49]
+    salience: 2
+    blurb: The broad farm country of California's Central Valley.
+    tags: [farmland, valley]
+  - id: san-francisco-bay
+    name: San Francisco Bay
+    kind: bay
+    class: natural
+    lat: 37.85
+    lon: -122.34
+    from_latlon: [38.02, -122.13]
+    to_latlon: [37.45, -121.95]
+    salience: 4
+    blurb: Running the east shore of San Francisco Bay through Martinez and Oakland — water and the city skyline to the west.
+    tags: [bay, scenic, city]
+  - id: pacific-coast-gaviota
+    name: Pacific Coast (Gaviota)
+    kind: coast
+    class: natural
+    lat: 34.40
+    lon: -120.15
+    from_latlon: [35.18, -120.75]
+    to_latlon: [34.42, -119.74]
+    salience: 5
+    blurb: The famous run right along the Pacific — empty beaches and surf out the west windows from San Luis Obispo to Santa Barbara.
+    tags: [coast, ocean, scenic, marquee]
+  - id: upper-sacramento-canyon
+    name: Upper Sacramento River Canyon
+    kind: canyon
+    class: natural
+    lat: 40.80
+    lon: -122.35
+    from_latlon: [41.22, -122.28]
+    to_latlon: [40.18, -122.24]
+    salience: 3
+    blurb: Twisting down the forested upper Sacramento River canyon beneath Mount Shasta.
+    tags: [canyon, forest, scenic]
+  - id: salinas-valley
+    name: Salinas Valley
+    kind: plain
+    class: natural
+    lat: 36.30
+    lon: -121.20
+    from_latlon: [37.00, -121.55]
+    to_latlon: [35.70, -120.69]
+    salience: 3
+    blurb: Steinbeck's Salinas Valley — lettuce fields between the coastal ranges.
+    tags: [valley, farmland]

@@ -1,0 +1,101 @@
+corridor: Southwest Chief
+leg: "3"
+# Curated marquee features (CHI→LAX). Stations are added automatically at build.
+# `side` is computed from geometry unless given here (crossings set side: both).
+features:
+  - id: mississippi-fort-madison
+    name: Mississippi River (Fort Madison)
+    kind: river
+    class: natural
+    lat: 40.629
+    lon: -91.317
+    side: both
+    salience: 4
+    blurb: Crossing the Mississippi on the BNSF swing bridge at Fort Madison, IA.
+    tags: [river, crossing, scenic]
+  - id: flint-hills
+    name: Flint Hills tallgrass prairie
+    kind: plain
+    class: natural
+    lat: 38.30
+    lon: -96.50
+    from_latlon: [38.95, -95.65]
+    to_latlon: [37.95, -97.10]
+    salience: 3
+    blurb: The last great expanse of tallgrass prairie, rolling across the Kansas Flint Hills.
+    tags: [prairie, scenic]
+  - id: raton-pass
+    name: Raton Pass
+    kind: pass
+    class: natural
+    lat: 36.95
+    lon: -104.46
+    side: both
+    elev_ft: 7834
+    salience: 5
+    blurb: The route's high point — over the Sangre de Cristos on the CO/NM line via the Raton Tunnel; sweeping 2% grades.
+    tags: [scenic, mountain, grade, pass]
+  - id: glorieta-pass
+    name: Glorieta Pass
+    kind: pass
+    class: natural
+    lat: 35.58
+    lon: -105.77
+    side: both
+    salience: 3
+    blurb: Climbing through the southern Sangre de Cristos toward Lamy and Santa Fe.
+    tags: [mountain, pass]
+  - id: continental-divide-gallup
+    name: Continental Divide (Campbell Pass)
+    kind: pass
+    class: natural
+    lat: 35.45
+    lon: -108.47
+    side: both
+    elev_ft: 7248
+    salience: 4
+    blurb: Crossing the Continental Divide on the high New Mexico plateau near Gallup.
+    tags: [divide, scenic]
+  - id: mojave-desert
+    name: Mojave Desert
+    kind: desert
+    class: natural
+    lat: 34.90
+    lon: -116.10
+    from_latlon: [34.83, -114.61]
+    to_latlon: [34.90, -117.02]
+    salience: 3
+    blurb: Crossing the Mojave between Needles and Barstow — Joshua trees and open desert.
+    tags: [desert, scenic]
+  - id: cajon-pass
+    name: Cajon Pass
+    kind: pass
+    class: natural
+    lat: 34.31
+    lon: -117.46
+    side: both
+    salience: 5
+    blurb: The dramatic descent off the high desert through Cajon Pass into the Los Angeles basin.
+    tags: [scenic, mountain, grade, pass]
+  - id: western-high-plains
+    name: Western High Plains
+    kind: plain
+    class: natural
+    lat: 37.80
+    lon: -101.20
+    from_latlon: [38.05, -98.10]
+    to_latlon: [37.00, -104.00]
+    salience: 3
+    blurb: The short-grass High Plains of western Kansas and southeastern Colorado, climbing imperceptibly toward the Rockies.
+    tags: [plains, scenic]
+  - id: arizona-colorado-plateau
+    name: Colorado Plateau (Northern Arizona)
+    kind: desert
+    class: natural
+    lat: 35.30
+    lon: -110.60
+    from_latlon: [35.52, -108.74]
+    to_latlon: [35.18, -112.60]
+    salience: 3
+    blurb: Red-rock high desert of the Colorado Plateau — Painted Desert country across northern Arizona.
+    tags: [desert, plateau, scenic]

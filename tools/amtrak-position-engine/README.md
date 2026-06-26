@@ -13,11 +13,20 @@ python3 position_engine.py eta SPK --at MOT --delay 90   # ETA to a station (con
 python3 position_engine.py --train 3   # probe ANY running train right now (live-feed test)
 python3 position_engine.py test     # full July-2026 itinerary suite
 python3 backtest_engine.py          # validation: unconditioned (NEW ≈ 0.66 SD) + conditioned sweep
+
+# route guide — what's out the window:
+python3 position_engine.py around   "2026-07-13 8:00 PM"   # towns/terrain/sights near you + which window
+python3 position_engine.py lookahead "2026-07-13 1:00 PM" --at MOT --delay 90   # what's coming, with ETAs
+python3 position_engine.py alerts                          # high-salience features arriving soon
+python3 position_engine.py guide 27                        # the whole route guide for a leg (planning)
+python3 build_route_guide.py        # recompile guides/*.yml → data/route_guide.json (build-time, needs PyYAML)
+python3 test_route_guide.py         # route-guide unit tests (schema, projection, landmark spot-checks)
 ```
 
 - **`now`** resolves **live → cached-fix → predictor**, labelling which it used; on the train this gives a real-time position (lat/lon, speed, delay, next-stop ETA) and degrades gracefully when signal drops.
 - Predicted queries report the most-likely position plus the **P10–P90 uncertainty window**, with lat/lon snapped to the actual track geometry.
 - **Conditioned forecasting** (`--at <station> --delay <min>`, or auto from the live feed): reweights the historical ensemble toward runs that were as late as you are at the point you've reached. In backtest this cuts forecast error **~35%** (MAE 38→25 mi) while holding coverage. A Gaussian kernel (`--sigma`, default 25 min) auto-widens to keep enough analogs. `eta <STATION>` reports the weighted P10/P50/P90 arrival time. Design: `docs/plans/2026-06-26-amtrak-conditioned-forecasting-design.md`.
+- **Route guide** (`around` / `lookahead` / `alerts` / `guide`): a milepost-indexed feature layer — towns, water, terrain, parks, scenic sights — keyed to the same axis as the predictor, so it composes with position and ETAs. Each feature carries which **window to look out** and (for `lookahead`) a conditioned ETA via `eta_to_mile`. Curated per corridor in `guides/*.yml`, compiled to `data/route_guide.json` (offline, stdlib runtime). This is the backbone the KML/3D/app renderers will build on. Design: `docs/plans/2026-06-26-amtrak-route-guide-build.md`; build doc covers the schema, sources, and phasing. Phase A (this) is curated marquee sights + stations; sparse stretches are explicitly annotated (`coverage_gaps`) for Phase B/C automation.
 
 Use `query_position(date, time_ET, all_runs, all_schedules, route_sched, station_lookup, leg_shapes)` programmatically — see `main()` for the wiring.
 
