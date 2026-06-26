@@ -215,6 +215,12 @@ model_list:
       model: "fireworks_ai/accounts/fireworks/models/minimax-m2p7"
       api_key: "os.environ/FIREWORKS_AI_API_KEY"
 
+  # --- MiniMax M3 (Jun 2026; tops open-weight SWE-bench Pro ~59%, 1M ctx) ---
+  - model_name: "minimax-m3"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/minimax-m3"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
   # --- OpenAI open-weight GPT-OSS 120B ---
   - model_name: "gpt-oss-120b"
     litellm_params:
@@ -225,6 +231,12 @@ model_list:
   - model_name: "deepseek-v4-pro"
     litellm_params:
       model: "fireworks_ai/accounts/fireworks/models/deepseek-v4-pro"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
+  # --- Qwen3.6 Plus (Zhipu/Alibaba; strong + cheapest serverless coder) ---
+  - model_name: "qwen3p6-plus"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/qwen3p6-plus"
       api_key: "os.environ/FIREWORKS_AI_API_KEY"
 
   # =========================================================================
