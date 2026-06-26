@@ -154,6 +154,154 @@ def build_bundle(src_dir) -> None:
     total = sum(len(v) for v in runs.values())
     print(f"Built bundle in {DATA_DIR}: {total} runs across {len(runs)} trains; "
           f"copied {sum((DATA_DIR/n).exists() for n in GEO_JSONS)}/{len(GEO_JSONS)} geo JSONs")
+    try:
+        st = load_station_catalog()
+        gg = build_station_geo(st, load_mileposts())
+        tts = {k: parse_timetable(v) for k, v in TIMETABLE_TEXT.items()}
+        scheds = {tt: compute_schedule(tt, dep, tts, gg) for _n, tt, _a, dep, _t in ITINERARY}
+        n = build_shapes(src, scheds, build_route_sched())
+        print(f"  + built data/leg_shapes.json ({n} legs with on-track geometry)")
+    except Exception as e:
+        print(f"  ! leg_shapes build skipped ({e}); engine will straight-line between stations")
+
+
+# ── 1b. GTFS TRACK GEOMETRY (on-track lat/lon between stations) ────
+
+GTFS_URL = 'https://content.amtrak.com/content/gtfs/GTFS.zip'
+ROUTE_NAMES = {
+    '3': 'Southwest Chief', '2': 'Sunset Limited', '58': 'City of New Orleans',
+    '27': 'Empire Builder', '11': 'Coast Starlight', '422': 'Texas Eagle',
+}
+MATCH_TOL_MI = 3.0   # max station→shape-vertex distance to trust a match
+
+
+def _haversine_mi(a, b):
+    from math import radians, sin, cos, asin, sqrt
+    dlat, dlon = radians(b[0] - a[0]), radians(b[1] - a[1])
+    h = sin(dlat / 2) ** 2 + cos(radians(a[0])) * cos(radians(b[0])) * sin(dlon / 2) ** 2
+    return 2 * 3958.7613 * asin(min(1.0, sqrt(h)))
+
+
+def _load_gtfs(src):
+    """Return (routes_by_id→name, trips, shapes_by_id→[(lat,lon),...]).
+    Uses src/GTFS.zip if present, else downloads the live Amtrak feed."""
+    import csv, io, zipfile, urllib.request
+    zpath = Path(src) / 'GTFS.zip'
+    if zpath.exists():
+        raw = zpath.read_bytes()
+    else:
+        req = urllib.request.Request(GTFS_URL, headers={'User-Agent': 'amtrak-position-engine'})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            raw = r.read()
+    z = zipfile.ZipFile(io.BytesIO(raw))
+
+    def rows(name):
+        with z.open(name) as f:
+            return list(csv.DictReader(io.TextIOWrapper(f, 'utf-8-sig')))
+
+    routes = {r['route_id']: r.get('route_long_name', '') for r in rows('routes.txt')}
+    trips = rows('trips.txt')
+    shapes = {}
+    for s in rows('shapes.txt'):
+        shapes.setdefault(s['shape_id'], []).append(
+            (int(s['shape_pt_sequence']), float(s['shape_pt_lat']), float(s['shape_pt_lon'])))
+    for sid in shapes:
+        shapes[sid] = [(la, lo) for _seq, la, lo in sorted(shapes[sid])]
+    return routes, trips, shapes
+
+
+def build_shapes(src, all_schedules, route_sched) -> int:
+    """Build data/leg_shapes.json: per leg, a dense [[anchor_mile, lat, lon], ...] polyline
+    that follows the actual track between stations (vs straight lines). Returns #legs built."""
+    routes, trips, shapes = _load_gtfs(src)
+    name_to_routeids = {}
+    for rid, nm in routes.items():
+        name_to_routeids.setdefault(nm, []).append(rid)
+    routeid_to_shapeids = {}
+    for t in trips:
+        routeid_to_shapeids.setdefault(t['route_id'], set()).add(t.get('shape_id'))
+
+    def candidate_shapes(corridor_names):
+        ids = set()
+        for nm in corridor_names:
+            for rid in name_to_routeids.get(nm, []):
+                ids |= routeid_to_shapeids.get(rid, set())
+        return [(sid, shapes[sid]) for sid in ids if sid in shapes and len(shapes[sid]) > 5]
+
+    def nearest(lat, lon, cands):
+        best = (None, None, 9e9)
+        for sid, poly in cands:
+            for i, v in enumerate(poly):
+                d = _haversine_mi((lat, lon), v)
+                if d < best[2]:
+                    best = (sid, i, d)
+        return best
+
+    leg_shapes = {}
+    for tt_key, corridor in ROUTE_NAMES.items():
+        names = [corridor] + (['Sunset Limited'] if tt_key == '422' else [])
+        cands = candidate_shapes(names)
+        sched = all_schedules.get(tt_key, [])
+        if not cands or len(sched) < 2:
+            continue
+        frame = build_leg_frame(tt_key, sched, route_sched)
+        anchor = next((s['code'] for s in sched if s['code'] in frame), None)
+        if not anchor:
+            continue
+        amile = frame[anchor]['miles']
+        stations = sorted(([frame[c]['miles'] - amile, frame[c]['lat'], frame[c]['lon']]
+                           for c in frame), key=lambda x: x[0])
+        out = []
+        for k in range(len(stations) - 1):
+            m1, la1, lo1 = stations[k]
+            m2, la2, lo2 = stations[k + 1]
+            out.append([round(m1, 2), round(la1, 5), round(lo1, 5)])
+            s1, s2 = nearest(la1, lo1, cands), nearest(la2, lo2, cands)
+            if s1[0] and s1[0] == s2[0] and s1[2] < MATCH_TOL_MI and s2[2] < MATCH_TOL_MI:
+                poly = shapes[s1[0]]
+                i1, i2 = s1[1], s2[1]
+                seg = poly[i1:i2 + 1] if i1 <= i2 else poly[i2:i1 + 1][::-1]
+                if len(seg) >= 3:
+                    cum = [0.0]
+                    for j in range(1, len(seg)):
+                        cum.append(cum[-1] + _haversine_mi(seg[j - 1], seg[j]))
+                    total = cum[-1] or 1.0
+                    for j in range(1, len(seg) - 1):
+                        f = cum[j] / total
+                        out.append([round(m1 + f * (m2 - m1), 2),
+                                    round(seg[j][0], 5), round(seg[j][1], 5)])
+        last = stations[-1]
+        out.append([round(last[0], 2), round(last[1], 5), round(last[2], 5)])
+        leg_shapes[tt_key] = out
+    (DATA_DIR / 'leg_shapes.json').write_text(json.dumps(leg_shapes))
+    return len(leg_shapes)
+
+
+def _load_leg_shapes() -> dict:
+    p = DATA_DIR / 'leg_shapes.json'
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def _milepost_latlon(poly, mile):
+    """Interpolate on-track (lat, lon) at an anchor-relative milepost along a leg polyline."""
+    if not poly:
+        return None
+    if mile <= poly[0][0]:
+        return poly[0][1], poly[0][2]
+    if mile >= poly[-1][0]:
+        return poly[-1][1], poly[-1][2]
+    for i in range(len(poly) - 1):
+        m1, la1, lo1 = poly[i]
+        m2, la2, lo2 = poly[i + 1]
+        if m1 <= mile <= m2:
+            f = (mile - m1) / (m2 - m1) if m2 != m1 else 0.0
+            return la1 + f * (la2 - la1), lo1 + f * (lo2 - lo1)
+    return poly[-1][1], poly[-1][2]
 
 
 # ── 2. LOAD STATION GEOGRAPHY ─────────────────────────────────────
@@ -585,6 +733,7 @@ def query_position(
     all_schedules: dict,
     route_sched: dict,
     station_lookup: dict,
+    leg_shapes: Optional[dict] = None,
 ) -> Optional[dict]:
     """Return probable position (p10/p50/p90) at a given date/time (ET).
 
@@ -661,6 +810,15 @@ def query_position(
             p50 = ps[int(n * 0.5)]
             p90 = ps[min(n - 1, int(n * 0.9))]
 
+            # On-track lat/lon: map each percentile milepost onto the GTFS leg polyline
+            # (follows the rails) instead of the straight line between stations.
+            if leg_shapes and tt_key in leg_shapes:
+                poly = leg_shapes[tt_key]
+                for p in (p10, p50, p90):
+                    ll = _milepost_latlon(poly, p['miles'])
+                    if ll:
+                        p['lat'], p['lon'] = ll
+
             route_stations = sorted(
                 ((info['miles'] - anchor_mi, code) for code, info in frame.items()),
                 key=lambda x: x[0],
@@ -697,56 +855,171 @@ def query_position(
 
 # ── 7. MAIN ────────────────────────────────────────────────────────
 
-def main():
-    print('Loading ASMAD historical data ...')
-    all_runs = load_asmad_runs()
-    for t, r in all_runs.items():
-        print(f'  Train {t}: {len(r)} runs')
+# ── 7. CLI ──────────────────────────────────────────────────────────
 
-    print('Loading station geography ...')
+# Operating train numbers per leg (timetable key), used for the live feed.
+LIVE_TRAINS = {
+    '3': ['3'], '2': ['2'], '58': ['58'],
+    '27': ['27', '7'], '11': ['11'], '422': ['422', '22'],
+}
+
+TESTS = [
+    ('2026-07-06', '5:00 PM', 'SW Chief Day 1'),
+    ('2026-07-07', '8:00 AM', 'SW Chief Day 2'),
+    ('2026-07-08', '5:00 AM', 'SW Chief approaching LA'),
+    ('2026-07-09', '3:00 PM', 'Sunset Ltd AZ/NM'),
+    ('2026-07-10', '6:00 PM', 'Sunset Ltd approaching NOLA'),
+    ('2026-07-11', '10:00 PM', 'CONO TN'),
+    ('2026-07-12', '8:00 PM', 'Empire Builder WI/MN'),
+    ('2026-07-13', '1:00 PM', 'Empire Builder MT'),
+    ('2026-07-14', '12:00 PM', 'Empire Builder arriving PDX'),
+    ('2026-07-16', '8:00 PM', 'Coast Starlight OR'),
+    ('2026-07-17', '3:00 PM', 'Coast Starlight CA'),
+    ('2026-07-20', '10:00 AM', 'TX Eagle AR'),
+    ('2026-07-21', '6:00 PM', 'TX Eagle approaching CHI'),
+]
+
+
+def load_engine() -> dict:
+    """Load all data once; return the context query_at()/query_position() need."""
     station_lookup = load_station_catalog()
-    mileposts_raw = load_mileposts()
-    get_geo = build_station_geo(station_lookup, mileposts_raw)
-    route_sched = build_route_sched()
-
-    print('Parsing timetables ...')
+    get_geo = build_station_geo(station_lookup, load_mileposts())
     timetables = {k: parse_timetable(v) for k, v in TIMETABLE_TEXT.items()}
-    for k, v in timetables.items():
-        print(f'  {k}: {len(v)} stations')
+    all_schedules = {tt: compute_schedule(tt, dep, timetables, get_geo)
+                     for _n, tt, _a, dep, _t in ITINERARY}
+    return {
+        'all_runs': load_asmad_runs(),
+        'station_lookup': station_lookup,
+        'route_sched': build_route_sched(),
+        'all_schedules': all_schedules,
+        'leg_shapes': _load_leg_shapes(),
+    }
 
-    print('Computing July 2026 schedules ...')
-    all_schedules = {}
-    for name, tt_key, _asm_train, dep_date_str, _ in ITINERARY:
-        all_schedules[tt_key] = compute_schedule(tt_key, dep_date_str, timetables, get_geo)
 
-    tests = [
-        ('2026-07-06', '5:00 PM', 'SW Chief Day 1'),
-        ('2026-07-07', '8:00 AM', 'SW Chief Day 2'),
-        ('2026-07-08', '5:00 AM', 'SW Chief approaching LA'),
-        ('2026-07-09', '3:00 PM', 'Sunset Ltd AZ/NM'),
-        ('2026-07-10', '6:00 PM', 'Sunset Ltd approaching NOLA'),
-        ('2026-07-11', '10:00 PM', 'CONO TN'),
-        ('2026-07-12', '8:00 PM', 'Empire Builder WI/MN'),
-        ('2026-07-13', '1:00 PM', 'Empire Builder MT'),
-        ('2026-07-14', '12:00 PM', 'Empire Builder arriving PDX'),
-        ('2026-07-16', '8:00 PM', 'Coast Starlight OR'),
-        ('2026-07-17', '3:00 PM', 'Coast Starlight CA'),
-        ('2026-07-20', '10:00 AM', 'TX Eagle AR'),
-        ('2026-07-21', '6:00 PM', 'TX Eagle approaching CHI'),
-    ]
+def query_at(ctx, when_dt):
+    """when_dt: tz-aware datetime → predictor result dict (or None). Normalizes to ET."""
+    et = when_dt.astimezone(pytz.timezone('US/Eastern'))
+    return query_position(et.strftime('%Y-%m-%d'), et.strftime('%I:%M %p'),
+                          ctx['all_runs'], ctx['all_schedules'],
+                          ctx['route_sched'], ctx['station_lookup'], ctx.get('leg_shapes'))
 
-    print('\n=== POSITION QUERIES ===')
-    for dt, tm, desc in tests:
-        r = query_position(dt, tm, all_runs, all_schedules, route_sched, station_lookup)
-        if r:
-            print(f'\n{desc}  ({dt} {tm} ET)')
-            print(f'  Train: {r["train"]}  +{r["hours_into_trip"]}h  n={r["n_runs"]}')
-            print(f'  P10: {r["p10_lat"]},{r["p10_lon"]}  ({r["p10_mi"]} mi)')
-            print(f'  P50: {r["p50_lat"]},{r["p50_lon"]}  ({r["p50_mi"]} mi)')
-            print(f'  P90: {r["p90_lat"]},{r["p90_lon"]}  ({r["p90_mi"]} mi)')
-            print(f'  Near: {r["before"]}  →  {r["after"]}')
-        else:
-            print(f'\n{desc}  ({dt} {tm} ET)  →  NOT ON TRAIN')
+
+def _active_leg(ctx, when_utc):
+    for name, tt_key, _a, _d, _t in ITINERARY:
+        s = ctx['all_schedules'].get(tt_key, [])
+        if len(s) >= 2 and s[0]['utc'] - 7200 <= when_utc <= s[-1]['utc'] + 21600:
+            return name, tt_key
+    return None, None
+
+
+def _fmt_predicted(r, when_dt, label='PREDICTED'):
+    if not r:
+        return f"  [{label}] Not on a train at {when_dt:%Y-%m-%d %I:%M %p %Z}."
+    return "\n".join([
+        f"  [{label}]  {r['train']}  ·  +{r['hours_into_trip']}h into the leg  ·  n={r['n_runs']} runs",
+        f"  Most likely (P50): {r['p50_lat']}, {r['p50_lon']}  (~mile {r['p50_mi']})",
+        f"  Between {r['before']}  and  {r['after']}",
+        f"  Uncertainty P10–P90: mile {r['p10_mi']} → {r['p90_mi']} "
+        f"({r['p10_lat']},{r['p10_lon']} → {r['p90_lat']},{r['p90_lon']})",
+    ])
+
+
+def _fmt_live(fix):
+    src = fix.get('source')
+    head = 'LIVE' if src == 'live' else 'CACHED LIVE'
+    lines = [f"  [{head}]  {fix.get('route')} (#{fix.get('train_num')})  ·  {fix.get('state')}"]
+    spd = (f"  ·  {fix['velocity_mph']} mph {fix.get('heading') or ''}".rstrip()
+           if fix.get('velocity_mph') is not None else "")
+    lines.append(f"  Now at: {fix.get('lat'):.4f}, {fix.get('lon'):.4f}{spd}")
+    d = fix.get('delay_min')
+    if d is not None:
+        lines.append(f"  Running: {'on time' if abs(d) < 5 else (f'{d} min late' if d > 0 else f'{-d} min early')}")
+    if fix.get('next_name'):
+        eta = f", est. arrival {fix['next_eta']}" if fix.get('next_eta') else ""
+        lines.append(f"  Next stop: {fix['next_name']} ({fix.get('next_code')}){eta}")
+    if src == 'cache':
+        try:
+            from live import cache_age_minutes
+            age = cache_age_minutes(fix)
+            if age is not None:
+                lines.append(f"  (offline — last live fix {age} min ago)")
+        except Exception:
+            pass
+    return "\n".join(lines)
+
+
+def run_tests(ctx):
+    print('=== POSITION QUERIES (July 2026 itinerary) ===')
+    for d, tm, desc in TESTS:
+        r = query_position(d, tm, ctx['all_runs'], ctx['all_schedules'],
+                           ctx['route_sched'], ctx['station_lookup'], ctx.get('leg_shapes'))
+        print(f"\n{desc}  ({d} {tm} ET)")
+        print(_fmt_predicted(r, datetime.now(pytz.UTC)) if r else '  → NOT ON TRAIN')
+
+
+def _parse_when(s, tzname):
+    tz = pytz.timezone(tzname)
+    for fmt in ('%Y-%m-%d %I:%M %p', '%Y-%m-%d %H:%M', '%Y-%m-%d %I%p', '%m/%d/%Y %I:%M %p'):
+        try:
+            return tz.localize(datetime.strptime(s.strip(), fmt))
+        except ValueError:
+            continue
+    return None
+
+
+def _load_live():
+    import sys
+    sys.path.insert(0, str(ENGINE_DIR))
+    try:
+        import live
+        return live
+    except Exception:
+        return None
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(description='Amtrak position estimator (July 2026 trip)')
+    ap.add_argument('when', nargs='?', default='now',
+                    help='"now", a time like "2026-07-13 1:30 PM", or "test"')
+    ap.add_argument('--tz', default='US/Eastern', help='timezone of the given time (default ET)')
+    ap.add_argument('--no-live', action='store_true', help='skip the live feed (predict only)')
+    ap.add_argument('--train', help='force a live lookup of this train number (debug)')
+    args = ap.parse_args()
+
+    if args.train:  # pure live probe — works whenever a train of that number is running
+        live = _load_live()
+        # --no-live forces the cached-fix path (demonstrates offline failover)
+        fix = live.live_position(args.train, data=({} if args.no_live else None)) if live else None
+        print(_fmt_live(fix) if fix else f"  No live data for train {args.train} (and no cache).")
+        return
+
+    ctx = load_engine()
+    if args.when == 'test':
+        run_tests(ctx)
+        return
+
+    if args.when == 'now':
+        now_dt = datetime.now(pytz.timezone('US/Eastern'))
+        name, tt_key = _active_leg(ctx, int(now_dt.timestamp()))
+        if not args.no_live and tt_key:
+            live = _load_live()
+            data = live.fetch_all() if live else None
+            for num in LIVE_TRAINS.get(tt_key, []):
+                fix = live.live_position(num, data=data) if live else None
+                if fix and fix.get('source') == 'live' and fix.get('state') == 'Active':
+                    print(_fmt_live(fix))
+                    return
+        r = query_at(ctx, now_dt)
+        print(_fmt_predicted(r, now_dt, 'PREDICTED (no live)') if r
+              else f"  Not currently on a trip leg ({now_dt:%Y-%m-%d %I:%M %p %Z}).")
+        return
+
+    when_dt = _parse_when(args.when, args.tz)
+    if when_dt is None:
+        print('  Could not parse time. Try e.g. "2026-07-13 1:30 PM" or "2026-07-13 13:30".')
+        return
+    print(_fmt_predicted(query_at(ctx, when_dt), when_dt))
 
 
 if __name__ == '__main__':

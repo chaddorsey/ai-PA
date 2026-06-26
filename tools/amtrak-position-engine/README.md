@@ -5,20 +5,27 @@
 Self-contained and offline-ready — the engine loads a pre-parsed data bundle in `data/`, so it needs only **Python 3.9+ and `pytz`** at runtime (no network, no `beautifulsoup4`).
 
 ```bash
-python3 position_engine.py      # run the July-2026 trip test queries
-python3 backtest_engine.py      # leave-one-run-out validation (expect NEW ≈ 0.66 SD)
+python3 position_engine.py "2026-07-13 1:30 PM"   # predicted position + P10–P90 window
+python3 position_engine.py "2026-07-13 12:30 PM" --tz US/Central   # any timezone
+python3 position_engine.py now      # live position if online (Amtraker), else cached, else predicted
+python3 position_engine.py --train 3   # probe ANY running train right now (live-feed test)
+python3 position_engine.py test     # full July-2026 itinerary suite
+python3 backtest_engine.py          # leave-one-run-out validation (expect NEW ≈ 0.66 SD)
 ```
 
-Use `query_position(date, time_ET, all_runs, all_schedules, route_sched, station_lookup)` programmatically — see `main()` for the wiring.
+- **`now`** resolves **live → cached-fix → predictor**, labelling which it used; on the train this gives a real-time position (lat/lon, speed, delay, next-stop ETA) and degrades gracefully when signal drops.
+- Predicted queries report the most-likely position plus the **P10–P90 uncertainty window**, with lat/lon snapped to the actual track geometry.
 
-**Files:** `position_engine.py` (engine), `backtest_engine.py` (validation), `data/` (committed bundle: `asmad_runs.json` = pre-parsed historical runs, plus the geo/schedule JSONs).
+Use `query_position(date, time_ET, all_runs, all_schedules, route_sched, station_lookup, leg_shapes)` programmatically — see `main()` for the wiring.
+
+**Files:** `position_engine.py` (engine + CLI), `live.py` (Amtraker live feed + offline cache), `backtest_engine.py` (validation), `data/` (committed bundle: `asmad_runs.json` = pre-parsed runs, `leg_shapes.json` = on-track GTFS geometry, plus the geo/schedule JSONs). The live cache (`.live_cache.json`) is gitignored.
 
 **Refreshing data** (after new ASMAD pulls — raw HTML is NOT in git, it lives in Dropbox `letta-shared-files/amtrak-data/`):
 ```bash
 python3 position_engine.py --build ~/Dropbox/letta-shared-files/amtrak-data
 # or: AMTRAK_SRC=/path/to/raw python3 position_engine.py --build
 ```
-This re-parses the HTML + geo JSONs into `data/`; commit the regenerated bundle. (Building needs `beautifulsoup4`.)
+This re-parses the HTML + geo JSONs into `data/`, and also downloads Amtrak's GTFS feed to rebuild `leg_shapes.json` (on-track geometry); commit the regenerated bundle. (Building needs `beautifulsoup4` + network.)
 
 ---
 
