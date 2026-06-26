@@ -1,0 +1,8 @@
+# live feed cache (machine-local, refreshed at runtime)
+.live_cache.json
+# build scratch
+GTFS.zip
+__pycache__/
+*.pyc
+# generated Google Earth tours (regenerate with kml_tour.py)
+kml/
