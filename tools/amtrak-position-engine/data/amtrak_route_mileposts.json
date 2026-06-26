@@ -1,0 +1,992 @@
+{
+  "3": {
+    "name": "Southwest Chief",
+    "origin": "CHI",
+    "destination": "LAX",
+    "total_miles": 2265,
+    "stations": [
+      {
+        "code": "CHI",
+        "miles": 0,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782153000
+      },
+      {
+        "code": "NPV",
+        "miles": 28,
+        "sch_arrive_epoch": 1782154800,
+        "sch_depart_epoch": 1782154980
+      },
+      {
+        "code": "MDT",
+        "miles": 83,
+        "sch_arrive_epoch": 1782157980,
+        "sch_depart_epoch": 1782158040
+      },
+      {
+        "code": "PCT",
+        "miles": 104,
+        "sch_arrive_epoch": 1782159240,
+        "sch_depart_epoch": 1782159360
+      },
+      {
+        "code": "GBB",
+        "miles": 162,
+        "sch_arrive_epoch": 1782162360,
+        "sch_depart_epoch": 1782162540
+      },
+      {
+        "code": "FMD",
+        "miles": 220,
+        "sch_arrive_epoch": 1782165900,
+        "sch_depart_epoch": 1782166200
+      },
+      {
+        "code": "LAP",
+        "miles": 298,
+        "sch_arrive_epoch": 1782170520,
+        "sch_depart_epoch": 1782170640
+      },
+      {
+        "code": "KCY",
+        "miles": 437,
+        "sch_arrive_epoch": 1782179580,
+        "sch_depart_epoch": 1782182220
+      },
+      {
+        "code": "LRC",
+        "miles": 477,
+        "sch_arrive_epoch": 1782186300,
+        "sch_depart_epoch": 1782186420
+      },
+      {
+        "code": "TOP",
+        "miles": 503,
+        "sch_arrive_epoch": 1782188460,
+        "sch_depart_epoch": 1782188640
+      },
+      {
+        "code": "NEW",
+        "miles": 638,
+        "sch_arrive_epoch": 1782196560,
+        "sch_depart_epoch": 1782196800
+      },
+      {
+        "code": "HUT",
+        "miles": 671,
+        "sch_arrive_epoch": 1782198780,
+        "sch_depart_epoch": 1782198900
+      },
+      {
+        "code": "DDG",
+        "miles": 791,
+        "sch_arrive_epoch": 1782205680,
+        "sch_depart_epoch": 1782206040
+      },
+      {
+        "code": "GCK",
+        "miles": 841,
+        "sch_arrive_epoch": 1782208980,
+        "sch_depart_epoch": 1782209100
+      },
+      {
+        "code": "LMR",
+        "miles": 941,
+        "sch_arrive_epoch": 1782214260,
+        "sch_depart_epoch": 1782214380
+      },
+      {
+        "code": "LAJ",
+        "miles": 993,
+        "sch_arrive_epoch": 1782218100,
+        "sch_depart_epoch": 1782219000
+      },
+      {
+        "code": "TRI",
+        "miles": 1074,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782223800
+      },
+      {
+        "code": "RAT",
+        "miles": 1098,
+        "sch_arrive_epoch": 1782227220,
+        "sch_depart_epoch": 1782227520
+      },
+      {
+        "code": "LSV",
+        "miles": 1209,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782233820
+      },
+      {
+        "code": "LMY",
+        "miles": 1274,
+        "sch_arrive_epoch": 1782240540,
+        "sch_depart_epoch": 1782240780
+      },
+      {
+        "code": "ABQ",
+        "miles": 1341,
+        "sch_arrive_epoch": 1782246240,
+        "sch_depart_epoch": 1782249240
+      },
+      {
+        "code": "GLP",
+        "miles": 1514,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782258840
+      },
+      {
+        "code": "WLO",
+        "miles": 1641,
+        "sch_arrive_epoch": 1782265260,
+        "sch_depart_epoch": 1782265380
+      },
+      {
+        "code": "FLG",
+        "miles": 1699,
+        "sch_arrive_epoch": 1782269340,
+        "sch_depart_epoch": 1782269700
+      },
+      {
+        "code": "KNG",
+        "miles": 1873,
+        "sch_arrive_epoch": 1782279720,
+        "sch_depart_epoch": 1782280140
+      },
+      {
+        "code": "NDL",
+        "miles": 1940,
+        "sch_arrive_epoch": 1782283740,
+        "sch_depart_epoch": 1782284040
+      },
+      {
+        "code": "BAR",
+        "miles": 2109,
+        "sch_arrive_epoch": 1782296280,
+        "sch_depart_epoch": 1782296580
+      },
+      {
+        "code": "VRV",
+        "miles": 2146,
+        "sch_arrive_epoch": 1782298800,
+        "sch_depart_epoch": 1782298920
+      },
+      {
+        "code": "SNB",
+        "miles": 2193,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782303960
+      },
+      {
+        "code": "RIV",
+        "miles": 2203,
+        "sch_arrive_epoch": 1782305400,
+        "sch_depart_epoch": 1782305520
+      },
+      {
+        "code": "FUL",
+        "miles": 2239,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782311040
+      },
+      {
+        "code": "LAX",
+        "miles": 2265,
+        "sch_arrive_epoch": 1782313920,
+        "sch_depart_epoch": null
+      }
+    ]
+  },
+  "58": {
+    "name": "City of New Orleans",
+    "origin": "NOL",
+    "destination": "CHI",
+    "total_miles": 934,
+    "stations": [
+      {
+        "code": "NOL",
+        "miles": 0,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782161100
+      },
+      {
+        "code": "HMD",
+        "miles": 53,
+        "sch_arrive_epoch": 1782165060,
+        "sch_depart_epoch": 1782165240
+      },
+      {
+        "code": "MCB",
+        "miles": 106,
+        "sch_arrive_epoch": 1782168240,
+        "sch_depart_epoch": 1782168360
+      },
+      {
+        "code": "BRH",
+        "miles": 129,
+        "sch_arrive_epoch": 1782169680,
+        "sch_depart_epoch": 1782169800
+      },
+      {
+        "code": "HAZ",
+        "miles": 150,
+        "sch_arrive_epoch": 1782170940,
+        "sch_depart_epoch": 1782171060
+      },
+      {
+        "code": "JAN",
+        "miles": 183,
+        "sch_arrive_epoch": 1782174240,
+        "sch_depart_epoch": 1782175200
+      },
+      {
+        "code": "YAZ",
+        "miles": 228,
+        "sch_arrive_epoch": 1782178560,
+        "sch_depart_epoch": 1782178680
+      },
+      {
+        "code": "GWD",
+        "miles": 280,
+        "sch_arrive_epoch": 1782181980,
+        "sch_depart_epoch": 1782182280
+      },
+      {
+        "code": "MKS",
+        "miles": 337,
+        "sch_arrive_epoch": 1782185580,
+        "sch_depart_epoch": 1782185700
+      },
+      {
+        "code": "MEM",
+        "miles": 406,
+        "sch_arrive_epoch": 1782192300,
+        "sch_depart_epoch": 1782193500
+      },
+      {
+        "code": "NBN",
+        "miles": 492,
+        "sch_arrive_epoch": 1782199560,
+        "sch_depart_epoch": 1782199680
+      },
+      {
+        "code": "FTN",
+        "miles": 528,
+        "sch_arrive_epoch": 1782202080,
+        "sch_depart_epoch": 1782202200
+      },
+      {
+        "code": "CDL",
+        "miles": 625,
+        "sch_arrive_epoch": 1782209580,
+        "sch_depart_epoch": 1782209880
+      },
+      {
+        "code": "CEN",
+        "miles": 681,
+        "sch_arrive_epoch": 1782213060,
+        "sch_depart_epoch": 1782213180
+      },
+      {
+        "code": "EFG",
+        "miles": 734,
+        "sch_arrive_epoch": 1782216540,
+        "sch_depart_epoch": 1782216600
+      },
+      {
+        "code": "MAT",
+        "miles": 761,
+        "sch_arrive_epoch": 1782218160,
+        "sch_depart_epoch": 1782218280
+      },
+      {
+        "code": "CHM",
+        "miles": 805,
+        "sch_arrive_epoch": 1782221100,
+        "sch_depart_epoch": 1782221400
+      },
+      {
+        "code": "KKI",
+        "miles": 877,
+        "sch_arrive_epoch": 1782225060,
+        "sch_depart_epoch": 1782225180
+      },
+      {
+        "code": "HMW",
+        "miles": 910,
+        "sch_arrive_epoch": 1782227280,
+        "sch_depart_epoch": 1782227460
+      },
+      {
+        "code": "CHI",
+        "miles": 934,
+        "sch_arrive_epoch": 1782231300,
+        "sch_depart_epoch": null
+      }
+    ]
+  },
+  "27": {
+    "name": "Empire Builder PDX section",
+    "origin": "SPK",
+    "destination": "PDX",
+    "total_miles": 2256,
+    "stations": [
+      {
+        "code": "SPK",
+        "miles": 1880,
+        "sch_arrive_epoch": 1782121440,
+        "sch_depart_epoch": 1782125340
+      },
+      {
+        "code": "PSC",
+        "miles": 2026,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782135600
+      },
+      {
+        "code": "WIH",
+        "miles": 2151,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782142500
+      },
+      {
+        "code": "BNG",
+        "miles": 2181,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782144600
+      },
+      {
+        "code": "VAN",
+        "miles": 2246,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782149700
+      },
+      {
+        "code": "PDX",
+        "miles": 2256,
+        "sch_arrive_epoch": 1782152220,
+        "sch_depart_epoch": null
+      }
+    ]
+  },
+  "7": {
+    "name": "Empire Builder full CHI\u2192SEA",
+    "origin": "CHI",
+    "destination": "SEA",
+    "total_miles": 2206,
+    "stations": [
+      {
+        "code": "CHI",
+        "miles": 0,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782158700
+      },
+      {
+        "code": "GLN",
+        "miles": 18,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782160140
+      },
+      {
+        "code": "MKE",
+        "miles": 86,
+        "sch_arrive_epoch": 1782164100,
+        "sch_depart_epoch": 1782164700
+      },
+      {
+        "code": "CBS",
+        "miles": 151,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782168900
+      },
+      {
+        "code": "POG",
+        "miles": 179,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782170640
+      },
+      {
+        "code": "WDL",
+        "miles": 196,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782171720
+      },
+      {
+        "code": "TOH",
+        "miles": 241,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782174000
+      },
+      {
+        "code": "LSE",
+        "miles": 282,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782176640
+      },
+      {
+        "code": "WIN",
+        "miles": 309,
+        "sch_arrive_epoch": 1782178440,
+        "sch_depart_epoch": 1782178800
+      },
+      {
+        "code": "RDW",
+        "miles": 372,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782182520
+      },
+      {
+        "code": "MSP",
+        "miles": 411,
+        "sch_arrive_epoch": 1782186960,
+        "sch_depart_epoch": 1782187980
+      },
+      {
+        "code": "SCD",
+        "miles": 487,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782194940
+      },
+      {
+        "code": "SPL",
+        "miles": 553,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782198600
+      },
+      {
+        "code": "DLK",
+        "miles": 615,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782201960
+      },
+      {
+        "code": "FAR",
+        "miles": 663,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782205980
+      },
+      {
+        "code": "GFK",
+        "miles": 738,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782210840
+      },
+      {
+        "code": "DVL",
+        "miles": 823,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782215940
+      },
+      {
+        "code": "RUG",
+        "miles": 880,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782219180
+      },
+      {
+        "code": "MOT",
+        "miles": 941,
+        "sch_arrive_epoch": 1782223560,
+        "sch_depart_epoch": 1782226260
+      },
+      {
+        "code": "STN",
+        "miles": 995,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782229560
+      },
+      {
+        "code": "WTN",
+        "miles": 1062,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782233940
+      },
+      {
+        "code": "WPT",
+        "miles": 1169,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782239640
+      },
+      {
+        "code": "GGW",
+        "miles": 1218,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782242400
+      },
+      {
+        "code": "MAL",
+        "miles": 1284,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782246000
+      },
+      {
+        "code": "HAV",
+        "miles": 1371,
+        "sch_arrive_epoch": 1782251640,
+        "sch_depart_epoch": 1782252900
+      },
+      {
+        "code": "SBY",
+        "miles": 1476,
+        "sch_arrive_epoch": 1782259980,
+        "sch_depart_epoch": 1782260460
+      },
+      {
+        "code": "CUT",
+        "miles": 1500,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782262260
+      },
+      {
+        "code": "GPK",
+        "miles": 1548,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782265680
+      },
+      {
+        "code": "ESM",
+        "miles": 1577,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782269040
+      },
+      {
+        "code": "WGL",
+        "miles": 1604,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782271620
+      },
+      {
+        "code": "WFH",
+        "miles": 1627,
+        "sch_arrive_epoch": 1782273960,
+        "sch_depart_epoch": 1782274860
+      },
+      {
+        "code": "LIB",
+        "miles": 1729,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782281100
+      },
+      {
+        "code": "SPT",
+        "miles": 1814,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782287700
+      },
+      {
+        "code": "SPK",
+        "miles": 1880,
+        "sch_arrive_epoch": 1782294240,
+        "sch_depart_epoch": 1782296340
+      },
+      {
+        "code": "EPH",
+        "miles": 1999,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782304080
+      },
+      {
+        "code": "WEN",
+        "miles": 2051,
+        "sch_arrive_epoch": 1782308100,
+        "sch_depart_epoch": 1782308700
+      },
+      {
+        "code": "LWA",
+        "miles": 2073,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782310680
+      },
+      {
+        "code": "EVR",
+        "miles": 2172,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782320580
+      },
+      {
+        "code": "EDM",
+        "miles": 2188,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782322500
+      },
+      {
+        "code": "SEA",
+        "miles": 2206,
+        "sch_arrive_epoch": 1782325740,
+        "sch_depart_epoch": null
+      }
+    ]
+  },
+  "11": {
+    "name": "Coast Starlight",
+    "origin": "SEA",
+    "destination": "LAX",
+    "total_miles": 1380,
+    "stations": [
+      {
+        "code": "SEA",
+        "miles": 0,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782147300
+      },
+      {
+        "code": "TAC",
+        "miles": 39,
+        "sch_arrive_epoch": 1782149880,
+        "sch_depart_epoch": 1782150180
+      },
+      {
+        "code": "OLW",
+        "miles": 75,
+        "sch_arrive_epoch": 1782152520,
+        "sch_depart_epoch": 1782152640
+      },
+      {
+        "code": "CTL",
+        "miles": 94,
+        "sch_arrive_epoch": 1782153900,
+        "sch_depart_epoch": 1782154080
+      },
+      {
+        "code": "KEL",
+        "miles": 137,
+        "sch_arrive_epoch": 1782156540,
+        "sch_depart_epoch": 1782156720
+      },
+      {
+        "code": "VAN",
+        "miles": 177,
+        "sch_arrive_epoch": 1782159120,
+        "sch_depart_epoch": 1782159300
+      },
+      {
+        "code": "PDX",
+        "miles": 187,
+        "sch_arrive_epoch": 1782161700,
+        "sch_depart_epoch": 1782163320
+      },
+      {
+        "code": "SLM",
+        "miles": 239,
+        "sch_arrive_epoch": 1782167760,
+        "sch_depart_epoch": 1782167940
+      },
+      {
+        "code": "ALY",
+        "miles": 267,
+        "sch_arrive_epoch": 1782169860,
+        "sch_depart_epoch": 1782170040
+      },
+      {
+        "code": "EUG",
+        "miles": 310,
+        "sch_arrive_epoch": 1782173280,
+        "sch_depart_epoch": 1782173700
+      },
+      {
+        "code": "CMO",
+        "miles": 432,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782184380
+      },
+      {
+        "code": "KFS",
+        "miles": 505,
+        "sch_arrive_epoch": 1782190680,
+        "sch_depart_epoch": 1782191280
+      },
+      {
+        "code": "DUN",
+        "miles": 610,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782200700
+      },
+      {
+        "code": "RDD",
+        "miles": 665,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782207060
+      },
+      {
+        "code": "CIC",
+        "miles": 739,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782213120
+      },
+      {
+        "code": "SAC",
+        "miles": 824,
+        "sch_arrive_epoch": 1782221280,
+        "sch_depart_epoch": 1782222480
+      },
+      {
+        "code": "DAV",
+        "miles": 838,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782223500
+      },
+      {
+        "code": "MTZ",
+        "miles": 882,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782226440
+      },
+      {
+        "code": "EMY",
+        "miles": 909,
+        "sch_arrive_epoch": 1782228540,
+        "sch_depart_epoch": 1782229140
+      },
+      {
+        "code": "OKJ",
+        "miles": 914,
+        "sch_arrive_epoch": 1782230040,
+        "sch_depart_epoch": 1782230940
+      },
+      {
+        "code": "SJC",
+        "miles": 955,
+        "sch_arrive_epoch": 1782234840,
+        "sch_depart_epoch": 1782235560
+      },
+      {
+        "code": "SNS",
+        "miles": 1022,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782241560
+      },
+      {
+        "code": "PRB",
+        "miles": 1120,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782248220
+      },
+      {
+        "code": "SLO",
+        "miles": 1158,
+        "sch_arrive_epoch": 1782253440,
+        "sch_depart_epoch": 1782254220
+      },
+      {
+        "code": "SBA",
+        "miles": 1277,
+        "sch_arrive_epoch": 1782263520,
+        "sch_depart_epoch": 1782263940
+      },
+      {
+        "code": "OXN",
+        "miles": 1313,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782267600
+      },
+      {
+        "code": "SIM",
+        "miles": 1344,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782270120
+      },
+      {
+        "code": "VNC",
+        "miles": 1361,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782272160
+      },
+      {
+        "code": "BUR",
+        "miles": 1367,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782272640
+      },
+      {
+        "code": "LAX",
+        "miles": 1380,
+        "sch_arrive_epoch": 1782274260,
+        "sch_depart_epoch": null
+      }
+    ]
+  },
+  "22": {
+    "name": "Texas Eagle",
+    "origin": "SAS",
+    "destination": "CHI",
+    "total_miles": 1305,
+    "stations": [
+      {
+        "code": "SAS",
+        "miles": 0,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782128880
+      },
+      {
+        "code": "SMC",
+        "miles": 52,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782134520
+      },
+      {
+        "code": "AUS",
+        "miles": 82,
+        "sch_arrive_epoch": 1782137760,
+        "sch_depart_epoch": 1782138360
+      },
+      {
+        "code": "TAY",
+        "miles": 117,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782141420
+      },
+      {
+        "code": "TPL",
+        "miles": 155,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782145200
+      },
+      {
+        "code": "MCG",
+        "miles": 180,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782146820
+      },
+      {
+        "code": "CBR",
+        "miles": 255,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782151140
+      },
+      {
+        "code": "FTW",
+        "miles": 283,
+        "sch_arrive_epoch": 1782154620,
+        "sch_depart_epoch": 1782156180
+      },
+      {
+        "code": "DAL",
+        "miles": 314,
+        "sch_arrive_epoch": 1782159780,
+        "sch_depart_epoch": 1782160980
+      },
+      {
+        "code": "MIN",
+        "miles": 393,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782166680
+      },
+      {
+        "code": "LVW",
+        "miles": 441,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782170280
+      },
+      {
+        "code": "MHL",
+        "miles": 465,
+        "sch_arrive_epoch": 1782173040,
+        "sch_depart_epoch": 1782174540
+      },
+      {
+        "code": "TXA",
+        "miles": 531,
+        "sch_arrive_epoch": 1782178560,
+        "sch_depart_epoch": 1782178860
+      },
+      {
+        "code": "HOP",
+        "miles": 564,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782180960
+      },
+      {
+        "code": "ARK",
+        "miles": 611,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782183720
+      },
+      {
+        "code": "MVN",
+        "miles": 628,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782185160
+      },
+      {
+        "code": "LRK",
+        "miles": 671,
+        "sch_arrive_epoch": 1782189120,
+        "sch_depart_epoch": 1782189840
+      },
+      {
+        "code": "WNR",
+        "miles": 792,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782197160
+      },
+      {
+        "code": "PBF",
+        "miles": 852,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782200940
+      },
+      {
+        "code": "ACD",
+        "miles": 929,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782206640
+      },
+      {
+        "code": "STL",
+        "miles": 1021,
+        "sch_arrive_epoch": 1782217800,
+        "sch_depart_epoch": 1782220200
+      },
+      {
+        "code": "ALN",
+        "miles": 1048,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782222960
+      },
+      {
+        "code": "CRV",
+        "miles": 1081,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782224580
+      },
+      {
+        "code": "SPI",
+        "miles": 1120,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782226980
+      },
+      {
+        "code": "LCN",
+        "miles": 1149,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782228540
+      },
+      {
+        "code": "BNL",
+        "miles": 1181,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782230880
+      },
+      {
+        "code": "PON",
+        "miles": 1213,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782232680
+      },
+      {
+        "code": "JOL",
+        "miles": 1268,
+        "sch_arrive_epoch": null,
+        "sch_depart_epoch": 1782237180
+      },
+      {
+        "code": "CHI",
+        "miles": 1305,
+        "sch_arrive_epoch": 1782240540,
+        "sch_depart_epoch": null
+      }
+    ]
+  }
+}

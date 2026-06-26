@@ -1,0 +1,375 @@
+{
+  "train_id": "2026-06-21_AMTK_2",
+  "railroad": "AMTRAK",
+  "origin_date": "2026-06-21",
+  "number": 2,
+  "all_numbers": [
+    2
+  ],
+  "name": "Sunset Limited",
+  "origin": "LAX",
+  "destination": "NOL",
+  "partial_train": false,
+  "last_updated": 1782270679,
+  "current_timezone": "America/Chicago",
+  "threshold": 30,
+  "disruption": false,
+  "total_miles": 1995,
+  "stops": [
+    {
+      "code": "LAX",
+      "miles": 0,
+      "sched_depart": 1782104400,
+      "depart": {
+        "variance": 0,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "POS",
+      "miles": 31,
+      "sched_depart": 1782106860,
+      "arrive": {
+        "variance": -60,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -180,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "ONA",
+      "miles": 38,
+      "sched_depart": 1782107640,
+      "arrive": {
+        "variance": 120,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -900,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "PSN",
+      "miles": 105,
+      "sched_depart": 1782113760,
+      "arrive": {
+        "variance": 180,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "YUM",
+      "miles": 251,
+      "sched_depart": 1782121620,
+      "arrive": {
+        "variance": -960,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -1140,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "MRC",
+      "miles": 416,
+      "sched_arrive": 1782131700,
+      "sched_depart": 1782132900,
+      "arrive": {
+        "variance": -660,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -120,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "TUS",
+      "miles": 502,
+      "sched_arrive": 1782139080,
+      "sched_depart": 1782139980,
+      "arrive": {
+        "variance": 960,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": 0,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "BEN",
+      "miles": 552,
+      "sched_depart": 1782143580,
+      "arrive": {
+        "variance": -1080,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2400,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "LDB",
+      "miles": 670,
+      "sched_depart": 1782150780,
+      "arrive": {
+        "variance": -2460,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2580,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "DEM",
+      "miles": 731,
+      "sched_depart": 1782154080,
+      "arrive": {
+        "variance": -2340,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2460,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "ELP",
+      "miles": 817,
+      "sched_arrive": 1782162000,
+      "sched_depart": 1782164700,
+      "arrive": {
+        "variance": -1560,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -840,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "ALP",
+      "miles": 1036,
+      "sched_arrive": 1782179100,
+      "sched_depart": 1782179700,
+      "arrive": {
+        "variance": -600,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -660,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "SND",
+      "miles": 1127,
+      "sched_depart": 1782186360,
+      "arrive": {
+        "variance": -660,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -660,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "DRT",
+      "miles": 1253,
+      "sched_depart": 1782195120,
+      "arrive": {
+        "variance": -1440,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -1800,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "SAS",
+      "miles": 1422,
+      "sched_arrive": 1782208800,
+      "sched_depart": 1782213900,
+      "arrive": {
+        "variance": -180,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": 0,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "HOS",
+      "miles": 1632,
+      "sched_arrive": 1782231000,
+      "sched_depart": 1782234600,
+      "arrive": {
+        "variance": -960,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": 0,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "BMT",
+      "miles": 1714,
+      "sched_arrive": 1782240780,
+      "sched_depart": 1782241500,
+      "arrive": {
+        "variance": -1680,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -1740,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "LCH",
+      "miles": 1776,
+      "sched_depart": 1782246540,
+      "arrive": {
+        "variance": -2520,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2640,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "LFT",
+      "miles": 1850,
+      "sched_arrive": 1782252720,
+      "sched_depart": 1782252900,
+      "arrive": {
+        "variance": -2040,
+        "times_compared": "ENROUTE_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2400,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "NIB",
+      "miles": 1868,
+      "sched_depart": 1782254460,
+      "arrive": {
+        "variance": -2580,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2700,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "SCH",
+      "miles": 1939,
+      "sched_depart": 1782259380,
+      "arrive": {
+        "variance": -2580,
+        "times_compared": "MISMATCH_ARRIVAL",
+        "type": "ACTUAL"
+      },
+      "depart": {
+        "variance": -2640,
+        "times_compared": "DEPARTURE",
+        "type": "ACTUAL"
+      },
+      "canceled": false
+    },
+    {
+      "code": "NOL",
+      "miles": 1995,
+      "sched_arrive": 1782268800,
+      "arrive": {
+        "variance": -1980,
+        "times_compared": "TERMINAL_ARRIVAL",
+        "type": "ESTIMATED"
+      },
+      "canceled": false
+    }
+  ],
+  "alerts": [
+    {
+      "record_time": 1782247080,
+      "text": "Service Resumption: As of 1:30 PM PT Train 2 has resumed travel and is currently operating approximately 30 minutes late."
+    },
+    {
+      "record_time": 1782104520,
+      "text": "Itinerary Change: As of 9:27 PM PT Due to a switch outage at Palm Springs (PSN) Trains 2 and 422 will bypass this station. Customers are urged to rebook their travel or travel to nearby Ontario (ONA) station."
+    }
+  ]
+}

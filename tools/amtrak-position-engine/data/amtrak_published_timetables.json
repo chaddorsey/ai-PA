@@ -1,0 +1,1274 @@
+{
+  "3": [
+    {
+      "code": "CHI",
+      "time": "1:30p",
+      "tz": "America/Chicago",
+      "kind": "departure",
+      "name": "Chicago, IL"
+    },
+    {
+      "code": "NPV",
+      "time": "2:00p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Naperville, IL"
+    },
+    {
+      "code": "MDT",
+      "time": "2:53p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Mendota, IL"
+    },
+    {
+      "code": "PCT",
+      "time": "3:14p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Princeton, IL"
+    },
+    {
+      "code": "GBB",
+      "time": "4:06p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Galesburg, IL"
+    },
+    {
+      "code": "FMD",
+      "time": "5:05p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Fort Madison, IA"
+    },
+    {
+      "code": "LAP",
+      "time": "6:22p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "La Plata, MO"
+    },
+    {
+      "code": "KCY",
+      "time": "8:53p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Kansas City, MO"
+    },
+    {
+      "code": "LRC",
+      "time": "10:45p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Lawrence, KS"
+    },
+    {
+      "code": "TOP",
+      "time": "11:21p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Topeka, KS"
+    },
+    {
+      "code": "NEW",
+      "time": "1:36a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Newton, KS"
+    },
+    {
+      "code": "HUT",
+      "time": "2:13a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Hutchinson, KS"
+    },
+    {
+      "code": "DDG",
+      "time": "4:08a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Dodge City, KS"
+    },
+    {
+      "code": "GCK",
+      "time": "5:03a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Garden City, KS"
+    },
+    {
+      "code": "LMR",
+      "time": "5:31a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Lamar, CO"
+    },
+    {
+      "code": "LAJ",
+      "time": "6:35a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "La Junta, CO"
+    },
+    {
+      "code": "TRI",
+      "time": "8:10a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Trinidad, CO"
+    },
+    {
+      "code": "RAT",
+      "time": "9:07a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Raton, NM"
+    },
+    {
+      "code": "LSV",
+      "time": "10:57a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Las Vegas, NM"
+    },
+    {
+      "code": "LMY",
+      "time": "12:49p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Lamy, NM"
+    },
+    {
+      "code": "ABQ",
+      "time": "2:24p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Albuquerque, NM"
+    },
+    {
+      "code": "GLP",
+      "time": "5:54p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Gallup, NM"
+    },
+    {
+      "code": "WLO",
+      "time": "6:41p",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Winslow, AZ"
+    },
+    {
+      "code": "FLG",
+      "time": "7:49p",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Flagstaff, AZ"
+    },
+    {
+      "code": "KNG",
+      "time": "10:42p",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Kingman, AZ"
+    },
+    {
+      "code": "NDL",
+      "time": "11:49p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Needles, CA"
+    },
+    {
+      "code": "BAR",
+      "time": "3:18a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Barstow, CA"
+    },
+    {
+      "code": "VRV",
+      "time": "4:00a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Victorville, CA"
+    },
+    {
+      "code": "SNB",
+      "time": "5:26a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "San Bernardino, CA"
+    },
+    {
+      "code": "RIV",
+      "time": "5:50a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Riverside, CA"
+    },
+    {
+      "code": "FUL",
+      "time": "7:24a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Fullerton, CA"
+    },
+    {
+      "code": "LAX",
+      "time": "8:12a",
+      "tz": "America/Los_Angeles",
+      "kind": "arrival",
+      "name": "Los Angeles, CA"
+    }
+  ],
+  "2": [
+    {
+      "code": "LAX",
+      "time": "10:00p",
+      "tz": "America/Los_Angeles",
+      "kind": "departure",
+      "name": "Los Angeles, CA"
+    },
+    {
+      "code": "POS",
+      "time": "10:41p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Pomona, CA"
+    },
+    {
+      "code": "ONA",
+      "time": "10:54p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Ontario, CA"
+    },
+    {
+      "code": "PSN",
+      "time": "12:36a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Palm Springs, CA"
+    },
+    {
+      "code": "YUM",
+      "time": "2:47a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Yuma, AZ"
+    },
+    {
+      "code": "MRC",
+      "time": "5:35a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Maricopa, AZ"
+    },
+    {
+      "code": "TUS",
+      "time": "7:38a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Tucson, AZ"
+    },
+    {
+      "code": "BEN",
+      "time": "8:53a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Benson, AZ"
+    },
+    {
+      "code": "LDB",
+      "time": "11:53a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Lordsburg, NM"
+    },
+    {
+      "code": "DEM",
+      "time": "12:48p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Deming, NM"
+    },
+    {
+      "code": "ELP",
+      "time": "3:00p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "El Paso, TX"
+    },
+    {
+      "code": "ALP",
+      "time": "8:45p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Alpine, TX"
+    },
+    {
+      "code": "SND",
+      "time": "10:46p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Sanderson, TX"
+    },
+    {
+      "code": "DRT",
+      "time": "1:12a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Del Rio, TX"
+    },
+    {
+      "code": "SAS",
+      "time": "5:00a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "San Antonio, TX"
+    },
+    {
+      "code": "HOS",
+      "time": "11:10a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Houston, TX"
+    },
+    {
+      "code": "BMT",
+      "time": "1:53p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Beaumont, TX"
+    },
+    {
+      "code": "LCH",
+      "time": "3:29p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Lake Charles, LA"
+    },
+    {
+      "code": "LFT",
+      "time": "5:12p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Lafayette, LA"
+    },
+    {
+      "code": "NIB",
+      "time": "5:41p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "New Iberia, LA"
+    },
+    {
+      "code": "SCH",
+      "time": "7:03p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Schriever, LA"
+    },
+    {
+      "code": "NOL",
+      "time": "9:40p",
+      "tz": "America/Chicago",
+      "kind": "arrival",
+      "name": "New Orleans, LA"
+    }
+  ],
+  "58": [
+    {
+      "code": "NOL",
+      "time": "3:45p",
+      "tz": "America/Chicago",
+      "kind": "departure",
+      "name": "New Orleans, LA"
+    },
+    {
+      "code": "HMD",
+      "time": "4:51p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Hammond, LA"
+    },
+    {
+      "code": "MCB",
+      "time": "5:44p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "McComb, MS"
+    },
+    {
+      "code": "BRH",
+      "time": "6:08p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Brookhaven, MS"
+    },
+    {
+      "code": "HAZ",
+      "time": "6:29p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Hazlehurst, MS"
+    },
+    {
+      "code": "JAN",
+      "time": "7:24p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Jackson, MS"
+    },
+    {
+      "code": "YAZ",
+      "time": "8:36p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Yazoo City, MS"
+    },
+    {
+      "code": "GWD",
+      "time": "9:33p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Greenwood, MS"
+    },
+    {
+      "code": "MKS",
+      "time": "10:33p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Marks, MS"
+    },
+    {
+      "code": "MEM",
+      "time": "12:25a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Memphis, TN"
+    },
+    {
+      "code": "NBN",
+      "time": "2:26a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Newbern-Dyersburg, TN"
+    },
+    {
+      "code": "FTN",
+      "time": "3:08a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Fulton, KY"
+    },
+    {
+      "code": "CDL",
+      "time": "5:13a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Carbondale, IL"
+    },
+    {
+      "code": "CEN",
+      "time": "6:11a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Centralia, IL"
+    },
+    {
+      "code": "EFG",
+      "time": "7:09a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Effingham, IL"
+    },
+    {
+      "code": "MAT",
+      "time": "7:36a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Mattoon, IL"
+    },
+    {
+      "code": "CHM",
+      "time": "8:25a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Champaign-Urbana, IL"
+    },
+    {
+      "code": "KKI",
+      "time": "9:31a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Kankakee, IL"
+    },
+    {
+      "code": "HMW",
+      "time": "10:08a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Homewood, IL"
+    },
+    {
+      "code": "CHI",
+      "time": "11:15a",
+      "tz": "America/Chicago",
+      "kind": "arrival",
+      "name": "Chicago, IL"
+    }
+  ],
+  "27": [
+    {
+      "code": "CHI",
+      "time": "3:05p",
+      "tz": "America/Chicago",
+      "kind": "departure",
+      "name": "Chicago, IL"
+    },
+    {
+      "code": "GLN",
+      "time": "3:29p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Glenview, IL"
+    },
+    {
+      "code": "MKE",
+      "time": "4:35p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Milwaukee-Downtown, WI"
+    },
+    {
+      "code": "CBS",
+      "time": "5:55p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Columbus, WI"
+    },
+    {
+      "code": "POG",
+      "time": "6:24p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Portage, WI"
+    },
+    {
+      "code": "WDL",
+      "time": "6:42p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Wisconsin Dells, WI"
+    },
+    {
+      "code": "TOH",
+      "time": "7:20p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Tomah, WI"
+    },
+    {
+      "code": "LSE",
+      "time": "8:04p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "La Crosse, WI"
+    },
+    {
+      "code": "WIN",
+      "time": "8:34p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Winona, MN"
+    },
+    {
+      "code": "RDW",
+      "time": "9:42p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Red Wing, MN"
+    },
+    {
+      "code": "MSP",
+      "time": "10:56p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "St. Paul-Minneapolis, MN"
+    },
+    {
+      "code": "SCD",
+      "time": "1:09a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "St. Cloud, MN"
+    },
+    {
+      "code": "SPL",
+      "time": "2:10a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Staples, MN"
+    },
+    {
+      "code": "DLK",
+      "time": "3:06a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Detroit Lakes, MN"
+    },
+    {
+      "code": "FAR",
+      "time": "4:13a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Fargo, ND"
+    },
+    {
+      "code": "GFK",
+      "time": "5:34a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Grand Forks, ND"
+    },
+    {
+      "code": "DVL",
+      "time": "6:59a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Devils Lake, ND"
+    },
+    {
+      "code": "RUG",
+      "time": "7:53a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Rugby, ND"
+    },
+    {
+      "code": "MOT",
+      "time": "9:06a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Minot, ND"
+    },
+    {
+      "code": "STN",
+      "time": "10:46a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Stanley, ND"
+    },
+    {
+      "code": "WTN",
+      "time": "11:59a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Williston, ND"
+    },
+    {
+      "code": "WPT",
+      "time": "12:34p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Wolf Point, MT"
+    },
+    {
+      "code": "GGW",
+      "time": "1:20p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Glasgow, MT"
+    },
+    {
+      "code": "MAL",
+      "time": "2:20p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Malta, MT"
+    },
+    {
+      "code": "HAV",
+      "time": "3:54p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Havre, MT"
+    },
+    {
+      "code": "SBY",
+      "time": "6:13p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Shelby, MT"
+    },
+    {
+      "code": "CUT",
+      "time": "6:51p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Cut Bank, MT"
+    },
+    {
+      "code": "GPK",
+      "time": "7:48p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "East Glacier Park, MT"
+    },
+    {
+      "code": "ESM",
+      "time": "8:44p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Essex, MT"
+    },
+    {
+      "code": "WGL",
+      "time": "9:27p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "West Glacier, MT"
+    },
+    {
+      "code": "WFH",
+      "time": "10:06p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Whitefish, MT"
+    },
+    {
+      "code": "LIB",
+      "time": "12:05a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Libby, MT"
+    },
+    {
+      "code": "SPT",
+      "time": "12:55a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Sandpoint, ID"
+    },
+    {
+      "code": "SPK",
+      "time": "2:44a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Spokane, WA"
+    },
+    {
+      "code": "PSC",
+      "time": "6:40a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Pasco, WA"
+    },
+    {
+      "code": "WIH",
+      "time": "8:35a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Wishram, WA"
+    },
+    {
+      "code": "BNG",
+      "time": "9:10a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Bingen-White Salmon, WA"
+    },
+    {
+      "code": "VAN",
+      "time": "10:35a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Vancouver, WA"
+    },
+    {
+      "code": "PDX",
+      "time": "11:17a",
+      "tz": "America/Los_Angeles",
+      "kind": "arrival",
+      "name": "Portland, OR"
+    }
+  ],
+  "11": [
+    {
+      "code": "PDX",
+      "time": "2:22p",
+      "tz": "America/Los_Angeles",
+      "kind": "departure",
+      "name": "Portland, OR"
+    },
+    {
+      "code": "SLM",
+      "time": "3:36p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Salem, OR"
+    },
+    {
+      "code": "ALY",
+      "time": "4:11p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Albany, OR"
+    },
+    {
+      "code": "EUG",
+      "time": "5:08p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Eugene, OR"
+    },
+    {
+      "code": "CMO",
+      "time": "8:13p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Chemult, OR"
+    },
+    {
+      "code": "KFS",
+      "time": "9:58p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Klamath Falls, OR"
+    },
+    {
+      "code": "DUN",
+      "time": "12:45a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Dunsmuir, CA"
+    },
+    {
+      "code": "RDD",
+      "time": "2:31a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Redding, CA"
+    },
+    {
+      "code": "CIC",
+      "time": "4:12a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Chico, CA"
+    },
+    {
+      "code": "SAC",
+      "time": "6:28a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Sacramento, CA"
+    },
+    {
+      "code": "DAV",
+      "time": "7:05a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Davis, CA"
+    },
+    {
+      "code": "MTZ",
+      "time": "7:54a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Martinez, CA"
+    },
+    {
+      "code": "EMY",
+      "time": "8:29a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Emeryville, CA"
+    },
+    {
+      "code": "OKJ",
+      "time": "8:54a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Oakland, CA"
+    },
+    {
+      "code": "SJC",
+      "time": "10:14a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "San Jose, CA"
+    },
+    {
+      "code": "SNS",
+      "time": "12:06p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Salinas, CA"
+    },
+    {
+      "code": "PRB",
+      "time": "1:57p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Paso Robles, CA"
+    },
+    {
+      "code": "SLO",
+      "time": "3:24p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "San Luis Obispo, CA"
+    },
+    {
+      "code": "SBA",
+      "time": "6:12p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Santa Barbara, CA"
+    },
+    {
+      "code": "OXN",
+      "time": "7:20p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Oxnard, CA"
+    },
+    {
+      "code": "SIM",
+      "time": "8:02p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Simi Valley, CA"
+    },
+    {
+      "code": "VNC",
+      "time": "8:36p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Van Nuys, CA"
+    },
+    {
+      "code": "BUR",
+      "time": "8:44p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Burbank, CA"
+    },
+    {
+      "code": "LAX",
+      "time": "9:11p",
+      "tz": "America/Los_Angeles",
+      "kind": "arrival",
+      "name": "Los Angeles, CA"
+    }
+  ],
+  "422": [
+    {
+      "code": "LAX",
+      "time": "10:00p",
+      "tz": "America/Los_Angeles",
+      "kind": "departure",
+      "name": "Los Angeles, CA"
+    },
+    {
+      "code": "POS",
+      "time": "10:41p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Pomona, CA"
+    },
+    {
+      "code": "ONA",
+      "time": "10:54p",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Ontario, CA"
+    },
+    {
+      "code": "PSN",
+      "time": "12:36a",
+      "tz": "America/Los_Angeles",
+      "kind": "intermediate",
+      "name": "Palm Springs, CA"
+    },
+    {
+      "code": "YUM",
+      "time": "2:47a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Yuma, AZ"
+    },
+    {
+      "code": "MRC",
+      "time": "5:35a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Maricopa, AZ"
+    },
+    {
+      "code": "TUS",
+      "time": "7:38a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Tucson, AZ"
+    },
+    {
+      "code": "BEN",
+      "time": "8:53a",
+      "tz": "America/Phoenix",
+      "kind": "intermediate",
+      "name": "Benson, AZ"
+    },
+    {
+      "code": "LDB",
+      "time": "11:53a",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Lordsburg, NM"
+    },
+    {
+      "code": "DEM",
+      "time": "12:48p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "Deming, NM"
+    },
+    {
+      "code": "ELP",
+      "time": "3:00p",
+      "tz": "America/Denver",
+      "kind": "intermediate",
+      "name": "El Paso, TX"
+    },
+    {
+      "code": "ALP",
+      "time": "8:45p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Alpine, TX"
+    },
+    {
+      "code": "SND",
+      "time": "10:46p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Sanderson, TX"
+    },
+    {
+      "code": "DRT",
+      "time": "1:12a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Del Rio, TX"
+    },
+    {
+      "code": "SAS",
+      "time": "5:00a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "San Antonio, TX"
+    },
+    {
+      "code": "SMC",
+      "time": "8:22a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "San Marcos, TX"
+    },
+    {
+      "code": "AUS",
+      "time": "9:16a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Austin, TX"
+    },
+    {
+      "code": "TAY",
+      "time": "10:17a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Taylor, TX"
+    },
+    {
+      "code": "TPL",
+      "time": "11:20a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Temple, TX"
+    },
+    {
+      "code": "MCG",
+      "time": "11:47a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "McGregor, TX"
+    },
+    {
+      "code": "CBR",
+      "time": "12:59p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Cleburne, TX"
+    },
+    {
+      "code": "FTW",
+      "time": "1:57p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Fort Worth, TX"
+    },
+    {
+      "code": "DAL",
+      "time": "3:23p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Dallas, TX"
+    },
+    {
+      "code": "MIN",
+      "time": "5:18p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Mineola, TX"
+    },
+    {
+      "code": "LVW",
+      "time": "6:18p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Longview, TX"
+    },
+    {
+      "code": "MHL",
+      "time": "7:04p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Marshall, TX"
+    },
+    {
+      "code": "TXA",
+      "time": "8:36p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Texarkana, AR"
+    },
+    {
+      "code": "HOP",
+      "time": "9:16p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Hope, AR"
+    },
+    {
+      "code": "ARK",
+      "time": "10:02p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Arkadelphia, AR"
+    },
+    {
+      "code": "MVN",
+      "time": "10:26p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Malvern, AR"
+    },
+    {
+      "code": "LRK",
+      "time": "11:32p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Little Rock, AR"
+    },
+    {
+      "code": "WNR",
+      "time": "1:46a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Walnut Ridge, AR"
+    },
+    {
+      "code": "PBF",
+      "time": "2:49a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Poplar Bluff, MO"
+    },
+    {
+      "code": "ACD",
+      "time": "4:24a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Arcadia, MO"
+    },
+    {
+      "code": "STL",
+      "time": "7:30a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "St. Louis, MO"
+    },
+    {
+      "code": "ALN",
+      "time": "8:56a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Alton, IL"
+    },
+    {
+      "code": "CRV",
+      "time": "9:23a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Carlinville, IL"
+    },
+    {
+      "code": "SPI",
+      "time": "10:03a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Springfield, IL"
+    },
+    {
+      "code": "LCN",
+      "time": "10:29a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Lincoln, IL"
+    },
+    {
+      "code": "BNL",
+      "time": "11:08a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Bloomington-Normal, IL"
+    },
+    {
+      "code": "PON",
+      "time": "11:38a",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Pontiac, IL"
+    },
+    {
+      "code": "JOL",
+      "time": "12:53p",
+      "tz": "America/Chicago",
+      "kind": "intermediate",
+      "name": "Joliet, IL"
+    },
+    {
+      "code": "CHI",
+      "time": "1:49p",
+      "tz": "America/Chicago",
+      "kind": "arrival",
+      "name": "Chicago, IL"
+    }
+  ]
+}
