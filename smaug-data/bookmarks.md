@@ -1,3 +1,15 @@
+# Friday, June 26, 2026
+
+## @HurrdatSports - Savannah Bananas $6 Million Service Recovery
+> The Savannah Bananas accidentally sent an email to 44,000 fans instead of 4,000 to purchase tickets to games in Savannah.
+>
+> Jesse Cole wanted to make it right and offered each fan who didn't get to purchase tickets five free tickets to another game outside of Savannah. If fans couldn't make it to another game, the organization BOUGHT back those tickets that these people didn't even purchase themselves. All in all, it was a $6 million loss for the Bananas. 🤯
+
+- **Tweet:** https://x.com/HurrdatSports/status/2070522484168790176
+- **What:** Account of Savannah Bananas' exceptional customer service recovery, offering free tickets and buyback compensation to fans affected by an email misdirection, resulting in a $6 million cost.
+
+---
+
 # Sunday, June 21, 2026
 
 ## @darrenrovell - Del Monte Spelling Correction (38 Years Later)
