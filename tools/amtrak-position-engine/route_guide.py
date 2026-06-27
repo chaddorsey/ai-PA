@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 GUIDE_FILE = Path(__file__).resolve().parent / 'data' / 'route_guide.json'
+LORE_FILE = Path(__file__).resolve().parent / 'data' / 'route_lore.json'
 
 
 def load_guide():
@@ -17,6 +18,26 @@ def load_guide():
         return json.loads(GUIDE_FILE.read_text()) if GUIDE_FILE.exists() else {}
     except Exception:
         return {}
+
+
+def load_lore():
+    try:
+        return json.loads(LORE_FILE.read_text()) if LORE_FILE.exists() else {}
+    except Exception:
+        return {}
+
+
+def lore_around(lore, leg, mile, radius_mi=25.0):
+    """Discovered lore points within radius_mi of `mile`, nearest first."""
+    pts = lore.get(leg, {}).get('lore', [])
+    out = [dict(p, rel_mi=round(p['peak_mi'] - mile, 1)) for p in pts
+           if abs(p['peak_mi'] - mile) <= radius_mi]
+    out.sort(key=lambda x: abs(x['rel_mi']))
+    return out
+
+
+def county_note(lore, leg, feature_id):
+    return lore.get(leg, {}).get('counties', {}).get(feature_id)
 
 
 def features_for(guide, leg):

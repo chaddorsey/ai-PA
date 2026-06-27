@@ -1337,6 +1337,27 @@ def _fmt_profile(area):
     return "\n".join(lines)
 
 
+def _first_sentences(text, n=2):
+    parts = text.replace('\n', ' ').split('. ')
+    return '. '.join(parts[:n]).rstrip('.') + '.' if parts else ''
+
+
+def _fmt_lore(items, county_note, mile):
+    lines = []
+    if county_note:
+        lines.append(f"  {county_note['title']}: {_first_sentences(county_note['summary'], 2)}")
+    if not items and not county_note:
+        return "  (no lore nearby yet)"
+    if items:
+        lines.append("  Stories around you:")
+        for f in items[:6]:
+            rel = f['rel_mi']
+            where = 'here' if abs(rel) < 3 else (f"{abs(rel):.0f} mi ahead" if rel > 0 else f"{abs(rel):.0f} mi back")
+            lines.append(f"    • {f['title']} ({where}, {f['side']})")
+            lines.append(f"        {_first_sentences(f['summary'], 1)}")
+    return "\n".join(lines)
+
+
 def run_tests(ctx):
     print('=== POSITION QUERIES (July 2026 itinerary) ===')
     for d, tm, desc in TESTS:
@@ -1369,7 +1390,7 @@ def main():
     import argparse
     ap = argparse.ArgumentParser(description='Amtrak position estimator (July 2026 trip)')
     ap.add_argument('when', nargs='?', default='now',
-                    help='"now", a time, "eta", "around", "lookahead", "alerts", "profile", "guide", or "test"')
+                    help='"now", a time, "eta", "around", "lookahead", "alerts", "profile", "story", "guide", or "test"')
     ap.add_argument('station', nargs='?', help='station/leg code, or a time for around/lookahead/alerts')
     ap.add_argument('--horizon', type=int, help='lookahead horizon in minutes (default 120; alerts 30)')
     ap.add_argument('--tz', default='US/Eastern', help='timezone of the given time (default ET)')
@@ -1406,12 +1427,31 @@ def main():
 
     if args.when == 'profile':   # who lives here / what they do / land character
         import route_guide as RG
-        guide = RG.load_guide()
+        guide, lore = RG.load_guide(), RG.load_lore()
         leg, mile, _ref, _obs = _locate(ctx, args)
         if not leg or mile is None:
             print('  Not on a leg now — give a time, e.g.  profile "2026-07-07 9:00 AM"')
             return
-        print(_fmt_profile(RG.area_at(guide, leg, mile)))
+        area = RG.area_at(guide, leg, mile)
+        print(_fmt_profile(area))
+        note = RG.county_note(lore, leg, area['id']) if area else None
+        if note:
+            print(f"    about: {_first_sentences(note['summary'], 2)}")
+        return
+
+    if args.when in ('lore', 'story'):   # interesting facts / color about where you are
+        import route_guide as RG
+        guide, lore = RG.load_guide(), RG.load_lore()
+        if not lore:
+            print("  No lore built yet (run lore.py).")
+            return
+        leg, mile, _ref, _obs = _locate(ctx, args)
+        if not leg or mile is None:
+            print('  Not on a leg now — give a time, e.g.  story "2026-07-07 9:00 AM"')
+            return
+        area = RG.area_at(guide, leg, mile)
+        note = RG.county_note(lore, leg, area['id']) if area else None
+        print(_fmt_lore(RG.lore_around(lore, leg, mile), note, mile))
         return
 
     if args.when == 'guide':

@@ -19,6 +19,8 @@ python3 position_engine.py around   "2026-07-13 8:00 PM"   # towns/terrain/sight
 python3 position_engine.py lookahead "2026-07-13 1:00 PM" --at MOT --delay 90   # what's coming, with ETAs
 python3 position_engine.py alerts                          # high-salience features arriving soon
 python3 position_engine.py profile  "2026-07-07 9:00 AM"   # who lives here / what they do / how they're doing
+python3 position_engine.py story    "2026-07-07 9:00 AM"   # interesting facts/history about where you are
+python3 lore.py                     # F.1 build: Wikipedia lore points + county notes -> route_lore.json
 python3 position_engine.py guide 27                        # the whole route guide for a leg (planning)
 python3 build_route_guide.py        # recompile guides/*.yml → data/route_guide.json (Phase A, needs PyYAML)
 python3 enrich.py towns counties acs nass nlcd elevation   # Phases B/C/E: towns, demographics, land use+cover, elevation
