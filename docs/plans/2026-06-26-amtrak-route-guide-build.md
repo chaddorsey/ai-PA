@@ -228,11 +228,11 @@ Default on-train track **leans dense** (connection + contemporaneity woven in by
 | Mode | Anchored to | Answers |
 |---|---|---|
 | **What's that?** | current position (engine `now`/live → leg+mile+latlon, optional window/bearing) | what am I looking at right now (quiet mode) |
-| **Say More ▸** | a topic (narrated or tapped) | more on this dimension (menu) |
-| **Why is that?** | a statement/feature | the causal/temporal chain (Burke mode) |
+| **Say More ▸** | a topic (narrated or tapped) | more of the node — breadth/depth on a chosen dimension (menu) |
+| **Why is that?** | a story / point of interest | the edges — the connections *beneath* it (causal, thematic, temporal): why it's here, how it came to be, what it links to |
 
 - **What's that?** picks the single most *plausibly-visible* feature near current mile, ranked by proximity × **side** (stored on every lore point) × prominence (off-track distance × salience × kind — landforms/water read at distance, towns up close). **Most offline-robust:** answers with zero LLM from the stored summary + window; local/hub LLM just makes it conversational. Composes into Say More / Why.
-- Each segment is generated with structured **expansion hooks** — referenced entities/threads tagged by dimension (geology/history/culture/economy/ecology/person/event/theme/**what-else-happened-then**) carrying their grounding bundle; the hooks are the Say-More menu (a woven moment is multi-dimensional). **Why is that?** = causal/temporal deepening; **Say more about X** = topical deepening on that bundle, recursive (each deep-dive exposes new hooks).
+- Each segment is generated with structured **expansion hooks** — referenced entities/threads tagged by dimension (geology/history/culture/economy/ecology/person/event/theme/**what-else-happened-then**) carrying their grounding bundle; the hooks are the Say-More menu (a woven moment is multi-dimensional). **Say more about X** = topical deepening (more facts on that dimension's node). **Why is that?** = the dedicated reveal of the Level-3 connective web *beneath* a story/POI — it walks the connection bundle + temporal index (causal chain, thematic threads, contemporaneity), not the fact sheet; this is where the narrator becomes Burke/Cronon explicitly. Both recursive (each deep-dive exposes new hooks).
 - **Offline:** pre-generate the top expansion cards per segment + the per-feature "what's that" answers; **live:** laptop local model offline or hub online for arbitrary follow-ups grounded in the stored bundle. All three modes share one substrate (facts + connection bundles + temporal index); they differ only in anchor and depth.
 
 ### Pipeline
