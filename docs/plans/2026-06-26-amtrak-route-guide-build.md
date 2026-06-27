@@ -177,6 +177,67 @@ Kept as a **sibling file** so the lean `route_guide.json` stays geometry/stats a
 - **F.3 — live grounded Q&A:** RAG over facts + local/hub LLM for "ask anything."
 - Deeper sources (WPA Guides, HMdb, NRHP) enrich F.1 over time.
 
+## 5d. Scientific substrate & dual-granularity narration (Phase F.2)
+
+The narration POC (Raton Pass, claude-sonnet-4-6 over the F.1 facts) validated the voice. Two upgrades make it the experience we want: a **scientific substrate** (travel with an expert geologist/ecologist) and a **dual-granularity** model (short stories overlaid on the large gradients of the unfolding country).
+
+### Decisions (2026-06-27)
+- Voice: keep the POC register (warm, literate, economical). Density: **denser / nearly always talking**. Grounding: **allow brief, well-known context** beyond the packet (e.g. orogeny names), kept honest by real data.
+- Scientific layers (all chosen): **geology, ecoregion, climate, hydrology** + extras **fossils, night-sky, volcanoes/faults**. Geology depth: **full deep-time + tectonics**.
+
+### Scientific layers (sources, confirmed status)
+| Layer | Source | Gives | Status |
+|---|---|---|---|
+| **Geology** | Macrostrat `/geologic_units/map` (keyless) | formation, age (Ma), lithology, description → micro ("60-Ma arkosic sandstone") + macro (orogeny, seeded by real units) | ✅ confirmed |
+| **Ecoregion** | EPA L3/L4 ArcGIS (keyless) | full biome hierarchy (L1→L4); also encodes climate ("Semi-Arid Prairies") | ✅ confirmed |
+| **Fossils** | Paleobiology DB (bbox, keyless) | taxa near track + age ("Ankylosaurus", "Western Interior Seaway plesiosaurs") | ✅ confirmed |
+| **Hydrology** | USGS WBD ArcGIS (keyless) | watershed (HUC) + **Continental Divide crossings** (HUC2 region change); aquifer (Ogallala) as bonus | ✅ WBD confirmed |
+| **Climate** | derived: 100th-meridian (longitude) + ecoregion climate semantics + elevation (rain-shadow) | the aridity gradient & climate story — no flaky API needed | ✅ via derivation; PRISM/Köppen raster = later quant. polish |
+| **Night sky** (extra) | VIIRS/Bortle light-pollution | dark-sky quality for overnight legs | ⏳ to source |
+| **Volcanoes/faults** (extra) | USGS Quaternary Faults / volcanoes ArcGIS | Raton-Clayton field, Rio Grande rift, Cascades | ⏳ to source |
+
+Built via `science.py` (same sample-along-track pattern as elevation/NLCD) → `data/route_science.json` continuous profiles. Keyless; cached in `.cache/science.json`.
+
+### Dual-granularity model
+Most macro gradients are **computable from layers we already store** — we keep continuous profiles and detect trends/transitions over a lookahead/lookback window (~150 mi ≈ 2–3 hrs):
+- elevation trend (have), land-cover regime shift (have NLCD), demographic drift (have ACS), state/county crossings (have);
+- biome transition (ecoregion), geologic/tectonic province (geology), aridity line (longitude), divide/watershed (WBD).
+
+A `macro_context(leg, mile)` rolls up **current** (rock, biome, climate, elevation) + **ahead 2–3 hrs** (trends + next transitions) + **contrast with behind**. The narrator (`narrate.py`) becomes a **polymath companion** (geologist, ecologist, historian, economist) weaving the immediate stories onto the deep-time and biome gradients, talking nearly continuously.
+
+## 5e. Level 3 — connections, the why/how, and the temporal axis (Phase F.3)
+
+L1 (facts) + L2 (gradients) give *what* and *how it changes*. L3 is *why and how it all connects* — the pinnacle. Touchstones: **James Burke** (lateral causal chains), **William Cronon** (nature⇄capital⇄people as one system), **Ken Burns** (throughline + telling detail). Standing instruction: the narrator never just names — it pursues **why a thing is here, how it came to be, and what it connects to.**
+
+### Connective substrate → `route_connections.json` (confirmed sources)
+Per key lore point, a **connection bundle**: ranked Wikipedia outbound links + their 1-hop summaries (deeper nodes), Wikidata typed relations, and Wikipedia categories. Derive **themes** from categories — the trip-recurring threads (Santa Fe Trail · cattle frontier · coal & company towns · the Arkansas/Rio Grande corridors · Western Interior Seaway · aridity & the 100th meridian · the railroad's own story · Indigenous land & displacement · Dust Bowl & reclamation). Probed ✓: Santa Fe Trail → 196 links; Dodge City categories → "American frontier/Boot Hill/Gunsmoke/Arkansas River"; Wikidata → "named after" etc.
+
+### Temporal axis (the connective key)
+Contemporaneity is itself an edge — same-decade events are connectable across domains and across 500 mi of route, producing the emergent cross-cuts. Index everything in time:
+- **Human time** from Wikidata `P571/P576/P585` (Dodge City 1872 ✓), category years (regex "1872 establishments" ✓), and summary text (Morley "1878–1956"); **deep time** from Macrostrat/PBDB ages.
+- **`timeline.yml`** — curated national backbone (~50–100 era events: Homestead Act, Pacific Railway Acts, barbed wire 1874, cattle-drive era 1866–86, Panics, Dawes Act, frontier-closed 1890, Dust Bowl, Reclamation, Interstate era).
+- Two modes: **synchronic** ("the year barbed wire was patented…") and **diachronic** ("camp 1878 → rails 1880 → strike 1913 → bypassed 1956"). `temporal_context(leg, mile)` hands the narrator the segment's dates + contemporaneous national events + co-temporal route events. Braids deep + human time.
+
+### Making the whole narration connective
+1. **Why/how prompt** — trace causation across domains; weave active themes every segment.
+2. **Per-leg thematic spine** (build-time LLM pass, strong model) — a narrative bible naming the dominant threads + causal throughlines; segments generated *against it* so they cohere.
+3. **Running story-state** — segments generated in order carrying open threads → foreshadow + call back; a trip-level **overture** sets the meta-arc.
+Default on-train track **leans dense** (connection + contemporaneity woven in by default), with Say More/Why for further depth.
+
+### Interactive modes (three anchors)
+| Mode | Anchored to | Answers |
+|---|---|---|
+| **What's that?** | current position (engine `now`/live → leg+mile+latlon, optional window/bearing) | what am I looking at right now (quiet mode) |
+| **Say More ▸** | a topic (narrated or tapped) | more on this dimension (menu) |
+| **Why is that?** | a statement/feature | the causal/temporal chain (Burke mode) |
+
+- **What's that?** picks the single most *plausibly-visible* feature near current mile, ranked by proximity × **side** (stored on every lore point) × prominence (off-track distance × salience × kind — landforms/water read at distance, towns up close). **Most offline-robust:** answers with zero LLM from the stored summary + window; local/hub LLM just makes it conversational. Composes into Say More / Why.
+- Each segment is generated with structured **expansion hooks** — referenced entities/threads tagged by dimension (geology/history/culture/economy/ecology/person/event/theme/**what-else-happened-then**) carrying their grounding bundle; the hooks are the Say-More menu (a woven moment is multi-dimensional). **Why is that?** = causal/temporal deepening; **Say more about X** = topical deepening on that bundle, recursive (each deep-dive exposes new hooks).
+- **Offline:** pre-generate the top expansion cards per segment + the per-feature "what's that" answers; **live:** laptop local model offline or hub online for arbitrary follow-ups grounded in the stored bundle. All three modes share one substrate (facts + connection bundles + temporal index); they differ only in anchor and depth.
+
+### Pipeline
+`connect.py` (bundles + themes + dates) → `timeline.yml` (authored) → per-leg thematic-spine pass → enhanced in-order segment narration (+ expansion hooks) → app: play track, hooks→menu, tap→pre-gen card or live LLM. Sequencing: after L2/science + the dual-granularity narrator validate.
+
 ## 6. Build pipeline (`build_route_guide`)
 
 Runs inside `--build` (online), after `leg_shapes` exist. Per leg:
