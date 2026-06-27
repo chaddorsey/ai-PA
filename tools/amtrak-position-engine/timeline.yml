@@ -1,0 +1,62 @@
+# National/regional historical backbone for the narration's TEMPORAL axis.
+# The narrator places a place's local dates against these — for contemporaneity
+# ("the year barbed wire was patented…") and succession (cause→effect over time).
+# Each entry: `year` (int) OR `span: [start, end]`; `event`; `themes` (free tags);
+# `regions` (state codes / broad areas / "national" — for relevance weighting).
+# Curated, accurate, deliberately compact — the deep backbone, not every fact.
+
+# ── Expansion & exploration ──────────────────────────────────────────────
+- {year: 1803, event: "Louisiana Purchase doubles the United States", themes: [expansion, federal], regions: [national]}
+- {span: [1804, 1806], event: "Lewis & Clark Expedition maps the Missouri & Columbia", themes: [exploration, rivers], regions: [Great Plains, Pacific NW]}
+- {span: [1821, 1880], event: "Santa Fe Trail trade era (Missouri↔Santa Fe)", themes: [trail, trade, frontier], regions: [MO, KS, CO, NM]}
+- {span: [1846, 1848], event: "Mexican–American War", themes: [war, expansion], regions: [Southwest, TX, NM, CA]}
+- {year: 1848, event: "Treaty of Guadalupe Hidalgo cedes the Southwest to the U.S.", themes: [war, expansion, displacement], regions: [Southwest, TX, NM, AZ, CA]}
+- {span: [1848, 1855], event: "California Gold Rush", themes: [gold, boom, migration], regions: [CA]}
+- {year: 1859, event: "Pike's Peak Gold Rush draws thousands to Colorado", themes: [gold, boom, mining], regions: [CO]}
+
+# ── Native nations, treaties & conflict ──────────────────────────────────
+- {span: [1851, 1868], event: "Fort Laramie Treaties (made and broken) on the Plains", themes: [treaty, displacement, indigenous], regions: [Great Plains]}
+- {year: 1864, event: "Sand Creek Massacre of Cheyenne & Arapaho", themes: [violence, displacement, indigenous], regions: [CO]}
+- {span: [1860, 1890], event: "Plains Indian Wars", themes: [war, displacement, indigenous], regions: [Great Plains, West]}
+- {year: 1876, event: "Battle of the Little Bighorn", themes: [war, indigenous], regions: [MT, Great Plains]}
+- {year: 1886, event: "Geronimo surrenders, ending the Apache Wars", themes: [war, indigenous], regions: [AZ, NM]}
+- {year: 1887, event: "Dawes Act breaks up tribal lands into allotments", themes: [displacement, indigenous, federal], regions: [national]}
+- {year: 1890, event: "Wounded Knee; Census Bureau declares the frontier 'closed'", themes: [frontier, indigenous, displacement], regions: [Great Plains, West]}
+
+# ── Railroads ────────────────────────────────────────────────────────────
+- {year: 1862, event: "Pacific Railway Act funds the transcontinental and grants railroads vast land", themes: [railroad, federal, land-grant], regions: [national, West]}
+- {year: 1869, event: "First Transcontinental Railroad completed at Promontory, Utah", themes: [railroad], regions: [West]}
+- {span: [1865, 1900], event: "Railroad land grants plat towns across the West (the railroad makes and kills towns)", themes: [railroad, settlement, land-grant], regions: [West, Great Plains]}
+- {year: 1879, event: "Santa Fe Railway wins Raton Pass and pushes into New Mexico", themes: [railroad, trail], regions: [CO, NM]}
+- {year: 1883, event: "Railroads impose standard time zones on the country", themes: [railroad, federal], regions: [national]}
+- {year: 1887, event: "Interstate Commerce Act begins federal railroad regulation", themes: [railroad, federal], regions: [national]}
+- {year: 1893, event: "Great Northern reaches Puget Sound (James J. Hill's line)", themes: [railroad], regions: [MT, Pacific NW]}
+- {year: 1971, event: "Amtrak created; most private passenger rail ends", themes: [railroad, federal], regions: [national]}
+
+# ── Settlement, cattle & the fenced range ────────────────────────────────
+- {year: 1862, event: "Homestead Act — 160 free acres to anyone who'd farm it", themes: [settlement, federal, farming], regions: [Great Plains, West]}
+- {span: [1866, 1886], event: "The great cattle-drive era (Chisholm, Goodnight–Loving trails to railhead towns)", themes: [cattle, frontier, railroad], regions: [TX, KS, Great Plains]}
+- {year: 1874, event: "Joseph Glidden patents barbed wire — within a decade it fences the open range", themes: [barbed-wire, cattle, farming, settlement], regions: [Great Plains]}
+- {year: 1889, event: "Oklahoma Land Rush", themes: [settlement, land-rush], regions: [OK, Great Plains]}
+- {year: 1902, event: "Reclamation Act launches federal irrigation of the arid West", themes: [water, irrigation, federal, farming], regions: [West, Southwest]}
+
+# ── Extraction: coal, oil, ore ───────────────────────────────────────────
+- {span: [1880, 1955], event: "Colorado Fuel & Iron coal-and-coke empire (company towns across southern CO)", themes: [coal, mining, company-town, labor], regions: [CO]}
+- {year: 1901, event: "Spindletop gusher launches the Texas oil age", themes: [oil, boom], regions: [TX]}
+- {year: 1914, event: "Ludlow Massacre — National Guard fires on striking CFI coal miners", themes: [coal, labor, violence, company-town], regions: [CO]}
+
+# ── Booms, busts & the federal hand ──────────────────────────────────────
+- {year: 1873, event: "Panic of 1873 triggers a long depression", themes: [bust, economy], regions: [national]}
+- {year: 1893, event: "Panic of 1893 — railroads fail, towns empty", themes: [bust, economy, railroad], regions: [national]}
+- {span: [1930, 1940], event: "Dust Bowl ravages the southern Plains", themes: [drought, farming, migration, environment], regions: [Great Plains, KS, OK, TX]}
+- {span: [1933, 1942], event: "New Deal — CCC, dams, rural electrification, the WPA guides", themes: [federal, environment, public-works], regions: [national]}
+- {year: 1935, event: "Hoover Dam completed; big-dam era reshapes Western water", themes: [water, dam, federal], regions: [West, AZ, NV]}
+- {year: 1956, event: "Interstate Highway Act — freeways bypass the rail towns", themes: [highway, federal, decline], regions: [national]}
+
+# ── Route, region & water ────────────────────────────────────────────────
+- {span: [1848, 1900], event: "Chicago becomes the railroad metropolis of the interior (its hinterland feeds grain, lumber, meat)", themes: [railroad, trade, metropolis], regions: [IL, Great Lakes, Midwest]}
+- {year: 1865, event: "Chicago Union Stock Yards open — the slaughterhouse hub of the nation", themes: [cattle, trade, industry], regions: [IL]}
+- {span: [1811, 1900], event: "Mississippi River steamboat & river-trade era", themes: [rivers, trade], regions: [Mississippi Valley, IL, MO, LA]}
+- {span: [1926, 1985], event: "U.S. Route 66 — the Mother Road from Chicago to Santa Monica", themes: [highway, migration, route-66], regions: [IL, MO, OK, NM, AZ, CA]}
+- {year: 1913, event: "Los Angeles Aqueduct opens; California's water wars begin", themes: [water, irrigation, growth], regions: [CA]}
+- {span: [1850, 1930], event: "Pacific Northwest timber and salmon economy booms", themes: [timber, fishing, industry], regions: [Pacific NW, WA, OR]}

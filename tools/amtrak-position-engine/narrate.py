@@ -159,6 +159,86 @@ def macro_context(leg, mile):
     return "\n".join(L)
 
 
+def load_connections():
+    f = DIR / 'data' / 'route_connections.json'
+    try:
+        return json.loads(f.read_text()) if f.exists() else {}
+    except Exception:
+        return {}
+
+
+def load_timeline():
+    f = DIR / 'timeline.yml'
+    try:
+        import yaml
+        return yaml.safe_load(f.read_text()) or []
+    except Exception:
+        return []
+
+
+RESOURCE_WORDS = ('coal', 'oil', 'gold', 'silver', 'copper', 'iron', 'lignite', 'uranium')
+
+
+def _timeline_near(years, tl, window=15):
+    out = []
+    for e in tl:
+        span = e.get('span')
+        ey = e.get('year') or (span[0] if span else None)
+        if ey is None:
+            continue
+        best = min((abs(ey - y) if not span else
+                    (0 if span[0] - window <= y <= span[1] + window else min(abs(span[0] - y), abs(span[1] - y)))
+                    for y in years), default=999)
+        if best <= window:
+            lbl = e['event'] + (f" ({span[0]}–{span[1]})" if span else f" ({e['year']})")
+            out.append((best, lbl))
+    out.sort(key=lambda x: x[0])
+    return [l for _, l in out[:8]]
+
+
+def connect_context(leg, lo, hi):
+    """L3 weave: recurring categories + per-place relations/dates + cross-layer
+    (geology→extraction→settlement) hints + contemporaneous national events."""
+    conn = load_connections().get(leg, {})
+    tl = load_timeline()
+    sci = load_science().get(leg, {})
+    seg = sorted([n for n in conn.get('nodes', {}).values() if lo <= n['mi'] <= hi], key=lambda x: x['mi'])
+    L = []
+    if conn.get('categories'):
+        L.append("RECURRING THREADS this leg (recurring categories — weave + call back): "
+                 + ", ".join(conn['categories'][:12]))
+    if seg:
+        L.append("CONNECTIONS for this segment's places (categories / named-after / part-of / dates):")
+        for n in seg:
+            bits = []
+            if n.get('categories'):
+                bits.append("cats: " + ", ".join(n['categories'][:4]))
+            if n.get('named_after'):
+                bits.append("named after " + n['named_after'])
+            if n.get('part_of'):
+                bits.append("part of " + n['part_of'])
+            if n.get('dates'):
+                bits.append("dates " + ", ".join(map(str, n['dates'])))
+            if bits:
+                L.append(f"  {n['title']}: " + " | ".join(bits))
+    liths = " ".join((g.get('lith') or '') + ' ' + (g.get('descrip') or '')
+                     for m, g in sci.get('geology', []) if lo <= m <= hi).lower()
+    cats_all = " ".join(c for n in seg for c in n.get('categories', [])).lower()
+    hints = [f"'{r}' in the bedrock here coincides with {r}/mining/ghost-town places — "
+             f"the geology→extraction→settlement→bust chain is live; tell it."
+             for r in RESOURCE_WORDS
+             if r in liths and (r in cats_all or 'mining' in cats_all or 'ghost town' in cats_all)]
+    if hints:
+        L.append("CROSS-LAYER HINTS (seams to weave): " + " ".join(hints))
+    years = sorted({y for n in seg for y in n.get('dates', [])})
+    if years and tl:
+        ev = _timeline_near(years, tl)
+        if ev:
+            L.append("CONTEMPORANEOUS NATIONAL EVENTS (for 'that same era' / contemporaneity links): "
+                     + "; ".join(ev))
+    return "\n".join(L)
+
+
 def assemble(leg, lo, hi):
     guide, lore = RG.load_guide(), RG.load_lore()
     feats = RG.features_for(guide, leg)
@@ -232,6 +312,8 @@ Work at TWO scales at once:
 
 Weave the near stories inside the large unfolding — that dual focus, granular and grand at once, is the gift of a long train.
 
+THE CONNECTIVE LAYER (this is what makes it sing): the finest stories live at the SEAMS BETWEEN LAYERS. Trace the chains — geology → resource → economy → settlement → culture → why it's a ghost town now; climate/aridity → land use → who lives here; the pass → the railroad's route → the town's founding. Use the CROSS-LAYER HINTS when given. Carry the RECURRING THREADS across the segment and call back ("the fifth ghost town we've passed on the old Santa Fe line"). And use TIME as a connective edge: when a place's dates line up with a CONTEMPORANEOUS NATIONAL EVENT, draw the link ("platted in 1874 — the very year barbed wire was patented, which would fence the open range that made it"). Ground every connection in the facts/relations/dates given; you may add brief, well-known context to complete a chain, never invent it.
+
 Guidelines:
 - Ground claims in the facts. You MAY add brief, well-known context — an orogeny's name, what a rock type or lithology means, a biome's character, a fossil's world — to enrich and explain, but never invent specific names, dates, or events the facts don't support.
 - Be the geologist for deep time: tell the story of the rock — when and in what sea or rising range it formed, what it became — using the formations and ages given. Make 60 million years and 1.6 billion years feel real.
@@ -246,12 +328,16 @@ def main():
     model = sys.argv[4] if len(sys.argv) > 4 else MODEL
     macro = macro_context(leg, lo)
     facts = assemble(leg, lo, hi)
+    connect = connect_context(leg, lo, hi)
     print("===== MACRO ARC =====")
     print(macro)
     print("\n===== FACTS PACKET =====")
     print(facts)
-    user = (macro + "\n\n" + facts
-            + "\n\nWrite the continuous narration for this segment, weaving the near stories into the large arc.")
+    print("\n===== CONNECTIONS (L3) =====")
+    print(connect)
+    user = (macro + "\n\n" + facts + "\n\n" + connect
+            + "\n\nWrite the continuous narration for this segment, weaving the near stories into the "
+            "large arc AND the connective chains (cross-layer, recurring threads, contemporaneity).")
     print("\n===== NARRATION (" + model + ") =====")
     print(llm(SYSTEM, user, model))
 
