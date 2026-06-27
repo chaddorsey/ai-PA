@@ -1310,6 +1310,28 @@ def _fmt_guide(legdata, leg):
     return "\n".join(lines)
 
 
+def _fmt_profile(area):
+    if not area:
+        return "  No area/demographic data here yet."
+    s = area.get('stats', {})
+    lines = [f"  {area['name']}"]
+    if s.get('population') is not None:
+        age = f", median age {s['median_age']}" if s.get('median_age') is not None else ""
+        lines.append(f"    ~{s['population']:,} people{age}")
+    if s.get('median_hh_income'):
+        pov = f", poverty {s['poverty_pct']}%" if s.get('poverty_pct') is not None else ""
+        lines.append(f"    median household income ~${s['median_hh_income']:,}{pov}")
+    if s.get('ba_plus_pct') is not None:
+        lines.append(f"    bachelor's degree or higher: {s['ba_plus_pct']}%")
+    if s.get('top_industries'):
+        lines.append("    main industries: " + ", ".join(s['top_industries']))
+    if s.get('top_occupations'):
+        lines.append("    top occupations: " + ", ".join(s['top_occupations']))
+    if s.get('source'):
+        lines.append(f"    [{s['source']}]")
+    return "\n".join(lines)
+
+
 def run_tests(ctx):
     print('=== POSITION QUERIES (July 2026 itinerary) ===')
     for d, tm, desc in TESTS:
@@ -1342,7 +1364,7 @@ def main():
     import argparse
     ap = argparse.ArgumentParser(description='Amtrak position estimator (July 2026 trip)')
     ap.add_argument('when', nargs='?', default='now',
-                    help='"now", a time, "eta", "around", "lookahead", "alerts", "guide", or "test"')
+                    help='"now", a time, "eta", "around", "lookahead", "alerts", "profile", "guide", or "test"')
     ap.add_argument('station', nargs='?', help='station/leg code, or a time for around/lookahead/alerts')
     ap.add_argument('--horizon', type=int, help='lookahead horizon in minutes (default 120; alerts 30)')
     ap.add_argument('--tz', default='US/Eastern', help='timezone of the given time (default ET)')
@@ -1375,6 +1397,16 @@ def main():
         observed = _observation(ctx, args, leg_key)
         print(_fmt_eta(eta_to(ctx, args.station.upper(), leg_key=leg_key,
                               observed=observed, sigma=args.sigma)))
+        return
+
+    if args.when == 'profile':   # who lives here / what they do / land character
+        import route_guide as RG
+        guide = RG.load_guide()
+        leg, mile, _ref, _obs = _locate(ctx, args)
+        if not leg or mile is None:
+            print('  Not on a leg now — give a time, e.g.  profile "2026-07-07 9:00 AM"')
+            return
+        print(_fmt_profile(RG.area_at(guide, leg, mile)))
         return
 
     if args.when == 'guide':

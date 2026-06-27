@@ -38,9 +38,17 @@ def around(guide, leg, mile, radius_mi=25.0, min_salience=1):
 
 
 def current_context(guide, leg, mile):
-    """Spans you are inside right now (in this park / desert / on this bridge)."""
+    """Spans you are inside right now (in this park / desert / on this bridge / county)."""
     return [f for f in features_for(guide, leg)
             if f['from_mi'] < f['to_mi'] and f['from_mi'] <= mile <= f['to_mi']]
+
+
+def area_at(guide, leg, mile):
+    """The statistical area (county) span containing `mile`, or None — carries `stats`."""
+    for f in features_for(guide, leg):
+        if f.get('class') == 'area' and f['from_mi'] <= mile <= f['to_mi']:
+            return f
+    return None
 
 
 def lookahead(ctx, guide, leg, mile, ref_dt, observed=None, horizon_min=120,
