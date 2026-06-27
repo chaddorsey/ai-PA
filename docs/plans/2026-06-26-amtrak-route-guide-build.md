@@ -141,6 +141,42 @@ All read the same `stats` payload: an enroute "this area" card that updates at c
 ### Framing / sensitivity
 Present Census aggregates **factually and neutrally**, always with source + vintage, and show margins of error where they're large (small counties, tracts). This is public, aggregate, place-level data answering honest travel curiosity — keep it descriptive, never editorial, and don't infer anything about individuals.
 
+## 5c. Narrative & lore layer — interesting facts + LLM narration (Phase F)
+
+The companion's "soul": the who / what / why of the places you pass, as **sourced color**, plus an LLM that turns it into narration. **Principle (same as everything else): facts are milepost-keyed DATA; narration is an LLM transform over the facts near you** — so it's groundable, reviewable, and offline-capable.
+
+### Sources (all free; license noted)
+| Source | Gives | Access | License |
+|---|---|---|---|
+| **Wikipedia REST summary** | concise lead "what's notable" for any city/county/park/river/landform | `/api/rest_v1/page/summary/<title>` | CC BY-SA |
+| **Wikipedia GeoSearch** | geotagged articles near a point — finds ghost towns, historic sites, battles, landforms, not just cities | `w/api.php?list=geosearch` | CC BY-SA |
+| **Wikipedia Pageviews** | popularity → rank/filter geosearch to the genuinely notable (cuts the radio-station noise) | `/metrics/pageviews/...` | CC0 |
+| **Wikidata** | structured facts (named-after, founded, notable people, `instance of` for filtering) + geo queries | SPARQL / entity API | CC0 |
+| **GNIS** (USGS Geographic Names) | official landform names + types (so summits/passes/streams get real names) | dump / API | public domain |
+| **NRHP** (National Register of Historic Places) | historic places, lat/lon + significance | NPS GIS | public domain |
+| **Wikivoyage** | travel-oriented, evocative city/region prose ("understand" sections) | API | CC BY-SA |
+| **WPA American Guide Series** (1930s–40s) | richly descriptive period *route tours* of exactly these places | archive.org (OCR text) | public domain |
+| **Historical Marker Database (HMdb)** | roadside-marker texts — dense local history/color | site (check ToS) | community |
+
+Don't reproduce copyrighted travel writing or Amtrak's own guide text — reference only. Keep excerpts short, attribute CC BY-SA sources, and **ground narration in the sourced facts** (no free-floating hallucination).
+
+### Derivation → a facts layer (`route_lore.json`)
+Kept as a **sibling file** so the lean `route_guide.json` stays geometry/stats and the verbose text loads on demand; keyed by feature id / milepost:
+1. **Annotate existing features** — fetch the Wikipedia summary for each city/county/park/river/named-summit → `notes` (1–2 sentences). Resolve the article via Wikidata or title + disambiguation.
+2. **Discover lore points** — GeoSearch every ~12 mi (radius ~8 mi) → candidates → filter by Wikidata `instance of` (drop schools/stations) + rank by pageviews + length → keep the top notable → summaries → `kind: lore` features (historic site, ghost town, landmark, battle, natural feature), deduped against existing.
+3. **Name the landforms** — GNIS gives the elevation/NLCD-detected summits/passes real names.
+4. **Deeper history (later)** — NRHP points near the route; WPA-Guide excerpts matched to places.
+
+### LLM narration (a transform over the facts)
+- **Pre-generated track (offline default):** at build time, segment each leg (by notable clusters / ~20–30 min) → feed the LLM that segment's features + notes + land/demographic context → a tight, engaging paragraph → store milepost-keyed `narration` segments. Offline-ready (no LLM on the train), reviewable, attributable; built via the hub LiteLLM. The "soul" you play as you ride.
+- **Live grounded Q&A (online / local model):** RAG over the facts near the current milepost → the LLM answers "what's that town? / tell me about here" dynamically — the laptop's local model offline, or the hub LiteLLM when connected. The facts layer is the grounding that prevents hallucination.
+
+### Phasing
+- **F.1 — facts layer (no LLM):** Wikipedia summaries on features + ranked GeoSearch lore points + GNIS names → `route_lore.json`. Sourced, reviewable; immediately enriches `around`/`profile`. *Start here — the durable substrate everything narrative builds on.*
+- **F.2 — pre-generated narration track:** LLM over the facts → offline narration segments.
+- **F.3 — live grounded Q&A:** RAG over facts + local/hub LLM for "ask anything."
+- Deeper sources (WPA Guides, HMdb, NRHP) enrich F.1 over time.
+
 ## 6. Build pipeline (`build_route_guide`)
 
 Runs inside `--build` (online), after `leg_shapes` exist. Per leg:
@@ -211,7 +247,8 @@ Everything downstream consumes **`route_guide.json` + `leg_shapes` + `eta_to_mil
 - **Phase B — Automated natural/engineering.** OSM tunnels/bridges/water crossings; elevation-derived passes/summits/grades/canyons.
 - **Phase C — Places + protected + biomes.** GeoNames towns; NPS/USFS spans; ecoregion deserts/plains.
 - **Phase D — Polish.** Side-of-train everywhere, salience tuning, optional LLM narration over `around`/`lookahead`.
-- **Phase E — Statistical corridor profile (§5b).** County-traversal `area` spans with ACS demographics/occupations/socioeconomics + NLCD/CDL land-use, plus a `profile`/`where` query. The richest layer, the most build-heavy (ACS pulls + raster sampling + point-in-polygon). Depends on Phase C's areal plumbing — do it **with or right after C**.
+- **Phase E — Statistical corridor profile (§5b).** County-traversal `area` spans with ACS demographics/occupations/socioeconomics + NASS land use + NLCD land cover, plus a `profile`/`where` query. Depends on Phase C's areal plumbing — do it **with or right after C**.
+- **Phase F — Narrative & lore layer (§5c).** Sourced facts/color per place (Wikipedia summaries + ranked GeoSearch lore points + GNIS names → `route_lore.json`), then an LLM narration track over them (pre-generated offline; live grounded Q&A online). The "soul." F.1 (facts) is the substrate; F.2/F.3 are the narration.
 
 Recommend building **Phase A end-to-end first** (proves the contract + runtime + CLI with real, hand-quality data), then layering B/C/D/E into the same `route_guide.json`. C and E are the two areal layers and share point-in-polygon machinery, so they pair naturally.
 
