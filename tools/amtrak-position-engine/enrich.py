@@ -288,6 +288,84 @@ def enrich_acs(guide, shapes):
     print(f"  ACS stats filled: {filled} county features across {len(by_state)} states")
 
 
+# ── Phase E: agricultural land use (USDA NASS QuickStats, needs key) ───────
+
+def _nass_key():
+    import os
+    k = os.environ.get('NASS_API_KEY')
+    if k:
+        return k
+    envf = Path(__file__).resolve().parents[2] / '.env'
+    if envf.exists():
+        for line in envf.read_text().splitlines():
+            if line.startswith('NASS_API_KEY='):
+                return line.split('=', 1)[1].strip()
+    return None
+
+
+def enrich_nass(guide, shapes):
+    """Top crops by harvested acreage per county (Census of Agriculture 2022) — the
+    tabular answer to 'what is the land used for.' Fills stats['top_crops']."""
+    key = _nass_key()
+    if not key:
+        print("  no NASS_API_KEY in env/.env — skipping land use "
+              "(free key: quickstats.nass.usda.gov/api)")
+        return
+    def _norm_crop(c):
+        c = c.title()
+        return 'Hay' if 'Haylage' in c else c   # merge NASS "Hay & Haylage" into "Hay"
+
+    CACHE.mkdir(exist_ok=True)
+    cf = CACHE / 'nass.json'
+    cache = json.loads(cf.read_text()) if cf.exists() else {}
+    states = set()
+    for leg in guide:
+        for f in guide[leg]['features']:
+            if f.get('kind') == 'county':
+                states.add(f['stats']['fips'][:2])
+    for st in sorted(states):
+        if st in cache:
+            continue
+        url = ("https://quickstats.nass.usda.gov/api/api_GET/?key=" + key +
+               "&source_desc=CENSUS&sector_desc=CROPS&statisticcat_desc=AREA+HARVESTED"
+               "&unit_desc=ACRES&agg_level_desc=COUNTY&year=2022&state_fips_code=" + st +
+               "&format=JSON")
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=90) as r:
+                recs = json.load(r).get('data', [])
+        except Exception as e:
+            print(f"  state {st}: NASS failed ({e})")
+            continue
+        agg = {}
+        for rec in recs:
+            fips = rec.get('state_fips_code', '') + rec.get('county_code', '')
+            val = (rec.get('Value', '') or '').replace(',', '')
+            if not val.isdigit():
+                continue
+            com = _norm_crop(rec.get('commodity_desc', ''))
+            agg.setdefault(fips, {})
+            agg[fips][com] = agg[fips].get(com, 0) + int(val)
+        cache[st] = agg
+        cf.write_text(json.dumps(cache))
+        time.sleep(0.5)
+    crop_acres = {}
+    for st in states:
+        crop_acres.update(cache.get(st, {}))
+    filled = 0
+    for leg in guide:
+        for f in guide[leg]['features']:
+            if f.get('kind') == 'county':
+                ca = crop_acres.get(f['stats']['fips'])
+                if ca:
+                    top = sorted(ca.items(), key=lambda x: -x[1])[:3]
+                    f['stats']['top_crops'] = [c for c, _ in top]
+                    f['stats']['land_use_source'] = 'NASS Census of Ag 2022'
+                    if f.get('blurb'):
+                        f['blurb'] += "; grows " + ", ".join(f['stats']['top_crops'][:2]).lower()
+                    filled += 1
+    print(f"  NASS land use: top crops on {filled} counties")
+
+
 # ── Phase B: elevation profile + auto passes/summits (open-meteo, keyless) ──
 
 def _elev_batch(points, tries=5):
@@ -384,7 +462,7 @@ def recompute_gaps(guide, min_sal=3, reach=20.0, thresh=40.0):
 
 
 ENRICHERS = {'towns': enrich_towns, 'counties': enrich_counties,
-             'acs': enrich_acs, 'elevation': enrich_elevation}
+             'acs': enrich_acs, 'nass': enrich_nass, 'elevation': enrich_elevation}
 
 
 def main():
