@@ -20,6 +20,8 @@
 gcp-oauth.keys.json
 credentials.json
 **/credentials.json
+credentials.json.bak.*
+**/credentials.json.bak.*
 oauth-*.json
 service-account-*.json
 service-account.json

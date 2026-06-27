@@ -1,5 +1,13 @@
 # Friday, June 26, 2026
 
+## @BBGreatMoments - What 40 mph to 100 mph looks like (Baseball)
+> What 40 mph to 100 mph looks like ⚾️
+
+- **Tweet:** https://x.com/BBGreatMoments/status/2070605644546134381
+- **What:** Video showing the visual and speed difference between a 40 mph and 100 mph baseball pitch.
+
+---
+
 ## @HurrdatSports - Savannah Bananas $6 Million Service Recovery
 > The Savannah Bananas accidentally sent an email to 44,000 fans instead of 4,000 to purchase tickets to games in Savannah.
 >

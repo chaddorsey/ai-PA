@@ -518,8 +518,15 @@
         }
       }));
 
-    // Not-a-fox toggle (or global Restore in No Foxes view).
-    const inNoFoxesView = (document.querySelector(".tab.active")?.dataset.bucket) === "demoted";
+    // Not-a-fox toggle (or global Restore for any clip that is already
+    // demoted). Keying off h.demoted instead of the active tab covers
+    // every entry point — gallery, modal opened from a deep link,
+    // push-notification follow-through — so the button matches the
+    // clip's actual state. Per-user toggling alone can't move a clip
+    // out of No Foxes when another family member also demoted it; the
+    // global restore (with confirm) is the only path that actually
+    // works in that case.
+    const inNoFoxesView = !!h.demoted;
     if (inNoFoxesView) {
       bar.appendChild(iconActionBtn(MI("undo"), "demote", false, "Restore", async () => {
         if (!confirm("Restore this clip to the main highlights view for everyone? It's currently flagged as 'No Foxes' by someone in the family — restoring will move it back into circulation for all users.")) return;

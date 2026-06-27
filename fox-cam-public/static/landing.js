@@ -79,12 +79,23 @@
   // 3. Featured grid render
   // ---------------------------------------------------------------------------
 
+  // Initial cards above the fold; the rest reveal in BATCH_SIZE chunks
+  // when the user taps "Show more".
+  const INITIAL_BATCH = 6;
+  const BATCH_SIZE = 6;
+
   async function renderFeatured() {
     const grid = document.getElementById("featured-grid");
+    const moreBtn = document.getElementById("featured-more");
     if (!grid) return;
     let data;
     try {
-      const r = await fetch("/api/featured?limit=6", { credentials: "same-origin" });
+      // Pull the full featured set in one request — the curator caps at
+      // 200 and 200 small JSON rows is well under any practical payload
+      // budget. Pagination is then handled client-side, which keeps the
+      // "Show more" button instant and avoids hitting the backend on
+      // every reveal.
+      const r = await fetch("/api/featured?limit=200", { credentials: "same-origin" });
       data = await r.json();
     } catch (err) {
       console.warn("[landing] /api/featured failed", err);
@@ -108,11 +119,20 @@
             Quiet woods today. Check back tonight.
           </p>
         </div>`;
+      if (moreBtn) moreBtn.hidden = true;
       return;
     }
     grid.innerHTML = "";
-    for (const h of items) {
-      grid.appendChild(buildCard(h));
+    let shown = 0;
+    function appendBatch(n) {
+      const next = items.slice(shown, shown + n);
+      for (const h of next) grid.appendChild(buildCard(h));
+      shown += next.length;
+      if (moreBtn) moreBtn.hidden = shown >= items.length;
+    }
+    appendBatch(INITIAL_BATCH);
+    if (moreBtn) {
+      moreBtn.addEventListener("click", () => appendBatch(BATCH_SIZE));
     }
   }
 

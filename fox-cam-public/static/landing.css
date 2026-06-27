@@ -348,6 +348,41 @@ body.landing .hero-cta { opacity: 1; transition: opacity 0.3s ease; transition-d
 @media (max-width: 900px) { .featured-grid { grid-template-columns: repeat(2, 1fr); gap: 20px; } }
 @media (max-width: 540px) { .featured-grid { grid-template-columns: 1fr; gap: 16px; } }
 
+/* "Show more highlights" — only visible when there are more items to
+   reveal. Styled to match the warm-cream landing surface: rounded pill,
+   soft cream fill, glow border, lifts on hover. */
+.featured-more-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 32px;
+}
+
+.featured-more {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: var(--color-ink);
+  background: white;
+  border: 2px solid var(--color-glow);
+  border-radius: var(--radius-pill);
+  padding: 12px 28px;
+  cursor: pointer;
+  box-shadow: var(--shadow-card-rest);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.featured-more:hover,
+.featured-more:focus-visible {
+  transform: translateY(-2px);
+  background: var(--color-glow);
+  color: white;
+  box-shadow: var(--shadow-cta);
+  outline: none;
+}
+
+.featured-more[hidden] { display: none; }
+
 .featured-card {
   position: relative;
   background: white;

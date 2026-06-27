@@ -415,7 +415,16 @@ def _handle_chad_mention(event: Dict[str, Any], client: WebClient, logger: loggi
 
 
 def register(app: App):
-    @app.event("message")
-    def _on_message(event, client, logger):
-        # Bolt fires this on every visible message — short-circuit fast for non-mentions.
-        _handle_chad_mention(event, client, logger)
+    # Registered as global middleware (not @app.event("message")) so it observes every
+    # message without consuming the dispatch. Bolt's listener dispatch is first-match-wins:
+    # if this were @app.event("message") it would auto-ack and silently swallow every DM
+    # before _handle_dm could run. Middleware that calls next() always passes events through.
+    @app.use
+    def _chad_mention_middleware(body, next, client, logger):
+        try:
+            ev = body.get("event") or {}
+            if ev.get("type") == "message" and not ev.get("subtype"):
+                _handle_chad_mention(ev, client, logger)
+        except Exception as e:
+            logger.warning("chad_mention_signal middleware failed: %s", e)
+        next()

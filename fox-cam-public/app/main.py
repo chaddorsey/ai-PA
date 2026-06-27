@@ -510,7 +510,7 @@ def whoami(request: Request) -> dict[str, Any]:
 @app.get("/api/featured")
 async def get_featured(limit: int = 6) -> Any:
     """Public list of featured highlights for the landing page."""
-    if limit < 1 or limit > 24:
+    if limit < 1 or limit > 200:
         raise HTTPException(status_code=400, detail="limit out of range")
     async with httpx.AsyncClient() as client:
         r = await client.get(f"{CURATOR_API}/featured",

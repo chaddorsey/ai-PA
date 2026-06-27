@@ -189,22 +189,17 @@ cameras:
 # ----------------------------------------------------------------------
 # Recording policy: SHORT alert clips only (SS handles bulk recording).
 # ----------------------------------------------------------------------
+    # Motion mask + zones stripped 2026-05-11 after fox_den_3 was
+    # physically relocated. The previous polygons were anchored to
+    # pixel coordinates from the old camera position and no longer
+    # corresponded to anything meaningful in the new scene.
+    # Defaults (no mask, no zone gating) until/unless we redraw via
+    # the Frigate UI for the new view.
     motion:
       threshold: 17
       contour_area: 8
       improve_contrast: true
-      mask:
-        - 0.787,0.095,0.943,0.106,0.947,0.031,0.783,0.028
-        - 0.772,0.341,0.798,0.196,0.764,0.179,0.734,0.263,0.677,0.268,0.587,0.229,0.523,0.196,0.488,0.207,0.597,0.277,0.686,0.318
-        - 0.004,0.229,0.154,0.087,0.112,0.003,0.004,0.006
-    zones:
-      exit_1_and_yard:
-        coordinates: 
-          0.004,0.263,0.177,0.081,0.736,0.344,0.998,0.542,0.994,0.983,0.009,0.992
-        loitering_time: 0
-        objects:
-          - animal
-        friendly_name: Exit 1 and Yard
+    zones: {}
 
   # Amcrest 4K at 192.168.7.21 — added 2026-05-03. Zones/masks left
   # unset; draw them in the Frigate UI once the camera is positioned.

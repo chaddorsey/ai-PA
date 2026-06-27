@@ -1056,7 +1056,7 @@ def manual_recovery_status(task_id: str) -> dict[str, Any]:
 
 
 @app.get("/featured")
-def list_featured_endpoint(limit: int = Query(default=6, ge=1, le=24)) -> dict[str, Any]:
+def list_featured_endpoint(limit: int = Query(default=6, ge=1, le=200)) -> dict[str, Any]:
     """Public list of featured items (highlights + remixes) for the
     landing page, merged and sorted by featured_at DESC.
 

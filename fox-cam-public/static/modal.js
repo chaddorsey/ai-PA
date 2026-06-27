@@ -750,9 +750,20 @@
         }
       }));
 
-    // Not-a-fox toggle. In the No Foxes view it becomes a single-tap
-    // GLOBAL restore (with confirm); elsewhere it's a per-user vote.
-    const inNoFoxesView = (document.querySelector(".tab.active")?.dataset.bucket) === "demoted";
+    // Not-a-fox toggle. If the clip is globally demoted (someone in the
+    // family — possibly the current user, possibly someone else — has
+    // already flagged it as "Not a fox"), the button becomes a single-
+    // tap GLOBAL restore with confirm. Per-user toggling alone can't
+    // bring back a clip that another user has demoted, so showing the
+    // per-user toggle in that state was misleading: clicking it
+    // appeared to do nothing because the *other* user's demote kept
+    // the aggregate flag on.
+    //
+    // Keying off h.demoted (not the active tab) means clips opened via
+    // direct URL, push notification, or share link behave correctly
+    // too — the previous tab-based check failed for any view-less
+    // entry point.
+    const inNoFoxesView = !!h.demoted;
     if (inNoFoxesView) {
       actionsBar.appendChild(iconActionBtn(ICON("undo"), "demote", false, "Restore", async () => {
         if (!confirm("Restore this clip to the main highlights view for everyone? It's currently flagged as 'No Foxes' by someone in the family — restoring will move it back into circulation for all users.")) return;
