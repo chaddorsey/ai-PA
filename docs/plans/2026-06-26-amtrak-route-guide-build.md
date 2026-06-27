@@ -58,6 +58,9 @@ It must be **offline-capable** (precomputed, shipped in the bundle, stdlib-only 
 - *protected:* `national_park`, `national_forest`, `monument`, `wildlife_refuge`, `state_park`
 - *scenic:* `viewpoint`, `landmark`, `look_note`
 - *station:* `station` (mirrors the engine frame, so the guide is self-contained)
+- *area (statistical):* `county`, `tract` — areal units that carry a `stats` payload (Phase E, §5b)
+
+**Optional `stats` field.** Area features (and, if useful, any feature) may carry a `stats` object — a free-form key→value map (population, density, income, occupations, land-cover mix, etc.) with `source` + `vintage`. It's additive: consumers that don't know about `stats` ignore it.
 
 **Why spans + `peak_mi`:** points (bridge, town, summit) set `from==to==peak`; spans (a desert, a park, a long climb) carry the range you're *in it*, plus the one milepost worth announcing. Alerts fire on `peak_mi`; "you are in X" uses the span.
 
@@ -93,6 +96,50 @@ def span_on_leg(poly, geometry) -> (from_mi, to_mi, peak_mi)
 | **Ecoregions (EPA L3) / curated** | deserts, plains, named ranges | free / curated | coarse `region`/`desert`/`plain` spans |
 
 All processed at build time. Licensing: OSM (ODbL — attribution), GeoNames (CC-BY), NPS/USGS/EPA (public domain). Attribution string carried in the bundle.
+
+## 5b. Statistical corridor profile — land use · demographics · occupations · socioeconomics (Phase E)
+
+Answers the questions you actually ask out the window: *what is the land around me used for, who lives here, what do they do for a living, how is this place doing?* This is a **different kind of layer** from the scenic features — it's **areal and continuous**, not discrete points. At any milepost you're *inside* a county (and a land-cover mix); the profile changes as you cross county lines and as the land shifts from cropland to range to forest to town. It still keys to the milepost axis — modeled as **county-traversal spans** carrying a `stats` payload, plus a sampled land-cover summary per segment.
+
+### Data model
+A county traversal becomes an `area` span feature: `class: area`, `kind: county`, `from_mi`/`to_mi` = where the route enters/exits the county, low `salience` (so it never clutters scenic alerts but is always available via `current_context` / a `profile` query), with a `stats` object, e.g.:
+
+```jsonc
+"stats": {
+  "geo": "Finney County, KS",
+  "population": 38470, "density_per_sqmi": 35, "median_age": 31.2,
+  "median_hh_income": 58200, "poverty_rate": 0.14,
+  "education": { "hs_or_higher": 0.78, "ba_or_higher": 0.19 },
+  "top_industries":  ["agriculture & meatpacking", "education/health", "retail"],
+  "top_occupations": ["production", "farming/fishing/forestry", "service"],
+  "land_cover": { "cropland": 0.58, "grassland_pasture": 0.30, "developed": 0.06, "other": 0.06 },
+  "top_crops": ["corn", "winter wheat", "sorghum"],
+  "source": "ACS 2023 5-yr · USGS NLCD 2021 · USDA CDL 2024", "vintage": 2023
+}
+```
+
+### Sources (all free, US)
+| Source | Gives | Access |
+|---|---|---|
+| **US Census ACS** (api.census.gov) | population, density, age, income, poverty, education, **occupation (table C24010), industry (C24030), class of worker** | free API (key) |
+| **TIGER/Line** | county / tract boundary polygons (for point-in-polygon: which unit is each milepost in) | free GIS, build-time |
+| **USGS NLCD** | 30 m land cover — cropland, pasture/grassland, forest, developed, water, wetland, shrub | free raster, build-time |
+| **USDA Cropland Data Layer** | specific crops (corn, soy, wheat, cotton, rice…) — "what's growing" | free raster, build-time |
+
+### Build pipeline (build-time heavy → compact artifact)
+Per leg: walk the polyline; point-in-polygon against TIGER → the ordered **county sequence with entry/exit mileposts**; pull ACS stats per county; sample NLCD/CDL every ~3–5 mi within each segment → land-cover mix + dominant crops; emit `area` span features with `stats`. Only the **distilled per-county summaries** are committed (~a few hundred KB for ~250 counties across six legs); rasters and boundary files are never committed.
+
+### Resolution choice
+**County-level is the robust default** — stable (you're in it for many miles) and ACS county estimates are reliable. **Tract-level** gives finer detail near cities but ~10× the data and much larger ACS margins of error; offer it as an optional overlay for urban approaches, not the base.
+
+### Runtime / query
+`current_context` already returns the span you're inside, so a `profile` (or `where`) command surfaces it: *"Finney County, KS — ~38k people, ~35/sq mi; mostly farming & meatpacking; median HH income ~$58k; land ~58% cropland (corn, wheat, sorghum), 30% rangeland."* `lookahead` can flag the **next** county / land-use transition ("entering wheat country in ~20 min").
+
+### Display (deferred — once the data's in)
+All read the same `stats` payload: an enroute "this area" card that updates at county lines; a **choropleth overlay** in the Cesium/3D or a map layer (color counties by a chosen metric); a **land-cover ribbon** along the track; or LLM narration. Decide the surfacing after we have the data.
+
+### Framing / sensitivity
+Present Census aggregates **factually and neutrally**, always with source + vintage, and show margins of error where they're large (small counties, tracts). This is public, aggregate, place-level data answering honest travel curiosity — keep it descriptive, never editorial, and don't infer anything about individuals.
 
 ## 6. Build pipeline (`build_route_guide`)
 
@@ -164,8 +211,9 @@ Everything downstream consumes **`route_guide.json` + `leg_shapes` + `eta_to_mil
 - **Phase B — Automated natural/engineering.** OSM tunnels/bridges/water crossings; elevation-derived passes/summits/grades/canyons.
 - **Phase C — Places + protected + biomes.** GeoNames towns; NPS/USFS spans; ecoregion deserts/plains.
 - **Phase D — Polish.** Side-of-train everywhere, salience tuning, optional LLM narration over `around`/`lookahead`.
+- **Phase E — Statistical corridor profile (§5b).** County-traversal `area` spans with ACS demographics/occupations/socioeconomics + NLCD/CDL land-use, plus a `profile`/`where` query. The richest layer, the most build-heavy (ACS pulls + raster sampling + point-in-polygon). Depends on Phase C's areal plumbing — do it **with or right after C**.
 
-Recommend building **Phase A end-to-end first** (proves the contract + runtime + CLI with real, hand-quality data), then layering B/C/D into the same `route_guide.json`.
+Recommend building **Phase A end-to-end first** (proves the contract + runtime + CLI with real, hand-quality data), then layering B/C/D/E into the same `route_guide.json`. C and E are the two areal layers and share point-in-polygon machinery, so they pair naturally.
 
 ## 12. File layout
 
@@ -187,3 +235,4 @@ tools/amtrak-position-engine/
 3. **Off-track visibility radius** — how far off the line a feature can be and still listed (e.g., a distant range). *Rec:* default 25 mi for `salience≥4`, 8 mi otherwise; tune in QA.
 4. **Curated authoring** — hand-write vs LLM-draft-then-review the YAML. *Rec:* LLM-draft per route from public route guides, human edit; it's the editorial backbone, worth the pass.
 5. **Town volume** — population cutoff for `geonames` towns. *Rec:* keep ≥2k pop within 8 mi, plus any named place the route is named-after; cap per leg.
+6. **Statistical resolution (Phase E)** — county vs tract. *Rec:* county as the base (stable, reliable estimates); tract only as an optional urban-approach overlay. Confirm at Phase E kickoff.
