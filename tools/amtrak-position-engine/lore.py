@@ -234,6 +234,82 @@ def annotate_counties(guide, cache, cp=None):
     return out
 
 
+# ── GNIS gap-fill: named landforms/places in the empty stretches ───
+GNIS_LAYERS = (5, 3, 7)   # Landforms, Populated Places, Other Hydrographic
+GNIS_SKIP = {'Well', 'Tank', 'Bar', 'Channel', 'Crossing', 'Census', 'Area', 'Bench'}
+
+
+def _gnis_near(lat, lon, cache):
+    k = f"gn:{lat:.3f},{lon:.3f}"
+    if k not in cache:
+        feats = []
+        for layer in GNIS_LAYERS:
+            url = (f"https://carto.nationalmap.gov/arcgis/rest/services/geonames/MapServer/{layer}/query?"
+                   f"geometry={lon:.4f},{lat:.4f}&geometryType=esriGeometryPoint&inSR=4326&outSR=4326"
+                   "&distance=10000&units=esriSRUnit_Meter"
+                   "&outFields=gaz_name,gaz_featureclass,county_name,state_alpha&returnGeometry=true&f=geojson")
+            try:
+                for ff in _get(url).get('features', []):
+                    p = ff.get('properties', {})
+                    coords = ff.get('geometry', {}).get('coordinates') or []
+                    if not coords:
+                        continue
+                    c = coords[len(coords) // 2] if isinstance(coords[0], list) else coords
+                    feats.append({'name': p.get('gaz_name'), 'cls': p.get('gaz_featureclass'),
+                                  'county': p.get('county_name'), 'state': p.get('state_alpha'),
+                                  'lon': c[0], 'lat': c[1]})
+            except Exception:
+                pass
+            time.sleep(0.05)
+        cache[k] = feats
+        _tick(cache)
+    return cache[k]
+
+
+def gnis_gapfill(guide, shapes, cache, cp=None, gap=20.0):
+    lore = json.loads(LORE.read_text()) if LORE.exists() else {}
+    for leg, poly in shapes.items():
+        if leg not in lore:
+            continue
+        legmi = poly[-1][0]
+        wiki = [p for p in lore[leg].get('lore', []) if not str(p['id']).startswith('g')]
+        edges = [0.0] + sorted(p['peak_mi'] for p in wiki) + [legmi]
+        adds, used = [], set()
+        for i in range(len(edges) - 1):
+            a, b = edges[i], edges[i + 1]
+            if b - a <= gap:
+                continue
+            m = a + BIN_MI
+            while m < b - 4:
+                la, lo = E._milepost_latlon(poly, m)
+                best = None
+                for ft in _gnis_near(la, lo, cache):
+                    if not ft['lat'] or ft['cls'] in GNIS_SKIP:
+                        continue
+                    mm, off, side = E.project_to_leg(poly, ft['lat'], ft['lon'])
+                    if not (a < mm < b):
+                        continue
+                    if best is None or off < best['off']:
+                        best = {'ft': ft, 'off': off, 'mi': mm, 'side': side}
+                if best and best['ft']['name'] not in used:
+                    ft = best['ft']
+                    used.add(ft['name'])
+                    cls = (ft['cls'] or 'place').lower()
+                    adds.append({'id': f"g{leg}-{round(best['mi'])}", 'title': ft['name'], 'kind': cls,
+                                 'peak_mi': round(best['mi'], 1), 'lat': round(ft['lat'], 5),
+                                 'lon': round(ft['lon'], 5), 'side': best['side'], 'offtrack_mi': best['off'],
+                                 'summary': f"{ft['name']} — a {cls} in {ft['county']} County, {ft['state']}.",
+                                 'url': '', 'source': 'gnis'})
+                m += BIN_MI
+        allpts = sorted(wiki + adds, key=lambda x: x['peak_mi'])
+        lore[leg]['lore'] = allpts
+        if cp:
+            cp.write_text(json.dumps(cache))
+        g2 = [allpts[i + 1]['peak_mi'] - allpts[i]['peak_mi'] for i in range(len(allpts) - 1)]
+        print(f"  leg {leg}: +{len(adds)} GNIS → {len(allpts)} total | max gap {max(g2) if g2 else 0:.0f}mi")
+    LORE.write_text(json.dumps(lore))
+
+
 def main():
     phases = sys.argv[1:] or ['lore', 'counties']
     guide = json.loads((DATA / 'route_guide.json').read_text())
@@ -252,8 +328,13 @@ def main():
         for leg, notes in annotate_counties(guide, cache, cp).items():
             lore.setdefault(leg, {})['counties'] = notes
         cp.write_text(json.dumps(cache))
-    LORE.write_text(json.dumps(lore))
-    print(f"Wrote {LORE}")
+    if 'lore' in phases or 'counties' in phases:
+        LORE.write_text(json.dumps(lore))
+        print(f"Wrote {LORE}")
+    if 'gnis' in phases:
+        print("== gnis gap-fill ==")
+        gnis_gapfill(guide, shapes, cache, cp)
+        print(f"Wrote {LORE}")
 
 
 if __name__ == '__main__':
