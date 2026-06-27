@@ -1329,6 +1329,9 @@ def _fmt_profile(area):
         lines.append("    top occupations: " + ", ".join(s['top_occupations']))
     if s.get('top_crops'):
         lines.append("    land use (crops): " + ", ".join(s['top_crops']))
+    if s.get('land_cover'):
+        top = list(s['land_cover'].items())[:3]
+        lines.append("    land cover: " + ", ".join(f"{int(p * 100)}% {g}" for g, p in top))
     if s.get('source'):
         lines.append(f"    [{s['source']}]")
     return "\n".join(lines)

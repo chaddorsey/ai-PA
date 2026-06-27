@@ -366,6 +366,73 @@ def enrich_nass(guide, shapes):
     print(f"  NASS land use: top crops on {filled} counties")
 
 
+# ── Phase E: land cover (USGS/MRLC NLCD via WMS, keyless) ──────────────────
+
+# NLCD class code → coarse land-cover group (for the mix + continuous profile)
+NLCD_GROUP = {
+    11: 'water', 12: 'ice/snow',
+    21: 'developed', 22: 'developed', 23: 'developed', 24: 'developed',
+    31: 'barren', 41: 'forest', 42: 'forest', 43: 'forest',
+    51: 'shrub', 52: 'shrub', 71: 'grassland', 72: 'grassland', 73: 'grassland', 74: 'grassland',
+    81: 'pasture', 82: 'cropland', 90: 'wetland', 95: 'wetland',
+}
+_NLCD_LAYER = 'NLCD_2021_Land_Cover_L48'
+
+
+def _nlcd_at(lat, lon):
+    bbox = f"{lon:.5f},{lat:.5f},{lon + 0.002:.5f},{lat + 0.002:.5f}"
+    url = ("https://www.mrlc.gov/geoserver/mrlc_display/wms?service=WMS&version=1.1.1"
+           f"&request=GetFeatureInfo&layers={_NLCD_LAYER}&query_layers={_NLCD_LAYER}"
+           f"&srs=EPSG:4326&bbox={bbox}&width=3&height=3&x=1&y=1&info_format=application/json")
+    for t in range(3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+                return json.load(r)['features'][0]['properties'].get('PALETTE_INDEX')
+        except Exception:
+            time.sleep(1.5 * (t + 1))
+    return None
+
+
+def enrich_nlcd(guide, shapes, step_mi=6.0):
+    """Sample NLCD land cover along each leg → continuous profile + per-county cover mix.
+    Complements NASS (which crops) with the full picture incl. forest/developed/water/shrub."""
+    CACHE.mkdir(exist_ok=True)
+    cf = CACHE / 'nlcd.json'
+    cache = json.loads(cf.read_text()) if cf.exists() else {}
+    new = 0
+    for leg, poly in shapes.items():
+        if leg not in guide:
+            continue
+        legmi = poly[-1][0]
+        samples, mile = [], 0.0
+        while mile <= legmi:
+            la, lo = _latlon_at(poly, mile)
+            k = f"{la:.3f},{lo:.3f}"
+            if k not in cache:
+                cache[k] = _nlcd_at(la, lo)
+                new += 1
+                time.sleep(0.15)
+                if new % 50 == 0:
+                    cf.write_text(json.dumps(cache))
+            c = cache[k]
+            if c is not None:
+                samples.append((round(mile, 1), NLCD_GROUP.get(int(c), 'other')))
+            mile += step_mi
+        guide[leg]['landcover'] = [[m, g] for m, g in samples]   # continuous "right here" profile
+        for f in guide[leg]['features']:
+            if f.get('kind') == 'county':
+                cnt = {}
+                for m, g in samples:
+                    if f['from_mi'] <= m <= f['to_mi']:
+                        cnt[g] = cnt.get(g, 0) + 1
+                tot = sum(cnt.values())
+                if tot >= 3:
+                    f['stats']['land_cover'] = {g: round(n / tot, 2)
+                                                for g, n in sorted(cnt.items(), key=lambda x: -x[1])}
+        cf.write_text(json.dumps(cache))
+        print(f"  leg {leg}: {len(samples)} land-cover samples")
+
+
 # ── Phase B: elevation profile + auto passes/summits (open-meteo, keyless) ──
 
 def _elev_batch(points, tries=5):
@@ -461,8 +528,8 @@ def recompute_gaps(guide, min_sal=3, reach=20.0, thresh=40.0):
         d['coverage_gaps'] = gaps
 
 
-ENRICHERS = {'towns': enrich_towns, 'counties': enrich_counties,
-             'acs': enrich_acs, 'nass': enrich_nass, 'elevation': enrich_elevation}
+ENRICHERS = {'towns': enrich_towns, 'counties': enrich_counties, 'acs': enrich_acs,
+             'nass': enrich_nass, 'nlcd': enrich_nlcd, 'elevation': enrich_elevation}
 
 
 def main():
