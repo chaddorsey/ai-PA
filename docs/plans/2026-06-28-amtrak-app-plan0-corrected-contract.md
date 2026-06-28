@@ -69,7 +69,9 @@ A **date‑match guard** drops even our legs to B if ridden off their `valid_dat
 ```ts
 loadBundle(legId: string, resolvePath: (legId: string) => Promise<unknown>): Promise<Bundle>
 projection.milepostToLatLon(leg, mile): {lat, lon}
-projection.projectToLeg(leg, lat, lon): {mile, offtrackMi, side: 'L'|'R'|'ahead'}   // 'ahead' = within deadband
+projection.projectToLeg(leg, lat, lon): {mile, offtrackMi, side: 'left'|'right'|'both'|'ahead'|null}
+  // side vocabulary is the engine's lowercase set (matches unit.side in the bundle); 'ahead' = within deadband.
+  // NOTE: unit.side and place/theme can be null in the real bundle — consumers must handle null.
 type Position = {mile, lat, lon, source:'live'|'gps'|'deadreckon'|'predicted', direction:1|-1, leg, stopped:boolean}
 PositionService:
   onFix(lat, lon, ts, speed?): void
