@@ -314,14 +314,14 @@ def memory_brief(present, state, seg_lo):
     if intro:
         L.append("INTRODUCE (first time this leg — explain once, fully): " + "; ".join(intro))
     if reground:
-        L.append("RE-GROUND (already introduced earlier on this leg — do NOT name it afresh or re-explain its "
-                 "basic definition; the listener has met it. Touch it only through a genuinely NEW facet or a "
-                 "contrast, and vary the overtness; FULLER = it's been a long while, so a slightly fuller "
-                 "re-anchor is ok, but still via a new angle, never a restatement): "
+        L.append("RE-GROUND (already introduced earlier on this leg — naming it again occasionally is fine, "
+                 "these are big recurring ideas, but do NOT LINGER on it or fully re-define it; a glancing touch "
+                 "or a genuinely new facet, never a paragraph re-establishing what it is. Vary the overtness; "
+                 "FULLER = it's been a long while, a slightly fuller re-anchor is ok, still without full redefinition): "
                  + "; ".join(f"{c} [first ~mi {last:.0f}, {lvl}]" for c, last, lvl in reground))
     if glance:
-        L.append("ASSUME KNOWN (covered recently — do NOT re-name or re-define; a glancing reference at most, "
-                 "or skip entirely): " + "; ".join(glance))
+        L.append("ASSUME KNOWN (covered recently — a glancing reference is fine, but don't pause to re-define it; "
+                 "or skip): " + "; ".join(glance))
     return "\n".join(L) if L else ""
 
 
@@ -419,7 +419,7 @@ Guidelines:
 - Vivid but economical — dense with substance, not words. No filler, no brochure gush.
 - Match the TIMING budget as a CEILING, not a floor — stay at or under it; fewer/shorter units when in doubt. The added connective material must NOT inflate length; cut to fit and leave real silence.
 STYLE (strict):
-- VOICE — FIRST-PERSON PLURAL, STRICT: we ride together. NEVER use the words "you" or "your" to address the listener — convert every such impulse to we/us/our: "you can see" → "we can see"; "keep your eyes ahead" → "watch ahead" / "let's keep an eye ahead"; "gives you" → "gives us"; "if you look" → "look" / "if we look". The guide is in the seat alongside us, never speaking at us from outside.
+- VOICE — WE'RE ON THE TRAIN TOGETHER: the narrator is a fellow traveler in the car with us, not an outside announcer. Anchor the companionship in "we / us / our" — "we're climbing now", "the river we've been following", "off to our left". "You" is welcome for pointing things out and cueing attention — "if you look out the left window, you'll see…", "you'll notice the grade steepen" — but it must never tip into addressing us as a distant audience. The shared-journey "we" always carries the tone; "you" only points.
 - Tone: wise, observant, patient, grounded — a companion riding alongside, never a lecturer.
 - OPEN ON A SPECIFIC SMALL DETAIL — one human or scientific particular (the minerals in the soil, a single line from an 1870s diary, one fossil, one family's fence line) — not a grand sweeping introduction. Let the small thing open onto the large.
 - Thread science and history together dynamically. Never separate them into a "science part" and a "history part" — let the landscape itself carry the listener between eras.

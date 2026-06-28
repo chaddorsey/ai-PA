@@ -64,8 +64,9 @@ def main():
         for m in re.finditer(r'^@mi\s+(\d+)', f.read_text(), flags=re.M):
             sq_miles.append(int(m.group(1)))
     covered = sum(1 for p in lore if any(abs(p['peak_mi'] - sm) <= 3 for sm in sq_miles))
-    # voice (we not you): count 2nd-person address
+    # voice: companionship ('we') should dominate; 'you' is fine for cueing attention
     you = len(re.findall(r'\byou\b|\byour\b', full_text))
+    we = len(re.findall(r'\bwe\b|\bwe\'re\b|\bus\b|\bour\b', full_text))
     forb = {w: full_text.count(w) for w in FORBIDDEN if w in full_text}
 
     print(f"=== leg {leg} scorecard ({len(files)} segments) ===")
@@ -78,7 +79,7 @@ def main():
     for name, pat in REPEAT_PROBES.items():
         n = sum(1 for f in files if re.search(pat, f.read_text(), re.I))
         print(f"    {name}: {n}/{len(files)} segments")
-    print(f"  VOICE: 'you/your' occurrences (want ~0): {you}")
+    print(f"  VOICE: we/us/our={we} vs you/your={you} (companionship should dominate; 'you' ok for cueing)")
     print(f"  forbidden words: {forb or 'none'}")
     print(f"  lint issues: {len(lint)}" + (" — e.g. " + lint[0] if lint else ""))
 
