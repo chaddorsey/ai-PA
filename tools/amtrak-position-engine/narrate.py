@@ -399,13 +399,13 @@ THE CONNECTIVE LAYER (this is what makes it sing): the finest stories live at th
 
 OUTPUT — a milepost-triggered SEQUENCE, not one essay. Produce an ordered list of two kinds of unit, each in this exact marked format:
 
-  @mi <milepost> · <place> · <left|right|both|ahead> · s<1-5>
+  @mi <milepost> · <place> · <left|right|both|ahead> · s<1-5> · t:<theme>
   <SQUIB: a short, self-contained mini-commentary tied to THIS point — about 60–130 words. Cued to the window, opening on a concrete detail. It must stand alone — a listener who catches only this one still gets a whole little thing.>
 
-  @span <lo>–<hi> · s<1-5>
+  @span <lo>–<hi> · s<1-5> · t:<theme>
   <INTERSTITIAL: the material that fills the gap between points. As often as not, make this a REAL, SPECIFIC STORY — most often historical, sometimes a deep dive into a scientific / natural / geographic story — concrete, with detail and characters — and ALWAYS tied to the larger narrative (a recurring thread, a specific place or sight, ideally both). Generic poetic musing loses its power fast; prefer the particular story that carries the theme. Reserve brief arc/foreshadow reflection for short transitions only.>
 
-- s<1-5> = salience (5 = unmissable, 1 = skippable) so the app can offer a "highlight mode" and a variable narration-fill level.
+- s<1-5> = salience (5 = unmissable, 1 = skippable) and t:<theme> = a short handle for which LEG-SPINE thesis this unit serves (or "—" if none). Both are metadata for the app's highlight mode, variable fill level, and theme-filtering — tag every unit.
 - TIMING / SILENCE: on a train, silence and watching matter as much as words. Aim for roughly 60% talking, ~40% silence. Honor the TIMING budget in the packet for the total word target; do NOT fill every mile — size the units so the sequence fits the budget and leaves real gaps.
 - CONTAINED BUT CHAINED: each unit stands alone, yet the sequence flows — interstitials carry the throughline (callbacks, foreshadowing) so the squibs add up to one unfolding story.
 
@@ -414,9 +414,10 @@ Guidelines:
 - Be the geologist for deep time: tell the story of the rock — when and in what sea or rising range it formed, what it became — using the formations and ages given. Make 60 million years and 1.6 billion years feel real.
 - Move in passing order (increasing milepost); cue the window. Past tense for history and deep time; present for what's out there now.
 - Vivid but economical — dense with substance, not words. No filler, no brochure gush.
-- Match the TIMING budget in the packet; it is a target, not a floor — leave silence.
+- Match the TIMING budget as a CEILING, not a floor — stay at or under it; fewer/shorter units when in doubt. The added connective material must NOT inflate length; cut to fit and leave real silence.
 STYLE (strict):
-- Tone: wise, observant, patient, grounded — an expert companion walking the landscape beside the listener, never a lecturer.
+- VOICE — FIRST-PERSON PLURAL: we ride together. Use "we", "us", "our train", "on our left / to our right". The guide is in the seat alongside the listener, never addressing them as "you" from outside the journey.
+- Tone: wise, observant, patient, grounded — a companion riding alongside, never a lecturer.
 - OPEN ON A SPECIFIC SMALL DETAIL — one human or scientific particular (the minerals in the soil, a single line from an 1870s diary, one fossil, one family's fence line) — not a grand sweeping introduction. Let the small thing open onto the large.
 - Thread science and history together dynamically. Never separate them into a "science part" and a "history part" — let the landscape itself carry the listener between eras.
 - Vary sentence length drastically: long, lyrical passages followed by short, sharp factual statements. Never settle into balanced, evenly-rhythmic paragraphs.
