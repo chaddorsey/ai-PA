@@ -105,9 +105,10 @@ The trip is the beta target, and there is **comfortable time for the full Phase 
 - **Three‑speed updates** (OTA web/content; rare native rebuilds); **minimal backend.**
 
 ## 9. Open items / to explore
-- **Voice audition** — pick premium TTS engine + voice (ElevenLabs / OpenAI / Google‑Azure Studio / PlayHT) on a sample segment; confirm API access.
+- **Voice audition — IMMEDIATE PRIORITY.** Apple/system TTS is expected to be inadequate for long‑haul listening, so the core uses **professional/studio TTS audio** (firm decision, not just an option). Audition candidate engines/voices (ElevenLabs / OpenAI / Google‑Azure Studio / PlayHT…) on a sample segment to lock the engine + voice; settle this first so the render pipeline and bundle sizing follow. Needs API access for the candidates.
+- **Pre‑generated Say‑More cards** — tentatively yes (likely high‑value, low‑lift); confirm during build.
 - **Dynamic Island** specifics — defer until further in.
-- **On‑device offline LLM** for dives — out of beta scope (dives are online); revisit if logs justify.
+- **On‑device LLM — DISCARDED for all phases.** Dives (and any LLM use) are **online‑only**; nothing on‑device.
 - **Web framework + map lib** (e.g., React/Svelte + MapLibre) and exact Capacitor plugins — settle in the implementation plan.
 - **Predictor port vs. precomputed table** — confirm the table export covers the offline no‑GPS fallback adequately.
 - **Backend specifics** (hosting, sync store, auth for the single user).
