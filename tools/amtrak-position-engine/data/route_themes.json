@@ -1,0 +1,87 @@
+{
+  "3": {
+    "overture": "This leg follows America's great migration corridor, tracing the evolution of westward expansion from prairie schooner trails to transcontinental rails and highways across a landscape of increasing scarcity and layered history.",
+    "theses": [
+      {
+        "name": "The Persistent Corridor",
+        "thesis": "The journey follows a single, enduring corridor of commerce and migration continually reshaped by new technologies, from ox-carts on the Santa Fe Trail to the locomotives of the AT&SF and the automobiles of Route 66.",
+        "anchored_in": [
+          "Santa Fe Trail",
+          "Former Atchison, Topeka and Santa Fe Railway stations",
+          "U.S. Route 66 in Arizona",
+          "Oregon Trail",
+          "Raton Pass",
+          "Independence, Missouri"
+        ],
+        "strongest_mi": [
+          0,
+          1200
+        ]
+      },
+      {
+        "name": "The Aridity Gradient",
+        "thesis": "The dramatic geographic arc is fundamentally a story about water, charting a relentless progression from the river-fed heartland into an arid West where every settlement, ancient and modern, is dictated by water's scarcity and control.",
+        "anchored_in": [
+          "Watersheds/divides",
+          "Mojave River",
+          "Flint Hills",
+          "High Plains",
+          "Mojave Basin and Range",
+          "Communities in the Lower Colorado River Valley"
+        ],
+        "strongest_mi": [
+          560,
+          2265
+        ]
+      },
+      {
+        "name": "Selling the West",
+        "thesis": "The settlement of the Southwest was driven as much by corporate enterprise as by pioneer spirit, with the Santa Fe Railway and Fred Harvey Company actively manufacturing and marketing a civilized, romanticized experience of the frontier.",
+        "anchored_in": [
+          "Fred Harvey Company",
+          "Casta\u00f1eda Hotel",
+          "Former Atchison, Topeka and Santa Fe Railway stations",
+          "Mission Revival architecture in New Mexico",
+          "Ghost towns on U.S. Route 66"
+        ],
+        "strongest_mi": [
+          600,
+          1800
+        ]
+      },
+      {
+        "name": "Ghosts on the Land",
+        "thesis": "The modern American landscape is a thin veneer laid over a deep and visible history of prior cultures, conflicts, and abandonments, from ancient Puebloan ruins to 19th-century forts and decaying Route 66 icons.",
+        "anchored_in": [
+          "Bent's Old Fort National Historic Site",
+          "Homolovi State Park",
+          "Fort Wingate",
+          "Ghost towns in Arizona",
+          "Populated places on the Navajo Nation",
+          "Los Lunas Decalogue Stone"
+        ],
+        "strongest_mi": [
+          900,
+          1900
+        ]
+      }
+    ],
+    "movements": [
+      {
+        "mi": 560,
+        "at": "The Flint Hills and the Arkansas River watershed.",
+        "why": "This is the definitive departure from the corn-belt Midwest into the true Great Plains, a major ecological and hydrological threshold where the story shifts from abundance to the looming challenge of the arid West."
+      },
+      {
+        "mi": 1080,
+        "at": "The ascent of the Southern Rockies at Raton Pass.",
+        "why": "Crossing this immense physical and psychological barrier marks the entry into the interior West. It's a moment to reflect on the engineering required to conquer the continent and the entirely new set of cultural and environmental rules that apply on the other side."
+      },
+      {
+        "mi": 1850,
+        "at": "The transition into the Mojave Basin and Range.",
+        "why": "This is the final major biome shift, from the high plateau into the harsh, low-elevation desert. Here, the romance of the Southwest gives way to the stark realities of aridity, geology, and the final formidable obstacle before the California coast."
+      }
+    ]
+  }
+}

@@ -251,6 +251,77 @@ def connect_context(leg, lo, hi):
     return "\n".join(L)
 
 
+# ── anti-repetition: spaced concept-ledger (introduce once, then re-ground on a cadence) ──
+FRESH_MI = 120.0     # within this since last touch → assume known (glance or skip)
+REFRESH_MI = 320.0   # beyond this → re-ground FULLER (a returning/fresh listener); between → light
+# breadth concepts detected from node categories (keyword → concept handle)
+CAT_CONCEPTS = [('ghost town', 'ghost towns'), ('santa fe railway', 'the Santa Fe Railway'),
+                ('route 66', 'Route 66'), ('coal', 'coal country'), ('apache', 'the Apache homeland'),
+                ('cattle', 'the cattle frontier'), ('santa fe trail', 'the Santa Fe Trail'),
+                ('mojave', 'the Mojave'), ('mining', 'mining country'), ('butterfield', 'the Butterfield stage line'),
+                ('mississippi river', 'the Mississippi corridor'), ('great northern', 'the Great Northern line')]
+
+
+def geo_concept(v):
+    name = (v.get('unit') or '').lower()
+    lith = (v.get('lith') or '').lower()
+    per = (v.get('period') or '').lower()
+    if 'shale' in lith and 'cretaceous' in per:
+        return 'the Western Interior Seaway (the Cretaceous inland sea)'
+    if any(x in lith for x in ('arkose', 'conglomerate')):
+        return 'debris shed off the rising Rockies'
+    if any(x in name + lith for x in ('volcan', 'basalt', 'lava', 'tuff', 'cinder')):
+        return 'volcanic country'
+    if 'alluvium' in name + lith:
+        return 'recent alluvium'
+    if any(x in per for x in ('proterozoic', 'archean', 'precambrian')):
+        return 'ancient basement rock'
+    return f"{v.get('period')} rock" if v.get('period') else None
+
+
+def concepts_in_segment(leg, lo, hi):
+    """Recurring concepts present in this segment → {concept: (kind, first_mi_in_range)}."""
+    sci = load_science().get(leg, {})
+    conn = load_connections().get(leg, {})
+    out = {}
+    for m, v in sci.get('geology', []):
+        if lo <= m <= hi and (c := geo_concept(v)) and c not in out:
+            out[c] = ('geology', m)
+    for m, v in sci.get('ecoregion', []):
+        if lo <= m <= hi and v and v.get('l3') and (c := 'the ' + v['l3'] + ' (biome)') not in out:
+            out[c] = ('biome', m)
+    for n in conn.get('nodes', {}).values():
+        if lo <= n['mi'] <= hi:
+            blob = " ".join(n.get('categories', [])).lower()
+            for kw, concept in CAT_CONCEPTS:
+                if kw in blob and concept not in out:
+                    out[concept] = ('thread', n['mi'])
+    return out
+
+
+def memory_brief(present, state, seg_lo):
+    """Given concepts present + state {concept: last_touched_mi}, return the re-grounding brief."""
+    intro, glance, reground = [], [], []
+    for c, (_kind, _m) in sorted(present.items(), key=lambda x: x[1][1]):
+        last = state.get(c)
+        if last is None:
+            intro.append(c)
+        elif seg_lo - last <= FRESH_MI:
+            glance.append(c)
+        else:
+            reground.append((c, last, 'FULLER' if seg_lo - last >= REFRESH_MI else 'light'))
+    L = []
+    if intro:
+        L.append("INTRODUCE (first time this leg — explain once, fully): " + "; ".join(intro))
+    if reground:
+        L.append("RE-GROUND (already introduced — do NOT re-explain; re-anchor through a NEW facet or contrast, "
+                 "vary the overtness; FULLER = a fresh/returning listener, give a fuller reminder): "
+                 + "; ".join(f"{c} [last ~mi {last:.0f}, {lvl}]" for c, last, lvl in reground))
+    if glance:
+        L.append("ASSUME KNOWN (covered recently — glancing reference at most, or skip): " + "; ".join(glance))
+    return "\n".join(L) if L else ""
+
+
 def assemble(leg, lo, hi):
     guide, lore = RG.load_guide(), RG.load_lore()
     feats = RG.features_for(guide, leg)
