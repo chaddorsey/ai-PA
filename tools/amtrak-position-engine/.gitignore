@@ -13,5 +13,7 @@ audition_voices/
 # pronunciation pipeline: derived / local artifacts
 data/pron_review.html
 data/.ipa_cache.json
-# audio bundles (large, regenerable)
+# audio bundles (large, regenerable) — ignore everything in bundles/
 bundles/
+# ... except the bundle.json metadata files (committed, no audio)
+!bundles/*/bundle.json
