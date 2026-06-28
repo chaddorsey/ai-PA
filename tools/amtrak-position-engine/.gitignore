@@ -10,3 +10,8 @@ kml/
 .cache/
 tools/amtrak-position-engine/audition/
 audition_voices/
+# pronunciation pipeline: derived / local artifacts
+data/pron_review.html
+data/.ipa_cache.json
+# audio bundles (large, regenerable)
+bundles/
