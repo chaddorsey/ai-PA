@@ -97,7 +97,10 @@ The trip is the beta target, and there is **comfortable time for the full Phase 
 
 ## 8. Key decisions (log)
 - **Hybrid (Capacitor web + native shell)**, not pure PWA and not pure native — required for background location/audio + non‑evictable storage; keeps OTA updates + cross‑platform future.
-- **Pre‑rendered premium audio** for the core track (TTS unacceptable long‑haul); **client playback‑speed** for the rate control; **per‑leg lazy Opus bundles**; **online premium‑TTS** for on‑demand dives only.
+- **Pre‑rendered premium audio** for the core track (TTS unacceptable long‑haul); **client playback‑speed** for the rate control; **per‑leg lazy Opus bundles**; on‑demand dives use the same engine when online.
+- **Audio engine LOCKED: Google Chirp3‑HD** (clear prosody winner) **with `customPronunciations`** for guaranteed proper‑noun pronunciation (verified the override is honored). ~$67 full‑corpus render. The specific Chirp3 voice is finalized by ear during build (we keep listening as we go).
+- **Proper‑noun pronunciation pipeline (first‑class build step):** extract every proper noun across the full narrative (place names from GNIS/lore, person names from connections, etc.) → source/curate correct IPA → store as a route pronunciation lexicon → apply via `customPronunciations` in the render step; spot‑check audio and fix any miss by editing the lexicon + re‑rendering that unit.
+- **Pre‑render ops gate:** switch the GCP project to a separate billing card before the full batch render (cost isolation), since the corpus render is the first significant charge.
 - **Nav‑style burst‑level audio ducking**; **track never auto‑pauses** (manual pause/silence always available).
 - **Interstitials never interrupt squibs** (fit‑or‑skip); fill leaves real silence.
 - **Map/Trip is home; Stations contextual; Saved its own tab; persistent now‑bar.**
@@ -105,7 +108,7 @@ The trip is the beta target, and there is **comfortable time for the full Phase 
 - **Three‑speed updates** (OTA web/content; rare native rebuilds); **minimal backend.**
 
 ## 9. Open items / to explore
-- **Voice audition — IMMEDIATE PRIORITY.** Apple/system TTS is expected to be inadequate for long‑haul listening, so the core uses **professional/studio TTS audio** (firm decision, not just an option). Audition candidate engines/voices (ElevenLabs / OpenAI / Google‑Azure Studio / PlayHT…) on a sample segment to lock the engine + voice; settle this first so the render pipeline and bundle sizing follow. Needs API access for the candidates.
+- **Voice audition — RESOLVED.** Auditioned ElevenLabs, OpenAI, Cartesia, Deepgram, Apple, and Google across many voices. **Engine = Google Chirp3‑HD + `customPronunciations`** (best prosody + verified pronunciation control + ~$67 render). Remaining: pick the specific Chirp3 voice by ear during build (Charon/Fenrir/etc.); ElevenLabs Brian/George remains a premium fallback (~$400–660) if desired later.
 - **Pre‑generated Say‑More cards** — tentatively yes (likely high‑value, low‑lift); confirm during build.
 - **Dynamic Island** specifics — defer until further in.
 - **On‑device LLM — DISCARDED for all phases.** Dives (and any LLM use) are **online‑only**; nothing on‑device.
