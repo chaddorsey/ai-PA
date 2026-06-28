@@ -5,7 +5,11 @@ kind/mile(s)/side/salience/theme/text (the metadata the app needs for triggering
 highlight mode, fill level, theme-filter)."""
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import position_engine as E   # noqa: E402
 
 OUT = Path(__file__).resolve().parent / 'audition'
 DATA = Path(__file__).resolve().parent / 'data'
@@ -34,6 +38,8 @@ def parse_unit(kind, head, body):
 
 
 def main():
+    shapes = json.loads((DATA / 'leg_shapes.json').read_text())
+    lore = json.loads((DATA / 'route_lore.json').read_text())
     out = {}
     for legdir in sorted(OUT.glob('leg*')):
         if not legdir.is_dir():
@@ -46,6 +52,19 @@ def main():
             for m in re.finditer(r'^@(mi|span)\b([^\n]*)\n(.*?)(?=^@(?:mi|span)\b|\Z)', txt, re.M | re.S):
                 units.append(parse_unit(m.group(1), m.group(2), m.group(3)))
         units.sort(key=lambda u: u.get('mile', u.get('from_mi', 0)))
+        # coordinates: on-track trigger position per unit + the POI's own point for squibs
+        poly = shapes.get(leg)
+        pts = sorted(lore.get(leg, {}).get('lore', []), key=lambda p: p['peak_mi'])
+        for u in units:
+            trig = u.get('mile') if u['kind'] == 'squib' else (u.get('from_mi', 0) + u.get('to_mi', 0)) / 2
+            if poly and trig is not None:
+                la, lo = E._milepost_latlon(poly, float(trig))
+                u['lat'], u['lon'] = round(la, 5), round(lo, 5)   # train position when this fires
+            if u['kind'] == 'squib' and u.get('mile') is not None and pts:
+                near = min(pts, key=lambda p: abs(p['peak_mi'] - u['mile']))
+                if abs(near['peak_mi'] - u['mile']) <= 2:
+                    u['poi_lat'], u['poi_lon'] = near['lat'], near['lon']   # the feature itself
+                    u['offtrack_mi'] = near.get('offtrack_mi')
         out[leg] = units
         print(f"  leg {leg}: {len(units)} units")
     (DATA / 'route_narration.json').write_text(json.dumps(out))
