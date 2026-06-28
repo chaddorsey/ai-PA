@@ -140,7 +140,7 @@ All 2,900 units have `lat`/`lon`; the 1,293 named‑feature squibs also have `po
 5. **Re‑entry:** when a listener returns after a gap, prefer an interstitial (they carry the throughline) plus a brief theme‑anchored "where we are in the larger story" from `route_themes` + recent theme‑tagged units.
 
 ### 3.5 Say‑More / Why generation contract (live or pre‑gen)
-Input: the anchor unit + its POI's `route_connections` node (categories, `named_after`/`part_of`, `dates`) + the leg `theses` + relevant `timeline.yml` events. Output: a short deepening (Say More = more on a chosen dimension; Why = the causal/thematic/temporal web). Pre‑generate the top‑N expansions per high‑salience POI for offline; generate the rest live (local model offline / hub online). Same grounding either way → no hallucination.
+Input: the anchor unit + its POI's `route_connections` node (categories, `named_after`/`part_of`, `dates`) + the leg `theses` + relevant `timeline.yml` events. (Note: `timeline.yml` is a BUILD-TIME file at `tools/amtrak-position-engine/timeline.yml`; its contemporaneity is baked into pre-generated Why-cards, so it need not ship in the runtime bundle unless live Why-generation is enabled — then export it to JSON.) Output: a short deepening (Say More = more on a chosen dimension; Why = the causal/thematic/temporal web). Pre‑generate the top‑N expansions per high‑salience POI for offline; generate the rest live (local model offline / hub online). Same grounding either way → no hallucination.
 
 ---
 
@@ -161,4 +161,4 @@ Input: the anchor unit + its POI's `route_connections` node (categories, `named_
 - **P4 — Map + polish:** map view, re‑entry catch‑up, pre‑rendered audio, the other renderers (Cesium 3D / AR) on the same contract.
 
 ## Appendix — current numbers
-6 legs · 2,900 narration units (1,612 squibs + 1,288 interstitials, approx) · `route_narration.json` ≈ 2.8 MB · supporting layers ≈ 0.5–0.7 MB each · all committed under `tools/amtrak-position-engine/data/`. Per‑train readable booklets in `letta-shared-files/amtrak-<train>-leg<N>-narration.html`.
+6 legs · 2,900 narration units (1,535 squibs + 1,365 interstitials) · `route_narration.json` ≈ 2.8 MB · supporting layers ≈ 0.5–0.7 MB each · all committed under `tools/amtrak-position-engine/data/`. Per‑train readable booklets in `letta-shared-files/amtrak-<train>-leg<N>-narration.html`.
