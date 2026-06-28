@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.9+ (stdlib), the existing engine modules, Google Cloud Text‑to‑Speech REST (`text:synthesize`, `OGG_OPUS`, `customPronunciations`), `pytest`. Audio stays Opus (Google returns it directly — no transcode).
 
+> **Sequencing (proxy‑first).** We build the whole app (Plans 2–4) against a **thin proxy bundle** — a small sampler (~30 representative units of one leg via a `--sample N` flag on `run render`, a few minutes of audio) or the short CONO leg — produced by Tasks 1–7. The **full ~42‑hour corpus render (Task 8) is DEFERRED to the very end**, run once only after the app works end‑to‑end and the Chirp3 voice is locked. This avoids generating scores of hours of audio before the player that consumes it exists, and keeps the first real charge late.
+
 ## Global Constraints
 - Package root: `tools/amtrak-position-engine/`; new pipeline code under `tools/amtrak-position-engine/pipeline/`; tests under `tools/amtrak-position-engine/pipeline/tests/`.
 - Engine = **Google Chirp3‑HD** voice (default `en-US-Chirp3-HD-Charon`, configurable) with `customPronunciations` (verified to honor IPA overrides). Audio encoding **OGG_OPUS**.
@@ -58,31 +60,59 @@ def test_extracts_place_names_from_lore_titles_and_text():
 
 ---
 
-### Task 2: Pronunciation lexicon (IPA) + overrides
+### Task 2: Pronunciation lexicon — multi‑source auto‑fill + risk‑ranked audio review
+
+> **Coverage probe findings (2026‑06‑28, `pipeline_probe_pronunciation.py`):** 1,485 unique proper nouns, **1,138 actually spoken**, 18 persons. Auto‑source IPA coverage is **partial** — Wikipedia ~15% (by exact pageid), Wiktionary ~39% — so auto‑sourcing alone CANNOT guarantee correctness. **Key insight:** the most‑spoken names are common and the engine already says them right (Chicago, Kansas, Santa Fe, San Antonio, Los Angeles, Tucson…); pronunciation **risk is concentrated in the irregular tail** (Raton, Tucumcari, Purgatoire, Cimarron…). So the guarantee comes from: auto‑fill IPA where available, **risk‑rank** every spoken name, and **human‑verify a risk×frequency‑sorted AUDIO review sheet** (finite, cheap, definitive). A name is only given a `customPronunciations` override when it has a TRUSTED IPA (curated or high‑confidence source); regular names keep the engine default. The probe also showed extraction noise (e.g. "Santa Fe" mis‑tagged person, "Quaternary sediment"/"state line" as names) → Task 1 extraction must filter common words + a stoplist before this task consumes it.
+
 **Files:**
-- Create: `pipeline/lexicon.py`, `pipeline/tests/test_lexicon.py`, `data/pron_overrides.json` (seed with known hard names)
-- Produces: `data/pron_lexicon.json`
+- Create: `pipeline/sources.py` (Wikipedia/Wiktionary/CMUdict/G2P IPA lookups), `pipeline/risk.py`, `pipeline/lexicon.py`, `pipeline/review_sheet.py`, their tests, and `data/pron_overrides.json` (seed with known‑hard route names).
+- Produces: `data/pron_lexicon.json`, `data/pron_review.html` (audio review sheet; gitignored with the name clips).
 
 **Interfaces:**
-- Produces: `build_lexicon(proper_nouns, overrides) -> dict[str,str]` (term→IPA); `custompron_for(text, lexicon) -> list[dict]` returning `[{"phrase","phoneticEncoding":"PHONETIC_ENCODING_IPA","pronunciation"}]` for terms present in `text`.
+- Produces: `source_ipa(name, pageid=None) -> {"ipa":str|None,"source":str,"confidence":float}` (tiered: overrides→wikipedia(pageid)→wiktionary→cmudict→g2p); `risk_score(name) -> float` (0–1, high = likely irregular); `build_lexicon(proper_nouns, overrides) -> dict[str,dict]` (`term -> {"ipa","source","confidence","risk","freq"}`); `custompron_for(text, lexicon) -> list[dict]` emitting `[{"phrase","phoneticEncoding":"PHONETIC_ENCODING_IPA","pronunciation"}]` for **trusted** terms only; `build_review_sheet(lexicon, render_fn, out_html)`.
 
-- [ ] **Step 1: Failing test**
+- [ ] **Step 1: Failing test — tiered sourcing**
+```python
+# pipeline/tests/test_sources.py
+from pipeline.sources import source_ipa
+def test_override_beats_all_and_source_is_tagged(monkeypatch):
+    monkeypatch.setattr("pipeline.sources.OVERRIDES", {"Raton":"rəˈtoʊn"})
+    r = source_ipa("Raton"); assert r["ipa"]=="rəˈtoʊn" and r["source"]=="override" and r["confidence"]==1.0
+```
+- [ ] **Step 2: Run → fail.**
+- [ ] **Step 3: Implement `sources.py`** — `OVERRIDES` loaded from `data/pron_overrides.json`. `wikipedia_ipa(pageid)` (fetch wikitext, extract `{{IPAc-en|…}}`/`{{IPA|…}}` → IPA, confidence 0.9), `wiktionary_ipa(name)` (`{{IPA|en|/…/}}`, 0.8), `cmudict_ipa(name)` (ARPABET→IPA map, 0.6), `g2p_ipa(name)` (predict, 0.3). `source_ipa` returns the first hit in order with its source+confidence.
+- [ ] **Step 4: Run → pass.**
+- [ ] **Step 5: Failing test — risk score**
+```python
+# pipeline/tests/test_risk.py
+from pipeline.risk import risk_score
+def test_irregular_names_score_higher_than_common():
+    assert risk_score("Tucumcari") > risk_score("Chicago")
+    assert risk_score("Purgatoire") > risk_score("Kansas")
+```
+- [ ] **Step 6: Run → fail.**
+- [ ] **Step 7: Implement `risk.py`** — heuristics: +risk for Spanish/French/Native markers (e.g. trailing `-oire`,`-cari`,`-ton` loan patterns, `qu`/`x`/double‑vowel clusters, tilde/accent), +risk if not in a common‑English‑word/major‑city list, −risk for plain CVC English. Normalize to 0–1.
+- [ ] **Step 8: Run → pass.**
+- [ ] **Step 9: Failing test — lexicon trust gate**
 ```python
 # pipeline/tests/test_lexicon.py
 from pipeline.lexicon import build_lexicon, custompron_for
-def test_overrides_win_and_custompron_filters_to_text():
-    pn = {"Raton": {"count":5}, "Tucumcari": {"count":3}, "Lamar": {"count":1}}
-    ov = {"Raton": "rəˈtoʊn", "Tucumcari": "ˌtukəmˈkɛri"}
+def test_only_trusted_entries_emit_custompron():
+    pn = {"Raton":{"freq":5,"pageid":None}, "Lamar":{"freq":1,"pageid":None}}
+    ov = {"Raton":"rəˈtoʊn"}                      # Lamar has no override
     lex = build_lexicon(pn, ov)
-    assert lex["Raton"] == "rəˈtoʊn"
-    cps = custompron_for("Ahead lies Raton Pass.", lex)
+    assert lex["Raton"]["ipa"]=="rəˈtoʊn" and lex["Raton"]["confidence"]==1.0
+    cps = custompron_for("Ahead lies Raton Pass near Lamar.", lex)
     assert cps == [{"phrase":"Raton","phoneticEncoding":"PHONETIC_ENCODING_IPA","pronunciation":"rəˈtoʊn"}]
 ```
-- [ ] **Step 2: Run → fail.**
-- [ ] **Step 3: Implement** — `build_lexicon`: start from `overrides` (authoritative hand‑curated IPA), include any term with an override; terms without an override are listed in a `data/pron_unresolved.json` for human review (NOT guessed — wrong IPA is worse than the engine's default). `custompron_for`: word‑boundary match terms present in the unit text → the customPronunciations list. Seed `data/pron_overrides.json` with the known hard route names (Raton, Tucumcari, Purgatoire, Cimarron, Mojave, Pecos, Las Animas, Cajon, etc.).
-- [ ] **Step 4: Run → pass.**
-- [ ] **Step 5: Build real lexicon** — `python3 -m pipeline.run lexicon` → writes `pron_lexicon.json` + `pron_unresolved.json`; review the unresolved list, add IPA for the high‑count names to overrides, re‑run.
-- [ ] **Step 6: Commit** — `git add pipeline/lexicon.py pipeline/tests/test_lexicon.py data/pron_overrides.json data/pron_lexicon.json && git commit -m "feat(pipeline): pronunciation lexicon + customPronunciations builder"`
+- [ ] **Step 10: Run → fail.**
+- [ ] **Step 11: Implement `lexicon.py`** — `build_lexicon`: for each proper noun, `source_ipa` + `risk_score`, carry `freq`. `custompron_for`: word‑boundary match terms present in the text whose entry is **trusted** (`confidence ≥ 0.8` or override) → the customPronunciations list. Low‑confidence (g2p/cmudict‑only) entries are listed but NOT emitted until a human confirms them in the review sheet.
+- [ ] **Step 12: Run → pass.**
+- [ ] **Step 13: Seed overrides** — write `data/pron_overrides.json` with the known‑hard route names and IPA (Raton `rəˈtoʊn`, Tucumcari `ˌtukəmˈkɛri`, Purgatoire `ˈpɝɡətwɑr`, Cimarron `ˈsɪmərɑn`, Mojave `moʊˈhɑvi`, Cajon `kəˈhoʊn`, Pecos `ˈpeɪkəs`, Cairo‑IL `ˈkɛroʊ`, Pierre‑SD `pɪr`, Las Animas, etc.).
+- [ ] **Step 14: Build the lexicon** — `python3 -m pipeline.run lexicon` → `pron_lexicon.json` (auto‑filled IPA + source + confidence + risk + freq for all spoken names).
+- [ ] **Step 15: Implement + build the audio review sheet** — `build_review_sheet`: render each spoken unique name (Chirp3 + its current best IPA via `render.synth`) and emit `pron_review.html` with rows **sorted by `risk × freq` descending**: `name | freq | source | confidence | IPA | ▶ audio | [override IPA field]`. Run `python3 -m pipeline.run review`.
+- [ ] **Step 16: HUMAN REVIEW (the guarantee)** — skim the sheet top‑down: the risky/most‑spoken names are first; the common head confirms instantly by ear. For any wrong one, add the correct IPA to `pron_overrides.json` (becomes trusted, confidence 1.0) and re‑run `lexicon`. Stop when the trusted set covers the risk you care about.
+- [ ] **Step 17: Commit** — `git add pipeline/sources.py pipeline/risk.py pipeline/lexicon.py pipeline/review_sheet.py pipeline/tests/ data/pron_overrides.json data/pron_lexicon.json && git commit -m "feat(pipeline): multi-source pronunciation lexicon + risk-ranked audio review"` (review.html + name clips gitignored).
 
 ---
 
@@ -171,7 +201,7 @@ def test_estimate_cost_scales_with_chars():
 
 ---
 
-### Task 8: Full‑corpus run (after billing gate) + manifest
+### Task 8 (DEFERRED to the end — only after the app is built and the Chirp3 voice is locked): Full‑corpus render + manifest
 **Files:** Modify: `pipeline/run.py` (`all` over all legs); Create: `bundles/INDEX.json` (per‑leg sizes/versions).
 
 - [ ] **Step 1:** `run all` = for each leg: render → bundle → postable; write `bundles/INDEX.json` (leg → {audio_mb, units, version hash}). Idempotent (cached units skipped).
