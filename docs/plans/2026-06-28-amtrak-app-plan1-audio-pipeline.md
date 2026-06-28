@@ -10,6 +10,8 @@
 
 > **Sequencing (proxy‑first).** We build the whole app (Plans 2–4) against a **thin proxy bundle** — a small sampler (~30 representative units of one leg via a `--sample N` flag on `run render`, a few minutes of audio) or the short CONO leg — produced by Tasks 1–7. The **full ~42‑hour corpus render (Task 8) is DEFERRED to the very end**, run once only after the app works end‑to‑end and the Chirp3 voice is locked. This avoids generating scores of hours of audio before the player that consumes it exists, and keeps the first real charge late.
 
+> ⚠ **Plan 0 governs (2026‑06‑28 review remediation).** Canonical contract + corrected decisions: `2026-06-28-amtrak-app-plan0-corrected-contract.md`. Binding deltas for THIS plan: audio → **MP3** (not OGG_OPUS); bundles must emit **`stations`, `geometry` (leg_shape polyline), `schedule_basis`, `eta_table` (real ensemble), `voice_version`**; add a **PMTiles corridor‑extract** task; **cut the G2P tier** (Task 2); validator covers the new fields + per‑leg MB; proxy‑first + full render last unchanged.
+
 ## Global Constraints
 - Package root: `tools/amtrak-position-engine/`; new pipeline code under `tools/amtrak-position-engine/pipeline/`; tests under `tools/amtrak-position-engine/pipeline/tests/`.
 - Engine = **Google Chirp3‑HD** voice (default `en-US-Chirp3-HD-Charon`, configurable) with `customPronunciations` (verified to honor IPA overrides). Audio encoding **OGG_OPUS**.

@@ -78,10 +78,10 @@ Proxy‑first correctly defers the render *cost* but also defers all *device‑i
 
 ---
 
-## Decisions needed from the user
-1. **CR4 — per‑trip data:** regenerate `position_table`/schedule per trip at load, OR demote to a labeled "estimated" fallback (GPS overrides; no confident on‑time claim)?
-2. **IM6 — ETA band:** source real historical variance, OR drop the P10/P90 band and show a single "scheduled/estimated" time?
-3. Go‑ahead to **revise the plans** for all CRITICALs + IMPORTANTs (contract reconciliation, MP3, schema unification, scope cuts to Phase 2, position robustness, PMTiles, etc.) and add the **device tracer bullet as the new first step**?
+## Decisions — RESOLVED (2026‑06‑28)
+1. **CR4 — per‑trip data → HYBRID.** Trip‑actual baked timing (the existing engine machinery, build‑time) for our six July legs; GPS‑primary + live‑feed + labeled "estimated" generic fallback for every other date/leg/user; live feed overrides when online; a date‑match guard drops our legs to the estimated path if ridden off their `valid_dates`. Generalized runtime per‑train modeling deferred behind a clean seam.
+2. **IM6 — ETA band → resolved by the hybrid.** Real engine ensemble P10/P50/P90 (honest band) for `trip-actual` legs; a single labeled "estimated" time (no band) otherwise. No fake ±5% precision anywhere.
+3. **Remediation → DONE.** All CRITICALs + IMPORTANTs folded into **`2026-06-28-amtrak-app-plan0-corrected-contract.md`** (governs over Plans 1–4) + per‑plan governing notes; device tracer bullet is Task 0.
 
 ## Recommended remediation order
 0. Device tracer bullet (IM12) — prove the premise on a real device.

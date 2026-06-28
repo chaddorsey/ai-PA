@@ -8,6 +8,8 @@
 
 **Tech Stack:** TypeScript 5.x (strict), vitest 1.x, Node 20+, zero runtime dependencies outside stdlib types.
 
+> ⚠ **Plan 0 governs (2026‑06‑28 review remediation).** Canonical contract: `2026-06-28-amtrak-app-plan0-corrected-contract.md`. Binding deltas for THIS plan: adopt the corrected `Bundle` type (new `stations`/`geometry`/`schedule_basis`/`eta_table` fields, **salience integer 1–5**, `leg:string`); `loadBundle(legId, resolvePath)`; **PositionService robustness** (stopped‑hold, N‑fix direction debounce, off‑route rejection, dead‑reckon age cap, resume‑reacquire, jitter smoothing) + `setDeparture`; `Eta` returns **absolute‑ms `EtaResult{p10,p50,p90,estimated}`** from `eta_table`; add the **timing‑strategy** module (live > trip‑actual > generic); `Favorites.add(unit, leg, position, kind, note?)`; **canonical `Favorite`/`DiveCard`**; `diveGrounding` **type‑only** (impl → Phase 2).
+
 ## Global Constraints
 - Package location: `packages/companion-core/` inside the monorepo root.
 - `"strict": true` in tsconfig; no `any` without an explicit cast comment.

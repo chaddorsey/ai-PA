@@ -8,6 +8,8 @@
 
 **Tech Stack:** Capacitor 6, Swift 5.9+, Xcode 15+, AVFoundation (AVAudioPlayer / AVPlayer), CoreLocation (CLLocationManager), ActivityKit (iOS 16.2+, Swift concurrency), Opus/AVAudioFile, TypeScript 5 (plugin JS bridges), Vitest + JSDOM (unit tests for JS bridge logic), iOS Simulator + physical device (device-verified steps).
 
+> ⚠ **Plan 0 governs (2026‑06‑28 review remediation).** Canonical contract: `2026-06-28-amtrak-app-plan0-corrected-contract.md`. Binding deltas for THIS plan: play **MP3 via AVAudioPlayer** (no OGG/Opus); **session stays active for the journey — duck‑modulate only**, `setActive(false, .notifyOthersOnDeactivation)` ONLY on a real full stop; `BundleStore` becomes **async `getPath()`/`list()`** + **ZIPFoundation/Compression unzip** (NOT `Process`/`/usr/bin/unzip`) + boot‑prime from disk; `pause/resume/setRate` async; **cut Live Activity to Phase 2** (ship JS stub only); OTA via **`@capawesome/capacitor-live-update`**; prefer When‑In‑Use + background‑audio entitlement, design the denied path.
+
 ## Global Constraints
 - iOS-first throughout; Android scaffolded but plugins stub-only until explicitly planned.
 - Background modes required: `UIBackgroundModes = [location, audio]` in Info.plist — without both, GPS and playback silently stop when the screen locks.

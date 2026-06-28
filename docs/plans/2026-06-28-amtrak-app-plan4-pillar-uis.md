@@ -8,6 +8,8 @@
 
 **Tech Stack:** Svelte 5 + SvelteKit (file-based routing, OTA-updatable web layer) · Vite · **MapLibre GL JS** (chosen over other options: open-source, offline-tile capable, strong TypeScript types, active community, no vendor lock-in vs. Mapbox GL) · vitest + @testing-library/svelte (component + unit tests) · Capacitor (native bridge, managed by Plans 2/3).
 
+> ⚠ **Plan 0 governs (2026‑06‑28 review remediation).** Canonical contract: `2026-06-28-amtrak-app-plan0-corrected-contract.md`. Binding deltas for THIS plan: read **`bundle.stations` / `bundle.geometry` / `bundle.schedule_basis`** (delete the `bundle.leg as {…}` casts); **salience integer 1–5** in all fixtures; settings field is **`fillPct`** (rename `defaultFill`); `await` async plugin calls + **`BundleStore.getPath()`**; map uses a **PMTiles** source and draws the P10–P90 band via **`milepostToLatLon`** (not a ±0.01 offset); **import canonical `Favorite`/`DiveCard`** from companion‑core; **cut Tasks 9 & 11 (focus questions + live‑dive) to Phase 2** (keep capture + a "dive available online later" Saved state); **add a Trip‑home `+page.svelte` assembly task and a bundle‑init / first‑run ("Download your trip") task**; `suncalc` for sunrise/sunset; export `orchestrator` as a singleton; `ApproachCue` as a class; leg ids match the bundle (numeric strings).
+
 ## Global Constraints
 
 - **Framework:** Svelte 5 with runes (`$state`, `$derived`, `$effect`); SvelteKit for routing and OTA delivery; no class-based state.

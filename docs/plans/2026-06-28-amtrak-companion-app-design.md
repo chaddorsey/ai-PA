@@ -1,6 +1,8 @@
 # Amtrak Companion App — Design Spec
 
-**Date:** 2026‑06‑28 · **Status:** design approved in brainstorm, pending written review → implementation plan · **Package:** new app, building on `tools/amtrak-position-engine/`
+**Date:** 2026‑06‑28 · **Status:** design approved; plans written + CE‑reviewed · **Package:** new app, building on `tools/amtrak-position-engine/`
+
+> ⚠ **Post‑review remediation (2026‑06‑28):** the implementation contract was corrected after a CE adversarial/feasibility pass. Where this spec differs, **`2026-06-28-amtrak-app-plan0-corrected-contract.md` governs.** Key changes: audio is **MP3** (iOS can't play OGG/Opus); bundles add **stations + route geometry + `schedule_basis` + real ensemble `eta_table`**; **hybrid timing** (trip‑actual for our July legs, GPS+live+"estimated" otherwise); map uses **PMTiles**; Live Activity + live‑dive deferred to Phase 2. Findings: `2026-06-28-amtrak-app-plan-review-findings.md`.
 
 **Relationship to existing docs.** This is the product/architecture design. It builds on three already‑written inputs: the **data‑contract spec** (`2026-06-28-amtrak-app-design-and-data-contract.md`), the first **implementation‑plan draft** (`2026-06-28-amtrak-app-implementation-plan.md` — now partly superseded by the decisions here, e.g. hybrid not pure‑native), and the **tracking/prediction synopsis** (`2026-06-28-train-tracking-prediction-synopsis.md`). The narration backbone (2,900 coordinate‑anchored units across six legs) and the position/timing engine are built.
 
