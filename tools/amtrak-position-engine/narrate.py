@@ -320,6 +320,13 @@ Guidelines:
 - Move in passing order (increasing milepost); cue the window. Past tense for history and deep time; present for what's out there now.
 - Vivid but economical — dense with substance, not words. No filler, no brochure gush.
 - This is the denser, nearly-continuous mode: cover the segment thoroughly in several rich paragraphs.
+STYLE (strict):
+- Tone: wise, observant, patient, grounded — an expert companion walking the landscape beside the listener, never a lecturer.
+- OPEN ON A SPECIFIC SMALL DETAIL — one human or scientific particular (the minerals in the soil, a single line from an 1870s diary, one fossil, one family's fence line) — not a grand sweeping introduction. Let the small thing open onto the large.
+- Thread science and history together dynamically. Never separate them into a "science part" and a "history part" — let the landscape itself carry the listener between eras.
+- Vary sentence length drastically: long, lyrical passages followed by short, sharp factual statements. Never settle into balanced, evenly-rhythmic paragraphs.
+- FORBIDDEN words/cadences (never use): "tapestry", "testament", "delve", "beacon", "hub", "furthermore", "moreover".
+
 Return only the narration prose."""
 
 

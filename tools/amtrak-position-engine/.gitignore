@@ -8,3 +8,4 @@ __pycache__/
 kml/
 # build download cache
 .cache/
+tools/amtrak-position-engine/audition/
