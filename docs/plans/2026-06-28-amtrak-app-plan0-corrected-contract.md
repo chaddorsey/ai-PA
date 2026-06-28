@@ -20,7 +20,7 @@ A throwaway iOS build (not production code) that demonstrates, on a **real devic
 ## Corrected contract (governs)
 
 ### A. Audio format — MP3 (was OGG_OPUS)
-iOS/AVFoundation cannot play OGG/Opus. Render Chirp3‑HD with `audioConfig.audioEncoding = "MP3"`; files are `.mp3`; played by `AVAudioPlayer`. (Plan 1 T3/T5, Plan 3 T3, design §8.) If bandwidth ever demands Opus, remux to **Opus‑in‑CAF** in the pipeline — never ship `.ogg`.
+iOS/AVFoundation cannot play OGG/Opus. Render Chirp3‑HD with `audioConfig.audioEncoding = "MP3"`; files are `.mp3`; played by `AVAudioPlayer`. (Plan 1 T3/T5, Plan 3 T3, design §8.) **Render endpoint: `/v1beta1/text:synthesize`** — `customPronunciations` is rejected by `v1`; nest it as `input.customPronunciations.pronunciations[]` (confirmed live, Plan 1 T3). If bandwidth ever demands Opus, remux to **Opus‑in‑CAF** in the pipeline — never ship `.ogg`.
 
 ### B. Bundle schema (per leg `bundle.json`) — adds stations, geometry, timing provenance, real ETA
 ```jsonc
