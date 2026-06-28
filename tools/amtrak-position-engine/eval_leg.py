@@ -67,7 +67,8 @@ def main():
     # voice: companionship ('we') should dominate; 'you' is fine for cueing attention
     you = len(re.findall(r'\byou\b|\byour\b', full_text))
     we = len(re.findall(r'\bwe\b|\bwe\'re\b|\bus\b|\bour\b', full_text))
-    forb = {w: full_text.count(w) for w in FORBIDDEN if w in full_text}
+    forb = {w: len(re.findall(r'\b' + w + r'\b', full_text)) for w in FORBIDDEN
+            if re.search(r'\b' + w + r'\b', full_text)}
 
     print(f"=== leg {leg} scorecard ({len(files)} segments) ===")
     print(f"  units: {len(units)} ({squibs} squibs + {inter} interstitials)")
