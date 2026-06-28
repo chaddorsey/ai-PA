@@ -9,3 +9,4 @@ kml/
 # build download cache
 .cache/
 tools/amtrak-position-engine/audition/
+audition_voices/
