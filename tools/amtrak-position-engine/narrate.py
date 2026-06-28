@@ -314,11 +314,14 @@ def memory_brief(present, state, seg_lo):
     if intro:
         L.append("INTRODUCE (first time this leg — explain once, fully): " + "; ".join(intro))
     if reground:
-        L.append("RE-GROUND (already introduced — do NOT re-explain; re-anchor through a NEW facet or contrast, "
-                 "vary the overtness; FULLER = a fresh/returning listener, give a fuller reminder): "
-                 + "; ".join(f"{c} [last ~mi {last:.0f}, {lvl}]" for c, last, lvl in reground))
+        L.append("RE-GROUND (already introduced earlier on this leg — do NOT name it afresh or re-explain its "
+                 "basic definition; the listener has met it. Touch it only through a genuinely NEW facet or a "
+                 "contrast, and vary the overtness; FULLER = it's been a long while, so a slightly fuller "
+                 "re-anchor is ok, but still via a new angle, never a restatement): "
+                 + "; ".join(f"{c} [first ~mi {last:.0f}, {lvl}]" for c, last, lvl in reground))
     if glance:
-        L.append("ASSUME KNOWN (covered recently — glancing reference at most, or skip): " + "; ".join(glance))
+        L.append("ASSUME KNOWN (covered recently — do NOT re-name or re-define; a glancing reference at most, "
+                 "or skip entirely): " + "; ".join(glance))
     return "\n".join(L) if L else ""
 
 
@@ -405,7 +408,7 @@ OUTPUT — a milepost-triggered SEQUENCE, not one essay. Produce an ordered list
   @span <lo>–<hi> · s<1-5> · t:<theme>
   <INTERSTITIAL: the material that fills the gap between points. As often as not, make this a REAL, SPECIFIC STORY — most often historical, sometimes a deep dive into a scientific / natural / geographic story — concrete, with detail and characters — and ALWAYS tied to the larger narrative (a recurring thread, a specific place or sight, ideally both). Generic poetic musing loses its power fast; prefer the particular story that carries the theme. Reserve brief arc/foreshadow reflection for short transitions only.>
 
-- s<1-5> = salience (5 = unmissable, 1 = skippable) and t:<theme> = a short handle for which LEG-SPINE thesis this unit serves (or "—" if none). Both are metadata for the app's highlight mode, variable fill level, and theme-filtering — tag every unit.
+- s<1-5> = salience (5 = unmissable, 1 = skippable) and t:<theme> = which LEG-SPINE thesis this unit serves, named EXACTLY as the spine lists it (verbatim handle), or "—" if none. Both are metadata for the app's highlight mode, variable fill level, and theme-filtering — tag every unit.
 - TIMING / SILENCE: on a train, silence and watching matter as much as words. Aim for roughly 60% talking, ~40% silence. Honor the TIMING budget in the packet for the total word target; do NOT fill every mile — size the units so the sequence fits the budget and leaves real gaps.
 - CONTAINED BUT CHAINED: each unit stands alone, yet the sequence flows — interstitials carry the throughline (callbacks, foreshadowing) so the squibs add up to one unfolding story.
 
@@ -416,7 +419,7 @@ Guidelines:
 - Vivid but economical — dense with substance, not words. No filler, no brochure gush.
 - Match the TIMING budget as a CEILING, not a floor — stay at or under it; fewer/shorter units when in doubt. The added connective material must NOT inflate length; cut to fit and leave real silence.
 STYLE (strict):
-- VOICE — FIRST-PERSON PLURAL: we ride together. Use "we", "us", "our train", "on our left / to our right". The guide is in the seat alongside the listener, never addressing them as "you" from outside the journey.
+- VOICE — FIRST-PERSON PLURAL, STRICT: we ride together. NEVER use the words "you" or "your" to address the listener — convert every such impulse to we/us/our: "you can see" → "we can see"; "keep your eyes ahead" → "watch ahead" / "let's keep an eye ahead"; "gives you" → "gives us"; "if you look" → "look" / "if we look". The guide is in the seat alongside us, never speaking at us from outside.
 - Tone: wise, observant, patient, grounded — a companion riding alongside, never a lecturer.
 - OPEN ON A SPECIFIC SMALL DETAIL — one human or scientific particular (the minerals in the soil, a single line from an 1870s diary, one fossil, one family's fence line) — not a grand sweeping introduction. Let the small thing open onto the large.
 - Thread science and history together dynamically. Never separate them into a "science part" and a "history part" — let the landscape itself carry the listener between eras.
