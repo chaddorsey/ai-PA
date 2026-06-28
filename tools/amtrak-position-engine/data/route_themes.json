@@ -83,5 +83,433 @@
         "why": "This is the final major biome shift, from the high plateau into the harsh, low-elevation desert. Here, the romance of the Southwest gives way to the stark realities of aridity, geology, and the final formidable obstacle before the California coast."
       }
     ]
+  },
+  "2": {
+    "overture": "This leg traces the ghost of America's first great overland artery, a journey eastward from arid basins to humid floodplains, revealing a desert landscape layered with deep time, frontier ambition, and stark modern realities.",
+    "theses": [
+      {
+        "name": "The Ghost Highway",
+        "thesis": "The railroad follows the phantom of 19th-century mail routes, revealing a landscape defined by the successes, failures, and forgotten outposts of connecting a continent before modern technology.",
+        "anchored_in": [
+          "Butterfield Overland Mail stations",
+          "San Antonio\u2013San Diego Mail Line",
+          "Ghost towns in West Texas",
+          "American frontier",
+          "Picacho Peak State Park",
+          "Birchville, Texas"
+        ],
+        "strongest_mi": [
+          100,
+          900
+        ]
+      },
+      {
+        "name": "From Dust to Delta",
+        "thesis": "The entire journey is a continental transect defined by the gradient of water, moving from the endorheic basins of the desert west to the alluvial plains of the Mississippi east.",
+        "anchored_in": [
+          "Ecoregions in order",
+          "Watersheds/divides in order",
+          "Willcox Playa",
+          "Sonoran Desert",
+          "Chihuahuan Deserts",
+          "Mississippi Alluvial Plain"
+        ],
+        "strongest_mi": [
+          1250,
+          1995
+        ]
+      },
+      {
+        "name": "The Desert Palimpsest",
+        "thesis": "The stark landscape acts as a canvas for jarring juxtapositions of time, where ancient geology, indigenous heritage, military experiments, and contemporary art or violence coexist.",
+        "anchored_in": [
+          "Ysleta del Sur Pueblo",
+          "Boeing YAL-1",
+          "Prada Marfa",
+          "2019 El Paso Walmart shooting",
+          "Aden Crater",
+          "pre-Cenozoic metasedimentary and metavolcanic rocks undivided"
+        ],
+        "strongest_mi": [
+          600,
+          1200
+        ]
+      },
+      {
+        "name": "The Managed Wild",
+        "thesis": "The seemingly empty desert is in fact a patchwork of competing jurisdictions\u2014national monuments, military lands, state parks, and sovereign nations\u2014revealing a constant struggle to define and control the American West.",
+        "anchored_in": [
+          "Bureau of Land Management national monuments",
+          "Organ Mountains\u2013Desert Peaks National Monument",
+          "Sonoran Desert National Monument",
+          "Units of the National Landscape Conservation System",
+          "Ysleta del Sur Pueblo"
+        ],
+        "strongest_mi": [
+          100,
+          700
+        ]
+      }
+    ],
+    "movements": [
+      {
+        "mi": 530,
+        "at": "The transition from the Sonoran Basin and Range to the Madrean Archipelago.",
+        "why": "It marks the physical and ecological climax of the desert crossing, ascending from the low basin floors into the rugged 'sky islands' that were the greatest barrier to early travelers."
+      },
+      {
+        "mi": 710,
+        "at": "The crossing of the Rio Grande watershed at El Paso.",
+        "why": "This is the leg's central pivot: a geopolitical, cultural, and hydrological fulcrum separating the deserts of the Interior West from the vastness of Texas and embodying centuries of borderland history."
+      },
+      {
+        "mi": 1300,
+        "at": "The transition from the Chihuahuan Desert ecoregion to the Texas plains.",
+        "why": "This is the climatic tipping point of the journey, where the narrative of water scarcity gives way to a story of water abundance, fundamentally reshaping the landscape, ecology, and patterns of life."
+      }
+    ]
+  },
+  "58": {
+    "overture": "This is a journey up the spine of the Great Migration, tracing the iconic Illinois Central route from the alluvial plains of the Mississippi Delta\u2014the heart of the Blues and the Black Belt\u2014north across the great American watershed divides into the industrial heartland of Chicago.",
+    "theses": [
+      {
+        "name": "The Migration's Spine",
+        "thesis": "The leg's route is a physical and cultural transect of the Great Migration, connecting the rural, agricultural Black Belt of Mississippi with the industrial promise and musical legacy of Memphis and Chicago.",
+        "anchored_in": [
+          "Black Belt in the American South",
+          "Mississippi Blues Trail",
+          "Pullman, Chicago",
+          "Music of Memphis, Tennessee",
+          "Amtrak stations in Mississippi"
+        ],
+        "strongest_mi": [
+          0,
+          934
+        ]
+      },
+      {
+        "name": "Written in Silt",
+        "thesis": "The entire human story, from Native American settlement to the cotton economy and modern transportation, is built upon a geological canvas of river-deposited sediments, loess, and alluvium left by the Mississippi River system.",
+        "anchored_in": [
+          "Mississippi Alluvial Plain",
+          "Loess",
+          "Alluvium",
+          "Lower Mississippi",
+          "Cairo, Illinois",
+          "Mississippi placenames of Native American origin"
+        ],
+        "strongest_mi": [
+          0,
+          570
+        ]
+      },
+      {
+        "name": "Haunted Ground",
+        "thesis": "The landscape is haunted by a history of racial violence and labor struggle, with the ghosts of Emmett Till, the Civil War, and industrial strife embedded in the very towns and fields the train passes.",
+        "anchored_in": [
+          "Emmett Till",
+          "Ghost towns in Mississippi",
+          "Cairo, Illinois",
+          "Pullman, Chicago",
+          "African-American churches in Tennessee"
+        ],
+        "strongest_mi": [
+          250,
+          934
+        ]
+      },
+      {
+        "name": "Corridor of Movement",
+        "thesis": "This route reveals a layered history of American transportation, where the dominant railroad corridor is superimposed on older riverine paths and paralleled by early military airfields and modern auto infrastructure.",
+        "anchored_in": [
+          "Illinois Central Railroad stations",
+          "United States Army Air Forces Contract Flying School Airfields",
+          "ARCA Menards Series tracks",
+          "Ohio River",
+          "Airports in Mississippi"
+        ],
+        "strongest_mi": [
+          50,
+          800
+        ]
+      }
+    ],
+    "movements": [
+      {
+        "mi": 570,
+        "at": "The crossing of the Ohio River at Cairo, Illinois.",
+        "why": "This is the journey's great pivot, crossing the historic and geographic boundary between the Deep South and the Midwest, leaving the Lower Mississippi watershed for the Ohio, and traversing a profound dividing line in American history."
+      },
+      {
+        "mi": 760,
+        "at": "The transition from the Interior River Valleys and Hills to the Central Corn Belt Plains.",
+        "why": "The landscape undergoes its final transformation, shifting from the rolling, river-carved topography of the border states to the vast, engineered agricultural grid of the northern Midwest, setting the stage for the industrial metropolis ahead."
+      },
+      {
+        "mi": 930,
+        "at": "The continental divide between the Mississippi River and Great Lakes watersheds.",
+        "why": "An invisible but profound climax, this threshold marks the final departure from the vast hydrological empire of the Mississippi, whose story has defined the entire journey, and the entry into the separate world of the Great Lakes just on the cusp of Chicago."
+      }
+    ]
+  },
+  "27": {
+    "overture": "This leg traces the northern tier of American expansion, following an iron road across the continent's great water divides and ecological frontiers, from the settled Great Lakes basin to the wild Columbia River.",
+    "theses": [
+      {
+        "name": "The Iron Spine",
+        "thesis": "The railway acts as a historical and geographical spine, dictating the route across watersheds and mountains and stringing together a century of settlement, from boomtowns to modern transit hubs.",
+        "anchored_in": [
+          "Former Great Northern Railway (U.S.) stations",
+          "Marias Pass",
+          "Whitefish station",
+          "Railway stations in the United States opened in 1893",
+          "Great Northern Railway Underpass",
+          "Former Milwaukee Road stations"
+        ],
+        "strongest_mi": [
+          770,
+          1620
+        ]
+      },
+      {
+        "name": "Crossing the Divides",
+        "thesis": "The journey is fundamentally a story of crossing North America's great water divides, moving sequentially through the basins of the Great Lakes, Mississippi, Missouri, and finally the Columbia, revealing how water dictates everything from ecology to human settlement.",
+        "anchored_in": [
+          "Upper Mississippi",
+          "Great Lakes",
+          "Souris-Red-Rainy",
+          "Missouri",
+          "Pacific Northwest",
+          "Minnesota populated places on the Mississippi River",
+          "Montana populated places on the Missouri River",
+          "Columbia River Gorge"
+        ],
+        "strongest_mi": [
+          590,
+          1560
+        ]
+      },
+      {
+        "name": "Persistence and Erasure",
+        "thesis": "The landscape reveals a layered human history of persistence, displacement, and erasure, from ancient indigenous sites and enduring Hutterite colonies to railroad boomtowns that have since become ghosts.",
+        "anchored_in": [
+          "Ghost towns in North Dakota",
+          "Fort Peck Assiniboine and Sioux Tribes",
+          "Celilo Falls",
+          "Hutterite communities in the United States",
+          "Seats of government of American Indian reservations",
+          "Railway stations in the United States closed in 2026"
+        ],
+        "strongest_mi": [
+          970,
+          2170
+        ]
+      },
+      {
+        "name": "From Farm to Formation",
+        "thesis": "The train travels from a tamed Midwestern landscape of cornfields overlying ancient, buried geology to the raw, exposed power of the West, where recent mountain-building and volcanism dictate the terrain and human life adapts to it.",
+        "anchored_in": [
+          "Central Corn Belt Plains",
+          "Canadian Rockies",
+          "Columbia Plateau",
+          "Cascades",
+          "Paleozoic sedimentary rocks",
+          "John Day River",
+          "Columbia River Gorge"
+        ],
+        "strongest_mi": [
+          1100,
+          2256
+        ]
+      }
+    ],
+    "movements": [
+      {
+        "mi": 590,
+        "at": "The divide between the Upper Mississippi and Souris-Red-Rainy (Hudson Bay) watersheds.",
+        "why": "It marks the departure from the familiar Midwestern river systems and entry into the vast, glaciated plains of the continent's interior, a landscape defined by a different climate and a different ultimate destination for its water."
+      },
+      {
+        "mi": 1560,
+        "at": "The Continental Divide at Marias Pass, separating the Missouri (Atlantic) and Pacific Northwest watersheds.",
+        "why": "This is the physical and symbolic apex of the journey, the point where the continent's hydrology splits, achieved via a remarkable feat of railway engineering that opened the northern Rockies to the world."
+      },
+      {
+        "mi": 1890,
+        "at": "The transition from the arid Columbia Plateau into the Columbia River Gorge and the Cascade Range.",
+        "why": "It's a dramatic final act where the journey leaves the vast, dry interior and enters a monumental, water-carved canyon that has served for millennia as a critical corridor for ecology, migration, and trade to the Pacific."
+      }
+    ]
+  },
+  "11": {
+    "overture": "This journey is a grand north-south transect of California, tracing the state's backbone from its volcanic origins to its coastal plains, revealing how successive layers of human ambition\u2014from missions and railroads to universities and spaceports\u2014have been shaped and challenged by its powerful geology.",
+    "theses": [
+      {
+        "name": "The Volcanic Hinge",
+        "thesis": "The journey's northern half hinges on a dramatic passage through California's volcanic spine, where the landscape's fiery origins dictate the rugged terrain, extractive economies, and the very path of human passage.",
+        "anchored_in": [
+          "Mount Shasta",
+          "Shasta Cascade",
+          "Cascades",
+          "Cenozoic volcanic rocks",
+          "Black Butte (Siskiyou County, California)",
+          "Logging communities in the United States"
+        ],
+        "strongest_mi": [
+          150,
+          420
+        ]
+      },
+      {
+        "name": "The Engineered Valleys",
+        "thesis": "The great valleys are not just natural features but immense human artifacts, where rivers, land, and transportation have been systematically engineered to create the agricultural and logistical heart of the state.",
+        "anchored_in": [
+          "Sacramento Valley",
+          "Salinas Valley",
+          "Yolo Causeway",
+          "Quaternary surficial deposits; Alluvial deposits",
+          "Salinas River (California)",
+          "Former Southern Pacific Railroad stations"
+        ],
+        "strongest_mi": [
+          520,
+          810
+        ]
+      },
+      {
+        "name": "A Coast of Ambition and Risk",
+        "thesis": "The California coast is a stage for humanity's most forward-looking ambitions\u2014from higher education to space exploration\u2014all built precariously upon an active and unforgiving geology.",
+        "anchored_in": [
+          "Vandenberg Space Force Base",
+          "Honda Point disaster",
+          "1994 Northridge earthquake",
+          "Public universities and colleges in California",
+          "Southern California/Northern Baja Coast",
+          "Santa Ynez Mountains"
+        ],
+        "strongest_mi": [
+          810,
+          1193
+        ]
+      },
+      {
+        "name": "The University Spine",
+        "thesis": "The railway traces a modern 'Camino Real' of public higher education, revealing how California's intellectual and economic growth is physically and culturally linked along this transportation corridor.",
+        "anchored_in": [
+          "Public universities and colleges in California",
+          "California Polytechnic State University, San Luis Obispo",
+          "California State University campuses",
+          "University of California, Santa Barbara",
+          "Davis station (California)"
+        ],
+        "strongest_mi": [
+          550,
+          1150
+        ]
+      }
+    ],
+    "movements": [
+      {
+        "mi": 250,
+        "at": "The Pacific Northwest/California watershed divide.",
+        "why": "This invisible line represents a fundamental shift in the continent's hydrology and ecology, marking the true entry into California's unique, self-contained system of water, life, and settlement."
+      },
+      {
+        "mi": 520,
+        "at": "The descent from the Klamath/Coastal Mountains into the Sacramento Valley.",
+        "why": "The dramatic topographical shift from a vertical world of mountains and timber to a horizontal, engineered landscape of agriculture and water announces the train's arrival in the manufactured heart of California."
+      },
+      {
+        "mi": 810,
+        "at": "The arrival at the Pacific Coast after the Salinas Valley.",
+        "why": "This transition from California's interior logic of sheltered valleys to the external force of the Pacific Ocean introduces the coastal themes of maritime history, geological precarity, and the state's identity as the continent's edge."
+      }
+    ]
+  },
+  "422": {
+    "overture": "This leg follows the ghosts of 19th-century mail routes across the continent's great arid backbone, tracing how ephemeral corridors of communication and settlement become hardened into the rail lines of today, while narrating a fundamental journey from a landscape defined by water's absence to one defined by its overwhelming presence.",
+    "theses": [
+      {
+        "name": "Corridor Persistence",
+        "thesis": "The modern railway is a palimpsest, laid directly over the historic mail and stagecoach routes that first conquered the unforgiving terrain of the desert Southwest.",
+        "anchored_in": [
+          "Butterfield Overland Mail stations",
+          "San Antonio\u2013San Diego Mail Line",
+          "Stagecoach stops in the United States",
+          "Former Missouri Pacific Railroad stations",
+          "Amtrak stations in Arkansas"
+        ],
+        "strongest_mi": [
+          100,
+          1250
+        ]
+      },
+      {
+        "name": "The Water Line",
+        "thesis": "The journey is a transect from west to east across America's great hydrological divide, moving from landscapes shaped by scarcity and evaporation to those governed by continental river systems and humidity.",
+        "anchored_in": [
+          "Sonoran Desert",
+          "Chihuahuan Deserts",
+          "Rio Grande",
+          "Texas Blackland Prairies",
+          "Arkansas-White-Red",
+          "Mississippi Alluvial Plain",
+          "Upper Mississippi"
+        ],
+        "strongest_mi": [
+          710,
+          2370
+        ]
+      },
+      {
+        "name": "Settlement's Ephemerality",
+        "thesis": "Across the arid first half of the leg, settlement is a fragile and often fleeting enterprise, leaving behind a landscape littered with ghost towns, a stark contrast to the persistent towns of the humid east.",
+        "anchored_in": [
+          "Ghost towns in West Texas",
+          "Ghost towns in New Mexico",
+          "Ghost towns in Arizona",
+          "Populated places in the Sonoran Desert",
+          "Sonoran Basin and Range",
+          "Chihuahuan Deserts"
+        ],
+        "strongest_mi": [
+          500,
+          1400
+        ]
+      },
+      {
+        "name": "The Technological Frontier",
+        "thesis": "The route chronicles successive technological frontiers, from stagecoaches and early railroads to experimental military aircraft and the digital landscape that fueled a modern tragedy.",
+        "anchored_in": [
+          "American frontier",
+          "Butterfield Overland Mail stations",
+          "Boeing YAL-1",
+          "Convair XC-99",
+          "Allen Tire Company and Gas Station",
+          "2019 El Paso Walmart shooting"
+        ],
+        "strongest_mi": [
+          0,
+          2727
+        ]
+      }
+    ],
+    "movements": [
+      {
+        "mi": 710,
+        "at": "The Rio Grande Watershed",
+        "why": "This marks the crossing from the Colorado River's sphere of influence to the Rio Grande's, a profound hydrological and cultural transition from the Sonoran/Madrean Southwest into the distinct Chihuahuan world of New Mexico and Texas."
+      },
+      {
+        "mi": 1400,
+        "at": "The Texas Blackland Prairies",
+        "why": "Here, the train crosses the invisible but decisive climate line out of the arid West. The transition from desert scrub to prairie marks the end of the story of water scarcity and the beginning of the story of agricultural abundance that defines the American interior."
+      },
+      {
+        "mi": 1890,
+        "at": "The Arkansas-White-Red Basin",
+        "why": "Entering the first major tributary system of the Mississippi signals the fundamental shift into the humid, river-dominated eastern half of the continent, where elevation flattens, history deepens differently, and the landscape is governed by the logic of the great river."
+      }
+    ]
   }
 }
