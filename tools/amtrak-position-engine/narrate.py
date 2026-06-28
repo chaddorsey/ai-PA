@@ -49,6 +49,18 @@ def llm(system, user, model=MODEL, temperature=0.7):
 
 
 LOOK_MI = 150.0   # lookahead/lookback horizon ~2-3 hrs
+AVG_MPH = 55.0    # nominal long-distance cruising avg (the app will use live speed)
+TTS_WPM = 150     # typical text-to-speech / audiobook reading rate
+FILL = 0.60       # target talking fraction; the rest is silence/watching time
+
+
+def timing_note(lo, hi):
+    miles = hi - lo
+    minutes = miles / AVG_MPH * 60
+    words = int(minutes * FILL * TTS_WPM)
+    return (f"TIMING BUDGET: ~{miles:.0f} mi ≈ ~{minutes:.0f} min at ~{AVG_MPH:.0f} mph. At ~{int(FILL * 100)}% "
+            f"talking and ~{TTS_WPM} wpm, target ~{words:,} words TOTAL across all units (squibs + "
+            f"interstitials), leaving ~{int((1 - FILL) * 100)}% as silence. Do not exceed it by much.")
 
 
 def load_science():
@@ -314,12 +326,24 @@ Weave the near stories inside the large unfolding — that dual focus, granular 
 
 THE CONNECTIVE LAYER (this is what makes it sing): the finest stories live at the SEAMS BETWEEN LAYERS. Trace the chains — geology → resource → economy → settlement → culture → why it's a ghost town now; climate/aridity → land use → who lives here; the pass → the railroad's route → the town's founding. Use the CROSS-LAYER HINTS when given. Carry the RECURRING THREADS across the segment and call back ("the fifth ghost town we've passed on the old Santa Fe line"). And use TIME as a connective edge: when a place's dates line up with a CONTEMPORANEOUS NATIONAL EVENT, draw the link ("platted in 1874 — the very year barbed wire was patented, which would fence the open range that made it"). Ground every connection in the facts/relations/dates given; you may add brief, well-known context to complete a chain, never invent it.
 
+OUTPUT — a milepost-triggered SEQUENCE, not one essay. Produce an ordered list of two kinds of unit, each in this exact marked format:
+
+  @mi <milepost> · <place> · <left|right|both|ahead> · s<1-5>
+  <SQUIB: a short, self-contained mini-commentary tied to THIS point — about 60–130 words. Cued to the window, opening on a concrete detail. It must stand alone — a listener who catches only this one still gets a whole little thing.>
+
+  @span <lo>–<hi> · s<1-5>
+  <INTERSTITIAL: the material that fills the gap between points. As often as not, make this a REAL, SPECIFIC STORY — most often historical, sometimes a deep dive into a scientific / natural / geographic story — concrete, with detail and characters — and ALWAYS tied to the larger narrative (a recurring thread, a specific place or sight, ideally both). Generic poetic musing loses its power fast; prefer the particular story that carries the theme. Reserve brief arc/foreshadow reflection for short transitions only.>
+
+- s<1-5> = salience (5 = unmissable, 1 = skippable) so the app can offer a "highlight mode" and a variable narration-fill level.
+- TIMING / SILENCE: on a train, silence and watching matter as much as words. Aim for roughly 60% talking, ~40% silence. Honor the TIMING budget in the packet for the total word target; do NOT fill every mile — size the units so the sequence fits the budget and leaves real gaps.
+- CONTAINED BUT CHAINED: each unit stands alone, yet the sequence flows — interstitials carry the throughline (callbacks, foreshadowing) so the squibs add up to one unfolding story.
+
 Guidelines:
 - Ground claims in the facts. You MAY add brief, well-known context — an orogeny's name, what a rock type or lithology means, a biome's character, a fossil's world — to enrich and explain, but never invent specific names, dates, or events the facts don't support.
 - Be the geologist for deep time: tell the story of the rock — when and in what sea or rising range it formed, what it became — using the formations and ages given. Make 60 million years and 1.6 billion years feel real.
 - Move in passing order (increasing milepost); cue the window. Past tense for history and deep time; present for what's out there now.
 - Vivid but economical — dense with substance, not words. No filler, no brochure gush.
-- This is the denser, nearly-continuous mode: cover the segment thoroughly in several rich paragraphs.
+- Match the TIMING budget in the packet; it is a target, not a floor — leave silence.
 STYLE (strict):
 - Tone: wise, observant, patient, grounded — an expert companion walking the landscape beside the listener, never a lecturer.
 - OPEN ON A SPECIFIC SMALL DETAIL — one human or scientific particular (the minerals in the soil, a single line from an 1870s diary, one fossil, one family's fence line) — not a grand sweeping introduction. Let the small thing open onto the large.
@@ -327,7 +351,7 @@ STYLE (strict):
 - Vary sentence length drastically: long, lyrical passages followed by short, sharp factual statements. Never settle into balanced, evenly-rhythmic paragraphs.
 - FORBIDDEN words/cadences (never use): "tapestry", "testament", "delve", "beacon", "hub", "furthermore", "moreover".
 
-Return only the narration prose."""
+Return ONLY the marked sequence (@mi / @span units) in milepost order — no preamble, no headers, nothing else."""
 
 
 def main():

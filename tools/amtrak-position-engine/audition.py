@@ -23,19 +23,20 @@ OUT = DIR / 'audition'
 OUT.mkdir(exist_ok=True)
 
 SEGMENTS = {
-    'raton':   ('3', 1050.0, 1110.0),    # dense history + deep-time geology
-    'desert':  ('2', 560.0, 620.0),      # sparse SE-Arizona desert (thin-facts discipline)
-    'glacier': ('27', 1540.0, 1600.0),   # Marias Pass / Glacier — biome+geology+divide turning
-    'chicago': ('3', 0.0, 55.0),         # urban departure (restraint with abundance)
+    # Tighter slices for structured-shape iteration (Trinidad→Raton heart; sparse desert).
+    'raton':   ('3', 1072.0, 1100.0),    # 28 mi, dense: coal towns → Morley → Raton Pass → Raton
+    'desert':  ('2', 562.0, 595.0),      # 33 mi, sparse: Texas Canyon, Willcox Playa — interstitials must carry it
+    'glacier': ('27', 1540.0, 1600.0),   # (held for the full audition)
+    'chicago': ('3', 0.0, 55.0),         # (held for the full audition)
 }
-PROXY_MODELS = ['gpt-5.4', 'gpt-5.5', 'gemini-2.5-pro', 'kimi-k2p6']
-TASK = ("\n\nWrite the continuous narration for this segment, weaving the near stories into the "
-        "large arc AND the connective chains (cross-layer, recurring threads, contemporaneity).")
+PROXY_MODELS = ['gemini-2.5-pro']   # finalists: Gemini (proxy) + Sonnet (subagent, proxy creds out)
+TASK = ("\n\nWrite the milepost-triggered SEQUENCE for this segment (squibs + interstitial stories) in "
+        "the marked @mi / @span format, honoring the timing budget and the style rules.")
 
 
 def packet(leg, lo, hi):
     return (N.macro_context(leg, lo) + "\n\n" + N.assemble(leg, lo, hi)
-            + "\n\n" + N.connect_context(leg, lo, hi) + TASK)
+            + "\n\n" + N.connect_context(leg, lo, hi) + "\n\n" + N.timing_note(lo, hi) + TASK)
 
 
 NO_TEMP = {'gpt-5.5'}   # models that reject temperature != default(1)
@@ -61,16 +62,22 @@ def call(model, system, user):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else 'packets'
     if mode == 'packets':
+        segf = sys.argv[2].split(',') if len(sys.argv) > 2 else None
         for seg, (leg, lo, hi) in SEGMENTS.items():
+            if segf and seg not in segf:
+                continue
             (OUT / f"{seg}__packet.txt").write_text(packet(leg, lo, hi))
             print(f"  wrote {seg}__packet.txt")
         (OUT / "SYSTEM.txt").write_text(N.SYSTEM)
         print("  wrote SYSTEM.txt")
         return
-    only_model = sys.argv[2] if len(sys.argv) > 2 else None
+    only_model = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != '-' else None
     models = [only_model] if only_model else PROXY_MODELS
+    segf = sys.argv[3].split(',') if len(sys.argv) > 3 else None
     rows = []
     for seg, (leg, lo, hi) in SEGMENTS.items():
+        if segf and seg not in segf:
+            continue
         user = (OUT / f"{seg}__packet.txt").read_text() if (OUT / f"{seg}__packet.txt").exists() else packet(leg, lo, hi)
         for m in models:
             try:
