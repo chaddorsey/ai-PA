@@ -1,0 +1,208 @@
+// ── Bundle types (Plan 0 corrected contract — do not modify) ──────────────────
+
+/**
+ * Side of the train the feature is on. Values match the real proxy bundle:
+ * lowercase 'left'/'right' from the Python engine, plus 'both'/'ahead'/null.
+ */
+export type UnitSide = 'left' | 'right' | 'both' | 'ahead' | null;
+
+/** Salience score: integer 1 (background) → 5 (unmissable highlight). */
+export type Salience = 1 | 2 | 3 | 4 | 5;
+
+export interface SquibUnit {
+  id: string;
+  kind: 'squib';
+  mile: number;
+  place: string | null;
+  side: UnitSide;
+  salience: Salience;
+  theme: string | null;
+  text: string;
+  lat: number;
+  lon: number;
+  poi_lat?: number;
+  poi_lon?: number;
+  offtrack_mi?: number;
+  audio: string;
+  dur_s: number;
+}
+
+export interface InterstitialUnit {
+  id: string;
+  kind: 'interstitial';
+  from_mi: number;
+  to_mi: number;
+  place: string | null;
+  side: UnitSide;
+  salience: Salience;
+  theme: string | null;
+  text: string;
+  lat: number;
+  lon: number;
+  poi_lat?: number;
+  poi_lon?: number;
+  offtrack_mi?: number;
+  audio: string;
+  dur_s: number;
+}
+
+export type Unit = SquibUnit | InterstitialUnit;
+
+export interface Station {
+  code: string;
+  name: string;
+  mile: number;
+  lat: number;
+  lon: number;
+  /** ISO 8601 datetime string, or null for origin/terminus. */
+  sched_arr: string | null;
+  sched_dep: string | null;
+  dwell_min: number;
+}
+
+export interface ScheduleBasis {
+  kind: 'trip-actual' | 'generic-scheduled';
+  /** ISO date strings. Non-empty for trip-actual; empty for generic. */
+  valid_dates: string[];
+}
+
+export interface BundleLayers {
+  guide: unknown;
+  lore: unknown;
+  science: unknown;
+  connections: unknown;
+  themes: unknown;
+}
+
+/** GeoJSON LineString geometry for the leg route. */
+export interface LineStringGeometry {
+  type: 'LineString';
+  /** [lon, lat] pairs per GeoJSON convention. */
+  coordinates: [number, number][];
+}
+
+/** position_table row: [elapsed_min, mile, lat, lon] */
+export type PositionTableRow = [number, number, number, number];
+
+export interface EtaTableRow {
+  station_code: string;
+  p10_min: number;
+  p50_min: number;
+  p90_min: number;
+}
+
+export interface Bundle {
+  leg: string;
+  /** Present in proxy bundles produced before full render. */
+  proxy?: boolean;
+  schedule_basis: ScheduleBasis;
+  stations: Station[];
+  geometry: LineStringGeometry;
+  units: Unit[];
+  layers: BundleLayers;
+  /** Rows: [elapsed_min, mile, lat, lon] */
+  position_table: PositionTableRow[];
+  /** Per-station ETA ensemble (trip-actual only; may be absent/empty for generic). */
+  eta_table: EtaTableRow[];
+}
+
+// ── Projection types ──────────────────────────────────────────────────────────
+
+/** Polyline vertex as stored in leg_shapes: [anchor_mile, lat, lon] */
+export type PolyVertex = [number, number, number];
+export type Polyline = PolyVertex[];
+
+export interface LatLon {
+  lat: number;
+  lon: number;
+}
+
+export interface ProjectionResult {
+  mile: number;
+  offtrackMi: number;
+  side: 'left' | 'right' | 'ahead';
+}
+
+// ── Position types ────────────────────────────────────────────────────────────
+
+export interface Position {
+  mile: number;
+  lat: number;
+  lon: number;
+  source: 'live' | 'gps' | 'deadreckon' | 'predicted';
+  direction: 1 | -1;
+  leg: string;
+  stopped: boolean;
+}
+
+// ── Scheduler types ───────────────────────────────────────────────────────────
+
+export interface SchedulerSettings {
+  /** Fraction of silence budget to fill with interstitials (0–1). */
+  fillPct: number;
+  /** Empty set = all themes pass. */
+  themes: Set<string>;
+  /** When true, only salience >= 4 units are considered. */
+  highlightOnly: boolean;
+}
+
+export interface SchedulerResult {
+  nowPlaying: Unit | null;
+  queue: Unit[];
+  /** Sentinel -Infinity = no active silence. */
+  silenceUntilMile: number;
+}
+
+// ── ETA types ─────────────────────────────────────────────────────────────────
+
+/**
+ * Absolute epoch-ms estimates.
+ * trip-actual: real ensemble from eta_table, estimated=false.
+ * generic: p10===p50===p90 (single time), estimated=true.
+ */
+export interface EtaResult {
+  p10: number;
+  p50: number;
+  p90: number;
+  estimated: boolean;
+}
+
+// ── Favorites types ───────────────────────────────────────────────────────────
+
+export interface DiveCard {
+  body: string;
+  sources: string[];
+  createdAt: number; // unix ms
+}
+
+export interface Favorite {
+  id: string;
+  leg: string;
+  unitSnapshot: Unit;
+  position: Position;
+  kind: 'star' | 'tellmore';
+  note?: string;
+  createdAt: number; // unix ms
+  dive?: DiveCard;
+}
+
+// ── Storage adapter interface ─────────────────────────────────────────────────
+
+export interface StorageAdapter {
+  save(favorite: Favorite): Promise<void>;
+  loadAll(): Promise<Favorite[]>;
+  loadById(id: string): Promise<Favorite | null>;
+  update(id: string, patch: Partial<Favorite>): Promise<void>;
+  delete(id: string): Promise<void>;
+}
+
+// ── Dive grounding (type-only; impl Phase 2) ──────────────────────────────────
+
+export interface DiveGrounding {
+  unitText: string;
+  connections: unknown;
+  lore: unknown;
+  science: unknown;
+  theme: unknown;
+  sources: string[];
+}
