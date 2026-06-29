@@ -28,7 +28,19 @@ import Capacitor
 import AVFoundation
 
 @objc(AudioSessionPlugin)
-public class AudioSessionPlugin: CAPPlugin {
+public class AudioSessionPlugin: CAPPlugin, CAPBridgedPlugin {
+
+    // MARK: - Capacitor registration (CAPBridgedPlugin — REQUIRED on Capacitor 6+;
+    // the old Objective-C CAP_PLUGIN macro in the .m no longer registers in-app Swift plugins.)
+    public let identifier = "AudioSessionPlugin"
+    public let jsName = "AudioSession"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setMode", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "play",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pause",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resume",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRate", returnType: CAPPluginReturnPromise),
+    ]
 
     // MARK: - State
 
