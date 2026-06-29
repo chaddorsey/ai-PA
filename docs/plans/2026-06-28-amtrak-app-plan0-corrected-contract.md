@@ -100,11 +100,21 @@ Settings field is **`fillPct`** (Plan 4 renames `defaultFill`→`fillPct`). `sil
 ### F. Native plugin interfaces (Plan 3 = producer; async corrected)
 ```ts
 BackgroundLocation.watch(cb:(fix:{lat,lon,ts,speed})=>void): Promise<string> ; clear(handle): Promise<void>
-AudioSession.play(fileUri:string, opts:{duckOthers:boolean}): Promise<void>
+AudioSession.setMode(mode:'duck'|'pause'|'interrupt-spoken'): Promise<void>   // user setting
+AudioSession.play(fileUri:string): Promise<void>
 AudioSession.pause(): Promise<void> ; resume(): Promise<void> ; setRate(r:number): Promise<void>
 AudioSession.addListener('ended'|'interrupt', cb): {remove():void}
-  // session stays ACTIVE for the whole journey; modulate ducking only; setActive(false, .notifyOthersOnDeactivation)
-  // ONLY on a real full stop (user silence/quit), never between units/gaps.
+  // OTHER-AUDIO MODEL IS A USER SETTING (tracer-bullet feedback), not hard-coded; Settings exposes all three:
+  //   'duck' (default for music): .playback + .duckOthers; session stays ACTIVE the whole journey; music drops to a
+  //     SYSTEM-FIXED low level while we speak (duck depth is NOT app-settable — no public API; this is the only
+  //     "low background" level iOS offers short of full pause), restores between bursts.
+  //   'pause': .playback (no mix); setActive(false, .notifyOthersOnDeactivation) after a talking burst so others
+  //     resume — native for sparse speech but stops/restarts the user's music each burst (the churn tradeoff).
+  //   'interrupt-spoken' (smart default combo): .duckOthers + .interruptSpokenAudioAndMixWithOthers — ducks music
+  //     but pauses other SPOKEN audio (podcasts/audiobooks you can't follow under narration).
+  //   DEFAULT = duck music + interrupt spoken. Only fully deactivate the session on a real full stop (silence/quit).
+  // REQUIRED: handle AVAudioSession.interruptionNotification — on .ended with options.contains(.shouldResume),
+  //   reactivate the session and RESUME playback (the bare tracer's "no resume after a call" was this missing handler).
 BundleStore.download(legId:string, url:string): Promise<void>
 BundleStore.getPath(legId:string): Promise<string>     // ASYNC (was sync path()); resolves from disk
 BundleStore.list(): Promise<string[]>                   // ASYNC; prime any cache from disk on boot
