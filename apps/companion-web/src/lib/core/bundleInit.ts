@@ -23,10 +23,14 @@ export type BundleInitResult =
   | { status: 'error'; message: string };
 
 export async function initBundle(legId: string): Promise<BundleInitResult> {
+  // DEV: load the embedded static bundle FIRST, fully independent of the native
+  // BundleStore (which may be unavailable/erroring on a dev device build). If the
+  // embedded fetch fails, fall through to the normal BundleStore path below.
+  if (DEV_EMBEDDED_BUNDLE && legId === DEV_EMBEDDED_LEG_ID) {
+    const dev = await loadEmbeddedBundle();
+    if (dev.status === 'loaded') return dev;
+  }
   try {
-    // BundleStore.list() may reject on device (native plugin unavailable/erroring,
-    // e.g. the dev build). Treat any failure as "no downloaded legs" so the dev
-    // embedded fallback can still fire instead of erroring out.
     let available: string[] = [];
     try {
       available = await BundleStore.list();
@@ -34,10 +38,6 @@ export async function initBundle(legId: string): Promise<BundleInitResult> {
       available = [];
     }
     if (!available.includes(legId)) {
-      // DEV: if the store is empty and the dev flag is set, load the embedded bundle
-      if (DEV_EMBEDDED_BUNDLE && legId === DEV_EMBEDDED_LEG_ID && available.length === 0) {
-        return loadEmbeddedBundle();
-      }
       return { status: 'first-run', message: 'Download your trip' };
     }
 

@@ -61,6 +61,7 @@
       initOrchestrator({ scheduler, audioSession: AudioSession, favorites: appState.favorites, bundlePath: '/bundles/leg58' });
     } else {
       bundleInitStatus = 'error';
+      firstRunMessage = result.message;
     }
   }
 
@@ -181,6 +182,13 @@
         <p class="layout-first-run__hint">
           {firstRunMessage || 'Go to Settings to download your trip bundle.'}
         </p>
+      </div>
+    {:else if bundleInitStatus === 'error'}
+      <!-- Bundle load failed — surface the reason so we can diagnose on device -->
+      <div class="layout-first-run">
+        <span class="layout-first-run__icon" aria-hidden="true">⚠️</span>
+        <h2 class="layout-first-run__heading">Couldn't load the trip</h2>
+        <p class="layout-first-run__hint">{firstRunMessage}</p>
       </div>
     {:else}
       {@render children()}
