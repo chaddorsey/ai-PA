@@ -125,4 +125,29 @@ describe('PlaybackOrchestrator', () => {
     expect((proxyBundle as Bundle).stations.length).toBeGreaterThan(0);
     expect((proxyBundle as Bundle).stations[0].code).toBe('NOL');
   });
+
+  it('uses absolute audio URL directly when it starts with /', async () => {
+    // bundleInit rewrites dev audio to /bundles/leg58/audio/... — those are absolute.
+    // The orchestrator should use them as-is, not prepend bundlePath again.
+    const absUnit: Unit = {
+      ...UNIT_A,
+      id: 'u-abs',
+      audio: '/bundles/leg58/audio/u-abs.mp3',
+    };
+    mockScheduler.select.mockReturnValue({ nowPlaying: absUnit, queue: [], silenceUntilMile: -Infinity });
+    const orch = makeOrch();
+    await orch.update(MOCK_POSITION);
+    const [uri] = mockAudioSession.play.mock.calls[0];
+    expect(uri).toBe('/bundles/leg58/audio/u-abs.mp3');
+  });
+
+  it('reconstructs audio URI from bundlePath when audio is a relative filename', async () => {
+    // When audio is just a filename like 'audio/u-a.mp3', reconstruct from bundlePath.
+    const relUnit: Unit = { ...UNIT_A, id: 'u-rel', audio: 'audio/u-rel.mp3' };
+    mockScheduler.select.mockReturnValue({ nowPlaying: relUnit, queue: [], silenceUntilMile: -Infinity });
+    const orch = makeOrch();
+    await orch.update(MOCK_POSITION);
+    const [uri] = mockAudioSession.play.mock.calls[0];
+    expect(uri).toBe('/bundles/58/audio/u-rel.mp3');
+  });
 });

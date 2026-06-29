@@ -6,18 +6,35 @@ import type { TripSimulator } from './tripSimulator';
 
 // ── DEV state singleton ───────────────────────────────────────────────────────
 
-/** The active TripSimulator, or null if not running. */
+/** The active TripSimulator, or null if not yet created. */
 let _simulator: TripSimulator | null = null;
 
+/**
+ * Whether simulation is currently running.
+ * Tracked separately so SettingsView can initialize its checkbox from this
+ * value after tab navigation (the local `simRunning` $state resets on remount).
+ */
+let _running = false;
+
 export const devState = {
-  /** Returns the simulator if it is active and running, else null. */
+  /** Returns the simulator if it exists, regardless of running state. */
   getSimulator(): TripSimulator | null {
-    return _simulator?.running ? _simulator : null;
+    return _simulator;
+  },
+
+  /** Returns true when simulation is active. */
+  isRunning(): boolean {
+    return _running;
   },
 
   /** Set (or clear) the active simulator. Called by SettingsView. */
   setSimulator(sim: TripSimulator | null): void {
     _simulator = sim;
+  },
+
+  /** Update the running flag. Called by SettingsView on toggle. */
+  setRunning(running: boolean): void {
+    _running = running;
   },
 };
 // ── end DEV ──────────────────────────────────────────────────────────────────

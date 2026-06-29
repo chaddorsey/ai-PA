@@ -46,7 +46,7 @@
 <aside class="now-bar" aria-label="Now playing">
   <button
     class="now-bar__content"
-    on:click={handleBarTap}
+    onclick={handleBarTap}
     aria-label="Open companion view"
   >
     {#if appState.nowPlaying}
@@ -67,7 +67,7 @@
     <div class="now-bar__controls">
       <button
         class="now-bar__btn"
-        on:click|stopPropagation={handlePauseResume}
+        onclick={(e) => { e.stopPropagation(); handlePauseResume(); }}
         aria-label={paused ? 'Resume' : 'Pause'}
         aria-pressed={paused}
       >
@@ -75,7 +75,7 @@
       </button>
       <button
         class="now-bar__btn now-bar__btn--star"
-        on:click|stopPropagation={handleStar}
+        onclick={(e) => { e.stopPropagation(); void handleStar(); }}
         aria-label="Star"
       >
         ★
@@ -90,8 +90,8 @@
     align-items: center;
     background: #1a1a2e;
     color: #fff;
-    padding: 0 12px;
-    height: 52px;
+    padding: env(safe-area-inset-top) 12px 0;
+    height: calc(52px + env(safe-area-inset-top));
     flex-shrink: 0;
     gap: 8px;
     position: relative;

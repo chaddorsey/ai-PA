@@ -8,8 +8,9 @@
   import { initBundle } from '$lib/core/bundleInit';
   import { BackgroundLocation, LiveActivity, AudioSession } from '$lib/native/plugins';
   import type { BackgroundLocationFix } from '$lib/native/plugins';
-  import { PositionService, Eta } from 'companion-core';
+  import { PositionService, Eta, Scheduler } from 'companion-core';
   import type { Station, Polyline } from 'companion-core';
+  import { initOrchestrator, getOrchestrator } from '$lib/core/PlaybackOrchestrator';
   // DEV: trip simulator wiring
   import { devState } from '$lib/dev/devState';
   // end DEV
@@ -53,6 +54,11 @@
         ([_elapsed, mile, lat, lon]) => [mile, lat, lon] as [number, number, number],
       );
       positionService = new PositionService(bundle, poly, bundle.leg);
+      // Wire up the PlaybackOrchestrator so narration/audio fires on every tick.
+      // For dev/proxy, audio lives under /bundles/leg58/audio (bundleInit already rewrites URLs).
+      // In production, use: await BundleStore.getPath(leg) for the native FS path.
+      const scheduler = new Scheduler(bundle, appState.settings);
+      initOrchestrator({ scheduler, audioSession: AudioSession, favorites: appState.favorites, bundlePath: '/bundles/leg58' });
     } else {
       bundleInitStatus = 'error';
     }
@@ -74,11 +80,12 @@
 
     // 2-second tick: dead-reckoning + scheduler updates + approach cue checks
     tickInterval = setInterval(() => {
-      // DEV: if a trip simulator is active, use its step() instead of positionService.tick()
-      const simActive = devState.getSimulator();
-      if (simActive) {
-        const pos = simActive.step(Date.now());
+      // DEV: if a trip simulator is active and running, use its step() instead of positionService.tick()
+      const sim = devState.getSimulator();
+      if (sim && devState.isRunning()) {
+        const pos = sim.step(Date.now());
         appState.position = pos;
+        void getOrchestrator()?.update(pos);
         // Approach cue still fires during simulation
         if (appState.bundle && eta) {
           const result = approachCue.check(pos, eta, appState.bundle.stations);
@@ -100,6 +107,7 @@
       if (!pos) return;
 
       appState.position = pos;
+      void getOrchestrator()?.update(pos);
 
       // Proactive approach cue: fires once per station per trip lifecycle
       if (appState.bundle && eta) {

@@ -91,8 +91,9 @@
   import type { SimSpeed } from '$lib/dev/tripSimulator';
   import { devState } from '$lib/dev/devState';
 
-  // Local Svelte-reactive state for the UI
-  let simRunning = $state(false);
+  // Local Svelte-reactive state for the UI; initialized from devState so checkbox
+  // reflects real state after tab navigation (remount resets local $state otherwise).
+  let simRunning = $state(devState.isRunning());
   let simSpeed = $state<SimSpeed>(1);
   // Current simulator instance (lazy-created when bundle is available)
   let _localSim: TripSimulator | null = null;
@@ -113,11 +114,13 @@
     if (target.checked) {
       sim.start(simSpeed);
       simRunning = true;
+      devState.setRunning(true);
     } else {
       sim.stop();
       simRunning = false;
+      devState.setRunning(false);
     }
-    // Notify layout tick via devState (it checks sim.running itself)
+    // Layout tick reads devState.isRunning() to decide between sim and real GPS
   }
 
   function onSimSpeedChange(event: Event) {

@@ -42,8 +42,10 @@ export class PlaybackOrchestrator {
     if (selected.id === appState.nowPlaying?.id) return;
 
     appState.nowPlaying = selected;
-    const filename = selected.audio.split('/').pop()!;
-    const fileUri = `${this.bundlePath}/audio/${filename}`;
+    // Use audio URL directly if already absolute, else reconstruct from bundlePath
+    const fileUri = (selected.audio.startsWith('/') || selected.audio.startsWith('http'))
+      ? selected.audio
+      : `${this.bundlePath}/audio/${selected.audio.split('/').pop()}`;
     await this.audioSession.play(fileUri);
     await this.audioSession.setRate(appState.settings.fillPct > 0 ? 1.0 : 1.0); // always 1.0 for now
   }
