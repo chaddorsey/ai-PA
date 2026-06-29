@@ -1,0 +1,551 @@
+[
+  {
+    "id": "dd-silt-norco",
+    "theme": "Written in Silt",
+    "title": "The Blast at Mile Twenty",
+    "mile": 20,
+    "nearest_place": "Norco, Louisiana",
+    "nearest_station": "Hammond",
+    "hook": "At 3:37 a.m. on May 5, 1988, a catalytic cracking unit at the Shell refinery in Norco, Louisiana, exploded — the fireball visible thirty miles away. Seven workers died instantly; 4,500 residents were evacuated; and a neighborhood called Diamond, which sat 200 feet from the fence line, would fight Shell for the next fourteen years just to be allowed to leave.",
+    "arc": "A Black neighborhood built on the site of a former plantation sits next door to one of the largest refineries in America — an explosion kills workers and destroys homes — the community spends a decade organizing, refusing to be silenced, until Shell finally agrees to relocate every resident who wants out.",
+    "summary": "The landscape outside the left window — flat, industrial, crowned by the flares of a petrochemical complex — looks like it was always this way. It was not. The land between New Orleans and Baton Rouge was sugar plantation country before it was refinery country. The workers who harvested cane became the workers who pumped crude, and many of them lived in the same places, passed down through generations. Diamond, a neighborhood in Norco, Louisiana, was one of those places: a tight community of African American families living a few hundred feet from the Shell Chemical plant's perimeter fence.\n\nOn the night of May 5, 1988, Diamond residents woke to a sound one survivor described as 'the world tearing open.' A hydrogen pipeline in the catalytic cracking unit ruptured and ignited. The explosion shook windows thirty miles away, lifted roofs off houses, and sent a black chemical fog rolling through the neighborhood. Seven Shell workers were killed. Dozens of homes in Diamond were destroyed or severely damaged.\n\nWhat made the disaster more than an industrial accident was what came before it and what came after. Diamond residents had been complaining about toxic releases, mysterious illnesses, and near-misses for years. A 1997 study found that 34 percent of Diamond children had asthma — more than double the national average. Residents said they had been evacuated from their homes eight times in twelve years.\n\nFor over a decade, Diamond fought back. Led by resident Margie Richard, who became the first Black woman to win the Goldman Environmental Prize in 2004, the community organized, documented, protested, and refused to accept Shell's initial offers. In 2002, Shell finally agreed to a voluntary buyout — relocating every resident of Diamond who chose to leave.\n\nThe neighborhood no longer exists as a residential community. The land it stood on is now part of the plant buffer zone. What remains is a story about who gets to live next to the things that power our world, and who has always been asked to pay that price.",
+    "sources": [
+      {
+        "title": "Shell plant explosions in Norco, Louisiana — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Shell_plant_explosions_in_Norco,_Louisiana"
+      },
+      {
+        "title": "1 Dead, 6 Missing as Blast at Shell Oil Refinery Rocks Louisiana Town — Washington Post",
+        "url": "https://www.washingtonpost.com/archive/politics/1988/05/06/1-dead-6-missing-as-blast-at-shell-oil-refinery-rocks-louisiana-town/a8ddcf3a-047d-4bd9-b23c-90d88a85639d/"
+      },
+      {
+        "title": "Shell plant at Norco stirred controversy — NOLA.com",
+        "url": "https://www.nola.com/news/environment/shell-plant-at-norco-stirred-controversy-decades-before-clean-air-act-allegations/article_247dfae1-b34e-51b5-9a9a-f9b695816525.html"
+      }
+    ],
+    "image": {
+      "available": false,
+      "note": "No license-clear Wikimedia Commons image of the 1988 explosion or Diamond neighborhood found; contemporary news photos are likely rights-restricted."
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 4
+  },
+  {
+    "id": "dd-migration-defender",
+    "theme": "The Migration's Spine",
+    "title": "The Paper That Moved a Nation",
+    "mile": 53,
+    "nearest_place": "Hammond, Louisiana",
+    "nearest_station": "Hammond",
+    "hook": "In 1905, Robert Sengstacke Abbott founded the Chicago Defender in a rented Chicago kitchen with 25 cents and 300 copies. Within fifteen years, it had become the most dangerous newspaper in the American South — dangerous because its editors were actively encouraging Black Mississippians to board trains like this one and never come back.",
+    "arc": "A Black-owned newspaper builds a secret distribution network using Pullman porters on Illinois Central trains — its editorials, job listings, and printed train schedules turn the idea of leaving into a concrete plan — and the Great Migration accelerates, transforming both Chicago and the South it departed from.",
+    "summary": "The Illinois Central Railroad beneath our wheels was not merely a physical corridor — it was also an information corridor. From roughly 1916 onward, it carried a newspaper that Southern white authorities tried to suppress, that some states made it illegal to distribute, and that hundreds of thousands of Black Southerners read in secret: the Chicago Defender.\n\nRobert Sengstacke Abbott, born in Georgia, educated in Chicago, founded the Defender in 1905 on almost nothing. By World War I it had a circulation exceeding 150,000, with more than two-thirds of its readers living outside Chicago. It ran blazing editorials comparing the Jim Crow South to the German enemy Americans were then fighting in Europe. It published job listings from Chicago meatpacking plants and steel mills. And it published train schedules — specific, practical information about which trains left which depots, at what times, and for what price.\n\nThe distribution system was improvised and audacious. Pullman porters — the men who worked the sleeping cars of trains like this one — carried bundles of the Defender south on their runs, passing them to contacts in small towns along the route. Barbershops, churches, and informal networks passed copies hand to hand. In some Mississippi counties, carrying the Defender was considered evidence of sedition. Copies were confiscated at depots.\n\nOn May 15, 1917, the Defender declared a 'Great Northern Drive' — essentially a coordinated call for migration on a specific date. Historians debate how literally that date should be taken, but there is no question that the newspaper gave the abstract idea of leaving a concrete, legible shape: here is the price of a ticket, here is the train, here is the address of a rooming house on Chicago's South Side when you arrive.\n\nThe Pullman porters who carried it north were members of the Brotherhood of Sleeping Car Porters, the union A. Philip Randolph built into the most powerful Black labor organization in America. The train was doing two things at once: carrying the people north, and carrying the news that made leaving thinkable.",
+    "sources": [
+      {
+        "title": "The Chicago Defender — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/The_Chicago_Defender"
+      },
+      {
+        "title": "Remembering the Chicago Defender — National Museum of African American History and Culture",
+        "url": "https://nmaahc.si.edu/explore/stories/remembering-chicago-defender-print-edition-1905-2019"
+      },
+      {
+        "title": "Robert Sengstacke Abbott — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Robert_Sengstacke_Abbott"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/07/ChicagoDefender1942.jpg",
+      "caption": "Front page of the Chicago Defender, 1942",
+      "credit": "Chicago Defender / Wikimedia Commons",
+      "license": "Public domain (published before 1928)"
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-haunted-mccomb",
+    "theme": "Haunted Ground",
+    "title": "The First Shots of the Mississippi Movement",
+    "mile": 106,
+    "nearest_place": "McComb, Mississippi",
+    "nearest_station": "McComb",
+    "hook": "In August 1961, a twenty-six-year-old Harvard-educated Black organizer named Robert Moses arrived in McComb, Mississippi and began the first voter registration drive in the state's history. Within weeks, one of his volunteers had been murdered by a state legislator — in broad daylight, in front of witnesses — and no one would ever be charged.",
+    "arc": "A SNCC organizer starts Mississippi's first voting rights campaign in a railroad town — a local farmer named Herbert Lee is shot dead in a cotton gin yard by a man who goes free — and the murder sends a message about what democracy costs in 1961 Mississippi that echoes all the way to the Voting Rights Act four years later.",
+    "summary": "McComb was built by the Illinois Central Railroad. The IC established a division point here in 1872, meaning the town grew up around the railroad's repair shops and crew-change yards — an industrial, working-class city in a state that was mostly rural and agricultural. That working-class character would matter in 1961, when McComb became the unexpected first battlefield of Mississippi's civil rights movement.\n\nRobert Moses was not yet famous when he arrived here. He was a young SNCC organizer, calm and methodical, wearing overalls instead of a suit because he wanted to look like the farmers he was working with. His project was simple and radical: help Black Mississippians register to vote. In a state where less than six percent of eligible Black voters were registered — where the registration process was deliberately obstructed, where the forms were designed to fail — this was an act of direct confrontation with the entire social order.\n\nThe response was swift. Organizers were beaten. A church that hosted registration meetings was bombed. And on September 25, 1961, in the cotton gin yard in Liberty, Mississippi — thirty miles from where this train is now — a Mississippi state legislator named E.H. Hurst shot and killed Herbert Lee. Lee was a fifty-two-year-old farmer and father of nine who had been helping Moses with the registration drive.\n\nHurst claimed self-defense. A witness named Louis Allen told federal investigators the truth: Hurst had simply walked up to Lee and shot him. Hurst was never charged. Allen, threatened into silence at the inquest, was later murdered as well. Two witnesses. Two deaths. No convictions.\n\nThe Herbert Lee murder did not end the movement. It hardened it. The story reached the national civil rights organizations, reached the Kennedy administration, reached Congress. McComb is one of the reasons the Voting Rights Act passed in 1965. The courthouse where all of this unraveled is two miles from this window.",
+    "sources": [
+      {
+        "title": "SNCC Digital Gateway — Medgar Evers Murdered (and McComb coverage)",
+        "url": "https://snccdigital.org/events/medgar-evers-murdered/"
+      },
+      {
+        "title": "McComb, Mississippi — The Mississippi Blues Trail (Herbert Lee marker)",
+        "url": "https://msbluestrail.org/blues-trail-markers/mccomb"
+      },
+      {
+        "title": "Civil Rights Act of 1964: A Long Struggle for Freedom — Library of Congress",
+        "url": "https://www.loc.gov/exhibits/civil-rights-act/multimedia/medgar-evers-and-jackson-movement.html"
+      }
+    ],
+    "image": {
+      "available": false,
+      "note": "Historical photos of McComb 1961 civil rights activities are likely in SNCC archives or CORE collections; Wikimedia Commons search did not surface a clearly license-clear candidate. The Mississippi Blues Trail marker photo may be usable with credit."
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-migration-johnson",
+    "theme": "The Migration's Spine",
+    "title": "The Crossroads: What Really Happened to Robert Johnson",
+    "mile": 150,
+    "nearest_place": "Hazlehurst, Mississippi",
+    "nearest_station": "Hazlehurst",
+    "hook": "Robert Johnson was born in Hazlehurst, Mississippi, in 1911, and died at twenty-seven — a nobody in his lifetime, the most important blues musician who ever lived by the judgment of Keith Richards, Eric Clapton, and everyone who followed. The legend says he sold his soul to the devil at a crossroads in exchange for his guitar genius. The actual story is stranger and more interesting.",
+    "arc": "A mediocre young guitarist disappears from the Mississippi Delta for a year and returns able to play anything — the crossroads myth attaches itself to him — and after his death from uncertain causes at twenty-seven, his twenty-nine recordings become the deepest root of rock and roll, found only because a young British musician went looking for the source.",
+    "summary": "The station just behind us — Hazlehurst — has a birth certificate on file for Robert Johnson, born May 8, 1911. It is one of the very few concrete facts we have about his early life. Everything else is disputed, layered in myth, distorted by the intense desire of later musicians to make the story fit the music.\n\nHere is what we know. As a young man, Johnson was considered a mediocre guitarist — good enough to hang around the Delta juke joints where the serious players worked, not good enough to command respect. Son House, who was then the acknowledged master of the Delta Blues, remembered Johnson as a kid who would grab someone's guitar during a break and play badly until the adults shooed him away. Then Johnson left. He was gone for roughly a year — accounts vary. When he came back, he could play anything. He could bend strings in ways no one had heard. His guitar sounded like two instruments at once. Son House, when asked later what had happened, told a journalist: 'He must have sold his soul to the devil to play like that.'\n\nThe crossroads story was not originally Robert Johnson's. It had been attached to another Delta musician, Tommy Johnson, who told people he had met the devil at a crossroads and traded his soul for musical ability. The story migrated — because the music demanded an explanation that ordinary life could not provide.\n\nWhat actually happened during that missing year? The most credible account involves a man named Ike Zimmerman, a guitarist from nearby Beauregard, Mississippi, who took Robert Johnson in and taught him, methodically, everything he knew. They practiced in graveyards at night — not for occult reasons, but because graveyards were quiet and no one would bother them there.\n\nJohnson died in 1938, in Greenwood, Mississippi, north of here on this same train line. He was twenty-seven. Cause of death: possibly poisoned, possibly syphilis, possibly a jealous husband. He left twenty-nine recordings. They sat in Columbia Records' vaults, largely unheard, until a young musician named John Hammond re-released them in 1961. Keith Richards heard them. Eric Clapton heard them. The Rolling Stones, Cream, Led Zeppelin — all of them traced the thread back to a man who died before any of them were born, in a county you are passing through right now.",
+    "sources": [
+      {
+        "title": "Robert Johnson — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Robert_Johnson"
+      },
+      {
+        "title": "The Devil Didn't Make Him Do It — American Blues Scene",
+        "url": "https://www.americanbluesscene.com/2022/08/devil-didnt-make-him-debunking-robert-johnson-myth-3dw/"
+      },
+      {
+        "title": "Beyond the Crossroads: the tragic real life of Robert Johnson — Guitar.com",
+        "url": "https://guitar.com/features/history/beyond-the-crossroads-the-tragic-real-life-of-robert-johnson/"
+      },
+      {
+        "title": "Robert Johnson At 100, Still Dispelling Myths — NPR",
+        "url": "https://www.npr.org/2011/05/07/136063911/robert-johnson-at-100-still-dispelling-myths"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/0/05/Robert_Johnson.png",
+      "caption": "Robert Johnson, the only authenticated photograph, circa 1935",
+      "credit": "Unknown / Wikimedia Commons",
+      "license": "Public domain (author unknown, published before 1928 threshold unclear — widely used as PD; confirm before publication)"
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-silt-eocene",
+    "theme": "Written in Silt",
+    "title": "Mississippi Was an Ocean",
+    "mile": 183,
+    "nearest_place": "Jackson, Mississippi",
+    "nearest_station": "Jackson",
+    "hook": "Just north of Jackson, the bedrock beneath the train shifts from young river sediment to something 48 million years old — the floor of a warm, shallow tropical sea that once covered what is now Mississippi. The fossils that prove it are in the rock beneath the train tracks right now.",
+    "arc": "Geologists discover that the rock beneath central Mississippi is ancient seafloor — marine fossils of creatures that lived in a tropical sea 48 million years ago are found in road cuts and creek banks along the IC route — and the story of why Mississippi is both flat and extraordinarily fertile begins with an ocean that disappeared tens of millions of years before the first human being existed.",
+    "summary": "The state of Mississippi, to a geologist, is a record of repeated drowning. For tens of millions of years, the land that is now the Deep South lay beneath the sea — not all at once, and not continuously, but in a long series of transgressions and retreats as sea levels rose and fell with the warming and cooling of the planet.\n\nAround milepost 183, something happens beneath the wheels that you cannot see but can measure. The rock changes. For the past hundred miles, we've been riding over sediments laid down in the last tens of millions of years — river deposits, coastal plain muds, the accumulated leavings of the Mississippi watershed. But here, the rock is Late Eocene: 37.8 to 33.9 million years old. It is sandstone, clay, chalk, and limestone. It was once the bottom of a warm, shallow tropical sea.\n\nThe fossils prove it. Paleontologists working the road cuts and creek banks around Jackson have found Turritella mississippiensis — a marine snail, elegantly coiled, named for this state — alongside Solarium triliraium, another marine gastropod, and Nucula sphenopsis, a tiny clam. These creatures lived here when what is now Mississippi was somewhere under fifteen feet of warm saltwater, when the climate was warmer than today, when the Gulf of Mexico extended hundreds of miles north of where it now lies.\n\nThe Eocene period, for context, is when the first grasses appeared on land, when the ancestors of modern whales were still four-legged land animals walking into the sea for the first time. Mississippi was underwater for most of that story.\n\nThe flatness of the Delta — that extraordinary, table-flat landscape we've been rolling through — is partly a consequence of this history. Ancient seafloor is flat. Ancient seafloor, compressed and then lifted gently by geological forces, stays flat. And ancient marine sediment, rich in calcium and organic material, becomes extraordinarily fertile soil. The Mississippi Delta grows the crops it does partly because it sits on the compressed remains of an Eocene tropical ocean.",
+    "sources": [
+      {
+        "title": "Geology of Mississippi — Mississippi Department of Environmental Quality",
+        "url": "https://www.mdeq.ms.gov/geology/"
+      },
+      {
+        "title": "Late Eocene epoch — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Eocene"
+      },
+      {
+        "title": "Mississippi Alluvial Plain — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Mississippi_Alluvial_Plain"
+      }
+    ],
+    "image": {
+      "available": false,
+      "note": "Relevant Wikimedia images exist of Eocene marine fossils generically, but none specific to Mississippi's road cut specimens. A map of the Eocene Gulf of Mexico extent (available in USGS publications) may be usable with credit."
+    },
+    "est_listen_min": 3,
+    "suggested_salience": 3
+  },
+  {
+    "id": "dd-corridor-panama",
+    "theme": "Corridor of Movement",
+    "title": "The Panama Limited: Twenty-Five Hours to the World",
+    "mile": 248,
+    "nearest_place": "Yazoo City, Mississippi",
+    "nearest_station": "Yazoo City",
+    "hook": "On February 4, 1911, the Illinois Central launched a train named for a canal that hadn't been finished yet — the Panama Limited, an all-Pullman sleeping-car service between Chicago and New Orleans that would run for sixty years and briefly become the most prestigious passenger train in the American South.",
+    "arc": "The Illinois Central stakes its prestige on an all-Pullman luxury train named to capitalize on Panama Canal excitement — the train survives depression, war, and the automobile age, becoming the primary artery for both the wealthy and the migrating — until Amtrak takes over the route in 1971 and renames it the City of New Orleans, the train whose song outlives it.",
+    "summary": "The Illinois Central's main line runs almost perfectly straight from Chicago to New Orleans — engineers laid it that way deliberately in the 1850s, minimizing curves to allow high speeds. That straightness, combined with flat terrain, made it ideal for fast, prestigious passenger service.\n\nIn 1911, the IC launched its flagship: the Panama Limited. The name was marketing genius — the Panama Canal was nearing completion, the biggest engineering project in American history, and everything Panama-adjacent had a glamour attached to it. The train carried no day coaches, only sleeping cars. You could not ride it for a short hop; you had to book a berth. The IC was positioning itself above the ordinary railroad and into the category of luxury travel.\n\nAt its peak, the Panama Limited ran an 18-hour schedule — Chicago to New Orleans in eighteen hours, which remains roughly competitive with modern trains. It carried heavyweight Pullman sleepers with names rather than numbers, diners serving actual meals on white tablecloths, a club car where passengers could socialize. The railroad employed Black Pullman porters for all the sleeper service — men who were, as the bundle's own narration notes, simultaneously the most visible face of the railroad's luxury service and the distributors of the Chicago Defender on their southbound runs.\n\nThe Panama Limited outlasted the automobile, the Depression (just barely — it was suspended 1932–34), and World War II. In the postwar era it was reequipped with modern streamlined cars and continued running through the 1950s and 1960s as passenger rail declined nationally. The IC's last Panama Limited ran April 30, 1971. The next day, Amtrak took over the route and renamed the service the City of New Orleans — the name that Steve Goodman would make famous, the name we're riding right now.\n\nWe are on the bones of the Panama Limited. The right-of-way is the same. The stations are mostly the same. Only the train has changed.",
+    "sources": [
+      {
+        "title": "Panama Limited — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Panama_Limited"
+      },
+      {
+        "title": "The Panama Limited: IC's Flagship Train — American-Rails.com",
+        "url": "https://www.american-rails.com/panama.html"
+      },
+      {
+        "title": "HawkinsRails — Illinois Central Passenger Trains",
+        "url": "https://hawkinsrails.net/mainlines/ic1/ic1_trains.html"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/28/Panama_Limited.jpg",
+      "caption": "Illinois Central Panama Limited promotional image, mid-20th century",
+      "credit": "Illinois Central Railroad / Wikimedia Commons",
+      "license": "Public domain (pre-1928 or corporate work — verify specific file license on Commons)"
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 4
+  },
+  {
+    "id": "dd-haunted-till",
+    "theme": "Haunted Ground",
+    "title": "The Store at Money",
+    "mile": 290,
+    "nearest_place": "Money, Mississippi",
+    "nearest_station": "Greenwood",
+    "hook": "On August 24, 1955, a fourteen-year-old Black boy from Chicago named Emmett Till went into a small grocery store in Money, Mississippi, and said something — or didn't say something, or whistled — to the white woman behind the counter. Four days later he was dead, his body thrown into the Tallahatchie River with a seventy-four-pound cotton-gin fan chained to his neck.",
+    "arc": "A Chicago teenager visits Mississippi relatives and makes a social misstep at a crossroads grocery — two men abduct him, torture him, and murder him — his mother insists on an open casket, the photographs appear in Jet magazine, and a hundred thousand people file past what racism had made of her son, igniting the Civil Rights Movement.",
+    "summary": "Money, Mississippi is six miles from this train, west of Greenwood. It is barely a crossroads today — a few buildings, a cotton field, the remnants of a grocery store that stood at the intersection of two rural roads. But that store, Bryant's Grocery and Meat Market, is one of the most significant sites in American history.\n\nEmmett Till was from Chicago's South Side. He was fourteen, visiting his great-uncle Moses Wright in Money during summer vacation. On August 24, 1955, he went into Bryant's Grocery with some other teenagers. What happened inside is still disputed — he may have whistled at Carolyn Bryant, the white woman behind the counter; he may have said something; he may have touched her hand when he paid for his candy. Whatever it was, it was enough.\n\nFour nights later, Roy Bryant and his half-brother J.W. Milam came to Moses Wright's house at 2 a.m. They took Emmett. Over the next hours they beat him with a pistol, gouged out one of his eyes, shot him in the head above his right ear, and dropped his body in the Tallahatchie River with a seventy-four-pound cotton-gin fan wired to his neck. Three days later, two boys fishing found what the river had brought up.\n\nMamie Till-Mobley made a decision that changed history: she demanded an open casket. 'Let the people see what they did to my boy,' she said. A hundred thousand people filed past in Chicago. Jet magazine ran the photographs. The images — of what racism had physically made of a fourteen-year-old child — circulated across the country and around the world.\n\nBryant and Milam were tried by an all-white jury that acquitted them in sixty-seven minutes. Protected from double jeopardy, they then sold their confession to Look magazine for four thousand dollars.\n\nRosa Parks said later she was thinking of Emmett Till when she refused to give up her seat in Montgomery that December. The Civil Rights Movement has many starting points. The store at Money is one of the most cited.",
+    "sources": [
+      {
+        "title": "Emmett Till — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Emmett_Till"
+      },
+      {
+        "title": "Emmett Till's Death Inspired a Movement — NMAAHC",
+        "url": "https://nmaahc.si.edu/explore/stories/emmett-tills-death-inspired-movement"
+      },
+      {
+        "title": "The Murder of Emmett Till — American Experience / PBS",
+        "url": "https://www.pbs.org/wgbh/americanexperience/films/till/"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/55/Emmett_Till_and_Mamie_Till_1955.png",
+      "caption": "Emmett Till and his mother Mamie Till, 1955",
+      "credit": "Mamie Till-Mobley estate / Wikimedia Commons",
+      "license": "Believed public domain; verify before publication — widely reproduced as PD on Wikimedia Commons"
+    },
+    "est_listen_min": 5,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-migration-muddy",
+    "theme": "The Migration's Spine",
+    "title": "Muddy Waters Takes the Train",
+    "mile": 337,
+    "nearest_place": "Marks, Mississippi",
+    "nearest_station": "Marks",
+    "hook": "In the summer of 1941, a young Library of Congress field researcher named Alan Lomax drove a borrowed car to a sharecropper's cabin on the Stovall Plantation near Clarksdale, Mississippi, set up a recording machine, and pressed 'record.' The man who played that day was McKinley Morganfield — Muddy Waters — and the music Lomax captured would eventually become the root of everything that came after.",
+    "arc": "Lomax records Muddy Waters on Stovall Plantation in 1941 — hears something transformative in the raw Delta blues — Waters leaves for Chicago on the Illinois Central two years later — and within a decade has electrified the acoustic Delta blues into something that would become Chicago blues, then rock and roll.",
+    "summary": "The Stovall Plantation, where McKinley Morganfield worked as a sharecropper in the early 1940s, is about forty miles west of where this train is running right now — in Coahoma County, the deep Delta heart of the state. Morganfield grew up around Clarksdale, learned guitar listening to Son House and Robert Johnson on the local juke joint circuit, and had been playing and singing since he was a teenager.\n\nAlan Lomax arrived in August 1941 on behalf of the Library of Congress, part of a broader effort to document American vernacular music before it disappeared. He had already recorded Jelly Roll Morton in Washington D.C. and Leadbelly in a Louisiana prison. When he set up his disc recorder in Morganfield's cabin and pressed play on what he heard, he knew he was recording something remarkable. He came back the following year. The recordings he made — raw, unadorned, intensely rhythmic — are now in the American Folklife Center at the Library of Congress.\n\nMorganfield heard himself on the recordings and understood what Lomax understood: that what he was doing was not primitive or regional, but fundamental.\n\nIn the summer of 1943, after an argument with a plantation overseer, Muddy Waters bought a ticket on the Illinois Central and rode north. He had a guitar. He had twelve hundred dollars in savings. He had Lomax's recordings in his head.\n\nIn Chicago, he went electric. He plugged his guitar into an amplifier because the South Side clubs were loud and an acoustic guitar couldn't be heard. The electrified Delta blues became Chicago blues. Chicago blues became the sound that the Rolling Stones, Eric Clapton, and a generation of British musicians imitated in the 1960s. Those musicians then exported it back to America as rock and roll.\n\nThe train Muddy Waters took north in 1943 was running this exact route. He came through Marks. Through Memphis. Across the Ohio. Into Chicago. The arc from Stovall to the world ran up this line.",
+    "sources": [
+      {
+        "title": "The Complete Plantation Recordings — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/The_Complete_Plantation_Recordings"
+      },
+      {
+        "title": "Muddy Waters' Cabin — The Mississippi Blues Trail",
+        "url": "https://msbluestrail.org/blues-trail-markers/muddy-waterss-cabin"
+      },
+      {
+        "title": "Muddy Waters — PBS American Masters",
+        "url": "https://www.pbs.org/wnet/americanmasters/muddy-waters-cant-be-satisfied/730/"
+      },
+      {
+        "title": "Alan Lomax spent years traveling the country — Smithsonian Magazine",
+        "url": "https://www.smithsonianmag.com/arts-culture/alan-lomax-spent-years-traveling-country-record-sounds-america-legacy-obsession-live-forever-180988858/"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/9/9a/Muddy_waters_1_rs.jpg",
+      "caption": "Muddy Waters performing, early 1970s",
+      "credit": "Wikimedia Commons",
+      "license": "Verify specific file license; several Muddy Waters images on Commons are PD or CC-licensed"
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-silt-flood1927",
+    "theme": "Written in Silt",
+    "title": "The Day the Levee Broke",
+    "mile": 380,
+    "nearest_place": "Tunica County, Mississippi",
+    "nearest_station": "Memphis",
+    "hook": "On April 21, 1927, a section of the Mississippi River levee at Mound Landing, in the heart of the Delta, gave way. The river came through at 468,000 cubic feet per second — a wall of water that would eventually drown 27,000 square miles and displace 637,000 people, most of them Black, most of them sharecroppers. The Army had said the levees would hold. The Army was wrong.",
+    "arc": "Army Corps engineers declare the levee system complete and protective in 1926 — the river breaches in eighteen places the following spring, drowning the Delta at depths up to thirty feet — Herbert Hoover's management of the disaster exposes the racial order of the relief camps to the nation — and the flood accelerates the Great Migration that would reshape American cities.",
+    "summary": "The Mississippi River created the Delta — built it, grain by grain, flood by flood, over millions of years. The people who farmed the Delta in the 1920s knew this. What the Army Corps of Engineers had persuaded them to believe was that the river had been tamed. In the official 1926 report, Army engineers stated for the first time that they were now in a position to prevent the damaging floods of the lower Mississippi Valley. The levee system was complete. The river was controlled.\n\nIn the spring of 1927, the river received the heaviest rainfall in recorded history across its watershed. The tributaries came up. The river rose. And then, beginning in April, it began breaking through in one place after another — eighteen breaches across 1,000 miles of levee. The breach at Mound Landing, north of Greenville and roughly sixty miles west of where this train is now, was the largest. The river came through at a rate that could fill the Empire State Building in under a minute.\n\nTwenty-seven thousand square miles were inundated. In places the water stood thirty feet deep. Six hundred thirty-seven thousand people were displaced. The dead numbered in the hundreds — the official count was under 500, but historians believe the actual toll was much higher, particularly among Black sharecroppers in the most remote areas.\n\nHerbert Hoover, then Secretary of Commerce, oversaw the federal relief operation and used it to build his reputation as a humanitarian. What the relief operation actually looked like in the Delta: Black refugees were housed in camps that replicated the plantation system, with planters given control over relief supplies and labor. Black men were forced to work on levee repair at gunpoint while their families waited in flooded tents. The Red Cross distributed aid unequally along racial lines.\n\nThe Black population of the Delta understood what the flood had revealed. In the months and years after 1927, the pace of the Great Migration accelerated sharply. The river had demonstrated what the land was actually worth to the people who owned it — and what the people who worked it were worth. Thirty blues songs were written about the 1927 flood. Bessie Smith recorded 'Back Water Blues' two months after Mound Landing. The music knew what had happened.",
+    "sources": [
+      {
+        "title": "Great Mississippi Flood of 1927 — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Great_Mississippi_Flood_of_1927"
+      },
+      {
+        "title": "The Great Mississippi River Flood of 1927 — NMAAHC",
+        "url": "https://nmaahc.si.edu/explore/stories/great-mississippi-river-flood-1927"
+      },
+      {
+        "title": "The Great Mississippi Flood of 1927 Laid Bare the Divide — Smithsonian Magazine",
+        "url": "https://www.smithsonianmag.com/history/devastating-mississippi-river-flood-uprooted-americas-faith-progress-180962856/"
+      },
+      {
+        "title": "The Flood of 1927 and Its Impact in Greenville, Mississippi — Mississippi Historical Society",
+        "url": "https://www.mshistorynow.mdah.ms.gov/issue/the-flood-of-1927-and-its-impact-in-greenville-mississippi"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/2/2d/1927_great_Mississippi_flood_-_refugees.jpg",
+      "caption": "Refugees from the 1927 Mississippi River flood being transported by boat, 1927",
+      "credit": "American Red Cross / Wikimedia Commons",
+      "license": "Public domain (US government or pre-1928 publication)"
+    },
+    "est_listen_min": 5,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-corridor-yellowfever",
+    "theme": "Corridor of Movement",
+    "title": "Yellow Jack: How the Railroad Killed Memphis",
+    "mile": 406,
+    "nearest_place": "Memphis, Tennessee",
+    "nearest_station": "Memphis",
+    "hook": "Memphis in the summer of 1878 was one of the fastest-growing cities in the American South — a river and rail hub with ambitions to rival St. Louis. Then a steamboat from Havana docked at the levee, and within weeks, Memphis was a city of the dead. Of the 20,000 people who stayed when the epidemic began, 17,000 contracted yellow fever. Five thousand died in two months.",
+    "arc": "Yellow fever arrives by steamboat in August 1878 — 40,000 residents flee by rail and river, spreading the disease further as they go — the 5,000 who die include almost all of the city's white professional class — and Memphis, bankrupt and charterless, rebuilds itself from near-nothing over fifteen years, emerging with the best water system in the American South.",
+    "summary": "Memphis sits at the crossing of two great American corridors: the Mississippi River, running north and south, and the Illinois Central Railroad, which we've been following since New Orleans. In 1878, that position was a death sentence.\n\nYellow fever is carried by Aedes aegypti mosquitoes. In 1878, no one knew this — the germ theory of disease was new and contested, and Memphis had among the worst sanitation in the country, its water supply drawn from the same bayou into which the city discharged its sewage. When yellow fever broke out in New Orleans in July 1878, Memphis watched it come north along the river.\n\nThe steamboat Golden Crown, arriving from New Orleans in early August, brought infected passengers. The epidemic was confirmed by August 13. The response was immediate: 40,000 of the city's 47,000 residents fled. They went by rail, by steamboat, by wagon — and they spread the virus as they went, carrying it to smaller towns along the Illinois Central's route. Requests to quarantine the trains were resisted by businessmen. The disease followed the corridors of commerce exactly as goods and people did.\n\nOf those who remained — roughly 20,000, most of them too poor to leave or unwilling to abandon family — 17,000 contracted yellow fever. Five thousand died. Among the dead: nearly the entire professional and merchant class of the city. Doctors, lawyers, priests, merchants. The Catholic nuns who stayed to nurse the sick died in large numbers. So did the Howards, a volunteer aid society whose members came from around the country to help and died at extraordinary rates.\n\nMemphis declared bankruptcy. The state legislature revoked the city charter in 1879 — Memphis was no longer legally a city. It took fourteen years to regain charter status.\n\nBut here is the turn: the disaster forced a reckoning. Memphis rebuilt its water and sewer systems from scratch, installing what would become one of the best sanitation systems in the South. Yellow fever never returned after 1879. The epidemic that almost ended Memphis became the reason Memphis survived — and why the city that sits outside this window today is cleaner, healthier, and larger than the one that stood here in 1878.",
+    "sources": [
+      {
+        "title": "Lower Mississippi Valley yellow fever epidemic of 1878 — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Lower_Mississippi_Valley_yellow_fever_epidemic_of_1878"
+      },
+      {
+        "title": "Yellow Fever Epidemics — Tennessee Encyclopedia",
+        "url": "https://tennesseeencyclopedia.net/entries/yellow-fever-epidemics/"
+      },
+      {
+        "title": "Memphis Fights the Yellow Fever — American Heritage",
+        "url": "https://www.americanheritage.com/memphis-fights-yellow-fever"
+      },
+      {
+        "title": "A City Under Siege: The 1878 Yellow Fever Epidemic — History of Vaccines",
+        "url": "https://historyofvaccines.org/blog/city-under-siege-1878-yellow-fever-epidemic-memphis/"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Memphis_yellow_fever_1878.jpg",
+      "caption": "Scene during the 1878 yellow fever epidemic in Memphis, from a contemporary illustration",
+      "credit": "Frank Leslie's Illustrated Newspaper / Wikimedia Commons",
+      "license": "Public domain (published 1878)"
+    },
+    "est_listen_min": 5,
+    "suggested_salience": 4
+  },
+  {
+    "id": "dd-haunted-fortpillow",
+    "theme": "Haunted Ground",
+    "title": "Remember Fort Pillow",
+    "mile": 475,
+    "nearest_place": "Henning, Tennessee",
+    "nearest_station": "Newbern-Dyersburg",
+    "hook": "On April 12, 1864, Confederate forces under Nathan Bedford Forrest stormed a Union garrison on the Mississippi River bluffs just north of here. Nearly half the Union garrison was Black — soldiers of the United States Colored Troops. After the fort fell, witnesses reported that soldiers who had surrendered were shot, bayoneted, and buried alive. The event became known as the Fort Pillow Massacre, and 'Remember Fort Pillow' became the battle cry of Black Union soldiers for the rest of the Civil War.",
+    "arc": "Forrest's cavalry overwhelms a mixed Black and white Union garrison — Confederate soldiers massacre surrendering Black troops at dramatically higher rates than white ones — Congress investigates and documents the atrocity — and the massacre instead of demoralizing Black soldiers becomes their rallying cry, driving them to fight with a ferocity that changes the outcome of the war.",
+    "summary": "Fort Pillow sits on a bluff above the Mississippi River, about forty miles west of this train and five miles north of Henning, Tennessee. It was a Union garrison in April 1864, when Nathan Bedford Forrest — the Confederate cavalry commander who would later found the Ku Klux Klan — arrived with 1,500 men.\n\nThe garrison numbered about 600 Union troops. Nearly half were soldiers of the United States Colored Troops — the regiments of Black men who had joined the Union Army after the Emancipation Proclamation. The rest were white Unionists from Tennessee.\n\nThe battle itself was brief. Forrest's forces had superior numbers and position. By mid-afternoon the garrison was overwhelmed. The commander, Major Lionel Booth, had already been killed. The remaining officers called for surrender.\n\nWhat happened next is what earned this battle a different name. According to witnesses and a subsequent Congressional investigation, Confederate soldiers continued killing after the white flag was raised. Black soldiers who threw down their weapons were shot, bayoneted, and according to some accounts, buried alive. The numbers tell the story: seventy percent of white soldiers survived the battle; only thirty-five percent of Black soldiers survived.\n\nThe Confederate position was explicit: Black soldiers were not prisoners of war. Confederate policy held that captured Black troops would be tried as slave insurrectionists — a capital charge — rather than treated as prisoners. Fort Pillow was that policy enacted.\n\nCongress investigated. The evidence was overwhelming and widely published. And rather than breaking the morale of Black Union troops, Fort Pillow became a rallying cry. 'Remember Fort Pillow' was shouted by Black regiments going into battle for the rest of the war. They fought, historians have noted, with a ferocity that reflected what they understood the alternative to be.",
+    "sources": [
+      {
+        "title": "Battle of Fort Pillow — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Battle_of_Fort_Pillow"
+      },
+      {
+        "title": "Fort Pillow Massacre: Facts, Deaths & Significance — HISTORY",
+        "url": "https://www.history.com/articles/fort-pillow-massacre"
+      },
+      {
+        "title": "The Hard Reality of Fort Pillow — National Park Service",
+        "url": "https://www.nps.gov/articles/000/hard-reality-of-fort-pillow.htm"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/5/5c/Fort_Pillow_Massacre.jpg",
+      "caption": "The Fort Pillow Massacre, 1864, from a contemporary Harper's Weekly illustration",
+      "credit": "Harper's Weekly / Wikimedia Commons",
+      "license": "Public domain (published 1864)"
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 4
+  },
+  {
+    "id": "dd-corridor-cairobridge",
+    "theme": "Corridor of Movement",
+    "title": "Cairo: Where the Rivers Meet and the Country Pivots",
+    "mile": 570,
+    "nearest_place": "Cairo, Illinois",
+    "nearest_station": "Fulton",
+    "hook": "At the tip of Illinois, where the Ohio River joins the Mississippi, sits Cairo — a city that once seemed destined to be the center of the American continent, the place where everything moving north or south would have to pass. It was where the Illinois Central crossed the Ohio River on the longest railroad bridge in the Western Hemisphere when it was completed in 1889. And it is now one of the most depopulated cities in the United States.",
+    "arc": "Cairo is platted as the inevitable commercial capital of mid-America at the confluence of the continent's two great rivers — the railroads come, the bridge is built, the city booms — then the Mississippi bypasses it economically, racial violence tears it apart in the 1960s and 1970s, and a city that once held 15,000 people now holds fewer than 1,700.",
+    "summary": "Look to the left as we approach the Ohio River: across the water and the bottomland is the tip of Illinois, a finger of land where the Ohio meets the Mississippi. That is Cairo, pronounced KAY-ro by the locals, and it is one of the great might-have-beens of American urban history.\n\nIn the 1830s and 1840s, Charles Dickens visited and wrote contemptuously of the mud and mosquitoes. But the speculators saw something real: the confluence of the Ohio and the Mississippi was the geographic hinge of the continent. Everything moving between the Great Lakes and the Gulf had to flow through or near this point. Railroads reaching the river needed to cross here. The Illinois Central built its bridge across the Ohio at Cairo in 1889 — at 20,000 feet, it was the longest railroad bridge in the Western Hemisphere. Cairo was the cork in the bottle of mid-American commerce.\n\nAt its peak, Cairo held over 15,000 residents and aspired to become the Chicago of the South. Then several things happened. The railroads eventually bridged the river at other points, reducing Cairo's monopoly on the crossing. The Mississippi River, perversely, silted up the portion of the river adjacent to Cairo rather than the Louisville side — the commerce that Cairo's promoters had assumed would come stayed on the Indiana shore. The city began its long slide.\n\nWhat finished it was race. From 1967 to 1973, Cairo convulsed with racial violence. The trigger was the alleged jailhouse suicide of a Black soldier named Robert Hunt — a death that Cairo's Black residents didn't believe. 170 nights of gunfire were reported in 1969. A white vigilante group called the White Hats patrolled Black neighborhoods with shotguns. A Black economic boycott shuttered most downtown businesses.\n\nThe white middle class left. The tax base collapsed. The businesses closed. The population that had been 15,000 is now under 1,700. The bridge still stands. The Illinois Central still crosses here. The geography hasn't changed. Everything else has.",
+    "sources": [
+      {
+        "title": "Cairo, Illinois — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Cairo,_Illinois"
+      },
+      {
+        "title": "Racial unrest in Cairo, Illinois — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Racial_unrest_in_Cairo,_Illinois"
+      },
+      {
+        "title": "Cairo, Illinois — Death by Racism — Legends of America",
+        "url": "https://www.legendsofamerica.com/il-cairo/"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/e2/Cairo_Illinois_Confluence.jpg",
+      "caption": "The confluence of the Ohio and Mississippi rivers at Cairo, Illinois",
+      "credit": "Wikimedia Commons",
+      "license": "Verify license on specific file — various aerial/satellite images of the confluence exist under open licenses"
+    },
+    "est_listen_min": 5,
+    "suggested_salience": 4
+  },
+  {
+    "id": "dd-migration-goodman",
+    "theme": "The Migration's Spine",
+    "title": "The Song That Lives Longer Than the Train",
+    "mile": 625,
+    "nearest_place": "Carbondale, Illinois",
+    "nearest_station": "Carbondale",
+    "hook": "In 1971, a young Chicago songwriter named Steve Goodman was riding this exact train north — this route, the City of New Orleans, from New Orleans to Chicago — when his wife fell asleep beside him. He pulled out a sketch pad and, in forty-five minutes, wrote what many people consider the greatest American train song ever recorded. He was twenty-three years old, had already been diagnosed with leukemia, and had maybe fifteen years left.",
+    "arc": "Goodman writes the song on the train in forty-five minutes — talks his way into performing it for Arlo Guthrie at a Chicago bar, trading a beer for one listen — Guthrie records it and it becomes a hit — Goodman dies of leukemia at thirty-six, and six months later wins a posthumous Grammy for the Willie Nelson cover, having outlasted the very train the song is about.",
+    "summary": "The train we're on almost didn't exist. By 1971, passenger rail in America was in terminal decline. The Illinois Central was running the City of New Orleans as a shadow of the Panama Limited it had replaced — a train without the prestige or the ridership of its predecessor, hemorrhaging money in an era when everyone had a car and airports were cheap. Amtrak was taking over the nation's passenger trains that year partly because railroads could no longer afford them.\n\nSteve Goodman was a twenty-three-year-old Chicago singer-songwriter with a small following in the folk clubs, a diagnosis of leukemia he'd received while in college, and a habit of writing songs quickly and precisely. He was riding the City of New Orleans north — his wife going to visit her grandmother in Chicago — when she fell asleep. He had a sketch pad. He started writing.\n\nThe song he wrote is about exactly what you can see out this window right now: the train rolling north through the Mississippi countryside, past old men playing cards in the club car, past 'the sons of Pullman porters and the sons of engineers,' past the towns and fields and rivers of a disappearing America. The song is elegiac but unsentimental. It knows this train is ending. 'Good morning, America, how are you? / Say, don't you know me, I'm your native son.'\n\nGoodman performed it for Arlo Guthrie at the Quiet Knight bar in Chicago by agreeing to play for as long as it took Guthrie to drink a beer. Guthrie recorded it. The song went to number 18 on the Billboard Hot 100 in 1972.\n\nSteve Goodman died of leukemia on September 20, 1984. He was thirty-six. Six months later, Willie Nelson's version of 'City of New Orleans' won the Grammy for Best Country Song — which was also Steve Goodman's Grammy, as the songwriter, received posthumously. He had known he was dying the whole time he was writing this music. He wrote anyway.\n\nAnd the train is still running.",
+    "sources": [
+      {
+        "title": "City of New Orleans (song) — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/City_of_New_Orleans_(song)"
+      },
+      {
+        "title": "Steve Goodman — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Steve_Goodman"
+      },
+      {
+        "title": "Steve Goodman, 'City of New Orleans' — American Songwriter",
+        "url": "https://americansongwriter.com/steve-goodman-city-new-orleans/"
+      }
+    ],
+    "image": {
+      "available": false,
+      "note": "Steve Goodman photos on Wikimedia Commons are limited; album covers are rights-restricted. A photo of the City of New Orleans train itself (the Amtrak trainset) is available on Commons under various licenses — may serve as a stand-in image."
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 5
+  },
+  {
+    "id": "dd-haunted-centralia",
+    "theme": "Haunted Ground",
+    "title": "Mine Number Five",
+    "mile": 681,
+    "nearest_place": "Centralia (Wamac), Illinois",
+    "nearest_station": "Centralia",
+    "hook": "At 3:26 p.m. on March 25, 1947, the Centralia No. 5 coal mine exploded. Of the 142 men underground, 111 never came back. The mine had been flagged for dangerous coal dust accumulation fifteen times. The inspectors had written the warnings. The owners had received them. The state and federal officials who should have forced compliance had done nothing. A hundred and eleven men died of paperwork.",
+    "arc": "Miners write desperate letters to the governor warning that the mine will explode — the letters are ignored, the warnings filed, the mine never cleaned — it blows up exactly as predicted, killing 111 men — the St. Louis Post-Dispatch wins a Pulitzer Prize for its coverage, the public outrage finally forces federal mine safety legislation, but only after another disaster in 1951.",
+    "summary": "Centralia is a coal town. The Illinois coalfields stretch across the southern part of this state — we've been riding over the buried seams for the past fifty miles — and they powered the industrial growth of the Midwest for a century. Coal mining was dangerous work everywhere in the mid-twentieth century, but some mines were more dangerous than others.\n\nCentralia No. 5 was one of those mines. The danger was coal dust: fine particles of ground coal that accumulate in mine tunnels and, in sufficient concentration, can ignite from a spark and explode with the force of a bomb. The remedy is straightforward — rock dust the tunnels to neutralize the coal dust — and the mine had been inspected repeatedly and found deficient repeatedly. Between 1942 and 1947, state and federal inspectors cited Centralia No. 5 fifteen times for dangerous coal dust conditions. The Centralia Coal Company received the reports.\n\nThe miners themselves knew. In 1946, they wrote directly to Governor Dwight Green of Illinois, a letter signed by twenty-eight miners: 'We are writing you this plea for help,' it said. They described the conditions. They asked for intervention. They begged not to be killed. The governor's office passed the letter to the Department of Mines and Minerals, which passed it to the mine operator — the company that was the subject of the complaint. Nothing changed.\n\nOn March 25, 1947, at 3:26 in the afternoon, an underburdened explosive shot ignited the accumulated coal dust. The explosion killed sixty-five men instantly. Forty-five more died of afterdamp — the lethal mixture of carbon monoxide and other gases that follows a mine explosion. Only thirty-one men escaped.\n\nThe St. Louis Post-Dispatch investigated and published. John L. Lewis of the United Mine Workers testified before Congress that the Secretary of the Interior had ignored the inspectors' warnings. The outrage was genuine and brief. No criminal charges were ever filed. No federal mine safety law passed immediately. It took another disaster — West Frankfort, Illinois, 1951, with 119 dead — before Congress finally passed the Federal Mine Safety Act in 1952.\n\nWoody Guthrie wrote a song about Centralia. The Post-Dispatch won the Pulitzer Prize for Public Service. The 111 men stayed dead.",
+    "sources": [
+      {
+        "title": "1947 Centralia mine disaster — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/1947_Centralia_mine_disaster"
+      },
+      {
+        "title": "Remembering the Centralia Mine Disaster — NPR / WBUR Here & Now",
+        "url": "https://www.wbur.org/hereandnow/2014/03/25/centralia-mine-disaster"
+      },
+      {
+        "title": "Report to Investigate the Disaster at Centralia Coal Company Mine Number 5 (1947) — Illinois State Archives",
+        "url": "https://www.ilsos.gov/departments/archives/online-exhibits/100-documents/1947-investigate-disaster-mine5.html"
+      }
+    ],
+    "image": {
+      "available": false,
+      "note": "Wikimedia Commons does not appear to have a clearly license-free image of the 1947 Centralia explosion or rescue operation. Images from the period exist in newspaper archives (St. Louis Post-Dispatch) but are rights-restricted. The Illinois State Archives may have usable public-domain materials."
+    },
+    "est_listen_min": 4,
+    "suggested_salience": 4
+  },
+  {
+    "id": "dd-silt-kankakee",
+    "theme": "Written in Silt",
+    "title": "The Kankakee Torrent: When a Glacier Emptied",
+    "mile": 841,
+    "nearest_place": "Buckley, Illinois",
+    "nearest_station": "Kankakee",
+    "hook": "Fourteen thousand five hundred years ago, a massive glacial lake in what is now Indiana found its outlet blocked by ice and began backing up. When the ice dam finally gave way, the water released in what geologists call the Kankakee Torrent — a flood so enormous it carved the modern Illinois River valley in a matter of days and deposited the deep, black, extraordinarily fertile soils that now make this the most productive agricultural corridor on Earth.",
+    "arc": "The last great ice sheet retreats north across Illinois — a blocked glacial lake breaks its ice dam and catastrophically floods the lowlands — the flood deposits the deep black till that early settlers called the Grand Prairie — and the landscape that seemed impossibly flat and impossibly fertile to nineteenth-century farmers turns out to be the legacy of a fifteen-thousand-year-old catastrophe.",
+    "summary": "The land outside the windows right now is almost shockingly flat. This is the Grand Prairie of Illinois — a vast, unbroken plain of black soil that stretches from here to the Indiana border and north toward Chicago. In the nineteenth century, settlers arriving from forested New England or the Appalachian foothills found it deeply disorienting: no trees, no hills, no visible edge to the horizon. Some turned around and went back.\n\nThe Grand Prairie is what a glacier left behind. The Laurentide Ice Sheet — the continental glacier that covered most of northern North America during the last Ice Age — advanced and retreated multiple times, the last major advance reaching roughly to this latitude around 25,000 years ago. When it finally retreated north, around 14,000 to 12,000 years ago, it left behind a landscape scraped clean of topography and covered in glacial till: a mixed deposit of clay, silt, sand, and gravel that the glacier had ground up as it moved.\n\nThe Kankakee Torrent was a specific catastrophic event within that broader retreat. A massive glacial lake — Lake Wabash — had been impounded by ice in what is now Indiana. When the ice dam failed, roughly 14,500 years ago, the lake drained catastrophically. Geologists calculate the flood was 50 to 100 times the average flow of the modern Mississippi River. It scoured the Kankakee River valley down to bedrock in places. It deposited sand in great sheets across the lowlands. It helped shape the Illinois River valley as a direct drainage channel to the Mississippi.\n\nWhat remained after the ice and the flood was soil. The glacial till, mixed with centuries of decayed prairie grass, produced the richest agricultural soil on the planet — the black loam of the Grand Prairie, which runs up to eight feet deep in places. This is why Illinois grows corn. This is why you're looking at one of the most intensively farmed landscapes on Earth. A catastrophic flood, fourteen millennia ago, is why your breakfast cereal exists.",
+    "sources": [
+      {
+        "title": "Grand Kankakee Marsh — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Grand_Kankakee_Marsh"
+      },
+      {
+        "title": "Geology of Illinois — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Geology_of_Illinois"
+      },
+      {
+        "title": "Illinois Department of Natural Resources — Geology of Illinois",
+        "url": "https://dnr.illinois.gov/content/dam/soi/en/web/dnr/education/documents/onlineintroillinoisnatres-5-6-.pdf"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/76/Grand_Prairie_Illinois.jpg",
+      "caption": "The Grand Prairie of Illinois — characteristic flat, fertile agricultural landscape",
+      "credit": "Wikimedia Commons",
+      "license": "Verify specific file license — multiple Grand Prairie landscape photos on Commons under CC or PD"
+    },
+    "est_listen_min": 3,
+    "suggested_salience": 3
+  },
+  {
+    "id": "dd-corridor-pullman",
+    "theme": "Corridor of Movement",
+    "title": "Pullman's Town: The Strike That Made Labor Day",
+    "mile": 920,
+    "nearest_place": "Pullman, Chicago",
+    "nearest_station": "Homewood",
+    "hook": "Three miles ahead, just south of central Chicago, sits the neighborhood of Pullman — the only place in America where a single company built an entire city from scratch, owned every building, employed every resident, and controlled every aspect of daily life. In 1894, the workers of Pullman went on strike, shut down nearly every railroad in the United States, and forced a confrontation between labor and capital that created Labor Day and sent the future president Eugene Debs to prison.",
+    "arc": "George Pullman builds a model company town with lovely parks and clean housing — cuts wages by 25 percent during the Depression of 1893 but refuses to lower rents — workers strike, the American Railway Union boycotts Pullman cars nationally, 125,000 railroad workers walk off the job — President Cleveland sends federal troops, breaks the strike, jails Debs, and creates Labor Day as a consolation prize.",
+    "summary": "The neighborhood ahead on our left — Pullman, on Chicago's Far South Side — looks like a Victorian-era small town that somehow landed in the middle of a big city. That's because it was exactly that. In 1880, George Pullman, the manufacturer of the sleeping cars that revolutionized long-distance rail travel, bought 4,000 acres on Lake Calumet and built an entire community from the ground up: factory, housing, churches, parks, hotel, library, market — everything his workers would need, all of it owned by the Pullman Palace Car Company.\n\nThe theory was enlightened industrial paternalism: if you control where workers live and what they spend money on, you control their morality, their productivity, and their loyalty. The Pullman company owned the water, the gas, the sewers. It owned the newspaper. It owned the church buildings, though it didn't mandate the denominations. Workers paid rent to Pullman. Workers bought food from Pullman stores. Workers lived their entire lives within a system designed by a single employer.\n\nThe Panic of 1893 shattered the logic. When orders for railroad cars collapsed, Pullman cut wages by up to 40 percent. He did not cut rents. Workers, already paying 25 percent of their wages in rent to the company they worked for, found themselves unable to make ends meet. A delegation of workers went to George Pullman to explain the arithmetic. He listened, told them he would think about it, and then fired the delegation.\n\nThe workers walked out on May 11, 1894. Eugene Debs's American Railway Union, which had organized workers across the country, called a national boycott: no union member would handle any train with a Pullman car attached. Within days, the national rail network was paralyzed. 125,000 workers on 29 railroads had walked off the job.\n\nPresident Grover Cleveland sent federal troops to Chicago over the objection of the governor of Illinois. The troops restored rail service. Debs was arrested, tried, convicted of contempt, and sentenced to six months in federal prison. He read Marx and Thoreau in his cell and emerged a Socialist.\n\nCongress, embarrassed by the optics, quickly passed a law creating Labor Day as a federal holiday — the nation's first. The consolation prize for a broken strike.\n\nWe're about to pass through what remains of Pullman. The factory is now a National Monument.",
+    "sources": [
+      {
+        "title": "Pullman Strike — Wikipedia",
+        "url": "https://en.wikipedia.org/wiki/Pullman_Strike"
+      },
+      {
+        "title": "Historic Pullman — EBSCO Research Starters",
+        "url": "https://www.ebsco.com/research-starters/history/historic-pullman"
+      },
+      {
+        "title": "The Pullman Strike — Northern Illinois University Digital Library",
+        "url": "https://digital.lib.niu.edu/illinois/gildedage/pullman"
+      },
+      {
+        "title": "Big Trouble in a Company Town: The Pullman Strike — Teaching American History",
+        "url": "https://teachingamericanhistory.org/big-trouble-in-a-company-town-the-pullman-strike/"
+      }
+    ],
+    "image": {
+      "available": true,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Pullman_Strike_Ills.jpg",
+      "caption": "Federal troops arriving in Chicago during the Pullman Strike of 1894",
+      "credit": "Harper's Weekly / Wikimedia Commons",
+      "license": "Public domain (published 1894)"
+    },
+    "est_listen_min": 5,
+    "suggested_salience": 5
+  }
+]
