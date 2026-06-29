@@ -85,6 +85,52 @@
     const target = event.target as HTMLInputElement;
     appState.settings.highlightOnly = target.checked;
   }
+
+  // ── DEV: Simulate trip ────────────────────────────────────────────────────
+  import { TripSimulator, SIM_SPEED_OPTIONS } from '$lib/dev/tripSimulator';
+  import type { SimSpeed } from '$lib/dev/tripSimulator';
+  import { devState } from '$lib/dev/devState';
+
+  // Local Svelte-reactive state for the UI
+  let simRunning = $state(false);
+  let simSpeed = $state<SimSpeed>(1);
+  // Current simulator instance (lazy-created when bundle is available)
+  let _localSim: TripSimulator | null = null;
+
+  function getOrCreateSim(): TripSimulator | null {
+    if (!appState.bundle) return null;
+    if (!_localSim) {
+      _localSim = new TripSimulator(appState.bundle);
+      devState.setSimulator(_localSim);
+    }
+    return _localSim;
+  }
+
+  function onSimToggle(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const sim = getOrCreateSim();
+    if (!sim) return;
+    if (target.checked) {
+      sim.start(simSpeed);
+      simRunning = true;
+    } else {
+      sim.stop();
+      simRunning = false;
+    }
+    // Notify layout tick via devState (it checks sim.running itself)
+  }
+
+  function onSimSpeedChange(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    simSpeed = parseFloat(target.value) as SimSpeed;
+    if (simRunning && _localSim) {
+      // Restart at new speed from current position
+      _localSim.stop();
+      _localSim.start(simSpeed);
+    }
+  }
+  // ── end DEV ───────────────────────────────────────────────────────────────
+
 </script>
 
 <div class="settings-view">
@@ -214,6 +260,54 @@
       {/each}
     </div>
   </section>
+  <!-- DEV: Developer section — remove before shipping to App Store -->
+  <section class="settings-section settings-section--dev">
+    <h2 class="settings-section__heading">Developer</h2>
+    <p class="settings-description settings-description--dev">
+      DEV-ONLY: On-device couch testing tools. Not visible in production.
+    </p>
+
+    <!-- Simulate trip toggle -->
+    <div class="settings-row" style="gap: 12px;">
+      <label class="settings-toggle-label">
+        <input
+          type="checkbox"
+          checked={simRunning}
+          onchange={onSimToggle}
+          disabled={!appState.bundle}
+          role="switch"
+          aria-checked={simRunning}
+          aria-label="Simulate trip along leg 58"
+        />
+        <span>
+          Simulate trip
+          {#if !appState.bundle}
+            <em style="color:#aaa;font-weight:400;">(load a bundle first)</em>
+          {/if}
+        </span>
+      </label>
+
+      <!-- Speed control -->
+      {#if simRunning}
+        <div class="settings-row" style="gap: 6px;">
+          <label class="settings-label" for="sim-speed">Speed</label>
+          <select
+            id="sim-speed"
+            class="settings-select"
+            value={simSpeed}
+            onchange={onSimSpeedChange}
+            aria-label="Simulation speed multiplier"
+          >
+            {#each SIM_SPEED_OPTIONS as spd}
+              <option value={spd}>{spd}x</option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+    </div>
+  </section>
+  <!-- end DEV -->
+
 </div>
 
 <style>
@@ -380,4 +474,19 @@
     font-size: 1.125rem;
     margin-left: 12px;
   }
+
+  /* DEV: Developer section styles */
+  .settings-section--dev {
+    border: 1.5px dashed #f59e0b;
+    border-radius: 12px;
+    padding: 14px 14px 6px;
+    background: #fffbeb;
+  }
+
+  .settings-description--dev {
+    color: #b45309;
+    font-style: italic;
+  }
+  /* end DEV */
+
 </style>

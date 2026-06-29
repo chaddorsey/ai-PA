@@ -10,6 +10,9 @@
   import type { BackgroundLocationFix } from '$lib/native/plugins';
   import { PositionService, Eta } from 'companion-core';
   import type { Station, Polyline } from 'companion-core';
+  // DEV: trip simulator wiring
+  import { devState } from '$lib/dev/devState';
+  // end DEV
 
   let { children } = $props();
 
@@ -71,6 +74,27 @@
 
     // 2-second tick: dead-reckoning + scheduler updates + approach cue checks
     tickInterval = setInterval(() => {
+      // DEV: if a trip simulator is active, use its step() instead of positionService.tick()
+      const simActive = devState.getSimulator();
+      if (simActive) {
+        const pos = simActive.step(Date.now());
+        appState.position = pos;
+        // Approach cue still fires during simulation
+        if (appState.bundle && eta) {
+          const result = approachCue.check(pos, eta, appState.bundle.stations);
+          if (result !== null) {
+            activeStationCode = result.station.code;
+          }
+        }
+        const nextStation = getNextStation();
+        void LiveActivity.update({
+          nowPlaying: appState.nowPlaying?.place ?? null,
+          nextStop: nextStation?.name ?? null,
+          positionText: `mi ${pos.mile.toFixed(1)} [SIM]`,
+        });
+        return;
+      }
+      // end DEV
       if (!positionService) return;
       const pos = positionService.tick(Date.now());
       if (!pos) return;
