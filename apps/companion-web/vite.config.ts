@@ -32,7 +32,7 @@ export default defineConfig(({ mode }) => {
         { find: /^\$lib\/(.*)/, replacement: path.resolve('./src/lib/$1') },
         {
           find: 'companion-core',
-          replacement: '/Volumes/main-drive/ai-PA/packages/companion-core/src/index.ts',
+          replacement: path.resolve('../../packages/companion-core/src/index.ts'),
         },
         {
           find: '$app/navigation',

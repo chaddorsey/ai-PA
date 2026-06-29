@@ -9,7 +9,7 @@ const config = {
       fallback: 'index.html',
     }),
     alias: {
-      'companion-core': '/Volumes/main-drive/ai-PA/packages/companion-core/src/index.ts',
+        'companion-core': '../../packages/companion-core/src/index.ts',
     },
   },
 };

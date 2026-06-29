@@ -39,7 +39,7 @@ import { loadBundle } from 'companion-core';
 import { BundleStore } from '$lib/native/plugins';
 
 // Load the real proxy bundle as fixture
-import proxyBundle from '/Volumes/main-drive/ai-PA/tools/amtrak-position-engine/bundles/leg58/bundle.json' with { type: 'json' };
+import proxyBundle from '../../../../../tools/amtrak-position-engine/bundles/leg58/bundle.json' with { type: 'json' };
 
 describe('initBundle', () => {
   beforeEach(() => {

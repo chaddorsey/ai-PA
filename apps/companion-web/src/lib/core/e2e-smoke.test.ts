@@ -40,7 +40,7 @@ vi.mock('$lib/native/plugins', () => ({
 
 // ── Real proxy bundle (no network, direct JSON import) ───────────────────────
 
-import bundleJson from '/Volumes/main-drive/ai-PA/tools/amtrak-position-engine/bundles/leg58/bundle.json' with { type: 'json' };
+import bundleJson from '../../../../../tools/amtrak-position-engine/bundles/leg58/bundle.json' with { type: 'json' };
 
 // ── Test suite ───────────────────────────────────────────────────────────────
 

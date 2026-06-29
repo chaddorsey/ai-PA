@@ -104,7 +104,7 @@
         max="1"
         step="0.05"
         value={appState.settings.fillPct}
-        on:input={onFillInput}
+        oninput={onFillInput}
         class="settings-slider"
         aria-label="Content fill percentage"
       />
@@ -125,7 +125,7 @@
         id="audio-mode"
         class="settings-select"
         value={appState.settings.audioMode}
-        on:change={onAudioModeChange}
+        onchange={onAudioModeChange}
         aria-label="Audio session mode"
       >
         <option value="interrupt-spoken">Duck music · pause podcasts (recommended)</option>
@@ -147,7 +147,7 @@
           <input
             type="checkbox"
             checked={appState.settings.themes.has(theme)}
-            on:change={(e) => onThemeChange(theme, e)}
+            onchange={(e) => onThemeChange(theme, e)}
             aria-label="Emphasize {theme} content"
           />
           <span>{theme.charAt(0).toUpperCase() + theme.slice(1)}</span>
@@ -163,7 +163,7 @@
       <input
         type="checkbox"
         checked={appState.settings.highlightOnly}
-        on:change={onHighlightOnlyChange}
+        onchange={onHighlightOnlyChange}
         role="switch"
         aria-checked={appState.settings.highlightOnly}
         aria-label="Only play highest-salience content"
@@ -200,7 +200,7 @@
           {#if !downloaded && status !== 'downloading'}
             <button
               class="settings-download-btn"
-              on:click={() => downloadLeg(leg.id)}
+              onclick={() => downloadLeg(leg.id)}
               aria-label="Download {leg.label}"
             >
               Download

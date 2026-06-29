@@ -3,7 +3,7 @@ import { PlaybackOrchestrator } from './PlaybackOrchestrator';
 import type { Unit, Position, Bundle } from 'companion-core';
 
 // Load real proxy bundle as fixture
-import proxyBundle from '/Volumes/main-drive/ai-PA/tools/amtrak-position-engine/bundles/leg58/bundle.json' with { type: 'json' };
+import proxyBundle from '../../../../../tools/amtrak-position-engine/bundles/leg58/bundle.json' with { type: 'json' };
 
 // Mock appState
 vi.mock('./AppState.svelte', () => {
