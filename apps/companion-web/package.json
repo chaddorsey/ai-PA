@@ -23,8 +23,10 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "@types/suncalc": "^1.9.2",
     "companion-core": "file:../../packages/companion-core",
     "maplibre-gl": "^4.0.0",
-    "pmtiles": "^3.0.0"
+    "pmtiles": "^3.0.0",
+    "suncalc": "^2.0.0"
   }
 }
