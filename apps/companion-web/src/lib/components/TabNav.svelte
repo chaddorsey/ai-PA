@@ -6,6 +6,7 @@
     { label: 'Trip', icon: '🗺', href: '/' },
     { label: 'Companion', icon: '🎧', href: '/companion' },
     { label: 'Saved', icon: '★', href: '/saved' },
+    { label: 'Stories', icon: '📖', href: '/stories' },
     { label: 'Settings', icon: '⚙', href: '/settings' },
   ] as const;
 

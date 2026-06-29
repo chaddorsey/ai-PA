@@ -1,4 +1,4 @@
-import type { Bundle, Unit, Position } from 'companion-core';
+import type { Bundle, Unit, Position, DeepDive } from 'companion-core';
 import { Favorites, InMemoryAdapter } from 'companion-core';
 
 export interface Settings {
@@ -6,6 +6,8 @@ export interface Settings {
   themes: Set<string>;       // empty = all themes
   highlightOnly: boolean;    // only salience >= 4
   audioMode: 'duck' | 'pause' | 'interrupt-spoken';  // default 'interrupt-spoken'
+  /** Controls how featured deep-dive stories are surfaced. Default: 'offer'. */
+  featuredStories: 'offer' | 'auto' | 'off';
 }
 
 // ── createAppState ─────────────────────────────────────────────────────────────
@@ -17,11 +19,13 @@ export function createAppState() {
   let bundle = $state<Bundle | null>(null);
   let position = $state<Position | null>(null);
   let nowPlaying = $state<Unit | null>(null);
+  let pendingDeepDive = $state<DeepDive | null>(null);
   const settings = $state<Settings>({
     fillPct: 0.6,
     themes: new Set<string>(),
     highlightOnly: false,
     audioMode: 'interrupt-spoken',
+    featuredStories: 'offer',
   });
   // favorites is not reactive via $state — it is an object with methods.
   // Components don't read it directly in templates; it is used imperatively.
@@ -36,6 +40,10 @@ export function createAppState() {
 
     get nowPlaying() { return nowPlaying; },
     set nowPlaying(v: Unit | null) { nowPlaying = v; },
+
+    /** Pending deep-dive offer — set by DeepDiveDirector; cleared on dismiss or auto-play. */
+    get pendingDeepDive() { return pendingDeepDive; },
+    set pendingDeepDive(v: DeepDive | null) { pendingDeepDive = v; },
 
     // settings is a reactive object; mutations to its fields are tracked
     get settings() { return settings; },

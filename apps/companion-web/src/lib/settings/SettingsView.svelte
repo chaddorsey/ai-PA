@@ -92,6 +92,13 @@
     appState.settings.highlightOnly = target.checked;
   }
 
+  // ── Featured stories mode ───────────────────────────────────────────────────
+
+  function onFeaturedStoriesChange(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    appState.settings.featuredStories = target.value as 'offer' | 'auto' | 'off';
+  }
+
   // ── DEV: Simulate trip ────────────────────────────────────────────────────
   import { TripSimulator, SIM_SPEED_OPTIONS } from '$lib/dev/tripSimulator';
   import type { SimSpeed } from '$lib/dev/tripSimulator';
@@ -208,6 +215,30 @@
       />
       <span>Only play salience ≥ 4 units (unmissable highlights)</span>
     </label>
+  </section>
+
+  <!-- Featured Stories -->
+  <section class="settings-section">
+    <h2 class="settings-section__heading">Featured Stories</h2>
+    <p class="settings-description">
+      Extended narratives (~4 min) that appear as you approach notable places. All are always readable in the Stories tab.
+    </p>
+    <div class="settings-row">
+      <label class="settings-label" for="featured-stories">
+        When a story becomes available:
+      </label>
+      <select
+        id="featured-stories"
+        class="settings-select"
+        value={appState.settings.featuredStories}
+        onchange={onFeaturedStoriesChange}
+        aria-label="Featured stories mode"
+      >
+        <option value="offer">Offer (recommended) — banner with Listen / Read / Later</option>
+        <option value="auto">Auto-play — plays narration in next gap</option>
+        <option value="off">Off — no offers; browse anytime in Stories tab</option>
+      </select>
+    </div>
   </section>
 
   <!-- Offline Bundles / Download Manager -->

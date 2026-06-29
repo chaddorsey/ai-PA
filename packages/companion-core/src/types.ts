@@ -104,6 +104,8 @@ export interface Bundle {
   position_table: PositionTableRow[];
   /** Per-station ETA ensemble (trip-actual only; may be absent/empty for generic). */
   eta_table: EtaTableRow[];
+  /** Optional featured deep-dive stories for this leg. */
+  deepdives?: DeepDive[];
 }
 
 // ── Projection types ──────────────────────────────────────────────────────────
@@ -194,6 +196,48 @@ export interface StorageAdapter {
   loadById(id: string): Promise<Favorite | null>;
   update(id: string, patch: Partial<Favorite>): Promise<void>;
   delete(id: string): Promise<void>;
+}
+
+// ── Deep-dive featured stories ────────────────────────────────────────────────
+
+export interface DeepDiveImage {
+  url: string;
+  caption: string;
+  credit: string;
+  license: string;
+}
+
+export interface DeepDiveSource {
+  title: string;
+  url: string;
+}
+
+/**
+ * An extended featured story (~3–5 min) that rides alongside the position-driven
+ * narration as a separate, opt-in layer. Available to Read (body_md) or Listen
+ * (audio, when rendered).
+ */
+export interface DeepDive {
+  id: string;
+  theme: string;
+  title: string;
+  /** Placement mile along the route. */
+  mile: number;
+  /** Mile at which the story becomes "available" (typically mile - 8). */
+  trigger_mile: number;
+  nearest_place: string;
+  /** 1–2 sentence teaser shown on the offer banner and card header. */
+  hook: string;
+  /** Formatted markdown — the READ version. */
+  body_md: string;
+  /** The spoken version (may differ slightly from body_md). */
+  narration_text: string;
+  est_listen_min: number;
+  /** Rendered audio path; null until rendered (offer still shows "Read"). */
+  audio: string | null;
+  images: DeepDiveImage[];
+  sources: DeepDiveSource[];
+  salience: number;
 }
 
 // ── Dive grounding (type-only; impl Phase 2) ──────────────────────────────────

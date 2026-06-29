@@ -28358,5 +28358,55 @@
       "p50_min": 1165,
       "p90_min": 1268
     }
+  ],
+  "deepdives": [
+    {
+      "id": "dd-casey-jones",
+      "theme": "Corridor of Movement",
+      "title": "The Wreck of Casey Jones",
+      "mile": 200,
+      "trigger_mile": 192,
+      "nearest_place": "Vaughan, MS",
+      "hook": "On a foggy April morning in 1900, engineer John Luther Jones held his throttle wide open\u2014heading into a stopped freight train and into legend.",
+      "body_md": "## The Wreck of Casey Jones\n\nOn April 30, 1900, Illinois Central engineer John Luther Jones\u2014known as Casey\u2014was running late on his fast mail train, No. 1, between Memphis and Canton, Mississippi. Pushing hard through the night to make up time, he roared south through the Mississippi Delta at speeds approaching 100 miles per hour.\n\nNear Vaughan, a stopped freight train blocked the main track. Casey's fireman, Sim Webb, leaped to safety as Casey held the throttle open and reached for the brake\u2014reducing what would have been a catastrophic collision to a survivable one for his passengers. Casey died at the controls. Webb survived to tell the story.\n\nWithin a year, railroad songs were circulating across the South, and Casey Jones became American folklore. The story is part accident report, part labor ballad, and part meditation on the contradiction at the heart of the railroad age: speed as heroism, speed as death.\n\n*(Draft placeholder \u2014 full story pending review.)*",
+      "narration_text": "On a foggy April morning in 1900, Illinois Central engineer Casey Jones was running late and pushing hard through the Mississippi Delta. Near Vaughan, a stopped freight train blocked his path. He held the brake and the throttle both, giving his passengers their lives at the cost of his own. Within a year, the songs had started. Casey Jones had become American folklore.",
+      "est_listen_min": 4,
+      "audio": null,
+      "images": [],
+      "sources": [],
+      "salience": 4
+    },
+    {
+      "id": "dd-great-flood-1927",
+      "theme": "Written in Silt",
+      "title": "The Great Flood of 1927",
+      "mile": 350,
+      "trigger_mile": 342,
+      "nearest_place": "Greenville, MS",
+      "hook": "In the spring of 1927, the Mississippi River burst its banks with a force that reshaped the Delta and the nation\u2014and revealed who the levees were really built to protect.",
+      "body_md": "## The Great Flood of 1927\n\nBy April 1927, the Mississippi River had been rising for months. What followed was the greatest peacetime disaster in American history to that point: a flood that inundated 27,000 square miles across seven states, displaced nearly a million people, and exposed the brutal logic of who the South's flood-control system was designed to serve.\n\nIn the Delta, Black sharecroppers were conscripted at gunpoint to sandbag levees. When Greenville's levee held while others broke, Black residents were refused evacuation and instead forced to remain and guard the cotton. The flood revealed that the elaborate infrastructure of levees and drainage had been built not simply against the river, but to keep the Delta's Black labor force in place and its white planter class in control.\n\nThe disaster produced a massive federal response\u2014and the first serious federal flood-insurance program\u2014but the unequal treatment of Black flood victims received little attention in the national press. Blues musicians from the Delta, however, remembered. Memphis Minnie's \"When the Levee Breaks\" wasn't about engineering. It was about betrayal.\n\n*(Draft placeholder \u2014 full story pending review.)*",
+      "narration_text": "In the spring of 1927, the Mississippi River broke its banks in the greatest peacetime disaster the country had seen. The Delta flooded. And the flood revealed who the levees had really been built for. Black sharecroppers were conscripted to sandbag and then refused evacuation. Blues musicians remembered what the newspapers would not print. Memphis Minnie's 'When the Levee Breaks' wasn't about engineering\u2014it was about betrayal.",
+      "est_listen_min": 4,
+      "audio": null,
+      "images": [],
+      "sources": [],
+      "salience": 4
+    },
+    {
+      "id": "dd-train-in-the-song",
+      "theme": "The Migration's Spine",
+      "title": "The Train in the Song",
+      "mile": 600,
+      "trigger_mile": 592,
+      "nearest_place": "Cairo, IL",
+      "hook": "For a generation of Black Southerners, the Illinois Central Railroad wasn't just transportation\u2014it was the corridor of the Great Migration, the spine along which an entire culture moved north.",
+      "body_md": "## The Train in the Song\n\nThe Illinois Central's City of New Orleans route\u2014the line you're traveling now\u2014runs almost exactly along the path of the Great Migration. From New Orleans through the Delta, past Memphis and Cairo, into Chicago's South Side: this was the route that carried between 1910 and 1970 hundreds of thousands of Black Southerners out of the Jim Crow South toward a different future.\n\nThe migration remade American culture. Chicago's South Side became a center of blues, jazz, and gospel. The Illinois Central wasn't a neutral carrier\u2014it was the physical mechanism by which a culture relocated itself under duress, by which families were reunited and separated, by which the music of the Delta became the music of the urban North.\n\nBy the time Arlo Guthrie wrote \"City of New Orleans\" in 1971\u2014and especially after Steve Goodman's mournful, elegiac rendering\u2014the train had already become a symbol of something passing. But the song arrived late. For the people who rode this route in the 1920s, 30s, and 40s, the Illinois Central wasn't a nostalgic image. It was a lifeline.\n\n*(Draft placeholder \u2014 full story pending review.)*",
+      "narration_text": "The route you're traveling now runs almost exactly along the spine of the Great Migration. Between 1910 and 1970, hundreds of thousands of Black Southerners rode this corridor north\u2014out of the Delta, through Memphis, past Cairo, into Chicago. The Illinois Central wasn't a neutral carrier. It was the mechanism by which a culture moved itself. By the time the song 'City of New Orleans' made the train famous, the people who needed it most had already ridden it into a different world.",
+      "est_listen_min": 4,
+      "audio": null,
+      "images": [],
+      "sources": [],
+      "salience": 4
+    }
   ]
 }

@@ -34,6 +34,10 @@ export type {
   StorageAdapter,
   // Dive grounding (type-only)
   DiveGrounding,
+  // Deep-dive featured stories
+  DeepDive,
+  DeepDiveImage,
+  DeepDiveSource,
 } from './types.js';
 
 export { loadBundle, validateBundle } from './bundle.js';

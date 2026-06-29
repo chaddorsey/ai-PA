@@ -11,6 +11,8 @@
   import { PositionService, Eta, Scheduler } from 'companion-core';
   import type { Station, Polyline } from 'companion-core';
   import { initOrchestrator, getOrchestrator } from '$lib/core/PlaybackOrchestrator';
+  import DeepDiveOffer from '$lib/deepdive/DeepDiveOffer.svelte';
+  import { getDeepDiveDirector } from '$lib/deepdive/DeepDiveDirector';
   // DEV: trip simulator wiring
   import { devState } from '$lib/dev/devState';
   // end DEV
@@ -95,6 +97,7 @@
         const pos = sim.step(Date.now());
         appState.position = pos;
         void getOrchestrator()?.update(pos);
+        getDeepDiveDirector().update(pos);
         // Approach cue still fires during simulation
         if (appState.bundle && eta) {
           const result = approachCue.check(pos, eta, appState.bundle.stations);
@@ -117,6 +120,7 @@
 
       appState.position = pos;
       void getOrchestrator()?.update(pos);
+      getDeepDiveDirector().update(pos);
 
       // Proactive approach cue: fires once per station per trip lifecycle
       if (appState.bundle && eta) {
@@ -179,6 +183,14 @@
 <div class="layout-shell">
   <!-- Persistent NowBar above the page content on all routes -->
   <NowBar />
+
+  <!-- Deep-dive offer banner: shown when a story is available and not yet seen -->
+  {#if appState.pendingDeepDive}
+    <DeepDiveOffer
+      deepdive={appState.pendingDeepDive}
+      onDismiss={() => { appState.pendingDeepDive = null; }}
+    />
+  {/if}
 
   <!-- Page slot -->
   <main class="layout-main" id="main-content">
