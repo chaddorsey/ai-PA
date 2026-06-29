@@ -217,6 +217,14 @@ export interface DeepDiveSource {
  * narration as a separate, opt-in layer. Available to Read (body_md) or Listen
  * (audio, when rendered).
  */
+export interface DeepDiveAudioAsset {
+  type: 'song' | 'speech' | 'field-recording';
+  desc: string;
+  suggested_source: string;
+  insert_after_excerpt: string;
+  licensing: string;
+}
+
 export interface DeepDive {
   id: string;
   theme: string;
@@ -238,6 +246,10 @@ export interface DeepDive {
   images: DeepDiveImage[];
   sources: DeepDiveSource[];
   salience: number;
+  /** Notes about image licensing status or sourcing needs. */
+  image_note?: string;
+  /** Suggested audio assets that would enhance the spoken version. */
+  audio_assets?: DeepDiveAudioAsset[];
 }
 
 // ── Dive grounding (type-only; impl Phase 2) ──────────────────────────────────
