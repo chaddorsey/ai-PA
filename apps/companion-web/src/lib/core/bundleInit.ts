@@ -29,6 +29,16 @@ export async function initBundle(legId: string): Promise<BundleInitResult> {
   if (DEV_EMBEDDED_BUNDLE && legId === DEV_EMBEDDED_LEG_ID) {
     const dev = await loadEmbeddedBundle();
     if (dev.status === 'loaded') return dev;
+    // Embedded fetch failed. Only fall through to BundleStore if a real bundle is
+    // actually downloaded for this leg; otherwise surface the embedded error
+    // (so a device fetch failure is visible, not hidden as "first-run").
+    let downloaded: string[] = [];
+    try {
+      downloaded = await BundleStore.list();
+    } catch {
+      downloaded = [];
+    }
+    if (!downloaded.includes(legId)) return dev;
   }
   try {
     let available: string[] = [];
