@@ -129,7 +129,7 @@ export interface Position {
   mile: number;
   lat: number;
   lon: number;
-  source: 'live' | 'gps' | 'deadreckon' | 'predicted';
+  source: 'live' | 'gps' | 'deadreckon' | 'predicted' | 'off-route';
   direction: 1 | -1;
   leg: string;
   stopped: boolean;

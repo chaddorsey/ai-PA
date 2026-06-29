@@ -38,3 +38,4 @@ export type {
 
 export { loadBundle, validateBundle } from './bundle.js';
 export { milepostToLatLon, projectToLeg } from './projection.js';
+export { PositionService } from './position-service.js';
