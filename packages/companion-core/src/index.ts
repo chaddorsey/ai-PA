@@ -37,3 +37,4 @@ export type {
 } from './types.js';
 
 export { loadBundle, validateBundle } from './bundle.js';
+export { milepostToLatLon, projectToLeg } from './projection.js';
