@@ -70,10 +70,11 @@ describe('NowBar', () => {
     expect(screen.getByText(/Rocky Mountain Arsenal/i)).toBeTruthy();
   });
 
-  it('shows "Unknown location" for a unit with null place', async () => {
-    appState.nowPlaying = { ...MOCK_UNIT, place: null };
+  it('shows the theme label for a unit with null place (not "Unknown location")', async () => {
+    appState.nowPlaying = { ...MOCK_UNIT, place: null, theme: 'history' };
     render(NowBar);
-    expect(screen.getByText(/Unknown location/i)).toBeTruthy();
+    expect(screen.getByText(/History/)).toBeTruthy();
+    expect(screen.queryByText(/Unknown location/i)).toBeNull();
   });
 
   it('star and pause buttons are NOT rendered when nowPlaying is null', () => {
