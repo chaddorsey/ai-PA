@@ -26,10 +26,11 @@
   "dependencies": {
     "@capacitor/core": "^8.4.1",
     "@types/suncalc": "^1.9.2",
+    "capacitor-audio-session": "file:../../packages/capacitor-audio-session",
     "companion-core": "file:../../packages/companion-core",
     "maplibre-gl": "^4.0.0",
     "pmtiles": "^3.0.0",
-    "suncalc": "^2.0.0",
-    "capacitor-audio-session": "file:../../packages/capacitor-audio-session"
+    "protomaps-themes-base": "^4.5.0",
+    "suncalc": "^2.0.0"
   }
 }

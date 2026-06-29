@@ -18,6 +18,7 @@
   import maplibregl from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
   import { Protocol } from 'pmtiles';
+  import { layers as pmThemeLayers, namedTheme as pmNamedTheme } from 'protomaps-themes-base';
   import PositionLayer from './PositionLayer.svelte';
   import StationPins from './StationPins.svelte';
   import { appState } from '$lib/core/AppState.svelte';
@@ -94,37 +95,28 @@
       ? [initialBundle.geometry.coordinates[0][0], initialBundle.geometry.coordinates[0][1]]
       : [-90.07829, 29.94609]; // NOL fallback
 
-    // Guard PMTiles source: only include it when a real corridor tile file is
-    // available (non-empty path). When absent, the map degrades gracefully to
-    // the background fill + route polyline + station pins + position marker.
-    // In production, replace CORRIDOR_PMTILES_PATH with the native bundle path.
-    const CORRIDOR_PMTILES_PATH = ''; // Set to 'pmtiles:///path/to/corridor.pmtiles' when available
-
-    const pmTilesSources: Record<string, maplibregl.SourceSpecification> = CORRIDOR_PMTILES_PATH
-      ? {
-          'corridor-tiles': {
-            type: 'vector',
-            url: CORRIDOR_PMTILES_PATH,
-          },
-        }
-      : {};
+    // Basemap: Protomaps v4 vector tiles + the protomaps-themes-base "light" theme.
+    // DEV reads the global build REMOTELY via HTTP range requests (real streets, no
+    // multi-hundred-MB download). For on-train OFFLINE, swap BASEMAP_URL to a local
+    // corridor extract, e.g. 'pmtiles:///bundles/basemap/corridor.pmtiles', produced by:
+    //   go-pmtiles extract https://build.protomaps.com/<date>.pmtiles corridor.pmtiles \
+    //     --bbox=-90.81,29.65,-87.29,42.18 --maxzoom=14
+    const BASEMAP_URL = 'pmtiles:///basemap/corridor.pmtiles';
 
     map = new maplibregl.Map({
       container: mapContainer,
       style: {
         version: 8,
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-        sources: pmTilesSources,
-        layers: [
-          // Fallback background: renders a muted color when no PMTiles basemap
-          // is available so users see a colored canvas + route line instead of
-          // a blank white box.
-          {
-            id: 'background',
-            type: 'background',
-            paint: { 'background-color': '#d4c9b8' },
+        glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+        sprite: 'https://protomaps.github.io/basemaps-assets/sprites/v4/light',
+        sources: {
+          protomaps: {
+            type: 'vector',
+            url: BASEMAP_URL,
+            attribution: '© OpenStreetMap',
           },
-        ],
+        },
+        layers: pmThemeLayers('protomaps', pmNamedTheme('light')) as maplibregl.LayerSpecification[],
       },
       center: defaultCenter,
       zoom: 7,
