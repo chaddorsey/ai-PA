@@ -23,6 +23,18 @@ export default defineConfig(({ mode }) => {
           ]
         : [sveltekit()]),
     ],
+    resolve: {
+      alias: {
+        // Resolve the local capacitor-audio-session package to its TypeScript source
+        // so Vite can tree-shake and bundle it directly (no separate dist/ build step).
+        'capacitor-audio-session': path.resolve('../../packages/capacitor-audio-session/src/index.ts'),
+      },
+    },
+    ssr: {
+      // @capacitor/core is browser-only; mark it external for the SSR bundle.
+      // Capacitor plugins are only invoked client-side, so this is safe.
+      external: ['@capacitor/core'],
+    },
     test: {
       environment: 'jsdom',
       include: ['src/**/*.test.ts'],
@@ -33,6 +45,10 @@ export default defineConfig(({ mode }) => {
         {
           find: 'companion-core',
           replacement: path.resolve('../../packages/companion-core/src/index.ts'),
+        },
+        {
+          find: 'capacitor-audio-session',
+          replacement: path.resolve('../../packages/capacitor-audio-session/src/index.ts'),
         },
         {
           find: '$app/navigation',

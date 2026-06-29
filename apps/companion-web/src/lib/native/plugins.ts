@@ -1,8 +1,8 @@
 /**
  * Native plugin interfaces and web stubs.
- * On device, Capacitor registerPlugin() bridges JS → native (iOS plugins in
- * apps/companion-native/ios-plugins/). In the browser/test environment the web
- * fallback objects (identical to the former stubs) are used instead, so no
+ * On device, Capacitor registerPlugin() bridges JS → native (iOS plugin provided by
+ * packages/capacitor-audio-session). In the browser/test environment the web
+ * fallback (HTML5 Audio via AudioSessionWeb) is used instead, so no
  * caller changes are needed and vitest continues to work as-is.
  *
  * NATIVE ARG KEYS are kept internal to this file — callers use the same
@@ -10,6 +10,7 @@
  */
 
 import { registerPlugin } from '@capacitor/core';
+import { AudioSession as _PackageAudioSession } from 'capacitor-audio-session';
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -50,18 +51,6 @@ export interface BundleStorePlugin {
 
 // ── Native Capacitor interfaces (single options-object per Capacitor convention) ─
 
-interface NativeAudioSession {
-  setMode(opts: { mode: string }): Promise<void>;
-  play(opts: { fileUri: string }): Promise<void>;
-  pause(): Promise<void>;
-  resume(): Promise<void>;
-  setRate(opts: { rate: number }): Promise<void>;
-  addListener(
-    event: string,
-    cb: (data: Record<string, unknown>) => void
-  ): Promise<{ remove(): void }>;
-}
-
 interface NativeBackgroundLocation {
   startWatch(): Promise<{ handle: string }>;
   clearWatch(): Promise<void>;
@@ -88,18 +77,7 @@ interface NativeBundleStore {
   list(): Promise<{ legs: string[] }>;
 }
 
-// ── Web fallbacks (identical to former stubs) ─────────────────────────────────
-
-const audioSessionWebFallback: NativeAudioSession = {
-  async setMode(_opts) {},
-  async play(_opts) {},
-  async pause() {},
-  async resume() {},
-  async setRate(_opts) {},
-  async addListener(_event, _cb) {
-    return { remove() {} };
-  },
-};
+// ── Web fallbacks ─────────────────────────────────────────────────────────────
 
 const backgroundLocationWebFallback: NativeBackgroundLocation = {
   async startWatch() {
@@ -128,10 +106,6 @@ const bundleStoreWebFallback: NativeBundleStore = {
 
 // ── Registered Capacitor plugins ──────────────────────────────────────────────
 
-const _AudioSession = registerPlugin<NativeAudioSession>('AudioSession', {
-  web: () => audioSessionWebFallback,
-});
-
 const _BackgroundLocation = registerPlugin<NativeBackgroundLocation>('BackgroundLocation', {
   web: () => backgroundLocationWebFallback,
 });
@@ -144,84 +118,62 @@ const _BundleStore = registerPlugin<NativeBundleStore>('BundleStore', {
   web: () => bundleStoreWebFallback,
 });
 
-// ── Public facades — same interface as before, internally adapts to native ────
+// ── Public facades — same positional interface as before ──────────────────────
 
-// ── AudioSession: HTML5 playback in the WebView ───────────────────────────────
-// The native AudioSession plugin does not register as a loose in-app plugin on
-// Capacitor 8 (UNIMPLEMENTED on device), so foreground audio plays via an HTML5
-// Audio element (works in the WebView + browser). `setMode` still attempts the
-// native session best-effort (for future background/ducking). iOS blocks
-// programmatic playback until a user gesture; we prime/unlock on the first tap.
-let _audioEl: HTMLAudioElement | null = null;
+// ── AudioSession: backed by capacitor-audio-session package ──────────────────
+// On native (iOS): the package registers CapacitorAudioSession Pod, which
+// invokes AVAudioSession / AVAudioPlayer natively (background + ducking).
+// In the browser / vitest: the package's AudioSessionWeb fallback uses
+// HTML5 Audio, satisfying Safari's gesture-unlock requirement automatically.
+//
+// The public facade keeps the same positional call signatures callers expect;
+// internally it adapts to the package's options-object API.
+
+// Keep track of 'ended' listeners separately so the synchronous addListener
+// facade works: the package's addListener returns Promise, but callers
+// expect a synchronous { remove() } back.
 const _endedListeners = new Set<() => void>();
-let _audioUnlocked = false;
-
-function _getAudioEl(): HTMLAudioElement | null {
-  if (typeof Audio === 'undefined') return null;
-  if (!_audioEl) {
-    _audioEl = new Audio();
-    _audioEl.addEventListener('ended', () => _endedListeners.forEach((cb) => cb()));
-    if (typeof document !== 'undefined') {
-      const unlock = () => {
-        _audioUnlocked = true;
-        // A gesture-initiated play() unlocks the element for later programmatic plays.
-        _audioEl?.play().then(() => _audioEl?.pause()).catch(() => {});
-        document.removeEventListener('touchend', unlock);
-        document.removeEventListener('click', unlock);
-      };
-      document.addEventListener('touchend', unlock);
-      document.addEventListener('click', unlock);
-    }
-  }
-  return _audioEl;
-}
 
 export const AudioSession: AudioSessionPlugin = {
   async setMode(mode) {
-    // Best-effort native session control; no-op when the native plugin is absent.
-    try {
-      await _AudioSession.setMode({ mode });
-    } catch {
-      /* native AudioSession unavailable (dev) */
-    }
+    return _PackageAudioSession.setMode({ mode });
   },
   async play(fileUri) {
-    const el = _getAudioEl();
-    if (!el) return;
-    try {
-      el.src = fileUri;
-      el.currentTime = 0;
-      await el.play();
-    } catch (e) {
-      console.warn('[AudioSession] HTML5 play failed (works after first tap to unlock):', e);
-    }
-    // Best-effort native ducking alongside, when the native plugin exists.
-    try {
-      await _AudioSession.setMode({ mode: 'duck' });
-    } catch {
-      /* ignore */
-    }
+    return _PackageAudioSession.play({ fileUri });
   },
   async pause() {
-    _getAudioEl()?.pause();
+    return _PackageAudioSession.pause();
   },
   async resume() {
-    try {
-      await _getAudioEl()?.play();
-    } catch {
-      /* ignore */
-    }
+    return _PackageAudioSession.resume();
   },
   async setRate(r) {
-    const el = _getAudioEl();
-    if (el) el.playbackRate = r;
+    return _PackageAudioSession.setRate({ rate: r });
   },
   addListener(event, cb) {
     if (event === 'ended') {
       _endedListeners.add(cb);
+      // Also wire into the package's async listener (fire-and-forget; keep the
+      // synchronous remove handle below as the canonical remove path).
+      let pluginHandle: { remove: () => void } | null = null;
+      _PackageAudioSession.addListener('ended', () => cb()).then(h => {
+        pluginHandle = h;
+      });
       return {
         remove() {
           _endedListeners.delete(cb);
+          pluginHandle?.remove();
+        },
+      };
+    }
+    if (event === 'interrupt') {
+      let pluginHandle: { remove: () => void } | null = null;
+      _PackageAudioSession.addListener('interrupt', () => cb()).then(h => {
+        pluginHandle = h;
+      });
+      return {
+        remove() {
+          pluginHandle?.remove();
         },
       };
     }

@@ -1,0 +1,39 @@
+{
+  "name": "capacitor-audio-session",
+  "version": "0.1.0",
+  "description": "Capacitor plugin for AVAudioSession background playback and ducking",
+  "type": "module",
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/plugin.cjs.js",
+      "types": "./dist/esm/index.d.ts"
+    }
+  },
+  "files": [
+    "ios/",
+    "dist/",
+    "CapacitorAudioSession.podspec",
+    "Package.swift"
+  ],
+  "scripts": {
+    "build": "tsc && rollup -c rollup.config.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@capacitor/core": "^6.0.0 || ^7.0.0 || ^8.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "devDependencies": {
+    "@capacitor/core": "^8.0.0",
+    "rollup": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

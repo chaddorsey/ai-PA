@@ -4,18 +4,21 @@
 
 This runbook covers: npm setup → Capacitor scaffold → Info.plist edits → plugin sources → Xcode build → device verification checklist.
 
-**Note:** The Swift sources in `ios-plugins/` are written but were not compiled in the development environment. This runbook covers the Mac build steps. All native capabilities are verified on a physical device (not the Simulator — background audio and location require hardware).
+**Note:** The Swift sources for AudioSessionPlugin are now delivered as a Capacitor Pod (`packages/capacitor-audio-session/`). The loose file at `ios-plugins/AudioSessionPlugin/` remains for reference but must NOT be added to the Xcode target — the Pod provides the registered plugin. All native capabilities are verified on a physical device (not the Simulator — background audio and location require hardware).
 
 ---
 
 ## Step 1: Install npm dependencies
 
 ```bash
+# Install companion-native deps (picks up capacitor-audio-session file: dep)
 cd apps/companion-native
 npm install
-```
 
-This installs `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`, and `@capawesome/capacitor-live-update`.
+# Install companion-web deps (also has the file: dep)
+cd ../companion-web
+npm install
+```
 
 ---
 
@@ -23,7 +26,6 @@ This installs `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`, and `@capaw
 
 ```bash
 cd apps/companion-web
-npm install
 npm run build
 # Outputs to apps/companion-web/build/ (referenced by capacitor.config.ts webDir)
 ```
@@ -72,31 +74,45 @@ Replace the generated `ios/App/App/AppDelegate.swift` with the contents of `ios-
 
 ---
 
-## Step 6: Add plugin Swift sources to the Xcode project
+## Step 6: Sync Capacitor (registers the AudioSession Pod)
+
+```bash
+cd apps/companion-native
+npx cap sync ios
+```
+
+`cap sync` reads the `capacitor` field in `package.json` of the `capacitor-audio-session` package (which points to `ios/`), runs `pod install`, and registers the `CapacitorAudioSession` Pod. The `AudioSession` plugin will now resolve natively on Capacitor 8 instead of returning UNIMPLEMENTED.
+
+**Important:** Do NOT manually add `ios-plugins/AudioSessionPlugin/` files to the Xcode target. The Pod now owns those sources. Adding them again would cause duplicate symbol errors.
+
+---
+
+## Step 7: Add remaining plugin Swift sources to the Xcode project
 
 Open the Xcode workspace:
 ```bash
 npx cap open ios
 ```
 
-In Xcode, for **each** plugin directory under `ios-plugins/`:
+In Xcode, for **each remaining** plugin directory under `ios-plugins/` (NOT AudioSessionPlugin — that is now a Pod):
 
 1. Right-click on the `App` group in the Project Navigator (not the project root — the nested `App` group containing `AppDelegate.swift`).
 2. Select **Add Files to "App"**.
-3. Navigate to the plugin directory (e.g., `ios-plugins/BackgroundLocationPlugin/`).
+3. Navigate to the plugin directory.
 4. Select both files (`.swift` + `.m`).
 5. Ensure **"Add to targets: App"** is checked.
 6. Click **Add**.
 
-Plugins to add:
+Plugins to add manually:
 - `ios-plugins/BackgroundLocationPlugin/` — `BackgroundLocationPlugin.swift` + `BackgroundLocationPlugin.m`
-- `ios-plugins/AudioSessionPlugin/` — `AudioSessionPlugin.swift` + `AudioSessionPlugin.m`
 - `ios-plugins/BundleStorePlugin/` — `BundleStorePlugin.swift` + `BundleStorePlugin.m`
 - **Phase 2 only** — `ios-plugins/LiveActivityPlugin/` — see Phase 2 section below
 
+**AudioSessionPlugin** — provided by the `CapacitorAudioSession` Pod. Skip adding it manually.
+
 ---
 
-## Step 7: Add ZIPFoundation via Swift Package Manager
+## Step 8: Add ZIPFoundation via Swift Package Manager
 
 BundleStorePlugin uses ZIPFoundation for unzipping (NOT /usr/bin/unzip, which is unavailable in an iOS app sandbox).
 
@@ -109,7 +125,7 @@ In Xcode:
 
 ---
 
-## Step 8: Enable Signing & Capabilities
+## Step 9: Enable Signing & Capabilities
 
 1. Select the `App` target → **Signing & Capabilities** tab.
 2. Set your Team (personal Apple ID works for device testing).
@@ -119,22 +135,11 @@ In Xcode:
 
 ---
 
-## Step 9: Set deployment target
+## Step 10: Set deployment target
 
 Set the minimum deployment target to **iOS 16.0** (needed for some API availability; iOS 16.2 required for Live Activities in Phase 2).
 
 In Xcode: Project → Build Settings → iOS Deployment Target → `16.0`.
-
----
-
-## Step 10: Sync Capacitor
-
-```bash
-cd apps/companion-native
-npx cap sync ios
-```
-
-This copies the web build into the iOS project and syncs plugin configurations.
 
 ---
 
@@ -160,9 +165,10 @@ All five checks should pass (matching the tracer bullet criteria from Plan 0 Tas
 - **Expected:** fixes continued accumulating while the screen was locked.
 
 ### Check 2: Background MP3 audio
-- Call `AudioSession.play('file:///path/to/test.mp3')` (use a path from BundleStore.getPath() or a known test file).
+- Call `AudioSession.play('/bundles/testleg/audio/test.mp3')` (use a path from BundleStore.getPath() or a known test file).
 - Lock the screen.
 - **Expected:** audio continues playing in the background.
+- **Expected (NEW):** On Capacitor 8, this invokes native AVAudioPlayer — not an UNIMPLEMENTED error. The JS console should NOT show "Plugin not implemented" or similar.
 
 ### Check 3: Three audio modes + ducking
 - Start Apple Music at ~50% volume.
@@ -233,10 +239,11 @@ When ready to ship Phase 2:
 
 ## Troubleshooting
 
-**"Plugin not found" error in the WKWebView console:**
-- Ensure both the `.swift` and `.m` files are added to the App target (check Target Membership in File Inspector).
-- Run `npx cap sync ios` again.
+**"Plugin not found" or UNIMPLEMENTED error in the WKWebView console:**
+- Ensure `npx cap sync ios` ran AFTER `npm install` (which links the `capacitor-audio-session` package).
+- Verify the Podfile references `CapacitorAudioSession` — look for it in `ios/App/Podfile` after sync.
 - Clean build folder (⌘⇧K) and rebuild.
+- Do NOT add `ios-plugins/AudioSessionPlugin/` files manually — the Pod owns those sources.
 
 **Audio stops when screen locks:**
 - Verify `UIBackgroundModes` contains `audio` in Info.plist.
@@ -251,3 +258,7 @@ When ready to ship Phase 2:
 **ZIPFoundation not found:**
 - Confirm the Swift Package was added (File → Packages → show packages list).
 - Clean derived data (Xcode → File → Packages → Reset Package Caches) and try again.
+
+**pod install fails with "Unable to find a specification for CapacitorAudioSession":**
+- The podspec uses a local git source. Run `npx cap sync ios` from `apps/companion-native/` — Capacitor handles the pod registration path automatically from the `capacitor.ios.src` field in `package.json`.
+- If needed, manually verify `ios/App/Podfile` contains: `pod 'CapacitorAudioSession', :path => '../../../../packages/capacitor-audio-session'`

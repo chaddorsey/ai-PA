@@ -29,6 +29,7 @@
     "companion-core": "file:../../packages/companion-core",
     "maplibre-gl": "^4.0.0",
     "pmtiles": "^3.0.0",
-    "suncalc": "^2.0.0"
+    "suncalc": "^2.0.0",
+    "capacitor-audio-session": "file:../../packages/capacitor-audio-session"
   }
 }
