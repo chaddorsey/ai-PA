@@ -7,11 +7,11 @@ import type { Bundle, Position, PositionTableRow } from 'companion-core';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Speed multipliers available in the dev UI. */
-export const SIM_SPEED_OPTIONS = [0.5, 1, 2, 4, 8] as const;
+export const SIM_SPEED_OPTIONS = [1, 4, 30, 120, 600] as const;
 export type SimSpeed = (typeof SIM_SPEED_OPTIONS)[number];
 
-/** Default speed multiplier (real-time). */
-const DEFAULT_SPEED: SimSpeed = 1;
+/** Default speed multiplier (120× for dev couch testing). */
+const DEFAULT_SPEED: SimSpeed = 120;
 
 /** Tick interval used by the simulator internally (ms). */
 export const SIM_TICK_MS = 2_000;

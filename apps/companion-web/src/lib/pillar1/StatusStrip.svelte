@@ -98,40 +98,40 @@
 
   // ── Derived values ───────────────────────────────────────────────────────────
 
-  $: bundle = appState.bundle;
-  $: pos = appState.position;
+  const bundle = $derived(appState.bundle);
+  const pos = $derived(appState.position);
 
   // Build an Eta instance from the bundle when it's loaded.
-  $: eta = (() => {
+  const eta = $derived((() => {
     if (!bundle) return null;
     const origin = bundle.stations.find(s => s.sched_dep !== null);
     const depMs = origin?.sched_dep ? new Date(origin.sched_dep).getTime() : NaN;
     return new Eta(bundle, depMs);
-  })();
+  })());
 
-  $: statusText = deriveStatus(bundle);
+  const statusText = $derived(deriveStatus(bundle));
 
-  $: isTripActual = bundle?.schedule_basis?.kind === 'trip-actual';
+  const isTripActual = $derived(bundle?.schedule_basis?.kind === 'trip-actual');
 
   // Next upcoming station (first station with mile > current mile)
-  $: nextStation = (() => {
+  const nextStation = $derived((() => {
     if (!bundle || !pos) return null;
     return bundle.stations.find(s => s.mile > pos!.mile) ?? null;
-  })();
+  })());
 
-  $: nextStationEta = (() => {
+  const nextStationEta = $derived((() => {
     if (!eta || !nextStation || !pos) return null;
     try {
       return eta.toStation(nextStation.code, pos);
     } catch {
       return null;
     }
-  })();
+  })());
 
-  $: sun = pos ? getSunTimes(pos.lat, pos.lon) : null;
+  const sun = $derived(pos ? getSunTimes(pos.lat, pos.lon) : null);
 
   // "near {place}" text — handle null place gracefully
-  $: nearText = (() => {
+  const nearText = $derived((() => {
     if (!pos) return null;
     if (!bundle || bundle.units.length === 0) return `mi ${pos.mile.toFixed(1)}`;
     const closest = bundle.units.reduce<{ place: string | null; delta: number }>(
@@ -146,7 +146,7 @@
     const placeStr = closest.place ?? '';
     const mileStr = `mi ${pos.mile.toFixed(1)}`;
     return placeStr ? `near ${placeStr}, ${mileStr}` : mileStr;
-  })();
+  })());
 </script>
 
 <div class="status-strip" role="status" aria-label="Train status">

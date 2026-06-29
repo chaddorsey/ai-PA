@@ -29,9 +29,9 @@
   // Real Amtrak California Zephyr leg IDs are numeric strings
   // matching the bundle's "leg" field (e.g., "3", "58").
   // ItineraryView shows the current leg's stations.
-  $: bundle = appState.bundle;
-  $: currentMile = appState.position?.mile ?? 0;
-  $: stations = bundle?.stations ?? [];
+  const bundle = $derived(appState.bundle);
+  const currentMile = $derived(appState.position?.mile ?? 0);
+  const stations = $derived(bundle?.stations ?? []);
 </script>
 
 <div class="itinerary" role="list" aria-label="Trip itinerary — {bundle?.leg ?? 'current leg'}">

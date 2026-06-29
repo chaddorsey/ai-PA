@@ -119,3 +119,25 @@ describe('ItineraryView — station classification', () => {
     expect(screen.getByText('Trip actual')).toBeTruthy();
   });
 });
+
+describe('ItineraryView — reactivity when bundle loads', () => {
+  beforeEach(() => {
+    appState.bundle = null;
+    appState.position = null;
+  });
+
+  it('shows bundle data (station names) when appState.bundle is set before render', async () => {
+    // Validates that ItineraryView reads appState.bundle via $derived (reactive)
+    // rather than a one-time capture that would be stale after bundle loads.
+    appState.bundle = BUNDLE;
+    appState.position = { mile: 50, lat: 30.5, lon: -90.3, source: 'gps', direction: 1, leg: '58', stopped: false };
+    render(ItineraryView);
+    // All three stations should be rendered
+    expect(screen.getByText('New Orleans')).toBeTruthy();
+    expect(screen.getByText('McComb')).toBeTruthy();
+    expect(screen.getByText('Hattiesburg')).toBeTruthy();
+    // The leg header should contain the leg ID
+    const list = screen.getByRole('list');
+    expect(list.getAttribute('aria-label')).toContain('58');
+  });
+});

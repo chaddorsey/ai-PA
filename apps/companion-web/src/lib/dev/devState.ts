@@ -2,7 +2,7 @@
 // Both the layout tick and SettingsView read/write this module.
 // The simulator instance lives here so the layout can call step() on every tick.
 
-import type { TripSimulator } from './tripSimulator';
+import type { TripSimulator, SimSpeed } from './tripSimulator';
 
 // ── DEV state singleton ───────────────────────────────────────────────────────
 
@@ -16,6 +16,12 @@ let _simulator: TripSimulator | null = null;
  */
 let _running = false;
 
+/**
+ * Current simulation speed, persisted so SettingsView speed selector reflects
+ * the real speed after tab-nav remounts (local $state would otherwise reset).
+ */
+let _speed: SimSpeed = 120;
+
 export const devState = {
   /** Returns the simulator if it exists, regardless of running state. */
   getSimulator(): TripSimulator | null {
@@ -27,6 +33,11 @@ export const devState = {
     return _running;
   },
 
+  /** Returns the persisted simulation speed. */
+  getSpeed(): SimSpeed {
+    return _speed;
+  },
+
   /** Set (or clear) the active simulator. Called by SettingsView. */
   setSimulator(sim: TripSimulator | null): void {
     _simulator = sim;
@@ -35,6 +46,11 @@ export const devState = {
   /** Update the running flag. Called by SettingsView on toggle. */
   setRunning(running: boolean): void {
     _running = running;
+  },
+
+  /** Persist the simulation speed. Called by SettingsView on speed change. */
+  setSpeed(speed: SimSpeed): void {
+    _speed = speed;
   },
 };
 // ── end DEV ──────────────────────────────────────────────────────────────────

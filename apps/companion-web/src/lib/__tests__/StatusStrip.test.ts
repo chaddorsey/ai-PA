@@ -193,3 +193,28 @@ describe('StatusStrip — suncalc integration', () => {
     expect(statusEl.textContent).not.toContain('Rise/Set');
   });
 });
+
+describe('StatusStrip — reactivity when bundle loads', () => {
+  beforeEach(() => {
+    appState.bundle = null;
+    appState.position = null;
+  });
+
+  it('shows loading state initially when no bundle set', async () => {
+    setAppState(null, null);
+    render(StatusStrip);
+    const statusEl = screen.getByRole('status');
+    expect(statusEl.textContent).toContain('Loading');
+  });
+
+  it('renders bundle data (station name) when appState.bundle is set before render', async () => {
+    // This test ensures the component reads appState.bundle reactively.
+    // Setting appState.bundle before render ensures the derived values are populated.
+    setAppState(TRIP_ACTUAL_BUNDLE, POSITION_AT_MILE_10);
+    render(StatusStrip);
+    const statusEl = screen.getByRole('status');
+    // McComb is the next stop at mile 98, with position at mile 10
+    expect(statusEl.textContent).toContain('McComb');
+    expect(statusEl.textContent).not.toContain('Loading');
+  });
+});

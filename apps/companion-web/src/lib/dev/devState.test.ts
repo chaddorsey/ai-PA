@@ -54,3 +54,44 @@ describe('devState running-state', () => {
     expect(devState.getSimulator()).toBeNull(); // no sim set
   });
 });
+
+describe('devState speed persistence', () => {
+  beforeEach(() => {
+    devState.setRunning(false);
+    devState.setSimulator(null);
+    // Reset speed to default by calling setSpeed with 120 (default)
+    devState.setSpeed(120);
+  });
+
+  it('getSpeed() returns 120 by default (default dev speed)', () => {
+    expect(devState.getSpeed()).toBe(120);
+  });
+
+  it('setSpeed(600) persists and getSpeed() returns 600', () => {
+    devState.setSpeed(600);
+    expect(devState.getSpeed()).toBe(600);
+  });
+
+  it('setSpeed(4) persists and getSpeed() returns 4', () => {
+    devState.setSpeed(4);
+    expect(devState.getSpeed()).toBe(4);
+  });
+
+  it('speed survives a simulated remount (setRunning false + setSimulator null then re-read)', () => {
+    // Set a non-default speed
+    devState.setSpeed(30);
+    // Simulate tab-nav remount: running and simulator are reset, but speed should persist
+    devState.setRunning(false);
+    devState.setSimulator(null);
+    // After "remount", SettingsView reads speed from devState
+    expect(devState.getSpeed()).toBe(30);
+  });
+
+  it('speed is independent of running state', () => {
+    devState.setSpeed(120);
+    devState.setRunning(true);
+    expect(devState.getSpeed()).toBe(120);
+    devState.setRunning(false);
+    expect(devState.getSpeed()).toBe(120);
+  });
+});

@@ -70,10 +70,45 @@ public class AudioSessionPlugin: CAPPlugin {
     // MARK: - play
 
     @objc func play(_ call: CAPPluginCall) {
-        guard let uriStr = call.getString("fileUri"),
-              let url = URL(string: uriStr) else {
-            call.reject("Missing or invalid fileUri")
+        guard let uriStr = call.getString("fileUri") else {
+            call.reject("Missing fileUri")
             return
+        }
+
+        // Resolve the URI to a local file URL.
+        // Handles four cases:
+        //   1. http:// / https://  → remote URL, pass through as-is
+        //   2. file://              → already a file URL
+        //   3. capacitor://localhost/... → take the path component and resolve under Bundle public/
+        //   4. /web-root-path or relative → resolve under Bundle.main/public/
+        let resolvedUrl: URL
+        if uriStr.hasPrefix("http://") || uriStr.hasPrefix("https://") {
+            guard let url = URL(string: uriStr) else {
+                call.reject("Invalid remote fileUri: \(uriStr)")
+                return
+            }
+            resolvedUrl = url
+        } else if uriStr.hasPrefix("file://") {
+            guard let url = URL(string: uriStr) else {
+                call.reject("Invalid file fileUri: \(uriStr)")
+                return
+            }
+            resolvedUrl = url
+        } else if uriStr.hasPrefix("capacitor://localhost") {
+            guard let parsed = URL(string: uriStr) else {
+                call.reject("Invalid capacitor fileUri: \(uriStr)")
+                return
+            }
+            let pathComponent = parsed.path.hasPrefix("/") ? String(parsed.path.dropFirst()) : parsed.path
+            resolvedUrl = Bundle.main.bundleURL
+                .appendingPathComponent("public")
+                .appendingPathComponent(pathComponent)
+        } else {
+            // Web-root path (/bundles/...) or bare relative path
+            let rel = uriStr.hasPrefix("/") ? String(uriStr.dropFirst()) : uriStr
+            resolvedUrl = Bundle.main.bundleURL
+                .appendingPathComponent("public")
+                .appendingPathComponent(rel)
         }
 
         // Cancel any pending silence-restore timer.
@@ -91,9 +126,16 @@ public class AudioSessionPlugin: CAPPlugin {
             // Make sure the session is active and ducking is established.
             self.ensureDucked()
 
+            // For file URLs, verify the file exists before attempting to play.
+            if resolvedUrl.isFileURL && !FileManager.default.fileExists(atPath: resolvedUrl.path) {
+                call.reject("Audio file not found at resolved path: \(resolvedUrl.path)")
+                return
+            }
+
             do {
-                let p = try AVAudioPlayer(contentsOf: url)
+                let p = try AVAudioPlayer(contentsOf: resolvedUrl)
                 p.enableRate = true   // required for setRate() to work
+                p.delegate = self     // required for audioPlayerDidFinishPlaying to fire
                 p.prepareToPlay()
                 p.play()
                 self.player = p

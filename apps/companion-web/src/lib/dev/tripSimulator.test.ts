@@ -109,22 +109,30 @@ describe('step() advances mile monotonically at 1x speed', () => {
 // ── Speed multiplier ─────────────────────────────────────────────────────────
 
 describe('speed multiplier', () => {
-  it('at 2x speed, mile at real t=5min equals sim t=10min', () => {
-    sim.start(2);
-    const pos = sim.step(BASE_NOW + 5 * 60_000); // 5 real min * 2x = 10 sim min
+  it('at 4x speed, mile at real t=2.5min equals sim t=10min', () => {
+    sim.start(4);
+    const pos = sim.step(BASE_NOW + 2.5 * 60_000); // 2.5 real min * 4x = 10 sim min
     expect(pos.mile).toBeCloseTo(5.0, 4);
   });
 
-  it('at 0.5x speed, mile at real t=10min equals sim t=5min', () => {
-    sim.start(0.5);
-    const pos = sim.step(BASE_NOW + 10 * 60_000); // 10 real min * 0.5 = 5 sim min
-    expect(pos.mile).toBeCloseTo(2.5, 4);
+  it('at 30x speed, mile is clamped at end after short real time', () => {
+    sim.start(30);
+    // 1 real min * 30 = 30 sim min (past table end of 10 min)
+    const pos = sim.step(BASE_NOW + 1 * 60_000);
+    expect(pos.mile).toBe(5.0);
   });
 
-  it('at 8x speed, mile is clamped at end when past table', () => {
-    sim.start(8);
-    // 2 real min * 8 = 16 sim min (past table end of 10 min)
-    const pos = sim.step(BASE_NOW + 2 * 60_000);
+  it('at 120x speed (default dev speed), mile is clamped quickly', () => {
+    sim.start(120);
+    // 0.1 real min * 120 = 12 sim min (past table end of 10 min)
+    const pos = sim.step(BASE_NOW + 0.1 * 60_000);
+    expect(pos.mile).toBe(5.0);
+  });
+
+  it('at 600x speed (max dev squib-per-second), mile is clamped very quickly', () => {
+    sim.start(600);
+    // 0.02 real min * 600 = 12 sim min (past table end of 10 min)
+    const pos = sim.step(BASE_NOW + 0.02 * 60_000);
     expect(pos.mile).toBe(5.0);
   });
 });
