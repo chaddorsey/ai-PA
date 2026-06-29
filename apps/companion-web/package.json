@@ -24,6 +24,7 @@
     "vitest": "^2.0.0"
   },
   "dependencies": {
+    "@capacitor/core": "^8.4.1",
     "@types/suncalc": "^1.9.2",
     "companion-core": "file:../../packages/companion-core",
     "maplibre-gl": "^4.0.0",
