@@ -35,3 +35,5 @@ export type {
   // Dive grounding (type-only)
   DiveGrounding,
 } from './types.js';
+
+export { loadBundle, validateBundle } from './bundle.js';
