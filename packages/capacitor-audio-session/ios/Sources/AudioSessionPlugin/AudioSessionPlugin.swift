@@ -74,7 +74,22 @@ public class AudioSessionPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Invalid mode; expected 'duck', 'pause', or 'interrupt-spoken'")
             return
         }
+        let modeChanged = mode != currentMode
         currentMode = mode
+
+        if modeChanged {
+            // Force a clean deactivate→reactivate cycle so iOS re-evaluates the new
+            // category's interruption policy against other active audio sessions.
+            // Without this, switching from .duck (which left the session ACTIVE) to
+            // .pause (.playback exclusive) only reconfigures the category in place —
+            // iOS does not re-interrupt other apps (music keeps playing).
+            try? AVAudioSession.sharedInstance().setActive(
+                false,
+                options: .notifyOthersOnDeactivation
+            )
+            isDucked = false
+        }
+
         activateSession(mode: mode)
         call.resolve()
     }
