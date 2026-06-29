@@ -14,7 +14,7 @@
    * - Route drawn from bundle.geometry (top-level, not bundle.leg.geometry)
    * - Nullable place/theme handled by child components
    */
-  import { onMount, onDestroy, setContext } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import maplibregl from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
   import { Protocol } from 'pmtiles';
@@ -133,16 +133,12 @@
 
     map.on('load', () => {
       if (!map) return;
-
-      // Provide the map instance to child components via Svelte context.
-      // setContext must be called synchronously during component init, but we
-      // can also expose it on the reactive state for children that mount after 'load'.
-      setContext('maplibre-map', map);
-
+      // NOTE: do NOT call setContext() here — it must run during component init,
+      // not in an async callback (it throws and aborts the rest of this handler).
+      // Child layers receive `map` as a prop instead.
       if (appState.bundle) {
         addRouteLayer(map, appState.bundle);
       }
-
       mapReady = true;
     });
 
