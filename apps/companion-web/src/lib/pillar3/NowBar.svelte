@@ -32,7 +32,9 @@
 
   function placeLabel(unit: typeof appState.nowPlaying): string {
     if (!unit) return '';
-    return unit.place ?? 'Unknown location';
+    if (unit.place) return unit.place;
+    // null place (many interstitials/squibs) → lead with the theme instead of "Unknown location"
+    return unit.theme ? unit.theme.charAt(0).toUpperCase() + unit.theme.slice(1) : 'On the route';
   }
 </script>
 
