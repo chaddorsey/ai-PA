@@ -146,34 +146,86 @@ const _BundleStore = registerPlugin<NativeBundleStore>('BundleStore', {
 
 // ── Public facades — same interface as before, internally adapts to native ────
 
+// ── AudioSession: HTML5 playback in the WebView ───────────────────────────────
+// The native AudioSession plugin does not register as a loose in-app plugin on
+// Capacitor 8 (UNIMPLEMENTED on device), so foreground audio plays via an HTML5
+// Audio element (works in the WebView + browser). `setMode` still attempts the
+// native session best-effort (for future background/ducking). iOS blocks
+// programmatic playback until a user gesture; we prime/unlock on the first tap.
+let _audioEl: HTMLAudioElement | null = null;
+const _endedListeners = new Set<() => void>();
+let _audioUnlocked = false;
+
+function _getAudioEl(): HTMLAudioElement | null {
+  if (typeof Audio === 'undefined') return null;
+  if (!_audioEl) {
+    _audioEl = new Audio();
+    _audioEl.addEventListener('ended', () => _endedListeners.forEach((cb) => cb()));
+    if (typeof document !== 'undefined') {
+      const unlock = () => {
+        _audioUnlocked = true;
+        // A gesture-initiated play() unlocks the element for later programmatic plays.
+        _audioEl?.play().then(() => _audioEl?.pause()).catch(() => {});
+        document.removeEventListener('touchend', unlock);
+        document.removeEventListener('click', unlock);
+      };
+      document.addEventListener('touchend', unlock);
+      document.addEventListener('click', unlock);
+    }
+  }
+  return _audioEl;
+}
+
 export const AudioSession: AudioSessionPlugin = {
-  setMode(mode) {
-    return _AudioSession.setMode({ mode });
+  async setMode(mode) {
+    // Best-effort native session control; no-op when the native plugin is absent.
+    try {
+      await _AudioSession.setMode({ mode });
+    } catch {
+      /* native AudioSession unavailable (dev) */
+    }
   },
-  play(fileUri) {
-    return _AudioSession.play({ fileUri });
+  async play(fileUri) {
+    const el = _getAudioEl();
+    if (!el) return;
+    try {
+      el.src = fileUri;
+      el.currentTime = 0;
+      await el.play();
+    } catch (e) {
+      console.warn('[AudioSession] HTML5 play failed (works after first tap to unlock):', e);
+    }
+    // Best-effort native ducking alongside, when the native plugin exists.
+    try {
+      await _AudioSession.setMode({ mode: 'duck' });
+    } catch {
+      /* ignore */
+    }
   },
-  pause() {
-    return _AudioSession.pause();
+  async pause() {
+    _getAudioEl()?.pause();
   },
-  resume() {
-    return _AudioSession.resume();
+  async resume() {
+    try {
+      await _getAudioEl()?.play();
+    } catch {
+      /* ignore */
+    }
   },
-  setRate(r) {
-    return _AudioSession.setRate({ rate: r });
+  async setRate(r) {
+    const el = _getAudioEl();
+    if (el) el.playbackRate = r;
   },
   addListener(event, cb) {
-    // registerPlugin's addListener is async; return a sync handle immediately
-    // and complete the async registration in the background.
-    let removeRef: (() => void) | null = null;
-    _AudioSession.addListener(event, cb).then((handle) => {
-      removeRef = handle.remove.bind(handle);
-    });
-    return {
-      remove() {
-        removeRef?.();
-      },
-    };
+    if (event === 'ended') {
+      _endedListeners.add(cb);
+      return {
+        remove() {
+          _endedListeners.delete(cb);
+        },
+      };
+    }
+    return { remove() {} };
   },
 };
 
