@@ -28,12 +28,10 @@ export default defineConfig(({ mode }) => {
         // Resolve the local capacitor-audio-session package to its TypeScript source
         // so Vite can tree-shake and bundle it directly (no separate dist/ build step).
         'capacitor-audio-session': path.resolve('../../packages/capacitor-audio-session/src/index.ts'),
+        // The aliased package src imports @capacitor/core, which lives in THIS app's
+        // node_modules (not the package's dir) — alias it so Rollup/SSR can resolve it.
+        '@capacitor/core': path.resolve('node_modules/@capacitor/core'),
       },
-    },
-    ssr: {
-      // @capacitor/core is browser-only; mark it external for the SSR bundle.
-      // Capacitor plugins are only invoked client-side, so this is safe.
-      external: ['@capacitor/core'],
     },
     test: {
       environment: 'jsdom',
