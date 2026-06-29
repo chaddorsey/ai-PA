@@ -1,13 +1,225 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import NowBar from '$lib/pillar3/NowBar.svelte';
+  import TabNav from '$lib/components/TabNav.svelte';
+  import StationCard from '$lib/pillar2/StationCard.svelte';
+  import { ApproachCue } from '$lib/core/ApproachCue';
+  import { appState } from '$lib/core/AppState.svelte';
+  import { initBundle } from '$lib/core/bundleInit';
+  import { BackgroundLocation, LiveActivity, AudioSession } from '$lib/native/plugins';
+  import type { BackgroundLocationFix } from '$lib/native/plugins';
+  import { PositionService, Eta } from 'companion-core';
+  import type { Station, Polyline } from 'companion-core';
+
   let { children } = $props();
+
+  // ── Runtime singletons ──────────────────────────────────────────────────────
+  // PositionService is created lazily after the bundle loads (needs bundle + poly).
+  // Before bundle load it remains null; position updates only start after load.
+
+  let positionService: InstanceType<typeof PositionService> | null = null;
+  const approachCue = new ApproachCue();
+
+  // Eta instance is created after the bundle loads (requires departure time).
+  let eta: InstanceType<typeof Eta> | null = null;
+
+  // ── Local state ─────────────────────────────────────────────────────────────
+
+  let locationHandle: string | null = null;
+  let tickInterval: ReturnType<typeof setInterval> | null = null;
+  let activeStationCode = $state<string | null>(null);
+  let bundleInitStatus = $state<'pending' | 'first-run' | 'loaded' | 'error'>('pending');
+  let firstRunMessage = $state<string>('');
+
+  // ── Bundle initialisation ───────────────────────────────────────────────────
+
+  async function loadBundle() {
+    const result = await initBundle('58');
+    if (result.status === 'first-run') {
+      bundleInitStatus = 'first-run';
+      firstRunMessage = result.message;
+    } else if (result.status === 'loaded') {
+      bundleInitStatus = 'loaded';
+      const bundle = result.bundle;
+      // Initialise Eta from the bundle's departure time
+      const origin = bundle.stations.find((s: Station) => s.sched_dep !== null);
+      const depMs = origin?.sched_dep ? new Date(origin.sched_dep).getTime() : NaN;
+      eta = new Eta(bundle, depMs);
+      // Initialise PositionService with the bundle's polyline (from position_table)
+      const poly: Polyline = bundle.position_table.map(
+        ([_elapsed, mile, lat, lon]) => [mile, lat, lon] as [number, number, number],
+      );
+      positionService = new PositionService(bundle, poly, bundle.leg);
+    } else {
+      bundleInitStatus = 'error';
+    }
+  }
+
+  // ── Lifecycle ───────────────────────────────────────────────────────────────
+
+  onMount(async () => {
+    // Apply initial audio mode from settings
+    await AudioSession.setMode(appState.settings.audioMode);
+
+    // Load bundle (first-run guard)
+    await loadBundle();
+
+    // Start GPS watching — feed fixes into PositionService when available
+    locationHandle = await BackgroundLocation.watch((fix: BackgroundLocationFix) => {
+      positionService?.onFix(fix.lat, fix.lon, fix.ts, fix.speed);
+    });
+
+    // 2-second tick: dead-reckoning + scheduler updates + approach cue checks
+    tickInterval = setInterval(() => {
+      if (!positionService) return;
+      const pos = positionService.tick(Date.now());
+      if (!pos) return;
+
+      appState.position = pos;
+
+      // Proactive approach cue: fires once per station per trip lifecycle
+      if (appState.bundle && eta) {
+        const result = approachCue.check(pos, eta, appState.bundle.stations);
+        if (result !== null) {
+          activeStationCode = result.station.code;
+        }
+      }
+
+      // Live Activity stub update (Phase 2 — no-op in web stub)
+      const nextStation = getNextStation();
+      void LiveActivity.update({
+        nowPlaying: appState.nowPlaying?.place ?? null,
+        nextStop: nextStation?.name ?? null,
+        positionText: `mi ${pos.mile.toFixed(1)}`,
+      });
+    }, 2000);
+  });
+
+  onDestroy(() => {
+    if (locationHandle !== null) {
+      void BackgroundLocation.clear(locationHandle);
+    }
+    if (tickInterval !== null) {
+      clearInterval(tickInterval);
+    }
+    void LiveActivity.end();
+  });
+
+  // ── Audio mode reactivity ───────────────────────────────────────────────────
+  // When the user changes audioMode in Settings, propagate to AudioSession.
+
+  $effect(() => {
+    const mode = appState.settings.audioMode;
+    void AudioSession.setMode(mode);
+  });
+
+  // ── Station card auto-dismiss ───────────────────────────────────────────────
+
+  $effect(() => {
+    if (!activeStationCode || !appState.bundle || !appState.position) return;
+    const station = appState.bundle.stations.find((s: Station) => s.code === activeStationCode);
+    if (station && appState.position.mile > station.mile + 0.5) {
+      activeStationCode = null;
+    }
+  });
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function getNextStation(): Station | null {
+    if (!appState.bundle || !appState.position) return null;
+    return appState.bundle.stations.find((s: Station) => s.mile > appState.position!.mile) ?? null;
+  }
+
+  function dismissStationCard() {
+    activeStationCode = null;
+  }
 </script>
 
-<main>
-  {@render children()}
-</main>
+<div class="layout-shell">
+  <!-- Persistent NowBar above the page content on all routes -->
+  <NowBar />
+
+  <!-- Page slot -->
+  <main class="layout-main" id="main-content">
+    {#if bundleInitStatus === 'first-run'}
+      <!-- First-run: no bundle downloaded yet -->
+      <div class="layout-first-run">
+        <span class="layout-first-run__icon" aria-hidden="true">🚂</span>
+        <h2 class="layout-first-run__heading">Download your trip</h2>
+        <p class="layout-first-run__hint">
+          {firstRunMessage || 'Go to Settings to download your trip bundle.'}
+        </p>
+      </div>
+    {:else}
+      {@render children()}
+    {/if}
+  </main>
+
+  <!-- Persistent TabNav below the page content on all routes -->
+  <TabNav />
+
+  <!-- Contextual StationCard overlay: triggered by ApproachCue or map pin tap -->
+  {#if activeStationCode && appState.bundle}
+    <StationCard
+      bundle={appState.bundle}
+      stationCode={activeStationCode}
+      position={appState.position}
+      onDismiss={dismissStationCard}
+    />
+  {/if}
+</div>
 
 <style>
-  main {
-    min-height: 100vh;
+  :global(*, *::before, *::after) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  :global(body) {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f9fafb;
+    overscroll-behavior: none;
+  }
+
+  .layout-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .layout-main {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .layout-first-run {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+  }
+
+  .layout-first-run__icon {
+    font-size: 3rem;
+  }
+
+  .layout-first-run__heading {
+    font-size: 1.375rem;
+    font-weight: 800;
+    color: #1a1a2e;
+  }
+
+  .layout-first-run__hint {
+    font-size: 0.9375rem;
+    color: #888;
+    line-height: 1.5;
   }
 </style>

@@ -38,6 +38,10 @@ export default defineConfig(({ mode }) => {
           find: '$app/navigation',
           replacement: path.resolve('./src/__mocks__/app-navigation.ts'),
         },
+        {
+          find: '$app/stores',
+          replacement: path.resolve('./src/__mocks__/app-stores.ts'),
+        },
         // Mock maplibre-gl and its CSS (WebGL not available in jsdom)
         {
           find: 'maplibre-gl/dist/maplibre-gl.css',
