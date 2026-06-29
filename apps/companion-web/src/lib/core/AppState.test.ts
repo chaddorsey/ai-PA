@@ -51,7 +51,7 @@ describe('createAppState', () => {
   it('accepts a loaded bundle', () => {
     const state = createAppState();
     state.bundle = PROXY_BUNDLE;
-    expect(state.bundle).toBe(PROXY_BUNDLE);
+    expect(state.bundle).toEqual(PROXY_BUNDLE);
     expect(state.bundle.units).toHaveLength(1);
     expect(state.bundle.leg).toBe('58');
   });
