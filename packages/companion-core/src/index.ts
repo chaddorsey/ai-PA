@@ -43,3 +43,4 @@ export { Scheduler } from './scheduler.js';
 export { Eta } from './eta.js';
 // Phase 2 stub — type exported; function exported but throws at runtime
 export { diveGrounding } from './dive.js';
+export { Favorites, InMemoryAdapter } from './favorites.js';
