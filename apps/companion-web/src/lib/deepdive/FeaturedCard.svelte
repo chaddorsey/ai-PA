@@ -20,6 +20,7 @@
     'Corridor of Movement': 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
     'Written in Silt':      'linear-gradient(135deg, #3d2b1f 0%, #5c3d2e 50%, #7a5c3f 100%)',
     "The Migration's Spine": 'linear-gradient(135deg, #1a2e1a 0%, #2e4a2e 50%, #1f3a2a 100%)',
+    'Haunted Ground':       'linear-gradient(135deg, #2a1a2e 0%, #3d2440 50%, #4a2a3f 100%)',
   };
 
   const DEFAULT_GRADIENT = 'linear-gradient(135deg, #1a1a2e 0%, #374151 100%)';

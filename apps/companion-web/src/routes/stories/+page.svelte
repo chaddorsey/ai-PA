@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DeepDive } from 'companion-core';
+  import { page } from '$app/stores';
   import { appState } from '$lib/core/AppState.svelte';
   import FeaturedCard from '$lib/deepdive/FeaturedCard.svelte';
   import { deepdiveState } from '$lib/deepdive/deepdiveState.svelte';
@@ -10,6 +11,7 @@
     'Corridor of Movement': 'linear-gradient(135deg, #1a1a2e, #0f3460)',
     'Written in Silt':      'linear-gradient(135deg, #3d2b1f, #7a5c3f)',
     "The Migration's Spine": 'linear-gradient(135deg, #1a2e1a, #1f3a2a)',
+    'Haunted Ground':       'linear-gradient(135deg, #2a1a2e, #4a2a3f)',
   };
 
   const DEFAULT_GRADIENT = 'linear-gradient(135deg, #1a1a2e, #374151)';
@@ -29,6 +31,20 @@
   function closeDive() {
     selectedDive = null;
   }
+
+  // Auto-open a specific story when arriving via ?open=<id> (from the offer banner's
+  // Read button). Guard with handledOpenId so closing the card doesn't re-open it.
+  let handledOpenId = $state<string | null>(null);
+  $effect(() => {
+    const openId = $page.url.searchParams.get('open');
+    if (openId && openId !== handledOpenId) {
+      const dd = (appState.bundle?.deepdives ?? []).find((d) => d.id === openId);
+      if (dd) {
+        selectedDive = dd;
+        handledOpenId = openId;
+      }
+    }
+  });
 
   // ── Nearest deep-dive to current position ─────────────────────────────────────
 

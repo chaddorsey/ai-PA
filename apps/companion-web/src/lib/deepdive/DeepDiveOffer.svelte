@@ -39,9 +39,9 @@
 
   function handleRead() {
     deepdiveState.markRead(deepdive.id);
-    // Navigate to Stories tab — the page will open the card automatically
-    // via the pendingDeepDive in appState (or just navigate to stories for now).
-    void goto('/stories');
+    // Navigate to the Stories tab AND open this specific story — the ?open=<id>
+    // param is consumed by the Stories page to auto-open the card.
+    void goto(`/stories?open=${encodeURIComponent(deepdive.id)}`);
     onDismiss();
   }
 

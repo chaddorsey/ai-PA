@@ -383,6 +383,11 @@
   .settings-slider {
     width: 100%;
     accent-color: #2563eb;
+    /* Keep the drag on the slider — don't let the scroll container pan/zoom
+       when the gesture starts on the thumb (was dragging the whole view). */
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   .settings-slider-labels {

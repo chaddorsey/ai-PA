@@ -18,7 +18,7 @@
   import maplibregl from 'maplibre-gl';
   import 'maplibre-gl/dist/maplibre-gl.css';
   import { Protocol } from 'pmtiles';
-  import { layers as pmThemeLayers, namedTheme as pmNamedTheme } from 'protomaps-themes-base';
+  import pmTheme from 'protomaps-themes-base';
   import PositionLayer from './PositionLayer.svelte';
   import StationPins from './StationPins.svelte';
   import { appState } from '$lib/core/AppState.svelte';
@@ -116,7 +116,9 @@
             attribution: '© OpenStreetMap',
           },
         },
-        layers: pmThemeLayers('protomaps', pmNamedTheme('light')) as maplibregl.LayerSpecification[],
+        // default() returns the FULL theme incl. the 11 symbol/label layers;
+        // layers() alone has no labels (was why no place names rendered).
+        layers: pmTheme('protomaps', 'light') as maplibregl.LayerSpecification[],
       },
       center: defaultCenter,
       zoom: 7,
