@@ -24,7 +24,15 @@ export type BundleInitResult =
 
 export async function initBundle(legId: string): Promise<BundleInitResult> {
   try {
-    const available = await BundleStore.list();
+    // BundleStore.list() may reject on device (native plugin unavailable/erroring,
+    // e.g. the dev build). Treat any failure as "no downloaded legs" so the dev
+    // embedded fallback can still fire instead of erroring out.
+    let available: string[] = [];
+    try {
+      available = await BundleStore.list();
+    } catch {
+      available = [];
+    }
     if (!available.includes(legId)) {
       // DEV: if the store is empty and the dev flag is set, load the embedded bundle
       if (DEV_EMBEDDED_BUNDLE && legId === DEV_EMBEDDED_LEG_ID && available.length === 0) {
