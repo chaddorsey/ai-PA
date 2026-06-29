@@ -2,9 +2,6 @@
   import { appState } from '$lib/core/AppState.svelte';
   import { AudioSession, BundleStore } from '$lib/native/plugins';
 
-  // Available themes (static list; matches CompanionView.svelte)
-  const AVAILABLE_THEMES = ['history', 'geology', 'lore', 'science', 'connections', 'culture'] as const;
-
   // California Zephyr legs — real numeric string IDs from the bundle
   const LEGS = [
     { id: '56', label: 'Chicago → Omaha' },
@@ -59,24 +56,33 @@
     await AudioSession.setMode(mode);
   }
 
-  // ── Fill density ────────────────────────────────────────────────────────────
+  // ── Chattiness (content density) ────────────────────────────────────────────
+  // Three stops mapped to fillPct. 0.60 is the content CEILING — narration is
+  // authored to ~60% talk density, so anything higher just runs out of material.
+  // Lowering drops the lesser tidbits first (packing is highest-salience-first).
+  const CHATTINESS = [
+    { fill: 0.30, label: 'Occasional info' },
+    { fill: 0.45, label: 'Chime in now and then' },
+    { fill: 0.60, label: 'Frequent stories & tidbits' },
+  ] as const;
 
-  function onFillInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    appState.settings.fillPct = parseFloat(target.value);
+  function chattinessIndex(): number {
+    const f = appState.settings.fillPct;
+    let best = CHATTINESS.length - 1;
+    let bestDelta = Infinity;
+    for (let i = 0; i < CHATTINESS.length; i++) {
+      const d = Math.abs(CHATTINESS[i].fill - f);
+      if (d < bestDelta) {
+        bestDelta = d;
+        best = i;
+      }
+    }
+    return best;
   }
 
-  // ── Theme emphasis toggles ──────────────────────────────────────────────────
-
-  function onThemeChange(theme: string, event: Event) {
-    const target = event.target as HTMLInputElement;
-    if (target.checked) {
-      appState.settings.themes.add(theme);
-    } else {
-      appState.settings.themes.delete(theme);
-    }
-    // Reassign to trigger Svelte 4 reactivity (Set mutation isn't tracked natively)
-    appState.settings.themes = new Set(appState.settings.themes);
+  function onChattinessInput(event: Event) {
+    const i = parseInt((event.target as HTMLInputElement).value, 10);
+    appState.settings.fillPct = CHATTINESS[i].fill;
   }
 
   // ── Highlight-only toggle ───────────────────────────────────────────────────
@@ -142,26 +148,27 @@
 <div class="settings-view">
   <h1 class="settings-view__title">Settings</h1>
 
-  <!-- Content Density (fillPct) -->
+  <!-- How chatty? (fillPct, three labeled stops, no percentages) -->
   <section class="settings-section">
-    <h2 class="settings-section__heading">Content Density</h2>
+    <h2 class="settings-section__heading">How chatty?</h2>
+    <p class="settings-description">
+      How often you'll hear stories and tidbits between the big sights.
+    </p>
     <div class="settings-row">
-      <label class="settings-label" for="fill-slider">
-        Fill: {Math.round(appState.settings.fillPct * 100)}%
-      </label>
+      <span class="settings-label">{CHATTINESS[chattinessIndex()].label}</span>
       <input
-        id="fill-slider"
+        id="chattiness-slider"
         type="range"
         min="0"
-        max="1"
-        step="0.05"
-        value={appState.settings.fillPct}
-        oninput={onFillInput}
+        max="2"
+        step="1"
+        value={chattinessIndex()}
+        oninput={onChattinessInput}
         class="settings-slider"
-        aria-label="Content fill percentage"
+        aria-label="How chatty the narration is"
       />
       <div class="settings-slider-labels">
-        <span>Sparse</span><span>Dense</span>
+        <span>Occasional</span><span>Now &amp; then</span><span>Frequent</span>
       </div>
     </div>
   </section>
@@ -184,27 +191,6 @@
         <option value="duck">Duck all other audio</option>
         <option value="pause">Pause all other audio</option>
       </select>
-    </div>
-  </section>
-
-  <!-- Theme Emphasis -->
-  <section class="settings-section">
-    <h2 class="settings-section__heading">Theme Emphasis</h2>
-    <p class="settings-description">
-      Emphasised themes appear more often. Leave all unchecked for balanced coverage.
-    </p>
-    <div class="settings-checkboxes">
-      {#each AVAILABLE_THEMES as theme}
-        <label class="settings-checkbox-label">
-          <input
-            type="checkbox"
-            checked={appState.settings.themes.has(theme)}
-            onchange={(e) => onThemeChange(theme, e)}
-            aria-label="Emphasize {theme} content"
-          />
-          <span>{theme.charAt(0).toUpperCase() + theme.slice(1)}</span>
-        </label>
-      {/each}
     </div>
   </section>
 
