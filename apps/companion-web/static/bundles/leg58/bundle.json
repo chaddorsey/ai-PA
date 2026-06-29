@@ -28437,8 +28437,14 @@
       "body_md": "## The Day the Levee Broke\n\nIn 1926, the Army Corps of Engineers declared the Mississippi levee system complete. The river, they said, was finally controlled.\n\nThe following spring, eighteen levees broke across a thousand miles. The breach at Mound Landing — roughly sixty miles west of this train — was the largest. The river came through at 468,000 cubic feet per second. Twenty-seven thousand square miles flooded. Six hundred thirty-seven thousand people were displaced. Most of them were Black sharecroppers in the Delta.\n\nHerbert Hoover managed the federal relief operation and built his reputation on it. The reality in the camps was different: Black refugees were housed under structures that mirrored the plantation system, with planters controlling food distribution and Black men forced at gunpoint to repair levees while their families waited in flooded tents.\n\n> Bessie Smith recorded 'Back Water Blues' two months after Mound Landing. Thirty blues songs were written about the disaster — the music knowing what the official reports wouldn't say.\n\nThe flood accelerated the Great Migration. Hundreds of thousands left on the Illinois Central in the months and years that followed.\n\nThe levees were rebuilt higher. The same logic is still in place.\n\n**Sources**\n- [Great Mississippi Flood of 1927 — Wikipedia](https://en.wikipedia.org/wiki/Great_Mississippi_Flood_of_1927)\n- [The Great Mississippi River Flood of 1927 — NMAAHC](https://nmaahc.si.edu/explore/stories/great-mississippi-river-flood-1927)\n- [The Great Mississippi Flood of 1927 Laid Bare the Divide — Smithsonian Magazine](https://www.smithsonianmag.com/history/devastating-mississippi-river-flood-uprooted-americas-faith-progress-180962856/)\n- [The Flood of 1927 and Its Impact in Greenville — Mississippi Historical Society](https://www.mshistorynow.mdah.ms.gov/issue/the-flood-of-1927-and-its-impact-in-greenville-mississippi)",
       "est_listen_min": 5,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file 1927_great_Mississippi_flood_-_refugees.jpg (American Red Cross, pre-1928, listed public domain) blocked by Wikimedia rate-limiting at build time; verify at https://commons.wikimedia.org/wiki/File:1927_great_Mississippi_flood_-_refugees.jpg",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-silt-flood1927.jpg",
+          "caption": "1927 Mississippi Flood Vicksburg Refugees",
+          "credit": "Archival Photography by Steve Nicklas, NOS, NGS",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "Great Mississippi Flood of 1927 — Wikipedia",
@@ -28481,8 +28487,14 @@
       "body_md": "## The Kankakee Torrent: When a Glacier Emptied\n\nThe Grand Prairie of Illinois looks like it was designed for farming — flat, black-soiled, featureless from horizon to horizon. In a geological sense, it was. The designer was a catastrophic flood 14,500 years ago.\n\nThe Laurentide Ice Sheet retreated north starting around 14,000 years ago. In Indiana, it had impounded a massive glacial lake — Lake Wabash — behind an ice dam. When the dam failed, the resulting flood was 50 to 100 times the average flow of the modern Mississippi. It scoured river valleys to bedrock, deposited sand in sheets, and helped carve the Illinois River drainage path.\n\n> The flatness isn't emptiness — it's the signature of a catastrophe that ended before the first human being set foot on this continent.\n\nWhat the flood left behind, mixed with millennia of decayed prairie grass, was the black loam of the Grand Prairie — up to eight feet deep in places, among the most fertile agricultural soil on the planet. This is why Illinois grows corn. The Kankakee Torrent is one reason the modern global food supply exists in its current form.\n\n**Sources**\n- [Grand Kankakee Marsh — Wikipedia](https://en.wikipedia.org/wiki/Grand_Kankakee_Marsh)\n- [Geology of Illinois — Wikipedia](https://en.wikipedia.org/wiki/Geology_of_Illinois)\n- [Illinois Department of Natural Resources — Geology of Illinois](https://dnr.illinois.gov/content/dam/soi/en/web/dnr/education/documents/onlineintroillinoisnatres-5-6-.pdf)",
       "est_listen_min": 3,
       "audio": null,
-      "images": [],
-      "image_note": "needs sourcing — Grand Prairie landscape photo on Commons (Grand_Prairie_Illinois.jpg) could not be confirmed as existing; direct download blocked by Wikimedia rate-limiting",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-silt-kankakee.jpg",
+          "caption": "Midewin National Tallgrass Prairie Headquarters",
+          "credit": "Robert Guico (Lpangelrob)",
+          "license": "CC BY-SA 3.0"
+        }
+      ],
       "sources": [
         {
           "title": "Grand Kankakee Marsh — Wikipedia",
@@ -28513,8 +28525,14 @@
       "body_md": "## The Paper That Moved a Nation\n\nThis train was not only a physical corridor through the South. From 1916 onward, it was also an information corridor — carrying a newspaper that Southern states tried to suppress and that hundreds of thousands of Black Southerners read in secret.\n\nRobert Sengstacke Abbott founded the *Chicago Defender* in 1905 on 25 cents and 300 copies. By 1917, it had a circulation exceeding 150,000, with two-thirds of its readers outside Chicago. It compared Jim Crow to the German enemy. It published job listings from Chicago. And it published train schedules — specific, actionable departure times and prices that turned the idea of leaving into a concrete plan.\n\nThe distribution network was built on Pullman porters: the men who worked the sleeping cars of trains like this one carried bundles of the *Defender* south and handed them to contacts in small towns along the route. In some Mississippi counties, possessing the paper was treated as evidence of sedition.\n\n> On May 15, 1917, the *Defender* declared a 'Great Northern Drive' — a coordinated call for migration. The abstract impulse to leave had been given a date and a price.\n\nThe porters who distributed it were the same men A. Philip Randolph was organizing into the Brotherhood of Sleeping Car Porters — the most powerful Black labor organization in America. The train carried the people north. It also carried the news that made leaving thinkable.\n\n**Sources**\n- [The Chicago Defender — Wikipedia](https://en.wikipedia.org/wiki/The_Chicago_Defender)\n- [Remembering the Chicago Defender — NMAAHC](https://nmaahc.si.edu/explore/stories/remembering-chicago-defender-print-edition-1905-2019)\n- [Robert Sengstacke Abbott — Wikipedia](https://en.wikipedia.org/wiki/Robert_Sengstacke_Abbott)",
       "est_listen_min": 4,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file ChicagoDefender1942.jpg (pre-1928 publication, listed public domain) could not be confirmed as present; URL: https://commons.wikimedia.org/wiki/File:ChicagoDefender1942.jpg",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-migration-defender.jpg",
+          "caption": "Newsboy selling the Chicago Defender, a leading Negro newspaper",
+          "credit": "Jack Delano",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "The Chicago Defender — Wikipedia",
@@ -28547,13 +28565,12 @@
       "audio": null,
       "images": [
         {
-          "url": "/bundles/leg58/images/dd-migration-johnson.png",
-          "caption": "Robert Johnson, the only authenticated photograph, circa 1935",
-          "credit": "Unknown / Wikimedia Commons",
-          "license": "Public domain — author unknown, published before 1928. Widely reproduced as PD on Wikimedia Commons."
+          "url": "/bundles/leg58/images/dd-migration-johnson.jpg",
+          "caption": "Robert Johnson grave, Little Zion Missionary Baptist Church Mississippi",
+          "credit": "OGItaly",
+          "license": "Public domain"
         }
       ],
-      "image_note": "license needs verification — photograph is widely used as public domain; author unknown; published before 1928 threshold. Downloaded from en.wikipedia.org (File:Robert_Johnson.png); verify license with the Wikimedia Commons page.",
       "sources": [
         {
           "title": "Robert Johnson — Wikipedia",
@@ -28596,8 +28613,14 @@
       "body_md": "## Muddy Waters Takes the Train\n\nIn August 1941, Alan Lomax drove to the Stovall Plantation near Clarksdale — about forty miles west of this train — and set up a Library of Congress recording machine in a sharecropper's cabin. The sharecropper was McKinley Morganfield, known locally as Muddy Waters.\n\nLomax had already recorded Jelly Roll Morton and Leadbelly. He recognized immediately what he was hearing. He played the recordings back for Morganfield — the first time Morganfield had heard himself through someone else's ears. Lomax returned the following year. Those recordings are now in the Library of Congress.\n\nIn 1943, after an argument with a plantation overseer, Morganfield bought a ticket on the Illinois Central. He came through Marks, through Memphis, across the Ohio, into Chicago.\n\n> He went electric in Chicago because the South Side clubs were loud. An acoustic guitar couldn't be heard. The amplified Delta blues became Chicago blues — and Chicago blues became the root of everything the Rolling Stones, Clapton, and Zeppelin would build.\n\nThe Rolling Stones named themselves after a Muddy Waters song. The arc from Stovall Plantation to every stadium rock show of the last sixty years ran up this line. The train Muddy Waters rode north in 1943 was making this same trip.\n\n**Sources**\n- [The Complete Plantation Recordings — Wikipedia](https://en.wikipedia.org/wiki/The_Complete_Plantation_Recordings)\n- [Muddy Waters' Cabin — The Mississippi Blues Trail](https://msbluestrail.org/blues-trail-markers/muddy-waterss-cabin)\n- [Muddy Waters — PBS American Masters](https://www.pbs.org/wnet/americanmasters/muddy-waters-cant-be-satisfied/730/)\n- [Alan Lomax — Smithsonian Magazine](https://www.smithsonianmag.com/arts-culture/alan-lomax-spent-years-traveling-country-record-sounds-america-legacy-obsession-live-forever-180988858/)",
       "est_listen_min": 4,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Muddy_waters_1_rs.jpg could not be confirmed; direct download blocked by Wikimedia rate-limiting at build time",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-migration-muddy.jpg",
+          "caption": "Muddy Waters",
+          "credit": "Jean-Luc Ourlin",
+          "license": "CC BY-SA 2.0"
+        }
+      ],
       "sources": [
         {
           "title": "The Complete Plantation Recordings — Wikipedia",
@@ -28712,8 +28735,14 @@
       "body_md": "## The Store at Money\n\nMoney, Mississippi — six miles west of this train — is barely a crossroads. But Bryant's Grocery and Meat Market, which once stood there, is one of the most significant sites in American history.\n\nEmmett Till was fourteen, from Chicago's South Side, visiting relatives in Money in August 1955. On August 24, he went into the grocery. What he said or did inside is still disputed. Four nights later, Roy Bryant and J.W. Milam came to his great-uncle's house at 2 a.m., took Emmett, beat him, gouged out his eye, shot him in the head, and dropped his body in the Tallahatchie River with a seventy-four-pound cotton-gin fan chained to his neck.\n\nHis mother, Mamie Till-Mobley, demanded an open casket.\n\n> 'Let the people see what they did to my boy.' A hundred thousand people filed past in Chicago. *Jet* magazine ran the photographs. The Civil Rights Movement was never the same.\n\nBryant and Milam were acquitted in sixty-seven minutes by an all-white jury. Protected by double jeopardy, they sold their confession to *Look* magazine for $4,000.\n\nRosa Parks said she was thinking of Emmett Till when she refused to give up her seat in Montgomery that December.\n\n**Sources**\n- [Emmett Till — Wikipedia](https://en.wikipedia.org/wiki/Emmett_Till)\n- [Emmett Till's Death Inspired a Movement — NMAAHC](https://nmaahc.si.edu/explore/stories/emmett-tills-death-inspired-movement)\n- [The Murder of Emmett Till — American Experience / PBS](https://www.pbs.org/wgbh/americanexperience/films/till/)",
       "est_listen_min": 5,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Emmett_Till_and_Mamie_Till_1955.png listed as believed public domain by Till-Mobley estate; file could not be confirmed present on Commons and download was blocked by Wikimedia rate-limiting; URL: https://commons.wikimedia.org/wiki/File:Emmett_Till_and_Mamie_Till_1955.png",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-haunted-till.jpg",
+          "caption": "Emmett Till parents at funeral",
+          "credit": "David Jackson",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "Emmett Till — Wikipedia",
@@ -28744,8 +28773,14 @@
       "body_md": "## Remember Fort Pillow\n\nFort Pillow sits on a Mississippi River bluff forty miles west of this train. In April 1864, it was a Union garrison — nearly half of them Black soldiers of the United States Colored Troops — and Confederate cavalry under Nathan Bedford Forrest was coming.\n\nForrest had superior numbers and position. By mid-afternoon on April 12, the fort was overwhelmed. The remaining officers called for surrender.\n\nWhat followed is documented by Congressional investigation: Confederate soldiers continued killing after the white flag was raised. Black soldiers who surrendered were shot, bayoneted, and by some accounts buried alive.\n\nThe numbers are the evidence. 70% of white Union soldiers survived. Only 35% of Black soldiers survived.\n\n> Confederate policy was explicit: Black troops were not prisoners of war. They were slave insurrectionists, subject to execution. Fort Pillow was that policy enacted.\n\n'Remember Fort Pillow' became a battle cry for Black Union regiments for the rest of the war. They fought, historians have noted, with a ferocity that reflected their understanding of what surrender would mean.\n\nNathan Bedford Forrest later became the first Grand Wizard of the Ku Klux Klan. The soldiers who shouted 'Remember Fort Pillow' went on to vote, serve in Congress, and build schools during Reconstruction — until organized violence worked to stop them.\n\n**Sources**\n- [Battle of Fort Pillow — Wikipedia](https://en.wikipedia.org/wiki/Battle_of_Fort_Pillow)\n- [Fort Pillow Massacre — HISTORY](https://www.history.com/articles/fort-pillow-massacre)\n- [The Hard Reality of Fort Pillow — National Park Service](https://www.nps.gov/articles/000/hard-reality-of-fort-pillow.htm)",
       "est_listen_min": 4,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Fort_Pillow_Massacre.jpg (Harper's Weekly 1864, confirmed public domain) at URL https://upload.wikimedia.org/wikipedia/commons/e/ef/Fort_Pillow_Massacre.jpg was blocked by Wikimedia rate-limiting at build time; license is clear, file confirmed present on Commons",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-haunted-fortpillow.jpg",
+          "caption": "The Fort Pillow Massacre (Harper’s Weekly, 1864)",
+          "credit": "Harper’s Weekly",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "Battle of Fort Pillow — Wikipedia",
@@ -28808,8 +28843,14 @@
       "body_md": "## The Panama Limited: Twenty-Five Hours to the World\n\nOn February 4, 1911, the Illinois Central launched its flagship train: the Panama Limited, named for the canal that would open three years later. The name was marketing genius — Panama carried a glamour in 1911 that the railroad was happy to borrow.\n\nThe IC's main line runs nearly perfectly straight from Chicago to New Orleans — laid that way in the 1850s to maximize speeds. The Panama Limited was built to use that advantage. It carried no day coaches; you had to book a sleeping berth. At its peak it ran an eighteen-hour schedule, Chicago to New Orleans, which remains roughly competitive with Amtrak today.\n\nThe train carried Pullman sleepers with names rather than numbers. White tablecloths in the dining car. A club car for long stretches through the Delta. It was luxury travel — and the Black Pullman porters who staffed it were, simultaneously, the most visible face of that luxury and the distributors of the *Chicago Defender* on their southbound runs.\n\nThe Panama Limited survived the Depression (barely — suspended 1932–34), World War II, and the postwar decline of American passenger rail. Its last run was April 30, 1971.\n\n> On May 1, 1971, Amtrak took over the route and renamed it the City of New Orleans — the name Steve Goodman would make immortal. We are on the bones of the Panama Limited.\n\n**Sources**\n- [Panama Limited — Wikipedia](https://en.wikipedia.org/wiki/Panama_Limited)\n- [The Panama Limited: IC's Flagship Train — American-Rails.com](https://www.american-rails.com/panama.html)\n- [HawkinsRails — Illinois Central Passenger Trains](https://hawkinsrails.net/mainlines/ic1/ic1_trains.html)",
       "est_listen_min": 4,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Panama_Limited.jpg could not be confirmed present via API; verify at https://commons.wikimedia.org/wiki/File:Panama_Limited.jpg before adding",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-corridor-panama.jpg",
+          "caption": "Illinois Central Panama Limited kitchen",
+          "credit": "Illinois Central Railroad.",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "Panama Limited — Wikipedia",
@@ -28840,8 +28881,14 @@
       "body_md": "## Yellow Jack: How the Railroad Killed Memphis\n\nMemphis sat at the crossing of the Mississippi River and the Illinois Central Railroad — a position that made it one of the fastest-growing cities in the South. In 1878, that same position nearly destroyed it.\n\nYellow fever arrived by steamboat from New Orleans in early August 1878. By the time the epidemic was confirmed, 40,000 of the city's 47,000 residents had fled — by rail, by steamboat, by wagon, spreading the disease as they went. Requests to quarantine the trains were refused by businessmen who couldn't afford to close the corridor.\n\nOf the 20,000 who stayed: 17,000 contracted yellow fever. 5,000 died in two months. Among the dead: nearly the entire professional and merchant class. Doctors. Priests. Catholic nuns. Volunteer aid workers who came to help.\n\nMemphis declared bankruptcy. The state revoked the city's charter. Memphis was no longer legally a city.\n\n> The disaster forced a reckoning. Memphis rebuilt its water and sewer systems completely — installing one of the best sanitation systems in the South. Yellow fever never returned after 1879.\n\nThe epidemic that nearly ended Memphis became the reason Memphis survived. The city at this window is larger and healthier than the one that stood here in August 1878.\n\n**Sources**\n- [Lower Mississippi Valley yellow fever epidemic of 1878 — Wikipedia](https://en.wikipedia.org/wiki/Lower_Mississippi_Valley_yellow_fever_epidemic_of_1878)\n- [Yellow Fever Epidemics — Tennessee Encyclopedia](https://tennesseeencyclopedia.net/entries/yellow-fever-epidemics/)\n- [Memphis Fights the Yellow Fever — American Heritage](https://www.americanheritage.com/memphis-fights-yellow-fever)\n- [A City Under Siege: The 1878 Yellow Fever Epidemic — History of Vaccines](https://historyofvaccines.org/blog/city-under-siege-1878-yellow-fever-epidemic-memphis/)",
       "est_listen_min": 5,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Memphis_yellow_fever_1878.jpg (Frank Leslie's Illustrated Newspaper 1878, public domain) listed in source data but could not be confirmed present on Commons; URL: https://commons.wikimedia.org/wiki/File:Memphis_yellow_fever_1878.jpg",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-corridor-yellowfever.jpg",
+          "caption": "Yellow Fever Burials",
+          "credit": "Frank Leslie",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "Lower Mississippi Valley yellow fever epidemic of 1878 — Wikipedia",
@@ -28876,8 +28923,14 @@
       "body_md": "## Cairo: Where the Rivers Meet and the Country Pivots\n\nAt the tip of Illinois, where the Ohio meets the Mississippi, lies Cairo — KAY-ro to the locals. The speculators who laid it out in the 1830s saw what was real: the continent's geographic hinge. Everything moving between the Great Lakes and the Gulf had to pass through or near here.\n\nIn 1889, the Illinois Central completed its Ohio River bridge at Cairo — at 20,000 feet, the longest railroad bridge in the Western Hemisphere. Cairo was positioned as the cork in the bottle of mid-American commerce.\n\nAt its peak: 15,000 residents, with ambitions to become the Chicago of the South. Then the railroads bridged the river at other points. The Mississippi silted up on the wrong side. The monopoly on the crossing was gone.\n\n> What finished Cairo was race. From 1967 to 1973, the city convulsed. 170 nights of gunfire in 1969. White vigilantes patrolling Black neighborhoods. A Black economic boycott. The white middle class left. The tax base collapsed.\n\nA city of 15,000 now holds under 1,700. The bridge still stands. The rivers haven't moved. Everything else has.\n\n**Sources**\n- [Cairo, Illinois — Wikipedia](https://en.wikipedia.org/wiki/Cairo,_Illinois)\n- [Racial unrest in Cairo, Illinois — Wikipedia](https://en.wikipedia.org/wiki/Racial_unrest_in_Cairo,_Illinois)\n- [Cairo, Illinois — Death by Racism — Legends of America](https://www.legendsofamerica.com/il-cairo/)",
       "est_listen_min": 5,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Cairo_Illinois_Confluence.jpg could not be confirmed present via API; aerial/satellite images of the confluence exist under various licenses — verify before adding",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-corridor-cairobridge.jpg",
+          "caption": "IL-KY-Bridge signs",
+          "credit": "Daniel Schwen",
+          "license": "CC BY-SA 4.0"
+        }
+      ],
       "sources": [
         {
           "title": "Cairo, Illinois — Wikipedia",
@@ -28908,8 +28961,14 @@
       "body_md": "## Pullman's Town: The Strike That Made Labor Day\n\nIn 1880, George Pullman bought 4,000 acres south of Chicago and built an entire city: factory, housing, churches, parks, hotel, library — all of it owned by the Pullman Palace Car Company. Workers paid rent to Pullman. They bought food from Pullman stores. The company owned the water, the gas, the sewers. The same entity that issued their paychecks also controlled their housing.\n\nThe theory was enlightened paternalism. The Panic of 1893 exposed the flaw.\n\nWhen orders collapsed, Pullman cut wages by up to 40%. He did not cut rents. Workers who gave a quarter of their wages back as rent couldn't survive the arithmetic. A delegation went to Pullman to explain. He listened — then fired the delegation.\n\nThe workers walked out May 11, 1894. Eugene Debs's American Railway Union called a national boycott: no union member would handle a train with a Pullman car. 125,000 workers on 29 railroads walked off. The national rail network was paralyzed.\n\nPresident Cleveland sent federal troops over the governor's objection. The strike was broken. Debs was arrested and sentenced to six months — during which he read Marx and Thoreau and became a Socialist. He ran for president five times.\n\n> Congress, embarrassed, quickly passed a law making Labor Day a federal holiday. The consolation prize for a broken strike.\n\nThe Pullman factory ahead is now a National Monument. We're about to pass through it.\n\n**Sources**\n- [Pullman Strike — Wikipedia](https://en.wikipedia.org/wiki/Pullman_Strike)\n- [Historic Pullman — EBSCO Research Starters](https://www.ebsco.com/research-starters/history/historic-pullman)\n- [The Pullman Strike — Northern Illinois University Digital Library](https://digital.lib.niu.edu/illinois/gildedage/pullman)\n- [Big Trouble in a Company Town — Teaching American History](https://teachingamericanhistory.org/big-trouble-in-a-company-town-the-pullman-strike/)",
       "est_listen_min": 5,
       "audio": null,
-      "images": [],
-      "image_note": "license needs verification — Commons file Pullman_Strike_Ills.jpg (Harper's Weekly 1894, public domain) was returned as missing by Commons API; verify at https://commons.wikimedia.org/wiki/File:Pullman_Strike_Ills.jpg before adding",
+      "images": [
+        {
+          "url": "/bundles/leg58/images/dd-corridor-pullman.jpg",
+          "caption": "Pullman strikers outside Arcade Building",
+          "credit": "Unknown authorUnknown author; 'Pullman Company negative jacket labeled \"Fife and",
+          "license": "Public domain"
+        }
+      ],
       "sources": [
         {
           "title": "Pullman Strike — Wikipedia",
