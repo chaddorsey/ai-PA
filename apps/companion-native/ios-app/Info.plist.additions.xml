@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Info.plist additions for Amtrak Companion iOS build.
+
+  After `npx cap add ios`, open ios/App/App/Info.plist and add these keys.
+  In Xcode: select the target → Info tab → add each key; or edit the raw XML.
+
+  REQUIRED BEFORE BUILDING:
+    1. UIBackgroundModes — audio + location (without both, GPS and audio die when screen locks)
+    2. NSLocation* usage strings (App Store / privacy manifest requires these)
+    3. NSSupportsLiveActivities (Phase 2; add now so the key is in the manifest)
+-->
+<dict>
+    <!-- ── Background modes (REQUIRED) ─────────────────────────────────────── -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>location</string>
+        <string>audio</string>
+    </array>
+
+    <!-- ── Location usage strings (REQUIRED for App Store submission) ─────── -->
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Amtrak Companion uses your location continuously to trigger audio narration as you pass landmarks — even when the screen is off. Your location is never sent off your device.</string>
+
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Amtrak Companion uses your location to trigger audio narration as you pass landmarks. For narration to continue when the screen is locked, grant Always access.</string>
+
+    <!-- Legacy key required for iOS 10 compatibility (still required by some App Store checks) -->
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Amtrak Companion uses your location continuously to trigger narration, even when the screen is off.</string>
+
+    <!-- ── Live Activities (Phase 2; include now) ───────────────────────────── -->
+    <key>NSSupportsLiveActivities</key>
+    <true/>
+
+    <!-- ── Microphone (if voice-search is added later) — leave commented out -->
+    <!-- <key>NSMicrophoneUsageDescription</key> -->
+    <!-- <string>Used for voice search.</string> -->
+</dict>
