@@ -68,16 +68,24 @@
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   onMount(async () => {
-    // Apply initial audio mode from settings
-    await AudioSession.setMode(appState.settings.audioMode);
-
-    // Load bundle (first-run guard)
+    // Load the bundle FIRST — startup must not be blocked by any native plugin call.
     await loadBundle();
 
-    // Start GPS watching — feed fixes into PositionService when available
-    locationHandle = await BackgroundLocation.watch((fix: BackgroundLocationFix) => {
-      positionService?.onFix(fix.lat, fix.lon, fix.ts, fix.speed);
-    });
+    // Apply initial audio mode (best-effort; a native failure must NOT block startup).
+    try {
+      await AudioSession.setMode(appState.settings.audioMode);
+    } catch (e) {
+      console.warn('[layout] AudioSession.setMode failed (non-fatal):', e);
+    }
+
+    // Start GPS watching — best-effort (the dev sim drives position regardless).
+    try {
+      locationHandle = await BackgroundLocation.watch((fix: BackgroundLocationFix) => {
+        positionService?.onFix(fix.lat, fix.lon, fix.ts, fix.speed);
+      });
+    } catch (e) {
+      console.warn('[layout] BackgroundLocation.watch failed (non-fatal):', e);
+    }
 
     // 2-second tick: dead-reckoning + scheduler updates + approach cue checks
     tickInterval = setInterval(() => {
@@ -143,7 +151,7 @@
 
   $effect(() => {
     const mode = appState.settings.audioMode;
-    void AudioSession.setMode(mode);
+    AudioSession.setMode(mode).catch((e) => console.warn('[layout] setMode failed (non-fatal):', e));
   });
 
   // ── Station card auto-dismiss ───────────────────────────────────────────────
