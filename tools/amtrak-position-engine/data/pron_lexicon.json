@@ -147,9 +147,9 @@
     "freq": 1
   },
   "Acoma": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈækəmə",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 9
   },
@@ -1519,9 +1519,9 @@
     "freq": 1
   },
   "Arapaho": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "əˈræpəhoʊ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.9,
     "freq": 2
   },
@@ -2996,9 +2996,9 @@
     "freq": 1
   },
   "Belen": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "beˈlɛn",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 1
   },
@@ -3241,9 +3241,9 @@
     "freq": 10
   },
   "Bernalillo": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˌbɝnəˈliːoʊ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.9,
     "freq": 8
   },
@@ -4025,9 +4025,9 @@
     "freq": 1
   },
   "Bosque": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈbɑskeɪ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.32,
     "freq": 18
   },
@@ -5019,9 +5019,9 @@
     "freq": 1
   },
   "Calcasieu Parish": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈkælkəˌʃuː",
+    "source": "wikipedia",
+    "confidence": 0.9,
     "risk": 0.52,
     "freq": 4
   },
@@ -6286,9 +6286,9 @@
     "freq": 2
   },
   "Chapelle": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ʃəˈpɛl",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.32999999999999996,
     "freq": 1
   },
@@ -6839,9 +6839,9 @@
     "freq": 1
   },
   "Chouteau": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈʃoʊtoʊ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.52,
     "freq": 4
   },
@@ -13559,9 +13559,9 @@
     "freq": 0
   },
   "Galisteo": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˌɡæləˈsteɪoʊ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 2
   },
@@ -14329,9 +14329,9 @@
     "freq": 1
   },
   "Glorieta": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˌɡlɔriˈɛtə",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 7
   },
@@ -16681,9 +16681,9 @@
     "freq": 1
   },
   "Hualapai": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈwɑləpaɪ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.1,
     "freq": 14
   },
@@ -19600,9 +19600,9 @@
     "freq": 4
   },
   "Laguna": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ləˈɡunə",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 16
   },
@@ -19894,9 +19894,9 @@
     "freq": 1
   },
   "Lamy": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈleɪmi",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 4
   },
@@ -20048,9 +20048,9 @@
     "freq": 1
   },
   "Las Vegas": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "lɑs ˈveɪɡəs",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 8
   },
@@ -22015,9 +22015,9 @@
     "freq": 5
   },
   "Marathon": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "/ˈmæɹəθən/",
+    "source": "wiktionary",
+    "confidence": 0.8,
     "risk": 0.15,
     "freq": 14
   },
@@ -27531,9 +27531,9 @@
     "freq": 1
   },
   "Pawnee": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈpɔni",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.9,
     "freq": 1
   },
@@ -30310,9 +30310,9 @@
     "freq": 1
   },
   "Ribera": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "riˈbɛrə",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 2
   },
@@ -32648,9 +32648,9 @@
     "freq": 1
   },
   "Seligman": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈsɛlɪɡmən",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 4
   },
@@ -33607,9 +33607,9 @@
     "freq": 1
   },
   "Socorro": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "səˈkɔroʊ",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.9,
     "freq": 1
   },
@@ -36197,9 +36197,9 @@
     "freq": 2
   },
   "Thoreau": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "θəˈru",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.52,
     "freq": 1
   },
@@ -38857,9 +38857,9 @@
     "freq": 4
   },
   "Watrous": {
-    "ipa": null,
-    "source": "none",
-    "confidence": 0.0,
+    "ipa": "ˈwɑtrəs",
+    "source": "override",
+    "confidence": 1.0,
     "risk": 0.0,
     "freq": 6
   },
