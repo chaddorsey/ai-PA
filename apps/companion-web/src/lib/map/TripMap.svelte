@@ -101,7 +101,7 @@
     // corridor extract, e.g. 'pmtiles:///bundles/basemap/corridor.pmtiles', produced by:
     //   go-pmtiles extract https://build.protomaps.com/<date>.pmtiles corridor.pmtiles \
     //     --bbox=-90.81,29.65,-87.29,42.18 --maxzoom=14
-    const BASEMAP_URL = 'pmtiles:///basemap/corridor.pmtiles';
+    const BASEMAP_URL = `pmtiles:///basemap/corridor-${appState.selectedLeg}.pmtiles`;
 
     map = new maplibregl.Map({
       container: mapContainer,

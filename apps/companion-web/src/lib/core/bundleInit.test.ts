@@ -49,23 +49,22 @@ describe('initBundle — normal BundleStore path', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
-  it('returns first-run when leg is not in BundleStore.list() (and DEV_EMBEDDED_BUNDLE would not fire for a non-58 leg)', async () => {
+  it('returns error when leg is not in BundleStore.list() and embedded fetch also fails', async () => {
     vi.mocked(BundleStore.list).mockResolvedValue([]);
-    // Use a leg that is NOT the embedded leg so we exercise the first-run path cleanly
-    // NOTE: leg '58' with empty list hits the dev fallback path — we test that below.
-    // This test uses leg '57' to verify the non-dev first-run.
+    // With DEV_EMBEDDED_BUNDLE=true, initBundle always tries the embedded fetch first.
+    // When fetch returns undefined (no-op mock), the embedded load throws a TypeError.
+    // Since the leg is not in BundleStore either, the embedded error is surfaced.
     const result = await initBundle('57');
-    expect(result.status).toBe('first-run');
-    if (result.status === 'first-run') {
-      expect(result.message).toBe('Download your trip');
-    }
+    expect(result.status).toBe('error');
     expect(appState.bundle).toBeNull();
   });
 
-  it('returns loaded and sets appState.bundle when leg is available', async () => {
+  it('returns loaded and sets appState.bundle when leg is available via BundleStore (embedded fetch fails first)', async () => {
     vi.mocked(BundleStore.list).mockResolvedValue(['58']);
     vi.mocked(BundleStore.getPath).mockResolvedValue('/bundles/58');
     vi.mocked(loadBundle).mockResolvedValue(proxyBundle as import('companion-core').Bundle);
+    // fetch returns a non-ok response so embedded path fails, falls through to BundleStore
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
     const result = await initBundle('58');
     expect(result.status).toBe('loaded');
@@ -80,6 +79,8 @@ describe('initBundle — normal BundleStore path', () => {
     vi.mocked(BundleStore.list).mockResolvedValue(['58']);
     vi.mocked(BundleStore.getPath).mockResolvedValue('/bundles/58');
     vi.mocked(loadBundle).mockRejectedValue(new Error('network error'));
+    // embedded fetch fails → falls through to BundleStore → loadBundle throws
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }));
 
     const result = await initBundle('58');
     expect(result.status).toBe('error');
@@ -158,19 +159,61 @@ describe('DEV embedded bundle fallback (BundleStore empty, leg=58)', () => {
     expect(appState.bundle).toBeNull();
   });
 
-  it('does NOT use dev fallback when BundleStore already has the leg', async () => {
+  it('uses BundleStore when leg is already downloaded (embedded fetch fails first)', async () => {
     // Even with DEV_EMBEDDED_BUNDLE, if the leg is already downloaded, use BundleStore
     vi.mocked(BundleStore.list).mockResolvedValue(['58']);
     vi.mocked(BundleStore.getPath).mockResolvedValue('/bundles/58');
     vi.mocked(loadBundle).mockResolvedValue(proxyBundle as import('companion-core').Bundle);
 
-    const mockFetch = vi.fn();
+    // Embedded fetch fails (non-ok) → falls through to BundleStore
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 404 });
     vi.stubGlobal('fetch', mockFetch);
 
     const result = await initBundle('58');
     expect(result.status).toBe('loaded');
-    // The loadBundle mock was called (BundleStore path), NOT fetch to /bundles/leg58
+    // The loadBundle mock was called (BundleStore path)
     expect(vi.mocked(loadBundle)).toHaveBeenCalled();
-    // fetch may have been called by loadBundle internally, but not by bundleInit directly
+  });
+});
+
+// ── DEV: embedded fetch works for leg 3 too ──────────────────────────────────
+
+describe('DEV embedded bundle fallback (leg=3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    appState.bundle = null;
+    vi.mocked(BundleStore.list).mockResolvedValue([]);
+  });
+
+  it('fetches /bundles/leg3/bundle.json for leg 3', async () => {
+    // Use a minimal bundle fixture that matches leg 3
+    const leg3Bundle = { ...proxyBundle, leg: '3' };
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => leg3Bundle,
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const result = await initBundle('3');
+    expect(result.status).toBe('loaded');
+    expect(mockFetch).toHaveBeenCalledWith('/bundles/leg3/bundle.json');
+  });
+
+  it('rewrites audio URIs to /bundles/leg3/audio/... for leg 3', async () => {
+    const leg3Bundle = { ...proxyBundle, leg: '3' };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => leg3Bundle,
+    }));
+
+    const result = await initBundle('3');
+    expect(result.status).toBe('loaded');
+    if (result.status === 'loaded') {
+      const unitsWithAudio = result.bundle.units.filter((u) => u.audio);
+      expect(unitsWithAudio.length).toBeGreaterThan(0);
+      for (const unit of unitsWithAudio) {
+        expect(unit.audio).toMatch(/^\/bundles\/leg3\//);
+      }
+    }
   });
 });

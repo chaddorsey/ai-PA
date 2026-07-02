@@ -40,7 +40,9 @@
   // ── Bundle initialisation ───────────────────────────────────────────────────
 
   async function loadBundle() {
-    const result = await initBundle('58');
+    const legId = appState.selectedLeg;
+    const bundlePath = `/bundles/leg${legId}`;
+    const result = await initBundle(legId);
     if (result.status === 'first-run') {
       bundleInitStatus = 'first-run';
       firstRunMessage = result.message;
@@ -57,10 +59,10 @@
       );
       positionService = new PositionService(bundle, poly, bundle.leg);
       // Wire up the PlaybackOrchestrator so narration/audio fires on every tick.
-      // For dev/proxy, audio lives under /bundles/leg58/audio (bundleInit already rewrites URLs).
+      // For dev/proxy, audio lives under /bundles/leg<legId>/audio (bundleInit already rewrites URLs).
       // In production, use: await BundleStore.getPath(leg) for the native FS path.
       const scheduler = new Scheduler(bundle, appState.settings);
-      initOrchestrator({ scheduler, audioSession: AudioSession, favorites: appState.favorites, bundlePath: '/bundles/leg58' });
+      initOrchestrator({ scheduler, audioSession: AudioSession, favorites: appState.favorites, bundlePath });
     } else {
       bundleInitStatus = 'error';
       firstRunMessage = result.message;

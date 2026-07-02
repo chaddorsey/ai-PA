@@ -1,5 +1,6 @@
 import type { Bundle, Unit, Position, DeepDive } from 'companion-core';
 import { Favorites, InMemoryAdapter } from 'companion-core';
+import { DEFAULT_LEG } from './legs';
 
 export interface Settings {
   fillPct: number;           // 0.0–1.0; default 0.6
@@ -31,6 +32,14 @@ export function createAppState() {
   // Components don't read it directly in templates; it is used imperatively.
   const favorites = new Favorites(new InMemoryAdapter());
 
+  // ── selectedLeg — persisted to localStorage ──────────────────────────────────
+  const LS_KEY = 'amtrak.selectedLeg';
+  let selectedLeg = $state<string>(
+    typeof localStorage !== 'undefined'
+      ? (localStorage.getItem(LS_KEY) ?? DEFAULT_LEG)
+      : DEFAULT_LEG,
+  );
+
   return {
     get bundle() { return bundle; },
     set bundle(v: Bundle | null) { bundle = v; },
@@ -50,6 +59,15 @@ export function createAppState() {
 
     // favorites instance — not reactive, used imperatively
     get favorites() { return favorites; },
+
+    /** Currently selected leg ID. Persisted to localStorage; change triggers reload. */
+    get selectedLeg() { return selectedLeg; },
+    set selectedLeg(v: string) {
+      selectedLeg = v;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LS_KEY, v);
+      }
+    },
   };
 }
 

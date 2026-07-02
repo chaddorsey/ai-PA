@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appState } from '$lib/core/AppState.svelte';
   import { AudioSession, BundleStore } from '$lib/native/plugins';
+  import { AVAILABLE_LEGS } from '$lib/core/legs';
 
   // California Zephyr legs — real numeric string IDs from the bundle
   const LEGS = [
@@ -11,6 +12,14 @@
     { id: '60', label: 'Reno → Sacramento' },
     { id: '61', label: 'Sacramento → Emeryville' },
   ];
+
+  // ── Trip picker ─────────────────────────────────────────────────────────────
+
+  function onTripChange(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    appState.selectedLeg = target.value;
+    window.location.reload();
+  }
 
   // ── Download manager ────────────────────────────────────────────────────────
 
@@ -154,6 +163,28 @@
 
 <div class="settings-view">
   <h1 class="settings-view__title">Settings</h1>
+
+  <!-- Trip picker — appears at the very top -->
+  <section class="settings-section">
+    <h2 class="settings-section__heading">Trip</h2>
+    <p class="settings-description">
+      Select which train trip to load. Changing the trip restarts the app.
+    </p>
+    <div class="settings-row">
+      <label class="settings-label" for="trip-select">Active trip</label>
+      <select
+        id="trip-select"
+        class="settings-select"
+        value={appState.selectedLeg}
+        onchange={onTripChange}
+        aria-label="Select trip"
+      >
+        {#each AVAILABLE_LEGS as leg}
+          <option value={leg.id}>{leg.name} — {leg.route} ({leg.depDate})</option>
+        {/each}
+      </select>
+    </div>
+  </section>
 
   <!-- How chatty? (fillPct, three labeled stops, no percentages) -->
   <section class="settings-section">
@@ -300,7 +331,7 @@
           disabled={!appState.bundle}
           role="switch"
           aria-checked={simRunning}
-          aria-label="Simulate trip along leg 58"
+          aria-label="Simulate trip along leg {appState.selectedLeg}"
         />
         <span>
           Simulate trip
