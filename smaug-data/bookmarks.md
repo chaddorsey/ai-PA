@@ -1,3 +1,59 @@
+# Thursday, July 23, 2026
+
+## @AndrewYNg - OpenWorker: AI Agent That Delivers Finished Work
+> Announcing OpenWorker! An open-source agent that doesn't just chat with you, but delivers finished work -- like hand you a polished document, send a slack message, or update a calendar entry.
+>
+> Ask it to prepare a customer brief, untangle your calendar, draft a report, or triage a Slack alert. It works across your files and everyday tools, produces the deliverable, and checks in before doing anything consequential.
+>
+> OpenWorker runs on your Mac, with Windows support coming soon. It does not lock you into any one model. Bring your own API key and run it with GPT 5.6 Sol, Claude Fable, Gemini 3.6, an open weight model (like Kimi, GLM, DeepSeek, Inkling), or Ollama to keep your data local. Your data does not leave your machine except through an LLM provider and integrations that you choose.
+
+- **Tweet:** https://x.com/AndrewYNg/status/2080333504446108104
+- **GitHub:** https://github.com/andrewyng/openworker
+- **Website:** https://openworker.com
+- **Filed:** [openworker.md](./knowledge/tools/openworker.md)
+- **What:** OpenWorker is an open-source desktop AI agent that delivers finished work (documents, Slack messages, calendar updates) rather than just chatting. Model-agnostic and privacy-focused, runs locally with choice of LLM provider.
+
+---
+
+# Wednesday, July 22, 2026
+
+## @iPaulCanada - AI Blackboard Debut at 2026 World AI Conference
+> 2026世界人工智能大会，某科技公司展示的跨时代教具--AI黑板
+
+- **Tweet:** https://x.com/iPaulCanada/status/2079981184717652150
+- **What:** Showcase of an AI-powered interactive blackboard (AI Blackboard) presented at the 2026 World Artificial Intelligence Conference, representing a transformational educational technology tool.
+
+---
+
+# Sunday, July 12, 2026
+
+## @DataChaz - COLIBRI: Running 744B Models on Consumer Hardware
+> THE RULE THAT GIANT MODELS REQUIRE GIANT RAM IS OFFICIALLY DEAD
+>
+> COLIBRI runs GLM-5.2, a 744B model, on a 25GB machine with no GPU.
+>
+> Because the model only needs a fraction of its parameters at once, colibrì smartly holds the core in RAM and streams the rest from disk on the fly.
+>
+> While disk speeds limit how fast it types, getting perfect responses from a massive model on a consumer rig is a stunning proof of concept!
+>
+> ★ 2.1k stars · Apache-2.0
+>
+> 100% free and open-source.
+
+- **Tweet:** https://x.com/DataChaz/status/2076229362559664188
+- **What:** Discovery of COLIBRI, an open-source project demonstrating that large language models can run on consumer hardware by intelligently managing parameter loading between RAM and disk, breaking the assumption that giant models require giant hardware.
+
+---
+
+## @khnh80044 - Messi's Magnificent Free-Kick with Magnus Effect Visualization
+> Possibly Messi's best free-kick ever, with a gorgeous visualization of the Magnus effect 😮
+
+- **Tweet:** https://x.com/khnh80044/status/2076333018743251163
+- **Quoted:** https://x.com/InternetPosttt/status/2047740657754837447
+- **What:** Celebration of Messi's exceptional free-kick technique, featuring a visualization of the Magnus effect (the aerodynamic principle that curves the ball's trajectory).
+
+---
+
 # Friday, June 26, 2026
 
 ## @BBGreatMoments - What 40 mph to 100 mph looks like (Baseball)
