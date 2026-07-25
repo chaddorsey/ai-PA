@@ -1,4 +1,34 @@
+# Friday, July 24, 2026
+
+## @JensenHuang - Open Weights and American AI Leadership
+> For my first post, I'm sharing a letter @NVIDIA signed on why open models matter.
+>
+> AI will transform every industry, power every company, and be built by every country.
+>
+> Open models strengthen safety and cybersecurity, accelerate innovation and diffusion, and enable sovereignty.
+>
+> The world needs both frontier closed models and frontier open models.
+
+- **Tweet:** https://x.com/JensenHuang/status/2080643682408321103
+- **PDF:** https://images.nvidia.com/pdf/Open-Weights-and-American-AI-Leadership.pdf
+- **Filed:** [open-models-letter.md](./knowledge/articles/open-models-letter.md)
+- **What:** NVIDIA CEO Jensen Huang's statement on why open models are critical for AI development—strengthening safety, accelerating innovation, enabling sovereignty, and argues both frontier closed and open models are needed for a healthy ecosystem.
+
+---
+
 # Thursday, July 23, 2026
+
+## @dani_avila7 - HTML Effectiveness: Flexible Agent Output Format
+> If you're experimenting with switching from markdown to HTML as an agent output format
+>
+> check this repo
+
+- **Tweet:** https://x.com/dani_avila7/status/2080439126390636661
+- **GitHub:** https://github.com/anthropics/html-effectiveness
+- **Filed:** [html-effectiveness.md](./knowledge/tools/html-effectiveness.md)
+- **What:** A gallery of standalone HTML examples demonstrating HTML as a flexible and powerful output format for AI agents, with no build steps or dependencies. Covers code review, design systems, prototyping, communication, and custom editing interfaces.
+
+---
 
 ## @AndrewYNg - OpenWorker: AI Agent That Delivers Finished Work
 > Announcing OpenWorker! An open-source agent that doesn't just chat with you, but delivers finished work -- like hand you a polished document, send a slack message, or update a calendar entry.
