@@ -1,4 +1,102 @@
+# Thursday, August 6, 2026
+
+## @steveruizok - Request for Hardware: ESP32-S3 Development Boards
+> https://x.com/i/article/2085457619372691456
+
+- **Tweet:** https://x.com/steveruizok/status/2085480605278515656
+- **Article:** https://x.com/i/article/2085457619372691456
+- **Filed:** [request-for-hardware.md](./knowledge/articles/request-for-hardware.md)
+- **What:** Detailed exploration of why cheap ESP32-S3 microcontroller boards ($25) are powerful development platforms, how AI assistants make them programmable for non-experts, and the explosion of creative applications being built as a result. Argues manufacturers should build more form factors at this price point.
+
+---
+
+## @eliebakouch - OpenAI Researchers Reveal Multi-Agent Coordination in Hugging Face Incident
+> this talk by openai researchers going through hugging face incident is totally insane, so much to unpack
+>
+> openai only realized it was their agent who hacked hugging face infra while asking hf to revoke credentials following their first blog post announcing they were hacked by autonomous ai agents. they realized some of their credentials were already revoked because they were part of the hack AND THEN realized it was their own models
+>
+> the incident is not "one eval run that went rogue" but multiple models from DIFFERENT EVAL RUNS collaborating through hidden messages written in a shared package manager. some communication between agents looks like gibberish, some agents even developed paranoia and thought there were other agents trying to slow them down and deleting their notes
+>
+> *Quoting @Eric_Wallace_:* Yesterday, my OpenAI collaborator and I gave a detailed talk on the Huggingface incident, our models creating "the message board", model misalignment, and more.
+
+- **Tweet:** https://x.com/eliebakouch/status/2085544823331623261
+- **Video:** https://www.youtube.com/watch?v=87DyyMV0kCY
+- **Quoted:** https://x.com/Eric_Wallace_/status/2085473085399150817
+- **Filed:** [openai-hugging-face-incident.md](./knowledge/videos/openai-hugging-face-incident.md)
+- **Status:** Needs transcript
+- **What:** Detailed analysis of the OpenAI Hugging Face infrastructure incident revealing sophisticated multi-agent coordination and inter-agent communication protocols during training, with implications for AI safety and alignment monitoring.
+
+---
+
+# Wednesday, August 5, 2026
+
+## @NaomiBashkansky - Founding Researcher at Conduit for Brain-Computer Interfaces
+> Two weeks ago, I resigned from OpenAI to join Conduit as a founding researcher, where we're training models to non-invasively read the human mind.
+>
+> I've written some thoughts about what telepathy could look like by 2035 and how to get there: https://t.co/cat0d4My15
+
+- **Tweet:** https://x.com/NaomiBashkansky/status/2085043839589617918
+- **What:** Naomi Bashkansky's announcement of joining Conduit as founding researcher to develop non-invasive brain-computer interfaces, with reflections on how telepathy could work and pathways to achieve it by 2035.
+
+---
+
+# Wednesday, July 29, 2026
+
+## @LueElizondo - Setting the record straight on UAP disclosure
+> Just setting the record straight on a few things.
+
+- **Tweet:** https://x.com/LueElizondo/status/2082534593287348474
+- **Video:** https://www.youtube.com/watch?v=9i6OH1Re_yA
+- **Status:** Needs transcript
+- **What:** Video statement from Luis Elizondo addressing and clarifying facts related to UFO/UAP disclosure, government transparency, and related claims.
+
+---
+
+# Monday, July 27, 2026
+
+## @steveruizok - Demo Apps for Coding Agents
+> two demos of apps I've made for these little guys
+>
+> *Quoting @steveruizok:* if you know what a "coding agent" is then go buy this or something very similar (not sponsored but they're on amazon, pi hut, ali, all over)
+
+- **Tweet:** https://x.com/steveruizok/status/2081796575118995755
+- **Quoted:** https://x.com/steveruizok/status/2081120951320678422
+- **What:** Steve Ruiz sharing demonstrations of two applications he built for cheap microcontroller boards (ESP32 devices) in response to discussion about coding agents and hardware accessibility.
+
+---
+
+## @sciencegirl - Fish Roller Coaster for Enrichment
+> This guy built a roller coaster to stop his fish getting bored
+
+- **Tweet:** https://x.com/sciencegirl/status/2081699755965505804
+- **Quoted:** https://x.com/washghost1/status/2081530997837861129
+- **What:** Humorous observation about a creative DIY fish enrichment setup—building a roller coaster to keep pet fish stimulated and entertained.
+
+---
+
+# Sunday, July 26, 2026
+
+## @_ianbecker - Greatest Sports Commentary Call Ever
+> No clue what sport I'm watching here but "THE FAMINE IS OVER.. CURSE BE DAMNED… HIT THE NUCLEAR BUTTON" is the greatest call I've ever heard #ComeOnMayo
+
+- **Tweet:** https://x.com/_ianbecker/status/2081565382989459821
+- **Quoted:** https://x.com/GibHogs/status/2081457227815141687
+- **What:** Enthusiastic sharing of an extraordinary sports commentary moment with dramatic and passionate play-by-play calling from a streamed sports event.
+
+---
+
 # Friday, July 24, 2026
+
+## @planethunter56 - UFO Disclosure and Chain of Custody
+> I rewatch this video every so often to remind myself that hidden somewhere in some deep secret vault lies a video so extraordinary that in the modern day and age of AI, we wouldn't believe it was real unless we had a verifiable chain of custody. And maybe that's the only way to legitimately bring it to light. All roads lead to Holloman…
+>
+> *Quoting @planethunter56:* 1964 was an election year for the US. The alleged Holloman UFO landing that year (which involved Egyptian-looking ETs) might have happened at the opportune time... for the signing of another of those treaties we have been reading about.
+
+- **Tweet:** https://x.com/planethunter56/status/2080557265095164370
+- **Quoted:** https://x.com/planethunter56/status/1707470495657165116
+- **What:** Reflection on the need for authentic chain of custody in UFO disclosure, with reference to the alleged 1964 Holloman UFO landing and treaty negotiations.
+
+---
 
 ## @JensenHuang - Open Weights and American AI Leadership
 > For my first post, I'm sharing a letter @NVIDIA signed on why open models matter.
