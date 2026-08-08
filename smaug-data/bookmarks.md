@@ -1,3 +1,14 @@
+# Friday, August 7, 2026
+
+## @matthew_pines - Time Discrepancy in UAP Incident (FBI Document)
+> "[REDACTED]'s watch was a [REDACTED] Men's Automatic Analog Watch. [REDACTED] walked back to the vehicle to check his phone, which displayed 12:40am. [REDACTED] noted the discrepancy, compared the time displayed on his watch to the time displayed on his phone and observed that the time on his watch was 25 minutes ahead of the time on his phone and the vehicle's digital clock. [REDACTED] relayed the discrepancy to [REDACTED], whose digital watch displayed the same time as the phones and vehicle clock." 🤔
+
+- **Tweet:** https://x.com/matthew_pines/status/2085718092437410239
+- **Document:** https://www.war.gov/medialink/ufo/release_05/Aug_07/documents/FBI-UAP-D037_FD-302_Multiple-Red-Lights_2026.pdf
+- **What:** Excerpt from FBI-UAP-D037_FD-302 document describing an unusual time discrepancy observation during a UAP incident, where one witness's watch was 25 minutes ahead of other time sources, suggesting possible electromagnetic effects.
+
+---
+
 # Thursday, August 6, 2026
 
 ## @steveruizok - Request for Hardware: ESP32-S3 Development Boards
@@ -229,6 +240,24 @@
 ---
 
 # Friday, June 19, 2026
+
+## @MinuteofZombie - Aviation Mystery (Quote Tweet)
+> *Quoting @AcepilotAV:* [tweet with link]
+
+- **Tweet:** https://x.com/MinuteofZombie/status/2068056852819280256
+- **Quoted:** https://x.com/AcepilotAV/status/2067826284215066996
+- **What:** Quote tweet reaction (with minimal commentary) to Acepilot Aviation's post about an aviation-related incident or observation.
+
+---
+
+## @disclosurefound - The Psychological Impact of UAP/NHI Disclosure
+> Authored by Jennice Vilhauer, PhD; Tim Lomas, PhD (Harvard); Daniel Stubbings, PhD (Cardiff Metropolitan); Omer Eldadi, PhD (Reichman / Harvard); Gabriel de La Torre, PhD (University of Cádiz); and Thomas Rabeyron, PhD (University of Lyon 2).
+
+- **Tweet:** https://x.com/disclosurefound/status/2068065511813136422
+- **Article:** [research/psychological-impact-of-uap-nhi-disclosure](https://disclosure.org/research/psychological-impact-of-uap-nhi-disclosure)
+- **What:** Multi-author research paper examining the psychological and societal implications of potential UAP/NHI disclosure, with analysis of public response frameworks and preparedness strategies written by academic researchers from major institutions.
+
+---
 
 ## @moultano - Where to Find the Colors Your Screen Can't Show You
 > I spent the last month obsessed with finding colors that can't be displayed on a conventional screen. This is what I found.
