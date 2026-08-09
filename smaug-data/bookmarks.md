@@ -213,7 +213,57 @@
 
 ---
 
+# Tuesday, June 23, 2026
+
+## @TheMysteryWire - David Grusch and Disclosure News Conference
+> Mystery Wire with George Knapp. George and @RonFutrell talk about David Grusch and his recent Disclosure News conference.
+
+- **Tweet:** https://x.com/TheMysteryWire/status/2069502740544503811
+- **Video:** https://www.youtube.com/watch?v=3X2byclVO7c&t=2s
+- **Status:** Needs transcript
+- **What:** Mystery Wire episode featuring George Knapp discussing David Grusch's participation in the Disclosure News conference, focusing on developments in UFO/UAP transparency initiatives.
+
+---
+
+# Monday, June 22, 2026
+
+## @planethunter56 - Collins Elite and Dr. Kit Green's Paranormal Assessment
+> Dr. Kit Green: "The Collins Elite consists of a dozen people known to us, who do have a superficial view of paranormal phenomena. They are senior military and Intelligence men, all born-again Fundamentalists, Southern Baptists, and generally Protestants with their own notions about the Bible, but they include three- and four-star generals and men of flag rank at the DoD. I knew of them through 'The Ambassador' Alonzo McDonald, the former White House Staff Director in the Carter administration. He told me they were beneath contempt, no value."
+>
+> And Vallée also reports that Green paid a visit to Ray Boeche. So read Nick Redfern's Final Events, if you haven't…
+>
+> Info from Vallée's FS7
+
+- **Tweet:** https://x.com/planethunter56/status/2068938154800017507
+- **What:** UAP researcher sharing detailed historical account from Dr. Kit Green about the "Collins Elite" - a military/intelligence group with purported knowledge of paranormal phenomena, including commentary on various government officials involved in classified research.
+
+---
+
+## @MinuteofZombie - CAC Credential ID Mismatch
+> They are so fucking dumb.
+>
+> *Quoting @sentdefender:* Hmmm, the person on that CAC doesn't exactly look like Vance? Someone clearly failed their Annual Cyber Awareness Training.
+
+- **Tweet:** https://x.com/MinuteofZombie/status/2068954673231679682
+- **Quoted:** https://x.com/sentdefender/status/2068902231924003128
+- **What:** Security breach commentary highlighting a credential (CAC card) identity mismatch incident, with implied critique of cybersecurity awareness failures in government operations.
+
+---
+
 # Sunday, June 21, 2026
+
+## @matthew_pines - ISSO Credential Violation and PKI Non-Repudiation
+> You: diplomacy in action.
+>
+> Me, a USG ISSO: operating a CAC/PIV-authenticated session under someone else's credential, defeating IA-2 unique identification and PKI non-repudiation while voiding audit-trail integrity (IA-5/AU-2), is a violation of the SAAR/AUP and DoDI 8520.02.
+>
+> *Quoting @MBA_AlThani_:* Live from Lucerne, work continues with @VP &amp; @jaredkushner.
+
+- **Tweet:** https://x.com/matthew_pines/status/2068871848947818668
+- **Quoted:** https://x.com/MBA_AlThani_/status/2068856739940676076
+- **What:** Critical security commentary from Matthew Pines (ISSO) highlighting serious violations of federal information security standards, including improper use of CAC/PIV credentials and breach of audit trail integrity, in response to a quote about diplomatic work.
+
+---
 
 ## @darrenrovell - Del Monte Spelling Correction (38 Years Later)
 > In the spring of 1988, a 9-year-old me noticed a misspelling on my favorite snack, Yogurt Covered Raisins. I wrote to Del Monte to say that they spelled "Delicious" wrong. They sent me a letter, 38 years ago today, changed millions of packages & gave me 36 pounds of raisins!
