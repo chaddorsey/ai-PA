@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ai-pa.lmstudio-facade</string>
+
+    <!-- LM Studio native-models facade: serves /api/v0/models with real context
+         windows so letta-code discovery stops defaulting proxy models to 128k;
+         reverse-proxies everything else to litellm (:4000). See
+         docs/followups/2026-08-10-letta-code-byok-context-window-128k-default.md -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/dorseyhomeserver/bin/lmstudio-facade-run.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/dorseyhomeserver</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Logs MUST live under ~/Library/Logs, never /Volumes: a /Volumes path is
+         unopenable at launchd spawn time and fails the job with EX_CONFIG(78). -->
+    <key>StandardOutPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/lmstudio-facade.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dorseyhomeserver/Library/Logs/lmstudio-facade.stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/dorseyhomeserver</string>
+        <key>XDG_DATA_HOME</key>
+        <string>/Users/dorseyhomeserver/Library/Application Support</string>
+    </dict>
+</dict>
+</plist>

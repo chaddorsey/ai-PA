@@ -228,6 +228,13 @@ model_list:
       model: "fireworks_ai/accounts/fireworks/models/deepseek-v4-pro"
       api_key: "os.environ/FIREWORKS_AI_API_KEY"
 
+  # --- DeepSeek V4 Flash (lighter/faster "lite" tier; rolling latest.
+  #      Fireworks has no v4-lite — flash is the light tier. Added 2026-08-10) ---
+  - model_name: "deepseek-v4-flash"
+    litellm_params:
+      model: "fireworks_ai/accounts/fireworks/models/deepseek-v4-flash"
+      api_key: "os.environ/FIREWORKS_AI_API_KEY"
+
   # =========================================================================
   # GOOGLE (Gemini) — vision-capable, used by fox-cam classifier (Track 1)
   # =========================================================================

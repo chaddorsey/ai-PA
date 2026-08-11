@@ -1,0 +1,47 @@
+# LM Studio native-models facade for letta-code discovery.
+#
+# letta-code reads model context windows from {host}/api/v0/models (LM Studio
+# native format). litellm (:4000) 404s that path, so letta-code falls back to a
+# 128k default for every proxy model. This facade (:4001) serves the generated
+# native file at /api/v0/models and transparently reverse-proxies everything else
+# (incl. streaming /v1/chat/completions) to litellm, so discovery sees real
+# windows. Point the letta-code "lmstudio" provider base_url at http://localhost:4001/v1.
+#
+# Regenerate the served file after editing litellm/config.yaml or
+# model-context-windows.json:  python3 litellm/lmstudio-facade/gen-lmstudio-models.py
+#
+# See docs/followups/2026-08-10-letta-code-byok-context-window-128k-default.md
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:4001 {
+	# Native models endpoint discovery reads (serves the generated static file).
+	# root MUST be on the home disk, NOT /Volumes: a launchd-spawned caddy hangs in
+	# open() on /Volumes paths (external USB). This dir is populated from a normal
+	# shell (which can read /Volumes) by deploy-facade.sh. The repo copy here is the
+	# canonical source; the served copy lives at ~/.config/lmstudio-facade/Caddyfile.
+	handle /api/v0/models* {
+		root * /Users/dorseyhomeserver/.config/lmstudio-facade
+		rewrite * /lmstudio-models.json
+		header Content-Type application/json
+		file_server
+	}
+
+	# Everything else (incl. /v1/models and streaming /v1/chat/completions) -> litellm.
+	handle {
+		reverse_proxy localhost:4000 {
+			# -1 = flush immediately: required so SSE token streams aren't buffered.
+			flush_interval -1
+		}
+	}
+
+	log {
+		output file /Users/dorseyhomeserver/Library/Logs/lmstudio-facade.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}

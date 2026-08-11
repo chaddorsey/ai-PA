@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# mc-set-model <model> [context_window] [--dry-run]
+#
+# Switch Mission Control's model AND set the correct context_window_limit in one
+# step, then restart MC so it reloads. Use this instead of the in-TUI `/model`
+# when running a large conversation: `/model` re-stamps the window from discovery
+# (litellm doesn't advertise context length, so it defaults to 128k), which
+# re-breaks big-conversation turns with `max_tokens_exceeded`. This sets the real
+# window from litellm/model-context-windows.json.
+#
+# Once the LM Studio native-models facade (Caddy on :4001) is live and the
+# "lmstudio" provider points at it, plain `/model` works again and this is just a
+# convenience. See docs/followups/2026-08-10-letta-code-byok-context-window-128k-default.md
+#
+#   mc-set-model deepseek-v4-flash          # window from the map
+#   mc-set-model lmstudio/kimi-k2p6         # explicit provider prefix ok
+#   mc-set-model deepseek-v4-pro 800000     # override the window
+#   mc-set-model glm-5p2 --dry-run          # show the change, don't apply
+set -euo pipefail
+
+MC_AGENT_ID="agent-local-8474bbbd-95fc-42f7-b586-eb0cf94a5a5d"
+REPO="${PA_AI_REPO_ROOT:-/Volumes/main-drive/ai-PA}"
+MAP="${MC_CONTEXT_MAP:-$REPO/litellm/model-context-windows.json}"
+BACKENDS="$HOME/.letta/lc-local-backend/agents"
+
+usage() { sed -n '2,20p' "$0"; exit "${1:-0}"; }
+[ "$#" -ge 1 ] || usage 1
+DRY=0; MODEL=""; CW=""
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY=1 ;;
+    -h|--help) usage 0 ;;
+    *) if [ -z "$MODEL" ]; then MODEL="$a"; elif [ -z "$CW" ]; then CW="$a"; fi ;;
+  esac
+done
+[ -n "$MODEL" ] || usage 1
+
+# Normalize: store `lmstudio/<model>` in the record unless a provider prefix is given.
+case "$MODEL" in */*) FULL="$MODEL" ;; *) FULL="lmstudio/$MODEL" ;; esac
+BARE="${FULL##*/}"
+
+# Resolve context window: explicit arg > map lookup > map default.
+if [ -z "$CW" ]; then
+  CW="$(BARE="$BARE" MAP="$MAP" python3 - <<'PY'
+import json, os, sys
+try:
+    m = json.load(open(os.environ["MAP"]))
+except Exception as e:
+    print("", end=""); sys.exit(0)
+print(m.get("models", {}).get(os.environ["BARE"]) or m.get("default", 131072))
+PY
+)"
+fi
+[ -n "$CW" ] || { echo "mc-set-model: could not resolve a context window (map: $MAP)"; exit 1; }
+
+REC="$BACKENDS/$(printf '%s' "$MC_AGENT_ID" | base64)"
+# base64 of the id may or may not include a trailing newline depending on platform; the
+# file has no newline in its name, and base64 on macOS emits none for short input — but guard:
+REC="${REC%$'\n'}.json"
+[ -f "$REC" ] || { echo "mc-set-model: MC agent record not found at $REC"; exit 1; }
+
+echo "model  : $FULL"
+echo "window : $CW"
+echo "record : $REC"
+
+if [ "$DRY" -eq 1 ]; then
+  echo "(dry-run: no changes written, MC not restarted)"
+  exit 0
+fi
+
+# Backup + atomic edit.
+cp "$REC" "$REC.bak"
+FULL="$FULL" CW="$CW" REC="$REC" python3 - <<'PY'
+import json, os, tempfile
+p = os.environ["REC"]
+d = json.load(open(p))
+d["model"] = os.environ["FULL"]
+ms = d.setdefault("model_settings", {})
+ms.setdefault("provider_type", "openai")
+ms.setdefault("parallel_tool_calls", True)
+ms["context_window_limit"] = int(os.environ["CW"])
+ms["max_output_tokens"] = 128000
+ms["max_tokens"] = 128000
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p))
+with os.fdopen(fd, "w") as f:
+    json.dump(d, f, indent=2)
+os.replace(tmp, p)
+print("record updated (backup at %s.bak)" % p)
+PY
+
+# Restart MC: kill its letta child; agent-supervise auto-relaunches (--conversation default).
+CHILD="$(pgrep -f "letta --backend local --agent $MC_AGENT_ID" 2>/dev/null | head -1 || true)"
+if [ -n "$CHILD" ]; then
+  echo "restarting MC (kill child pid=$CHILD; supervisor relaunches)…"
+  kill -9 "$CHILD" 2>/dev/null || true
+  echo "done. MC will reboot on $FULL within a few seconds."
+else
+  echo "note: MC letta child not running; it will pick up the new model on next launch."
+fi
