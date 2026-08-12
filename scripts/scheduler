@@ -143,6 +143,69 @@ Examples:
 
   # Run a job right now (for testing)
   scheduler trigger <job-id>
+
+  # Let an agent schedule a weekday-morning reminder (auto-tagged agent-created)
+  scheduler create --title "Reminder: review SOW" --cron "0 9 * * 1-5" \
+    --message "Please review the SOW draft" --to-agent agent-local-30c45759-...
+
+  # Schedule an hourly allow-listed script
+  scheduler create --title "Hourly export" --every 3600 --script "run-export.sh"
+
+  # Undo everything agents have scheduled
+  scheduler cancel-all --category agent-created --yes
+
+  # Focused help for a command:  scheduler create --help  /  scheduler cancel-all --help
+EOF
+}
+
+# ─── focused per-command help (progressive disclosure) ────────────────────────
+
+create_help() {
+  cat <<'EOF'
+scheduler create — create a new scheduled job (auto-tagged for audit)
+
+Synopsis:
+  scheduler create --title T <SCHEDULE> <ACTION> [--description D] [--category C] [--created-by U]
+
+Schedule (exactly one):
+  --cron "M H D M W"        cron, e.g. "0 6 * * *" (6am daily)
+  --every <seconds>         interval, e.g. --every 3600 (hourly)
+  --at <ISO8601>            one-off, e.g. --at "2026-09-01T14:00:00Z"
+  --when "<phrase>"         natural language; must be parser-recognized
+                            (e.g. "every 5 minutes"); if rejected, use --cron
+  --schedule-json '{...}'   raw {type,expression[,next_run_at,timezone]}
+
+Action (exactly one):
+  --message "<text>" --to-agent <agent-id>        message a Letta agent
+  --script <name> [--args '<json-array>']         run an allow-listed script
+  --http <url> [--method POST] [--body '<str>']   HTTP request
+  --action-json '{...}'                           raw {action_type,config}
+
+Audit: category defaults to "agent-created", created_by to $SCHEDULER_CREATED_BY
+or "agent". Undo with `scheduler cancel-all`. Jobs execute with the
+scheduler-service's privileges (script actions are allow-list-confined; http is open).
+
+Examples:
+  scheduler create --title "Nudge" --cron "0 9 * * 1-5" \
+    --message "Review the SOW" --to-agent agent-local-30c45759-...
+  scheduler create --title "Hourly export" --every 3600 --script "run-export.sh"
+EOF
+}
+
+cancelall_help() {
+  cat <<'EOF'
+scheduler cancel-all — bulk-cancel matching scheduled jobs (the undo lever)
+
+Synopsis:
+  scheduler cancel-all [--category C] [--created-by U] [--yes]
+
+  --category <cat>       default: agent-created (what `create` tags)
+  --created-by <user>    further filter by creator
+  --yes / -y             skip the confirmation prompt (for agents)
+
+Cancels all currently-scheduled jobs matching the filter.
+Example:
+  scheduler cancel-all --created-by pulse-agent --yes
 EOF
 }
 
@@ -328,7 +391,7 @@ cmd_create() {
       --method)        http_method="$2"; shift 2 ;;
       --body)          http_body="$2"; shift 2 ;;
       --action-json)   act_json="$2"; shift 2 ;;
-      -h|--help)       usage; exit 0 ;;
+      -h|--help)       create_help; exit 0 ;;
       *)               die "unknown flag: $1" ;;
     esac
   done
@@ -385,7 +448,7 @@ cmd_cancel_all() {
       --created-by) created_by="$2"; shift 2 ;;
       --category)   category="$2"; shift 2 ;;
       --yes|-y)     assume_yes=1; shift ;;
-      -h|--help)    usage; exit 0 ;;
+      -h|--help)    cancelall_help; exit 0 ;;
       *)            die "unknown flag: $1" ;;
     esac
   done
