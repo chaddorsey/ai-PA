@@ -262,7 +262,8 @@ cmd_delete() {
 cmd_archive() {
   [[ $# -ge 1 ]] || die "archive requires at least one job-id"
   local ids_json
-  ids_json="$(printf '%s\n' "$@" | jq -R . | jq -s '{job_ids: .}')"
+  # /v1/jobs/batch/archive expects a BARE JSON array of ids (not {job_ids:[...]}).
+  ids_json="$(printf '%s\n' "$@" | jq -R . | jq -s '.')"
   sched_curl POST "/v1/jobs/batch/archive" "$ids_json" | jq .
 }
 
