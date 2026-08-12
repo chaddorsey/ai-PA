@@ -47,6 +47,7 @@ def create_app() -> Flask:
         app_client = AppServerClient(app_server.base_url, _log)
         enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
     app.config["APP_SERVER"] = app_server
+    app.config["ENRICH_POOL"] = enrich_pool
 
     # ---- routes ----
 
@@ -142,6 +143,9 @@ def main():
 
     def _shutdown(signum, frame):
         _log(f"received signal {signum}, shutting down")
+        enrich_pool = app.config.get("ENRICH_POOL")
+        if enrich_pool is not None:
+            enrich_pool.shutdown(wait=False, cancel_futures=True)
         pool = app.config.get("WARM_POOL")
         if pool is not None:
             pool.shutdown()
