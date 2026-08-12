@@ -177,8 +177,8 @@ Create `letta-push-receiver/tests/test_app_server.py`:
 from letta_push_receiver.app_server import _is_ready_line
 
 def test_ready_line_detects_listening_banner():
-    # The server prints a line announcing the bound URL when ready.
-    assert _is_ready_line("App Server listening on ws://127.0.0.1:4577") is True
+    # Task-1 spike confirmed the exact banner the server prints when ready.
+    assert _is_ready_line("Listening on ws://127.0.0.1:4577") is True
 
 def test_ready_line_ignores_noise():
     assert _is_ready_line("loading agent config...") is False
@@ -207,8 +207,8 @@ from .warm_pool import build_runtime_env  # extracted shared env builder
 READY_TIMEOUT_S = 60.0
 
 def _is_ready_line(line: str) -> bool:
-    l = line.lower()
-    return "app server" in l and "listening" in l
+    # Task-1 spike: server prints "Listening on ws://127.0.0.1:4577" when ready.
+    return "listening on ws://" in line.lower()
 
 class AppServer:
     def __init__(self, log_fn):
@@ -234,7 +234,10 @@ class AppServer:
     def _start_locked(self) -> None:
         env = build_runtime_env()
         letta_bin = env.get("LETTA_BIN", "/opt/homebrew/bin/letta")
-        cmd = [letta_bin, "server", "--listen", APP_SERVER_LISTEN, "--openai-api"]
+        # Task-1 spike: --backend local is REQUIRED, else --openai-api hits the
+        # cloud APIBackend and fails with "Missing LETTA_API_KEY".
+        cmd = [letta_bin, "server", "--backend", "local",
+               "--listen", APP_SERVER_LISTEN, "--openai-api"]
         ts = time.strftime("%Y%m%d-%H%M%S")
         log_fh = open(log_dir() / f"app-server-{ts}.log", "w", buffering=1)
         self._ready.clear()
@@ -289,39 +292,43 @@ git commit -m "feat(push-receiver): App Server supervision module + shared runti
 
 ## Task 4: Per-task dispatch client (primary path: OpenAI-compatible `/v1/responses`)
 
-> Implements the **expected** spike outcome. If Task 1 chose `WS`, implement per **Appendix A** and keep the same `AppServerClient.enrich()` signature so Task 5 is unchanged.
+> **Task 1 spike RESOLVED this: use `POST /v1/responses` (non-streaming).** Confirmed the tool loop runs server-side, calls are stateless, and the response is a single JSON object. **Appendix A (WS) is not needed** — ignore it.
 
 **Files:**
 - Create: `letta-push-receiver/src/letta_push_receiver/app_server_client.py`
 - Create: `letta-push-receiver/tests/test_app_server_client.py`
 
 **Interfaces:**
-- Consumes: `AppServer.base_url` (Task 3); the exact request body from Task 1's decision record.
-- Produces: `class AppServerClient` with `enrich(agent_id: str, prompt: str) -> DispatchResult`, where `DispatchResult` is a dataclass `{status: str ("done"|"error"), context_tokens: int|None, detail: str}`. `status="done"` means the run completed without a context-overflow error (NOT that the DB row flipped — the scanner owns that via `write_packet_info`).
+- Consumes: `AppServer.base_url` (Task 3); the `/v1/responses` contract from `docs/plans/2026-08-12-dispatch-surface-spike.md`.
+- Produces: `class AppServerClient` with `enrich(slug: str, prompt: str) -> DispatchResult` (slug is the receiver agent slug, e.g. `"tasks"`, mapped to the friendly model name), where `DispatchResult` is a dataclass `{status: str ("done"|"error"), context_tokens: int|None, detail: str}`. `status="done"` means the run completed (`status=="completed"`); the DB row flip is owned by the agent's own `write_packet_info` call, not this client. Also exports `parse_responses_json(obj: dict) -> DispatchResult` and `SLUG_TO_MODEL: dict`.
 
 - [ ] **Step 1: Write the failing completion-parse test**
 
 Create `letta-push-receiver/tests/test_app_server_client.py`:
 ```python
-from letta_push_receiver.app_server_client import parse_stream_result
+from letta_push_receiver.app_server_client import parse_responses_json
 
-def test_parse_success_extracts_context_tokens():
-    lines = [
-        '{"type":"message","message_type":"usage_statistics","context_tokens":37357}',
-        '{"type":"result","subtype":"success","result":"ENRICHED: ref_id=x"}',
-    ]
-    r = parse_stream_result(lines)
+def test_parse_completed_extracts_text_and_context_tokens():
+    # Shape confirmed by the Task-1 spike: single /v1/responses JSON object.
+    obj = {
+        "status": "completed",
+        "output": [
+            {"type": "function_call", "name": "exec_command"},
+            {"type": "message", "content": [{"type": "output_text", "text": "ENRICHED: ref_id=x"}]},
+        ],
+        "usage": {"input_tokens": 35167},
+    }
+    r = parse_responses_json(obj)
     assert r.status == "done"
-    assert r.context_tokens == 37357
+    assert r.context_tokens == 35167
+    assert "ENRICHED" in r.detail
 
-def test_parse_context_overflow_is_error():
-    lines = [
-        '{"type":"error","message":"litellm.ContextWindowExceededError: ..."}',
-        '{"type":"result","subtype":"error","result":""}',
-    ]
-    r = parse_stream_result(lines)
+def test_parse_non_completed_is_error():
+    obj = {"status": "incomplete", "output": [], "error": {"message": "context_window exceeded"},
+           "usage": {"input_tokens": 271000}}
+    r = parse_responses_json(obj)
     assert r.status == "error"
-    assert "ContextWindowExceeded" in r.detail
+    assert "context_window" in r.detail
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -335,14 +342,23 @@ Create `letta-push-receiver/src/letta_push_receiver/app_server_client.py`:
 ```python
 """Per-task enrichment dispatch against the warm App Server.
 
-Each call is a FRESH conversation (OpenAI-compatible /v1/responses is
-stateless per request — confirmed in the Task 1 spike), so context never
-accumulates across tasks. Signature is dispatch-surface-agnostic; only the
-HTTP body here is /v1/responses-specific.
+Each POST /v1/responses is a FRESH, isolated conversation (stateless —
+confirmed in the Task 1 spike), so context never accumulates across tasks.
+Non-streaming: the server returns one JSON object with output[] + usage.
 """
 from __future__ import annotations
 import json, urllib.request, urllib.error
 from dataclasses import dataclass
+
+# Task-1 spike: /v1/models exposes agents by FRIENDLY NAME, not agent-local-* id.
+SLUG_TO_MODEL = {
+    "tasks": "tasks-agent-local",
+    "docs": "docs-and-transcripts-agent-local",
+    "pulse": "pulse-monitor-agent-local",
+    "email": "email-agent-local",
+    "calendar": "calendar-agent_copy-local",
+    "mc": "Mission Control (local)",
+}
 
 @dataclass
 class DispatchResult:
@@ -350,51 +366,47 @@ class DispatchResult:
     context_tokens: int | None
     detail: str
 
-def parse_stream_result(lines) -> "DispatchResult":
-    ctx = None
-    overflow = False
-    for line in lines:
-        try:
-            obj = json.loads(line)
-        except Exception:
-            continue
-        if obj.get("message_type") == "usage_statistics" and obj.get("context_tokens") is not None:
-            ctx = obj["context_tokens"]
-        msg = (obj.get("message") or "") if obj.get("type") == "error" else ""
-        if "ContextWindowExceeded" in msg:
-            overflow = True
-        if obj.get("type") == "result" and obj.get("subtype") == "error":
-            return DispatchResult("error", ctx,
-                                  "context_window_overflow" if overflow else (obj.get("result") or "run error"))
-        if obj.get("type") == "result" and obj.get("subtype") == "success":
-            return DispatchResult("done", ctx, obj.get("result") or "")
-    return DispatchResult("error", ctx, "no terminal result event")
+def parse_responses_json(obj: dict) -> "DispatchResult":
+    usage = obj.get("usage") or {}
+    ctx = usage.get("input_tokens")
+    if obj.get("status") != "completed":
+        err = obj.get("error") or {}
+        detail = err.get("message") if isinstance(err, dict) else str(err)
+        return DispatchResult("error", ctx, detail or f"status={obj.get('status')}")
+    text = ""
+    for item in obj.get("output", []):
+        if item.get("type") == "message":
+            content = item.get("content") or []
+            if content:
+                text = content[0].get("text", "")
+    return DispatchResult("done", ctx, text)
 
 class AppServerClient:
     def __init__(self, base_url: str, log_fn):
         self.base_url = base_url.rstrip("/")
         self.log = log_fn
 
-    def enrich(self, agent_id: str, prompt: str) -> DispatchResult:
-        body = json.dumps({"model": agent_id, "input": prompt, "stream": True}).encode()
+    def enrich(self, slug: str, prompt: str) -> DispatchResult:
+        model = SLUG_TO_MODEL.get(slug, slug)
+        body = json.dumps({"model": model, "input": prompt}).encode()
         req = urllib.request.Request(
             f"{self.base_url}/v1/responses", data=body,
             headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                lines = resp.read().decode().splitlines()
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                obj = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             return DispatchResult("error", None, f"HTTP {e.code}: {e.read()[:200].decode('utf-8','replace')}")
         except Exception as e:
             return DispatchResult("error", None, f"unreachable: {e}")
-        result = parse_stream_result(lines)
+        result = parse_responses_json(obj)
         # Observability sanity-check: a single fresh-conversation task should be
         # nowhere near the window. Flag pathological single-task growth.
         if result.context_tokens and result.context_tokens > 200_000:
-            self.log(f"WARN pathological single-task context={result.context_tokens} agent={agent_id}")
+            self.log(f"WARN pathological single-task context={result.context_tokens} slug={slug}")
         return result
 ```
-> **Reconcile with Task 1:** the request shape (`/v1/responses`, `input` vs `messages`, `stream`, and how the streamed body is framed — newline-delimited JSON vs SSE `data:` lines) MUST match the decision record. If the server frames SSE, strip `data: ` prefixes before `json.loads`.
+> **Note:** `enrich(slug, prompt)` now takes the receiver **slug** (maps to the friendly model name), not the raw `agent_id` — update Task 5's call site accordingly. Timeout is 300s (enrichment tool chains can be slow).
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -439,7 +451,7 @@ In the `/push` handler, resolve the agent id (existing `source`/`agent` routing 
 ```python
 if APP_SERVER_ENABLED and app_client is not None:
     app_server.ensure()                       # restart-on-death
-    result = app_client.enrich(spec.agent_id, prompt)
+    result = app_client.enrich(slug, prompt)  # slug -> friendly model name (SLUG_TO_MODEL)
     return {"status": "queued", "agent": slug, "dispatch": "app-server",
             "result_status": result.status, "context_tokens": result.context_tokens}
 # else: existing warm_pool.dispatch(slug, prompt) path unchanged
@@ -512,9 +524,11 @@ Post the payload assembled in the design doc's "Upstream follow-up" section to t
 
 ---
 
-## Appendix A: WS session-per-task dispatch (contingency if Task 1 selects `WS`)
+## Appendix A: WS session-per-task dispatch (OBSOLETE — Task 1 chose `/v1/responses`)
 
-If the spike shows the OpenAI-compatible routes do NOT run the tool loop statelessly, implement `AppServerClient.enrich()` over the WebSocket App Server instead, preserving the same signature and `DispatchResult`:
+> **Not needed.** The Task 1 spike confirmed `POST /v1/responses` runs the tool loop statelessly against local agents. This appendix is retained only as a record of the contingency. Do not implement it.
+
+If the spike had shown the OpenAI-compatible routes do NOT run the tool loop statelessly, implement `AppServerClient.enrich()` over the WebSocket App Server instead, preserving the same signature and `DispatchResult`:
 1. Connect once (persistent WS) to `APP_SERVER_LISTEN`; loopback needs no auth.
 2. Per task: send the "create conversation/session" op for `agent_id` (shape captured in Task 1 Step 4), receive the new `conversation_id`.
 3. Send the enrichment prompt as a user message into that conversation; read stream-json events to the terminal `result` (reuse `parse_stream_result` verbatim — it is transport-agnostic).
