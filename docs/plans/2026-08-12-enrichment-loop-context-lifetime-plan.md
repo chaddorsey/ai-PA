@@ -478,43 +478,58 @@ git commit -m "feat(push-receiver): per-task App Server dispatch client (fresh c
 
 - [ ] **Step 1: Wire the App Server into the receiver startup and `/push` handler**
 
-In `server.py`, where the `WarmPool` is constructed, add (guarded by the flag):
+The existing `/push` handler (in `create_app()`) is **synchronous and fast** — `pool.dispatch(agent_slug, pr.prompt)` just writes to a stdin pipe and returns a "queued" ack immediately. The App Server `enrich()` is the **opposite**: a full enrichment round-trip up to 300s. The enrichment scanner POSTs `/push` with a **15s timeout** and treats a slow/failed ack as a dispatch failure (reverts the row to `pending`). Therefore the App Server path MUST be **fire-and-forget**: submit `enrich()` to a background pool and return `202` immediately. Because each `enrich()` is a fresh isolated conversation, **no per-agent serialization is needed** (unlike the single-stdin warm pool), so a small shared pool is correct.
+
+Add near the top of `server.py` (module imports):
 ```python
+from concurrent.futures import ThreadPoolExecutor
 from .config import APP_SERVER_ENABLED
 from .app_server import AppServer
 from .app_server_client import AppServerClient
-
-app_server = None
-app_client = None
-if APP_SERVER_ENABLED:
-    app_server = AppServer(log)
-    app_server.ensure()
-    app_client = AppServerClient(app_server.base_url, log)
 ```
-In the `/push` handler, resolve the agent id (existing `source`/`agent` routing → `spec.agent_id`), then branch:
+In `create_app()`, right after `pool = WarmPool(DEFAULT_AGENTS, _log)`:
 ```python
-if APP_SERVER_ENABLED and app_client is not None:
-    app_server.ensure()                       # restart-on-death
-    result = app_client.enrich(slug, prompt)  # slug -> friendly model name (SLUG_TO_MODEL)
-    return {"status": "queued", "agent": slug, "dispatch": "app-server",
-            "result_status": result.status, "context_tokens": result.context_tokens}
-# else: existing warm_pool.dispatch(slug, prompt) path unchanged
+    app_server = None
+    app_client = None
+    enrich_pool = None
+    if APP_SERVER_ENABLED:
+        app_server = AppServer(_log)
+        app_server.ensure()
+        app_client = AppServerClient(app_server.base_url, _log)
+        enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
 ```
-Keep the fire-and-forget contract: `enrich()` is synchronous but the scanner already expects a 202-style ack; run it on the request thread (the scanner dispatches one row per 30s, so serialization is fine) OR hand to a worker thread and return immediately. Match the existing handler's async shape — if the current handler returns before completion, submit `enrich` to a `ThreadPoolExecutor(max_workers=1)` per agent and return the queued ack.
+In the `/push` handler, AFTER `agent_slug` is resolved and validated against `DEFAULT_AGENTS` (reuse the existing resolution — do not duplicate it), branch BEFORE the existing `pool.dispatch(...)` call:
+```python
+        if APP_SERVER_ENABLED and app_client is not None:
+            def _run_enrich(slug=agent_slug, prompt=pr.prompt):
+                try:
+                    app_server.ensure()                  # restart-on-death
+                    r = app_client.enrich(slug, prompt)  # slug -> friendly model (SLUG_TO_MODEL)
+                    _log(f"ENRICH {slug} -> {r.status} ctx={r.context_tokens}")
+                except Exception as e:
+                    _log(f"ENRICH FAILED {slug}: {e}")
+            enrich_pool.submit(_run_enrich)
+            return jsonify({"status": "queued", "agent": agent_slug,
+                            "dispatch": "app-server"}), 202
+        # else: fall through to the existing pool.dispatch(agent_slug, pr.prompt) path (unchanged fallback)
+```
+The DB row still flips to `done` via the agent's own `write_packet_info` inside `enrich()`; the scanner's existing timeout-recovery governs any failure (unchanged). Note the server's log function is `_log` (not `log`), and the handler uses `agent_slug` / `pr.prompt`.
 
 - [ ] **Step 2: Add `shutdown` wiring**
 
 Where `warm_pool.shutdown()` is called on receiver stop, also call `app_server.shutdown()` if present.
 
-- [ ] **Step 3: Manual smoke test with the flag ON (throwaway)**
+- [ ] **Step 3: Static verification only (do NOT start a live receiver)**
 
+A live receiver already runs on port 8099 — do NOT start a second instance and do NOT
+touch it. Verify the change compiles and imports cleanly:
 ```bash
-# In a scratch shell, run the receiver with the flag and hit /push for one requeued task.
-PA_APP_SERVER_ENABLED=1 poetry run python -m letta_push_receiver &   # scratch instance on an alt port if needed
-curl -s -XPOST http://127.0.0.1:8099/push -H 'Content-Type: application/json' \
-  -d '{"agent":"tasks","source_ref":"<REF>","prompt":"<enrich prompt>","priority":"normal"}'
+cd /Volumes/main-drive/ai-PA/letta-push-receiver
+/opt/homebrew/bin/python3.11 -m py_compile src/letta_push_receiver/server.py && echo "compiles"
+# import-check with the flag OFF (default) so no AppServer spawns:
+/opt/homebrew/bin/python3.11 -c "import sys; sys.path.insert(0,'src'); from letta_push_receiver import server; print('import ok')"
 ```
-Expected: ack with `"dispatch":"app-server"`; the target row reaches `enrichment_state='done'`; the App Server log shows a **new conversation id per push**.
+Expected: `compiles` and `import ok`. The end-to-end live smoke test (flag ON, real `/push`, row → `done`, distinct conversation ids) is Task 6 Step 1, run by the controller during rollout — NOT here.
 
 - [ ] **Step 4: Commit**
 
