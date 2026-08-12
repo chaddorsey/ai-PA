@@ -28,6 +28,18 @@ retries the row is set to `enrichment_state='failed'`.
 
 ### Root cause
 
+> **Update 2026-08-12 (refined via Letta support + live verification):** the *proximate*
+> cause of the wedge is narrower than "compaction is broken." letta-code 0.30.19's
+> `effectiveContextWindow()` reads `model_settings.context_window_limit`; pre-existing
+> agents lack that field (they have only a synthesized legacy `llm_config.context_window`,
+> which is not consulted), so the window resolves to `undefined` and sliding compaction
+> falls back to the message-percentage scan that degrades to cutoff-1 no-ops. **Backfilling
+> `model_settings.context_window_limit` (see plan Task 2.5) resolves the window and restores
+> healthy compaction — the immediate fix, now deployed.** The long-lived single-conversation
+> accumulation below remains a real *cost/architecture* issue (each call carries the whole
+> transcript), which the App Server per-task-conversation migration addresses; that migration
+> is now an optimisation rather than the sole wedge fix.
+
 The push-receiver runs **one long-lived `letta` stream-json subprocess per agent** and
 feeds every task into it over stdin. Per Letta support: `--new` runs **only at startup**,
 so **every stdin task enters the same conversation** — the wrong isolation boundary for

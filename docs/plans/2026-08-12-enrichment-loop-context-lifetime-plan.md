@@ -157,6 +157,50 @@ git commit -m "feat(scripts): one-time requeue for wedge-orphaned enrichment tas
 
 ---
 
+## Task 2.5: Backfill `context_window_limit` on existing agents (immediate wedge fix) — DONE 2026-08-12
+
+**Root-cause refinement (from Letta support + live verification):** the wedge's proximate
+cause is that letta-code 0.30.19's `effectiveContextWindow()` reads
+`model_settings.context_window_limit`, which pre-existing agents lack (they have only a
+synthesized legacy `llm_config.context_window`, not consulted). An unresolved window makes
+sliding compaction fall back to a message-percentage scan that degrades to cutoff-1 no-ops
+→ wedge. Freshly-created 0.30.19 agents get the field and are healthy. **Setting the field
+resolves the window and restores healthy token-target compaction** — a much smaller fix
+than the App Server migration, and it protects the long-lived residents in the interim (and
+permanently for non-tasks agents).
+
+**Files:**
+- Create: `scripts/backfill-agent-context-window.py`
+
+**What was done:**
+- Script sets `model_settings.context_window_limit` (default **128000**, env-override
+  `CONTEXT_WINDOW_LIMIT`) on any local agent missing it; idempotent; per-file `.bak-cwl`
+  backups; `--apply` to write, `--only-named` to skip default-named ("Letta Code")
+  throwaway agents.
+- **Value rationale:** 128000 is a cost-bounded ceiling for long-lived push residents
+  (compaction fires ~111.6k), deliberately below the real model windows in
+  `litellm/model-context-windows.json` (gpt-5.2=400k, deepseek-v4-flash=1M) which target
+  interactive Mission Control use. It is ≤ every affected model's real window, so the
+  provider never rejects before compaction fires.
+- **Rolled out** to the named push agents: `tasks` (manually, during verification),
+  `docs-and-transcripts`, `email`, `calendar` — each `effective.model_settings.context_window_limit`
+  now resolves to 128000. `pulse` (272000) and `Mission Control` (272000) already had a value.
+- Recycled `com.ai-pa.letta-push-receiver` so live residents reload config.
+
+**Not covered (documented follow-up):** the 11 generic default-named ("Letta Code") agents
+still lack the field; they are ephemeral/throwaway and newly-created ones get it
+automatically, so they were intentionally skipped. Re-run without `--only-named` if any
+becomes a long-lived resident.
+
+**Verification:** `letta --backend local agents config --agent <id>` shows the resolved
+`effective.model_settings.context_window_limit` for each named agent. Full end-to-end
+compaction proof (a live overflow pass) was NOT run (cost); the Letta support source
+analysis is authoritative that a resolved window restores token-target compaction.
+
+- [x] Done — committed with `scripts/backfill-agent-context-window.py`.
+
+---
+
 ## Task 3: App Server supervision module
 
 **Files:**
