@@ -7,11 +7,13 @@
 # plus the trigger-now operation. Underlying scheduler-service REST API
 # is unchanged — this is a thin shell over it.
 #
-# Deliberate omission: `scheduler create`. The legacy scheduler-mcp tools
-# did not expose job creation to agents, preserving an implicit safety
-# boundary (agents can manage existing jobs but not spawn new ones).
-# Re-establishing the same boundary here. If we want agents to create
-# jobs in the future, add `scheduler create` explicitly.
+# `scheduler create` (added 2026-08-12): agents CAN create jobs. Safety is
+# audit-based, not restriction: every created job is auto-tagged
+# category=agent-created + created_by, and `scheduler cancel-all` wipes them
+# in one shot. Execution runs with the scheduler-service's privileges (not the
+# agent's); script actions are already confined to the allow-listed scripts
+# dir at execution; http is unrestricted (accepted). See
+# docs/plans/2026-08-12-agent-scheduler-create-design.md.
 #
 # Usage:
 #   scheduler list [--status <st>] [--category <cat>] [--created-by <u>]
@@ -78,6 +80,21 @@ usage() {
 scheduler — manage scheduler-service jobs from a shell
 
 Subcommands:
+
+  create --title T <schedule> <action> [opts]   Create a new job
+    schedule (one of): --cron "0 6 * * *" | --every <seconds>
+                       | --at <ISO8601> | --when "<natural language>"
+                       | --schedule-json '{...}'
+                       (--when phrases must be parser-recognized, e.g.
+                        "every 5 minutes"; if rejected, use --cron)
+    action   (one of): --message "<text>" --to-agent <id>
+                       | --script <name> [--args '<json array>']
+                       | --http <url> [--method POST] [--body '<str>']
+                       | --action-json '{...}'
+    --description D    --category C (default: agent-created)
+    --created-by U     (default: $SCHEDULER_CREATED_BY or "agent")
+    Jobs are auto-tagged category=agent-created + created_by; undo with
+    `scheduler cancel-all`. (execution uses scheduler-service privileges)
 
   list [opts]                 List scheduled jobs
     --status <st>             scheduled | paused | cancelled | completed | active
@@ -278,9 +295,85 @@ cmd_trigger() {
   sched_curl POST "/v1/jobs/$1/executions" | jq .
 }
 
+# ─── create ─────────────────────────────────────────────────────────────────
+
+cmd_create() {
+  local title="" desc="" category="" created_by=""
+  local sched_type="" sched_expr_json="" next_run="" sched_json=""
+  local act_type="" act_json=""
+  local msg="" to_agent="" script_name="" script_args="[]"
+  local http_url="" http_method="POST" http_body=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --title)         title="$2"; shift 2 ;;
+      --description)   desc="$2"; shift 2 ;;
+      --category)      category="$2"; shift 2 ;;
+      --created-by)    created_by="$2"; shift 2 ;;
+      --cron)          sched_type="cron";     sched_expr_json="$(jq -nc --arg c "$2" '{cron:$c}')"; shift 2 ;;
+      --every)         sched_type="interval"; sched_expr_json="$(jq -nc --argjson s "$2" '{seconds:$s}')"; shift 2 ;;
+      --at)            sched_type="one_off";  sched_expr_json="{}"; next_run="$2"; shift 2 ;;
+      --when)          sched_type="natural";  sched_expr_json="$(jq -nc --arg t "$2" '$t')"; shift 2 ;;
+      --schedule-json) sched_json="$2"; shift 2 ;;
+      --message)       act_type="agent_message"; msg="$2"; shift 2 ;;
+      --to-agent)      to_agent="$2"; shift 2 ;;
+      --script)        act_type="script"; script_name="$2"; shift 2 ;;
+      --args)          script_args="$2"; shift 2 ;;
+      --http)          act_type="http"; http_url="$2"; shift 2 ;;
+      --method)        http_method="$2"; shift 2 ;;
+      --body)          http_body="$2"; shift 2 ;;
+      --action-json)   act_json="$2"; shift 2 ;;
+      -h|--help)       usage; exit 0 ;;
+      *)               die "unknown flag: $1" ;;
+    esac
+  done
+  [[ -n "$title" ]] || die "create requires --title"
+
+  # Auto-tag (the audit spine)
+  [[ -n "$category" ]]   || category="agent-created"
+  [[ -n "$created_by" ]] || created_by="${SCHEDULER_CREATED_BY:-agent}"
+
+  # Schedule object
+  local schedule
+  if [[ -n "$sched_json" ]]; then
+    schedule="$sched_json"
+  elif [[ -n "$sched_type" ]]; then
+    schedule="$(jq -nc --arg t "$sched_type" --argjson e "$sched_expr_json" --arg nr "$next_run" \
+                 '{type:$t, expression:$e} + (if $nr=="" then {} else {next_run_at:$nr} end)')"
+  else
+    die "a schedule is required (--cron / --every / --at / --when / --schedule-json)"
+  fi
+
+  # Action object
+  local action
+  if [[ -n "$act_json" ]]; then
+    action="$act_json"
+  elif [[ "$act_type" == "agent_message" ]]; then
+    [[ -n "$to_agent" ]] || die "--message requires --to-agent"
+    action="$(jq -nc --arg a "$to_agent" --arg m "$msg" '{action_type:"agent_message", config:{agent_id:$a, message:$m}}')"
+  elif [[ "$act_type" == "script" ]]; then
+    action="$(jq -nc --arg s "$script_name" --argjson args "$script_args" '{action_type:"script", config:{script:$s, args:$args}}')"
+  elif [[ "$act_type" == "http" ]]; then
+    action="$(jq -nc --arg u "$http_url" --arg m "$http_method" --arg b "$http_body" \
+               '{action_type:"http", config:({url:$u, method:$m} + (if $b=="" then {} else {body:$b} end))}')"
+  else
+    die "an action is required (--message+--to-agent / --script / --http / --action-json)"
+  fi
+
+  local body out jid
+  body="$(jq -nc --arg t "$title" --arg d "$desc" --arg cb "$created_by" --arg cat "$category" \
+            --argjson sch "$schedule" --argjson act "$action" \
+            '{title:$t, description:$d, created_by:$cb, category:$cat, schedule:$sch, actions:[$act]}')"
+  out="$(sched_curl POST "/v1/jobs" "$body")"
+  echo "$out" | jq .
+  jid="$(echo "$out" | jq -r '.job_id // .id // empty')"
+  echo "created job ${jid} (created_by=${created_by}, category=${category})" >&2
+  echo "undo: scheduler cancel-all --category ${category}   # or: scheduler archive ${jid}" >&2
+}
+
 # ─── main ───────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
+  create)       shift; cmd_create "$@" ;;
   list)         shift; cmd_list "$@" ;;
   search)       shift; cmd_search "$@" ;;
   get)          shift; cmd_get "$@" ;;
