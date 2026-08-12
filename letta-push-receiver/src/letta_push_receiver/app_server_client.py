@@ -26,7 +26,13 @@ class DispatchResult:
 
 def parse_responses_json(obj: dict) -> "DispatchResult":
     usage = obj.get("usage") or {}
-    ctx = usage.get("input_tokens")
+    # total_tokens is the real per-task context size; input_tokens is only
+    # the last-turn delta (spike measured ~708 vs ~35167 total on the same
+    # response), so the >200_000 WARN in enrich() below needs total_tokens
+    # to ever fire. Fall back to input_tokens if total_tokens is absent.
+    ctx = usage.get("total_tokens")
+    if ctx is None:
+        ctx = usage.get("input_tokens")
     if obj.get("status") != "completed":
         err = obj.get("error") or {}
         detail = err.get("message") if isinstance(err, dict) else str(err)

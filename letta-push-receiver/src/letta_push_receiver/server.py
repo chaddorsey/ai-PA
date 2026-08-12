@@ -42,10 +42,20 @@ def create_app() -> Flask:
     app_client = None
     enrich_pool = None
     if APP_SERVER_ENABLED:
-        app_server = AppServer(_log)
-        app_server.ensure()
-        app_client = AppServerClient(app_server.base_url, _log)
-        enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
+        try:
+            app_server = AppServer(_log)
+            app_server.ensure()
+            app_client = AppServerClient(app_server.base_url, _log)
+            enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
+        except Exception as e:
+            # Degrade, don't crash: a failed App Server boot must not take
+            # the receiver's port down with it. The /push handler's
+            # `app_client is not None` guard falls through to the warm-pool
+            # fallback below when these stay None.
+            _log(f"WARNING: App Server failed to start, degrading to warm-pool-only mode: {e}")
+            app_server = None
+            app_client = None
+            enrich_pool = None
     app.config["APP_SERVER"] = app_server
     app.config["ENRICH_POOL"] = enrich_pool
 

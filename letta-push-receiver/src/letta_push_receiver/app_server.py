@@ -10,6 +10,7 @@ from .config import log_dir, APP_SERVER_LISTEN
 from .warm_pool import build_runtime_env  # extracted shared env builder
 
 READY_TIMEOUT_S = 60.0
+READY_POLL_INTERVAL_S = 0.25
 
 
 def _is_ready_line(line: str) -> bool:
@@ -50,13 +51,38 @@ class AppServer:
         cmd = [letta_bin, "server", "--backend", "local",
                "--listen", APP_SERVER_LISTEN, "--openai-api"]
         ts = time.strftime("%Y%m%d-%H%M%S")
-        log_fh = open(log_dir() / f"app-server-{ts}.log", "w", buffering=1)
+        log_path = log_dir() / f"app-server-{ts}.log"
+        log_fh = open(log_path, "w", buffering=1)
         self._ready.clear()
         self.proc = subprocess.Popen(
             cmd, env=env, stdout=subprocess.PIPE, stderr=log_fh, text=True, bufsize=1,
         )
         threading.Thread(target=self._read, args=(log_fh,), daemon=True).start()
-        if not self._ready.wait(timeout=READY_TIMEOUT_S):
+
+        # Bounded poll loop: return as soon as EITHER the ready event fires
+        # OR the subprocess exits — don't blindly block for READY_TIMEOUT_S
+        # when the process died in the first second (e.g. stale process
+        # already holding the port).
+        deadline = time.monotonic() + READY_TIMEOUT_S
+        while True:
+            if self._ready.wait(timeout=READY_POLL_INTERVAL_S):
+                break
+            if self.proc.poll() is not None:
+                break
+            if time.monotonic() >= deadline:
+                break
+
+        exit_code = self.proc.poll()
+        if exit_code is not None:
+            # Process is gone — whether or not _ready got set (the _read
+            # thread also sets it on stream close), a dead process is never
+            # a successful startup. Fail fast with the exit code so callers
+            # don't mistake this for the timeout case.
+            raise RuntimeError(
+                f"App Server process exited during startup (code={exit_code}); "
+                f"check log at {log_path}"
+            )
+        if not self._ready.is_set():
             raise RuntimeError(f"App Server not ready within {READY_TIMEOUT_S}s")
         self.log(f"App Server ready ({self.proc.pid}) at {self.base_url}")
 
@@ -66,6 +92,12 @@ class AppServer:
             log_fh.write(line); log_fh.flush()
             if _is_ready_line(line):
                 self._ready.set()
+        # Stream closed (process exited) without ever printing the ready
+        # banner. Set the event so a waiter in _start_locked's poll loop
+        # wakes immediately instead of blocking out the full timeout;
+        # _start_locked checks proc.poll() first, so this can't be
+        # mistaken for a successful readiness signal.
+        self._ready.set()
 
     def shutdown(self) -> None:
         if self.is_alive():

@@ -8,7 +8,9 @@ def test_parse_completed_extracts_text_and_context_tokens():
             {"type": "function_call", "name": "exec_command"},
             {"type": "message", "content": [{"type": "output_text", "text": "ENRICHED: ref_id=x"}]},
         ],
-        "usage": {"input_tokens": 35167},
+        # Spike-realistic shape: input_tokens is the last-turn delta,
+        # total_tokens is the real per-task context size.
+        "usage": {"input_tokens": 708, "total_tokens": 35167},
     }
     r = parse_responses_json(obj)
     assert r.status == "done"
