@@ -8,12 +8,17 @@ Routes:
 from __future__ import annotations
 
 import json
+import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request
 
+from .app_server import AppServer
+from .app_server_client import AppServerClient
 from .config import (
+    APP_SERVER_ENABLED,
     DEFAULT_AGENTS,
     DEFAULT_SOURCE_ROUTING,
     listen_host,
@@ -32,6 +37,16 @@ def create_app() -> Flask:
     app = Flask(__name__)
     pool = WarmPool(DEFAULT_AGENTS, _log)
     app.config["WARM_POOL"] = pool
+
+    app_server = None
+    app_client = None
+    enrich_pool = None
+    if APP_SERVER_ENABLED:
+        app_server = AppServer(_log)
+        app_server.ensure()
+        app_client = AppServerClient(app_server.base_url, _log)
+        enrich_pool = ThreadPoolExecutor(max_workers=4)  # fire-and-forget; fresh conv per call = no per-agent serialization
+    app.config["APP_SERVER"] = app_server
 
     # ---- routes ----
 
@@ -81,6 +96,19 @@ def create_app() -> Flask:
             f"prompt_chars={len(pr.prompt)}"
         )
 
+        if APP_SERVER_ENABLED and app_client is not None:
+            def _run_enrich(slug=agent_slug, prompt=pr.prompt):
+                try:
+                    app_server.ensure()                  # restart-on-death
+                    r = app_client.enrich(slug, prompt)  # slug -> friendly model (SLUG_TO_MODEL)
+                    _log(f"ENRICH {slug} -> {r.status} ctx={r.context_tokens}")
+                except Exception as e:
+                    _log(f"ENRICH FAILED {slug}: {e}")
+            enrich_pool.submit(_run_enrich)
+            return jsonify({"status": "queued", "agent": agent_slug,
+                            "dispatch": "app-server"}), 202
+        # else: fall through to the existing pool.dispatch(agent_slug, pr.prompt) path (unchanged fallback)
+
         try:
             result = pool.dispatch(agent_slug, pr.prompt)
             return jsonify({
@@ -100,8 +128,8 @@ def create_app() -> Flask:
 
     @app.teardown_appcontext
     def _teardown(exc):
-        # No-op per-request; the pool is shut down on process exit
-        # via signal handler in __main__.
+        # No-op per-request; the pool (and the App Server, if enabled) are
+        # shut down on process exit via signal handler in __main__.
         return None
 
     return app
@@ -111,6 +139,20 @@ def main():
     app = create_app()
     host = listen_host()
     port = listen_port()
+
+    def _shutdown(signum, frame):
+        _log(f"received signal {signum}, shutting down")
+        pool = app.config.get("WARM_POOL")
+        if pool is not None:
+            pool.shutdown()
+        app_server = app.config.get("APP_SERVER")
+        if app_server is not None:
+            app_server.shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
     _log(f"letta-push-receiver listening on {host}:{port}")
     # Single-threaded for simplicity; dispatch is fast (just a stdin
     # write). If we need concurrency, switch to gunicorn later.
