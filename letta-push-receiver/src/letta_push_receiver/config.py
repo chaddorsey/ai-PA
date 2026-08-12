@@ -103,3 +103,11 @@ def log_dir() -> Path:
     )
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+# App Server (resident `letta server --backend local --openai-api`) —
+# see docs/plans/2026-08-12-dispatch-surface-spike.md for the pinned
+# launch command and readiness banner this config feeds.
+APP_SERVER_LISTEN = os.environ.get("PA_APP_SERVER_LISTEN", "ws://127.0.0.1:4577")
+APP_SERVER_URL = APP_SERVER_LISTEN.replace("ws://", "http://", 1)
+APP_SERVER_ENABLED = os.environ.get("PA_APP_SERVER_ENABLED", "0") == "1"

@@ -39,6 +39,85 @@ INIT_TIMEOUT_S = 60.0
 # How long to wait between health-checks of warm subprocesses
 HEALTH_PING_INTERVAL_S = 60.0
 
+# Env vars from .env that runtime subprocesses need (the union of what
+# the various wrappers export). Shared between the warm pool
+# (_build_agent_env) and the App Server (build_runtime_env) so both get
+# identical credentials — see the 2026-06-10 gws-creds regression note
+# on GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE below.
+_ENV_KEYS_FROM_DOTENV = (
+    "POSTGRES_PASSWORD",
+    "GITEA_MEMFS_TOKEN",
+    "SLACK_MCP_XOXP_TOKEN",
+    "GITHUB_TOKEN",
+    "GRANOLA_API_KEY",
+    "GRANOLA_OAUTH_TOKEN",
+)
+
+
+def _load_dotenv_file(env_path: Optional[str] = None) -> Dict[str, str]:
+    """Read KEY=VALUE pairs from the repo .env file.
+
+    Module-level so it can be used without a WarmPool instance (the App
+    Server supervisor needs the same values but has no `self._dotenv`).
+    """
+    if env_path is None:
+        env_path = os.environ.get(
+            "LETTA_PUSH_RECEIVER_ENV_FILE",
+            "/Volumes/main-drive/ai-PA/.env",
+        )
+    out: Dict[str, str] = {}
+    try:
+        with open(env_path) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return out
+
+
+def build_runtime_env() -> Dict[str, str]:
+    """Build the base env dict shared by every runtime subprocess.
+
+    This is the agent-independent portion of what used to live only in
+    WarmPool._build_agent_env: a minimal PATH, HOME, LETTA_LOCAL_BACKEND_DIR,
+    and the curated credentials from .env. Excludes broad host env
+    passthrough to keep behavior reproducible. Callers (WarmPool,
+    AppServer) may layer per-invocation bits (e.g. per-agent settings) on
+    top of this dict.
+    """
+    env = {
+        "PATH": (
+            f"{os.path.expanduser('~/.local/bin')}:"
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        ),
+        "HOME": os.path.expanduser("~"),
+        "TERM": "dumb",
+        "LETTA_LOCAL_BACKEND_DIR": os.path.expanduser(
+            "~/.letta/lc-local-backend"
+        ),
+        "GITEA_BASE_URL": "http://127.0.0.1:3030",
+        "PA_AI_REPO_ROOT": "/Volumes/main-drive/ai-PA",
+        "PA_WEB_POSTGRES_PORT": "5433",
+        "GMAIL_WATCH_SERVICE_URL": "http://localhost:8094/mcp",
+        # gws (Google Workspace CLI) needs file-based creds — the macOS
+        # Keychain is unreachable in this spawned context, so without this
+        # gws fails and email/Drive/meeting enrichment fetches degrade
+        # ("remote Gmail fetch failed (gws CLI error)"). 2026-06-10.
+        "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/Volumes/main-drive/ai-PA/gws-bridge/credentials.json",
+    }
+    dotenv = _load_dotenv_file()
+    for k in _ENV_KEYS_FROM_DOTENV:
+        v = dotenv.get(k)
+        if v:
+            env[k] = v
+    return env
+
 
 @dataclass
 class SubprocessHandle:
@@ -69,18 +148,6 @@ class SubprocessHandle:
 
 
 class WarmPool:
-    # Env vars from .env that warm subprocesses need (the union of what
-    # the various wrappers export). LETTA_LOCAL_BACKEND_DIR is added
-    # below since it's not from .env.
-    _ENV_KEYS_FROM_DOTENV = (
-        "POSTGRES_PASSWORD",
-        "GITEA_MEMFS_TOKEN",
-        "SLACK_MCP_XOXP_TOKEN",
-        "GITHUB_TOKEN",
-        "GRANOLA_API_KEY",
-        "GRANOLA_OAUTH_TOKEN",
-    )
-
     def __init__(self, agents: Dict[str, AgentSpec], log_fn):
         self.agents = agents
         self.log = log_fn
@@ -94,53 +161,23 @@ class WarmPool:
             "LETTA_PUSH_RECEIVER_ENV_FILE",
             "/Volumes/main-drive/ai-PA/.env",
         )
-        out: Dict[str, str] = {}
-        try:
-            with open(env_path) as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "=" not in line:
-                        continue
-                    k, v = line.split("=", 1)
-                    out[k.strip()] = v.strip()
-        except Exception as e:
-            self.log(f"WARN: could not read .env at {env_path}: {e}")
+        out = _load_dotenv_file(env_path)
+        if not out:
+            self.log(f"WARN: could not read .env at {env_path}")
         return out
 
     def _build_agent_env(self, spec: AgentSpec) -> Dict[str, str]:
         """Build the env dict for a warm subprocess.
 
-        Includes a minimal PATH, HOME, LETTA_LOCAL_BACKEND_DIR, and
-        the curated credentials from .env. Excludes broad host env
-        passthrough to keep behavior reproducible.
+        Delegates the agent-independent portion (PATH, HOME,
+        LETTA_LOCAL_BACKEND_DIR, curated .env credentials) to the
+        module-level build_runtime_env() so the App Server supervisor
+        (app_server.py) gets an identical base env — DRY, and avoids
+        re-introducing the 2026-06-10 gws-creds regression by drifting
+        the two env builders apart. No per-agent bits are layered on
+        top today (spec is accepted for future use / API stability).
         """
-        env = {
-            "PATH": (
-                f"{os.path.expanduser('~/.local/bin')}:"
-                "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-            ),
-            "HOME": os.path.expanduser("~"),
-            "TERM": "dumb",
-            "LETTA_LOCAL_BACKEND_DIR": os.path.expanduser(
-                "~/.letta/lc-local-backend"
-            ),
-            "GITEA_BASE_URL": "http://127.0.0.1:3030",
-            "PA_AI_REPO_ROOT": "/Volumes/main-drive/ai-PA",
-            "PA_WEB_POSTGRES_PORT": "5433",
-            "GMAIL_WATCH_SERVICE_URL": "http://localhost:8094/mcp",
-            # gws (Google Workspace CLI) needs file-based creds — the macOS
-            # Keychain is unreachable in this spawned context, so without this
-            # gws fails and email/Drive/meeting enrichment fetches degrade
-            # ("remote Gmail fetch failed (gws CLI error)"). 2026-06-10.
-            "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/Volumes/main-drive/ai-PA/gws-bridge/credentials.json",
-        }
-        for k in self._ENV_KEYS_FROM_DOTENV:
-            v = self._dotenv.get(k)
-            if v:
-                env[k] = v
-        return env
+        return build_runtime_env()
 
     # ---- subprocess lifecycle ----
 
