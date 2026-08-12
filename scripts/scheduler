@@ -115,6 +115,11 @@ Subcommands:
 
   delete <job-id>             Cancel a job (status → cancelled)
 
+  cancel-all [opts]           Bulk-cancel matching scheduled jobs (undo lever)
+    --category <cat>          default: agent-created
+    --created-by <user>       filter by creator
+    --yes / -y                skip the confirmation prompt (for agents)
+
   archive <job-id> [<job-id>...]
                               Archive one or more jobs
 
@@ -370,10 +375,47 @@ cmd_create() {
   echo "undo: scheduler cancel-all --category ${category}   # or: scheduler archive ${jid}" >&2
 }
 
+# ─── cancel-all ───────────────────────────────────────────────────────────────
+
+cmd_cancel_all() {
+  local created_by="" category="agent-created" assume_yes=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --created-by) created_by="$2"; shift 2 ;;
+      --category)   category="$2"; shift 2 ;;
+      --yes|-y)     assume_yes=1; shift ;;
+      -h|--help)    usage; exit 0 ;;
+      *)            die "unknown flag: $1" ;;
+    esac
+  done
+
+  local qs="?status_filter=scheduled&limit=500"
+  [[ -n "$created_by" ]] && qs+="&created_by_filter=${created_by}"
+  [[ -n "$category" ]]   && qs+="&category_filter=${category}"
+
+  local jobs ids n
+  jobs="$(sched_curl GET "/v1/jobs${qs}")"
+  ids="$(echo "$jobs" | jq -r '(. // .jobs // [])[].job_id')"
+  n="$(printf '%s' "$ids" | grep -c . || true)"
+  if [[ "$n" -eq 0 ]]; then echo "0 matching jobs" >&2; return 0; fi
+
+  if [[ "$assume_yes" -ne 1 ]]; then
+    echo "About to cancel ${n} job(s) (created_by='${created_by:-*}' category='${category:-*}'). Enter to proceed, Ctrl-C to abort." >&2
+    read -r _
+  fi
+
+  # /v1/jobs/batch/cancel expects a BARE JSON array of ids (not {job_ids:[...]}).
+  local ids_json
+  ids_json="$(echo "$ids" | jq -R . | jq -sc '.')"
+  sched_curl POST "/v1/jobs/batch/cancel" "$ids_json" | jq .
+  echo "cancelled ${n} job(s)" >&2
+}
+
 # ─── main ───────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
   create)       shift; cmd_create "$@" ;;
+  cancel-all)   shift; cmd_cancel_all "$@" ;;
   list)         shift; cmd_list "$@" ;;
   search)       shift; cmd_search "$@" ;;
   get)          shift; cmd_get "$@" ;;
