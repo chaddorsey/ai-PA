@@ -1,0 +1,30 @@
+{
+  "name": "@ai-pa/letta-continuity-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Raw-WS client-core for the sole-owner Letta App Server (multi-surface continuity M1, Unit 4). Speaks the full App Server /ws protocol on one ordered connection.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src test",
+    "lint:fix": "biome check --write src test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm run test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
